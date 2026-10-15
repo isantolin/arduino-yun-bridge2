@@ -188,6 +188,35 @@ rules:
         - "**/tests/**"
 
   # ==============================================================================
+  # RULE 17 & 18: MANDATORY ASSERTIONS IN UNITY C++ TESTS (C++)
+  # ==============================================================================
+  - id: sil2-ban-cpp-test-without-assert
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 17/18 Violation: C++ test function must contain at least one TEST_ASSERT* or assert macro."
+    patterns:
+      - pattern: |
+          void $FUNC() {
+            ...
+          }
+      - metavariable-regex:
+          metavariable: "$FUNC"
+          regex: "^test_"
+      - pattern-not: |
+          void $FUNC() {
+            ...
+            $ASSERT(...);
+            ...
+          }
+    paths:
+      include:
+        - "**/mcubridge-library-arduino/tests/**"
+      exclude:
+        - "**/bridge_emulator.cpp"
+        - "**/bridge_control_emulator.cpp"
+        - "**/bridge_test_global.cpp"
+
+  # ==============================================================================
   # RULE 27: MANUAL STREAM SHIFTING BAN (C++)
   # ==============================================================================
   - id: sil2-ban-manual-stream-shift

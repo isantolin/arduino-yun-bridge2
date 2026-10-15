@@ -11,8 +11,8 @@ from typer.testing import CliRunner
 from tools.profiling.arduino_symbol_profiler import (
     cli,
     detect_board_label,
+    extract_elf_memory_table,
     extract_symbols,
-    parse_memory_logs,
     profile_elf,
 )
 
@@ -34,43 +34,6 @@ def test_detect_board_label() -> None:
     generic_path = Path("/tmp/build/generic_board/firmware.elf")
     label_generic = detect_board_label(build_dir, generic_path)
     assert label_generic == "generic_board"
-
-
-def test_parse_memory_logs(tmp_path: Path) -> None:
-    # 1. Non-existent directory returns None
-    assert parse_memory_logs(tmp_path / "non_existent") is None
-
-    # 2. Empty directory returns None
-    log_dir = tmp_path / "logs"
-    log_dir.mkdir()
-    assert parse_memory_logs(log_dir) is None
-
-    # 3. Directory with valid log returns markdown table
-    log_file = log_dir / "arduino-samd-mkrwifi1010__BridgeControl.log"
-    log_file.write_text(
-        "Sketch uses 12345 bytes (42%) of program storage space. Maximum is 28672 bytes.\n"
-        "Global variables use 1024 bytes (40%) of dynamic memory. Maximum is 2560 bytes.\n",
-        encoding="utf-8",
-    )
-    nano_log = log_dir / "arduino-esp32-nano_nora__BridgeWiFi.log"
-    nano_log.write_text(
-        "El Sketch usa 12345 bytes (42%) del espacio de almacenamiento de programa. "
-        "El máximo es 3145728 bytes.\n"
-        "Las variables Globales usan 1024 bytes (1%) de la memoria dinámica, "
-        "dejando 326656 bytes para las variables locales. El máximo es 327680 bytes.\n",
-        encoding="utf-8",
-    )
-    result = parse_memory_logs(log_dir)
-    assert result is not None
-    assert "### 📊 Arduino Memory Usage" in result
-    assert "Arduino MKR WiFi 1010" in result
-    assert "Arduino Nano ESP32" in result
-    assert "3,145,728 B" in result
-    assert "327,680 B" in result
-    assert "`BridgeControl`" in result
-    assert "`BridgeWiFi`" in result
-    assert "12,345 / 28,672 B" in result
-    assert "1,024 / 2,560 B" in result
 
 
 def test_extract_symbols_real_elf() -> None:
@@ -137,3 +100,16 @@ def test_cli_main_with_output(tmp_path: Path) -> None:
     assert out_file.exists()
     content = out_file.read_text(encoding="utf-8")
     assert "Symbol Profiling (pyelftools)" in content
+
+
+def test_extract_elf_memory_table() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    build_dir = repo_root / "arduino-build" / "arduino-avr-mega"
+    if not build_dir.exists():
+        pytest.skip(f"Build directory not found: {build_dir}")
+
+    table = extract_elf_memory_table(build_dir)
+    assert table is not None
+    assert "### 📊 Arduino Memory Usage" in table
+    assert "Arduino Mega 2560" in table
+    assert "`BridgeControl`" in table

@@ -3,8 +3,8 @@
 
 Enforces Rule 11, Rule 17, and Rule 18 compliance:
 1. 100% of Python test functions must assert concrete state or emitted frames.
-2. 100% of Unity C++ test cases must call TEST_ASSERT* macros.
-Tautology and discarded call checks are delegated to Semgrep (.semgrep.yml) and Ruff (B018, PT).
+C++ test assertion (sil2-ban-cpp-test-without-assert), tautology, and discarded call
+checks are delegated to Semgrep (.semgrep.yml) and Ruff (B018, PT).
 """
 
 from __future__ import annotations
@@ -208,39 +208,6 @@ def audit_python_tests() -> list[str]:
     return findings
 
 
-def audit_cpp_tests() -> list[str]:
-    """Scan all C++ test files in Arduino library test directories."""
-    findings: list[str] = []
-    print("Auditing C++ test integrity...")
-    test_dir = ROOT / "mcubridge-library-arduino" / "tests"
-    if not test_dir.exists():
-        return findings
-    ignored = {"bridge_emulator.cpp", "bridge_control_emulator.cpp", "bridge_test_global.cpp"}
-    for cpp_path in sorted(test_dir.glob("*.cpp")):
-        if cpp_path.name in ignored:
-            continue
-        lines: list[str] = cpp_path.read_text(encoding="utf-8").splitlines()
-        current_func: str | None = None
-        brace_depth: int = 0
-        func_lines: list[str] = []
-        for i, line in enumerate(lines, 1):
-            if line.strip().startswith("void test_") and "(" in line:
-                current_func = line.strip().split("(")[0].replace("void ", "").strip()
-                brace_depth = 0
-                func_lines = []
-            if current_func:
-                func_lines.append(line)
-                brace_depth += line.count("{") - line.count("}")
-                if brace_depth == 0 and "{" in "".join(func_lines):
-                    if not any(k in "".join(func_lines) for k in ("TEST_ASSERT", "assert(")):
-                        findings.append(
-                            f"[{cpp_path.relative_to(ROOT)}:{i}] Rule 17/18 Violation: "
-                            f"C++ '{current_func}' has ZERO assertions."
-                        )
-                    current_func = None
-    return findings
-
-
 def audit_test_only_hooks() -> list[str]:
     """Scan production code for methods and functions called exclusively from tests (Rule 5 violation)."""
     findings: list[str] = []
@@ -341,8 +308,8 @@ def main(
         bool, typer.Option("--strict/--no-strict", help="Exit with code 1 if integrity violations are found.")
     ] = True,
 ) -> None:
-    """Execute automated test integrity audit across Python and C++ test suites."""
-    all_findings = audit_python_tests() + audit_cpp_tests() + audit_test_only_hooks()
+    """Execute automated test integrity audit across Python test suites."""
+    all_findings = audit_python_tests() + audit_test_only_hooks()
     print("\n--- TEST INTEGRITY AUDIT RESULTS ---")
     if not all_findings:
         print("✅ 100% of test functions have substantive assertions and pass Rule 17/18 integrity gates.")

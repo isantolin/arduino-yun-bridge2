@@ -3,13 +3,13 @@
 and verify agent.json model matches the canonical tools/gemini_model file."""
 
 import json
-import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -23,14 +23,20 @@ WORKFLOWS = [
 
 
 def _parse_md(path: Path) -> tuple[str, str]:
-    text = path.read_text()
-    m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.DOTALL)
-    if not m:
-        return "", text.strip()
-    fm, body = m.group(1), m.group(2)
-    desc_m = re.search(r"description:\s*(.+)", fm)
-    desc = desc_m.group(1).strip() if desc_m else ""
-    return desc, body.strip()
+    content = path.read_text(encoding="utf-8")
+    if not content.startswith("---"):
+        return "", content.strip()
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        return "", content.strip()
+    raw_frontmatter: object = yaml.safe_load(parts[1])
+    desc = ""
+    if isinstance(raw_frontmatter, dict):
+        fm_dict = cast(dict[str, object], raw_frontmatter)
+        raw_desc = fm_dict.get("description")
+        if isinstance(raw_desc, str):
+            desc = raw_desc.strip()
+    return desc, parts[2].strip()
 
 
 def check_model_parity() -> list[str]:

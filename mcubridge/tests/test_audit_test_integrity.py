@@ -11,7 +11,6 @@ from unittest.mock import patch
 import pytest
 
 from tools.audit.audit_test_integrity import (
-    audit_cpp_tests,
     audit_python_tests,
     audit_test_only_hooks,
     main,
@@ -62,23 +61,6 @@ def test_audit_python_tests_detects_empty_assertions(tmp_path: Path) -> None:
 
     assert any("Rule 17/18 Violation" in f for f in findings)
     assert any("test_function_without_assertions" in f for f in findings)
-
-
-def test_audit_cpp_tests_detects_empty_assertions(tmp_path: Path) -> None:
-    """Verify that C++ test functions without TEST_ASSERT macros are flagged."""
-    fake_cpp = tmp_path / "mcubridge-library-arduino" / "tests" / "test_empty.cpp"
-    fake_cpp.parent.mkdir(parents=True, exist_ok=True)
-
-    fake_cpp.write_text(
-        "void test_unasserted_case() {\n  int a = 10;\n}\n",
-        encoding="utf-8",
-    )
-
-    with patch("tools.audit.audit_test_integrity.ROOT", tmp_path):
-        findings = audit_cpp_tests()
-
-    assert any("Rule 17/18 Violation" in f for f in findings)
-    assert any("test_unasserted_case" in f for f in findings)
 
 
 def test_main_cli_success() -> None:

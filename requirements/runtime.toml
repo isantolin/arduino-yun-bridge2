@@ -366,3 +366,13 @@ rationale = "Declarative structural assertions for deterministic test validation
 name = "esprima"
 pip = "esprima==4.0.1"
 rationale = "ECMAScript AST parser for LuCI JavaScript view validation without Node.js dependency"
+
+[[dev_dependency]]
+name = "pyyaml"
+pip = "pyyaml==6.0.3"
+rationale = "Formal YAML parser for workflow frontmatter and configuration audit"
+
+[[dev_dependency]]
+name = "types-pyyaml"
+pip = "types-PyYAML==6.0.12.20260906"
+rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"

@@ -180,6 +180,7 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
         "cloud_tls": "0",
         "cloud_tls_insecure": "1",
         "watchdog_enabled": "0",
+        "serial_response_timeout": "30.0",
         "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe",
         "allowed_commands": "*",
         "storage_path": str(storage_path),
@@ -203,6 +204,7 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
     daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
     daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
+    daemon_env["MCUBRIDGE_SERIAL_RESPONSE_TIMEOUT"] = "30.0"
     daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
@@ -247,8 +249,8 @@ class SimavrState:
                 self.capabilities_event.set()
                 self.sync_event.set()
             elif (
-                ('"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line)
-                or "MCU link synchronised" in clean_line
+                "MCU link synchronised" in clean_line
+                or "MCU link synchronized" in clean_line
                 or "Handshake synchronization complete" in clean_line
                 or '"new_state": "SYNCHRONIZED"' in clean_line
             ):
@@ -368,7 +370,7 @@ def run_simavr_emulation(
 
     logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
     # Wait for capabilities discovery to complete so in-flight frames don't collide with client tests
-    state.capabilities_event.wait(timeout=5.0)
+    state.capabilities_event.wait(timeout=30.0)
     time.sleep(1.0)
 
     all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
@@ -448,13 +450,21 @@ def run_client_scripts(
     led_builtin_pin: int,
 ) -> bool:
     _ = (daemon_env, timeout_seconds)
-    for test_path in test_scripts:
-        if not test_path.exists():
-            logger.warning("Test script not found, skipping", path=str(test_path))
-            continue
-        if not run_single_client_script(test_path, device_id="yun-01", led_builtin_pin=led_builtin_pin):
-            return False
-    return True
+    old_non_interactive = os.environ.get("MCUBRIDGE_NON_INTERACTIVE")
+    os.environ["MCUBRIDGE_NON_INTERACTIVE"] = "1"
+    try:
+        for test_path in test_scripts:
+            if not test_path.exists():
+                logger.warning("Test script not found, skipping", path=str(test_path))
+                continue
+            if not run_single_client_script(test_path, device_id="yun-01", led_builtin_pin=led_builtin_pin):
+                return False
+        return True
+    finally:
+        if old_non_interactive is None:
+            os.environ.pop("MCUBRIDGE_NON_INTERACTIVE", None)
+        else:
+            os.environ["MCUBRIDGE_NON_INTERACTIVE"] = old_non_interactive
 
 
 def _teardown_simavr(

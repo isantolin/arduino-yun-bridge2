@@ -9,6 +9,7 @@ from __future__ import annotations
 import functools
 import posixpath
 
+import parse
 import structlog
 from google.protobuf.message import Message as ProtobufMessage
 
@@ -46,23 +47,40 @@ def _get_prefix_segs(prefix: str) -> tuple[str, ...]:
     return tuple(filter(None, prefix.split("/")))
 
 
+@functools.lru_cache(maxsize=32)
+def _get_topic_parser(prefix_canonical: str) -> tuple[parse.Parser, parse.Parser]:
+    """Compile declarative topic parsers for prefix with and without remainder segments. [SIL-2]"""
+    return (
+        parse.compile(f"{prefix_canonical}/{{service}}/{{remainder}}"),
+        parse.compile(f"{prefix_canonical}/{{service}}"),
+    )
+
+
 @functools.lru_cache(maxsize=256)
 def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
-    """Parse an incoming CLOUD topic into a TopicRoute.
-    Returns None if the topic does not match the prefix or is malformed.
-    """
+    """Parse an incoming CLOUD topic into a TopicRoute using declarative parse patterns. [SIL-2]"""
     if not topic_name or not prefix:
         return None
 
-    # [SIL-2] Holistic topic decomposition using library-native filter/split.
     prefix_segs = _get_prefix_segs(prefix)
-    topic_segs = tuple(filter(None, topic_name.split("/")))
-
-    # Validation: must contain prefix + at least one service segment
-    if len(topic_segs) <= len(prefix_segs) or topic_segs[: len(prefix_segs)] != prefix_segs:
+    prefix_canonical = "/".join(prefix_segs)
+    clean_topic = "/".join(filter(None, topic_name.split("/")))
+    if not prefix_canonical or not clean_topic:
         return None
 
-    seg = topic_segs[len(prefix_segs)].lower()
+    full_parser, svc_parser = _get_topic_parser(prefix_canonical)
+    parsed = full_parser.parse(clean_topic)
+    if parsed is not None:
+        seg = str(parsed["service"]).lower()
+        remainder = str(parsed["remainder"])
+        segments = tuple(filter(None, remainder.split("/")))
+    else:
+        parsed_svc = svc_parser.parse(clean_topic)
+        if parsed_svc is None:
+            return None
+        seg = str(parsed_svc["service"]).lower()
+        segments = ()
+
     topic_enum = TOPIC_ALIASES.get(seg)
     if topic_enum is None:
         try:
@@ -71,10 +89,9 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
             logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name, error=str(exc))
             return None
 
-    seg_start = len(prefix_segs) + 1
     return TopicRoute(
         raw=topic_name,
-        prefix="/".join(prefix_segs),
+        prefix=prefix_canonical,
         topic=topic_enum,
-        segments=topic_segs[seg_start:],
+        segments=segments,
     )

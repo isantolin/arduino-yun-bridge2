@@ -35,6 +35,7 @@
 #include <etl/array.h>
 #include <etl/bitset.h>
 #include <etl/callback_timer.h>
+#include <etl/debounce.h>
 #include <etl/delegate.h>
 #include <etl/deque.h>
 #include <etl/fsm.h>
@@ -42,7 +43,9 @@
 #include <etl/pool.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+#include <etl/variant.h>
 #include <etl/vector.h>
+#include <etl/visitor.h>
 #include <PacketSerial.h>
 #include <Codecs/COBSR.h>
 // clang-format on
@@ -133,38 +136,36 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
   uint32_t getWatchdogTimeout() const { return _watchdog_timeout_ms; }
 
+  using StatusPayloadVariant =
+      etl::variant<etl::span<const uint8_t>, etl::string_view>;
+
   template <typename T = etl::span<const uint8_t>>
   void emitStatus(rpc::StatusCode s,
                   const T& payload = etl::span<const uint8_t>()) {
-    if (_status_handler.is_valid()) {
-      if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
-        _status_handler(s, payload);
-      } else if constexpr (etl::is_same_v<T, etl::string_view>) {
-        _status_handler(s, etl::span<const uint8_t>(
-                               reinterpret_cast<const uint8_t*>(payload.data()),
-                               payload.size()));
-      }
+    if constexpr (etl::is_same_v<T, etl::span<const uint8_t>> ||
+                  etl::is_same_v<T, etl::string_view>) {
+      StatusPayloadVariant v(payload);
+      _emitStatusVariant(s, v);
     }
-    if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
-      if (!sendFrame(s, 0, payload)) {
-        enterSafeState();
-      }
-    } else if constexpr (etl::is_same_v<T, etl::string_view>) {
-      rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-      const size_t to_copy =
-          etl::min(payload.size(), sizeof(resp.message) - 1U);
-      if (to_copy > 0U) etl::copy_n(payload.begin(), to_copy, resp.message);
-      resp.message[to_copy] = 0;
-      if (!send(s, 0, resp)) {
-        enterSafeState();
-      }
-    }
+  }
+
+  void emitStatus(rpc::StatusCode s, const StatusPayloadVariant& payload) {
+    _emitStatusVariant(s, payload);
   }
 
   void signalXoff();
   void signalXon();
 
   [[nodiscard]] bool sendPinEvent(uint8_t pin, uint16_t value);
+
+  template <uint16_t ValidCount = 1>
+  [[nodiscard]] bool sendDebouncedPinEvent(
+      uint8_t pin, bool raw_state, etl::debounce<ValidCount>& debouncer) {
+    if (debouncer.add(raw_state)) {
+      return sendPinEvent(pin, debouncer.is_set() ? 1U : 0U);
+    }
+    return true;
+  }
 
   template <typename T>
   [[nodiscard]] bool sendFrame(T command, uint16_t seq = 0,
@@ -238,6 +239,38 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       return false;
     }
     return true;
+  }
+
+  struct StatusVisitor {
+    BridgeClass& self;
+    rpc::StatusCode s;
+    void operator()(etl::span<const uint8_t> p) const {
+      if (self._status_handler.is_valid()) {
+        self._status_handler(s, p);
+      }
+      if (!self.sendFrame(s, 0, p)) {
+        self.enterSafeState();
+      }
+    }
+    void operator()(etl::string_view p) const {
+      if (self._status_handler.is_valid()) {
+        self._status_handler(
+            s, etl::span<const uint8_t>(
+                   reinterpret_cast<const uint8_t*>(p.data()), p.size()));
+      }
+      rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
+      const size_t to_copy = etl::min(p.size(), sizeof(resp.message) - 1U);
+      if (to_copy > 0U) etl::copy_n(p.begin(), to_copy, resp.message);
+      resp.message[to_copy] = 0;
+      if (!self.send(s, 0, resp)) {
+        self.enterSafeState();
+      }
+    }
+  };
+
+  void _emitStatusVariant(rpc::StatusCode s,
+                          const StatusPayloadVariant& payload) {
+    etl::visit(StatusVisitor{*this, s}, payload);
   }
 
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;

@@ -55,6 +55,7 @@ define Package/$(PKG_NAME)
 		python3-psutil \
 		python3-statemachine \
 		python3-anyio \
+		python3-parse \
 		python3-ubus \
 		python3-hpack \
 		python3-hyperframe \

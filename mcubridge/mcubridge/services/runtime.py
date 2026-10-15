@@ -872,6 +872,9 @@ class BridgeService:
                 reply_context=inbound,
             )
 
+    async def execute_local_file_remove(self, target: str) -> None:
+        await self.local_bridge_service.execute_file_remove(pb.FileRemove(path=target))
+
     async def handle_file(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
@@ -882,27 +885,12 @@ class BridgeService:
         act_val = getattr(act, "value", str(act))
         with structlog.contextvars.bound_contextvars(file_action=act_val, file_target=target):
             if target.startswith(MCU_FS_PREFIX):
-                match act:
-                    case FileAction.READ:
-                        await self.handle_file_mcu_read(target, inbound)
-                    case FileAction.WRITE:
-                        await self.handle_file_mcu_write(target, inbound)
-                    case FileAction.REMOVE:
-                        await self.handle_file_mcu_remove(target, inbound)
-                    case _:
-                        return
+                if handler := _FILE_MCU_DISPATCH.get(cast(FileAction, act)):
+                    await handler(self, target, inbound)
                 return
 
-            if self._get_safe_path(target):
-                match act:
-                    case FileAction.READ:
-                        await self.handle_file_local_read(target, inbound)
-                    case FileAction.WRITE:
-                        await self.handle_file_local_write(target, inbound)
-                    case FileAction.REMOVE:
-                        await self.local_bridge_service.execute_file_remove(pb.FileRemove(path=target))
-                    case _:
-                        return
+            if self._get_safe_path(target) and (handler := _FILE_LOCAL_DISPATCH.get(cast(FileAction, act))):
+                await handler(self, target, inbound)
 
     def _file_response_topic(self, target: str) -> str:
         return topic_path(
@@ -988,6 +976,9 @@ class BridgeService:
             finally:
                 self.pending_mcu_read = None
 
+    async def execute_shell_kill(self, pid: int) -> None:
+        await self.local_bridge_service.execute_process_kill(pb.ProcessKill(pid=pid))
+
     async def handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         raw_act = route.segments[0] if route.segments else None
         if not raw_act:
@@ -1000,13 +991,8 @@ class BridgeService:
             return
         pid = int(route.segments[1]) if len(route.segments) == 2 and route.segments[1].isdigit() else 0
         with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
-            match act:
-                case ShellAction.RUN_ASYNC:
-                    await self.handle_shell_run_async(pid, inbound)
-                case ShellAction.POLL:
-                    await self.handle_shell_poll(pid, inbound)
-                case ShellAction.KILL:
-                    await self.local_bridge_service.execute_process_kill(pb.ProcessKill(pid=pid))
+            if handler := _SHELL_ACTION_DISPATCH.get(act):
+                await handler(self, pid, inbound)
 
     async def handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
         pl = inbound.payload
@@ -1071,20 +1057,15 @@ class BridgeService:
                 reply_context=inbound,
             )
 
+    async def spi_send_command(self, cmd: Command) -> None:
+        if self.serial:
+            await self.serial.send(cmd.value, b"")
+
     async def handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
-        match route.identifier:
-            case SpiAction.BEGIN:
-                await self.serial.send(Command.CMD_SPI_BEGIN.value, b"")
-            case SpiAction.END:
-                await self.serial.send(Command.CMD_SPI_END.value, b"")
-            case SpiAction.CONFIG:
-                await self.handle_spi_config(route, inbound)
-            case SpiAction.TRANSFER:
-                await self.handle_spi_transfer(route, inbound)
-            case _:
-                pass
+        if handler := _SPI_ACTION_DISPATCH.get(cast(SpiAction, route.identifier)):
+            await handler(self, route, inbound)
 
     async def _reply_cloud_ok(self, *segments: Any, success: bool, inbound: pb.CloudQueuedPublish) -> None:
         if inbound.correlation_data or inbound.response_topic:
@@ -1144,13 +1125,8 @@ class BridgeService:
                 action = PinAction(raw_action)
             except ValueError:
                 return
-        match action:
-            case PinAction.MODE:
-                await self.handle_pin_mode(route, pin, inbound)
-            case PinAction.READ:
-                await self.handle_pin_read(route, pin, inbound)
-            case None:
-                await self.handle_pin_write(route, pin, inbound)
+        if handler := _PIN_ACTION_DISPATCH.get(action):
+            await handler(self, route, pin, inbound)
 
     async def handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         resp = await self.local_bridge_service.execute_get_free_memory(pb.SubscribeRequest())
@@ -1774,3 +1750,48 @@ class BridgeService:
         except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
             log.critical("Supervisor task failed unexpectedly", error=str(exc))
             raise
+
+
+_FILE_MCU_DISPATCH: Final[
+    dict[FileAction, Callable[[BridgeService, str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+] = {
+    FileAction.WRITE: lambda s, target, inbound: s.handle_file_mcu_write(target, inbound),
+    FileAction.REMOVE: lambda s, target, inbound: s.handle_file_mcu_remove(target, inbound),
+    FileAction.READ: lambda s, target, inbound: s.handle_file_mcu_read(target, inbound),
+}
+
+_FILE_LOCAL_DISPATCH: Final[
+    dict[FileAction, Callable[[BridgeService, str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+] = {
+    FileAction.WRITE: lambda s, target, inbound: s.handle_file_local_write(target, inbound),
+    FileAction.REMOVE: lambda s, target, inbound: s.execute_local_file_remove(target),
+    FileAction.READ: lambda s, target, inbound: s.handle_file_local_read(target, inbound),
+}
+
+_SHELL_ACTION_DISPATCH: Final[
+    dict[ShellAction, Callable[[BridgeService, int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+] = {
+    ShellAction.RUN_ASYNC: lambda s, pid, inbound: s.handle_shell_run_async(pid, inbound),
+    ShellAction.POLL: lambda s, pid, inbound: s.handle_shell_poll(pid, inbound),
+    ShellAction.KILL: lambda s, pid, _inbound: s.execute_shell_kill(pid),
+}
+
+_SPI_ACTION_DISPATCH: Final[
+    dict[SpiAction, Callable[[BridgeService, TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+] = {
+    SpiAction.BEGIN: lambda s, _r, _m: s.spi_send_command(Command.CMD_SPI_BEGIN),
+    SpiAction.END: lambda s, _r, _m: s.spi_send_command(Command.CMD_SPI_END),
+    SpiAction.CONFIG: lambda s, r, m: s.handle_spi_config(r, m),
+    SpiAction.TRANSFER: lambda s, r, m: s.handle_spi_transfer(r, m),
+}
+
+_PIN_ACTION_DISPATCH: Final[
+    dict[
+        PinAction | None,
+        Callable[[BridgeService, TopicRoute, int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]],
+    ]
+] = {
+    PinAction.MODE: lambda s, r, pin, m: s.handle_pin_mode(r, pin, m),
+    PinAction.READ: lambda s, r, pin, m: s.handle_pin_read(r, pin, m),
+    None: lambda s, r, pin, m: s.handle_pin_write(r, pin, m),
+}

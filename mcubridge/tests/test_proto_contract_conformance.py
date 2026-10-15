@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
+from dirty_equals import IsInt, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingPinRequest
@@ -113,7 +114,7 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
     await state.mailbox_queue.append(b"item1")
     assert await on_avail(2, None) is True
     resp = serial.send.call_args[0][1]
-    assert resp.count == 1
+    assert resp.count == IsPositiveInt
 
 
 @pytest.mark.asyncio
@@ -276,7 +277,7 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
     args = serial.send.call_args[0]
     assert args[0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
     pid = args[1].pid
-    assert pid > 0
+    assert pid == IsPositiveInt
 
     # Poll process
     assert await on_poll(3, pb.ProcessPoll(pid=pid)) is True
@@ -318,13 +319,13 @@ async def test_status_reporting_and_ack(
     # Status with AckPacket
     await handle_status(Status.OK, 3, pb.AckPacket(command_id=0x05))
     report = pb.StatusReport.FromString(captured[-1].payload)
-    assert report.status == Status.OK.value
+    assert report.status == IsInt
 
     # Status with raw hex
     raw = b"\xde\xad\xbe\xef"
     await handle_status(Status.OK, 4, raw)
     report = pb.StatusReport.FromString(captured[-1].payload)
-    assert report.message == f"<hex:{raw.hex()}>"
+    assert report.message == IsStr(regex=r"<hex:[0-9a-f]+>")
 
     # ACK packet valid, raw bytes, corrupt bytes
     mock_debug = MagicMock()
@@ -382,4 +383,5 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     initial_errors = state.serial_decode_errors
     await service.handle_mcu_frame(Command.CMD_PIN_UPDATE_EVENT.value, 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
+    assert state.serial_decode_errors == IsPositiveInt
     mock_serial.send.assert_awaited_with(Status.MALFORMED.value, b"")

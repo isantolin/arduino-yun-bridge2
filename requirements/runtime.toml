@@ -43,7 +43,7 @@ rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client 
 [[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
-pip = "serialx==1.13.0"
+pip = "serialx==1.14.0"
 rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]
@@ -88,6 +88,12 @@ name = "anyio"
 openwrt = "python3-anyio"
 pip = "anyio==4.15.1"
 rationale = "Asynchronous file I/O (anyio.Path) and structured async thread execution (SIL-2)"
+
+[[dependency]]
+name = "parse"
+openwrt = "python3-parse"
+pip = "parse==1.22.3"
+rationale = "Declarative topic path parsing and compilation (SIL-2)"
 
 [[dependency]]
 name = "ubus"
@@ -323,7 +329,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.169.1"
+pip = "hypothesis==6.169.2"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -345,3 +351,8 @@ rationale = "Embedded target testing harness and fixtures for hardware-in-the-lo
 name = "pyelftools"
 pip = "pyelftools==0.33"
 rationale = "Pure-Python ELF symbol parser for Arduino firmware profiling and size analysis [SIL-2 / Rule 37]"
+
+[[dev_dependency]]
+name = "dirty-equals"
+pip = "dirty-equals==0.11"
+rationale = "Declarative structural assertions for deterministic test validation"

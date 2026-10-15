@@ -130,3 +130,10 @@ def test_update_tox_dev_deps_syncs_pinned_versions_without_prefix_collision(
     assert sync_runtime_deps.update_tox_dev_deps(dev_deps, runtime_deps)
     expected = "deps =\n    protobuf==7.36.2\n    mypy-protobuf==5.1.0\n    types-protobuf==7.35.1\n"
     assert tox_file.read_text(encoding="utf-8") == expected
+
+
+def test_sync_runtime_deps_user_agent_reflects_ecosystem_version() -> None:
+    expected_version = sync_runtime_deps.VERSION_PATH.read_text(encoding="utf-8").strip()
+    assert sync_runtime_deps.ECOSYSTEM_VERSION == expected_version
+    assert sync_runtime_deps.USER_AGENT == f"McuBridge-DepsSync/{expected_version}"
+

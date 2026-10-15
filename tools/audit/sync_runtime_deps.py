@@ -18,6 +18,9 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parents[2]
+VERSION_PATH = ROOT / "VERSION"
+ECOSYSTEM_VERSION = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "2.8.8"
+USER_AGENT = f"McuBridge-DepsSync/{ECOSYSTEM_VERSION}"
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
@@ -392,7 +395,7 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
     """Query PyPI JSON API for the latest release version using packaging.Version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
-        resp = fetch_url_with_retry(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"}, timeout=10.0)
+        resp = fetch_url_with_retry(url, headers={"User-Agent": USER_AGENT}, timeout=10.0)
         data = resp.json()
         if "releases" in data and data["releases"]:
             parsed_versions: list[Version] = []
@@ -418,7 +421,7 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
     """Fetch SHA-256 hash of the sdist package from PyPI JSON API."""
     url = f"https://pypi.org/pypi/{package_name}/{version}/json"
     try:
-        resp = fetch_url_with_retry(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"}, timeout=10.0)
+        resp = fetch_url_with_retry(url, headers={"User-Agent": USER_AGENT}, timeout=10.0)
         data = resp.json()
         for file_info in data.get("urls", []):
             if file_info.get("packagetype") == "sdist":
@@ -431,7 +434,7 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
 
 def _fetch_github_latest_version(repo: str) -> str | None:
     """Query GitHub API for latest release or tag using HTTPX."""
-    headers = {"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"}
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github.v3+json"}
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     try:
         resp = fetch_url_with_retry(url, headers=headers, timeout=8.0)

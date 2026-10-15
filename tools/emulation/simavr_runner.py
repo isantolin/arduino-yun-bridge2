@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
+import parse
 import structlog
 import tenacity
 import typer
@@ -47,6 +48,9 @@ configure_logging(console=True)
 logger = structlog.get_logger("simavr_runner")
 
 
+_PTY_PARSER = parse.compile("[SIMAVR] UART{id:w} PTY ready on: {pty}")
+
+
 def _read_pty_from_stream(proc_stdout: Any, state: SimavrState) -> str:
     """Read PTY line emitted by simavr harness with tenacity retry."""
 
@@ -54,8 +58,9 @@ def _read_pty_from_stream(proc_stdout: Any, state: SimavrState) -> str:
         line = proc_stdout.readline()
         if line:
             state.on_line(line, "simavr-stdout")
-            if "[SIMAVR] UART" in line and "PTY ready on:" in line:
-                return line.split(":", 1)[1].strip()
+            res = _PTY_PARSER.parse(line.strip())
+            if res:
+                return str(res["pty"])
         return None
 
     retryer = tenacity.Retrying(

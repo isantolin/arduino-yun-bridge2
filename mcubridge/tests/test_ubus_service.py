@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from dirty_equals import Contains, IsInstance, IsPartialDict
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.ubus import UbusService
@@ -91,19 +92,21 @@ def test_ubus_service_start_with_mock_ubus_success(mock_runtime: MockRuntimeFaca
     call_args = mock_conn.add.call_args[0]
     assert call_args[0] == "mcubridge"
     methods = call_args[1]
-    assert "status" in methods
-    assert "digital_write" in methods
-    assert "analog_write" in methods
-    assert "mailbox_push" in methods
-    assert "mailbox_read" in methods
-    assert "datastore_set" in methods
-    assert "datastore_get" in methods
-    assert "file_write" in methods
-    assert "process_run" in methods
-    assert "process_kill" in methods
-    assert "process_poll" in methods
-    assert "link_reset" in methods
-    assert "ping" in methods
+    assert methods.keys() == Contains(
+        "status",
+        "digital_write",
+        "analog_write",
+        "mailbox_push",
+        "mailbox_read",
+        "datastore_set",
+        "datastore_get",
+        "file_write",
+        "process_run",
+        "process_kill",
+        "process_poll",
+        "link_reset",
+        "ping",
+    )
 
     service.stop()
     assert not service.is_active
@@ -128,17 +131,16 @@ def test_ubus_handle_status(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     status_resp = service.ubus_handle_status(MagicMock(), {})
 
-    assert status_resp["connected"] is True
-    assert status_resp["synchronized"] is True
-    assert status_resp["version"] == "2.8.8"
-    assert status_resp["capabilities"]["watchdog"] is True
-    assert status_resp["capabilities"]["spi"] is True
-    assert status_resp["capabilities"]["sd"] is True
-    assert status_resp["capabilities"]["i2c"] is False
-    assert "metrics" in status_resp
-    assert "bridge" in status_resp
-    assert "system" in status_resp
-    assert "process_stats" in status_resp
+    assert status_resp == IsPartialDict(
+        connected=True,
+        synchronized=True,
+        version="2.8.8",
+        capabilities=IsPartialDict(watchdog=True, spi=True, sd=True, i2c=False),
+        metrics=IsInstance(dict),
+        bridge=IsInstance(dict),
+        system=IsInstance(dict),
+        process_stats=IsInstance(list),
+    )
 
 
 def test_ubus_handle_status_with_dict_caps_and_no_version(mock_runtime: MockRuntimeFacade) -> None:

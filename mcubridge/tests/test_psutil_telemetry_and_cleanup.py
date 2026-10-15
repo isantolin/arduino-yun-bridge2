@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock
 
+from dirty_equals import IsFloat, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.state.context import ProcessContext, create_runtime_state
@@ -23,18 +24,18 @@ def test_build_status_snapshot_populates_psutil_telemetry(runtime_config: Runtim
 
         # Validate SystemStatus telemetry fields
         sys = status.system
-        assert sys.memory_total_bytes > 0
-        assert sys.memory_available_bytes > 0
-        assert sys.uptime_seconds >= 0.0
-        assert sys.load_avg_1m >= 0.0
-        assert 0.0 <= sys.cpu_percent <= 100.0
+        assert sys.memory_total_bytes == IsPositiveInt
+        assert sys.memory_available_bytes == IsPositiveInt
+        assert sys.uptime_seconds == IsFloat(ge=0.0)
+        assert sys.load_avg_1m == IsFloat(ge=0.0)
+        assert sys.cpu_percent == IsFloat(ge=0.0, le=100.0)
 
         # Validate ProcessStats
         assert len(status.process_stats) >= 1
         daemon_proc = status.process_stats[0]
-        assert len(daemon_proc.name) > 0
-        assert daemon_proc.memory_rss_bytes > 0
-        assert daemon_proc.cpu_percent >= 0.0
+        assert daemon_proc.name == IsStr(min_length=1)
+        assert daemon_proc.memory_rss_bytes == IsPositiveInt
+        assert daemon_proc.cpu_percent == IsFloat(ge=0.0)
     finally:
         state.cleanup()
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import cast
+
+import parse
 
 HOST_TEST_FQBN = "arduino:avr:uno"
 REQUIRED_PIN_MACROS = (
@@ -41,6 +42,9 @@ class ArduinoCoreMetadata:
     i2c_scl: int
 
 
+_INCLUDE_PARSER = parse.compile('include "{header}"')
+
+
 def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[str, str]:
     visited: set[Path] = set() if seen is None else seen
     resolved_header = header.resolve()
@@ -51,23 +55,29 @@ def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[st
     macros: dict[str, str] = {}
 
     for line in content.splitlines():
-        include = re.match(r'^\s*#\s*include\s*"([^"]+)"', line)
-        if include:
-            include_path = resolved_header.parent / include.group(1)
+        trimmed = line.strip()
+        if not trimmed.startswith("#"):
+            continue
+        inc = _INCLUDE_PARSER.search(trimmed)
+        if inc:
+            include_path = resolved_header.parent / str(inc["header"])
             if include_path.is_file():
                 macros.update(_read_variant_macros(include_path, visited))
             continue
-        definition = re.match(r"^\s*#\s*define\s+([A-Z][A-Z0-9_]*)\s+(.+?)\s*$", line)
-        if definition and definition.group(1) in REQUIRED_PIN_MACROS:
-            macros[definition.group(1)] = definition.group(2).split("//", maxsplit=1)[0].strip()
+        tokens = trimmed.removeprefix("#").strip().split(None, 2)
+        if len(tokens) >= 3 and tokens[0] == "define":
+            name, val = tokens[1], tokens[2]
+            if name in REQUIRED_PIN_MACROS:
+                macros[name] = val.split("//", maxsplit=1)[0].strip()
     return macros
 
 
 def _parse_integer(value: str, name: str) -> int:
-    literal = re.fullmatch(r"\(?\s*(0[xX][0-9A-Fa-f]+|[0-9]+)\s*\)?[uUlL]*", value)
-    if literal is None:
-        raise ValueError(f"Arduino core metadata {name} is not an integer literal: {value!r}")
-    return int(literal.group(1), 0)
+    token = value.strip().strip("()").strip().rstrip("uUlL")
+    try:
+        return int(token, 0)
+    except ValueError as exc:
+        raise ValueError(f"Arduino core metadata {name} is not an integer literal: {value!r}") from exc
 
 
 def metadata_from_properties(fqbn: str, output: str) -> ArduinoCoreMetadata:

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+from dirty_equals import IsStr
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
@@ -45,9 +46,10 @@ def test_audit_status_dict_anomalies() -> None:
         "bridge": {},
     }
     spool_errors = audit_status_dict(spool_data)
-    assert len(spool_errors) == 2
-    assert any("dropped messages" in e for e in spool_errors)
-    assert any("trim events" in e for e in spool_errors)
+    assert spool_errors == [
+        IsStr(regex=r".*dropped messages.*"),
+        IsStr(regex=r".*trim events.*"),
+    ]
 
     # 3. Serial link and handshake anomalies
     link_data = {
@@ -65,11 +67,13 @@ def test_audit_status_dict_anomalies() -> None:
         },
     }
     link_errors = audit_status_dict(link_data)
-    assert len(link_errors) == 5
-    assert any("disconnected" in e for e in link_errors)
-    assert any("link_sync_timeout" in e for e in link_errors)
-    assert any("failure streak active" in e for e in link_errors)
-    assert any("Fatal handshake" in e for e in link_errors)
+    assert link_errors == [
+        IsStr(regex=r".*disconnected.*"),
+        IsStr(regex=r".*error: link_sync_timeout.*"),
+        IsStr(regex=r".*3 failure.*"),
+        IsStr(regex=r".*streak=3.*"),
+        IsStr(regex=r".*Fatal handshake.*"),
+    ]
 
 
 def test_audit_cli_raw_json_clean() -> None:

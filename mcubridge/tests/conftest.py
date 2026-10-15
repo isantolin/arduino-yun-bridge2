@@ -109,7 +109,7 @@ original_get_default_config = mcubridge.config.common.get_default_config
 
 
 class PatchedRuntimeConfig:
-    def __new__(cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
+    def __new__(_cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
         mappings = {
             "cloud_topic": "topic_prefix",
             "cloud_spool_dir": "cloud_spool_dir",

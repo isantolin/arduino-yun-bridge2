@@ -1134,7 +1134,7 @@ async def test_runtime_cloud_session_non_command_envelope(
         async def __aenter__(self) -> MockStream:
             return self
 
-        async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        async def __aexit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
             pass
 
         def __aiter__(self) -> MockStream:
@@ -1241,7 +1241,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         async def __aenter__(self) -> MockRpcStream:
             return self
 
-        async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        async def __aexit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
             pass
 
         def __aiter__(self) -> MockRpcStream:

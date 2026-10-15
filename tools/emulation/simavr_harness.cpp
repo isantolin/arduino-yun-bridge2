@@ -366,7 +366,8 @@ int main(int argc, char* argv[]) {
 
   const etl::string_view firmware_file = argv[1];
   const etl::string_view mcu_name = argv[2];
-  const uint32_t frequency = static_cast<uint32_t>(strtoul(argv[3], nullptr, 10));
+  const uint32_t frequency =
+      static_cast<uint32_t>(strtoul(argv[3], nullptr, 10));
   if (frequency == 0) {
     fprintf(stderr, "[ERROR] AVR CPU frequency must be non-zero.\n");
     return 1;

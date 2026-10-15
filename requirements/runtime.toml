@@ -361,3 +361,8 @@ rationale = "Pure-Python ELF symbol parser for Arduino firmware profiling and si
 name = "dirty-equals"
 pip = "dirty-equals==0.11"
 rationale = "Declarative structural assertions for deterministic test validation"
+
+[[dev_dependency]]
+name = "esprima"
+pip = "esprima==4.0.1"
+rationale = "ECMAScript AST parser for LuCI JavaScript view validation without Node.js dependency"

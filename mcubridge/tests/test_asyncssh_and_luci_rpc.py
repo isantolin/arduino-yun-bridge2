@@ -43,6 +43,25 @@ def test_validate_luci_rpc_endpoint_exception_handling() -> None:
         assert code == 1
 
 
+def test_validate_luci_app_success() -> None:
+    assert validate_luci.validate_luci_app() == 0
+
+
+def test_validate_luci_app_syntax_error(tmp_path: Path) -> None:
+    fake_luci = tmp_path / "luci-app-mcubridge"
+    fake_js_dir = fake_luci / "htdocs" / "luci-static" / "resources" / "view" / "mcubridge"
+    fake_js_dir.mkdir(parents=True)
+    fake_menu_dir = fake_luci / "root" / "usr" / "share" / "luci" / "menu.d"
+    fake_menu_dir.mkdir(parents=True)
+
+    # Valid JSON
+    (fake_luci / "test.json").write_text("{}", encoding="utf-8")
+    # Invalid JS syntax
+    (fake_js_dir / "bad.js").write_text("return { invalid syntax !!!", encoding="utf-8")
+
+    assert validate_luci.validate_luci_app(root_dir=tmp_path) == 1
+
+
 def test_run_remote_ssh_success() -> None:
     mock_conn = AsyncMock()
     mock_res = MagicMock()

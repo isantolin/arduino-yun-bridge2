@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
+import esprima
 
-def validate_luci_app() -> int:
-    repo_root = Path(__file__).resolve().parents[2]
+
+def validate_luci_app(root_dir: Path | None = None) -> int:
+    repo_root = root_dir if root_dir is not None else Path(__file__).resolve().parents[2]
     luci_dir = repo_root / "luci-app-mcubridge"
 
     if not luci_dir.exists():
@@ -43,11 +44,17 @@ def validate_luci_app() -> int:
         return 1
 
     for js_file in js_files:
-        res = subprocess.run(["node", "--check", str(js_file)], capture_output=True, text=True, check=False)
-        if res.returncode == 0:
+        try:
+            content = js_file.read_text(encoding="utf-8")
+            esprima.parseScript(f"(function() {{\n{content}\n}})", {"tolerant": False})
             sys.stdout.write(f"  ✔ {js_file.relative_to(repo_root)} (syntax OK)\n")
-        else:
-            sys.stderr.write(f"  ✖ {js_file.relative_to(repo_root)}:\n{res.stderr}\n")
+        except esprima.Error as exc:
+            line_no = exc.lineNumber - 1 if exc.lineNumber > 1 else 1
+            rel_file = js_file.relative_to(repo_root)
+            sys.stderr.write(f"  ✖ {rel_file} (syntax error at line {line_no}, col {exc.column}): {exc.message}\n")
+            errors += 1
+        except OSError as exc:
+            sys.stderr.write(f"  ✖ {js_file.relative_to(repo_root)} (read error): {exc}\n")
             errors += 1
 
     # 3. Check route correspondence between menu and views

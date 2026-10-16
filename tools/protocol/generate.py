@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import importlib.util
+import json
 import re
 import shutil
 import subprocess
@@ -874,6 +875,44 @@ class JinjaGenerator:
         )
         cast(dict[str, Any], self.env.filters)["cpp_digits"] = self._cpp_digit_separator
         cast(dict[str, Any], self.env.filters)["snakecase"] = self._snake_case
+        cast(dict[str, Any], self.env.filters)["py_str"] = self._py_str
+
+    @staticmethod
+    def _split_py_string(s: str, width: int = 70) -> list[str]:
+        words = s.split(" ")
+        lines: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for w in words:
+            added_len = len(w) + (1 if current else 0)
+            if current and current_len + added_len > width:
+                lines.append(" ".join(current) + " ")
+                current = [w]
+                current_len = len(w)
+            else:
+                current.append(w)
+                current_len += added_len
+        if current:
+            lines.append(" ".join(current))
+        return lines
+
+    @staticmethod
+    def _py_str(value: object, indent: int = 8, max_width: int = 100) -> str:
+        """Format a Python literal, splitting long strings into parenthesized chunks. [SIL-2]"""
+        if value is None:
+            return "None"
+        if not isinstance(value, str):
+            return json.dumps(value)
+        encoded = json.dumps(value)
+        if len(encoded) + indent <= max_width:
+            return encoded
+        target_width = max(20, max_width - indent - 8)
+        parts = JinjaGenerator._split_py_string(value, width=target_width)
+        if len(parts) <= 1:
+            return encoded
+        indent_str = " " * indent
+        formatted_parts = [f"{indent_str}    {json.dumps(p)}" for p in parts]
+        return "(\n" + "\n".join(formatted_parts) + f"\n{indent_str})"
 
     @staticmethod
     def _cpp_digit_separator(value: object) -> str:

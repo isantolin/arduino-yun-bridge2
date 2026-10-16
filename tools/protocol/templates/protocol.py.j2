@@ -115,7 +115,7 @@ COMMAND_SPECS: Final[dict[int, CommandSpec]] = {
         expects_direct_response={{ spec.expects_direct_response }},
         pre_sync_allowed={{ spec.pre_sync_allowed }},
         category={{ spec.category|tojson if spec.category else 'None' }},
-        description={{ spec.description|tojson if spec.description else 'None' }},
+        description={{ spec.description|py_str(8) }},
     ),
 {%- endfor %}
 }

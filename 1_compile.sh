@@ -551,6 +551,16 @@ else
     echo "[WARN] python-pyopenssl Makefile not found at $PYTHON_OPENSSL_MAKEFILE"
 fi
 # ==============================================================================
+# [FIX CRITICO] Patch python-setuptools para soportar paquetes con setuptools>=82 (hpack 4.2+, etc.)
+# ==============================================================================
+for st_mk in "feeds/packages/lang/python/python-setuptools/Makefile" "package/feeds/packages/python-setuptools/Makefile"; do
+    if [ -f "$st_mk" ]; then
+        echo "[FIX] Upgrading setuptools recipe to 84.0.0 in $st_mk..."
+        sed -i 's/PKG_VERSION:=.*/PKG_VERSION:=84.0.0/' "$st_mk"
+        sed -i 's/PKG_HASH:=.*/PKG_HASH:=f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73/' "$st_mk"
+    fi
+done
+# ==============================================================================
 
 
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
@@ -699,17 +709,19 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 echo "[BUILD] Pre-building SDK host Python3..."
 set -o pipefail
 make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5
+make package/feeds/packages/python-setuptools/host/compile -j$(nproc) 2>&1 | tail -5 || true
 set +o pipefail
 
 _SDK_PY="$SDK_DIR/staging_dir/hostpkg/bin/python3"
 if [ -x "$_SDK_PY" ]; then
     echo "[INFO] Injecting build backends (and CFFI dependency) into SDK Python ($($_SDK_PY --version))..."
     "$_SDK_PY" -m pip install --no-cache-dir --ignore-installed --prefix "$SDK_DIR/staging_dir/hostpkg" \
-        "setuptools>=82.0.0" "wheel>=0.46.3" "build>=1.2.0" "installer>=0.7.0" \
+        "setuptools>=84.0.0" "wheel>=0.46.3" "build>=1.2.0" "installer>=0.7.0" \
         "pdm-backend>=2.4.0" "maturin>=1.4" "Cython>=3.1" "hatchling" "hatch-vcs" "hatch-fancy-pypi-readme" "setuptools-rust" "setuptools-scm>=8.0" "vcs-versioning>=2.3.2" "cffi" 2>&1 | tail -5
     # Clean up obsolete dist-info folders from previous base builds to avoid metadata version ambiguity
     find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'wheel-0.4[0-5]*' -exec rm -rf {} + 2>/dev/null || true
     find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'setuptools-[0-7]*' -exec rm -rf {} + 2>/dev/null || true
+    find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'setuptools-8[0-3]*' -exec rm -rf {} + 2>/dev/null || true
 else
     echo "[WARN] SDK Python not found at $_SDK_PY after host build; build backends may be missing."
 fi

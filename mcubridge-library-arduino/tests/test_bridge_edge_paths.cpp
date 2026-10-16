@@ -933,7 +933,7 @@ void test_all_timers_and_etl_error_coverage() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setTimerLastTick(1);
   ba.startTimersForCoverage();
-  bridge::test::fault::advance_clock_ms(100000);
+  bridge::test::fault::advance_clock_ms(300000);
   ba.invokeTimerTask();
 
   // Exercise weak etl::handle_error definition
@@ -950,7 +950,8 @@ void test_bootloader_timer_and_hal_coverage() {
     auto& ba = TestAccessor::create(Bridge);
     ba.setTimerLastTick(1);
     ba.startBootloaderTimerForCoverage();
-    bridge::test::fault::advance_clock_ms(bridge::config::BOOTLOADER_DELAY_MS + 100);
+    bridge::test::fault::advance_clock_ms(bridge::config::BOOTLOADER_DELAY_MS +
+                                          100);
     ba.invokeTimerTask();
     _exit(1);
   }

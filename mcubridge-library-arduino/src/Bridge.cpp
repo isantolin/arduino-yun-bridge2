@@ -332,6 +332,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   // Period is refreshed dynamically on every CMD_LINK_RESET.
   _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
                          _response_timeout_ms, etl::timer::mode::SINGLE_SHOT);
+  _timers.enable(true);
 
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<

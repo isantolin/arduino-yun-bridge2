@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import anyio
 import pytest
 from mcubridge.metrics import (
     publish_bridge_snapshots,
@@ -43,7 +44,7 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
             min_interval=0.01,
         )
     )
-    async with asyncio.timeout(0.5):
+    with anyio.fail_after(0.5):
         await event.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -86,7 +87,7 @@ async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: Runtime
             min_interval=0.01,
         )
     )
-    async with asyncio.timeout(0.5):
+    with anyio.fail_after(0.5):
         await event.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -118,7 +119,7 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
             min_interval=0.01,
         )
     )
-    async with asyncio.timeout(0.5):
+    with anyio.fail_after(0.5):
         await event.wait()
     task.cancel()
     with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
@@ -258,7 +259,7 @@ async def test_publish_metrics_file_write_limit_rejection(runtime_state: Runtime
             min_interval=0.01,
         )
     )
-    async with asyncio.timeout(0.5):
+    with anyio.fail_after(0.5):
         await event.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Protocol, cast
 
+import anyio
 import structlog
 import tenacity
 from statemachine import State, StateMachine
@@ -478,7 +479,7 @@ class SerialHandshakeManager:
 
             try:
                 timeout = (self.timing.response_timeout_ms / 1000.0) if self.timing.response_timeout_ms > 0 else 5.0
-                async with asyncio.timeout(timeout):
+                with anyio.fail_after(timeout):
                     payload = await self.capabilities_future
                 self._parse_capabilities(payload)
                 return True
@@ -570,7 +571,7 @@ class SerialHandshakeManager:
     async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = (self.timing.response_timeout_ms / 1000.0) * 2 if self.timing.response_timeout_ms > 0 else 5.0
         try:
-            async with asyncio.timeout(timeout):
+            with anyio.fail_after(timeout):
                 if not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
                 return self._state.is_synchronized

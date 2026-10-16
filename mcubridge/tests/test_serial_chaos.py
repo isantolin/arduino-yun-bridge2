@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock
 
+import anyio
 import pytest
 from cobs import cobsr
 from hypothesis import given
@@ -77,7 +78,7 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
 
     read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     with pytest.raises(TimeoutError):
-        async with asyncio.timeout(0.05):
+        with anyio.fail_after(0.05):
             await read_loop(mock_serial)
 
 

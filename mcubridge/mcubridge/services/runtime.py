@@ -582,7 +582,7 @@ class BridgeService:
             if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
                 if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
                     try:
-                        async with asyncio.timeout(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
+                        with anyio.fail_after(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
                             await self.state.link_sync_event.wait()
                     except TimeoutError:
                         logger.error("Timed out waiting for MCU link synchronization")
@@ -958,7 +958,7 @@ class BridgeService:
                 return
             try:
                 timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
-                async with asyncio.timeout(timeout_seconds):
+                with anyio.fail_after(timeout_seconds):
                     res = await pending.future
                 await self.enqueue_cloud_publish(
                     response_topic,
@@ -1251,7 +1251,7 @@ class BridgeService:
                     ctx = self.state.running_processes.get(pid)
                 if ctx:
                     try:
-                        async with asyncio.timeout(float(self.state.process_timeout)):
+                        with anyio.fail_after(float(self.state.process_timeout)):
                             ctx.exit_code = await ctx.handle.wait()
                     except TimeoutError:
                         ctx.exit_code = await self.terminate_process(
@@ -1259,7 +1259,8 @@ class BridgeService:
                         )
                     await asyncio.sleep(60.0)
             finally:
-                self.release_process(pid)
+                with anyio.CancelScope(shield=True):
+                    self.release_process(pid)
 
     async def poll_process(self, pid: int) -> pb.ProcessPollResponse:
         async with self.state.process_lock:

@@ -302,15 +302,16 @@ class LocalBridgeService(LocalBridgeBase):
 
                 if is_query and response_queue is not None:
                     try:
-                        async with asyncio.timeout(15.0):
+                        with anyio.fail_after(15.0):
                             return await response_queue.get()
                     except TimeoutError:
                         logger.warning("IPC request timed out")
                         return pb.CloudQueuedPublish()
                 return pb.CloudQueuedPublish()
             finally:
-                if is_query and correlation:
-                    self.runtime_service.ipc_requests.pop(correlation, None)
+                with anyio.CancelScope(shield=True):
+                    if is_query and correlation:
+                        self.runtime_service.ipc_requests.pop(correlation, None)
 
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
         """[SIL-2] Dispatch and execute an RPC by name, returning serialized response."""

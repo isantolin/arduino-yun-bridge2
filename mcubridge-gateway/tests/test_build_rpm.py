@@ -6,9 +6,10 @@ import importlib.util
 import tarfile
 from pathlib import Path
 from types import ModuleType
-from unittest.mock import MagicMock
 
+from dirty_equals import Contains
 import pytest
+from pytest_mock import MockerFixture
 
 _build_rpm_path = Path(__file__).resolve().parents[1] / "build_rpm.py"
 _spec = importlib.util.spec_from_file_location("build_rpm", _build_rpm_path)
@@ -23,8 +24,8 @@ def test_generate_spec_file(tmp_path: Path) -> None:
     build_rpm.generate_spec_file("2.8.5", spec_path)
     assert spec_path.exists()
     content = spec_path.read_text(encoding="utf-8")
-    assert "Version:        2.8.5" in content
-    assert "Name:           mcubridge-gateway" in content
+    assert content == Contains("Version:        2.8.5")
+    assert content == Contains("Name:           mcubridge-gateway")
 
 
 def test_create_source_tarball(tmp_path: Path) -> None:
@@ -34,42 +35,36 @@ def test_create_source_tarball(tmp_path: Path) -> None:
 
     with tarfile.open(tarball, "r:gz") as tar:
         names = tar.getnames()
-        assert "mcubridge-gateway-2.8.5/gateway.py" in names
-        assert "mcubridge-gateway-2.8.5/mcubridge-gateway.service" in names
-        assert "mcubridge-gateway-2.8.5/mcubridge/__init__.py" in names
+        assert names == Contains("mcubridge-gateway-2.8.5/gateway.py")
+        assert names == Contains("mcubridge-gateway-2.8.5/mcubridge-gateway.service")
+        assert names == Contains("mcubridge-gateway-2.8.5/mcubridge/__init__.py")
 
 
-def test_main_missing_rpmbuild(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def mock_which_none(_cmd: str) -> str | None:
-        return None
-
-    monkeypatch.setattr(build_rpm.shutil, "which", mock_which_none)
+def test_main_missing_rpmbuild(tmp_path: Path, mocker: MockerFixture) -> None:
+    mocker.patch.object(build_rpm.shutil, "which", return_value=None)
     with pytest.raises(SystemExit) as exc:
         build_rpm.main(output_dir=tmp_path, build_dir=tmp_path / "rpmbuild")
     assert exc.value.code == 1
 
 
-def test_main_rpmbuild_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_rpmbuild_success(tmp_path: Path, mocker: MockerFixture) -> None:
     output_dir = tmp_path / "bin"
     output_dir.mkdir(parents=True, exist_ok=True)
     custom_build = tmp_path / "rpmbuild"
 
-    def mock_which_found(_cmd: str) -> str | None:
-        return "/usr/bin/rpmbuild"
+    mocker.patch.object(build_rpm.shutil, "which", return_value="/usr/bin/rpmbuild")
 
-    monkeypatch.setattr(build_rpm.shutil, "which", mock_which_found)
-
-    def mock_run(cmd: list[str], check: bool = False) -> MagicMock:
+    def mock_run(cmd: list[str], check: bool = False) -> mocker.MagicMock:
         _ = (cmd, check)
         # Create a mock rpm file in rpmbuild/RPMS
         rpms_dir = custom_build / "RPMS" / "noarch"
         rpms_dir.mkdir(parents=True, exist_ok=True)
         (rpms_dir / "mcubridge-gateway-2.8.5-1.noarch.rpm").write_text("mock_rpm", encoding="utf-8")
-        res = MagicMock()
+        res = mocker.MagicMock()
         res.returncode = 0
         return res
 
-    monkeypatch.setattr(build_rpm.subprocess, "run", mock_run)
+    mocker.patch.object(build_rpm.subprocess, "run", side_effect=mock_run)
 
     build_rpm.main(output_dir=output_dir, build_dir=custom_build, keep_build=False)
 

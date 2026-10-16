@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import anyio
+from dirty_equals import IsPositiveInt
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -190,7 +193,7 @@ async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     stream = _make_mock_stream(pb.ProcessRunAsync(command="echo hi"))
     await local_svc.ProcessRunAsync(stream)
     sent = stream.sent_message
-    assert sent.pid > 0
+    assert sent.pid == IsPositiveInt
 
     # ProcessPoll
     stream = _make_mock_stream(pb.ProcessPoll(pid=sent.pid))
@@ -202,7 +205,7 @@ async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     stream_sleep = _make_mock_stream(pb.ProcessRunAsync(command="sleep 10"))
     await local_svc.ProcessRunAsync(stream_sleep)
     sent_sleep = stream_sleep.sent_message
-    assert sent_sleep.pid > 0
+    assert sent_sleep.pid == IsPositiveInt
 
     stream = _make_mock_stream(pb.ProcessKill(pid=sent_sleep.pid))
     await local_svc.ProcessKill(stream)
@@ -409,9 +412,9 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     assert stream.sent_message.pid == 0
 
     # ProcessKill exception branch
-    mock_handle = MagicMock()
+    mock_handle = mocker.MagicMock()
     mock_handle.returncode = None
-    type(mock_handle).pid = property(fget=MagicMock(side_effect=OSError("Kill failed")))
+    type(mock_handle).pid = mocker.PropertyMock(side_effect=OSError("Kill failed"))
     service.state.running_processes[8888] = ProcessContext(
         handle=mock_handle,
     )
@@ -574,13 +577,13 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
     )
     mock_stream = MockGrpcStream(request=req_msg)
 
-    _orig_timeout = asyncio.timeout
+    _orig_fail_after = anyio.fail_after
 
-    def _quick_timeout(t: float) -> object:
+    def _quick_fail_after(t: float) -> anyio.CancelScope:
         del t
-        return _orig_timeout(0.001)
+        return _orig_fail_after(0.001)
 
-    mocker.patch("mcubridge.services.local_bridge.asyncio.timeout", side_effect=_quick_timeout)
+    mocker.patch("mcubridge.services.local_bridge.anyio.fail_after", side_effect=_quick_fail_after)
     await local_svc.Publish(mock_stream.as_stream())
     assert mock_stream.send_message.called
 

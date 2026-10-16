@@ -68,6 +68,9 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     assert parse_topic("", s) is None
     assert parse_topic(s, "") is None
     assert parse_topic("", "") is None
+    assert parse_topic("prefix", "///") is None
+    assert parse_topic("///", "prefix/gpio/13") is None
+
 
 
 @given(

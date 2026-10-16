@@ -354,3 +354,44 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
     await flush_spool()
     assert mock_bridge_state.cloud_spool_degraded
     assert mock_bridge_state.cloud_spool_failure_reason == "simulated_error"
+
+
+async def test_enqueue_cloud_disabled_noop(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    test_config.cloud_enabled = False
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    msg = pb.CloudQueuedPublish(topic_name="mcu/data", payload=b"test")
+    await svc.enqueue_cloud(msg)
+    assert mock_bridge_state.cloud_publish_queue.empty()
+
+
+async def test_enqueue_cloud_publish_success(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    test_config.cloud_enabled = True
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.publish_cloud_message = AsyncMock(return_value=True)
+    msg = pb.CloudQueuedPublish(topic_name="mcu/data", payload=b"test")
+    await svc.enqueue_cloud(msg)
+    assert mock_bridge_state.cloud_publish_queue.empty()
+
+
+async def test_spool_cloud_message_serialization_error(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
+) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    bad_msg = MagicMock(spec=pb.CloudQueuedPublish)
+    bad_msg.SerializeToString.side_effect = Exception("serialization_fail")
+    res = await svc.spool_cloud_message_locked(bad_msg)
+    assert res is False
+
+
+async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.cloud_stream = AsyncMock()
+    logging.getLogger("mcubridge.service").setLevel(logging.DEBUG)
+    msg = pb.CloudQueuedPublish(topic_name="mcu/telemetry", payload=b"test")
+    success = await svc.publish_cloud_message(msg)
+    assert success is True
+

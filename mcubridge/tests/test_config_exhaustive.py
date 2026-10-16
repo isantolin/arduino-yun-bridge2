@@ -198,3 +198,12 @@ def test_load_runtime_config_uci_invalid_fatal() -> None:
 def test_load_runtime_config_cli_invalid_fatal() -> None:
     with pytest.raises(ValueError, match="topic_prefix: value length must be at least 1"):
         load_runtime_config(overrides={"topic_prefix": ""})
+
+
+def test_runtime_config_factory_with_explicit_defaults() -> None:
+    from mcubridge.config.settings import get_default_config, runtime_config_factory
+
+    defaults = get_default_config()
+    cfg = runtime_config_factory(**defaults)
+    assert cfg.topic_prefix == defaults["topic_prefix"]
+

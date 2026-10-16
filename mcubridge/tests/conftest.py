@@ -508,3 +508,21 @@ def st_spi_transfer(draw: DrawFn) -> pb.SpiTransfer:
     """Canonical Hypothesis strategy for generating SpiTransfer messages."""
     data = draw(st.binary(min_size=1, max_size=64))
     return pb.SpiTransfer(data=data)
+
+
+# ==============================================================================
+# CANONICAL HYPOTHESIS TYPE STRATEGY REGISTRATIONS [SIL-2]
+# ==============================================================================
+st.register_type_strategy(pb.PinMode, st_pin_mode())
+st.register_type_strategy(pb.DigitalWrite, st_digital_write())
+st.register_type_strategy(pb.AnalogWrite, st_analog_write())
+st.register_type_strategy(pb.PinRead, st_pin_read())
+st.register_type_strategy(pb.DatastorePut, st_datastore_put())
+st.register_type_strategy(pb.DatastoreGet, st_datastore_get())
+st.register_type_strategy(pb.MailboxPush, st_mailbox_push())
+st.register_type_strategy(pb.FileWrite, st_file_write())
+st.register_type_strategy(pb.FileRead, st_file_read())
+st.register_type_strategy(pb.SpiTransfer, st_spi_transfer())
+st.register_type_strategy(pb.CloudQueuedPublish, st_cloud_queued_publish())
+st.register_type_strategy(pb.RuntimeConfig, st_runtime_config())
+

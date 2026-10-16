@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
+from hypothesis import given, strategies as st
 import pytest
 from dirty_equals import IsInt, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
@@ -375,3 +376,86 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
     mock_serial.send.assert_awaited_with(Status.MALFORMED.value, b"")
+
+
+@given(pin_mode=st.from_type(pb.PinMode))
+def test_pin_mode_roundtrip_property(pin_mode: pb.PinMode) -> None:
+    """Property: PinMode message preserves fields across protobuf serialization."""
+    encoded = pin_mode.SerializeToString()
+    decoded = pb.PinMode.FromString(encoded)
+    assert decoded.pin == pin_mode.pin
+    assert decoded.mode == pin_mode.mode
+
+
+@given(digital_write=st.from_type(pb.DigitalWrite))
+def test_digital_write_roundtrip_property(digital_write: pb.DigitalWrite) -> None:
+    """Property: DigitalWrite message preserves fields across protobuf serialization."""
+    encoded = digital_write.SerializeToString()
+    decoded = pb.DigitalWrite.FromString(encoded)
+    assert decoded.pin == digital_write.pin
+    assert decoded.value == digital_write.value
+
+
+@given(analog_write=st.from_type(pb.AnalogWrite))
+def test_analog_write_roundtrip_property(analog_write: pb.AnalogWrite) -> None:
+    """Property: AnalogWrite message preserves fields across protobuf serialization."""
+    encoded = analog_write.SerializeToString()
+    decoded = pb.AnalogWrite.FromString(encoded)
+    assert decoded.pin == analog_write.pin
+    assert decoded.value == analog_write.value
+
+
+@given(datastore_put=st.from_type(pb.DatastorePut))
+def test_datastore_put_roundtrip_property(datastore_put: pb.DatastorePut) -> None:
+    """Property: DatastorePut message preserves fields across protobuf serialization."""
+    encoded = datastore_put.SerializeToString()
+    decoded = pb.DatastorePut.FromString(encoded)
+    assert decoded.key == datastore_put.key
+    assert decoded.value == datastore_put.value
+
+
+@given(mailbox_push=st.from_type(pb.MailboxPush))
+def test_mailbox_push_roundtrip_property(mailbox_push: pb.MailboxPush) -> None:
+    """Property: MailboxPush message preserves fields across protobuf serialization."""
+    encoded = mailbox_push.SerializeToString()
+    decoded = pb.MailboxPush.FromString(encoded)
+    assert decoded.data == mailbox_push.data
+
+
+@given(file_write=st.from_type(pb.FileWrite))
+def test_file_write_roundtrip_property(file_write: pb.FileWrite) -> None:
+    """Property: FileWrite message preserves fields across protobuf serialization."""
+    encoded = file_write.SerializeToString()
+    decoded = pb.FileWrite.FromString(encoded)
+    assert decoded.path == file_write.path
+    assert decoded.data == file_write.data
+
+
+@given(file_read=st.from_type(pb.FileRead))
+def test_file_read_roundtrip_property(file_read: pb.FileRead) -> None:
+    """Property: FileRead message preserves fields across protobuf serialization."""
+    encoded = file_read.SerializeToString()
+    decoded = pb.FileRead.FromString(encoded)
+    assert decoded.path == file_read.path
+
+
+@given(spi_transfer=st.from_type(pb.SpiTransfer))
+def test_spi_transfer_roundtrip_property(spi_transfer: pb.SpiTransfer) -> None:
+    """Property: SpiTransfer message preserves fields across protobuf serialization."""
+    encoded = spi_transfer.SerializeToString()
+    decoded = pb.SpiTransfer.FromString(encoded)
+    assert decoded.data == spi_transfer.data
+
+
+@given(pub=st.from_type(pb.CloudQueuedPublish))
+def test_cloud_queued_publish_roundtrip_property(pub: pb.CloudQueuedPublish) -> None:
+    """Property: CloudQueuedPublish message preserves fields across protobuf serialization."""
+    encoded = pub.SerializeToString()
+    decoded = pb.CloudQueuedPublish.FromString(encoded)
+    assert decoded.topic_name == pub.topic_name
+    assert decoded.payload == pub.payload
+    assert decoded.qos == pub.qos
+    assert decoded.retain == pub.retain
+    assert decoded.correlation_data == pub.correlation_data
+    assert decoded.response_topic == pub.response_topic
+

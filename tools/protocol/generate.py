@@ -122,11 +122,15 @@ def _default_action_routes() -> list[dict[str, str]]:
     return []
 
 
+def _default_directions() -> list[str]:
+    return []
+
+
 @dataclass
 class CommandDef:
     name: str
     value: int
-    directions: list[str]
+    directions: list[str] = field(default_factory=_default_directions)
     category: str | None = None
     description: str | None = None
     requires_ack: bool = False
@@ -349,11 +353,11 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
             CommandDef(
                 name=val.name,
                 value=val.number,
-                directions=list(opts.directions),
+                directions=list(getattr(opts, "directions", [])),
                 category=opts.category or None,
                 description=opts.description or None,
                 requires_ack=opts.requires_ack,
-                expects_direct_response=opts.expects_direct_response,
+                expects_direct_response=bool(opts.response_command),
                 pre_sync_allowed=opts.pre_sync_allowed,
                 cloud_topic=opts.cloud_topic or None,
                 pb_message=opts.pb_message or None,
@@ -367,6 +371,12 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
                 is_query=opts.is_query,
             )
         )
+
+    # Automatically derive bidirectional request_command pairing from response_command
+    req_map = {cmd.response_command: cmd.name for cmd in commands if cmd.response_command}
+    for cmd in commands:
+        if not cmd.request_command and cmd.name in req_map:
+            cmd.request_command = req_map[cmd.name]
 
     # Load Message & Enum CLOUD topics
     message_topics = {
@@ -606,20 +616,24 @@ def _build_action_context(spec: ProtocolSpec) -> dict[str, Any]:
             elif segment == "#":
                 segments.append("CLOUD_WILDCARD_MULTI")
             else:
+                action_prefix = "PIN" if topic_name in ("DIGITAL", "ANALOG") else topic_name
                 matched_action = next(
                     (
                         action
                         for action in spec.actions
                         if topic_name in valid_topic_names
-                        and action["name"].startswith(f"{topic_name}_")
+                        and action["name"].startswith(f"{action_prefix}_")
                         and action["value"] == segment
                     ),
                     None,
                 )
                 if matched_action:
-                    action_class = (
-                        "DatastoreAction" if topic_name == "DATASTORE" else f"{topic_name.lower().title()}Action"
-                    )
+                    if topic_name in ("DIGITAL", "ANALOG"):
+                        action_class = "PinAction"
+                    elif topic_name == "DATASTORE":
+                        action_class = "DatastoreAction"
+                    else:
+                        action_class = f"{topic_name.lower().title()}Action"
                     segments.append(f"{action_class}.{matched_action['name'].split('_', 1)[1]}.value")
                 else:
                     segments.append(f'"{segment}"')

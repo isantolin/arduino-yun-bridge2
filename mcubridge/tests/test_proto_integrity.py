@@ -268,7 +268,7 @@ def test_command_specs_multidimensional_integrity() -> None:
         assert spec.name == val.name
         opts = val.GetOptions().Extensions[pb.cmd_opts]
         assert spec.requires_ack == opts.requires_ack
-        assert spec.expects_direct_response == opts.expects_direct_response
+        assert spec.expects_direct_response == bool(opts.response_command)
         assert spec.pre_sync_allowed == opts.pre_sync_allowed
         assert spec.cloud_topic == (opts.cloud_topic or None)
         assert spec.auth_field == (opts.auth_field or None)
@@ -280,8 +280,8 @@ def test_command_specs_multidimensional_integrity() -> None:
             assert msg_spec.pb_class is spec.pb_class
         if opts.response_command:
             assert spec.expected_responses == frozenset({getattr(protocol.Command, opts.response_command).value})
-        if opts.request_command:
-            assert spec.paired_request_id == getattr(protocol.Command, opts.request_command).value
+        if spec.paired_request_id:
+            assert any(s.expected_responses and spec.command_id in s.expected_responses for s in protocol.COMMAND_SPECS.values())
 
 
 def test_runtime_config_defaults_reference_canonical_metadata() -> None:

@@ -100,8 +100,8 @@ class MockGrpcStream[RecvMsg = Any, SendMsg = Any]:
     async def __aenter__(self) -> MockGrpcStream[RecvMsg, SendMsg]:
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        pass
+    async def __aexit__(self, *args: object) -> None:
+        _ = args
 
     @property
     def sent_message(self) -> SendMsg:

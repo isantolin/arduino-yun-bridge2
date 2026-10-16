@@ -19,6 +19,8 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 from pytest_mock import MockerFixture
 
+from tools.testing.mock_stream import MockGrpcStream
+
 
 def _make_config() -> RuntimeConfig:
     return RuntimeConfig(
@@ -231,13 +233,14 @@ async def test_cloud_events_and_direct_rpc_dispatch(
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send = AsyncMock(return_value=pb.GenericResponse(status="ok").SerializeToString())
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    mock_stream = AsyncMock()
+    mock_stream = MockGrpcStream[Any, pb.CloudEnvelope]()
     svc.cloud_stream = mock_stream
 
     # _send_cloud_event test
     send_event: Callable[..., Awaitable[None]] = svc.send_cloud_event
     await send_event("test_event", "info", "Description")
     mock_stream.send_message.assert_awaited_once()
+    assert mock_stream.sent_message.event.event_type == "test_event"
 
     env = pb.CloudEnvelope(
         protocol_version=protocol.PROTOCOL_VERSION,
@@ -248,31 +251,7 @@ async def test_cloud_events_and_direct_rpc_dispatch(
         ),
     )
 
-    class MockStream:
-        def __init__(self, items: list[pb.CloudEnvelope]) -> None:
-            self._items = items
-            self.sent_messages: list[pb.CloudEnvelope] = []
-
-        async def __aenter__(self) -> MockStream:
-            return self
-
-        async def __aexit__(self, *args: Any) -> None:
-            pass
-
-        def __aiter__(self) -> MockStream:
-            self._iter = iter(self._items)
-            return self
-
-        async def __anext__(self) -> pb.CloudEnvelope:
-            try:
-                return next(self._iter)
-            except StopIteration as exc:
-                raise StopAsyncIteration from exc
-
-        async def send_message(self, msg: Any) -> None:
-            self.sent_messages.append(msg)
-
-    session_stream = MockStream([env])
+    session_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](inbound=[env])
     mocker.patch("mcubridge.services.runtime.Channel")
     mock_stub = mocker.patch("mcubridge.services.runtime.CloudBridgeStub")
     mock_stub.return_value.Session.open.return_value = session_stream

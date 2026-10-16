@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import cast
+from typing import Any
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
+from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
@@ -106,7 +107,7 @@ async def test_publish_cloud_message_wraps_command_response(
     """Validate that _publish_cloud_message builds pb.CommandResponse envelope when correlation_data is present."""
     svc, state, _, _ = _make_service()
     try:
-        stream_mock = AsyncMock()
+        stream_mock = MockGrpcStream[Any, pb.CloudEnvelope]()
         svc.cloud_stream = stream_mock
 
         msg = pb.CloudQueuedPublish(
@@ -121,8 +122,7 @@ async def test_publish_cloud_message_wraps_command_response(
         assert published is True
 
         stream_mock.send_message.assert_awaited_once()
-        assert stream_mock.send_message.await_args is not None
-        envelope = cast(pb.CloudEnvelope, stream_mock.send_message.await_args.args[0])
+        envelope = stream_mock.sent_message
         assert envelope.sequence_id == seq_id
         assert envelope.WhichOneof("payload") == "command_response"
         assert envelope.command_response.status_code == 200

@@ -605,7 +605,7 @@ class RuntimeState:
 
     @property
     def connected_via_http3(self) -> bool:
-        return self._connected_via_http3 and self.cloud_fsm.connected_http3.is_active
+        return self._connected_via_http3
 
     @connected_via_http3.setter
     def connected_via_http3(self, value: bool) -> None:

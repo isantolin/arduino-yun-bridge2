@@ -29,6 +29,29 @@ SUPPORTED_BOARDS: dict[str, BoardSpec] = {
 }
 
 
+FLASH_SECTION_NAMES: frozenset[str] = frozenset({
+    ".text",
+    ".data",
+    ".rodata",
+    ".flash.text",
+    ".flash.rodata",
+    ".flash.appdesc",
+    ".iram0.text",
+    ".iram0.vectors",
+    ".iram0.data",
+    ".dram0.data",
+    ".dram0.rodata",
+})
+
+RAM_SECTION_NAMES: frozenset[str] = frozenset({
+    ".data",
+    ".bss",
+    ".dram0.data",
+    ".dram0.bss",
+    ".dram0.rodata",
+})
+
+
 def extract_elf_memory_table(build_dir: Path) -> str | None:
     """Extract Flash and RAM usage table directly from ELF sections using pyelftools. [SIL-2 / Rule 37]"""
     if not build_dir.exists() or not build_dir.is_dir():
@@ -45,10 +68,10 @@ def extract_elf_memory_table(build_dir: Path) -> str | None:
                 sec_sizes = {
                     s.name: s["sh_size"]
                     for s in parsed_elf.iter_sections()
-                    if s.name in (".text", ".data", ".bss", ".rodata")
+                    if s.name in FLASH_SECTION_NAMES or s.name in RAM_SECTION_NAMES
                 }
-                flash_used = sec_sizes.get(".text", 0) + sec_sizes.get(".data", 0) + sec_sizes.get(".rodata", 0)
-                ram_used = sec_sizes.get(".data", 0) + sec_sizes.get(".bss", 0)
+                flash_used = sum(sec_sizes.get(name, 0) for name in FLASH_SECTION_NAMES)
+                ram_used = sum(sec_sizes.get(name, 0) for name in RAM_SECTION_NAMES)
                 if flash_used == 0 and ram_used == 0:
                     continue
 

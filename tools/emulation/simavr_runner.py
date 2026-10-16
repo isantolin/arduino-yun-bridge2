@@ -566,9 +566,13 @@ def run_matrix(
                 logger.error("Emulation FAILED for board", board=board_fqbn)
                 emulation_status.append("❌ Failed")
                 fail_count += 1
+        elif compile_res.returncode == 0:
+            compilation_status.append("⚠️ Skipped (Flash/RAM limit exceeded)")
+            emulation_status.append("⏭️ Skipped (No binary)")
+            logger.info("Emulation skipped (target memory limit exceeded)", board=board_fqbn)
         else:
             compilation_status.append("❌ Failed")
-            emulation_status.append("⏭️ Not run (firmware unavailable)")
+            emulation_status.append("⏭️ Not run (compilation failed)")
             fail_count += 1
 
     summary_file = summary_dir / "simavr_summary.md"

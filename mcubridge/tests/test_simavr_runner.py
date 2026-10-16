@@ -152,7 +152,9 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
-    assert simavr_runner.MATRIX_BOARDS == [("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)")]
+    assert simavr_runner.MATRIX_BOARDS == [
+        ("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)"),
+    ]
     assert captured_metadata == [("core-selected-mcu", 8_000_000, 6)]
 
     summary_file = tmp_path / "metrics" / "simavr_summary.md"
@@ -162,7 +164,29 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert "Arduino Mega 2560" in content
 
 
-def test_run_matrix_missing_firmware_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_matrix_compilation_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(simavr_runner, "repo_root", tmp_path)
+    sketch = tmp_path / "TestSketch.ino"
+    sketch.write_text("// test sketch\n", encoding="utf-8")
+
+    def mock_compile_error(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess[str]:
+        _ = check
+        return subprocess.CompletedProcess(cmd, returncode=1)
+
+    monkeypatch.setattr(subprocess, "run", mock_compile_error)
+    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_success)
+    monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
+
+    fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
+    assert fail_count == 1
+
+    summary_file = tmp_path / "metrics" / "simavr_summary.md"
+    content = summary_file.read_text(encoding="utf-8")
+    assert "FAIL" in content
+    assert "compilation failed" in content
+
+
+def test_run_matrix_skipped_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(simavr_runner, "repo_root", tmp_path)
     sketch = tmp_path / "TestSketch.ino"
     sketch.write_text("// test sketch\n", encoding="utf-8")
@@ -178,12 +202,11 @@ def test_run_matrix_missing_firmware_fails(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
-    assert fail_count == 1
-
+    assert fail_count == 0
     summary_file = tmp_path / "metrics" / "simavr_summary.md"
     content = summary_file.read_text(encoding="utf-8")
-    assert "FAIL" in content
-    assert "firmware unavailable" in content
+    assert "SKIPPED" in content
+    assert "Flash/RAM limit exceeded" in content
 
 
 def test_main_rejects_missing_sketch_without_substitution(tmp_path: Path) -> None:

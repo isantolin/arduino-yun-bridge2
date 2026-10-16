@@ -113,3 +113,17 @@ def test_extract_elf_memory_table() -> None:
     assert "### 📊 Arduino Memory Usage" in table
     assert "Arduino Mega 2560" in table
     assert "`BridgeControl`" in table
+
+
+def test_extract_elf_memory_table_esp32() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    build_dir = repo_root / "arduino-build" / "arduino-esp32-nano_nora"
+    if not build_dir.exists():
+        pytest.skip(f"Build directory not found: {build_dir}")
+
+    table = extract_elf_memory_table(build_dir)
+    assert table is not None
+    assert "### 📊 Arduino Memory Usage" in table
+    assert "Arduino Nano ESP32" in table
+    assert "`BridgeControl`" in table
+

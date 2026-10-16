@@ -430,4 +430,3 @@ def test_runtime_state_fsm_properties_and_branches() -> None:
         assert state.cloud_fsm.disabled.is_active
     finally:
         state.cleanup()
-

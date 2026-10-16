@@ -87,6 +87,8 @@ ALLOWLIST_PY_HELPERS = {
     "correlate_frame",
     "check_baudrate_fallback",
     "is_healthy",
+    "is_draining",
+    "is_cloud_connected",
     "_build_bridge_snapshot_message",
     "generate_spec_file",
     "create_source_tarball",

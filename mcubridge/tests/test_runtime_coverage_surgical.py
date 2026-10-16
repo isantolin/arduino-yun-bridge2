@@ -412,4 +412,3 @@ def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, moc
     svc.lifecycle_fsm.stop()
     assert not svc.is_running
     assert not svc.is_draining
-

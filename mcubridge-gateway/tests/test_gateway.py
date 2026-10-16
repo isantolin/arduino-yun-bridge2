@@ -1102,4 +1102,3 @@ async def test_gateway_device_session_lifecycle() -> None:
     # Closing an already closed session is a safe no-op
     session.close()
     assert session.current_state_value == "closed"
-

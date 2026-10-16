@@ -277,4 +277,3 @@ def test_serial_transport_is_negotiating_property(mock_config: RuntimeConfig, mo
     assert transport.is_negotiating
     transport.is_negotiating = False
     assert not transport.is_negotiating
-

@@ -261,7 +261,7 @@ class BridgeService:
             await self.cloud_publisher(resolved_message)
             return
 
-        if not self.config.cloud_enabled:
+        if not self.config.cloud_enabled or self.is_draining:
             return
 
         self.state.cloud_publish_queue.put_nowait(resolved_message)

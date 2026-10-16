@@ -7,6 +7,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from dirty_equals import Contains, IsInstance, IsPartialDict
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -710,3 +712,56 @@ def test_ubus_register_methods_no_add(mock_runtime: MockRuntimeFacade) -> None:
     service.connection = object()
     service.register_methods()
     assert service.connection is not None
+
+
+@given(raw=st.binary())
+def test_format_ubus_bytes_property(raw: bytes) -> None:
+    from mcubridge.services.ubus import format_ubus_bytes
+
+    formatted = format_ubus_bytes(raw)
+    assert isinstance(formatted, str)
+    try:
+        decoded = raw.decode("utf-8")
+        assert formatted == decoded
+    except UnicodeDecodeError:
+        assert formatted == f"<hex:{raw.hex()}>"
+
+
+@given(pin=st.integers(0, 255), val=st.integers(0, 1023))
+def test_ubus_handle_pin_write_property(pin: int, val: int) -> None:
+    cfg = RuntimeConfig()
+    state = create_runtime_state(cfg)
+    mock_rt = MockRuntimeFacade(cfg, state)
+    svc = UbusService(mock_rt)
+    try:
+        # Digital write
+        resp_d = svc.ubus_handle_digital_write(None, {"pin": pin, "value": val})
+        assert resp_d == {"status": "ok", "pin": pin, "value": val}
+
+        # Analog write
+        resp_a = svc.ubus_handle_analog_write(None, {"pin": pin, "value": val})
+        assert resp_a == {"status": "ok", "pin": pin, "value": val}
+    finally:
+        state.cleanup()
+
+
+@given(
+    key=st.text(min_size=1, max_size=64).filter(lambda k: "\x00" not in k),
+    val=st.text(max_size=128).filter(lambda v: "\x00" not in v),
+    msg_text=st.text(max_size=128),
+)
+def test_ubus_handle_datastore_and_mailbox_property(key: str, val: str, msg_text: str) -> None:
+    cfg = RuntimeConfig()
+    state = create_runtime_state(cfg)
+    mock_rt = MockRuntimeFacade(cfg, state)
+    svc = UbusService(mock_rt)
+    try:
+        # Datastore set
+        resp_ds = svc.ubus_handle_datastore_set(None, {"key": key, "value": val})
+        assert resp_ds == {"status": "ok", "key": key}
+
+        # Mailbox push
+        resp_mb = svc.ubus_handle_mailbox_push(None, {"message": msg_text})
+        assert resp_mb == {"status": "ok", "message_length": len(msg_text)}
+    finally:
+        state.cleanup()

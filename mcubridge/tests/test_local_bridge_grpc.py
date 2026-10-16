@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 from grpclib.server import Stream
 
@@ -604,3 +606,103 @@ def test_parse_serial_response_corrupt_bytes() -> None:
     parsed = parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
     assert parsed == default_resp
     assert parsed.message == "fallback"
+
+
+def _make_property_service() -> tuple[BridgeService, LocalBridgeService, AsyncMock]:
+    cfg = RuntimeConfig()
+    cfg.allowed_policy.entries.extend(["echo", "sleep", "test_cmd"])
+    cfg.allow_non_tmp_paths = True
+    state = create_runtime_state(cfg)
+    mock_serial = AsyncMock()
+    mock_serial.send = AsyncMock(return_value=True)
+    service = BridgeService(config=cfg, state=state, serial=mock_serial)
+    local_service = LocalBridgeService(service)
+    return service, local_service, mock_serial
+
+
+@given(
+    pin_mode=st.from_type(pb.PinMode),
+    digital_write=st.from_type(pb.DigitalWrite),
+    analog_write=st.from_type(pb.AnalogWrite),
+)
+async def test_local_bridge_pin_operations_property(
+    pin_mode: pb.PinMode,
+    digital_write: pb.DigitalWrite,
+    analog_write: pb.AnalogWrite,
+) -> None:
+    service, local_svc, mock_serial = _make_property_service()
+    try:
+        # SetPinMode
+        stream_mode = _make_mock_stream(pin_mode)
+        await local_svc.SetPinMode(stream_mode.as_stream())
+        assert stream_mode.sent_message is not None
+        assert stream_mode.sent_message.status == "ok"
+        mock_serial.send.assert_called_with(Command.CMD_SET_PIN_MODE.value, pin_mode)
+
+        # DigitalWrite
+        stream_dw = _make_mock_stream(digital_write)
+        await local_svc.DigitalWrite(stream_dw.as_stream())
+        assert stream_dw.sent_message is not None
+        assert stream_dw.sent_message.status == "ok"
+        mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, digital_write)
+
+        # AnalogWrite
+        stream_aw = _make_mock_stream(analog_write)
+        await local_svc.AnalogWrite(stream_aw.as_stream())
+        assert stream_aw.sent_message is not None
+        assert stream_aw.sent_message.status == "ok"
+        mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, analog_write)
+    finally:
+        service.state.cleanup()
+
+
+@given(
+    datastore_put=st.from_type(pb.DatastorePut),
+    mailbox_push=st.from_type(pb.MailboxPush),
+)
+async def test_local_bridge_datastore_and_mailbox_property(
+    datastore_put: pb.DatastorePut,
+    mailbox_push: pb.MailboxPush,
+) -> None:
+    service, local_svc, _mock_serial = _make_property_service()
+    try:
+        # DatastorePut
+        stream_dp = _make_mock_stream(datastore_put)
+        await local_svc.DatastorePut(stream_dp.as_stream())
+        assert stream_dp.sent_message is not None
+        assert stream_dp.sent_message.status == "ok"
+
+        # DatastoreGet roundtrip from cache
+        stream_dg = _make_mock_stream(pb.DatastoreGet(key=datastore_put.key))
+        await local_svc.DatastoreGet(stream_dg.as_stream())
+        assert stream_dg.sent_message is not None
+        assert stream_dg.sent_message.value == datastore_put.value
+
+        # MailboxPush
+        stream_mp = _make_mock_stream(mailbox_push)
+        await local_svc.MailboxPush(stream_mp.as_stream())
+        assert stream_mp.sent_message is not None
+        assert stream_mp.sent_message.status == "ok"
+        assert len(service.state.mailbox_queue) >= 1
+    finally:
+        service.state.cleanup()
+
+
+@given(
+    spi_req=st.from_type(pb.SpiTransfer),
+)
+async def test_local_bridge_spi_transfer_property(
+    spi_req: pb.SpiTransfer,
+) -> None:
+    service, local_svc, mock_serial = _make_property_service()
+    try:
+        mock_serial.send.return_value = pb.SpiTransferResponse(
+            data=spi_req.data,
+        )
+        stream_spi = _make_mock_stream(spi_req)
+        await local_svc.SpiTransfer(stream_spi.as_stream())
+        assert stream_spi.sent_message is not None
+        assert stream_spi.sent_message.data == spi_req.data
+        mock_serial.send.assert_called_with(Command.CMD_SPI_TRANSFER.value, spi_req)
+    finally:
+        service.state.cleanup()

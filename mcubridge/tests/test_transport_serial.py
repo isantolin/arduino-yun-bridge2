@@ -4,6 +4,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from cobs import cobsr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -561,3 +563,53 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
     assert mock_serial.set_modem_pins.call_count >= 2
     assert service.on_serial_connected.called
     assert service.on_serial_disconnected.called
+
+
+@given(raw_bytes=st.binary(min_size=0, max_size=256))
+async def test_process_packet_fuzz_resilience_property(raw_bytes: bytes) -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
+        transport = SerialTransport(config, state, service)
+
+        # Fuzz process_packet with arbitrary bytes: must never raise unhandled exceptions
+        await transport.process_packet(raw_bytes)
+        assert state.serial_decode_errors >= 0
+    finally:
+        state.cleanup()
+
+
+@given(
+    command_id=st.integers(1, 0x00FF),
+    seq_id=st.integers(1, protocol.UINT16_MAX),
+    payload=st.binary(max_size=128),
+)
+async def test_send_raw_arbitrary_payload_and_sequence_property(
+    command_id: int,
+    seq_id: int,
+    payload: bytes,
+) -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
+        transport = SerialTransport(config, state, service)
+        mock_serial = AsyncMock()
+        mock_serial.is_open = True
+        transport.serial = mock_serial
+
+        ok = await transport.send_raw(command_id, payload, seq_id=seq_id)
+        assert ok is True
+        assert mock_serial.write.called
+        written_data: bytes = mock_serial.write.call_args[0][0]
+        # Frame delimiter must be at the end
+        assert written_data.endswith(protocol.FRAME_DELIMITER)
+        # Body before delimiter must not contain 0x00 bytes (COBS invariant)
+        body = written_data[:-1]
+        assert b"\x00" not in body
+        # COBS decoding must succeed
+        decoded = cobsr.decode(body)
+        assert len(decoded) > 0
+    finally:
+        state.cleanup()

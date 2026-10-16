@@ -29,7 +29,7 @@ except ImportError as exc:
     ubus = None
 
 
-def _format_ubus_bytes(data: bytes) -> str:
+def format_ubus_bytes(data: bytes) -> str:
     """Safely decode bytes to UTF-8 or return canonical hex string. [SIL-2]"""
     try:
         return data.decode("utf-8")
@@ -332,7 +332,7 @@ class UbusService:
         val: bytes | None = self.run_sync(cache.get(key))
         if val is None:
             return {"status": "not_found", "key": key}
-        return {"status": "ok", "key": key, "value": _format_ubus_bytes(val)}
+        return {"status": "ok", "key": key, "value": format_ubus_bytes(val)}
 
     def ubus_handle_mailbox_read(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_read'."""
@@ -341,7 +341,7 @@ class UbusService:
         except IndexError:
             logger.debug("UBUS mailbox read called on empty queue")
             return {"status": "empty"}
-        return {"status": "ok", "message": _format_ubus_bytes(item)}
+        return {"status": "ok", "message": format_ubus_bytes(item)}
 
     def ubus_handle_file_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.file_write'."""
@@ -378,8 +378,8 @@ class UbusService:
         resp: pb.ProcessPollResponse = self.run_sync(self.runtime.poll_process(pid))
         data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
         data["status"] = "ok" if resp.status == 0 else "error"
-        data["stdout"] = _format_ubus_bytes(resp.stdout_data)
-        data["stderr"] = _format_ubus_bytes(resp.stderr_data)
+        data["stdout"] = format_ubus_bytes(resp.stdout_data)
+        data["stderr"] = format_ubus_bytes(resp.stderr_data)
         data.pop("stdout_data", None)
         data.pop("stderr_data", None)
         return data

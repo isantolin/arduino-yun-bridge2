@@ -24,7 +24,7 @@ from hypothesis import strategies as st
 from hypothesis.strategies import DrawFn
 from mcubridge.config import common, settings
 from mcubridge.config.logging import configure_logging, reset_handlers
-from mcubridge.config.settings import RuntimeConfig, load_runtime_config
+from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
@@ -140,7 +140,9 @@ class PatchedRuntimeConfig:
 
         if isinstance(kwargs.get("serial_shared_secret"), str):
             kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode()
-        return OriginalRuntimeConfig(*args, **kwargs)
+        cfg = OriginalRuntimeConfig(*args, **kwargs)
+        mcubridge.protocol.structures.validate_config(cfg)
+        return cfg
 
 
 def patched_get_default_config() -> dict[str, Any]:
@@ -150,7 +152,9 @@ def patched_get_default_config() -> dict[str, Any]:
     return cfg
 
 
+RuntimeConfig = cast(Any, PatchedRuntimeConfig)
 mcubridge.protocol.structures.RuntimeConfig = cast(Any, PatchedRuntimeConfig)
+mcubridge.config.settings.RuntimeConfig = cast(Any, PatchedRuntimeConfig)
 mcubridge.config.common.get_default_config = patched_get_default_config
 # ==============================================================================
 

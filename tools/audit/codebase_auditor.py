@@ -100,15 +100,17 @@ def audit_ast_integrity() -> list[str]:
         "typings",
     }
     for path in ROOT.rglob("*.py"):
-        if ignored_parts.intersection(path.parts):
+        try:
+            rel_path = path.relative_to(ROOT)
+        except ValueError:
+            rel_path = path
+        if ignored_parts.intersection(rel_path.parts[:-1]):
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         except (SyntaxError, UnicodeDecodeError, OSError) as exc:
-            findings.append(f"AST Parse Error: {path} - {exc}")
+            findings.append(f"AST Parse Error: {rel_path} - {exc}")
             continue
-
-        rel_path = path.relative_to(ROOT)
         for node in ast.walk(tree):
             if isinstance(node, (ast.Try, ast.TryStar)):
                 for handler in node.handlers:

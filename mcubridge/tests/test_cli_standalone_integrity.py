@@ -36,6 +36,7 @@ def get_standalone_scripts() -> list[Path]:
     return sorted(scripts)
 
 
+@pytest.mark.xdist_group("repo_audit")
 @pytest.mark.parametrize("script_path", get_standalone_scripts(), ids=lambda p: str(p.name))
 def test_script_standalone_execution_and_help(script_path: Path) -> None:
     """Validate that every script runs cleanly with --help in a clean subprocess."""

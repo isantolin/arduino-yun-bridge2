@@ -6,9 +6,9 @@ Validates Rule 17/18 substantive test assertions and Rule 5 zero test-only hooks
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+from pytest_mock import MockerFixture
 
 from tools.audit.audit_test_integrity import (
     audit_python_tests,
@@ -23,7 +23,7 @@ def test_audit_test_only_hooks_clean_codebase() -> None:
     assert findings == [], f"Unexpected test-only hooks detected:\n{findings}"
 
 
-def test_audit_test_only_hooks_positive_detection(tmp_path: Path) -> None:
+def test_audit_test_only_hooks_positive_detection(tmp_path: Path, mocker: MockerFixture) -> None:
     """Positive test: verify that a method in prod called only from tests is flagged."""
     fake_prod = tmp_path / "mcubridge" / "mcubridge" / "dummy_service.py"
     fake_test = tmp_path / "mcubridge" / "tests" / "test_dummy.py"
@@ -39,14 +39,14 @@ def test_audit_test_only_hooks_positive_detection(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with patch("tools.audit.audit_test_integrity.ROOT", tmp_path):
-        findings = audit_test_only_hooks()
+    mocker.patch("tools.audit.audit_test_integrity.ROOT", tmp_path)
+    findings = audit_test_only_hooks()
 
     assert any("internal_test_only_hook" in f for f in findings)
     assert any("Rule 5 Violation" in f for f in findings)
 
 
-def test_audit_python_tests_detects_empty_assertions(tmp_path: Path) -> None:
+def test_audit_python_tests_detects_empty_assertions(tmp_path: Path, mocker: MockerFixture) -> None:
     """Verify that Python test functions without assertions are flagged."""
     fake_test = tmp_path / "mcubridge" / "tests" / "test_empty.py"
     fake_test.parent.mkdir(parents=True, exist_ok=True)
@@ -56,8 +56,8 @@ def test_audit_python_tests_detects_empty_assertions(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    with patch("tools.audit.audit_test_integrity.ROOT", tmp_path):
-        findings = audit_python_tests()
+    mocker.patch("tools.audit.audit_test_integrity.ROOT", tmp_path)
+    findings = audit_python_tests()
 
     assert any("Rule 17/18 Violation" in f for f in findings)
     assert any("test_function_without_assertions" in f for f in findings)
@@ -69,11 +69,12 @@ def test_main_cli_success() -> None:
     assert res is None
 
 
-def test_main_cli_failure_on_violations(tmp_path: Path) -> None:
+def test_main_cli_failure_on_violations(tmp_path: Path, mocker: MockerFixture) -> None:
     """Verify main() CLI exits with code 1 when violations are detected."""
     fake_test = tmp_path / "mcubridge" / "tests" / "test_empty.py"
     fake_test.parent.mkdir(parents=True, exist_ok=True)
     fake_test.write_text("def test_empty(): pass\n", encoding="utf-8")
-    with patch("tools.audit.audit_test_integrity.ROOT", tmp_path), pytest.raises(SystemExit) as exc:
+    mocker.patch("tools.audit.audit_test_integrity.ROOT", tmp_path)
+    with pytest.raises(SystemExit) as exc:
         main(strict=True)
     assert exc.value.code == 1

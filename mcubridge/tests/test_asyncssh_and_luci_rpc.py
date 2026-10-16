@@ -4,40 +4,41 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 from tools.audit import validate_luci
 from tools.emulation import hardware_harness, sync_to_vm
 from tools.testing.unity_parser import TestSuite as UnityTestSuite
 
 
-def test_validate_luci_rpc_endpoint_success() -> None:
+def test_validate_luci_rpc_endpoint_success(mocker: MockerFixture) -> None:
     mock_rpc = MagicMock()
     mock_rpc.is_logged_in.return_value = True
 
-    with patch("openwrt_luci_rpc.OpenWrtRpc", return_value=mock_rpc):
-        code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "secret")
-        assert code == 0
-        mock_rpc.is_logged_in.assert_called_once()
+    mocker.patch("openwrt_luci_rpc.OpenWrtRpc", return_value=mock_rpc)
+    code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "secret")
+    assert code == 0
+    mock_rpc.is_logged_in.assert_called_once()
 
 
-def test_validate_luci_rpc_endpoint_login_failure() -> None:
+def test_validate_luci_rpc_endpoint_login_failure(mocker: MockerFixture) -> None:
     mock_rpc = MagicMock()
     mock_rpc.is_logged_in.return_value = False
 
-    with patch("openwrt_luci_rpc.OpenWrtRpc", return_value=mock_rpc):
-        code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "wrong")
-        assert code == 1
-        mock_rpc.is_logged_in.assert_called_once()
+    mocker.patch("openwrt_luci_rpc.OpenWrtRpc", return_value=mock_rpc)
+    code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "wrong")
+    assert code == 1
+    mock_rpc.is_logged_in.assert_called_once()
 
 
-def test_validate_luci_rpc_endpoint_exception_handling() -> None:
+def test_validate_luci_rpc_endpoint_exception_handling(mocker: MockerFixture) -> None:
     from openwrt_luci_rpc.exceptions import InvalidLuciLoginError
 
-    with patch("openwrt_luci_rpc.OpenWrtRpc", side_effect=InvalidLuciLoginError("Bad auth")):
-        code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "bad")
-        assert code == 1
+    mocker.patch("openwrt_luci_rpc.OpenWrtRpc", side_effect=InvalidLuciLoginError("Bad auth"))
+    code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "bad")
+    assert code == 1
 
 
 def test_validate_luci_app_success() -> None:
@@ -59,7 +60,7 @@ def test_validate_luci_app_syntax_error(tmp_path: Path) -> None:
     assert validate_luci.validate_luci_app(root_dir=tmp_path) == 1
 
 
-def test_run_remote_ssh_success() -> None:
+def test_run_remote_ssh_success(mocker: MockerFixture) -> None:
     mock_conn = AsyncMock()
     mock_res = MagicMock()
     mock_res.exit_status = 0
@@ -70,15 +71,15 @@ def test_run_remote_ssh_success() -> None:
     mock_connect = AsyncMock()
     mock_connect.__aenter__.return_value = mock_conn
 
-    with patch("asyncssh.connect", return_value=mock_connect):
-        exit_code, stdout, stderr = sync_to_vm.run_remote_ssh("echo test", "192.168.122.200", user="root")
-        assert exit_code == 0
-        assert stdout == "output-ok"
-        assert stderr == ""
-        mock_conn.run.assert_awaited_once_with("echo test")
+    mocker.patch("asyncssh.connect", return_value=mock_connect)
+    exit_code, stdout, stderr = sync_to_vm.run_remote_ssh("echo test", "192.168.122.200", user="root")
+    assert exit_code == 0
+    assert stdout == "output-ok"
+    assert stderr == ""
+    mock_conn.run.assert_awaited_once_with("echo test")
 
 
-def test_run_remote_ssh_error_with_check() -> None:
+def test_run_remote_ssh_error_with_check(mocker: MockerFixture) -> None:
     mock_conn = AsyncMock()
     mock_res = MagicMock()
     mock_res.exit_status = 127
@@ -89,14 +90,12 @@ def test_run_remote_ssh_error_with_check() -> None:
     mock_connect = AsyncMock()
     mock_connect.__aenter__.return_value = mock_conn
 
-    with (
-        patch("asyncssh.connect", return_value=mock_connect),
-        pytest.raises(RuntimeError, match="Remote command failed on 192.168.122.200"),
-    ):
+    mocker.patch("asyncssh.connect", return_value=mock_connect)
+    with pytest.raises(RuntimeError, match="Remote command failed on 192.168.122.200"):
         sync_to_vm.run_remote_ssh("bad_cmd", "192.168.122.200", user="root", check=True)
 
 
-def test_sync_push_file_sftp(tmp_path: Path) -> None:
+def test_sync_push_file_sftp(tmp_path: Path, mocker: MockerFixture) -> None:
     test_file = tmp_path / "hello.txt"
     test_file.write_text("content", encoding="utf-8")
 
@@ -110,14 +109,14 @@ def test_sync_push_file_sftp(tmp_path: Path) -> None:
     mock_connect = AsyncMock()
     mock_connect.__aenter__.return_value = mock_conn
 
-    with patch("asyncssh.connect", return_value=mock_connect):
-        sync_to_vm.push_file(test_file, "/tmp/hello.txt", "192.168.122.200", "root", mode="0755")
-        mock_sftp.makedirs.assert_awaited_once_with("/tmp", exist_ok=True)
-        mock_sftp.put.assert_awaited_once_with(str(test_file), "/tmp/hello.txt")
-        mock_sftp.chmod.assert_awaited_once_with("/tmp/hello.txt", 0o755)
+    mocker.patch("asyncssh.connect", return_value=mock_connect)
+    sync_to_vm.push_file(test_file, "/tmp/hello.txt", "192.168.122.200", "root", mode="0755")
+    mock_sftp.makedirs.assert_awaited_once_with("/tmp", exist_ok=True)
+    mock_sftp.put.assert_awaited_once_with(str(test_file), "/tmp/hello.txt")
+    mock_sftp.chmod.assert_awaited_once_with("/tmp/hello.txt", 0o755)
 
 
-def test_tar_push_asyncssh(tmp_path: Path) -> None:
+def test_tar_push_asyncssh(tmp_path: Path, mocker: MockerFixture) -> None:
     source_dir = tmp_path / "src"
     source_dir.mkdir()
     (source_dir / "sample.py").write_text("print('sample')\n", encoding="utf-8")
@@ -137,17 +136,17 @@ def test_tar_push_asyncssh(tmp_path: Path) -> None:
     mock_connect = AsyncMock()
     mock_connect.__aenter__.return_value = mock_conn
 
-    with patch("asyncssh.connect", return_value=mock_connect):
-        sync_to_vm.tar_push(source_dir, "/tmp/target", "192.168.122.200", "root")
-        mock_conn.run.assert_awaited_once_with("mkdir -p '/tmp/target'", check=True)
-        mock_conn.create_process.assert_awaited_once_with("tar -xzf - -C '/tmp/target'")
-        assert mock_proc.stdin.write.called
-        mock_proc.stdin.drain.assert_awaited_once()
-        mock_proc.stdin.write_eof.assert_called_once()
-        mock_proc.wait.assert_awaited_once()
+    mocker.patch("asyncssh.connect", return_value=mock_connect)
+    sync_to_vm.tar_push(source_dir, "/tmp/target", "192.168.122.200", "root")
+    mock_conn.run.assert_awaited_once_with("mkdir -p '/tmp/target'", check=True)
+    mock_conn.create_process.assert_awaited_once_with("tar -xzf - -C '/tmp/target'")
+    assert mock_proc.stdin.write.called
+    mock_proc.stdin.drain.assert_awaited_once()
+    mock_proc.stdin.write_eof.assert_called_once()
+    mock_proc.wait.assert_awaited_once()
 
 
-def test_hardware_harness_run_ssh_command() -> None:
+def test_hardware_harness_run_ssh_command(mocker: MockerFixture) -> None:
     mock_conn = AsyncMock()
     mock_res = MagicMock()
     mock_res.exit_status = 0
@@ -158,15 +157,15 @@ def test_hardware_harness_run_ssh_command() -> None:
     mock_connect = AsyncMock()
     mock_connect.__aenter__.return_value = mock_conn
 
-    with patch("asyncssh.connect", return_value=mock_connect):
-        code, out, err = asyncio.run(hardware_harness.run_ssh_command("192.168.122.200", "root", "uptime", timeout=5.0))
-        assert code == 0
-        assert out == "harness-output"
-        assert err == ""
-        mock_conn.run.assert_awaited_once_with("uptime")
+    mocker.patch("asyncssh.connect", return_value=mock_connect)
+    code, out, err = asyncio.run(hardware_harness.run_ssh_command("192.168.122.200", "root", "uptime", timeout=5.0))
+    assert code == 0
+    assert out == "harness-output"
+    assert err == ""
+    mock_conn.run.assert_awaited_once_with("uptime")
 
 
-def test_pytest_embedded_unity_parser_success() -> None:
+def test_unity_parser_success() -> None:
     unity_raw_output = """
 tests/test_core.cpp:10:test_handshake_auth:PASS
 tests/test_core.cpp:25:test_mailbox_exchange:PASS
@@ -190,7 +189,7 @@ OK
     assert xml.attrib["failures"] == "0"
 
 
-def test_pytest_embedded_unity_parser_failure() -> None:
+def test_unity_parser_failure() -> None:
     unity_raw_output = """
 tests/test_core.cpp:12:test_expected_assertion:FAIL:Expected 42 Was 0
 -----------------------

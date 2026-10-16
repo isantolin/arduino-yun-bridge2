@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -14,42 +13,33 @@ from elftools.elf.sections import SymbolTableSection
 
 import typer
 
+from tools.boards import BOARDS_BY_SLUG as SUPPORTED_BOARDS
 
-@dataclass(frozen=True, slots=True)
-class BoardSpec:
-    label: str
-    max_flash: int
-    max_ram: int
+FLASH_SECTION_NAMES: frozenset[str] = frozenset(
+    {
+        ".text",
+        ".data",
+        ".rodata",
+        ".flash.text",
+        ".flash.rodata",
+        ".flash.appdesc",
+        ".iram0.text",
+        ".iram0.vectors",
+        ".iram0.data",
+        ".dram0.data",
+        ".dram0.rodata",
+    }
+)
 
-
-SUPPORTED_BOARDS: dict[str, BoardSpec] = {
-    "arduino-avr-mega": BoardSpec(label="Arduino Mega 2560", max_flash=253_952, max_ram=8_192),
-    "arduino-samd-mkrwifi1010": BoardSpec(label="Arduino MKR WiFi 1010", max_flash=262_144, max_ram=32_768),
-    "arduino-esp32-nano_nora": BoardSpec(label="Arduino Nano ESP32", max_flash=3_145_728, max_ram=327_680),
-}
-
-
-FLASH_SECTION_NAMES: frozenset[str] = frozenset({
-    ".text",
-    ".data",
-    ".rodata",
-    ".flash.text",
-    ".flash.rodata",
-    ".flash.appdesc",
-    ".iram0.text",
-    ".iram0.vectors",
-    ".iram0.data",
-    ".dram0.data",
-    ".dram0.rodata",
-})
-
-RAM_SECTION_NAMES: frozenset[str] = frozenset({
-    ".data",
-    ".bss",
-    ".dram0.data",
-    ".dram0.bss",
-    ".dram0.rodata",
-})
+RAM_SECTION_NAMES: frozenset[str] = frozenset(
+    {
+        ".data",
+        ".bss",
+        ".dram0.data",
+        ".dram0.bss",
+        ".dram0.rodata",
+    }
+)
 
 
 def extract_elf_memory_table(build_dir: Path) -> str | None:

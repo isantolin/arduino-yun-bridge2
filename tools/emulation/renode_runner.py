@@ -27,6 +27,7 @@ import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 from tools.arduino_core_metadata import read_metadata_json
+from tools.boards import RENODE_BOARDS as MATRIX_BOARDS
 from tools.emulation.process_utils import (
     start_daemon_thread,
     stream_pump,
@@ -45,10 +46,6 @@ DEFAULT_RENODE_PORT = 12345
 
 configure_logging(console=True)
 logger = structlog.get_logger("renode_runner")
-
-MATRIX_BOARDS: list[tuple[str, str]] = [
-    ("arduino:samd:mkrwifi1010", "Arduino MKR WiFi 1010 (ATSAMD21G18A)"),
-]
 
 
 def default_client_test_paths() -> list[Path]:
@@ -227,12 +224,13 @@ def run_renode_emulation(
 
     temp_dir = Path(tempfile.mkdtemp(prefix="renode_run_"))
     temp_resc = temp_dir / "run.resc"
-    resc_content = (
-        f"$ELF_PATH = @{firmware_path.resolve()}\n"
-        f"$UART_PORT = {port}\n"
-        f"include @{resc_template.resolve()}\n"
-    )
-    temp_resc.write_text(resc_content, encoding="utf-8")
+    resc_lines = [
+        f"$ELF_PATH = @{firmware_path.resolve()}",
+        f"$UART_PORT = {port}",
+        f"include @{resc_template.resolve()}",
+        "",
+    ]
+    temp_resc.write_text("\n".join(resc_lines), encoding="utf-8")
 
     pty_link = temp_dir / "ttyRENODE"
 

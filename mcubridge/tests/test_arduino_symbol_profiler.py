@@ -126,4 +126,3 @@ def test_extract_elf_memory_table_esp32() -> None:
     assert "### 📊 Arduino Memory Usage" in table
     assert "Arduino Nano ESP32" in table
     assert "`BridgeControl`" in table
-

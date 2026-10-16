@@ -27,6 +27,7 @@ from mcubridge.config.const import (
     ALLOWED_COMMAND_WILDCARD,
     CLOUD_TLS_MIN_VERSION,
     PROP_KEY_BRIDGE_REQUEST_TOPIC,
+    VOLATILE_STORAGE_PATHS,
 )
 
 from . import mcubridge_pb2 as pb
@@ -46,7 +47,7 @@ def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
-_VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = ("/tmp", "/var/run", "/run", "/dev/shm")
+_VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = tuple(sorted(VOLATILE_STORAGE_PATHS))
 _FLAVOR_SEGMENTS: Final[frozenset[str]] = frozenset({"response", "value"})
 _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields)
 
@@ -147,7 +148,7 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         for field_name, meta in protocol.RUNTIME_CONFIG_METADATA.items():
             if meta.get("volatile"):
                 val = getattr(cfg, field_name, "")
-                if val and not str(val).startswith(_VOLATILE_STORAGE_PREFIXES):
+                if val and not str(val).startswith(tuple(VOLATILE_STORAGE_PATHS)):
                     raise ValueError(
                         f"{field_name}: {field_name} must be in volatile storage "
                         "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"

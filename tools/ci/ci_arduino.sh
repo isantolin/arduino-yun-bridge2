@@ -71,8 +71,12 @@ echo "Installing libraries..."
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
 
-# Define memory-capable, library-supported target boards.
-TARGET_BOARDS=("arduino:avr:mega" "arduino:samd:mkrwifi1010" "arduino:esp32:nano_nora")
+# Define memory-capable, library-supported target boards (SSOT: tools.boards).
+if command -v python3 >/dev/null 2>&1 && python3 -c "import tools.boards" >/dev/null 2>&1; then
+    TARGET_BOARDS=($(python3 -m tools.boards fqbns))
+else
+    TARGET_BOARDS=("arduino:avr:mega" "arduino:samd:mkrwifi1010" "arduino:esp32:nano_nora")
+fi
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 

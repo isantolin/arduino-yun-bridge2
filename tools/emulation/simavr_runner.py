@@ -31,6 +31,7 @@ import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 from tools.arduino_core_metadata import read_metadata_json, resolve_core_metadata
+from tools.boards import SIMAVR_BOARDS as MATRIX_BOARDS
 from tools.emulation.process_utils import (
     start_daemon_thread,
     stream_pump,
@@ -497,11 +498,6 @@ def _teardown_simavr(
         storage_p = Path(storage_path)
         if storage_p.exists():
             shutil.rmtree(storage_p)
-
-
-MATRIX_BOARDS: list[tuple[str, str]] = [
-    ("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)"),
-]
 
 
 def run_matrix(

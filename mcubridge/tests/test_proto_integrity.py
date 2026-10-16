@@ -414,3 +414,53 @@ def test_codebase_auditor_cli_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_constants_completeness() -> None:
     assert protocol.PROTOCOL_VERSION == 2
+
+
+def test_proto_dispatch_handlers_ssot() -> None:
+    """SIL-2: Verify dispatch tables and action routes are derived from .proto SSOT."""
+    import operator
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.services.runtime import BridgeService
+
+    assert hasattr(pb, "ActionRouteDef")
+    assert len(protocol.TOPIC_DISPATCH_HANDLERS) == 9
+    for topic, handler_name in protocol.TOPIC_DISPATCH_HANDLERS.items():
+        assert isinstance(topic, protocol.Topic)
+        assert hasattr(BridgeService, handler_name)
+        assert callable(getattr(BridgeService, handler_name))
+
+    assert len(protocol.COMMAND_ACTION_ROUTES) == 23
+    for (topic, scope, _action), handler_name in protocol.COMMAND_ACTION_ROUTES.items():
+        assert isinstance(topic, protocol.Topic)
+        assert scope in ("mcu", "local")
+        assert hasattr(BridgeService, handler_name)
+        assert callable(getattr(BridgeService, handler_name))
+
+    assert len(protocol.MCU_DISPATCH_HANDLERS) == 26
+    for code, handler_path in protocol.MCU_DISPATCH_HANDLERS.items():
+        assert isinstance(code, int)
+        root_attr = handler_path.split(".", 1)[0]
+        assert hasattr(BridgeService, root_attr) or root_attr == "handshake"
+        assert callable(operator.attrgetter(root_attr))
+
+    assert len(protocol.MCU_UNSUPPORTED_REASONS) == 2
+    assert protocol.MCU_UNSUPPORTED_REASONS[protocol.Command.CMD_DIGITAL_READ.value] == (
+        protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
+    )
+    assert protocol.MCU_UNSUPPORTED_REASONS[protocol.Command.CMD_ANALOG_READ.value] == (
+        protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
+    )
+
+    assert len(protocol.QUERY_TOPIC_ACTIONS) == 5
+    for topic, action in protocol.QUERY_TOPIC_ACTIONS:
+        assert isinstance(topic, protocol.Topic)
+        assert isinstance(action, str)
+
+    assert len(protocol.LOCAL_RPC_SPECS) == 22
+    assert len(protocol.GATEWAY_RPC_SPECS) == 21
+    from mcubridge.services.local_bridge import LocalBridgeService, RPC_DISPATCH_TABLE
+
+    assert len(RPC_DISPATCH_TABLE) == 22
+    for spec in protocol.LOCAL_RPC_SPECS:
+        assert hasattr(LocalBridgeService, spec.handler_name)
+        assert callable(getattr(LocalBridgeService, spec.handler_name))

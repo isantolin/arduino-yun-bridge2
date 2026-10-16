@@ -97,6 +97,7 @@ ALLOWLIST_PY_HELPERS = {
     "format_line_protocol",
     "auth_interceptor",
     "handle_command_response",
+    "unsupported_mcu_request",
 }
 
 

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from hypothesis import assume, given
 from hypothesis import strategies as st
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import COMMAND_SPECS, TOPIC_LOOKUP, Topic
 from mcubridge.protocol.topics import (
     get_topic_for_message,
@@ -132,3 +135,21 @@ def test_topics_edge_cases() -> None:
     assert parse_topic("br", "") is None
     assert topic_path("", Topic.SYSTEM) == "system"
     assert topic_path("", Topic.SYSTEM, "") == "system"
+
+
+def test_get_topic_for_message_all_types() -> None:
+    """[SIL-2] Test get_topic_for_message across all message input types (str, message, class, invalid)."""
+    assert get_topic_for_message("bridge", "VersionResponse") == "bridge/system/version/value"
+    assert get_topic_for_message("bridge", "NonExistentMsg") is None
+
+    resp = pb.VersionResponse()
+    assert get_topic_for_message("bridge", resp) == "bridge/system/version/value"
+
+    assert get_topic_for_message("bridge", pb.VersionResponse) == "bridge/system/version/value"
+
+    class DummyMsg:
+        class DESCRIPTOR:
+            name = "NonExistent"
+
+    assert get_topic_for_message("bridge", cast(Any, DummyMsg)) is None
+    assert get_topic_for_message("bridge", cast(Any, 3.14)) is None

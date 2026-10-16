@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import secrets
 from collections.abc import Callable, Coroutine
 from typing import Any, Final, Protocol
@@ -19,7 +18,13 @@ from grpclib.server import Stream
 from ..config.const import MCU_FS_PREFIX
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.mcubridge_grpc import LocalBridgeBase
-from ..protocol.protocol import AEAD_NONCE_SIZE, Command, DatastoreAction, FileAction, PinAction, SpiAction, Topic
+from ..protocol.protocol import (
+    AEAD_NONCE_SIZE,
+    LOCAL_RPC_SPECS,
+    QUERY_TOPIC_ACTIONS,
+    Command,
+    Topic,
+)
 from ..protocol.structures import is_command_allowed
 from ..protocol.topics import parse_topic
 
@@ -65,17 +70,6 @@ class MemoryQueueAdapter:
 
     def close(self) -> None:
         self._send_stream.close()
-
-
-QUERY_TOPIC_ACTIONS: Final = frozenset(
-    {
-        (Topic.DIGITAL, PinAction.READ),
-        (Topic.ANALOG, PinAction.READ),
-        (Topic.DATASTORE, DatastoreAction.GET),
-        (Topic.FILE, FileAction.READ),
-        (Topic.SPI, SpiAction.TRANSFER),
-    }
-)
 
 
 def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T) -> T:
@@ -127,30 +121,32 @@ class LocalBridgeService(LocalBridgeBase):
 
     # --- Core Business Logic Execution (Zero-Duplication) ---
 
-    async def execute_set_pin_mode(self, req: pb.PinMode) -> pb.GenericResponse:
+    async def _send_serial_ack(self, cmd: Command, payload: ProtobufMessage | bytes) -> pb.GenericResponse:
         serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_SET_PIN_MODE.value, req)) if serial else None
+        res = (await serial.send(cmd.value, payload)) if serial else None
         return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
+
+    async def _send_serial_query[T: ProtobufMessage](
+        self, cmd: Command, payload: ProtobufMessage | bytes, resp_type: type[T]
+    ) -> T:
+        serial = self.runtime_service.serial
+        res = (await serial.send(cmd.value, payload)) if serial else None
+        return parse_serial_response(res, resp_type, resp_type())
+
+    async def execute_set_pin_mode(self, req: pb.PinMode) -> pb.GenericResponse:
+        return await self._send_serial_ack(Command.CMD_SET_PIN_MODE, req)
 
     async def execute_digital_write(self, req: pb.DigitalWrite) -> pb.GenericResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_DIGITAL_WRITE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
+        return await self._send_serial_ack(Command.CMD_DIGITAL_WRITE, req)
 
     async def execute_digital_read(self, req: pb.PinRead) -> pb.DigitalReadResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_DIGITAL_READ.value, req)) if serial else None
-        return parse_serial_response(res, pb.DigitalReadResponse, pb.DigitalReadResponse())
+        return await self._send_serial_query(Command.CMD_DIGITAL_READ, req, pb.DigitalReadResponse)
 
     async def execute_analog_write(self, req: pb.AnalogWrite) -> pb.GenericResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_ANALOG_WRITE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
+        return await self._send_serial_ack(Command.CMD_ANALOG_WRITE, req)
 
     async def execute_analog_read(self, req: pb.PinRead) -> pb.AnalogReadResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_ANALOG_READ.value, req)) if serial else None
-        return parse_serial_response(res, pb.AnalogReadResponse, pb.AnalogReadResponse())
+        return await self._send_serial_query(Command.CMD_ANALOG_READ, req, pb.AnalogReadResponse)
 
     async def execute_pin_subscribe(self, req: pb.PinSubscribeRequest) -> pb.PinSubscribeResponse:
         try:
@@ -241,9 +237,7 @@ class LocalBridgeService(LocalBridgeBase):
         )
 
     async def execute_spi_transfer(self, req: pb.SpiTransfer) -> pb.SpiTransferResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_SPI_TRANSFER.value, req)) if serial else None
-        return parse_serial_response(res, pb.SpiTransferResponse, pb.SpiTransferResponse())
+        return await self._send_serial_query(Command.CMD_SPI_TRANSFER, req, pb.SpiTransferResponse)
 
     async def execute_spi_configure(self, req: pb.SpiConfig) -> pb.GenericResponse:
         serial = self.runtime_service.serial
@@ -255,14 +249,10 @@ class LocalBridgeService(LocalBridgeBase):
         return pb.GenericResponse(status="ok" if ok else "error")
 
     async def execute_get_version(self, _req: pb.SubscribeRequest) -> pb.VersionResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_GET_VERSION.value, b"")) if serial else None
-        return parse_serial_response(res, pb.VersionResponse, pb.VersionResponse())
+        return await self._send_serial_query(Command.CMD_GET_VERSION, b"", pb.VersionResponse)
 
     async def execute_get_free_memory(self, _req: pb.SubscribeRequest) -> pb.FreeMemoryResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")) if serial else None
-        return parse_serial_response(res, pb.FreeMemoryResponse, pb.FreeMemoryResponse())
+        return await self._send_serial_query(Command.CMD_GET_FREE_MEMORY, b"", pb.FreeMemoryResponse)
 
     async def execute_get_status(self, _req: pb.SubscribeRequest) -> pb.BridgeStatus:
         return self.runtime_service.state.build_status_snapshot()
@@ -429,28 +419,6 @@ class LocalBridgeService(LocalBridgeBase):
                 self.runtime_service.console_queues.remove(adapter)
 
 
-def _rpc_handler_name(method_name: str) -> str:
-    return f"execute_{re.sub(r'(?<!^)(?=[A-Z])', '_', method_name).lower()}"
-
-
-def _build_rpc_dispatch_table() -> dict[
-    str,
-    tuple[
-        type[ProtobufMessage],
-        Callable[[LocalBridgeService, Any], Coroutine[Any, Any, ProtobufMessage]],
-    ],
-]:
-    methods = pb.DESCRIPTOR.services_by_name["LocalBridge"].methods
-    return {
-        method.name: (
-            getattr(pb, method.input_type.name),
-            getattr(LocalBridgeService, _rpc_handler_name(method.name)),
-        )
-        for method in methods
-        if not method.client_streaming and not method.server_streaming
-    }
-
-
 RPC_DISPATCH_TABLE: Final[
     dict[
         str,
@@ -459,4 +427,7 @@ RPC_DISPATCH_TABLE: Final[
             Callable[[LocalBridgeService, Any], Coroutine[Any, Any, ProtobufMessage]],
         ],
     ]
-] = _build_rpc_dispatch_table()
+] = {
+    spec.name: (spec.request_type, getattr(LocalBridgeService, spec.handler_name))
+    for spec in LOCAL_RPC_SPECS
+}

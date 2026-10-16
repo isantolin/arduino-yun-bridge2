@@ -118,6 +118,10 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
+def _default_action_routes() -> list[dict[str, str]]:
+    return []
+
+
 @dataclass
 class CommandDef:
     name: str
@@ -134,6 +138,10 @@ class CommandDef:
     request_command: str | None = None
     auth_field: str | None = None
     rpc_method: str | None = None
+    action_routes: list[dict[str, str]] = field(default_factory=_default_action_routes)
+    mcu_handler: str | None = None
+    mcu_unsupported_reason: str | None = None
+    is_query: bool = False
 
 
 @dataclass
@@ -141,6 +149,7 @@ class StatusDef:
     name: str
     value: int
     description: str
+    mcu_handler: str | None = None
 
 
 @dataclass
@@ -326,6 +335,16 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
         if val.name == "CMD_UNSPECIFIED":
             continue
         opts = val.GetOptions().Extensions[mcubridge_pb2.cmd_opts]
+        action_routes = [
+            {
+                "topic": r.topic,
+                "scope": r.scope,
+                "action_enum": r.action_enum,
+                "action": r.action,
+                "handler": r.handler,
+            }
+            for r in getattr(opts, "action_routes", [])
+        ]
         commands.append(
             CommandDef(
                 name=val.name,
@@ -342,6 +361,10 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
                 request_command=opts.request_command or None,
                 auth_field=opts.auth_field or None,
                 rpc_method=opts.rpc_method or None,
+                action_routes=action_routes,
+                mcu_handler=opts.mcu_handler or None,
+                mcu_unsupported_reason=opts.mcu_unsupported_reason or None,
+                is_query=opts.is_query,
             )
         )
 
@@ -365,7 +388,8 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
         StatusDef(
             name=val.name,
             value=val.number,
-            description=val.GetOptions().Extensions[mcubridge_pb2.status_opts].description,
+            description=(s_opts := val.GetOptions().Extensions[mcubridge_pb2.status_opts]).description,
+            mcu_handler=s_opts.mcu_handler or None,
         )
         for val in status_enum_desc.values
         if val.name != "STATUS_UNSPECIFIED"
@@ -609,36 +633,34 @@ def _build_action_context(spec: ProtocolSpec) -> dict[str, Any]:
     return {"grouped_actions": grouped_actions, "subscriptions": subscriptions}
 
 
-def _build_gateway_rpc_context(pb_module: Any) -> list[dict[str, str]]:
+def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     file_desc = pb_module.DESCRIPTOR
     service_desc = file_desc.services_by_name.get("LocalBridge")
     if not service_desc:
-        return []
-    specs: list[dict[str, str]] = []
+        return [], []
+    local_specs: list[dict[str, str]] = []
+    gateway_specs: list[dict[str, str]] = []
     for method in service_desc.methods:
-        if method.name in ("SubscribeConsole", "Publish"):
+        if method.client_streaming or method.server_streaming:
             continue
         req_cls = method.input_type.name
         resp_cls = method.output_type.name
-        if resp_cls == "GenericResponse":
-            default_factory = 'lambda: pb.GenericResponse(status="error")'
-        elif resp_cls == "PinSubscribeResponse":
-            default_factory = "lambda: pb.PinSubscribeResponse(success=False)"
-        elif resp_cls == "ProcessRunAsyncResponse":
-            default_factory = "lambda: pb.ProcessRunAsyncResponse(pid=0)"
-        elif resp_cls == "ProcessPollResponse":
-            default_factory = "lambda: pb.ProcessPollResponse(finished=True)"
-        else:
-            default_factory = f"pb.{resp_cls}"
-        specs.append(
-            {
-                "name": method.name,
-                "req_cls": req_cls,
-                "resp_cls": resp_cls,
-                "default_factory": default_factory,
-            }
+        resp_opts = method.output_type.GetOptions()
+        error_init = (
+            resp_opts.Extensions[pb_module.msg_error_init] if resp_opts.HasExtension(pb_module.msg_error_init) else ""
         )
-    return specs
+        default_factory = f"lambda: pb.{resp_cls}({error_init})" if error_init else f"pb.{resp_cls}"
+        spec = {
+            "name": method.name,
+            "req_cls": req_cls,
+            "resp_cls": resp_cls,
+            "default_factory": default_factory,
+            "handler_name": f"execute_{JinjaGenerator._snake_case(method.name)}",
+        }
+        local_specs.append(spec)
+        if method.input_type != method.output_type:
+            gateway_specs.append(spec)
+    return local_specs, gateway_specs
 
 
 def _build_command_context(
@@ -825,6 +847,69 @@ def _build_telemetry_field_context(pb_module: Any) -> tuple[dict[str, str], str]
     return topic_field_map, default_field
 
 
+def _build_command_action_routes(spec: ProtocolSpec) -> list[dict[str, str]]:
+    """Derive canonical action routes directly from Command action_routes in .proto (SSOT). [SIL-2]"""
+    routes: list[dict[str, str]] = []
+    for cmd in spec.commands:
+        for r in cmd.action_routes:
+            if not r.get("handler"):
+                continue
+            action_code = f"{r['action_enum']}.{r['action']}" if r.get("action") else "None"
+            routes.append(
+                {
+                    "topic": f"Topic.{r['topic']}",
+                    "scope": r["scope"],
+                    "action_code": action_code,
+                    "handler": r["handler"],
+                }
+            )
+    return routes
+
+
+def _build_topic_dispatch_handlers(spec: ProtocolSpec) -> list[dict[str, str]]:
+    """Derive topic dispatch handlers directly from TopicConfig handler in .proto (SSOT). [SIL-2]"""
+    return [
+        {"topic": f"Topic.{topic['name']}", "handler": topic["handler"]}
+        for topic in spec.topics
+        if topic.get("handler")
+    ]
+
+
+def _build_mcu_dispatch_context(spec: ProtocolSpec) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Derive MCU frame dispatch handlers and unsupported reasons from .proto (SSOT). [SIL-2]"""
+    handlers: list[dict[str, str]] = [
+        {"code": f"Status.{s.name}.value", "handler": s.mcu_handler} for s in spec.statuses if s.mcu_handler
+    ]
+    handlers.extend(
+        {"code": f"Command.{c.name}.value", "handler": c.mcu_handler} for c in spec.commands if c.mcu_handler
+    )
+    unsupported: list[dict[str, str]] = [
+        {
+            "code": f"Command.{c.name}.value",
+            "reason": f"STATUS_REASON_{c.mcu_unsupported_reason.upper()}",
+        }
+        for c in spec.commands
+        if c.mcu_unsupported_reason
+    ]
+    return handlers, unsupported
+
+
+def _build_query_topic_actions(spec: ProtocolSpec) -> list[tuple[str, str]]:
+    """Derive query (topic, action) pairs directly from is_query Command options in .proto (SSOT). [SIL-2]"""
+    seen: set[tuple[str, str]] = set()
+    query_actions: list[tuple[str, str]] = []
+    for cmd in spec.commands:
+        if not getattr(cmd, "is_query", False):
+            continue
+        for route in cmd.action_routes:
+            if route.get("action") and route.get("action_enum"):
+                entry = (f"Topic.{route['topic']}", f"{route['action_enum']}.{route['action']}")
+                if entry not in seen:
+                    seen.add(entry)
+                    query_actions.append(entry)
+    return query_actions
+
+
 def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     """Build all template data from the protocol model and its descriptors."""
     constant_context = _build_constant_context(spec, version)
@@ -834,14 +919,20 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     telemetry_topic_field_map, telemetry_default_field = _build_telemetry_field_context(spec.pb_module)
     payload_fields_by_msg = {p["name"]: p["field"] for p in descriptor_context["payload_fields"]}
     command_context = _build_command_context(spec, spec.pb_module, payload_fields_by_msg, telemetry_topic_field_map)
-    gateway_rpc_specs = _build_gateway_rpc_context(spec.pb_module)
+    local_rpc_specs, gateway_rpc_specs = _build_rpc_context(spec.pb_module)
+    command_action_routes = _build_command_action_routes(spec)
+    topic_dispatch_handlers = _build_topic_dispatch_handlers(spec)
+    mcu_dispatch_handlers, mcu_unsupported_reasons = _build_mcu_dispatch_context(spec)
+    query_topic_actions = _build_query_topic_actions(spec)
     return {
         **constant_context,
         **handshake_context,
         **action_context,
         **command_context,
         **descriptor_context,
+        "local_rpc_specs": local_rpc_specs,
         "gateway_rpc_specs": gateway_rpc_specs,
+        "query_topic_actions": query_topic_actions,
         "runtime_config_constants": _build_runtime_config_constants(spec, constant_context["python_constants"]),
         "client_runtime_config_constants": _build_client_runtime_config_constants(spec),
         "runtime_config_fields": spec.runtime_config_fields,
@@ -864,6 +955,10 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
             {"name": value.name, "value": value.number} for value in spec.pb_module.SpiDataMode.DESCRIPTOR.values
         ],
         "hardware": spec.hardware,
+        "command_action_routes": command_action_routes,
+        "topic_dispatch_handlers": topic_dispatch_handlers,
+        "mcu_dispatch_handlers": mcu_dispatch_handlers,
+        "mcu_unsupported_reasons": mcu_unsupported_reasons,
     }
 
 

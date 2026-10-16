@@ -1330,8 +1330,66 @@ def test_runtime_action_dispatch_canonical_completeness() -> None:
     """Verify that _RUNTIME_ACTION_DISPATCH is fully populated with valid handler callables. [SIL-2]"""
     from mcubridge.services.runtime import RUNTIME_ACTION_DISPATCH
 
-    assert len(RUNTIME_ACTION_DISPATCH) == 19
+    assert len(RUNTIME_ACTION_DISPATCH) == 23
     for (topic, scope, _action), handler in RUNTIME_ACTION_DISPATCH.items():
         assert isinstance(topic, protocol.Topic)
         assert scope in ("mcu", "local")
         assert callable(handler)
+
+
+async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
+    """[SIL-2] Ensure edge branches for unmapped topics and actions in dispatchers are covered."""
+    svc = mock_bridge_service
+
+    # 1. Topic with no handler in _topic_dispatch (e.g. CLOCK)
+    res_clock = await svc.handle_request(pb.CloudQueuedPublish(topic_name="bridge/clock/sync", payload=b""))
+    assert res_clock is None
+
+    # 2. handle_file_local_read with response topic suffix
+    local_file = tmp_path / "test_resp.txt"
+    local_file.write_text("content", encoding="utf-8")
+    res_file = await svc.handle_file_local_read(
+        str(local_file),
+        pb.CloudQueuedPublish(topic_name=f"bridge/file/read/path/{protocol.CLOUD_SUFFIX_RESPONSE}"),
+    )
+    assert res_file is None
+
+    # 3. handle_spi with unmapped action in serial connected state
+    route_spi_unmapped = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("unknown_act",))
+    res_spi = await svc.handle_spi(route_spi_unmapped, pb.CloudQueuedPublish(payload=b""))
+    assert res_spi is None
+
+    # 4. handle_file with empty remainder or empty action
+    route_file_empty = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=())
+    res_file_empty = await svc.handle_file(route_file_empty, pb.CloudQueuedPublish(payload=b""))
+    assert res_file_empty is None
+
+    # 5. handle_file with unsafe path
+    route_file_unsafe = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "../../../etc/passwd"))
+    res_file_unsafe = await svc.handle_file(route_file_unsafe, pb.CloudQueuedPublish(payload=b""))
+    assert res_file_unsafe is None
+
+    # 6. handle_shell with no action or invalid action
+    route_shell_no_act = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=())
+    res_shell_no_act = await svc.handle_shell(route_shell_no_act, pb.CloudQueuedPublish(payload=b""))
+    assert res_shell_no_act is None
+
+    route_shell_bad_act = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=("invalid_action",))
+    res_shell_bad_act = await svc.handle_shell(route_shell_bad_act, pb.CloudQueuedPublish(payload=b""))
+    assert res_shell_bad_act is None
+
+    # 7. handle_pin with invalid pin or invalid action
+    route_pin_invalid = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("invalid_pin",))
+    res_pin_invalid = await svc.handle_pin(route_pin_invalid, pb.CloudQueuedPublish(payload=b""))
+    assert res_pin_invalid is None
+
+    route_pin_bad_act = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13", "invalid_action"))
+    res_pin_bad_act = await svc.handle_pin(route_pin_bad_act, pb.CloudQueuedPublish(payload=b""))
+    assert res_pin_bad_act is None
+
+    # 8. spi_send_command with serial is None
+    serial_bak = svc.serial
+    svc.serial = None
+    res_spi_cmd = await svc.spi_send_command(Command.CMD_SPI_BEGIN)
+    assert res_spi_cmd is None
+    svc.serial = serial_bak

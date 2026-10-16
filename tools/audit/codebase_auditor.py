@@ -372,6 +372,11 @@ def audit_proto_usage() -> list[str]:
     extension_message_types = {
         ext.message_type.name for ext in pb.DESCRIPTOR.extensions_by_name.values() if ext.message_type
     }
+    for ext in pb.DESCRIPTOR.extensions_by_name.values():
+        if ext.message_type:
+            for field in ext.message_type.fields:
+                if field.message_type:
+                    extension_message_types.add(field.message_type.name)
     for message_desc in pb.DESCRIPTOR.message_types_by_name.values():
         if message_desc.name in extension_message_types:
             continue

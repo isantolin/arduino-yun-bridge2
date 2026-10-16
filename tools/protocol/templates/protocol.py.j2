@@ -146,11 +146,18 @@ class GatewayRpcSpec:
     request_type: type[ProtobufMessage]
     response_type: type[ProtobufMessage]
     default_factory: Callable[[], ProtobufMessage]
+    handler_name: str
 
+
+LOCAL_RPC_SPECS: Final[tuple[GatewayRpcSpec, ...]] = (
+{%- for rpc in local_rpc_specs %}
+    GatewayRpcSpec("{{ rpc.name }}", pb.{{ rpc.req_cls }}, pb.{{ rpc.resp_cls }}, {{ rpc.default_factory }}, {{ rpc.handler_name|tojson }}),
+{%- endfor %}
+)
 
 GATEWAY_RPC_SPECS: Final[tuple[GatewayRpcSpec, ...]] = (
 {%- for rpc in gateway_rpc_specs %}
-    GatewayRpcSpec("{{ rpc.name }}", pb.{{ rpc.req_cls }}, pb.{{ rpc.resp_cls }}, {{ rpc.default_factory }}),
+    GatewayRpcSpec("{{ rpc.name }}", pb.{{ rpc.req_cls }}, pb.{{ rpc.resp_cls }}, {{ rpc.default_factory }}, {{ rpc.handler_name|tojson }}),
 {%- endfor %}
 )
 
@@ -186,6 +193,12 @@ TOPIC_LOOKUP: Final[dict[str, Topic]] = {
     {%- endfor %}
 }
 
+TOPIC_DISPATCH_HANDLERS: Final[dict[Topic, str]] = {
+    {%- for item in topic_dispatch_handlers %}
+    {{ item.topic }}: {{ item.handler|tojson }},
+    {%- endfor %}
+}
+
 
 class CommonAction:
     {%- set unique_items = [] %}
@@ -213,6 +226,32 @@ CLOUD_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...
     {%- for sub in subscriptions %}
     (Topic.{{ sub.topic }}, {{ sub.segments_tuple }}, {{ sub.qos }}),
     {%- endfor %}
+)
+
+COMMAND_ACTION_ROUTES: Final[dict[tuple[Topic, str, Any], str]] = {
+    {%- for route in command_action_routes %}
+    ({{ route.topic }}, {{ route.scope|tojson }}, {{ route.action_code }}): {{ route.handler|tojson }},
+    {%- endfor %}
+}
+
+MCU_DISPATCH_HANDLERS: Final[dict[int, str]] = {
+    {%- for item in mcu_dispatch_handlers %}
+    {{ item.code }}: {{ item.handler|tojson }},
+    {%- endfor %}
+}
+
+MCU_UNSUPPORTED_REASONS: Final[dict[int, str]] = {
+    {%- for item in mcu_unsupported_reasons %}
+    {{ item.code }}: {{ item.reason }},
+    {%- endfor %}
+}
+
+QUERY_TOPIC_ACTIONS: Final[frozenset[tuple[Topic, Any]]] = frozenset(
+    {
+        {%- for topic, action in query_topic_actions %}
+        ({{ topic }}, {{ action }}),
+        {%- endfor %}
+    }
 )
 
 

@@ -10,7 +10,9 @@ from tools.boards import (
     BOARD_NANO_ESP32,
     BOARDS_BY_FQBN,
     BOARDS_BY_SLUG,
+    FLASH_SECTION_NAMES,
     OFFICIAL_BOARDS,
+    RAM_SECTION_NAMES,
     RENODE_BOARDS,
     SIMAVR_BOARDS,
     cli,
@@ -70,6 +72,17 @@ def test_board_lookups() -> None:
 def test_emulation_matrices() -> None:
     assert SIMAVR_BOARDS == [("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)")]
     assert RENODE_BOARDS == [("arduino:samd:mkrwifi1010", "Arduino MKR WiFi 1010 (ATSAMD21G18A)")]
+
+
+def test_section_names() -> None:
+    assert ".text" in FLASH_SECTION_NAMES
+    assert ".flash.text" in FLASH_SECTION_NAMES
+    assert ".iram0.text" in FLASH_SECTION_NAMES
+    assert len(FLASH_SECTION_NAMES) == 11
+
+    assert ".bss" in RAM_SECTION_NAMES
+    assert ".dram0.bss" in RAM_SECTION_NAMES
+    assert len(RAM_SECTION_NAMES) == 5
 
 
 def test_cli_fqbns() -> None:

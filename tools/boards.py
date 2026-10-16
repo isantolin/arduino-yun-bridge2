@@ -74,6 +74,32 @@ RENODE_BOARDS: Final[list[tuple[str, str]]] = [
     (b.fqbn, b.detailed_name) for b in OFFICIAL_BOARDS if b.emulator == "renode"
 ]
 
+FLASH_SECTION_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        ".text",
+        ".data",
+        ".rodata",
+        ".flash.text",
+        ".flash.rodata",
+        ".flash.appdesc",
+        ".iram0.text",
+        ".iram0.vectors",
+        ".iram0.data",
+        ".dram0.data",
+        ".dram0.rodata",
+    }
+)
+
+RAM_SECTION_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        ".data",
+        ".bss",
+        ".dram0.data",
+        ".dram0.bss",
+        ".dram0.rodata",
+    }
+)
+
 
 def get_board_by_slug(slug: str) -> BoardSpec | None:
     """Return board spec matching slug or None."""

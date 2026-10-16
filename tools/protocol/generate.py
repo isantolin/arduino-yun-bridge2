@@ -96,10 +96,12 @@ def run_buf_generate(proto_dir: Path) -> None:
     import os
 
     env = os.environ.copy()
+    py_bin_dir = str(Path(sys.executable).parent)
+    env["PATH"] = f"{py_bin_dir}:{env.get('PATH', '')}"
     # Ensure nanopb's bundled protoc is reachable for buf's protoc_builtin plugins
     nanopb_dir = _resolve_nanopb_protoc_dir()
     if nanopb_dir:
-        env["PATH"] = f"{nanopb_dir}:{env.get('PATH', '')}"
+        env["PATH"] = f"{nanopb_dir}:{env['PATH']}"
 
     try:
         subprocess.run(
@@ -115,37 +117,6 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
-EXPLICIT_CMD_TO_PB_CLASS: dict[str, str] = {
-    "CMD_GET_VERSION_RESP": "VersionResponse",
-    "CMD_GET_FREE_MEMORY_RESP": "FreeMemoryResponse",
-    "CMD_GET_CAPABILITIES_RESP": "Capabilities",
-    "CMD_SET_PIN_MODE": "PinMode",
-    "CMD_SET_BAUDRATE": "SetBaudratePacket",
-    "CMD_DIGITAL_READ": "PinRead",
-    "CMD_ANALOG_READ": "PinRead",
-    "CMD_PIN_SUBSCRIBE": "PinSubscribeRequest",
-    "CMD_SPI_SET_CONFIG": "SpiConfig",
-    "CMD_CLOCK_SYNC": "ClockSyncRequest",
-    "CMD_LINK_SYNC_RESP": "LinkSync",
-}
-
-
-def cmd_name_to_pb_class(cmd_name: str) -> str:
-    """Convert CMD_X_Y style command name to CamelCase class name."""
-    clean_name = cmd_name.removeprefix("CMD_")
-    return "".join("Response" if seg == "RESP" else seg.capitalize() for seg in clean_name.split("_"))
-
-
-def resolve_cmd_to_pb_class(cmd_name: str, pb_module: Any) -> str | None:
-    """Resolve command name to its canonical Protobuf message class name. [SIL-2]"""
-    if (explicit := EXPLICIT_CMD_TO_PB_CLASS.get(cmd_name)) and hasattr(pb_module, explicit):
-        return explicit
-    candidate = cmd_name_to_pb_class(cmd_name)
-    if hasattr(pb_module, candidate):
-        return candidate
-    return None
-
-
 @dataclass
 class CommandDef:
     name: str
@@ -157,6 +128,11 @@ class CommandDef:
     expects_direct_response: bool = False
     pre_sync_allowed: bool = False
     cloud_topic: str | None = None
+    pb_message: str | None = None
+    response_command: str | None = None
+    request_command: str | None = None
+    auth_field: str | None = None
+    rpc_method: str | None = None
 
 
 @dataclass
@@ -360,6 +336,11 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
                 expects_direct_response=opts.expects_direct_response,
                 pre_sync_allowed=opts.pre_sync_allowed,
                 cloud_topic=opts.cloud_topic or None,
+                pb_message=opts.pb_message or None,
+                response_command=opts.response_command or None,
+                request_command=opts.request_command or None,
+                auth_field=opts.auth_field or None,
+                rpc_method=opts.rpc_method or None,
             )
         )
 
@@ -627,25 +608,120 @@ def _build_action_context(spec: ProtocolSpec) -> dict[str, Any]:
     return {"grouped_actions": grouped_actions, "subscriptions": subscriptions}
 
 
-def _build_command_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]:
-    commands_by_name = {command.name for command in spec.commands}
-    request_response_pairs: dict[str, list[str]] = {}
-    response_to_req_map: dict[str, str] = {}
-    for command in spec.commands:
-        if command.name.endswith("_RESP"):
-            request_name = command.name.removesuffix("_RESP")
-            if request_name in commands_by_name:
-                request_response_pairs.setdefault(request_name, []).append(command.name)
-                response_to_req_map[command.name] = request_name
-    command_to_pb = [
-        (command.name, class_name)
-        for command in spec.commands
-        if (class_name := resolve_cmd_to_pb_class(command.name, pb_module)) is not None
-    ]
+def _build_gateway_rpc_context(pb_module: Any) -> list[dict[str, str]]:
+    file_desc = pb_module.DESCRIPTOR
+    service_desc = file_desc.services_by_name.get("LocalBridge")
+    if not service_desc:
+        return []
+    specs: list[dict[str, str]] = []
+    for method in service_desc.methods:
+        if method.name in ("SubscribeConsole", "Publish"):
+            continue
+        req_cls = method.input_type.name
+        resp_cls = method.output_type.name
+        if resp_cls == "GenericResponse":
+            default_factory = 'lambda: pb.GenericResponse(status="error")'
+        elif resp_cls == "PinSubscribeResponse":
+            default_factory = "lambda: pb.PinSubscribeResponse(success=False)"
+        elif resp_cls == "ProcessRunAsyncResponse":
+            default_factory = "lambda: pb.ProcessRunAsyncResponse(pid=0)"
+        elif resp_cls == "ProcessPollResponse":
+            default_factory = "lambda: pb.ProcessPollResponse(finished=True)"
+        else:
+            default_factory = f"pb.{resp_cls}"
+        specs.append(
+            {
+                "name": method.name,
+                "req_cls": req_cls,
+                "resp_cls": resp_cls,
+                "default_factory": default_factory,
+            }
+        )
+    return specs
+
+
+def _build_command_context(
+    spec: ProtocolSpec,
+    pb_module: Any,
+    payload_fields_by_msg: dict[str, str],
+    telemetry_topic_field_map: dict[str, str],
+) -> dict[str, Any]:
+    command_specs: list[dict[str, Any]] = []
+    message_specs: dict[str, dict[str, Any]] = {}
+
+    for cmd in spec.commands:
+        pb_cls = cmd.pb_message if (cmd.pb_message and hasattr(pb_module, cmd.pb_message)) else None
+        p_field = payload_fields_by_msg.get(cmd.pb_message) if cmd.pb_message else None
+        resps = [cmd.response_command] if cmd.response_command else []
+        command_specs.append(
+            {
+                "name": cmd.name,
+                "value": cmd.value,
+                "pb_class": pb_cls,
+                "payload_field": p_field,
+                "cloud_topic": cmd.cloud_topic,
+                "expected_responses": resps,
+                "paired_request_id": cmd.request_command,
+                "auth_field": cmd.auth_field,
+                "rpc_method": cmd.rpc_method,
+                "requires_ack": cmd.requires_ack,
+                "expects_direct_response": cmd.expects_direct_response,
+                "pre_sync_allowed": cmd.pre_sync_allowed,
+                "category": cmd.category,
+                "description": cmd.description,
+            }
+        )
+        if cmd.pb_message and cmd.pb_message not in message_specs:
+            message_specs[cmd.pb_message] = {
+                "is_command": True,
+                "cmd_name": cmd.name,
+            }
+
+    # Add any remaining envelope payload messages
+    for msg_name, field_name in payload_fields_by_msg.items():
+        if msg_name not in message_specs:
+            blob_field = next((bf for tm, bf in telemetry_topic_field_map.items() if tm in msg_name.lower()), None)
+            message_specs[msg_name] = {
+                "is_command": False,
+                "name": msg_name,
+                "pb_class": msg_name if hasattr(pb_module, msg_name) else None,
+                "payload_field": field_name,
+                "cloud_topic": spec.message_topics.get(msg_name),
+                "auth_field": None,
+                "metrics_blob_field": blob_field,
+            }
+
+    # Add autonomous telemetry topics
+    for msg_name, topic in spec.message_topics.items():
+        if msg_name.endswith("_ENUM"):
+            enum_name = msg_name[:-5]
+            if enum_name not in message_specs:
+                message_specs[enum_name] = {
+                    "is_command": False,
+                    "name": enum_name,
+                    "pb_class": None,
+                    "payload_field": None,
+                    "cloud_topic": topic,
+                    "auth_field": None,
+                    "metrics_blob_field": None,
+                }
+        elif msg_name not in message_specs:
+            blob_field = next((bf for tm, bf in telemetry_topic_field_map.items() if tm in topic), None)
+            if blob_field is None and "status" in topic:
+                blob_field = "system_status_blob"
+            message_specs[msg_name] = {
+                "is_command": False,
+                "name": msg_name,
+                "pb_class": msg_name if hasattr(pb_module, msg_name) else None,
+                "payload_field": payload_fields_by_msg.get(msg_name),
+                "cloud_topic": topic,
+                "auth_field": None,
+                "metrics_blob_field": blob_field,
+            }
+
     return {
-        "request_response_pairs": request_response_pairs,
-        "response_to_req_map": response_to_req_map,
-        "command_to_pb": command_to_pb,
+        "command_specs": command_specs,
+        "message_specs": message_specs,
         "ack_commands": [command for command in spec.commands if command.requires_ack],
         "pre_sync_allowed_commands": [command for command in spec.commands if command.pre_sync_allowed],
         "response_only_commands": [command for command in spec.commands if command.expects_direct_response],
@@ -753,15 +829,18 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     constant_context = _build_constant_context(spec, version)
     handshake_context = _build_handshake_context(spec, spec.pb_module)
     action_context = _build_action_context(spec)
-    command_context = _build_command_context(spec, spec.pb_module)
     descriptor_context = _build_descriptor_context(spec, spec.pb_module)
     telemetry_topic_field_map, telemetry_default_field = _build_telemetry_field_context(spec.pb_module)
+    payload_fields_by_msg = {p["name"]: p["field"] for p in descriptor_context["payload_fields"]}
+    command_context = _build_command_context(spec, spec.pb_module, payload_fields_by_msg, telemetry_topic_field_map)
+    gateway_rpc_specs = _build_gateway_rpc_context(spec.pb_module)
     return {
         **constant_context,
         **handshake_context,
         **action_context,
         **command_context,
         **descriptor_context,
+        "gateway_rpc_specs": gateway_rpc_specs,
         "runtime_config_constants": _build_runtime_config_constants(spec, constant_context["python_constants"]),
         "client_runtime_config_constants": _build_client_runtime_config_constants(spec),
         "runtime_config_fields": spec.runtime_config_fields,

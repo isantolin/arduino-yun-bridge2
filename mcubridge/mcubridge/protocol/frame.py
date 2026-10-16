@@ -94,9 +94,9 @@ def build_frame(
         # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
         if isinstance(payload, ProtobufMessage):
             # [SIL-2] Use descriptor-based field mapping to eliminate manual string logic.
-            field_name = protocol.PAYLOAD_FIELD_MAP.get(payload.DESCRIPTOR.name)
-            if field_name:
-                getattr(envelope, field_name).CopyFrom(payload)
+            spec = protocol.MESSAGE_SPECS.get(payload.DESCRIPTOR.name)
+            if spec is not None and spec.payload_field:
+                getattr(envelope, spec.payload_field).CopyFrom(payload)
         else:
             if len(payload) > protocol.MAX_PAYLOAD_SIZE:
                 raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")

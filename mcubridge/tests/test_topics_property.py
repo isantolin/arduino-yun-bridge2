@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from mcubridge.protocol.protocol import COMMAND_TO_TOPIC, TOPIC_ALIASES, Topic
+from mcubridge.protocol.protocol import COMMAND_SPECS, TOPIC_LOOKUP, Topic
 from mcubridge.protocol.topics import (
     get_topic_for_message,
     parse_topic,
@@ -49,10 +49,13 @@ def test_parse_topic_mismatched_prefix_rejected(
     assert parse_topic(prefix_a, raw) is None
 
 
+_KNOWN_COMMAND_IDS = [spec.command_id for spec in COMMAND_SPECS.values() if spec.cloud_topic is not None]
+
+
 @given(
     prefix=_SAFE_TEXT,
     invalid_service=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=8, max_size=16).filter(
-        lambda s: s not in {topic.value for topic in Topic} and s not in TOPIC_ALIASES
+        lambda s: s not in TOPIC_LOOKUP
     ),
     segments=st.lists(_SAFE_TEXT, max_size=2),
 )
@@ -74,14 +77,16 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
 
 @given(
     prefix=_SAFE_TEXT,
-    command_id=st.sampled_from(list(COMMAND_TO_TOPIC.keys())),
+    command_id=st.sampled_from(_KNOWN_COMMAND_IDS),
 )
 def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) -> None:
     """Property: get_topic_for_message returns exact topic path for all registered commands."""
     res = get_topic_for_message(prefix, command_id)
     assert res is not None
     assert res.startswith(prefix)
-    assert COMMAND_TO_TOPIC[command_id] in res
+    expected_topic = COMMAND_SPECS[command_id].cloud_topic
+    assert expected_topic is not None
+    assert expected_topic in res
 
 
 @given(
@@ -90,7 +95,7 @@ def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) ->
 )
 def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
     """Property: get_topic_for_message returns None for any unregistered command ID."""
-    assume(unknown_id not in COMMAND_TO_TOPIC)
+    assume(unknown_id not in _KNOWN_COMMAND_IDS)
     assert get_topic_for_message(prefix, unknown_id) is None
 
 
@@ -112,9 +117,8 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
         "digital": Topic.DIGITAL,
         "shell": Topic.SHELL,
     }
-    assert expected_aliases == TOPIC_ALIASES
-
-    for alias, expected_topic in TOPIC_ALIASES.items():
+    for alias, expected_topic in expected_aliases.items():
+        assert TOPIC_LOOKUP[alias] == expected_topic
         route = parse_topic("prefix", f"prefix/{alias}/13/read")
         assert route is not None
         assert route.topic == expected_topic

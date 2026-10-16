@@ -1325,4 +1325,13 @@ async def test_service_supervisor_circuit_breaker(service_stack: tuple[BridgeSer
 
     assert call_count == 15
 
-    assert call_count == 15
+
+def test_runtime_action_dispatch_canonical_completeness() -> None:
+    """Verify that _RUNTIME_ACTION_DISPATCH is fully populated with valid handler callables. [SIL-2]"""
+    from mcubridge.services.runtime import RUNTIME_ACTION_DISPATCH
+
+    assert len(RUNTIME_ACTION_DISPATCH) == 19
+    for (topic, scope, _action), handler in RUNTIME_ACTION_DISPATCH.items():
+        assert isinstance(topic, protocol.Topic)
+        assert scope in ("mcu", "local")
+        assert callable(handler)

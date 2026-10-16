@@ -31,7 +31,8 @@ def test_build_protocol_context_contains_template_data() -> None:
     assert context["payload_fields"]
     assert context["topic_auth_map"]
     assert context["runtime_config_fields"] == spec.runtime_config_fields
-    assert context["request_response_pairs"]
+    assert context["command_specs"]
+    assert context["message_specs"]
     assert {constant["name"]: constant["value"] for constant in context["handshake_constants"]}[
         "RPC_MCU_AEAD_NONCE_PREFIX"
     ] == 1296258304

@@ -92,6 +92,7 @@ from .ubus import UbusService
 __all__ = [
     "BridgeService",
     "LocalBridgeService",
+    "RUNTIME_ACTION_DISPATCH",
     "_PendingMcuRead",
 ]
 
@@ -530,19 +531,17 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
+        spec = protocol.COMMAND_SPECS.get(command_id)
         if not (
-            self.state.is_synchronized
-            or command_id in _STATUS_VALUES
-            or command_id in protocol.PRE_SYNC_ALLOWED_COMMANDS
+            self.state.is_synchronized or command_id in _STATUS_VALUES or (spec is not None and spec.pre_sync_allowed)
         ):
             return
 
         with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):
             if handler := self.mcu_registry.get(command_id):
                 p = payload
-                if not isinstance(p, ProtobufMessage) and command_id in protocol.COMMAND_TO_PB:
-                    msg_cls = protocol.COMMAND_TO_PB[command_id]
-                    p = msg_cls()
+                if not isinstance(p, ProtobufMessage) and spec is not None and spec.pb_class is not None:
+                    p = spec.pb_class()
                     try:
                         p.ParseFromString(cast(bytes, payload))
                     except ProtobufDecodeError as exc:
@@ -886,11 +885,13 @@ class BridgeService:
         act_val = getattr(act, "value", str(act))
         with structlog.contextvars.bound_contextvars(file_action=act_val, file_target=target):
             if target.startswith(MCU_FS_PREFIX):
-                if handler := _FILE_MCU_DISPATCH.get(cast(FileAction, act)):
+                if handler := RUNTIME_ACTION_DISPATCH.get((Topic.FILE, "mcu", cast(FileAction, act))):
                     await handler(self, target, inbound)
                 return
 
-            if self._get_safe_path(target) and (handler := _FILE_LOCAL_DISPATCH.get(cast(FileAction, act))):
+            if self._get_safe_path(target) and (
+                handler := RUNTIME_ACTION_DISPATCH.get((Topic.FILE, "local", cast(FileAction, act)))
+            ):
                 await handler(self, target, inbound)
 
     def _file_response_topic(self, target: str) -> str:
@@ -998,7 +999,7 @@ class BridgeService:
             logger.warning("Unrecognized shell action segment", action=raw_act, error=str(exc))
             return
         with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
-            if handler := _SHELL_ACTION_DISPATCH.get(act):
+            if handler := RUNTIME_ACTION_DISPATCH.get((Topic.SHELL, "local", act)):
                 await handler(self, pid, inbound)
 
     async def handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
@@ -1077,7 +1078,7 @@ class BridgeService:
     async def handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
-        if handler := _SPI_ACTION_DISPATCH.get(cast(SpiAction, route.identifier)):
+        if handler := RUNTIME_ACTION_DISPATCH.get((Topic.SPI, "mcu", cast(SpiAction, route.identifier))):
             await handler(self, route, inbound)
 
     async def _reply_cloud_ok(self, *segments: Any, success: bool, inbound: pb.CloudQueuedPublish) -> None:
@@ -1138,7 +1139,7 @@ class BridgeService:
                 action = PinAction(raw_action)
             except ValueError:
                 return
-        if handler := _PIN_ACTION_DISPATCH.get(action):
+        if handler := RUNTIME_ACTION_DISPATCH.get((route.topic, "mcu", action)):
             await handler(self, route, pin, inbound)
 
     async def handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
@@ -1783,46 +1784,34 @@ class BridgeService:
             raise
 
 
-_FILE_MCU_DISPATCH: Final[
-    dict[FileAction, Callable[[BridgeService, str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
-] = {
-    FileAction.WRITE: BridgeService.handle_file_mcu_write,
-    FileAction.REMOVE: BridgeService.handle_file_mcu_remove,
-    FileAction.READ: BridgeService.handle_file_mcu_read,
-}
-
-_FILE_LOCAL_DISPATCH: Final[
-    dict[FileAction, Callable[[BridgeService, str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
-] = {
-    FileAction.WRITE: BridgeService.handle_file_local_write,
-    FileAction.REMOVE: BridgeService.execute_local_file_remove,
-    FileAction.READ: BridgeService.handle_file_local_read,
-}
-
-_SHELL_ACTION_DISPATCH: Final[
-    dict[ShellAction, Callable[[BridgeService, int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
-] = {
-    ShellAction.RUN_ASYNC: BridgeService.handle_shell_run_async,
-    ShellAction.POLL: BridgeService.handle_shell_poll,
-    ShellAction.KILL: BridgeService.execute_shell_kill,
-}
-
-_SPI_ACTION_DISPATCH: Final[
-    dict[SpiAction, Callable[[BridgeService, TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
-] = {
-    SpiAction.BEGIN: BridgeService.handle_spi_begin,
-    SpiAction.END: BridgeService.handle_spi_end,
-    SpiAction.CONFIG: BridgeService.handle_spi_config,
-    SpiAction.TRANSFER: BridgeService.handle_spi_transfer,
-}
-
-_PIN_ACTION_DISPATCH: Final[
+RUNTIME_ACTION_DISPATCH: Final[
     dict[
-        PinAction | None,
-        Callable[[BridgeService, TopicRoute, int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]],
+        tuple[Topic, str, Any],
+        Callable[..., Coroutine[Any, Any, None]],
     ]
 ] = {
-    PinAction.MODE: BridgeService.handle_pin_mode,
-    PinAction.READ: BridgeService.handle_pin_read,
-    None: BridgeService.handle_pin_write,
+    # MCU File Operations
+    (Topic.FILE, "mcu", FileAction.WRITE): BridgeService.handle_file_mcu_write,
+    (Topic.FILE, "mcu", FileAction.REMOVE): BridgeService.handle_file_mcu_remove,
+    (Topic.FILE, "mcu", FileAction.READ): BridgeService.handle_file_mcu_read,
+    # Local Linux File Operations
+    (Topic.FILE, "local", FileAction.WRITE): BridgeService.handle_file_local_write,
+    (Topic.FILE, "local", FileAction.REMOVE): BridgeService.execute_local_file_remove,
+    (Topic.FILE, "local", FileAction.READ): BridgeService.handle_file_local_read,
+    # Shell Operations
+    (Topic.SHELL, "local", ShellAction.RUN_ASYNC): BridgeService.handle_shell_run_async,
+    (Topic.SHELL, "local", ShellAction.POLL): BridgeService.handle_shell_poll,
+    (Topic.SHELL, "local", ShellAction.KILL): BridgeService.execute_shell_kill,
+    # SPI Bus Operations
+    (Topic.SPI, "mcu", SpiAction.BEGIN): BridgeService.handle_spi_begin,
+    (Topic.SPI, "mcu", SpiAction.END): BridgeService.handle_spi_end,
+    (Topic.SPI, "mcu", SpiAction.CONFIG): BridgeService.handle_spi_config,
+    (Topic.SPI, "mcu", SpiAction.TRANSFER): BridgeService.handle_spi_transfer,
+    # Pin Operations (Digital and Analog)
+    (Topic.DIGITAL, "mcu", PinAction.MODE): BridgeService.handle_pin_mode,
+    (Topic.DIGITAL, "mcu", PinAction.READ): BridgeService.handle_pin_read,
+    (Topic.DIGITAL, "mcu", None): BridgeService.handle_pin_write,
+    (Topic.ANALOG, "mcu", PinAction.MODE): BridgeService.handle_pin_mode,
+    (Topic.ANALOG, "mcu", PinAction.READ): BridgeService.handle_pin_read,
+    (Topic.ANALOG, "mcu", None): BridgeService.handle_pin_write,
 }

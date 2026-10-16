@@ -14,7 +14,7 @@ import parse
 import structlog
 from google.protobuf.message import Message as ProtobufMessage
 
-from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC, TOPIC_ALIASES, Topic
+from .protocol import COMMAND_SPECS, MESSAGE_SPECS, TOPIC_LOOKUP, Topic
 from .structures import TopicRoute
 
 logger = structlog.get_logger(__name__)
@@ -29,10 +29,21 @@ def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
 def get_topic_for_message(prefix: str, message: ProtobufMessage | type[ProtobufMessage] | int | str) -> str | None:
     """Resolve the canonical CLOUD topic for a given message instance, class, command ID or enum name. [SIL-2]"""
     if isinstance(message, int):
-        rel = COMMAND_TO_TOPIC.get(message)
+        spec = COMMAND_SPECS.get(message)
+        rel = spec.cloud_topic if spec else None
+    elif isinstance(message, str):
+        spec = MESSAGE_SPECS.get(message)
+        rel = spec.cloud_topic if spec else None
+    elif isinstance(message, ProtobufMessage):
+        spec = MESSAGE_SPECS.get(message.DESCRIPTOR.name)
+        rel = spec.cloud_topic if spec else None
+    elif hasattr(message, "DESCRIPTOR"):
+        desc = message.DESCRIPTOR
+        name = getattr(desc, "name", "")
+        spec = MESSAGE_SPECS.get(name)
+        rel = spec.cloud_topic if spec else None
     else:
-        key = getattr(message, "DESCRIPTOR", message)
-        rel = MESSAGE_TO_TOPIC.get(key) or MESSAGE_TO_TOPIC.get(message)
+        rel = None
 
     if rel:
         return topic_path(prefix, *rel.split("/"))
@@ -82,13 +93,10 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
         seg = str(parsed_svc["service"]).lower()
         segments = ()
 
-    topic_enum = TOPIC_ALIASES.get(seg)
+    topic_enum = TOPIC_LOOKUP.get(seg)
     if topic_enum is None:
-        try:
-            topic_enum = Topic(seg)
-        except ValueError as exc:
-            logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name, error=str(exc))
-            return None
+        logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name)
+        return None
 
     return TopicRoute(
         raw=topic_name,

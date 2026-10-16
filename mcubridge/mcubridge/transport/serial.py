@@ -44,7 +44,7 @@ from mcubridge.protocol import is_system_command, protocol
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import (
-    ACK_ONLY_COMMANDS,
+    COMMAND_SPECS,
     Status,
     expected_responses,
     response_to_request,
@@ -420,9 +420,10 @@ class SerialTransport:
         if response_to_request(command_id) == pending.command_id:
             logger.debug("Marking pending command success on response")
             resp_payload = payload
-            if isinstance(payload, bytes) and command_id in protocol.COMMAND_TO_PB:
+            spec = COMMAND_SPECS.get(command_id)
+            if isinstance(payload, bytes) and spec is not None and spec.pb_class is not None:
                 try:
-                    msg = protocol.COMMAND_TO_PB[command_id]()
+                    msg = spec.pb_class()
                     msg.ParseFromString(payload)
                     resp_payload = msg
                 except ProtobufDecodeError as e:
@@ -455,8 +456,9 @@ class SerialTransport:
         if not self.serial or not self.serial.is_open:
             return False
 
+        spec = COMMAND_SPECS.get(command_id)
         is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
-        is_tracked = not is_handshake and (bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS)
+        is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
 
         if not is_tracked:
             return await self.send_raw(command_id, payload, seq_id)

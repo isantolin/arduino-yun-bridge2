@@ -244,16 +244,44 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
     }
 
     assert expected_names == actual_names
-    assert {protocol.Command[name].value for name in expected_names} == protocol.PRE_SYNC_ALLOWED_COMMANDS
+    pre_sync_specs = {spec.command_id for spec in protocol.COMMAND_SPECS.values() if spec.pre_sync_allowed}
+    assert {protocol.Command[name].value for name in expected_names} == pre_sync_specs
 
 
-def test_topic_aliases_match_schema_metadata() -> None:
+def test_topic_lookup_matches_schema_metadata() -> None:
     topic_configs = pb.DESCRIPTOR.GetOptions().Extensions[pb.topics]
-    expected_aliases = {
-        alias: protocol.Topic[topic_config.name] for topic_config in topic_configs for alias in topic_config.aliases
-    }
+    for topic_config in topic_configs:
+        enum_val = protocol.Topic[topic_config.name]
+        assert protocol.TOPIC_LOOKUP[topic_config.value] == enum_val
+        for alias in topic_config.aliases:
+            assert protocol.TOPIC_LOOKUP[alias] == enum_val
 
-    assert expected_aliases == protocol.TOPIC_ALIASES
+
+def test_command_specs_multidimensional_integrity() -> None:
+    """Verify that every command has a canonical CommandSpec matching Protobuf descriptors."""
+    assert len(protocol.COMMAND_SPECS) == len(pb.Command.DESCRIPTOR.values) - 1
+    for val in pb.Command.DESCRIPTOR.values:
+        if val.name == "CMD_UNSPECIFIED":
+            continue
+        spec = protocol.COMMAND_SPECS[val.number]
+        assert spec.command_id == val.number
+        assert spec.name == val.name
+        opts = val.GetOptions().Extensions[pb.cmd_opts]
+        assert spec.requires_ack == opts.requires_ack
+        assert spec.expects_direct_response == opts.expects_direct_response
+        assert spec.pre_sync_allowed == opts.pre_sync_allowed
+        assert spec.cloud_topic == (opts.cloud_topic or None)
+        assert spec.auth_field == (opts.auth_field or None)
+        assert spec.rpc_method == (opts.rpc_method or None)
+        if opts.pb_message:
+            assert spec.pb_class is getattr(pb, opts.pb_message)
+            assert spec.payload_field is not None
+            msg_spec = protocol.MESSAGE_SPECS[opts.pb_message]
+            assert msg_spec.pb_class is spec.pb_class
+        if opts.response_command:
+            assert spec.expected_responses == frozenset({getattr(protocol.Command, opts.response_command).value})
+        if opts.request_command:
+            assert spec.paired_request_id == getattr(protocol.Command, opts.request_command).value
 
 
 def test_runtime_config_defaults_reference_canonical_metadata() -> None:

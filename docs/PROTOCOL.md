@@ -454,7 +454,7 @@ Hay dos niveles distintos de “ACK” en este sistema:
   - Si el receptor detecta un error de framing/semántica, puede responder con `STATUS_MALFORMED`, `STATUS_ERROR`, etc.
 
 2) **Comandos “ACK-only” (sin respuesta de negocio):** son comandos para los cuales **no existe** `CMD_X_RESP`; el éxito se confirma con `STATUS_ACK`.
-  Esta lista está alineada con el spec (bindings Python: `ACK_ONLY_COMMANDS`):
+  Esta lista está alineada con el spec (bindings Python: `COMMAND_SPECS` con `requires_ack=True`):
 
 - `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
 - `CMD_CONSOLE_WRITE` (bidireccional)

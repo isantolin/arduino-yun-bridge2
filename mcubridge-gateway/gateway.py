@@ -12,7 +12,6 @@ import asyncio
 import ssl
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Final, Protocol, cast
@@ -37,7 +36,12 @@ from grpclib.server import Server, Stream
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
-from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
+from mcubridge.protocol.protocol import (
+    DEFAULT_CLOUD_PORT,
+    GATEWAY_RPC_SPECS,
+    PROTOCOL_VERSION,
+    GatewayRpcSpec,
+)
 from statemachine import State, StateMachine
 
 logger = structlog.get_logger("mcubridge.gateway")
@@ -653,45 +657,6 @@ class CloudBridgeService(CloudBridgeBase):
                 await stream.send_message(response)
             except (KeyError, TimeoutError, OSError) as exc:
                 await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
-
-
-@dataclass(frozen=True, slots=True)
-class GatewayRpcSpec:
-    name: str
-    request_type: type[ProtobufMessage]
-    response_type: type[ProtobufMessage]
-    default_factory: Callable[[], ProtobufMessage]
-
-
-GATEWAY_RPC_SPECS: Final[tuple[GatewayRpcSpec, ...]] = (
-    GatewayRpcSpec("SetPinMode", pb.PinMode, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("DigitalWrite", pb.DigitalWrite, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("DigitalRead", pb.PinRead, pb.DigitalReadResponse, pb.DigitalReadResponse),
-    GatewayRpcSpec("AnalogWrite", pb.AnalogWrite, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("AnalogRead", pb.PinRead, pb.AnalogReadResponse, pb.AnalogReadResponse),
-    GatewayRpcSpec(
-        "PinSubscribe", pb.PinSubscribeRequest, pb.PinSubscribeResponse, lambda: pb.PinSubscribeResponse(success=False)
-    ),
-    GatewayRpcSpec("DatastorePut", pb.DatastorePut, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("DatastoreGet", pb.DatastoreGet, pb.DatastoreGetResponse, pb.DatastoreGetResponse),
-    GatewayRpcSpec("MailboxPush", pb.MailboxPush, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("MailboxRead", pb.SubscribeRequest, pb.MailboxReadResponse, pb.MailboxReadResponse),
-    GatewayRpcSpec("FileWrite", pb.FileWrite, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("FileRead", pb.FileRead, pb.FileReadResponse, pb.FileReadResponse),
-    GatewayRpcSpec("FileRemove", pb.FileRemove, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec(
-        "ProcessRunAsync", pb.ProcessRunAsync, pb.ProcessRunAsyncResponse, lambda: pb.ProcessRunAsyncResponse(pid=0)
-    ),
-    GatewayRpcSpec(
-        "ProcessPoll", pb.ProcessPoll, pb.ProcessPollResponse, lambda: pb.ProcessPollResponse(finished=True)
-    ),
-    GatewayRpcSpec("ProcessKill", pb.ProcessKill, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("SpiTransfer", pb.SpiTransfer, pb.SpiTransferResponse, pb.SpiTransferResponse),
-    GatewayRpcSpec("SpiConfigure", pb.SpiConfig, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
-    GatewayRpcSpec("GetVersion", pb.SubscribeRequest, pb.VersionResponse, pb.VersionResponse),
-    GatewayRpcSpec("GetFreeMemory", pb.SubscribeRequest, pb.FreeMemoryResponse, pb.FreeMemoryResponse),
-    GatewayRpcSpec("GetStatus", pb.SubscribeRequest, pb.BridgeStatus, pb.BridgeStatus),
-)
 
 
 class ConsoleQueueTarget(Protocol):

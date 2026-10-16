@@ -13,32 +13,10 @@ from elftools.elf.sections import SymbolTableSection
 
 import typer
 
-from tools.boards import BOARDS_BY_SLUG as SUPPORTED_BOARDS
-
-FLASH_SECTION_NAMES: frozenset[str] = frozenset(
-    {
-        ".text",
-        ".data",
-        ".rodata",
-        ".flash.text",
-        ".flash.rodata",
-        ".flash.appdesc",
-        ".iram0.text",
-        ".iram0.vectors",
-        ".iram0.data",
-        ".dram0.data",
-        ".dram0.rodata",
-    }
-)
-
-RAM_SECTION_NAMES: frozenset[str] = frozenset(
-    {
-        ".data",
-        ".bss",
-        ".dram0.data",
-        ".dram0.bss",
-        ".dram0.rodata",
-    }
+from tools.boards import (
+    BOARDS_BY_SLUG as SUPPORTED_BOARDS,
+    FLASH_SECTION_NAMES,
+    RAM_SECTION_NAMES,
 )
 
 

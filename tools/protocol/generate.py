@@ -655,7 +655,7 @@ def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, str]], list[dict[
             "req_cls": req_cls,
             "resp_cls": resp_cls,
             "default_factory": default_factory,
-            "handler_name": f"execute_{JinjaGenerator._snake_case(method.name)}",
+            "handler_name": f"execute_{JinjaGenerator.snake_case(method.name)}",
         }
         local_specs.append(spec)
         if method.input_type != method.output_type:
@@ -1018,8 +1018,10 @@ class JinjaGenerator:
         return f"-{formatted}" if value < 0 else formatted
 
     @staticmethod
-    def _snake_case(s: str) -> str:
+    def snake_case(s: str) -> str:
         return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
+
+    _snake_case = snake_case
 
     def render_template(
         self,

@@ -398,5 +398,5 @@ rationale = "Pytest plugin for measuring line and branch code coverage"
 
 [[dev_dependency]]
 name = "gcovr"
-pip = "gcovr==8.6"
+pip = "gcovr==8.7"
 rationale = "C++ code coverage analysis utility parsing gcov instrumentation data"

@@ -6,8 +6,10 @@ import asyncio
 import re
 import secrets
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
+import anyio
+from anyio.streams.memory import MemoryObjectSendStream
 import structlog
 import structlog.contextvars
 from google.protobuf.message import DecodeError as ProtobufDecodeError
@@ -25,13 +27,48 @@ if TYPE_CHECKING:
     from .runtime import BridgeService
 
 __all__ = [
+    "ConsoleQueueTarget",
     "LocalBridgeService",
+    "MemoryQueueAdapter",
     "QUERY_TOPIC_ACTIONS",
     "RPC_DISPATCH_TABLE",
     "parse_serial_response",
 ]
 
 logger = structlog.get_logger("mcubridge.service.local_bridge")
+
+
+class ConsoleQueueTarget(Protocol):
+    def put_nowait(self, item: pb.CloudQueuedPublish) -> None: ...
+    async def put(self, item: pb.CloudQueuedPublish) -> None: ...
+
+
+class MemoryQueueAdapter:
+    """Adapts an AnyIO MemoryObjectSendStream to queue-compatible API. [SIL-2]"""
+
+    __slots__ = ("_send_stream",)
+    _send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
+
+    def __init__(self, send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]) -> None:
+        self._send_stream = send_stream
+
+    def put_nowait(self, item: pb.CloudQueuedPublish) -> None:
+        try:
+            self._send_stream.send_nowait(item)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+            logger.debug("Console stream subscriber disconnected during put_nowait", error=str(exc))
+        except anyio.WouldBlock as exc:
+            logger.warning("Console stream subscriber buffer full, dropping message", error=str(exc))
+
+    async def put(self, item: pb.CloudQueuedPublish) -> None:
+        try:
+            await self._send_stream.send(item)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+            logger.debug("Console stream subscriber disconnected during put", error=str(exc))
+
+    def close(self) -> None:
+        self._send_stream.close()
+
 
 QUERY_TOPIC_ACTIONS: Final = frozenset(
     {
@@ -354,17 +391,20 @@ class LocalBridgeService(LocalBridgeBase):
         if await stream.recv_message() is None:
             return
 
-        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
-        self.runtime_service.console_queues.append(queue)
+        send_stream, receive_stream = anyio.create_memory_object_stream[pb.CloudQueuedPublish](max_buffer_size=64)
+        adapter = MemoryQueueAdapter(send_stream)
+        self.runtime_service.console_queues.append(adapter)
         try:
-            while True:
-                await stream.send_message(await queue.get())
+            async with receive_stream:
+                async for msg in receive_stream:
+                    await stream.send_message(msg)
         except (OSError, RuntimeError) as e:
             logger.error("Local IPC console stream error", error=str(e))
             raise
         finally:
-            if queue in self.runtime_service.console_queues:
-                self.runtime_service.console_queues.remove(queue)
+            adapter.close()
+            if adapter in self.runtime_service.console_queues:
+                self.runtime_service.console_queues.remove(adapter)
 
 
 def _rpc_handler_name(method_name: str) -> str:

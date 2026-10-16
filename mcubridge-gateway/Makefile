@@ -44,6 +44,7 @@ define Package/$(PKG_NAME)
 		python3-prometheus-client \
 		python3-httpx \
 		python3-statemachine \
+		python3-anyio \
 		python3-hpack \
 		python3-hyperframe \
 		python3-h2 \

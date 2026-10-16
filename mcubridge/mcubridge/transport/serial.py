@@ -20,6 +20,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import anyio
 import serialx
 import structlog
 import tenacity
@@ -231,40 +232,45 @@ class SerialTransport:
                 if not is_network:
                     await self.toggle_dtr()
 
-                read_task = asyncio.get_running_loop().create_task(self.read_loop(self.serial))
                 try:
-                    if (
-                        not is_network
-                        and self.config.serial_baud != connect_baud
-                        and not await self.negotiate_baudrate(self.config.serial_baud)
-                    ):
-                        raise ConnectionError("Baudrate negotiation failed")
+                    async with anyio.create_task_group() as tg:
+                        if (
+                            not is_network
+                            and self.config.serial_baud != connect_baud
+                            and not await self.negotiate_baudrate(self.config.serial_baud)
+                        ):
+                            raise ConnectionError("Baudrate negotiation failed")
 
-                    if self.service:
-                        await self.service.on_serial_connected()
+                        if self.service:
+                            await self.service.on_serial_connected()
 
-                    # Wait for either stop event or read task failure
-                    wait_stop = asyncio.create_task(self.stop_event.wait())
-                    done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
-                    if not wait_stop.done():
-                        wait_stop.cancel()
+                        async def _supervised_read_loop() -> None:
+                            try:
+                                if self.serial:
+                                    await self.read_loop(self.serial)
+                            finally:
+                                if not self.stop_event.is_set():
+                                    tg.cancel_scope.cancel()
 
-                    # If read_task finished first, it means connection was lost
-                    if read_task in done:
+                        tg.start_soon(_supervised_read_loop)
+                        await self.stop_event.wait()
+                        tg.cancel_scope.cancel()
+
+                    if not self.stop_event.is_set():
                         if is_network:
                             raise ConnectionError("Wireless network connection lost")
                         raise ConnectionError("Serial connection lost")
+                except BaseExceptionGroup as eg:
+                    if len(eg.exceptions) == 1:
+                        raise eg.exceptions[0] from None
+                    raise
                 finally:
-                    read_task.cancel()
-                    try:
-                        await read_task
-                    except (asyncio.IncompleteReadError, asyncio.CancelledError):
-                        logger.debug("Read task cancelled or incomplete during cleanup")
                     if self.service:
-                        try:
-                            await self.service.on_serial_disconnected()
-                        except (OSError, RuntimeError, ValueError, TypeError) as e:
-                            logger.error("Error during transport disconnect cleanup", error=str(e))
+                        with anyio.CancelScope(shield=True):
+                            try:
+                                await self.service.on_serial_disconnected()
+                            except (OSError, RuntimeError, ValueError, TypeError) as e:
+                                logger.error("Error during transport disconnect cleanup", error=str(e))
         finally:
             self.state.serial_writer = None
             self.serial = None

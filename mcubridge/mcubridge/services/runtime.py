@@ -85,7 +85,7 @@ from ..watchdog import WatchdogKeepalive
 from .clock_sync import ClockSyncService
 from .gpio import GpioService
 from .handshake import SerialHandshakeFatal, SerialHandshakeManager, derive_serial_timing
-from .local_bridge import LocalBridgeService
+from .local_bridge import ConsoleQueueTarget, LocalBridgeService
 from .ubus import UbusService
 
 __all__ = [
@@ -131,7 +131,7 @@ class BridgeService:
     cloud_spool: LmdbDeque | None
     mcu_registry: dict[int, McuHandler]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
-    console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
+    console_queues: list[ConsoleQueueTarget]
     ubus_service: UbusService
     clock_sync: ClockSyncService
     gpio: GpioService
@@ -1492,17 +1492,24 @@ class BridgeService:
                     self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                     tg.create_task(self.supervise("watchdog", self.watchdog.run))
 
-        except* asyncio.CancelledError:
+        except BaseExceptionGroup as eg:
+            cancelled_group, rest = eg.split(asyncio.CancelledError)
+            if cancelled_group is not None:
+                logger.info("Daemon shutdown initiated (Cancelled).")
+            if rest is not None:
+                for e in rest.exceptions:
+                    logger.critical("Fatal task error", error=str(e), exc_info=True)
+                raise rest from eg
+        except asyncio.CancelledError:
             logger.info("Daemon shutdown initiated (Cancelled).")
-        except* (
+        except (
             OSError,
             RuntimeError,
             ValueError,
             TypeError,
             tenacity.RetryError,
-        ) as exc_group:
-            for e in exc_group.exceptions:
-                logger.critical("Fatal task error", error=str(e), exc_info=True)
+        ) as exc:
+            logger.critical("Fatal task error", error=str(exc), exc_info=True)
             raise
         finally:
             with anyio.CancelScope(shield=True):

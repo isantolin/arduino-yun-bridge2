@@ -253,8 +253,8 @@ def main(
         from tools.audit.check_gemini_parity import main as audit_parity_main
 
         audit_parity_main(fix=True)
-    except SystemExit:
-        pass
+    except SystemExit as exc:
+        print(f"  ℹ️ Gemini parity check finished with code: {exc.code}", file=sys.stderr)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"  ⚠️ Gemini parity check error: {exc}", file=sys.stderr)
 

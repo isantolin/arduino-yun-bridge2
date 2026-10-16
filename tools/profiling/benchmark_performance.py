@@ -15,6 +15,7 @@ import importlib
 import importlib.util
 import json
 import os
+import sys
 import time
 import tracemalloc
 from dataclasses import dataclass
@@ -257,8 +258,8 @@ def measure_module_audit() -> list[tuple[str, float, float, str]]:
             spec = importlib.util.find_spec(mod)
             if spec and spec.origin:
                 size_kb = Path(spec.origin).stat().st_size / 1024
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError) as exc:
+            sys.stderr.write(f"Diagnostic: Unable to measure file size for module {mod}: {exc}\n")
         status = "🟢 Optimized" if dur_ms < 50 else "🟡 Heavy"
         results.append((mod, dur_ms, size_kb, status))
     return results
@@ -310,8 +311,8 @@ def main(
         mem_info = proc.memory_info()
         rss_mb = mem_info.rss / (1024 * 1024)
         vms_mb = mem_info.vms / (1024 * 1024)
-    except (ImportError, AttributeError, OSError):
-        pass
+    except (ImportError, AttributeError, OSError) as exc:
+        sys.stderr.write(f"Diagnostic: psutil memory info not available: {exc}\n")
 
     all_metrics = framing_metrics + rpc_metrics + crypto_metrics + proto_metrics + lmdb_metrics
 

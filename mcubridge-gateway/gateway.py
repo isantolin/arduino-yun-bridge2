@@ -15,8 +15,10 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Final, cast
+from typing import Annotated, Any, Final, Protocol, cast
 
+import anyio
+from anyio.streams.memory import MemoryObjectSendStream
 import grpclib.events
 import httpx
 import prometheus_client
@@ -632,6 +634,38 @@ GATEWAY_RPC_SPECS: Final[tuple[GatewayRpcSpec, ...]] = (
 )
 
 
+class ConsoleQueueTarget(Protocol):
+    def put_nowait(self, item: pb.CloudQueuedPublish) -> None: ...
+    async def put(self, item: pb.CloudQueuedPublish) -> None: ...
+
+
+class MemoryQueueAdapter:
+    """Adapts an AnyIO MemoryObjectSendStream to queue-compatible API. [SIL-2]"""
+
+    __slots__ = ("_send_stream",)
+    _send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
+
+    def __init__(self, send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]) -> None:
+        self._send_stream = send_stream
+
+    def put_nowait(self, item: pb.CloudQueuedPublish) -> None:
+        try:
+            self._send_stream.send_nowait(item)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+            logger.debug("Console stream subscriber disconnected during put_nowait", error=str(exc))
+        except anyio.WouldBlock as exc:
+            logger.warning("Console stream subscriber buffer full, dropping message", error=str(exc))
+
+    async def put(self, item: pb.CloudQueuedPublish) -> None:
+        try:
+            await self._send_stream.send(item)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+            logger.debug("Console stream subscriber disconnected during put", error=str(exc))
+
+    def close(self) -> None:
+        self._send_stream.close()
+
+
 class GatewayLocalBridgeService:
     """[SIL-2] Northbound LocalBridge gRPC service hosted on the Gateway for clients.
 
@@ -771,16 +805,19 @@ class GatewayLocalBridgeService:
             target_device_id=device_id,
             rpc_method="SubscribeConsole",
         ):
-            queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
-            self.gateway.console_queues.setdefault(device_id, []).append(queue)
+            send_stream, receive_stream = anyio.create_memory_object_stream[pb.CloudQueuedPublish](max_buffer_size=64)
+            adapter = MemoryQueueAdapter(send_stream)
+            self.gateway.console_queues.setdefault(device_id, []).append(adapter)
             try:
-                while True:
-                    await stream.send_message(await queue.get())
+                async with receive_stream:
+                    async for msg in receive_stream:
+                        await stream.send_message(msg)
             except (OSError, RuntimeError) as e:
                 logger.debug("Console subscriber stream closed", device_id=device_id, error=str(e))
             finally:
-                if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
-                    self.gateway.console_queues[device_id].remove(queue)
+                adapter.close()
+                if device_id in self.gateway.console_queues and adapter in self.gateway.console_queues[device_id]:
+                    self.gateway.console_queues[device_id].remove(adapter)
 
     @staticmethod
     def create_forwarder(spec: GatewayRpcSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
@@ -836,7 +873,7 @@ class ProtobufGateway:
         self._sequence_id: int = 0
         self.metrics: FleetMetrics = FleetMetrics(registry=metrics_registry)
         self.tsdb_sink: TSDBSink = TSDBSink(endpoint_url=tsdb_url)
-        self.console_queues: dict[str, list[asyncio.Queue[pb.CloudQueuedPublish]]] = {}
+        self.console_queues: dict[str, list[ConsoleQueueTarget]] = {}
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:

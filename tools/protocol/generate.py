@@ -1131,10 +1131,15 @@ def main(
     _dispatch_generated_file(proto_path.parent / "mcubridge.pb.c", cpp_targets)
     _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.py", py_targets)
     _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.pyi", py_targets)
+
+    def _sanitize_grpc_bindings(text: str) -> str:
+        text = text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
+        return text.replace("if typing.TYPE_CHECKING:\n    import grpclib.server", "import grpclib.server")
+
     _dispatch_generated_file(
         proto_path.parent / "mcubridge_grpc.py",
         py_targets,
-        lambda t: t.replace("import mcubridge_pb2", "from . import mcubridge_pb2"),
+        _sanitize_grpc_bindings,
     )
 
     # Render Jinja2 artifacts declaratively

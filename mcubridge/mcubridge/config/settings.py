@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, cast
+from typing import Any, Final, cast
 
 import structlog
 from google.protobuf import json_format
@@ -90,10 +90,7 @@ def runtime_config_factory(
 # [SIL-2] RuntimeConfig is pb.RuntimeConfig at type-check time (zero wrapper).
 # At runtime, this callable factory applies defaults + validate_config(),
 # preserving backward compatibility with direct construction from kwargs.
-if TYPE_CHECKING:
-    RuntimeConfig = pb.RuntimeConfig
-else:
-    RuntimeConfig = runtime_config_factory
+RuntimeConfig = pb.RuntimeConfig
 
 
 def load_raw_config(uci_getter: Callable[[], dict[str, Any]] | None = None) -> tuple[dict[str, Any], str]:

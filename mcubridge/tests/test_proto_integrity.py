@@ -12,7 +12,7 @@ from typer.testing import CliRunner
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from tools.audit import codebase_auditor
-from tools.audit.codebase_auditor import app, audit_proto_integrity, audit_proto_usage
+from tools.audit.codebase_auditor import app, audit_ast_integrity, audit_proto_integrity, audit_proto_usage
 
 runner = CliRunner()
 
@@ -115,6 +115,36 @@ def test_audit_config_suppressions_reports_matches_and_skips_ignored_directories
     assert len(findings) == 1
     assert "suppressed.yml" in findings[0]
     assert "skip.yml" not in findings[0]
+
+
+def test_audit_ast_integrity_detects_violations_and_skips_ignored(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+    # Valid file
+    (tmp_path / "valid.py").write_text("x = 1 + 2\n", encoding="utf-8")
+    # Except with pass
+    (tmp_path / "bad_except.py").write_text("try:\n    a = 1\nexcept Exception:\n    pass\n", encoding="utf-8")
+    # Match case with pass
+    (tmp_path / "bad_case.py").write_text("match 1:\n    case _:\n        pass\n", encoding="utf-8")
+    # TYPE_CHECKING identifier
+    (tmp_path / "bad_tc.py").write_text("from typing import TYPE_CHECKING\n", encoding="utf-8")
+    # Syntax error file
+    (tmp_path / "invalid_syntax.py").write_text("def broken(\n", encoding="utf-8")
+    # Ignored directory
+    ignored_dir = tmp_path / ".tox"
+    ignored_dir.mkdir()
+    (ignored_dir / "skip.py").write_text("try:\n    pass\nexcept Exception:\n    pass\n", encoding="utf-8")
+
+    findings = audit_ast_integrity()
+
+    assert any("bad_except.py" in f and "Catching exceptions with 'pass'" in f for f in findings)
+    assert any("bad_case.py" in f and "Match case with 'pass'" in f for f in findings)
+    assert any("bad_tc.py" in f and "TYPE_CHECKING dual-standard" in f for f in findings)
+    assert any("invalid_syntax.py" in f and "AST Parse Error" in f for f in findings)
+    assert not any("skip.py" in f for f in findings)
+    assert not any("valid.py" in f for f in findings)
 
 
 def test_protobuf_descriptor_purged_elements() -> None:

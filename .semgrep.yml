@@ -36,6 +36,25 @@ rules:
           - pattern: $X.encode(..., errors="replace", ...)
           - pattern: $X.encode(..., errors="backslashreplace", ...)
 
+  - id: sil2-ban-except-pass
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: Catching exceptions with 'pass' is strictly forbidden. Handle or log errors explicitly."
+    pattern: |
+      try:
+        ...
+      except ...:
+        pass
+
+  - id: sil2-ban-type-checking
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: TYPE_CHECKING is strictly prohibited. Types must be sound at runtime without dual standards."
+    patterns:
+      - pattern-either:
+          - pattern: TYPE_CHECKING
+          - pattern: typing.TYPE_CHECKING
+
   # ==============================================================================
   # RULE 11 & 17: TEST INTEGRITY & ANTI-TAUTOLOGY GATES (PYTHON)
   # ==============================================================================

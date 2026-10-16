@@ -6,6 +6,7 @@ using Semgrep declarative analysis, strict config suppression audits, and Protob
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 from pathlib import Path
@@ -16,10 +17,13 @@ import tokenize
 import tomllib
 from typing import cast
 
+import sys
 import typer
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent.parent
+if str(ROOT / "mcubridge") not in sys.path:
+    sys.path.insert(0, str(ROOT / "mcubridge"))
 IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
 FORBIDDEN_SUPPRESSIONS = frozenset(
     {
@@ -76,6 +80,67 @@ def _buf_check(buf_bin: str, label: str, cwd: Path, *arguments: str) -> str | No
         return None
     output = result.stdout.strip() or result.stderr.strip()
     return f"{label}:\n{output or 'command failed without output'}"
+
+
+def audit_ast_integrity() -> list[str]:
+    """Audit Python AST for Rule 4 violations: except-pass, case-pass, and TYPE_CHECKING."""
+    print("Auditing Python AST integrity (Rule 4)...")
+    findings: list[str] = []
+    ignored_parts = {
+        ".git",
+        ".tox",
+        ".tmp_tests",
+        ".venv",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "openwrt-sdk",
+        "__pycache__",
+        "typings",
+    }
+    for path in ROOT.rglob("*.py"):
+        if ignored_parts.intersection(path.parts):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError, OSError) as exc:
+            findings.append(f"AST Parse Error: {path} - {exc}")
+            continue
+
+        rel_path = path.relative_to(ROOT)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Try, ast.TryStar)):
+                for handler in node.handlers:
+                    findings.extend(
+                        f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
+                        f"Catching exceptions with 'pass' is strictly prohibited."
+                        for stmt in handler.body
+                        if isinstance(stmt, ast.Pass)
+                    )
+            elif isinstance(node, ast.match_case):
+                findings.extend(
+                    f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
+                    f"Match case with 'pass' is strictly prohibited."
+                    for stmt in node.body
+                    if isinstance(stmt, ast.Pass)
+                )
+            elif (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
+                isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
+            ):
+                findings.append(
+                    f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
+                    f"TYPE_CHECKING dual-standard is strictly prohibited."
+                )
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                findings.extend(
+                    f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
+                    f"TYPE_CHECKING dual-standard is strictly prohibited."
+                    for alias in node.names
+                    if alias.name == "TYPE_CHECKING" or alias.asname == "TYPE_CHECKING"
+                )
+
+    return findings
 
 
 def audit_semgrep() -> list[str]:
@@ -310,7 +375,13 @@ app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims."
 @app.command()
 def main() -> None:
     """Execute Semgrep, config, and protobuf compliance audits."""
-    all_findings = audit_semgrep() + audit_config_suppressions() + audit_proto_integrity() + audit_proto_usage()
+    all_findings = (
+        audit_ast_integrity()
+        + audit_semgrep()
+        + audit_config_suppressions()
+        + audit_proto_integrity()
+        + audit_proto_usage()
+    )
 
     print("\n--- RESULTS ---")
     if not all_findings:

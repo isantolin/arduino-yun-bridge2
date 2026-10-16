@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 import structlog
 
@@ -12,17 +12,30 @@ from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, Topic
 from ..protocol.structures import create_queued_publish
 from ..protocol.topics import topic_path
 
-if TYPE_CHECKING:
-    from .runtime import BridgeService
+from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.gpio")
+
+
+class GpioRuntime(Protocol):
+    """Protocol for runtime link dependency in GpioService."""
+
+    @property
+    def serial(self) -> Any: ...
+
+    @property
+    def state(self) -> RuntimeState: ...
+
+    async def enqueue_cloud(
+        self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None
+    ) -> None: ...
 
 
 class GpioService:
     """Manages reactive MCU pin subscriptions, edge/hysteresis change streams, and telemetry. [SIL-2]"""
 
-    def __init__(self, runtime: BridgeService) -> None:
-        self._runtime: BridgeService = runtime
+    def __init__(self, runtime: GpioRuntime) -> None:
+        self._runtime: GpioRuntime = runtime
 
     async def subscribe_pin(
         self,

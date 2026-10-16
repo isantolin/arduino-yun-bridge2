@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
-
 import pytest
-from mcubridge.watchdog import WatchdogKeepalive
 
-if TYPE_CHECKING:
-    from mcubridge.config.settings import RuntimeConfig
-    from mcubridge.state.context import RuntimeState
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.state.context import RuntimeState
+from mcubridge.watchdog import WatchdogKeepalive
 
 
 def test_watchdog_keepalive_emits_pulses(

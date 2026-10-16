@@ -12,13 +12,15 @@ and StreamWriter. It delegates delimiter searching to Python's C core via
 """
 
 from __future__ import annotations
+from mcubridge.state.context import RuntimeState
+from mcubridge.config.settings import RuntimeConfig
 
 import asyncio
 import errno
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 import anyio
 import serialx
@@ -99,10 +101,17 @@ if sys.platform == "linux":
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
 
 
-if TYPE_CHECKING:
-    from mcubridge.config.settings import RuntimeConfig
-    from mcubridge.services.runtime import BridgeService
-    from mcubridge.state.context import RuntimeState
+class SerialBridgeService(Protocol):
+    """Protocol for bridge service callbacks invoked by SerialTransport."""
+
+    async def on_serial_connected(self) -> None: ...
+
+    async def on_serial_disconnected(self) -> None: ...
+
+    async def handle_mcu_frame(
+        self, cmd_id: int, seq_id: int, payload: bytes | ProtobufMessage, /
+    ) -> Any: ...
+
 
 serialx.register_uri_handler(
     scheme="wifi://",
@@ -135,12 +144,12 @@ class SerialTransport:
         self,
         config: RuntimeConfig,
         state: RuntimeState,
-        service: BridgeService | None,
+        service: SerialBridgeService | None,
         runner_fn: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.config = config
         self.state = state
-        self.service = service
+        self.service: SerialBridgeService | None = service
         self._runner_fn = runner_fn
         self.serial: serialx.AsyncSerial | None = None
 
@@ -234,6 +243,16 @@ class SerialTransport:
 
                 try:
                     async with anyio.create_task_group() as tg:
+                        async def _supervised_read_loop() -> None:
+                            try:
+                                if self.serial:
+                                    await self.read_loop(self.serial)
+                            finally:
+                                if not self.stop_event.is_set():
+                                    tg.cancel_scope.cancel()
+
+                        tg.start_soon(_supervised_read_loop)
+
                         if (
                             not is_network
                             and self.config.serial_baud != connect_baud
@@ -244,15 +263,6 @@ class SerialTransport:
                         if self.service:
                             await self.service.on_serial_connected()
 
-                        async def _supervised_read_loop() -> None:
-                            try:
-                                if self.serial:
-                                    await self.read_loop(self.serial)
-                            finally:
-                                if not self.stop_event.is_set():
-                                    tg.cancel_scope.cancel()
-
-                        tg.start_soon(_supervised_read_loop)
                         await self.stop_event.wait()
                         tg.cancel_scope.cancel()
 

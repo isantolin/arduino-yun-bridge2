@@ -11,7 +11,7 @@ import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, cast
+from typing import Any, Final, cast
 
 import anyio
 import anyio.to_thread
@@ -94,8 +94,7 @@ __all__ = [
     "_PendingMcuRead",
 ]
 
-if TYPE_CHECKING:
-    from ..transport.serial import SerialTransport
+from ..transport.serial import SerialTransport
 
 
 logger = structlog.get_logger("mcubridge.service")
@@ -1164,7 +1163,7 @@ class BridgeService:
             case SystemAction.BRIDGE:
                 await self.handle_system_bridge(route, inbound)
             case _:
-                pass
+                logger.warning("Unrecognized system action requested", action=str(route.identifier))
 
     # --- Low-level Helpers ---
 

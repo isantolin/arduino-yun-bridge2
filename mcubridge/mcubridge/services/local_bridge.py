@@ -6,7 +6,7 @@ import asyncio
 import re
 import secrets
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import Any, Final, Protocol
 
 import anyio
 from anyio.streams.memory import MemoryObjectSendStream
@@ -22,9 +22,6 @@ from ..protocol.mcubridge_grpc import LocalBridgeBase
 from ..protocol.protocol import AEAD_NONCE_SIZE, Command, DatastoreAction, FileAction, PinAction, SpiAction, Topic
 from ..protocol.structures import is_command_allowed
 from ..protocol.topics import parse_topic
-
-if TYPE_CHECKING:
-    from .runtime import BridgeService
 
 __all__ = [
     "ConsoleQueueTarget",
@@ -98,10 +95,34 @@ def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], de
     return default
 
 
+class LocalBridgeRuntime(Protocol):
+    """Protocol for runtime link dependency in LocalBridgeService."""
+
+    @property
+    def state(self) -> Any: ...
+    @property
+    def serial(self) -> Any: ...
+    @property
+    def gpio(self) -> Any: ...
+    @property
+    def console_queues(self) -> list[ConsoleQueueTarget]: ...
+    @property
+    def ipc_requests(self) -> dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]: ...
+    async def store_and_publish_datastore_value(self, key: str, value: bytes, /) -> None: ...
+    async def safe_file_write(self, p_str: str, data: bytes, /) -> bool: ...
+    async def safe_file_read(self, p_str: str, /) -> bytes | None: ...
+    async def safe_file_remove(self, p_str: str, /) -> bool: ...
+    async def run_process(self, command: str, /) -> int: ...
+    async def poll_process(self, pid: int, /) -> pb.ProcessPollResponse: ...
+    async def kill_process(self, pid: int, /) -> tuple[bool, str | None]: ...
+    def deduce_action(self, route: Any, /) -> Any: ...
+    async def handle_request(self, inbound: Any, /) -> None: ...
+
+
 class LocalBridgeService(LocalBridgeBase):
     """Implementation of the Local gRPC service for local MPU clients and Cloud Gateway forwarding."""
 
-    def __init__(self, runtime_service: BridgeService) -> None:
+    def __init__(self, runtime_service: LocalBridgeRuntime) -> None:
         self.runtime_service = runtime_service
 
     # --- Core Business Logic Execution (Zero-Duplication) ---

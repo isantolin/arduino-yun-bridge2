@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any, Protocol
 
 import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from statemachine import State, StateMachine
 
+from mcubridge.state.context import RuntimeState
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import Command
 
-if TYPE_CHECKING:
-    from .runtime import BridgeService
+
+class ClockSyncRuntime(Protocol):
+    """Protocol for runtime link dependency in ClockSyncService."""
+
+    @property
+    def serial(self) -> Any: ...
+    @property
+    def state(self) -> RuntimeState: ...
+
 
 logger = structlog.get_logger("mcubridge.clock_sync")
 
@@ -51,8 +59,8 @@ class ClockSyncMachine(StateMachine):
 class ClockSyncService:
     """Computes round-trip time (RTT), clock offset, and jitter between Linux MPU and MCU. [SIL-2]"""
 
-    def __init__(self, runtime: BridgeService, sync_interval_seconds: float = 30.0) -> None:
-        self._runtime: BridgeService = runtime
+    def __init__(self, runtime: ClockSyncRuntime, sync_interval_seconds: float = 30.0) -> None:
+        self._runtime: ClockSyncRuntime = runtime
         self._interval: float = sync_interval_seconds
         self._task: asyncio.Task[None] | None = None
         self._is_running: bool = False

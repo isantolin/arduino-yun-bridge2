@@ -6,12 +6,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config import settings as config_settings
-from mcubridge.config.settings import RuntimeConfig
+from mcubridge.config.settings import RuntimeConfig, runtime_config_factory
 from mcubridge.protocol.structures import validate_config
 
 
 def _valid_base_config() -> RuntimeConfig:
-    cfg = RuntimeConfig()
+    cfg = runtime_config_factory()
     cfg.serial_port = "/dev/null"
     cfg.topic_prefix = "mcubridge"
     cfg.file_system_root = "/tmp/fs"

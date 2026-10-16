@@ -294,13 +294,60 @@ jobs:
           path: simavr-logs
           if-no-files-found: ignore
 
+  renode-emulation:
+    name: Renode ARM Emulation (Arduino MKR WiFi 1010)
+    runs-on: ubuntu-26.04
+    needs: [tox-checks]
+    timeout-minutes: 15
+    env:
+      RENODE_METRICS_DIR: renode-logs
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-protoc
+      - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: renode
+      - name: Setup Arduino CLI & Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y socat
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: Install Arduino SAMD Core & Libraries
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:samd
+          arduino-cli lib install wolfSSL WiFiNINA
+      - name: Install Renode
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/bin"
+          RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.linux-dotnet.tar.gz"
+          if curl -fsSL -o /tmp/renode.tar.gz "$RENODE_URL"; then
+            mkdir -p /opt/renode
+            tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1
+            echo "/opt/renode" >> $GITHUB_PATH
+            rm -f /tmp/renode.tar.gz
+          else
+            echo "::warning::Failed to download Renode binary. Fallback to skip mode."
+          fi
+      - name: Run Renode E2E Test Suite
+        run: |
+          mkdir -p renode-logs
+          tox -e renode
+      - name: Upload Renode Logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: renode-logs
+          path: renode-logs
+          if-no-files-found: ignore
+
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-26.04
-    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation]
+    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation]
     if: always()
     timeout-minutes: 3
     steps:
@@ -338,6 +385,13 @@ jobs:
           path: simavr-logs
         continue-on-error: true
 
+      - name: Download Renode Logs
+        uses: actions/download-artifact@v8
+        with:
+          name: renode-logs
+          path: renode-logs
+        continue-on-error: true
+
       - name: Verify Artifacts
         run: |
           echo "### Artifact Verification"
@@ -349,6 +403,10 @@ jobs:
           if [ -d "simavr-logs" ]; then
             echo "Contents of simavr-logs:"
             ls -la simavr-logs/
+          fi
+          if [ -d "renode-logs" ]; then
+            echo "Contents of renode-logs:"
+            ls -la renode-logs/
           fi
 
       - name: Generate Coverage Summary
@@ -375,9 +433,14 @@ jobs:
             cat arduino-logs/symbol_profile.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # 2. simavr Hardware Emulation Summary
+          # 2. simavr AVR Hardware Emulation Summary
           if [ -f simavr-logs/simavr_summary.md ]; then
             cat simavr-logs/simavr_summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 3. Renode ARM Hardware Emulation Summary
+          if [ -f renode-logs/renode_summary.md ]; then
+            cat renode-logs/renode_summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Generate Daemon Profile

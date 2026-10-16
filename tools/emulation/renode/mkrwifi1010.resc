@@ -1,0 +1,20 @@
+# Renode Script for Arduino MKR WiFi 1010 (ATSAMD21G18A)
+# Variables $ELF_PATH and $UART_PORT should be provided before inclusion
+
+using sysbus
+mach create "mkrwifi1010"
+
+machine LoadPlatformDescription $ORIGIN/mkrwifi1010.repl
+
+# Expose UART0 over TCP socket terminal for daemon communication
+emulation CreateServerSocketTerminal $UART_PORT "term" false
+connector Connect sysbus.uart0 term
+
+# Load ELF binary
+macro reset
+---
+    sysbus LoadELF $ELF_PATH
+---
+
+runMacro $reset
+start

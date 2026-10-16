@@ -1,0 +1,22 @@
+// Microchip ATSAMD21G18A (ARM Cortex-M0+) Platform Description
+// Target Board: Arduino MKR WiFi 1010
+// CPU: Cortex-M0+ @ 48 MHz, 256 KB Flash, 32 KB SRAM
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m0+"
+    nvic: nvic
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xFF
+    systickFrequency: 48000000
+    -> cpu@0
+
+flash: Memory.MappedMemory @ sysbus 0x00000000
+    size: 0x40000
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x8000
+
+// Serial Communication Interface (SERCOM) USART for Bridge communication
+uart0: UART.SAM_USART @ sysbus 0x42001C00
+    IRQ -> nvic@14

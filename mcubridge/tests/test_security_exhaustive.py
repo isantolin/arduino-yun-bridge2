@@ -178,7 +178,9 @@ def test_validate_nonce_counter_hypothesis(counter: int, step: int) -> None:
     assert res_ctr == next_ctr
 
     # When current <= last_counter: fails
-    invalid, kept_ctr = validate_nonce_counter(nonce, last_counter=next_ctr + step, expected_prefix=protocol.MCU_AEAD_NONCE_PREFIX)
+    invalid, kept_ctr = validate_nonce_counter(
+        nonce, last_counter=next_ctr + step, expected_prefix=protocol.MCU_AEAD_NONCE_PREFIX
+    )
     assert not invalid
     assert kept_ctr == next_ctr + step
 
@@ -201,6 +203,7 @@ def test_verify_crypto_integrity_failure_branches() -> None:
         assert not verify_crypto_integrity()
 
     # 4. ChaCha20 exception failure
-    with patch("cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", side_effect=ValueError("corrupt")):
+    with patch(
+        "cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", side_effect=ValueError("corrupt")
+    ):
         assert not verify_crypto_integrity()
-

@@ -525,4 +525,3 @@ st.register_type_strategy(pb.FileRead, st_file_read())
 st.register_type_strategy(pb.SpiTransfer, st_spi_transfer())
 st.register_type_strategy(pb.CloudQueuedPublish, st_cloud_queued_publish())
 st.register_type_strategy(pb.RuntimeConfig, st_runtime_config())
-

@@ -458,4 +458,3 @@ def test_cloud_queued_publish_roundtrip_property(pub: pb.CloudQueuedPublish) -> 
     assert decoded.retain == pub.retain
     assert decoded.correlation_data == pub.correlation_data
     assert decoded.response_topic == pub.response_topic
-

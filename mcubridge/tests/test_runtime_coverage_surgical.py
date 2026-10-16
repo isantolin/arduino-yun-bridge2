@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from google.protobuf.message import EncodeError as ProtobufSerializationError
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -381,7 +382,7 @@ async def test_spool_cloud_message_serialization_error(
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     bad_msg = MagicMock(spec=pb.CloudQueuedPublish)
-    bad_msg.SerializeToString.side_effect = Exception("serialization_fail")
+    bad_msg.SerializeToString.side_effect = ProtobufSerializationError("serialization_fail")
     res = await svc.spool_cloud_message_locked(bad_msg)
     assert res is False
 
@@ -394,4 +395,3 @@ async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, m
     msg = pb.CloudQueuedPublish(topic_name="mcu/telemetry", payload=b"test")
     success = await svc.publish_cloud_message(msg)
     assert success is True
-

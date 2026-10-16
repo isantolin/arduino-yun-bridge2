@@ -72,7 +72,6 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     assert parse_topic("///", "prefix/gpio/13") is None
 
 
-
 @given(
     prefix=_SAFE_TEXT,
     command_id=st.sampled_from(list(COMMAND_TO_TOPIC.keys())),

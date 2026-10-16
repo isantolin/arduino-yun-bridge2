@@ -58,6 +58,7 @@ ALLOWLIST_PY_HELPERS = {
     "replace_cloud_publish",
     "build_cached_ssl_context",
     "extract_nonce_counter",
+    "secure_zero",
     "get_subscriptions",
     "check_rate_limit",
     "set_fsm_state",

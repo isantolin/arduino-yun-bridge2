@@ -1,7 +1,14 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
 #include <Arduino.h>
 #include <etl/exception.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <unity.h>
+
+namespace etl {
+void handle_error(const etl::exception& e);
+}
 
 #include "Bridge.h"
 #include "BridgeFaultInjection.h"
@@ -920,6 +927,39 @@ void test_force_safe_state_uses_core_bus_pin_map() {
   TEST_ASSERT_EQUAL_UINT8(0xFF, g_arduino_stub_pin_states[1].mode);
 }
 
+void test_all_timers_and_etl_error_coverage() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream, 0, nullptr);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setTimerLastTick(1);
+  ba.startTimersForCoverage();
+  bridge::test::fault::advance_clock_ms(100000);
+  ba.invokeTimerTask();
+
+  // Exercise weak etl::handle_error definition
+  etl::exception sim_exc("sim_error", "test", 1);
+  etl::handle_error(sim_exc);
+  TEST_ASSERT_FALSE(ba.isTxEnabled());
+}
+
+void test_bootloader_timer_and_hal_coverage() {
+  pid_t pid = fork();
+  if (pid == 0) {
+    BiStream stream;
+    reset_bridge_core(Bridge, stream, 0, nullptr);
+    auto& ba = TestAccessor::create(Bridge);
+    ba.setTimerLastTick(1);
+    ba.startBootloaderTimerForCoverage();
+    bridge::test::fault::advance_clock_ms(bridge::config::BOOTLOADER_DELAY_MS + 100);
+    ba.invokeTimerTask();
+    _exit(1);
+  }
+  int status = 0;
+  waitpid(pid, &status, 0);
+  TEST_ASSERT_TRUE(WIFEXITED(status));
+  TEST_ASSERT_EQUAL_INT(0, WEXITSTATUS(status));
+}
+
 }  // namespace
 
 int main() {
@@ -938,5 +978,7 @@ int main() {
   RUN_TEST(test_fault_injection_harness_paths);
   RUN_TEST(test_architectural_extensions_edge_paths);
   RUN_TEST(test_force_safe_state_uses_core_bus_pin_map);
+  RUN_TEST(test_all_timers_and_etl_error_coverage);
+  RUN_TEST(test_bootloader_timer_and_hal_coverage);
   return UNITY_END();
 }

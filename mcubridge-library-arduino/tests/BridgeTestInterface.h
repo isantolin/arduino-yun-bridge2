@@ -51,6 +51,7 @@ class TestAccessor : public BridgeClass {
   void dispatch(const rpc_pb_RpcEnvelope& frame) { _dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
+  bool isTxEnabled() const { return _state_flags.test(FLAG_TX_ENABLED); }
   void setTxEnabled(bool enabled) {
     _state_flags.set(FLAG_TX_ENABLED, enabled);
   }
@@ -100,8 +101,13 @@ class TestAccessor : public BridgeClass {
     _handleLinkReset(ctx);
   }
   void startTimersForCoverage() {
+    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT);
     _timers.start(bridge::scheduler::TIMER_RX_DEDUPE);
     _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
+    _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
+  }
+  void startBootloaderTimerForCoverage() {
+    _timers.start(bridge::scheduler::TIMER_BOOTLOADER_DELAY);
   }
   void setSerialTaskXoffSent(bool value) {
     _state_flags.set(FLAG_SERIAL_XOFF, value);

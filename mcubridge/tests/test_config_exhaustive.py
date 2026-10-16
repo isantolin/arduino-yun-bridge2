@@ -206,4 +206,3 @@ def test_runtime_config_factory_with_explicit_defaults() -> None:
     defaults = get_default_config()
     cfg = runtime_config_factory(**defaults)
     assert cfg.topic_prefix == defaults["topic_prefix"]
-

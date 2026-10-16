@@ -10,7 +10,9 @@ BUILD_DIR="${ROOT_DIR}/coverage/build-arduino"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 ARDUINO_COVERAGE_MIN_LINE="${ARDUINO_COVERAGE_MIN_LINE:-95}"
 ARDUINO_COVERAGE_MIN_BRANCH="${ARDUINO_COVERAGE_MIN_BRANCH:-95}"
+ARDUINO_COVERAGE_MIN_FUNCTION="${ARDUINO_COVERAGE_MIN_FUNCTION:-95}"
 ARDUINO_COVERAGE_RUN_ID="${ARDUINO_COVERAGE_RUN_ID:-$$}"
+PYTHON_BIN="${PYTHON_EXE:-$(command -v python3 || command -v python)}"
 
 BUILD_DIR="${ROOT_DIR}/coverage/build-arduino-${ARDUINO_COVERAGE_RUN_ID}"
 
@@ -19,15 +21,30 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}/objs"
 mkdir -p "${OUTPUT_ROOT}"
 METADATA_DIR="${BUILD_DIR}/generated"
-python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
-    --host-test \
-    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
+mkdir -p "${METADATA_DIR}"
+if command -v arduino-cli >/dev/null 2>&1; then
+    "${PYTHON_BIN}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+        --host-test \
+        --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
+else
+    cp -f "${STUB_INCLUDE}/ArduinoCoreMetadata.h" "${METADATA_DIR}/ArduinoCoreMetadata.h"
+fi
 
 # Setup dependencies in Arduino libraries directory
 echo "[coverage_arduino] Installing library dependencies..."
-ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
-mkdir -p "${ARDUINO_LIBS}"
-"${LIB_ROOT}/tools/install.sh" "${ARDUINO_LIBS}"
+if [ -z "${ARDUINO_LIB_DIR:-}" ]; then
+    if [ -f "${ROOT_DIR}/build/simavr/arduino-avr-mega/libraries/Embedded_Template_Library/include/etl/algorithm.h" ]; then
+        ARDUINO_LIBS="${ROOT_DIR}/build/simavr/arduino-avr-mega/libraries"
+    else
+        ARDUINO_LIBS="$HOME/Arduino/libraries"
+        mkdir -p "${ARDUINO_LIBS}"
+        "${LIB_ROOT}/tools/install.sh" "${ARDUINO_LIBS}"
+    fi
+else
+    ARDUINO_LIBS="${ARDUINO_LIB_DIR}"
+    mkdir -p "${ARDUINO_LIBS}"
+    "${LIB_ROOT}/tools/install.sh" "${ARDUINO_LIBS}"
+fi
 
 ETL_PATH="${ARDUINO_LIBS}/Embedded_Template_Library"
 WOLFSSL_PATH="${ARDUINO_LIBS}/wolfSSL"
@@ -170,7 +187,7 @@ if ! $PYTHON_BIN -m gcovr --version >/dev/null 2>&1; then
     echo "[coverage_arduino] gcovr no encontrado. Instalando..."
     $PYTHON_BIN -m pip install --break-system-packages gcovr
 fi
-$PYTHON_BIN -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*\\.h$" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
+$PYTHON_BIN -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*\\.h$" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" --fail-under-function "${ARDUINO_COVERAGE_MIN_FUNCTION}" --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 cat "${OUTPUT_ROOT}/summary.txt"
 echo "[coverage_arduino] Proceso finalizado."

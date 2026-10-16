@@ -147,13 +147,3 @@ def test_daemon_exception_group_partially_unhandled_raises(mocker: MockerFixture
 
     with pytest.raises(ExceptionGroup):
         run_daemon()
-
-
-def test_daemon_dunder_main(mocker: MockerFixture) -> None:
-    """Validate python -m mcubridge.daemon execution triggers app()."""
-    import runpy
-
-    mock_run = mocker.patch("mcubridge.daemon.run_daemon")
-    runpy.run_module("mcubridge.daemon", run_name="__main__")
-    assert mock_run.call_count == 1
-

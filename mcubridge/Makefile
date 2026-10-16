@@ -64,8 +64,7 @@ define Package/$(PKG_NAME)
 		python3-annotated-doc \
 		python3-shellingham \
 		python3-typer \
-		python3-lmdb \
-		python3-packaging
+		python3-lmdb
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

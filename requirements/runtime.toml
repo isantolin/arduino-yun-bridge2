@@ -189,12 +189,6 @@ openwrt = "python3-lmdb"
 pip = "lmdb==3.0.0"
 rationale = "Ultra-fast memory-mapped C storage engine for persistent queues and key-value datastores"
 
-[[dependency]]
-name = "packaging"
-openwrt = "python3-packaging"
-pip = "packaging==26.3"
-rationale = "Standardized core utilities for Python package version parsing and requirement specifiers"
-
 
 # =============================================================================
 # C++ / Arduino Microcontroller Dependencies (SIL-2 Zero-Heap)
@@ -386,9 +380,9 @@ pip = "setuptools==84.0.0"
 rationale = "Core packaging and distribution utilities for Python environments"
 
 [[dev_dependency]]
-name = "rich"
-pip = "rich==15.0.0"
-rationale = "Terminal formatting and structured diagnostics output"
+name = "packaging"
+pip = "packaging==26.3"
+rationale = "Standardized core utilities for Python package version parsing and requirement specifiers"
 
 [[dev_dependency]]
 name = "clang-format"

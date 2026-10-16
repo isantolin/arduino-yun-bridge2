@@ -29,7 +29,6 @@ def mock_bridge_state(test_config: RuntimeConfig) -> RuntimeState:
     return create_runtime_state(test_config)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("topic_name", "telemetry_field"),
     [

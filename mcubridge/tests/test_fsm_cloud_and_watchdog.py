@@ -6,7 +6,6 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock
 
-import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.runtime import BridgeService
@@ -87,7 +86,6 @@ def test_watchdog_keepalive_fsm_integration(runtime_config: RuntimeConfig) -> No
     assert len(written_bytes) == 2  # No new pulse
 
 
-@pytest.mark.asyncio
 async def test_runtime_mcu_file_read_fsm_success(
     service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
 ) -> None:
@@ -129,7 +127,6 @@ async def test_runtime_mcu_file_read_fsm_success(
     assert service.pending_mcu_read is None
 
 
-@pytest.mark.asyncio
 async def test_runtime_mcu_file_read_fsm_dispatch_fail(
     service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
 ) -> None:
@@ -147,7 +144,6 @@ async def test_runtime_mcu_file_read_fsm_dispatch_fail(
     assert service.pending_mcu_read is None
 
 
-@pytest.mark.asyncio
 async def test_runtime_mcu_file_read_fsm_timeout(
     service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
 ) -> None:

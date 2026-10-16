@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 import structlog
 from cobs import cobsr
 from mcubridge.config.settings import RuntimeConfig
@@ -24,7 +23,6 @@ from mcubridge.transport.serial import SerialTransport
 logger = structlog.get_logger(__name__)
 
 
-@pytest.mark.asyncio
 async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -149,7 +147,6 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     await server.wait_closed()
 
 
-@pytest.mark.asyncio
 async def test_e2e_wireless_tcp_analog_read_and_datastore(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:

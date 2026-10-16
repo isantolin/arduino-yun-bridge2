@@ -28,14 +28,12 @@ def mock_grpc() -> tuple[MagicMock, MagicMock]:
     return mock_channel, mock_stub
 
 
-@pytest.mark.asyncio
 async def test_client_connect_disconnect(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     mock_channel, mock_stub = mock_grpc
     assert mock_channel is not None
     assert mock_stub is not None
 
 
-@pytest.mark.asyncio
 async def test_client_digital_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     msg = pb.DigitalWrite(pin=13, value=1)
@@ -49,7 +47,6 @@ async def test_client_digital_write(mock_grpc: tuple[MagicMock, MagicMock]) -> N
     assert sent.value == 1
 
 
-@pytest.mark.asyncio
 async def test_client_analog_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     msg = pb.AnalogWrite(pin=3, value=128)
@@ -63,7 +60,6 @@ async def test_client_analog_write(mock_grpc: tuple[MagicMock, MagicMock]) -> No
     assert sent.value == 128
 
 
-@pytest.mark.asyncio
 async def test_client_datastore_put(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     mock_fn = cast(AsyncMock, mock_stub.DatastorePut)
@@ -79,7 +75,6 @@ async def test_client_datastore_put(mock_grpc: tuple[MagicMock, MagicMock]) -> N
     assert sent.value == b"test_value"
 
 
-@pytest.mark.asyncio
 async def test_client_file_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     msg = pb.FileWrite(path="test.txt", data=b"content")
@@ -93,7 +88,6 @@ async def test_client_file_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None
     assert sent.data == b"content"
 
 
-@pytest.mark.asyncio
 async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     mock_fn = cast(AsyncMock, mock_stub.AnalogRead)
@@ -103,7 +97,6 @@ async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]
         await mock_stub.AnalogRead(msg)
 
 
-@pytest.mark.asyncio
 async def test_client_pin_subscribe(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     mock_fn = cast(AsyncMock, mock_stub.PinSubscribe)
@@ -208,7 +201,6 @@ def test_env_functions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert "MCU Bridge client configuration" in logs[0]
 
 
-@pytest.mark.asyncio
 async def test_spi_device_transfer() -> None:
     mock_channel = MagicMock(spec=Channel)
     mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))

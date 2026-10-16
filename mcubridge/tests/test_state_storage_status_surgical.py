@@ -49,7 +49,6 @@ def state_setup(tmp_path: Path) -> Iterator[tuple[RuntimeState, RuntimeConfig]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_status_writer_periodic_ticks(
     state_setup: tuple[RuntimeState, RuntimeConfig],
 ) -> None:
@@ -61,7 +60,6 @@ async def test_status_writer_periodic_ticks(
         await task
 
 
-@pytest.mark.asyncio
 async def test_status_writer_handles_exception(
     state_setup: tuple[RuntimeState, RuntimeConfig],
 ) -> None:
@@ -87,7 +85,6 @@ def test_write_status_file_handles_oserror() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_deque.db"
     # Write garbage to simulate corrupted database
@@ -106,7 +103,6 @@ async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     await deque.close()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/empty_deque.db"
     deque = LmdbDeque(db_path)
@@ -115,7 +111,6 @@ async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
     await deque.close()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_kv.db"
     with Path(db_path).open("wb") as f:
@@ -129,7 +124,6 @@ async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     await kv.close()
 
 
-@pytest.mark.asyncio
 @given(
     maxlen=st.integers(min_value=1, max_value=8),
     items=st.lists(st.binary(min_size=1, max_size=32), min_size=1, max_size=20),
@@ -154,7 +148,6 @@ async def test_lmdb_deque_multi_overflow_trimming(
     await deque.close()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_pop_delete_vacuum_lifecycle(tmp_path: object) -> None:
     """Verify LmdbCache pop, delete, and vacuum operations on disk and memory."""
     db_path = str(tmp_path) + "/kv_ops.db"
@@ -188,7 +181,6 @@ async def test_lmdb_cache_pop_delete_vacuum_lifecycle(tmp_path: object) -> None:
     await mem_kv.close()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
     """Verify fallback and error paths for LmdbCache and _vacuum_lmdb_env."""
     # 1. Vacuum with None env
@@ -226,7 +218,6 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
         compact_dir.rmdir()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_len_contains_items(tmp_path: Path) -> None:
     """Verify LmdbCache __len__, contains, __contains__, and items on disk and memory."""
     db_path = str(tmp_path / "cache_ext.db")
@@ -271,7 +262,6 @@ async def test_lmdb_cache_len_contains_items(tmp_path: Path) -> None:
     await kv.close()
 
 
-@pytest.mark.asyncio
 async def test_open_lmdb_env_dir_branch(tmp_path: Path) -> None:
     cache = LmdbCache(str(tmp_path))
     try:
@@ -281,7 +271,6 @@ async def test_open_lmdb_env_dir_branch(tmp_path: Path) -> None:
         await cache.close()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_deque_popleft_none_val(tmp_path: Path) -> None:
     db_path = str(tmp_path / "deque.db")
     q = LmdbDeque(db_path)
@@ -301,7 +290,6 @@ async def test_lmdb_deque_popleft_none_val(tmp_path: Path) -> None:
         await q.close()
 
 
-@pytest.mark.asyncio
 async def test_lmdb_deque_no_env_safety() -> None:
     deque = LmdbDeque(":memory:")
     deque.is_mem = False

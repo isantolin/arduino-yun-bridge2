@@ -41,7 +41,6 @@ def mock_state(mock_config: RuntimeConfig) -> RuntimeState:
     return create_runtime_state(mock_config)
 
 
-@pytest.mark.asyncio
 async def test_switch_local_baudrate_failure_raises(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = MagicMock()
@@ -56,7 +55,6 @@ async def test_switch_local_baudrate_failure_raises(mock_config: RuntimeConfig, 
         switch_local_baudrate(115200)
 
 
-@pytest.mark.asyncio
 async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = AsyncMock()
@@ -68,7 +66,6 @@ async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_sta
     mock_serial.set_modem_pins.assert_awaited_once_with(dtr=False)
 
 
-@pytest.mark.asyncio
 async def test_read_loop_limit_overrun(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = AsyncMock()
@@ -83,7 +80,6 @@ async def test_read_loop_limit_overrun(mock_config: RuntimeConfig, mock_state: R
     assert mock_state.serial_decode_errors == 1
 
 
-@pytest.mark.asyncio
 async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = AsyncMock()
@@ -94,7 +90,6 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     mock_serial.readuntil.assert_awaited_once_with(protocol.FRAME_DELIMITER)
 
 
-@pytest.mark.asyncio
 async def test_process_packet_baudrate_negotiation_response(
     mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
@@ -114,7 +109,6 @@ async def test_process_packet_baudrate_negotiation_response(
     assert mock_serial.transport.serial.baudrate == 115200
 
 
-@pytest.mark.asyncio
 async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
@@ -131,7 +125,6 @@ async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeCon
     pending.mark_success.assert_called_once_with(ack)
 
 
-@pytest.mark.asyncio
 async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
@@ -147,7 +140,6 @@ async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig
     pending.mark_success.assert_called_once_with(b"\xff\xff\xff\xff")
 
 
-@pytest.mark.asyncio
 async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = AsyncMock()
@@ -160,7 +152,6 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
     mock_serial.close.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
@@ -172,7 +163,6 @@ async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: Runti
     assert transport.current_command is None
 
 
-@pytest.mark.asyncio
 async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     transport.serial = None
@@ -180,7 +170,6 @@ async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: Runtim
     assert ok is False
 
 
-@pytest.mark.asyncio
 async def test_check_baudrate_fallback_triggers(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     transport.consecutive_crc_errors = mock_config.serial_fallback_threshold - 1
@@ -190,7 +179,6 @@ async def test_check_baudrate_fallback_triggers(mock_config: RuntimeConfig, mock
     assert transport.consecutive_crc_errors == 0
 
 
-@pytest.mark.asyncio
 async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     from mcubridge.protocol.structures import PendingCommand
 
@@ -208,7 +196,6 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
     assert pending.response_payload == b"content"
 
 
-@pytest.mark.asyncio
 async def test_connect_without_runner_fn(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_run = AsyncMock()
@@ -217,7 +204,6 @@ async def test_connect_without_runner_fn(mock_config: RuntimeConfig, mock_state:
     mock_run.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_logging_not_debug_branches(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
@@ -237,7 +223,6 @@ async def test_logging_not_debug_branches(
     assert mock_state.metrics.serial_bytes_received.value > 0
 
 
-@pytest.mark.asyncio
 async def test_process_packet_uninitialized_protobuf(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
@@ -257,7 +242,6 @@ async def test_process_packet_uninitialized_protobuf(
     assert mock_state.serial_decode_errors == initial_errors + 1
 
 
-@pytest.mark.asyncio
 async def test_connect_and_run_negotiation_failure(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:

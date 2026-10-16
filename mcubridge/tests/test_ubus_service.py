@@ -193,7 +193,6 @@ def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, mocker: M
     assert service.connection is None
 
 
-@pytest.mark.asyncio
 async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_digital_write(MagicMock(), {"pin": 13, "value": 1})
@@ -203,7 +202,6 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
     mock_runtime.write_digital_pin.assert_awaited_once_with(13, 1)
 
 
-@pytest.mark.asyncio
 async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_analog_write(MagicMock(), {"pin": 9, "value": 128})
@@ -213,7 +211,6 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
     mock_runtime.write_analog_pin.assert_awaited_once_with(9, 128)
 
 
-@pytest.mark.asyncio
 async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_mailbox_push(MagicMock(), {"message": "hello_mcu"})
@@ -225,7 +222,6 @@ async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None
     assert req.data == b"hello_mcu"
 
 
-@pytest.mark.asyncio
 async def test_ubus_handle_datastore_set(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_datastore_set(MagicMock(), {"key": "temperature", "value": "24.5"})
@@ -392,7 +388,6 @@ def test_ubus_handle_datastore_get_cache_none(mock_runtime: MockRuntimeFacade) -
     assert res == {"status": "error", "message": "Datastore cache unavailable"}
 
 
-@pytest.mark.asyncio
 async def test_ubus_run_sync_with_running_loop(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
 
@@ -404,7 +399,6 @@ async def test_ubus_run_sync_with_running_loop(mock_runtime: MockRuntimeFacade) 
     assert res == "async_ok"
 
 
-@pytest.mark.asyncio
 async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_file_write(MagicMock(), {"path": "test.txt", "data": "file content"})
@@ -444,7 +438,6 @@ def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
     assert res_unsync["synchronized"] is False
 
 
-@pytest.mark.asyncio
 async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     mock_ubus: Any = MagicMock()
     mock_ubus.loop = MagicMock()
@@ -641,7 +634,6 @@ def test_ubus_handle_pin_subscribe(mock_runtime: MockRuntimeFacade) -> None:
     assert err["status"] == "error"
 
 
-@pytest.mark.asyncio
 async def test_ubus_schedule_async_in_running_loop(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     executed: list[bool] = []
@@ -696,7 +688,6 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
         coro.close()
 
 
-@pytest.mark.asyncio
 async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     service = UbusService(mock_runtime)
     current_loop = asyncio.get_running_loop()

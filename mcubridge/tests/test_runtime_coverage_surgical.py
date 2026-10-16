@@ -40,7 +40,6 @@ def mock_bridge_state(test_config: RuntimeConfig) -> RuntimeState:
     return create_runtime_state(test_config)
 
 
-@pytest.mark.asyncio
 async def test_enqueue_cloud_ipc_correlation(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
@@ -57,7 +56,6 @@ async def test_enqueue_cloud_ipc_correlation(test_config: RuntimeConfig, mock_br
     assert pushed.topic_name == "mcu/data"
 
 
-@pytest.mark.asyncio
 async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     cq: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
@@ -71,7 +69,6 @@ async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_brid
     assert pushed.payload == b"hello"
 
 
-@pytest.mark.asyncio
 async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_bridge_state.cloud_queue_limit = 5
@@ -89,7 +86,6 @@ async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_b
     assert mock_bridge_state.cloud_spool_trim_events == 1
 
 
-@pytest.mark.asyncio
 async def test_spool_cloud_message_exceptions(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
 
@@ -108,7 +104,6 @@ async def test_spool_cloud_message_exceptions(test_config: RuntimeConfig, mock_b
     assert mock_bridge_state.cloud_spool_degraded is True
 
 
-@pytest.mark.asyncio
 async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_spool = MagicMock()
@@ -128,7 +123,6 @@ async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_
     mock_spool.vacuum.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_handle_mcu_status_formatting(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_enqueue = AsyncMock()
@@ -145,7 +139,6 @@ async def test_handle_mcu_status_formatting(test_config: RuntimeConfig, mock_bri
     assert mock_enqueue.call_count == 2
 
 
-@pytest.mark.asyncio
 async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     cache = AsyncMock()
@@ -177,7 +170,6 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     assert mock_publish.await_args_list[1][0][0].payload == b"cached-value"
 
 
-@pytest.mark.asyncio
 async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock()
     mock_serial.send.return_value = True
@@ -197,7 +189,6 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     mock_serial.send.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_handle_file_mcu_read_success_and_timeout(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState
 ) -> None:
@@ -226,7 +217,6 @@ async def test_handle_file_mcu_read_success_and_timeout(
     mock_enqueue.assert_awaited()
 
 
-@pytest.mark.asyncio
 async def test_cloud_events_and_direct_rpc_dispatch(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
 ) -> None:
@@ -265,7 +255,6 @@ async def test_cloud_events_and_direct_rpc_dispatch(
     assert session_stream.sent_messages[1].command_response.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     from mcubridge.protocol import protocol
     from mcubridge.protocol.protocol import SystemAction, Topic
@@ -305,7 +294,6 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     mock_publisher.assert_awaited()
 
 
-@pytest.mark.asyncio
 async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     from mcubridge.protocol.protocol import Status
 
@@ -325,7 +313,6 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
     assert code == 0
 
 
-@pytest.mark.asyncio
 async def test_enqueue_cloud_not_debug_and_drop(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     test_config.cloud_enabled = True
     test_config.cloud_spool_dir = ""
@@ -341,7 +328,6 @@ async def test_enqueue_cloud_not_debug_and_drop(test_config: RuntimeConfig, mock
     assert mock_bridge_state.cloud_drop_counts.get("test/topic") == 1
 
 
-@pytest.mark.asyncio
 async def test_flush_cloud_spool_publish_fails_and_degraded(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState
 ) -> None:

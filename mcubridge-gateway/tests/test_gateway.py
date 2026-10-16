@@ -53,7 +53,6 @@ def cloud_service(mock_gateway: ProtobufGateway) -> CloudBridgeService:
     return CloudBridgeService(mock_gateway)
 
 
-@pytest.mark.asyncio
 async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
     ping_envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
@@ -71,12 +70,9 @@ async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
     assert sent_pong.WhichOneof("payload") == "pong"
 
 
-@pytest.mark.asyncio
 async def test_session_client_cert_common_name(cloud_service: CloudBridgeService) -> None:
     inbound = [
-        pb.CloudEnvelope(
-            protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data")
-        )
+        pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
     ]
     mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
         inbound=inbound,
@@ -88,7 +84,6 @@ async def test_session_client_cert_common_name(cloud_service: CloudBridgeService
     assert "device-mips-01" not in cloud_service.gateway.connections
 
 
-@pytest.mark.asyncio
 async def test_session_event_and_command_response(cloud_service: CloudBridgeService) -> None:
     event_envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
@@ -139,7 +134,6 @@ def test_cli_help() -> None:
     assert "MCU Bridge Protobuf Gateway" in result.stdout
 
 
-@pytest.mark.asyncio
 async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) -> None:
     mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
         inbound=[pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION)],
@@ -172,7 +166,6 @@ def test_protobuf_gateway_mtls(tmp_path: Path, mocker: MockerFixture) -> None:
     assert mock_ctx.load_verify_locations.called
 
 
-@pytest.mark.asyncio
 async def test_protobuf_gateway_run(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False)
     mock_server_cls = mocker.patch("gateway.Server")
@@ -220,7 +213,6 @@ def test_cli_main_keyboard_interrupt(mocker: MockerFixture, caplog: pytest.LogCa
     assert "Gateway terminated by user." in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_protobuf_gateway_http3_run(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False, http3_enabled=True, http3_port=9999)
     mock_server_cls = mocker.patch("gateway.Server")
@@ -231,7 +223,6 @@ async def test_protobuf_gateway_http3_run(mocker: MockerFixture) -> None:
     assert mock_server.start.called
 
 
-@pytest.mark.asyncio
 async def test_cloud_bridge_service_cert_parse_error() -> None:
     gw = ProtobufGateway(use_tls=False)
     service = CloudBridgeService(gw)
@@ -242,7 +233,6 @@ async def test_cloud_bridge_service_cert_parse_error() -> None:
     assert len(gw.connections) == 0
 
 
-@pytest.mark.asyncio
 async def test_cloud_bridge_service_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     service = CloudBridgeService(gw)
@@ -253,7 +243,6 @@ async def test_cloud_bridge_service_session_cancelled() -> None:
         await service.Session(mock_stream.as_stream())
 
 
-@pytest.mark.asyncio
 async def test_session_invalid_envelope_validation(cloud_service: CloudBridgeService) -> None:
     # Invalid envelope with wrong protocol_version (fails native check)
     invalid_envelope = pb.CloudEnvelope(protocol_version=99, device_id="DEV_001")
@@ -322,7 +311,6 @@ def test_gateway_session_machine_lifecycle() -> None:
     run_state_machine_as_test(GatewaySessionStateMachine)
 
 
-@pytest.mark.asyncio
 async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudBridgeService) -> None:
     empty_envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
@@ -380,7 +368,6 @@ def test_extract_peer_identity() -> None:
     assert auth_meta is False
 
 
-@pytest.mark.asyncio
 async def test_auth_interceptor_flow() -> None:
     # Valid call flow through interceptor
     invocations: list[Any] = []
@@ -415,7 +402,6 @@ async def test_auth_interceptor_flow() -> None:
     assert mock_event_bad.method_func == dummy_handler
 
 
-@pytest.mark.asyncio
 async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeService) -> None:
     metrics = pb.DaemonMetrics(
         cloud_queue_depth=4,
@@ -487,7 +473,6 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
     assert line.endswith("1700000000000000000")
 
 
-@pytest.mark.asyncio
 async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_resp = MagicMock(spec=httpx.Response)
@@ -507,7 +492,6 @@ async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
     assert spy_format.call_count == 1
 
 
-@pytest.mark.asyncio
 async def test_send_command_success_and_correlation(mock_gateway: ProtobufGateway) -> None:
     mock_stream = AsyncMock()
     mock_gateway.connections["device-test"] = mock_stream
@@ -534,13 +518,11 @@ async def test_send_command_success_and_correlation(mock_gateway: ProtobufGatewa
     assert len(mock_gateway.pending_commands) == 0
 
 
-@pytest.mark.asyncio
 async def test_send_command_device_not_connected(mock_gateway: ProtobufGateway) -> None:
     with pytest.raises(KeyError, match="Device non-existent is not connected"):
         await mock_gateway.send_command("non-existent", "/status")
 
 
-@pytest.mark.asyncio
 async def test_send_command_device_disconnected_during_execution(mock_gateway: ProtobufGateway) -> None:
     mock_stream = AsyncMock()
     mock_gateway.connections["device-abort"] = mock_stream
@@ -557,7 +539,6 @@ async def test_send_command_device_disconnected_during_execution(mock_gateway: P
     await task
 
 
-@pytest.mark.asyncio
 async def test_protobuf_gateway_metrics_port_run(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False, metrics_port=9100)
     mock_metrics_server = mocker.patch("prometheus_client.start_http_server")
@@ -569,7 +550,6 @@ async def test_protobuf_gateway_metrics_port_run(mocker: MockerFixture) -> None:
     assert mock_metrics_server.called
 
 
-@pytest.mark.asyncio
 async def test_tsdb_sink_post_line_edge_paths() -> None:
     # 1. Empty endpoint returns early
     sink_empty = TSDBSink(endpoint_url=None)
@@ -594,7 +574,6 @@ async def test_tsdb_sink_post_line_edge_paths() -> None:
     assert mock_client.post.call_count == 2
 
 
-@pytest.mark.asyncio
 async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
     # 1. Disabled sink returns early
     sink_disabled = TSDBSink(endpoint_url=None)
@@ -611,7 +590,6 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
     mock_client.post.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker: MockerFixture) -> None:
     import gateway
 
@@ -650,7 +628,6 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     assert telemetry_val2 == init_val + 2.0
 
 
-@pytest.mark.asyncio
 async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway) -> None:
 
     # 1. Key not in pending commands (ignored safely)
@@ -666,7 +643,6 @@ async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway)
     assert fut.result().payload == b"already_done"
 
 
-@pytest.mark.asyncio
 async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
     mock_gateway: ProtobufGateway, mocker: MockerFixture
 ) -> None:
@@ -696,7 +672,6 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
     assert not fut_other.done()
 
 
-@pytest.mark.asyncio
 async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGateway) -> None:
     import gateway
 
@@ -860,7 +835,6 @@ def test_tsdb_sink_format_line_protocol_property(
         ),
     ],
 )
-@pytest.mark.asyncio
 async def test_dispatch_command_branches(
     mock_gateway: ProtobufGateway,
     dispatch_msg: pb.CommandDispatch | None,
@@ -893,7 +867,6 @@ async def test_dispatch_command_branches(
             assert expected_payload_substr in resp.payload
 
 
-@pytest.mark.asyncio
 async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGateway) -> None:
     local_svc = GatewayLocalBridgeService(mock_gateway)
 
@@ -935,9 +908,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         await local_svc.SubscribeConsole(stream_sub_no_dev.as_stream())
     assert sub_exc_info.value.status == Status.INVALID_ARGUMENT
 
-    stream_sub_unknown = MockGrpcStream(
-        request=pb.SubscribeRequest(), metadata={"x-device-id": "dev-missing"}
-    )
+    stream_sub_unknown = MockGrpcStream(request=pb.SubscribeRequest(), metadata={"x-device-id": "dev-missing"})
     with pytest.raises(GRPCError) as sub_unavail:
         await local_svc.SubscribeConsole(stream_sub_unknown.as_stream())
     assert sub_unavail.value.status == Status.UNAVAILABLE
@@ -1088,7 +1059,6 @@ def test_tsdb_sink_invalid_scheme() -> None:
         TSDBSink(endpoint_url="ftp://evil.com/write")
 
 
-@pytest.mark.asyncio
 async def test_protobuf_gateway_reflection_services() -> None:
     gw = ProtobufGateway(use_tls=False)
     services = [CloudBridgeService(gw), GatewayLocalBridgeService(gw)]
@@ -1098,7 +1068,6 @@ async def test_protobuf_gateway_reflection_services() -> None:
     assert "ServerReflection" in service_names
 
 
-@pytest.mark.asyncio
 async def test_gateway_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     svc = CloudBridgeService(gw)

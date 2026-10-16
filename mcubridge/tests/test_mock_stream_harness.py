@@ -24,7 +24,6 @@ def test_mock_peer_attributes() -> None:
     assert stream_none_peer.peer is None
 
 
-@pytest.mark.asyncio
 async def test_mock_grpc_stream_unary_request() -> None:
     stream: MockGrpcStream[str, str] = MockGrpcStream(request="hello", metadata={"x-dev": "1"})
     assert stream.metadata == {"x-dev": "1"}
@@ -37,7 +36,6 @@ async def test_mock_grpc_stream_unary_request() -> None:
     assert stream.send_message.called
 
 
-@pytest.mark.asyncio
 async def test_mock_grpc_stream_streaming_inbound() -> None:
     stream: MockGrpcStream[int, int] = MockGrpcStream(inbound=[1, 2, 3])
 
@@ -56,7 +54,6 @@ async def test_mock_grpc_stream_streaming_inbound() -> None:
     assert not stream.send_message.called
 
 
-@pytest.mark.asyncio
 async def test_mock_grpc_stream_exceptions() -> None:
     # 1. aiter_exception
     stream_iter: MockGrpcStream[str, str] = MockGrpcStream(
@@ -84,7 +81,6 @@ async def test_mock_grpc_stream_exceptions() -> None:
         _ = stream_empty.last_sent_message
 
 
-@pytest.mark.asyncio
 async def test_mock_grpc_stream_context_and_side_effects() -> None:
     async def _async_effect(msg: str) -> None:
         await asyncio.sleep(0.001)

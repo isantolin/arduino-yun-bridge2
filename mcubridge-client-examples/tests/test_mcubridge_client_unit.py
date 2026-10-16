@@ -36,7 +36,6 @@ def test_cli_configure_logging() -> None:
     assert structlog.is_configured()
 
 
-@pytest.mark.asyncio
 async def test_cli_bridge_session() -> None:
     """bridge_session context manager yields Channel and LocalBridgeStub."""
     mock_chan = MagicMock()
@@ -127,7 +126,6 @@ def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
         build_bridge_args(host="127.0.0.1", port=8443)
 
 
-@pytest.mark.asyncio
 async def test_spi_device_lifecycle_and_transfer() -> None:
     """SpiDevice context manager, properties, begin/end, and transfer."""
     mock_stub = MagicMock(spec=LocalBridgeStub)
@@ -213,7 +211,6 @@ def test_topic_build_and_match_invariants(prefix: str, seg1: str, seg2: str) -> 
     assert Topic.matches(built, built)
 
 
-@pytest.mark.asyncio
 async def test_smoke_connection_run_test() -> None:
     """Verify test_smoke_connection.run_test calls bridge_session correctly."""
     import test_smoke_connection
@@ -241,7 +238,6 @@ def test_smoke_connection_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> Non
     mock_run.assert_awaited_once_with("127.0.0.1", 8443, "yun-01")
 
 
-@pytest.mark.asyncio
 async def test_gateway_northbound_run_test() -> None:
     """Verify test_gateway_northbound.run_test calls DispatchCommand correctly."""
     import test_gateway_northbound

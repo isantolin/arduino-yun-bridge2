@@ -59,7 +59,6 @@ def test_serialx_uri_dispatch_resolution() -> None:
     assert posix_ser.is_open is False
 
 
-@pytest.mark.asyncio
 async def test_serialx_socket_transport_lifecycle() -> None:
     """Verify serialx native socket transport lifecycle and connection to a real server."""
 
@@ -90,7 +89,6 @@ async def test_serialx_socket_transport_lifecycle() -> None:
     await server.wait_closed()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_tcp_connect_and_stream(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -152,7 +150,6 @@ async def test_serial_transport_tcp_connect_and_stream(
     await server.wait_closed()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_tcp_network_error_and_disconnect_paths(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -185,7 +182,6 @@ async def test_serial_transport_tcp_network_error_and_disconnect_paths(
         await server.wait_closed()
 
 
-@pytest.mark.asyncio
 async def test_switch_local_baudrate_on_tcp_connection(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -202,7 +198,6 @@ async def test_switch_local_baudrate_on_tcp_connection(
     assert mock_serialx.transport.serial.baudrate == 230400
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_tcp_stop_event_branch(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -237,7 +232,6 @@ async def test_serial_transport_tcp_stop_event_branch(
     await server.wait_closed()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_tcp_none_service_disconnect(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:

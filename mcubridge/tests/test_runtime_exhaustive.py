@@ -31,7 +31,6 @@ def runtime_setup() -> tuple[BridgeService, RuntimeState, AsyncMock]:
     return service, state, mock_serial
 
 
-@pytest.mark.asyncio
 async def test_on_serial_connected_and_disconnected(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -56,7 +55,6 @@ async def test_on_serial_connected_and_disconnected(
     assert not state.is_connected
 
 
-@pytest.mark.asyncio
 async def test_handle_mcu_frame_pre_sync_denied(runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = runtime_setup
     assert not state.is_synchronized
@@ -65,7 +63,6 @@ async def test_handle_mcu_frame_pre_sync_denied(runtime_setup: tuple[BridgeServi
     serial.send.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_handle_mcu_frame_handshake_routing(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -78,7 +75,6 @@ async def test_handle_mcu_frame_handshake_routing(
     mock_sync_resp.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_handle_mcu_frame_rpc_handlers(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -115,7 +111,6 @@ async def test_handle_mcu_frame_rpc_handlers(
     mock_pub.assert_awaited()
 
 
-@pytest.mark.asyncio
 async def test_handle_request_routing(runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = runtime_setup
     state.connection_fsm.connect()
@@ -140,7 +135,6 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
     serial.send.assert_awaited()
 
 
-@pytest.mark.asyncio
 async def test_enqueue_cloud_spool_and_flush(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:

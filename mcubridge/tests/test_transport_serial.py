@@ -35,7 +35,6 @@ def _make_config() -> RuntimeConfig:
     )
 
 
-@pytest.mark.asyncio
 async def test_process_packet_crc_mismatch_reports_crc(
     mocker: MockerFixture,
 ) -> None:
@@ -63,7 +62,6 @@ async def test_process_packet_crc_mismatch_reports_crc(
         state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_process_packet_success_dispatches() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -82,7 +80,6 @@ async def test_process_packet_success_dispatches() -> None:
         state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
     config = _make_config()
     config.serial_baud = 230400
@@ -121,7 +118,6 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_write_frame_debug_logs_unknown_command(
     mocker: MockerFixture,
 ) -> None:
@@ -170,7 +166,6 @@ async def test_write_frame_debug_logs_unknown_command(
         state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_write_frame_returns_false_on_write_error() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -189,7 +184,6 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_process_packet_fallback_triggers_negotiation(
     mocker: MockerFixture,
 ) -> None:
@@ -236,7 +230,6 @@ async def test_process_packet_fallback_triggers_negotiation(
         state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_toggle_dtr_error(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     mock_serial = AsyncMock()
@@ -264,7 +257,6 @@ def test_serial_transport_switch_local_baudrate_error(
         switch_baud(99999999)
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_send_failure_status_code(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -283,7 +275,6 @@ async def test_serial_transport_send_failure_status_code(
     assert res is False
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_methods_with_none_serial(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -309,7 +300,6 @@ async def test_serial_transport_methods_with_none_serial(
     await fallback_fn()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_correlate_frame_branches(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -346,7 +336,6 @@ async def test_serial_transport_correlate_frame_branches(
     assert curr3.success is None
 
 
-@pytest.mark.asyncio
 async def test_serial_process_packet_negotiating_non_baud_cmd(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -399,7 +388,6 @@ def test_serial_safe_after_configure_branches(mocker: MockerFixture) -> None:
     assert cc_list[termios.VTIME] == 0
 
 
-@pytest.mark.asyncio
 async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
     mock_serial = AsyncMock()
@@ -421,7 +409,6 @@ async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_
     assert transport.consecutive_crc_errors == 0
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_connect_exceptions(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     async def _cancel_run() -> None:
         raise asyncio.CancelledError()
@@ -437,7 +424,6 @@ async def test_serial_transport_connect_exceptions(runtime_config: RuntimeConfig
         await transport_fatal.connect()
 
 
-@pytest.mark.asyncio
 async def test_serial_correlate_frame_already_resolved(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -451,7 +437,6 @@ async def test_serial_correlate_frame_already_resolved(
     assert cmd.response_payload == b"original"
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_edge_branches(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -517,7 +502,6 @@ async def test_serial_transport_edge_branches(
     assert res_fail_status is False
 
 
-@pytest.mark.asyncio
 async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
     """Test that reader task re-establishes connection on failure."""
     config = RuntimeConfig(

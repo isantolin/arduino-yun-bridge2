@@ -433,7 +433,6 @@ def handshake_setup(
     state.cleanup()
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
 async def test_handshake_auth_mismatch(
     handshake_setup: tuple[
@@ -465,7 +464,6 @@ async def test_handshake_auth_mismatch(
         await sync_task
 
 
-@pytest.mark.asyncio
 async def test_handshake_rate_limiting(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -485,7 +483,6 @@ async def test_handshake_rate_limiting(
     assert state.last_handshake_error == "sync_rate_limited"
 
 
-@pytest.mark.asyncio
 async def test_handshake_fatal_threshold(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -502,7 +499,6 @@ async def test_handshake_fatal_threshold(
     assert state.handshake_fatal_reason is not None
 
 
-@pytest.mark.asyncio
 async def test_handshake_streak_fatal_threshold(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -522,7 +518,6 @@ async def test_handshake_streak_fatal_threshold(
     assert state.handshake_fatal_count == 1
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
 async def test_handshake_capabilities_retry(
     handshake_setup: tuple[
@@ -558,7 +553,6 @@ async def test_handshake_capabilities_retry(
     assert send_frame.call_count == 3
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
 async def test_handshake_capabilities_corrupt_payload(
     handshake_setup: tuple[
@@ -583,7 +577,6 @@ async def test_handshake_capabilities_corrupt_payload(
     assert not result
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
 async def test_handshake_malformed_sync_resp(
     handshake_setup: tuple[
@@ -600,7 +593,6 @@ async def test_handshake_malformed_sync_resp(
     handshake_setup[-1].assert_called_with(Command.CMD_LINK_SYNC_RESP.value, 1, status=Status.MALFORMED)
 
 
-@pytest.mark.asyncio
 async def test_wait_for_link_sync_confirmation_timeout(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -614,7 +606,6 @@ async def test_wait_for_link_sync_confirmation_timeout(
     assert res is False
 
 
-@pytest.mark.asyncio
 async def test_handshake_attempt_link_sync_timeout(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -641,7 +632,6 @@ def test_handshake_calculate_tag_deterministic_property(secret: bytes, nonce: by
     assert len(tag1) == 16
 
 
-@pytest.mark.asyncio
 async def test_handshake_wait_confirmation_already_synchronized(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -660,7 +650,6 @@ async def test_handshake_wait_confirmation_already_synchronized(
     assert confirmed is True
 
 
-@pytest.mark.asyncio
 async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     runtime_state.connection_fsm.disconnect()
     mock_send = AsyncMock(return_value=True)
@@ -702,7 +691,6 @@ async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, 
     assert await sync_attempt() is True
 
 
-@pytest.mark.asyncio
 async def test_handshake_resp_rate_limit_and_secret_none(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -735,7 +723,6 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     assert runtime_state.link_session_key is None
 
 
-@pytest.mark.asyncio
 async def test_handshake_capabilities_resp_future_none(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -751,7 +738,6 @@ async def test_handshake_capabilities_resp_future_none(
     assert await hs.handle_capabilities_resp(1, b"") is True
 
 
-@pytest.mark.asyncio
 async def test_handshake_fsm_state_override_and_unexpected_resp(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -787,7 +773,6 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
     assert mock_cloud.await_count == 0
 
 
-@pytest.mark.asyncio
 async def test_handshake_rate_limit_and_sync_fault_branches(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,

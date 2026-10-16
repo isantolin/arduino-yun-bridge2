@@ -17,7 +17,6 @@ from mcubridge.state.context import RuntimeState
 from pytest_mock import MockerFixture
 
 
-@pytest.mark.asyncio
 async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
     event = asyncio.Event()
@@ -66,7 +65,6 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
     assert ("bridge-watchdog-interval", "7.5") in props
 
 
-@pytest.mark.asyncio
 async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     """Ensure bridge-spool user property defaults to 'unknown'."""
     event = asyncio.Event()
@@ -100,7 +98,6 @@ async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: Runtime
     assert any(key == "bridge-watchdog-enabled" for key, _ in props)
 
 
-@pytest.mark.asyncio
 async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     runtime_state: RuntimeState, mocker: MockerFixture
 ) -> None:
@@ -135,7 +132,6 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     assert ("bridge-snapshot", "handshake") in props
 
 
-@pytest.mark.asyncio
 async def test_publish_bridge_snapshots_noop_when_disabled(
     runtime_state: RuntimeState,
 ) -> None:
@@ -159,7 +155,6 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
     assert messages == []
 
 
-@pytest.mark.asyncio
 async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     import mcubridge.metrics
 
@@ -184,7 +179,6 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, moc
     assert mock_critical.call_count == 1
 
 
-@pytest.mark.asyncio
 async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> None:
     calls = 0
 
@@ -208,7 +202,6 @@ async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> 
     assert calls >= 1
 
 
-@pytest.mark.asyncio
 async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState) -> None:
     calls = 0
 
@@ -233,7 +226,6 @@ async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: Runti
     assert calls >= 1
 
 
-@pytest.mark.asyncio
 async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     from collections.abc import Awaitable, Callable
     import mcubridge.metrics as metrics_mod
@@ -246,7 +238,6 @@ async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState,
     assert enqueue.call_count == 0
 
 
-@pytest.mark.asyncio
 async def test_publish_metrics_file_write_limit_rejection(runtime_state: RuntimeState) -> None:
     event = asyncio.Event()
     captured: dict[str, pb.CloudQueuedPublish] = {}
@@ -278,7 +269,6 @@ async def test_publish_metrics_file_write_limit_rejection(runtime_state: Runtime
     assert ("bridge-files", "write-limit") in props
 
 
-@pytest.mark.asyncio
 async def test_publish_bridge_snapshots_missing_intervals(runtime_state: RuntimeState) -> None:
     calls = 0
 

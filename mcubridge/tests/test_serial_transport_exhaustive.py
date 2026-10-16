@@ -44,7 +44,6 @@ def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport,
         switch_fn(9600)
 
 
-@pytest.mark.asyncio
 async def test_reset(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
     transport, _state, _ = mock_serial_setup
     cmd = MagicMock()
@@ -54,7 +53,6 @@ async def test_reset(mock_serial_setup: tuple[SerialTransport, RuntimeState, Mag
     cmd.mark_failure.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_read_loop_cobs_decode_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
@@ -71,7 +69,6 @@ async def test_read_loop_cobs_decode_error(
         await read_loop_fn(mock_serial)
 
 
-@pytest.mark.asyncio
 async def test_read_loop_crc_error_recovery(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
@@ -92,7 +89,6 @@ async def test_read_loop_crc_error_recovery(
     assert transport.consecutive_crc_errors == 1
 
 
-@pytest.mark.asyncio
 async def test_read_loop_valid_frame_dispatch(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
@@ -112,7 +108,6 @@ async def test_read_loop_valid_frame_dispatch(
     assert transport.consecutive_crc_errors == 0
 
 
-@pytest.mark.asyncio
 async def test_send_raw_success(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
@@ -126,7 +121,6 @@ async def test_send_raw_success(
     assert written_data.endswith(protocol.FRAME_DELIMITER)
 
 
-@pytest.mark.asyncio
 async def test_send_raw_write_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:

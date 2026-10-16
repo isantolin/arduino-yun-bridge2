@@ -7,7 +7,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
-import pytest
 from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
@@ -37,7 +36,6 @@ def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     return svc, state, serial_mock, mock_publisher
 
 
-@pytest.mark.asyncio
 @given(
     pin=st.integers(0, 64),
     val=st.integers(0, 2),
@@ -95,7 +93,6 @@ async def test_cloud_command_pin_dispatch_property(
         svc.cleanup()
 
 
-@pytest.mark.asyncio
 @given(
     seq_id=st.integers(1, 2**63 - 1),
     payload=st.binary(min_size=1, max_size=64),
@@ -132,7 +129,6 @@ async def test_publish_cloud_message_wraps_command_response(
         svc.cleanup()
 
 
-@pytest.mark.asyncio
 @given(
     pin=st.integers(0, 64),
     value=st.integers(0, 1023),

@@ -31,7 +31,6 @@ def _make_config() -> RuntimeConfig:
     )
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_service() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -129,7 +128,6 @@ def test_gpio_pin_event_canonical_topic_property(pin: int, value: int, ts_us: in
     asyncio.run(_run())
 
 
-@pytest.mark.asyncio
 async def test_gpio_service() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -189,7 +187,6 @@ async def test_gpio_service() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_ubus_clock_and_gpio_handlers() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -219,7 +216,6 @@ async def test_ubus_clock_and_gpio_handlers() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_skipped_when_capability_missing() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -270,7 +266,6 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_fsm_lifecycle() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -315,7 +310,6 @@ async def test_clock_sync_fsm_lifecycle() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -345,7 +339,6 @@ async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_initial_probe_failure() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -367,7 +360,6 @@ async def test_clock_sync_initial_probe_failure() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_worker_start_stop_lifecycle() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -401,7 +393,6 @@ async def test_clock_sync_worker_start_stop_lifecycle() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_loop_exception_handling() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -438,7 +429,6 @@ async def test_clock_sync_loop_exception_handling() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_pin_subscribe() -> None:
     from mcubridge.services.runtime import LocalBridgeService
 
@@ -477,7 +467,6 @@ async def test_local_bridge_pin_subscribe() -> None:
         service.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_loop_unsupported_branch(mock_bridge_service: BridgeService) -> None:
     from mcubridge.services.clock_sync import ClockSyncService
 
@@ -492,7 +481,6 @@ async def test_clock_sync_loop_unsupported_branch(mock_bridge_service: BridgeSer
     await clock.stop()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_loop_degraded_branch(
     mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -511,7 +499,6 @@ async def test_clock_sync_loop_degraded_branch(
     await clock.stop()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_loop_idle_exception_marks_unsupported(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -530,7 +517,6 @@ async def test_clock_sync_loop_idle_exception_marks_unsupported(
     await clock.stop()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeService) -> None:
     from mcubridge.services.clock_sync import ClockSyncService
 
@@ -546,7 +532,6 @@ async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeSe
     await clock.stop()
 
 
-@pytest.mark.asyncio
 async def test_clock_sync_loop_normal_exit_branch(mock_bridge_service: BridgeService) -> None:
     from mcubridge.services.clock_sync import ClockSyncService
 

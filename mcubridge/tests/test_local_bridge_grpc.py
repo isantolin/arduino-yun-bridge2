@@ -56,7 +56,6 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         assert callable(handler)
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -116,7 +115,6 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     assert sent.value == 512
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_datastore_and_mailbox(tmp_path: Path) -> None:
     service, local_svc, _ = _make_service(_make_config(tmp_path))
 
@@ -146,7 +144,6 @@ async def test_local_bridge_datastore_and_mailbox(tmp_path: Path) -> None:
     assert sent.content == b"incoming_data"
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -184,7 +181,6 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     mock_serial.send.assert_called_with(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path="eeprom.bin"))
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -230,7 +226,6 @@ async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     assert sent.status == "ok"
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_telemetry(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -299,7 +294,6 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
     await local_svc.GetStatus(_make_mock_stream(None))
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -424,7 +418,6 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     assert stream.sent_message.status == "error"
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -476,7 +469,6 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
         await local_svc.SubscribeConsole(stream)
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
@@ -514,7 +506,6 @@ async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
         await local_svc.execute_rpc("NonExistent", b"")
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_write_methods_report_failed_serial_send(tmp_path: Path) -> None:
     _, local_svc, mock_serial = _make_service(_make_config(tmp_path))
     mock_serial.send.return_value = False
@@ -529,7 +520,6 @@ async def test_local_bridge_write_methods_report_failed_serial_send(tmp_path: Pa
     assert mock_serial.send.await_count == 3
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
     svc, local_svc, _ = _make_service(_make_config(tmp_path))
 
@@ -552,7 +542,6 @@ async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
     assert sent_msg.correlation_data == b"123456789012"
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_service_subscribe_console(tmp_path: Path) -> None:
     svc, local_svc, _ = _make_service(_make_config(tmp_path))
 
@@ -573,7 +562,6 @@ async def test_local_bridge_service_subscribe_console(tmp_path: Path) -> None:
         await local_svc.SubscribeConsole(mock_stream.as_stream())
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, mocker: MockerFixture) -> None:
     svc, local_svc, _ = _make_service(_make_config(tmp_path))
 

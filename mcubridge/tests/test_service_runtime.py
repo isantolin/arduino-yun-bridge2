@@ -52,7 +52,6 @@ def _make_config() -> RuntimeConfig:
     )
 
 
-@pytest.mark.asyncio
 async def test_send_frame_via_transport() -> None:
     service = None
     config = _make_config()
@@ -73,7 +72,6 @@ async def test_send_frame_via_transport() -> None:
             state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_handle_mcu_frame_pre_sync_denied() -> None:
     service = None
     config = _make_config()
@@ -93,7 +91,6 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
             state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_handle_mcu_xon_xoff() -> None:
     service = None
     config = _make_config()
@@ -117,7 +114,6 @@ async def test_handle_mcu_xon_xoff() -> None:
             state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_handle_cloud_console_queues_and_flushes() -> None:
     service = None
     config = _make_config()
@@ -147,7 +143,6 @@ async def test_handle_cloud_console_queues_and_flushes() -> None:
             state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_enqueue_cloud_spools_until_client_recovers() -> None:
     service = None
     config = _make_config()
@@ -174,7 +169,6 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
             state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_handle_cloud_pin_overflow_reports_error() -> None:
     service = None
     config = _make_config()
@@ -219,7 +213,6 @@ async def test_handle_cloud_pin_overflow_reports_error() -> None:
             state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
     mock_proc = MagicMock()
@@ -244,7 +237,6 @@ async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -
     assert res.stdout_truncated is True
 
 
-@pytest.mark.asyncio
 async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     svc = mock_bridge_service
     svc.config.cloud_http3_enabled = True
@@ -276,7 +268,6 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
     assert resp.command_response.status_code == 200
 
 
-@pytest.mark.asyncio
 async def test_process_terminate_sigkill_escalation(mocker: MockerFixture) -> None:
     mock_ctx = MagicMock()
     mock_ctx.handle.returncode = None
@@ -289,7 +280,6 @@ async def test_process_terminate_sigkill_escalation(mocker: MockerFixture) -> No
     assert code == -1
 
 
-@pytest.mark.asyncio
 async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
     state = service.state
@@ -314,7 +304,6 @@ async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: 
     assert service.cloud_spool is None
 
 
-@pytest.mark.asyncio
 async def test_runtime_run_cloud_disabled(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
     service.config.cloud_enabled = False
@@ -379,7 +368,6 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
     asyncio.run(_run())
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_mcu_status_binary_undecodable(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -476,7 +464,6 @@ def test_runtime_pin_analog_and_invalid_digits(
     asyncio.run(_run())
 
 
-@pytest.mark.asyncio
 async def test_flush_cloud_spool_corrupt_and_index_error(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -566,7 +553,6 @@ def test_runtime_write_with_quota_property(
     asyncio.run(_run())
 
 
-@pytest.mark.asyncio
 async def test_runtime_terminate_process_escalation(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     svc = mock_bridge_service
 
@@ -584,7 +570,6 @@ async def test_runtime_terminate_process_escalation(mock_bridge_service: BridgeS
     assert ctx.fsm.current_state_value in {"terminating", "exited"}
 
 
-@pytest.mark.asyncio
 async def test_runtime_flush_console_queue_send_failed(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -617,7 +602,6 @@ def test_runtime_reject_cloud_topic_variants(action: str, topic_str: str) -> Non
     asyncio.run(_run())
 
 
-@pytest.mark.asyncio
 async def test_runtime_cloud_spool_trimming_and_drop(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
 
@@ -646,7 +630,6 @@ async def test_runtime_cloud_spool_trimming_and_drop(mock_bridge_service: Bridge
     assert svc.state.cloud_spool_trim_events == 1
 
 
-@pytest.mark.asyncio
 async def test_runtime_cleanup_and_lifecycle(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -657,7 +640,6 @@ async def test_runtime_cleanup_and_lifecycle(
     assert svc.ubus_service.stop.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_file_dispatch_local_methods_none_path(
     runtime_config: RuntimeConfig, mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -675,7 +657,6 @@ async def test_runtime_file_dispatch_local_methods_none_path(
     assert mock_serial.send.call_count == 0
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
 
@@ -692,7 +673,6 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     assert mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_request_route_none_and_inbound_props(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -714,7 +694,6 @@ async def test_runtime_handle_request_route_none_and_inbound_props(
     assert not mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_console_empty_payload(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     handle_console: Callable[..., Awaitable[None]] = svc.handle_console
@@ -722,7 +701,6 @@ async def test_runtime_handle_console_empty_payload(mock_bridge_service: BridgeS
     assert not mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_datastore_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     handle_ds: Callable[..., Awaitable[None]] = svc.handle_datastore
@@ -744,7 +722,6 @@ async def test_runtime_handle_datastore_branches(mock_bridge_service: BridgeServ
     assert not mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_mailbox_unknown_identifier(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -755,7 +732,6 @@ async def test_runtime_handle_mailbox_unknown_identifier(
     assert not mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock, tmp_path: Path
 ) -> None:
@@ -787,7 +763,6 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     assert real_file.exists()
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_shell_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     handle_shell: Callable[..., Awaitable[None]] = svc.handle_shell
@@ -804,7 +779,6 @@ async def test_runtime_handle_shell_branches(mock_bridge_service: BridgeService,
     assert 99999 not in svc.state.running_processes
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_spi_and_pin_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     handle_spi: Callable[..., Awaitable[None]] = svc.handle_spi
@@ -819,7 +793,6 @@ async def test_runtime_handle_spi_and_pin_branches(mock_bridge_service: BridgeSe
     assert not mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_system_free_memory_non_bytes(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -836,7 +809,6 @@ async def test_runtime_handle_system_free_memory_non_bytes(
     assert mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_cloud_spool_locked_limit_errors(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -866,7 +838,6 @@ async def test_runtime_cloud_spool_locked_limit_errors(
     assert await spool_locked(msg) is False
 
 
-@pytest.mark.asyncio
 async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -912,7 +883,6 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     assert svc.state.cloud_spool_corrupt_dropped == initial_dropped + 1
 
 
-@pytest.mark.asyncio
 async def test_runtime_poll_process_eof_and_xoff(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -942,7 +912,6 @@ async def test_runtime_poll_process_eof_and_xoff(
     assert await on_ds_get(1, pb.DatastoreGet(key="k")) is False
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_datastore_empty_key_and_request_miss(
     mock_bridge_service: BridgeService,
 ) -> None:
@@ -965,7 +934,6 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     assert any(p.key == "bridge-error" and p.value == "datastore-miss" for p in published.user_properties)
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     handle_mb: Callable[..., Awaitable[None]] = svc.handle_mailbox
@@ -982,7 +950,6 @@ async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeS
     assert not mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_file_and_shell_edge_branches(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -1029,7 +996,6 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     assert 777 not in svc.state.running_processes
 
 
-@pytest.mark.asyncio
 async def test_runtime_handle_spi_and_pin_edge_branches(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
@@ -1085,7 +1051,6 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     assert mock_serial.send.called
 
 
-@pytest.mark.asyncio
 async def test_runtime_run_cloud_cancelled(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     svc = mock_bridge_service
     svc.config.cloud_tls = False
@@ -1104,7 +1069,6 @@ async def test_runtime_run_cloud_cancelled(mock_bridge_service: BridgeService, m
     assert svc.state.cloud_fsm.disabled.is_active
 
 
-@pytest.mark.asyncio
 async def test_runtime_cloud_session_non_command_envelope(
     mock_bridge_service: BridgeService, mocker: MockerFixture
 ) -> None:
@@ -1125,7 +1089,6 @@ async def test_runtime_cloud_session_non_command_envelope(
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
-@pytest.mark.asyncio
 async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
 
@@ -1141,7 +1104,6 @@ async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> 
     assert envelope.event.description == "test_msg"
 
 
-@pytest.mark.asyncio
 async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
     on_mcu_datastore_get: Callable[[int, pb.DatastoreGet], Awaitable[bool]] = svc.on_mcu_datastore_get
@@ -1170,7 +1132,6 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     assert mock_serial.send.call_args[0][1].value == b""
 
 
-@pytest.mark.asyncio
 async def test_runtime_cloud_session_rpc_commands_and_errors(
     mock_bridge_service: BridgeService, mocker: MockerFixture
 ) -> None:
@@ -1236,7 +1197,6 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
-@pytest.mark.asyncio
 async def test_runtime_service_edge_branches(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -1293,7 +1253,6 @@ async def test_runtime_service_edge_branches(
 # --- BridgeService Supervisor and Orchestration Lifecycle Tests ---
 
 
-@pytest.mark.asyncio
 async def test_service_supervise_retries_on_failure(service_stack: tuple[BridgeService, Any, Any]) -> None:
     service, _, _ = service_stack
     mock_factory = AsyncMock(side_effect=[ValueError("fail"), None])
@@ -1301,7 +1260,6 @@ async def test_service_supervise_retries_on_failure(service_stack: tuple[BridgeS
     assert mock_factory.call_count == 2
 
 
-@pytest.mark.asyncio
 async def test_service_supervise_fatal_exception(service_stack: tuple[BridgeService, Any, Any]) -> None:
     service, _, _ = service_stack
 
@@ -1312,7 +1270,6 @@ async def test_service_supervise_fatal_exception(service_stack: tuple[BridgeServ
         await service.supervise("test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,))
 
 
-@pytest.mark.asyncio
 async def test_service_supervise_restarts_and_recovers(
     service_stack: tuple[BridgeService, Any, Any], mocker: MockerFixture
 ) -> None:
@@ -1334,7 +1291,6 @@ async def test_service_supervise_restarts_and_recovers(
     )
 
 
-@pytest.mark.asyncio
 async def test_service_supervise_cancelled(service_stack: tuple[BridgeService, Any, Any]) -> None:
     service, _, _ = service_stack
 
@@ -1348,7 +1304,6 @@ async def test_service_supervise_cancelled(service_stack: tuple[BridgeService, A
         await task
 
 
-@pytest.mark.asyncio
 async def test_service_supervisor_circuit_breaker(service_stack: tuple[BridgeService, Any, Any]) -> None:
     service, _, _ = service_stack
     call_count = 0

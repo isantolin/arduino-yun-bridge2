@@ -1,11 +1,9 @@
 import tempfile
 
-import pytest
 from mcubridge.state.storage import LmdbDeque
 import pathlib
 
 
-@pytest.mark.asyncio
 async def test_mailbox_static_queue_overflow() -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
         path = tf.name

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import gc
-import importlib.util
-import inspect
 import logging
 import os
 import shutil
 import sys
 import time
-from asyncio import events as asyncio_events
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
@@ -162,23 +158,6 @@ mcubridge.config.common.get_default_config = patched_get_default_config
 # Configure structlog centrally for test execution
 configure_logging(debug=True, console=True)
 
-_HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
-
-
-def _get_event_loop_policy() -> object:
-    private_getter = getattr(asyncio_events, "_get_event_loop_policy", None)
-    if private_getter is not None:
-        return private_getter()
-
-    policy = getattr(asyncio_events, "_event_loop_policy", None)
-    if policy is None:
-        init_policy = getattr(asyncio_events, "_init_event_loop_policy", None)
-        if init_policy is None:
-            return None
-        init_policy()
-        policy = getattr(asyncio_events, "_event_loop_policy", None)
-    return policy
-
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
@@ -188,52 +167,12 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     logging.lastResort = None
 
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
-    """Fallback asyncio runner when pytest-asyncio is unavailable."""
-    if _HAS_PYTEST_ASYNCIO:
-        return None
-    if "asyncio" not in pyfuncitem.keywords:
-        return None
-    test_function = pyfuncitem.obj
-    if not inspect.iscoroutinefunction(test_function):
-        return None
-
-    policy = pyfuncitem.funcargs.get("event_loop_policy")
-    if policy is not None:
-        set_policy = getattr(asyncio, "set_event_loop_policy", None)
-        if callable(set_policy):
-            set_policy(cast(asyncio.AbstractEventLoopPolicy, policy))
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        fixture_info = getattr(pyfuncitem, "_fixtureinfo", None)
-        argnames = getattr(fixture_info, "argnames", pyfuncitem.fixturenames)
-        kwargs = {name: pyfuncitem.funcargs[name] for name in argnames if name in pyfuncitem.funcargs}
-        loop.run_until_complete(test_function(**kwargs))
-    finally:
-        try:
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        except (RuntimeError, ValueError) as e:
-            structlog.get_logger("mcubridge.tests").debug("Loop asyncgen shutdown notice", error=str(e))
-        loop.close()
-        asyncio.set_event_loop(None)
-    return True
-
-
 @pytest.fixture(autouse=True)
-def force_gc_cleanup():
+def force_gc_cleanup() -> Iterator[None]:
     """Ensure all resources are released after each test to reach zero warnings."""
     yield
     if logging.getLogger().level != logging.DEBUG:
         configure_logging(debug=True, console=True)
-    # Close any stale event loop left by asyncio.run() or explicit set_event_loop
-    policy = _get_event_loop_policy()
-    loop = getattr(getattr(policy, "_local", None), "_loop", None)
-    if loop is not None and not loop.is_closed():
-        loop.close()
-    asyncio.set_event_loop(None)
     gc.collect()
 
 

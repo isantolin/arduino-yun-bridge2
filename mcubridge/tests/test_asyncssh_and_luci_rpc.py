@@ -1,4 +1,4 @@
-"""Unit tests for asyncssh, openwrt-luci-rpc, and pytest-embedded integrations."""
+"""Unit tests for asyncssh, openwrt-luci-rpc, and Unity test parser integrations."""
 
 from __future__ import annotations
 
@@ -7,12 +7,9 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pytest_embedded.unity import TestSuite as UnityTestSuite
-
 from tools.audit import validate_luci
 from tools.emulation import hardware_harness, sync_to_vm
-
-UnityTestSuite.__test__ = False
+from tools.testing.unity_parser import TestSuite as UnityTestSuite
 
 
 def test_validate_luci_rpc_endpoint_success() -> None:

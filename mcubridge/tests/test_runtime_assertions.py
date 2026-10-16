@@ -68,7 +68,6 @@ def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMoc
     return service, state, mock_serial
 
 
-@pytest.mark.asyncio
 async def test_mcu_file_read_handler_asserts_state(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -84,7 +83,6 @@ async def test_mcu_file_read_handler_asserts_state(
     assert args[1].content == b"file_data"
 
 
-@pytest.mark.asyncio
 async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -103,7 +101,6 @@ async def test_cloud_file_write_asserts_serial(
     assert serial.send.call_args[0][1].data == b"new_data"
 
 
-@pytest.mark.asyncio
 async def test_cloud_datastore_put_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -119,7 +116,6 @@ async def test_cloud_datastore_put_asserts_cache(
     assert await state.datastore_cache.get("my_key") == b"my_value"
 
 
-@pytest.mark.asyncio
 async def test_mcu_datastore_put_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -138,7 +134,6 @@ async def test_mcu_datastore_put_asserts_cloud(
     assert queued_pub.payload == b"mcu_val"
 
 
-@pytest.mark.asyncio
 async def test_local_bridge_datastore_put_persists_and_publishes(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -159,7 +154,6 @@ async def test_local_bridge_datastore_put_persists_and_publishes(
     assert queued_pub.payload == b"local_value"
 
 
-@pytest.mark.asyncio
 async def test_mcu_mailbox_push_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -175,7 +169,6 @@ async def test_mcu_mailbox_push_asserts_cloud(
     assert queued_pub.payload == b"pushed_msg"
 
 
-@pytest.mark.asyncio
 async def test_cloud_mailbox_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -194,7 +187,6 @@ async def test_cloud_mailbox_write_asserts_serial(
     assert serial.send.call_args[0][1].data == b"outbound_box"
 
 
-@pytest.mark.asyncio
 async def test_mcu_process_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -213,7 +205,6 @@ async def test_mcu_process_run_asserts_exec(
     await service.kill_process(pid)
 
 
-@pytest.mark.asyncio
 async def test_cloud_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -232,7 +223,6 @@ async def test_cloud_spi_transfer_asserts_serial(
     assert serial.send.call_args[0][1].data == b"\x01\x02\x03"
 
 
-@pytest.mark.asyncio
 async def test_cloud_file_host_write_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -252,7 +242,6 @@ async def test_cloud_file_host_write_asserts_cache(
     assert queued_pub.payload == b"host_file_payload"
 
 
-@pytest.mark.asyncio
 async def test_cloud_file_host_read_asserts_read(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -272,7 +261,6 @@ async def test_cloud_file_host_read_asserts_read(
     assert queued_pub.payload == b"disk_data"
 
 
-@pytest.mark.asyncio
 async def test_cloud_shell_poll_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -296,7 +284,6 @@ async def test_cloud_shell_poll_asserts_cloud(
     assert resp.stdout_data == b"out\n"
 
 
-@pytest.mark.asyncio
 async def test_cloud_shell_kill_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -314,7 +301,6 @@ async def test_cloud_shell_kill_asserts_cloud(
     assert pid not in state.running_processes
 
 
-@pytest.mark.asyncio
 async def test_cloud_shell_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:

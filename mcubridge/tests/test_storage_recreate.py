@@ -5,12 +5,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import lmdb
-import pytest
 from mcubridge.state.storage import LmdbCache, LmdbDeque
 from pytest_mock import MockerFixture
 
 
-@pytest.mark.asyncio
 async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/deque_test"
     db_error = lmdb.Error("Corrupt DB")
@@ -36,7 +34,6 @@ async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object, mocker: Mocker
     )
 
 
-@pytest.mark.asyncio
 async def test_lmdb_deque_unlink_os_error(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/deque_unlink_test"
     db_error = lmdb.Error("Corrupt DB")
@@ -57,7 +54,6 @@ async def test_lmdb_deque_unlink_os_error(tmp_path: object, mocker: MockerFixtur
     assert unlink_call.kwargs["path"] == db_path
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_recreate_on_corrupt(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/cache_test"
     db_error = lmdb.Error("Corrupt DB")
@@ -79,7 +75,6 @@ async def test_lmdb_cache_recreate_on_corrupt(tmp_path: object, mocker: MockerFi
     )
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_unlink_os_error(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/cache_unlink_test"
     db_error = lmdb.Error("Corrupt DB")
@@ -100,7 +95,6 @@ async def test_lmdb_cache_unlink_os_error(tmp_path: object, mocker: MockerFixtur
     assert unlink_call.kwargs["path"] == db_path
 
 
-@pytest.mark.asyncio
 async def test_lmdb_cache_uncovered_branches() -> None:
     cache = LmdbCache(path="/tmp/test_cache_branches.db")
     cache.env = None

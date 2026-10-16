@@ -14,7 +14,6 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
-import pytest
 import serialx
 from cobs import cobsr
 from mcubridge.config.settings import RuntimeConfig
@@ -48,7 +47,6 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
     return transport, state, mock_serialx
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_acknowledge(tmp_path: Path) -> None:
     transport, state, mock_serialx = _make_transport(tmp_path)
 
@@ -58,7 +56,6 @@ async def test_serial_transport_acknowledge(tmp_path: Path) -> None:
     state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_send_raw(tmp_path: Path) -> None:
     transport, state, mock_serialx = _make_transport(tmp_path)
 
@@ -81,7 +78,6 @@ async def test_serial_transport_send_raw(tmp_path: Path) -> None:
     state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
     transport, state, mock_serialx = _make_transport(tmp_path)
 
@@ -97,7 +93,6 @@ async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
     state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 
@@ -115,7 +110,6 @@ async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
     state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 
@@ -150,7 +144,6 @@ async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> No
     state.cleanup()
 
 
-@pytest.mark.asyncio
 async def test_serial_transport_send_with_retries(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 

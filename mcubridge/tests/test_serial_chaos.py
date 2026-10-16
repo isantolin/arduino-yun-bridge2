@@ -31,7 +31,6 @@ def _make_transport() -> tuple[SerialTransport, Any]:
     return transport, state
 
 
-@pytest.mark.asyncio
 async def test_abrupt_disconnect_os_error() -> None:
     transport, _state = _make_transport()
     mock_serial = AsyncMock()
@@ -42,7 +41,6 @@ async def test_abrupt_disconnect_os_error() -> None:
     assert mock_serial.readuntil.call_count == 1
 
 
-@pytest.mark.asyncio
 async def test_negotiation_failure_and_disconnect() -> None:
     transport, state = _make_transport()
     mock_serial = AsyncMock()
@@ -53,7 +51,6 @@ async def test_negotiation_failure_and_disconnect() -> None:
     assert not state.is_connected
 
 
-@pytest.mark.asyncio
 @given(corrupt_payload=st.binary(min_size=1, max_size=32).map(lambda b: b.replace(b"\x00", b"\x01")))
 async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> None:
     transport, _state = _make_transport()
@@ -84,7 +81,6 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
             await read_loop(mock_serial)
 
 
-@pytest.mark.asyncio
 @given(init_seq=st.integers(0, protocol.UINT16_MAX))
 async def test_tx_sequence_wrapping_isomorphism(init_seq: int) -> None:
     transport, state = _make_transport()

@@ -69,7 +69,6 @@ def test_protocol_registry_coverage(svc: tuple[BridgeService, RuntimeState, Asyn
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(("has_serial", "expected_result"), [(False, False), (True, True)])
 async def test_unsupported_mcu_request(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
@@ -95,7 +94,6 @@ async def test_unsupported_mcu_request(
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
     on_avail: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_available
@@ -117,7 +115,6 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
     assert resp.count == IsPositiveInt
 
 
-@pytest.mark.asyncio
 async def test_mailbox_read_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
     on_read: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_read
@@ -140,7 +137,6 @@ async def test_mailbox_read_scenarios(svc: tuple[BridgeService, RuntimeState, As
     assert serial.send.call_args[0][1].content == b"msg_a"
 
 
-@pytest.mark.asyncio
 async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
@@ -160,7 +156,6 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
     on_write: Callable[..., Awaitable[bool]] = service.on_mcu_file_write
@@ -182,7 +177,6 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
-@pytest.mark.asyncio
 async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
     on_read: Callable[..., Awaitable[None]] = service.on_mcu_file_read
@@ -224,7 +218,6 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
-@pytest.mark.asyncio
 async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _serial = svc
     on_read_resp: Callable[..., Awaitable[bool]] = service.on_mcu_file_read_resp
@@ -255,7 +248,6 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
     on_run: Callable[..., Awaitable[bool]] = service.on_mcu_process_run_async
@@ -293,7 +285,6 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_status_reporting_and_ack(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
     monkeypatch: pytest.MonkeyPatch,
@@ -344,7 +335,6 @@ async def test_status_reporting_and_ack(
     mock_error.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, mock_serial = svc
     captured: list[pb.CloudQueuedPublish] = []

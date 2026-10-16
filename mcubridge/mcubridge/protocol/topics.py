@@ -99,7 +99,7 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
 
 
 @functools.lru_cache(maxsize=64)
-def compile_subtopic_parser(format_spec: str) -> parse.Parser:
+def _get_subtopic_parser(format_spec: str) -> parse.Parser:
     """Compile and cache subtopic format parser for structured path segments. [SIL-2]"""
     return parse.compile(format_spec)
 
@@ -107,6 +107,5 @@ def compile_subtopic_parser(format_spec: str) -> parse.Parser:
 def parse_subtopic(path: str, format_spec: str) -> dict[str, Any] | None:
     """Extract structured named fields from subtopic remainder using declarative parse pattern. [SIL-2]"""
     clean_path = path.strip("/")
-    result = compile_subtopic_parser(format_spec).parse(clean_path)
+    result = _get_subtopic_parser(format_spec).parse(clean_path)
     return dict(result.named) if result is not None else None
-

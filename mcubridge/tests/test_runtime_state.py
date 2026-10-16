@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from dirty_equals import Contains, IsFloat, IsInstance, IsInt, IsPartialDict, IsPositiveInt, IsStr
+from dirty_equals import IsFloat, IsPartialDict, IsPositiveInt
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state

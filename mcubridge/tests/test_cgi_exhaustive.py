@@ -8,7 +8,6 @@ import io
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 from dirty_equals import Contains, IsPartialDict
 import pytest
@@ -140,4 +139,3 @@ def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:
     assert res_err
     assert start_response_err.call_args[0][0] == "400 Bad Request"
     assert start_response_err.call_args[0][1] == Contains(("Content-Type", "application/json"))
-

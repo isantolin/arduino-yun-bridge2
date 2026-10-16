@@ -72,7 +72,7 @@ from ..protocol.structures import (
     load_tls_session_ticket,
     save_tls_session_ticket,
 )
-from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
+from ..protocol.topics import Topic, get_topic_for_message, parse_subtopic, parse_topic, topic_path
 from ..state.context import (
     DaemonLifecycleMachine,
     FileTransferMachine,
@@ -981,7 +981,14 @@ class BridgeService:
         await self.local_bridge_service.execute_process_kill(pb.ProcessKill(pid=pid))
 
     async def handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        raw_act = route.segments[0] if route.segments else None
+        raw_act: str | None = None
+        pid: int = 0
+        if len(route.segments) == 2 and (parsed := parse_subtopic("/".join(route.segments), "{action}/{pid:d}")):
+            raw_act = str(parsed["action"])
+            pid = int(parsed["pid"])
+        elif route.segments:
+            raw_act = route.segments[0]
+
         if not raw_act:
             logger.warning("Shell operation rejected: missing action segment", topic=route.raw)
             return
@@ -990,7 +997,6 @@ class BridgeService:
         except ValueError as exc:
             logger.warning("Unrecognized shell action segment", action=raw_act, error=str(exc))
             return
-        pid = int(route.segments[1]) if len(route.segments) == 2 and route.segments[1].isdigit() else 0
         with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
             if handler := _SHELL_ACTION_DISPATCH.get(act):
                 await handler(self, pid, inbound)

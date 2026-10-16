@@ -201,9 +201,7 @@ def test_validate_nonce_counter_hypothesis(counter: int, step: int) -> None:
         ),
     ],
 )
-def test_verify_crypto_integrity_failure_branches(
-    mocker: MockerFixture, target: str, kwargs: dict[str, Any]
-) -> None:
+def test_verify_crypto_integrity_failure_branches(mocker: MockerFixture, target: str, kwargs: dict[str, Any]) -> None:
     """Verify KAT branch failure paths in verify_crypto_integrity using mocker.patch. [SIL-2]"""
     mocker.patch(target, **kwargs)
     assert not verify_crypto_integrity()

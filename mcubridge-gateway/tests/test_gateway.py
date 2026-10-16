@@ -10,7 +10,7 @@ import re
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
-from dirty_equals import Contains, HasLen, IsFloat, IsInstance, IsInt, IsPartialDict, IsPositiveInt, IsStr
+from dirty_equals import Contains, HasLen, IsStr
 import httpx
 import pytest
 from gateway import (

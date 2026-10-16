@@ -7,6 +7,7 @@ import subprocess
 from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 import pytest
+from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -17,12 +18,6 @@ from tools.audit.codebase_auditor import app, audit_ast_integrity, audit_proto_i
 runner = CliRunner()
 
 
-def _mock_which_none(_name: str) -> None:
-    return None
-
-
-def _mock_which_semgrep(_name: str) -> str:
-    return "semgrep"
 
 
 def test_audit_proto_integrity_clean() -> None:
@@ -64,37 +59,38 @@ def test_audit_proto_integrity_missing_file(tmp_path: Path) -> None:
     assert str(missing) in findings[0]
 
 
-def test_audit_semgrep_reports_missing_executable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_audit_semgrep_reports_missing_executable(tmp_path: Path, mocker: MockerFixture) -> None:
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
-    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
-    monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_none)
+    mocker.patch.object(codebase_auditor, "ROOT", tmp_path)
+    mocker.patch.object(codebase_auditor.shutil, "which", return_value=None)
+    mocker.patch.object(codebase_auditor.os, "access", return_value=False)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
 
 
-def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_audit_semgrep_reports_execution_failure(tmp_path: Path, mocker: MockerFixture) -> None:
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
-    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
-    monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
+    mocker.patch.object(codebase_auditor, "ROOT", tmp_path)
+    mocker.patch.object(codebase_auditor.shutil, "which", return_value="semgrep")
 
     def _mock_cmd_fail(cmd: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(cmd), 2, stdout='{"results":[]}', stderr="invalid rules")
 
-    monkeypatch.setattr(codebase_auditor, "run_command", _mock_cmd_fail)
+    mocker.patch.object(codebase_auditor, "run_command", _mock_cmd_fail)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: invalid rules"]
 
 
-def test_audit_semgrep_reports_empty_output_as_execution_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_audit_semgrep_reports_empty_output_as_execution_error(tmp_path: Path, mocker: MockerFixture) -> None:
     """SIL-2: Verify empty Semgrep stdout is never treated as a clean audit, even on exit code 0."""
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
-    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
-    monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
+    mocker.patch.object(codebase_auditor, "ROOT", tmp_path)
+    mocker.patch.object(codebase_auditor.shutil, "which", return_value="semgrep")
 
     def _mock_cmd_empty(cmd: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(cmd), 0, stdout="   \n", stderr="")
 
-    monkeypatch.setattr(codebase_auditor, "run_command", _mock_cmd_empty)
+    mocker.patch.object(codebase_auditor, "run_command", _mock_cmd_empty)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: Empty output received from Semgrep"]
 

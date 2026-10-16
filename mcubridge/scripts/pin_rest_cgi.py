@@ -39,6 +39,7 @@ def extract_pin_from_path(path: str) -> int | None:
             return res["pin"]
     return None
 
+
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 
 

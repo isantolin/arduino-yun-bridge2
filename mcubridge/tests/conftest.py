@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.config.common
 import mcubridge.config.const
+import mcubridge.config.settings
 import mcubridge.protocol.structures
 import pytest
 import structlog
@@ -105,7 +106,7 @@ original_get_default_config = mcubridge.config.common.get_default_config
 
 
 class PatchedRuntimeConfig:
-    def __new__(_cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
+    def __new__(_cls, *args: Any, **kwargs: Any) -> pb.RuntimeConfig:
         mappings = {
             "cloud_topic": "topic_prefix",
             "cloud_spool_dir": "cloud_spool_dir",
@@ -280,7 +281,7 @@ def default_serial_secret(mocker: MockerFixture) -> None:
 
 
 @pytest.fixture
-def runtime_config() -> RuntimeConfig:
+def runtime_config() -> pb.RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -314,7 +315,7 @@ def runtime_config() -> RuntimeConfig:
 
 
 @pytest.fixture
-def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
+def runtime_state(runtime_config: pb.RuntimeConfig) -> Iterator[RuntimeState]:
     """Provide a RuntimeState instance with proper cleanup."""
     state = create_runtime_state(runtime_config)
     state.connection_fsm.connect()
@@ -342,7 +343,7 @@ def real_config():
 
 
 @pytest.fixture
-def service_stack(runtime_config: RuntimeConfig):
+def service_stack(runtime_config: pb.RuntimeConfig):
     """Provide a complete service stack (Service, State, Serial) for integration testing."""
     state = create_runtime_state(runtime_config)
     serial = SerialTransport(runtime_config, state, None)
@@ -370,14 +371,14 @@ def mock_serial() -> AsyncMock:
 
 @pytest.fixture
 def mock_bridge_service(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mock_serial: AsyncMock
+    runtime_config: pb.RuntimeConfig, runtime_state: RuntimeState, mock_serial: AsyncMock
 ) -> BridgeService:
     """Provide an isolated BridgeService instance with mocked serial transport."""
     return BridgeService(runtime_config, runtime_state, mock_serial)
 
 
 @pytest.fixture
-def mock_daemon_env(mocker: MockerFixture, runtime_config: RuntimeConfig) -> dict[str, Any]:
+def mock_daemon_env(mocker: MockerFixture, runtime_config: pb.RuntimeConfig) -> dict[str, Any]:
     """Reusable fixture for daemon bootstrap isolation."""
     mock_load = mocker.patch("mcubridge.daemon.load_runtime_config", return_value=runtime_config)
     mock_verify = mocker.patch("mcubridge.daemon.verify_crypto_integrity")
@@ -418,7 +419,7 @@ def st_cloud_queued_publish(
 
 
 @st.composite
-def st_runtime_config(draw: DrawFn) -> RuntimeConfig:
+def st_runtime_config(draw: DrawFn) -> pb.RuntimeConfig:
     """Canonical Hypothesis strategy for generating valid RuntimeConfig instances."""
     baud = draw(st.sampled_from([9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]))
     port = draw(st.integers(min_value=1024, max_value=65535))

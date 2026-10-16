@@ -96,7 +96,6 @@ __all__ = [
 
 from ..transport.serial import SerialTransport
 
-
 logger = structlog.get_logger("mcubridge.service")
 
 McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]

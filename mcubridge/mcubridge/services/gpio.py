@@ -26,9 +26,7 @@ class GpioRuntime(Protocol):
     @property
     def state(self) -> RuntimeState: ...
 
-    async def enqueue_cloud(
-        self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None
-    ) -> None: ...
+    async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None: ...
 
 
 class GpioService:

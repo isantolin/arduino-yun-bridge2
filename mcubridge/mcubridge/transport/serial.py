@@ -108,9 +108,7 @@ class SerialBridgeService(Protocol):
 
     async def on_serial_disconnected(self) -> None: ...
 
-    async def handle_mcu_frame(
-        self, cmd_id: int, seq_id: int, payload: bytes | ProtobufMessage, /
-    ) -> Any: ...
+    async def handle_mcu_frame(self, cmd_id: int, seq_id: int, payload: bytes | ProtobufMessage, /) -> Any: ...
 
 
 serialx.register_uri_handler(
@@ -243,6 +241,7 @@ class SerialTransport:
 
                 try:
                     async with anyio.create_task_group() as tg:
+
                         async def _supervised_read_loop() -> None:
                             try:
                                 if self.serial:

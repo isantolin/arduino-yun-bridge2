@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import io
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -24,7 +25,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT / "mcubridge") not in sys.path:
     sys.path.insert(0, str(ROOT / "mcubridge"))
-IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
+IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests", "Unity"}
 FORBIDDEN_SUPPRESSIONS = frozenset(
     {
         "ignore_errors",
@@ -98,6 +99,7 @@ def audit_ast_integrity() -> list[str]:
         "openwrt-sdk",
         "__pycache__",
         "typings",
+        "Unity",
     }
     for path in ROOT.rglob("*.py"):
         try:
@@ -148,6 +150,14 @@ def audit_ast_integrity() -> list[str]:
 def audit_semgrep() -> list[str]:
     """Audit Python and C++ source files using declarative Semgrep rules."""
     semgrep_bin = shutil.which("semgrep")
+    if not semgrep_bin:
+        for candidate in (
+            ROOT / ".tox" / "semgrep" / "bin" / "semgrep",
+            Path.home() / ".local" / "bin" / "semgrep",
+        ):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                semgrep_bin = str(candidate)
+                break
     config_path = ROOT / ".semgrep.yml"
     if not semgrep_bin:
         return ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]

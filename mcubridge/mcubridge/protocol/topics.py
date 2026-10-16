@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import functools
 import posixpath
+from typing import Any
 
 import parse
 import structlog
@@ -95,3 +96,17 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
         topic=topic_enum,
         segments=segments,
     )
+
+
+@functools.lru_cache(maxsize=64)
+def compile_subtopic_parser(format_spec: str) -> parse.Parser:
+    """Compile and cache subtopic format parser for structured path segments. [SIL-2]"""
+    return parse.compile(format_spec)
+
+
+def parse_subtopic(path: str, format_spec: str) -> dict[str, Any] | None:
+    """Extract structured named fields from subtopic remainder using declarative parse pattern. [SIL-2]"""
+    clean_path = path.strip("/")
+    result = compile_subtopic_parser(format_spec).parse(clean_path)
+    return dict(result.named) if result is not None else None
+

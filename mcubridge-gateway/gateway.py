@@ -610,10 +610,11 @@ class CloudBridgeService(CloudBridgeBase):
             except OSError as exc:
                 logger.warning("Network OS error for device", error=str(exc))
             finally:
-                session_fsm.close()
-                logger.info("Device disconnected", state=session_fsm.current_state_value)
-                self.gateway.sessions.pop(device_id, None)
-                self.gateway.connections.pop(device_id, None)
+                with anyio.CancelScope(shield=True):
+                    session_fsm.close()
+                    logger.info("Device disconnected", state=session_fsm.current_state_value)
+                    self.gateway.sessions.pop(device_id, None)
+                    self.gateway.connections.pop(device_id, None)
 
     async def DispatchCommand(self, stream: Stream[pb.CommandDispatch, pb.CommandResponse]) -> None:
         """[SIL-2] Northbound gRPC endpoint dispatching a command to an active edge device."""
@@ -994,10 +995,11 @@ class ProtobufGateway:
 
         try:
             await stream.send_message(req_envelope)
-            async with asyncio.timeout(timeout_seconds):
+            with anyio.fail_after(timeout_seconds):
                 return await future
         finally:
-            self.pending_commands.pop(key, None)
+            with anyio.CancelScope(shield=True):
+                self.pending_commands.pop(key, None)
 
     def handle_command_response(
         self,

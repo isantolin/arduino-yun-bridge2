@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import logging
 from pathlib import Path
+import re
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+from dirty_equals import Contains, HasLen, IsFloat, IsInstance, IsInt, IsPartialDict, IsPositiveInt, IsStr
 import httpx
 import pytest
 from gateway import (
@@ -23,7 +26,6 @@ from gateway import (
     extract_peer_identity,
     main,
 )
-from collections.abc import Callable
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
 from grpclib.reflection.service import ServerReflection
@@ -498,7 +500,7 @@ async def test_send_command_success_and_correlation(mock_gateway: ProtobufGatewa
 
     async def _send_and_respond():
         await asyncio.sleep(0.01)
-        assert len(mock_gateway.pending_commands) == 1
+        assert mock_gateway.pending_commands == HasLen(1)
         key = list(mock_gateway.pending_commands.keys())[0]
         seq = key[1]
         resp_envelope = pb.CloudEnvelope(
@@ -515,7 +517,7 @@ async def test_send_command_success_and_correlation(mock_gateway: ProtobufGatewa
 
     assert resp.status_code == 200
     assert resp.payload == b"OK"
-    assert len(mock_gateway.pending_commands) == 0
+    assert mock_gateway.pending_commands == HasLen(0)
 
 
 async def test_send_command_device_not_connected(mock_gateway: ProtobufGateway) -> None:
@@ -731,11 +733,13 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
 
     # Verify line protocol format contains all dimensions
     line = TSDBSink.format_line_protocol("edge-full", metrics, timestamp_ns=1700000000000)
-    assert "serial_bytes_sent=1024i" in line
-    assert "serial_bytes_received=2048i" in line
-    assert "serial_crc_errors=1i" in line
-    assert "watchdog_beats=50i" in line
-    assert "published_messages=8i" in line
+    assert line == (
+        Contains("serial_bytes_sent=1024i")
+        & Contains("serial_bytes_received=2048i")
+        & Contains("serial_crc_errors=1i")
+        & Contains("watchdog_beats=50i")
+        & Contains("published_messages=8i")
+    )
 
 
 @settings(max_examples=30, derandomize=True, deadline=None)
@@ -774,16 +778,17 @@ def test_tsdb_sink_format_line_protocol_property(
         watchdog_enabled=watchdog,
     )
     line = TSDBSink.format_line_protocol(device_id, metrics, timestamp_ns=ts)
-    assert line.startswith(f"mcubridge_telemetry,device_id={device_id} ")
-    assert line.endswith(f" {ts}")
-    assert f"serial_bytes_sent={serial_sent}i" in line
-    assert f"serial_bytes_received={serial_recv}i" in line
-    assert f"serial_crc_errors={crc_errors}i" in line
-    assert f"watchdog_beats={beats}i" in line
-    assert f"published_messages={published}i" in line
-    assert f"link_synchronized={1 if sync else 0}i" in line
-    assert f"spool_degraded={1 if spool_deg else 0}i" in line
-    assert f"watchdog_enabled={1 if watchdog else 0}i" in line
+    assert line == (
+        IsStr(regex=rf"^mcubridge_telemetry,device_id={re.escape(device_id)} .* {ts}$")
+        & Contains(f"serial_bytes_sent={serial_sent}i")
+        & Contains(f"serial_bytes_received={serial_recv}i")
+        & Contains(f"serial_crc_errors={crc_errors}i")
+        & Contains(f"watchdog_beats={beats}i")
+        & Contains(f"published_messages={published}i")
+        & Contains(f"link_synchronized={1 if sync else 0}i")
+        & Contains(f"spool_degraded={1 if spool_deg else 0}i")
+        & Contains(f"watchdog_enabled={1 if watchdog else 0}i")
+    )
 
 
 @pytest.mark.parametrize(
@@ -1063,9 +1068,9 @@ async def test_protobuf_gateway_reflection_services() -> None:
     gw = ProtobufGateway(use_tls=False)
     services = [CloudBridgeService(gw), GatewayLocalBridgeService(gw)]
     extended = ServerReflection.extend(services)
-    assert len(extended) == 4
+    assert extended == HasLen(4)
     service_names = [type(s).__name__ for s in extended]
-    assert "ServerReflection" in service_names
+    assert service_names == Contains("ServerReflection")
 
 
 async def test_gateway_session_cancelled() -> None:

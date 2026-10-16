@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from google.protobuf.message import EncodeError as ProtobufSerializationError
+from dirty_equals import IsPartialDict, IsPositiveInt
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 from mcubridge.config.settings import RuntimeConfig
@@ -412,3 +413,20 @@ def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, moc
     svc.lifecycle_fsm.stop()
     assert not svc.is_running
     assert not svc.is_draining
+
+
+def test_parse_subtopic_and_compile_parser() -> None:
+    """Validate declarative subtopic pattern parsing using parse library. [SIL-2]"""
+    from mcubridge.protocol.topics import compile_subtopic_parser, parse_subtopic
+
+    parser = compile_subtopic_parser("pins/{pin:d}/{action}")
+    assert parser is not None
+
+    parsed = parse_subtopic("pins/13/read", "pins/{pin:d}/{action}")
+    assert parsed == IsPartialDict({"pin": 13, "action": "read"})
+
+    parsed_ds = parse_subtopic("datastore/cache/sensor1", "datastore/{bucket}/{key}")
+    assert parsed_ds == IsPartialDict({"bucket": "cache", "key": "sensor1"})
+
+    assert parse_subtopic("invalid/format", "pins/{pin:d}/{action}") is None
+

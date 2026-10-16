@@ -485,7 +485,7 @@ class SerialTransport:
                         raise self._FatalSerialError(None)
 
                     try:
-                        async with asyncio.timeout(effective_timeout):
+                        with anyio.fail_after(effective_timeout):
                             await pending.completion.wait()
                             if pending.success:
                                 return pending.response_payload if pending.response_payload is not None else True
@@ -513,7 +513,7 @@ class SerialTransport:
 
         if not self.state.serial_tx_allowed.is_set():
             try:
-                async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
+                with anyio.fail_after(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
             except TimeoutError:
                 logger.error("Timed out waiting for serial TX flow control")
@@ -575,15 +575,16 @@ class SerialTransport:
             self.negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
-            async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
+            with anyio.fail_after(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
                 await self.negotiation_future
             return True
         except (TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
-            if self.state.connection_fsm.negotiating_baud.is_active:
-                self.state.connection_fsm.connect()
+            with anyio.CancelScope(shield=True):
+                if self.state.connection_fsm.negotiating_baud.is_active:
+                    self.state.connection_fsm.connect()
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
         await self.send_raw(status.value, pb.AckPacket(command_id=command_id), seq_id)

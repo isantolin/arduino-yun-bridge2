@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import importlib
 import os
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Final, cast
 from wsgiref.handlers import CGIHandler
 
+import parse
 import structlog
 import typer
 from google.protobuf import json_format
@@ -22,6 +23,21 @@ try:
 except ImportError as exc:
     logger.debug("Native OpenWrt UBUS module unavailable", error=str(exc))
     ubus = None
+
+_PIN_SEARCH_PATTERNS: Final = (
+    parse.compile("pin/{pin:d}"),
+    parse.compile("digital/{pin:d}"),
+)
+
+
+def extract_pin_from_path(path: str) -> int | None:
+    """Extract pin integer from REST URI using compiled parse patterns. [SIL-2]"""
+    path_only = path.split("?", 1)[0].strip("/")
+    for pattern in _PIN_SEARCH_PATTERNS:
+        res = pattern.search(path_only)
+        if res is not None and isinstance(res["pin"], int):
+            return res["pin"]
+    return None
 
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 
@@ -71,13 +87,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         configure_logging(config)
 
         path = environ.get("PATH_INFO") or environ.get("REQUEST_URI") or ""
-        path_only = path.split("?", 1)[0]
-        segments = [s for s in path_only.split("/") if s]
-        pin: int | None = None
-        for i, segment in enumerate(segments[:-1]):
-            if segment in ("pin", "digital") and segments[i + 1].isdigit():
-                pin = int(segments[i + 1])
-                break
+        pin = extract_pin_from_path(path)
 
         if pin is None:
             return json_res(

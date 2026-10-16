@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+from dirty_equals import Contains, IsFloat, IsInstance, IsInt, IsPartialDict, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
@@ -62,7 +63,7 @@ def test_record_watchdog_beat_updates_counters(runtime_config: RuntimeConfig) ->
         watchdog.kick()
 
         assert state.watchdog_beats == initial_beats + 1
-        assert state.last_watchdog_beat > 0
+        assert state.last_watchdog_beat == IsFloat(gt=0)
     finally:
         state.cleanup()
 
@@ -79,8 +80,8 @@ def test_record_cloud_drop_increments_counter(runtime_config: RuntimeConfig) -> 
         record_drop: Any = service.record_cloud_drop
         record_drop(topic)
 
-        assert state.cloud_dropped_messages == 1
-        assert state.cloud_drop_counts[topic] == 1
+        assert state.cloud_dropped_messages == IsPositiveInt
+        assert state.cloud_drop_counts == IsPartialDict({topic: 1})
     finally:
         state.cleanup()
 
@@ -158,7 +159,7 @@ def test_handshake_duration_since_start(runtime_config: RuntimeConfig) -> None:
 
         state.handshake_last_started = time.monotonic() - 1.0
         duration = state.handshake_duration_since_start()
-        assert duration > 0.5
+        assert duration == IsFloat(gt=0.5)
     finally:
         state.cleanup()
 

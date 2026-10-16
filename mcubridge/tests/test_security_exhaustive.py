@@ -3,10 +3,12 @@ This file is part of Arduino MCU Ecosystem v2.
 Copyright (C) 2025-2026 Ignacio Santolin and contributors
 """
 
-from unittest.mock import patch
+from typing import Any
 
+from dirty_equals import HasLen, IsPositiveInt
 from hypothesis import given, strategies as st
 import pytest
+from pytest_mock import MockerFixture
 
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame, parse_frame
@@ -29,7 +31,8 @@ def test_security_nonce_validation_via_public_api() -> None:
     nonce, next_counter = generate_nonce_with_counter(41)
 
     assert next_counter == 42
-    assert len(nonce) == protocol.AEAD_NONCE_SIZE
+    assert next_counter == IsPositiveInt
+    assert nonce == HasLen(protocol.AEAD_NONCE_SIZE)
     assert extract_nonce_counter(nonce, expected_prefix=protocol.MPU_AEAD_NONCE_PREFIX) == next_counter
     prefix_size = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
     mpu_prefix = protocol.MPU_AEAD_NONCE_PREFIX.to_bytes(prefix_size, "big")
@@ -86,7 +89,7 @@ def test_security_nonce_overflow_boundary_public_api() -> None:
     nonce, next_counter = generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK - 1)
 
     assert next_counter == protocol.NONCE_COUNTER_MASK
-    assert len(nonce) == protocol.AEAD_NONCE_SIZE
+    assert nonce == HasLen(protocol.AEAD_NONCE_SIZE)
     assert extract_nonce_counter(nonce, expected_prefix=protocol.MPU_AEAD_NONCE_PREFIX) == protocol.NONCE_COUNTER_MASK
 
     with pytest.raises(ValueError, match="Nonce counter overflow"):
@@ -185,25 +188,22 @@ def test_validate_nonce_counter_hypothesis(counter: int, step: int) -> None:
     assert kept_ctr == next_ctr + step
 
 
-def test_verify_crypto_integrity_failure_branches() -> None:
-    """Verify all KAT branch failure paths in verify_crypto_integrity."""
-    # 1. SHA256 failure
-    with patch("cryptography.hazmat.primitives.hashes.Hash.finalize", return_value=b"bad_sha"):
-        assert not verify_crypto_integrity()
-
-    # 2. HMAC failure
-    with patch("cryptography.hazmat.primitives.hmac.HMAC.finalize", return_value=b"bad_hmac"):
-        assert not verify_crypto_integrity()
-
-    # 3. ChaCha20 tag mismatch / length failure
-    with patch("cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", return_value=b"short"):
-        assert not verify_crypto_integrity()
-
-    with patch("cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", return_value=b"x" * 20):
-        assert not verify_crypto_integrity()
-
-    # 4. ChaCha20 exception failure
-    with patch(
-        "cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", side_effect=ValueError("corrupt")
-    ):
-        assert not verify_crypto_integrity()
+@pytest.mark.parametrize(
+    ("target", "kwargs"),
+    [
+        ("cryptography.hazmat.primitives.hashes.Hash.finalize", {"return_value": b"bad_sha"}),
+        ("cryptography.hazmat.primitives.hmac.HMAC.finalize", {"return_value": b"bad_hmac"}),
+        ("cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", {"return_value": b"short"}),
+        ("cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt", {"return_value": b"x" * 20}),
+        (
+            "cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt",
+            {"side_effect": ValueError("corrupt")},
+        ),
+    ],
+)
+def test_verify_crypto_integrity_failure_branches(
+    mocker: MockerFixture, target: str, kwargs: dict[str, Any]
+) -> None:
+    """Verify KAT branch failure paths in verify_crypto_integrity using mocker.patch. [SIL-2]"""
+    mocker.patch(target, **kwargs)
+    assert not verify_crypto_integrity()

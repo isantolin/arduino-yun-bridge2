@@ -1163,7 +1163,7 @@ class BridgeService:
             case SystemAction.BRIDGE:
                 await self.handle_system_bridge(route, inbound)
             case _:
-                logger.warning("Unrecognized system action requested", action=str(route.identifier))
+                logger.warning("Unrecognized system action requested", action=route.identifier)
 
     # --- Low-level Helpers ---
 

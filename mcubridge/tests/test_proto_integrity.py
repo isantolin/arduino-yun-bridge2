@@ -18,8 +18,6 @@ from tools.audit.codebase_auditor import app, audit_ast_integrity, audit_proto_i
 runner = CliRunner()
 
 
-
-
 def test_audit_proto_integrity_clean() -> None:
     """SIL-2: Verify canonical mcubridge.proto contains zero dead or abandoned definitions."""
     findings = audit_proto_integrity()

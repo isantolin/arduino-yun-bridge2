@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
-import tarfile
 from pathlib import Path
+import subprocess
+import tarfile
 from types import ModuleType
 
 from dirty_equals import Contains
@@ -54,15 +55,13 @@ def test_main_rpmbuild_success(tmp_path: Path, mocker: MockerFixture) -> None:
 
     mocker.patch.object(build_rpm.shutil, "which", return_value="/usr/bin/rpmbuild")
 
-    def mock_run(cmd: list[str], check: bool = False) -> mocker.MagicMock:
+    def mock_run(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess[str]:
         _ = (cmd, check)
         # Create a mock rpm file in rpmbuild/RPMS
         rpms_dir = custom_build / "RPMS" / "noarch"
         rpms_dir.mkdir(parents=True, exist_ok=True)
         (rpms_dir / "mcubridge-gateway-2.8.5-1.noarch.rpm").write_text("mock_rpm", encoding="utf-8")
-        res = mocker.MagicMock()
-        res.returncode = 0
-        return res
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     mocker.patch.object(build_rpm.subprocess, "run", side_effect=mock_run)
 

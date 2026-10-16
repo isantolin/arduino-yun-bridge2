@@ -595,13 +595,10 @@ class RuntimeState:
                 self.cloud_fsm.degrade()
         else:
             if self.cloud_fsm.spooling_degraded.is_active:
-                if self.is_cloud_connected:
-                    if self.cloud_fsm.connected_http3.is_active:
-                        self.cloud_fsm.connect_http3()
-                    else:
-                        self.cloud_fsm.connect_http2()
+                if self._connected_via_http3:
+                    self.cloud_fsm.connect_http3()
                 else:
-                    self.cloud_fsm.start_connecting()
+                    self.cloud_fsm.connect_http2()
 
     @property
     def connected_via_http3(self) -> bool:

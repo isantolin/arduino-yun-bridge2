@@ -67,6 +67,66 @@ class GatewaySessionMachine(StateMachine):
     close = connected.to(closed) | authenticated.to(closed) | active.to(closed)
 
 
+class GatewayDeviceSession:
+    """[SIL-2] Edge session container and deterministic lifecycle controller."""
+
+    device_id: str
+    stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope] | None
+    metrics: FleetMetrics | None
+    gateway: Any | None
+    pending_commands: dict[int, asyncio.Future[pb.CommandResponse]]
+    console_queues: list[Any]
+    fsm: GatewaySessionMachine
+
+    def __init__(
+        self,
+        device_id: str = "",
+        stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope] | None = None,
+        metrics: FleetMetrics | None = None,
+        gateway: Any | None = None,
+    ) -> None:
+        self.device_id = device_id
+        self.stream = stream
+        self.metrics = metrics
+        self.gateway = gateway
+        self.pending_commands = {}
+        self.console_queues = []
+        self.fsm = GatewaySessionMachine()
+
+    @property
+    def current_state_value(self) -> str:
+        return str(self.fsm.current_state_value)
+
+    @property
+    def active(self) -> Any:
+        return self.fsm.active
+
+    def authenticate(self) -> None:
+        self.fsm.authenticate()
+
+    def activate(self) -> None:
+        self.fsm.activate()
+
+    def close(self) -> None:
+        if self.fsm.closed.is_active:
+            return
+        self.fsm.close()
+        for fut in list(self.pending_commands.values()):
+            if not fut.done():
+                fut.set_exception(ConnectionResetError(f"Device {self.device_id} disconnected during execution"))
+        self.pending_commands.clear()
+        self.console_queues.clear()
+
+        if self.gateway is not None and hasattr(self.gateway, "pending_commands"):
+            for (target_id, _), fut in list(self.gateway.pending_commands.items()):
+                if target_id == self.device_id and not fut.done():
+                    fut.set_exception(ConnectionResetError(f"Device {self.device_id} disconnected during execution"))
+
+        if self.metrics is not None and self.device_id:
+            self.metrics.devices_connected.dec()
+            self.metrics.device_connection_state.labels(device_id=self.device_id).set(0.0)
+
+
 class FleetMetrics:
     """[SIL-2] Fleet-wide Prometheus observability metrics container."""
 
@@ -497,7 +557,12 @@ class CloudBridgeService(CloudBridgeBase):
             logger.warning("Session connection rejected: invalid peer identity", error=str(exc))
             return
 
-        session_fsm = GatewaySessionMachine()
+        session_fsm = GatewayDeviceSession(
+            device_id=device_id,
+            stream=stream,
+            metrics=self.gateway.metrics,
+            gateway=self.gateway,
+        )
         if is_authenticated:
             session_fsm.authenticate()
 
@@ -520,6 +585,7 @@ class CloudBridgeService(CloudBridgeBase):
                     if envelope.device_id and envelope.device_id != device_id:
                         old_device_id = device_id
                         device_id = envelope.device_id
+                        session_fsm.device_id = device_id
                         self.gateway.connections.pop(old_device_id, None)
                         self.gateway.sessions.pop(old_device_id, None)
                         self.gateway.connections[device_id] = stream
@@ -548,13 +614,6 @@ class CloudBridgeService(CloudBridgeBase):
                 logger.info("Device disconnected", state=session_fsm.current_state_value)
                 self.gateway.sessions.pop(device_id, None)
                 self.gateway.connections.pop(device_id, None)
-                self.gateway.metrics.devices_connected.dec()
-                self.gateway.metrics.device_connection_state.labels(device_id=device_id).set(0.0)
-
-                # Abort pending command futures for this disconnected device
-                for (target_id, _), fut in list(self.gateway.pending_commands.items()):
-                    if target_id == device_id and not fut.done():
-                        fut.set_exception(ConnectionResetError(f"Device {device_id} disconnected during execution"))
 
     async def DispatchCommand(self, stream: Stream[pb.CommandDispatch, pb.CommandResponse]) -> None:
         """[SIL-2] Northbound gRPC endpoint dispatching a command to an active edge device."""
@@ -868,7 +927,7 @@ class ProtobufGateway:
         self.metrics_port = metrics_port
         self.server: Server | None = None
         self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
-        self.sessions: dict[str, GatewaySessionMachine] = {}
+        self.sessions: dict[str, GatewayDeviceSession] = {}
         self.pending_commands: dict[tuple[str, int], asyncio.Future[pb.CommandResponse]] = {}
         self._sequence_id: int = 0
         self.metrics: FleetMetrics = FleetMetrics(registry=metrics_registry)

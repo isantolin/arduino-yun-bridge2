@@ -329,19 +329,19 @@ def test_extract_peer_identity() -> None:
     # 1. peer is None
     device_id, auth = extract_peer_identity(None)
     assert device_id == "anonymous-unknown"
-    assert auth is False
+    assert not auth
 
     # 2. peer with address only
     mock_peer = MockPeer(addr=("192.168.1.50", 44321))
     device_id, auth = extract_peer_identity(mock_peer)
     assert device_id == "anonymous-192.168.1.50:44321"
-    assert auth is False
+    assert not auth
 
     # 3. peer with CN certificate
     mock_peer_cn = MockPeer(common_name="test-device-01")
     device_id, auth = extract_peer_identity(mock_peer_cn)
     assert device_id == "test-device-01"
-    assert auth is True
+    assert auth
 
     # 4. peer with malformed cert subject
     mock_peer_bad = MockPeer(cert={"subject": [None]})
@@ -1078,3 +1078,28 @@ async def test_gateway_session_cancelled() -> None:
 
     with pytest.raises(asyncio.CancelledError):
         await svc.Session(mock_stream.as_stream())
+
+
+async def test_gateway_device_session_lifecycle() -> None:
+    from gateway import GatewayDeviceSession
+
+    fleet = FleetMetrics()
+    session = GatewayDeviceSession(device_id="dev-test", metrics=fleet)
+    assert session.current_state_value == "connected"
+    session.activate()
+    assert session.current_state_value == "active"
+
+    fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    session.pending_commands[1] = fut
+    q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+    session.console_queues.append(q)
+
+    session.close()
+    assert session.current_state_value == "closed"
+    assert fut.done()
+    assert isinstance(fut.exception(), ConnectionResetError)
+    assert len(session.console_queues) == 0
+    # Closing an already closed session is a safe no-op
+    session.close()
+    assert session.current_state_value == "closed"
+

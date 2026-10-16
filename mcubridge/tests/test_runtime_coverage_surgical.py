@@ -395,3 +395,21 @@ async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, m
     msg = pb.CloudQueuedPublish(topic_name="mcu/telemetry", payload=b"test")
     success = await svc.publish_cloud_message(msg)
     assert success is True
+
+
+def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    assert not svc.is_running
+    assert not svc.is_draining
+    svc.lifecycle_fsm.start()
+    svc.lifecycle_fsm.run()
+    assert svc.is_running
+    assert not svc.is_draining
+    svc.lifecycle_fsm.drain()
+    assert not svc.is_running
+    assert svc.is_draining
+    svc.lifecycle_fsm.stop()
+    assert not svc.is_running
+    assert not svc.is_draining
+

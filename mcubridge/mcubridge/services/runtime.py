@@ -74,6 +74,7 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
 from ..state.context import (
+    DaemonLifecycleMachine,
     FileTransferMachine,
     ProcessContext,
     RuntimeState,
@@ -136,6 +137,7 @@ class BridgeService:
     local_bridge_service: LocalBridgeService
     _tg: asyncio.TaskGroup | None
     cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None
+    lifecycle_fsm: DaemonLifecycleMachine
 
     def __init__(
         self,
@@ -147,6 +149,7 @@ class BridgeService:
         handshake: SerialHandshakeManager | None = None,
     ) -> None:
         self.config, self.state, self.serial = config, state, serial
+        self.lifecycle_fsm = DaemonLifecycleMachine()
         self.cloud_publisher = cloud_publisher
         self._cloud_channel, self.cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
@@ -1414,13 +1417,23 @@ class BridgeService:
             reply_context=reply_context,
         )
 
+    @property
+    def is_running(self) -> bool:
+        return self.lifecycle_fsm.running.is_active
+
+    @property
+    def is_draining(self) -> bool:
+        return self.lifecycle_fsm.draining.is_active
+
     # --- De-layered Orchestration [SIL-2] ---
 
     async def run(self) -> None:
         """Main entry point for daemon execution using native TaskGroup orchestration."""
+        self.lifecycle_fsm.start()
         try:
             async with asyncio.TaskGroup() as tg:
                 self._tg = tg
+                self.lifecycle_fsm.run()
                 # 1. Serial Link (Critical)
                 tg.create_task(
                     self.supervise(
@@ -1510,6 +1523,7 @@ class BridgeService:
             logger.critical("Fatal task error", error=str(exc), exc_info=True)
             raise
         finally:
+            self.lifecycle_fsm.drain()
             with anyio.CancelScope(shield=True):
                 if self.cloud_spool is not None:
                     try:
@@ -1519,6 +1533,7 @@ class BridgeService:
                     self.cloud_spool = None
                 self.cleanup()
                 STATUS_FILE.unlink(missing_ok=True)
+                self.lifecycle_fsm.stop()
                 logger.info("MCU Bridge daemon stopped.")
 
     async def run_cloud(self) -> None:

@@ -11,10 +11,35 @@ import pytest
 from pytest_mock import MockerFixture
 
 from tools.audit.audit_test_integrity import (
+    audit_boolean_identity_assertions,
     audit_python_tests,
     audit_test_only_hooks,
     main,
 )
+
+
+def test_audit_boolean_identity_assertions_clean_codebase() -> None:
+    """Verify that current clean codebase has zero repeated boolean identity assertions."""
+    findings = audit_boolean_identity_assertions()
+    assert findings == [], f"Unexpected repeated boolean identity assertions detected:\n{findings}"
+
+
+def test_audit_boolean_identity_assertions_positive_detection(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Positive test: verify that repeated identity assertions on an attribute/var are flagged."""
+    fake_test = tmp_path / "mcubridge" / "tests" / "test_identity_violation.py"
+    fake_test.parent.mkdir(parents=True, exist_ok=True)
+    fake_test.write_text(
+        "def test_repeated_identity():\n"
+        "    svc = Dummy()\n"
+        "    assert svc.is_running is False\n"
+        "    svc.run()\n"
+        "    assert svc.is_running is True\n",
+        encoding="utf-8",
+    )
+    mocker.patch("tools.audit.audit_test_integrity.ROOT", tmp_path)
+    findings = audit_boolean_identity_assertions()
+    assert any("Unnecessary Comparison Invariant" in f for f in findings)
+    assert any("svc.is_running" in f for f in findings)
 
 
 def test_audit_test_only_hooks_clean_codebase() -> None:

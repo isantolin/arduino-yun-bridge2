@@ -231,6 +231,57 @@ def audit_test_only_hooks() -> list[str]:
     return findings
 
 
+def audit_boolean_identity_assertions() -> list[str]:
+    """Scan test suites for repeated boolean identity assertions ('is True' / 'is False')
+    that trigger Pyrefly unnecessary-comparison narrowing errors.
+    """
+    findings: list[str] = []
+    print("Auditing boolean identity comparisons in assertions...")
+    search_dirs = [
+        ROOT / "mcubridge" / "tests",
+        ROOT / "mcubridge-gateway" / "tests",
+        ROOT / "mcubridge-client-examples" / "tests",
+    ]
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for py_path in sorted(d.glob("**/test_*.py")):
+            try:
+                tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
+            except (SyntaxError, UnicodeDecodeError) as exc:
+                findings.append(f"[{py_path.relative_to(ROOT)}] Parse Error: {exc}")
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                seen_asserts: dict[str, list[int]] = {}
+                for sub in ast.walk(node):
+                    if (
+                        isinstance(sub, ast.Assert)
+                        and isinstance(sub.test, ast.Compare)
+                        and isinstance(sub.test.left, (ast.Attribute, ast.Name))
+                    ):
+                        for op, comp in zip(sub.test.ops, sub.test.comparators, strict=False):
+                            if (
+                                isinstance(op, (ast.Is, ast.IsNot))
+                                and isinstance(comp, ast.Constant)
+                                and isinstance(comp.value, bool)
+                            ):
+                                expr_str = ast.unparse(sub.test.left)
+                                seen_asserts.setdefault(expr_str, []).append(sub.lineno)
+
+                for expr_str, lines in seen_asserts.items():
+                    if len(lines) > 1:
+                        findings.append(
+                            f"[{py_path.relative_to(ROOT)}:{lines[1]}] Unnecessary Comparison Invariant: "
+                            f"Repeated boolean identity assertion on '{expr_str}' in '{node.name}' (lines {lines}). "
+                            f"Use 'assert {expr_str}' / 'assert not {expr_str}' to avoid Pyrefly "
+                            f"unnecessary-comparison narrowing errors."
+                        )
+
+    return findings
+
+
 @app.command()
 def main(
     strict: Annotated[
@@ -238,11 +289,12 @@ def main(
     ] = True,
 ) -> None:
     """Execute automated test integrity audit across Python test suites."""
-    all_findings = audit_python_tests() + audit_test_only_hooks()
+    all_findings = audit_python_tests() + audit_test_only_hooks() + audit_boolean_identity_assertions()
     print("\n--- TEST INTEGRITY AUDIT RESULTS ---")
     if not all_findings:
         print("✅ 100% of test functions have substantive assertions and pass Rule 17/18 integrity gates.")
         print("✅ Zero test-only hooks or dead backdoors detected in production code (Rule 5 compliant).")
+        print("✅ Zero repeated boolean identity assertions in test suites (Pyrefly unnecessary-comparison compliant).")
         return
 
     print(f"❌ Found {len(all_findings)} test integrity violation(s):")

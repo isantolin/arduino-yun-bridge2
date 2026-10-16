@@ -113,16 +113,91 @@ class LinkConnectionState(StrEnum):
     SYNCHRONIZED = "synchronized"
 
 
-class LinkConnectionMachine(StateMachine):
-    """[SIL-2] Strongly-typed deterministic FSM for serial link connection."""
+class SerialLinkMachine(StateMachine):
+    """[SIL-2] Strongly-typed deterministic FSM for serial link connection and physical flow control."""
+
+    allow_event_without_transition = True
 
     disconnected = State(value="disconnected", initial=True)
+    opening = State(value="opening")
+    negotiating_baud = State(value="negotiating_baud")
     connected = State(value="connected")
     synchronized = State(value="synchronized")
+    paused = State(value="paused")
+    fault = State(value="fault")
 
-    connect = disconnected.to(connected) | synchronized.to(connected) | connected.to(connected)
-    synchronize = disconnected.to(synchronized) | connected.to(synchronized) | synchronized.to(synchronized)
-    disconnect = connected.to(disconnected) | synchronized.to(disconnected) | disconnected.to(disconnected)
+    open_port = disconnected.to(opening) | opening.to(opening) | fault.to(opening)
+    start_negotiating = (
+        opening.to(negotiating_baud)
+        | disconnected.to(negotiating_baud)
+        | connected.to(negotiating_baud)
+        | synchronized.to(negotiating_baud)
+        | negotiating_baud.to(negotiating_baud)
+    )
+    connect = (
+        disconnected.to(connected)
+        | opening.to(connected)
+        | negotiating_baud.to(connected)
+        | synchronized.to(connected)
+        | paused.to(connected)
+        | fault.to(connected)
+        | connected.to(connected)
+    )
+    synchronize = (
+        disconnected.to(synchronized)
+        | opening.to(synchronized)
+        | negotiating_baud.to(synchronized)
+        | connected.to(synchronized)
+        | paused.to(synchronized)
+        | fault.to(synchronized)
+        | synchronized.to(synchronized)
+    )
+    pause = synchronized.to(paused) | connected.to(paused) | paused.to(paused)
+    resume = paused.to(synchronized) | synchronized.to(synchronized) | paused.to(connected) | connected.to(connected)
+    fail = (
+        disconnected.to(fault)
+        | opening.to(fault)
+        | negotiating_baud.to(fault)
+        | connected.to(fault)
+        | synchronized.to(fault)
+        | paused.to(fault)
+        | fault.to(fault)
+    )
+    disconnect = (
+        connected.to(disconnected)
+        | synchronized.to(disconnected)
+        | opening.to(disconnected)
+        | negotiating_baud.to(disconnected)
+        | paused.to(disconnected)
+        | fault.to(disconnected)
+        | disconnected.to(disconnected)
+    )
+
+
+LinkConnectionMachine = SerialLinkMachine
+
+
+class DaemonLifecycleMachine(StateMachine):
+    """[SIL-2] Deterministic lifecycle FSM for BridgeService daemon."""
+
+    allow_event_without_transition = True
+
+    uninitialized = State(value="uninitialized", initial=True)
+    starting = State(value="starting")
+    running = State(value="running")
+    draining = State(value="draining")
+    stopped = State(value="stopped")
+
+    start = uninitialized.to(starting) | stopped.to(starting)
+    run = starting.to(running) | running.to(running)
+    drain = running.to(draining) | starting.to(draining) | draining.to(draining)
+    stop = (
+        draining.to(stopped)
+        | running.to(stopped)
+        | starting.to(stopped)
+        | uninitialized.to(stopped)
+        | stopped.to(stopped)
+    )
 
 
 class CloudLinkState(StrEnum):
@@ -234,10 +309,8 @@ class RuntimeState:
     allow_non_tmp_paths: bool
     datastore_cache: LmdbCache | None
     tls_session_cache: LmdbCache | None
-    connected_via_http3: bool
     mailbox_queue: LmdbDeque
     mailbox_incoming_queue: LmdbDeque
-    mcu_is_paused: bool
     serial_tx_allowed: asyncio.Event
     console_to_mcu_queue: collections.deque[bytes]
     console_queue_limit_bytes: int
@@ -317,7 +390,6 @@ class RuntimeState:
     cloud_spool_dropped_limit: int
     cloud_spool_trim_events: int
     cloud_spool_last_trim_unix: float
-    cloud_spool_degraded: bool
     cloud_spool_failure_reason: str | None
     cloud_spool_pending_messages: int
     clock_offset_us: int
@@ -341,12 +413,10 @@ class RuntimeState:
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
         self.datastore_cache: LmdbCache | None = kwargs.get("datastore_cache")
         self.tls_session_cache: LmdbCache | None = kwargs.get("tls_session_cache")
-        self.connected_via_http3: bool = False
 
         self.mailbox_queue: LmdbDeque = kwargs.get("mailbox_queue") or LmdbDeque(path=":memory:")
         self.mailbox_incoming_queue: LmdbDeque = kwargs.get("mailbox_incoming_queue") or LmdbDeque(path=":memory:")
 
-        self.mcu_is_paused: bool = kwargs.get("mcu_is_paused", False)
         self.serial_tx_allowed: asyncio.Event = kwargs.get("serial_tx_allowed") or asyncio.Event()
         self.console_to_mcu_queue: collections.deque[bytes] = kwargs.get("console_to_mcu_queue") or collections.deque()
         self.console_queue_limit_bytes: int = kwargs.get(
@@ -444,7 +514,6 @@ class RuntimeState:
         self.cloud_spool_dropped_limit: int = kwargs.get("cloud_spool_dropped_limit", 0)
         self.cloud_spool_trim_events: int = kwargs.get("cloud_spool_trim_events", 0)
         self.cloud_spool_last_trim_unix: float = kwargs.get("cloud_spool_last_trim_unix", 0.0)
-        self.cloud_spool_degraded: bool = kwargs.get("cloud_spool_degraded", False)
         self.cloud_spool_failure_reason: str | None = kwargs.get("cloud_spool_failure_reason")
         self.cloud_spool_pending_messages: int = kwargs.get("cloud_spool_pending_messages", 0)
         self.clock_offset_us: int = kwargs.get("clock_offset_us", 0)
@@ -467,6 +536,15 @@ class RuntimeState:
             start_value=self.cloud_link_state,
             listeners=[self],
         )
+        self._connected_via_http3: bool = bool(kwargs.get("connected_via_http3", False))
+        self._cloud_spool_degraded: bool = bool(kwargs.get("cloud_spool_degraded", False))
+
+        if kwargs.get("mcu_is_paused", False):
+            self.connection_fsm.pause()
+        if self._connected_via_http3:
+            self.cloud_fsm.connect_http3()
+        if kwargs.get("cloud_spool_degraded", False):
+            self.cloud_fsm.degrade()
 
     @property
     def device_id(self) -> str:
@@ -478,15 +556,62 @@ class RuntimeState:
 
     @property
     def is_connected(self) -> bool:
-        return self.connection_fsm.connected.is_active or self.connection_fsm.synchronized.is_active
+        return (
+            self.connection_fsm.connected.is_active
+            or self.connection_fsm.synchronized.is_active
+            or self.connection_fsm.paused.is_active
+        )
 
     @property
     def is_synchronized(self) -> bool:
-        return self.connection_fsm.synchronized.is_active
+        return self.connection_fsm.synchronized.is_active or self.connection_fsm.paused.is_active
 
     @property
     def is_cloud_connected(self) -> bool:
         return self.cloud_fsm.connected_http3.is_active or self.cloud_fsm.connected_http2.is_active
+
+    @property
+    def mcu_is_paused(self) -> bool:
+        return self.connection_fsm.paused.is_active
+
+    @mcu_is_paused.setter
+    def mcu_is_paused(self, value: bool) -> None:
+        if value:
+            if not self.connection_fsm.paused.is_active:
+                self.connection_fsm.pause()
+        else:
+            if self.connection_fsm.paused.is_active:
+                self.connection_fsm.resume()
+
+    @property
+    def cloud_spool_degraded(self) -> bool:
+        return self._cloud_spool_degraded or self.cloud_fsm.spooling_degraded.is_active
+
+    @cloud_spool_degraded.setter
+    def cloud_spool_degraded(self, value: bool) -> None:
+        self._cloud_spool_degraded = value
+        if value:
+            if not self.cloud_fsm.spooling_degraded.is_active and not self.cloud_fsm.disabled.is_active:
+                self.cloud_fsm.degrade()
+        else:
+            if self.cloud_fsm.spooling_degraded.is_active:
+                if self.is_cloud_connected:
+                    if self.cloud_fsm.connected_http3.is_active:
+                        self.cloud_fsm.connect_http3()
+                    else:
+                        self.cloud_fsm.connect_http2()
+                else:
+                    self.cloud_fsm.start_connecting()
+
+    @property
+    def connected_via_http3(self) -> bool:
+        return self._connected_via_http3 and self.cloud_fsm.connected_http3.is_active
+
+    @connected_via_http3.setter
+    def connected_via_http3(self, value: bool) -> None:
+        self._connected_via_http3 = value
+        if value and not self.cloud_fsm.connected_http3.is_active and not self.cloud_fsm.disabled.is_active:
+            self.cloud_fsm.connect_http3()
 
     def on_enter_connected(self) -> None:
         """[SIL-2] Native hook executed on entering connected state."""
@@ -505,21 +630,44 @@ class RuntimeState:
         self.metrics.link_state.state("synchronized")
         if getattr(self, "link_sync_event", None) is not None:
             self.link_sync_event.set()
+        if getattr(self, "serial_tx_allowed", None) is not None:
+            self.serial_tx_allowed.set()
+
+    def on_enter_paused(self) -> None:
+        """[SIL-2] Native hook executed on entering paused state."""
+        if getattr(self, "serial_tx_allowed", None) is not None:
+            self.serial_tx_allowed.clear()
+
+    def on_enter_fault(self) -> None:
+        """[SIL-2] Native hook executed on entering fault state."""
+        self.metrics.link_state.state("disconnected")
+        if getattr(self, "link_sync_event", None) is not None:
+            self.link_sync_event.clear()
+        if getattr(self, "serial_tx_allowed", None) is not None:
+            self.serial_tx_allowed.clear()
+
+    def on_enter_negotiating_baud(self) -> None:
+        """[SIL-2] Native hook executed on entering negotiating_baud state."""
+        if getattr(self, "serial_tx_allowed", None) is not None:
+            self.serial_tx_allowed.clear()
 
     def on_enter_connected_http3(self) -> None:
         """[SIL-2] Native hook executed on entering connected_http3 state."""
-        self.connected_via_http3 = True
+        self._connected_via_http3 = True
+        self._cloud_spool_degraded = False
 
     def on_enter_connected_http2(self) -> None:
         """[SIL-2] Native hook executed on entering connected_http2 state."""
-        self.connected_via_http3 = False
+        self._connected_via_http3 = False
+        self._cloud_spool_degraded = False
 
     def on_enter_spooling_degraded(self) -> None:
         """[SIL-2] Native hook executed on entering spooling_degraded state."""
+        self._cloud_spool_degraded = True
 
     def on_enter_disabled(self) -> None:
         """[SIL-2] Native hook executed on entering disabled state."""
-        self.connected_via_http3 = False
+        self._connected_via_http3 = False
 
     @property
     def handshake_failures(self) -> int:

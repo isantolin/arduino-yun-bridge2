@@ -368,3 +368,66 @@ def test_state_metrics_state_and_counters(runtime_config: RuntimeConfig) -> None
         assert state.state == "disconnected"
     finally:
         state.cleanup()
+
+
+def test_runtime_state_fsm_properties_and_branches() -> None:
+    from mcubridge.state.metrics import DaemonMetrics
+
+    state = RuntimeState(
+        metrics=DaemonMetrics(),
+        state="synchronized",
+        mcu_is_paused=True,
+        cloud_link_state="connecting",
+        connected_via_http3=True,
+    )
+    try:
+        assert state.mcu_is_paused
+        assert state.is_connected
+        assert state.is_synchronized
+        assert state.connected_via_http3
+        assert not state.cloud_spool_degraded
+
+        # MCU pause/resume property
+        state.mcu_is_paused = False
+        assert not state.mcu_is_paused
+        state.mcu_is_paused = False
+        assert not state.mcu_is_paused
+        state.mcu_is_paused = True
+        assert state.mcu_is_paused
+        state.mcu_is_paused = True
+        assert state.mcu_is_paused
+
+        # Cloud degraded property
+        state.cloud_fsm.connect_http3()
+        assert state.is_cloud_connected
+        state.cloud_spool_degraded = True
+        assert state.cloud_spool_degraded
+        state.cloud_spool_degraded = True
+        assert state.cloud_spool_degraded
+        state.cloud_spool_degraded = False
+        assert not state.cloud_spool_degraded
+        state.cloud_fsm.connect_http2()
+        state.cloud_spool_degraded = True
+        state.cloud_spool_degraded = False
+        assert not state.cloud_spool_degraded
+
+        # HTTP3 property
+        state.connected_via_http3 = True
+        assert state.connected_via_http3
+        state.connected_via_http3 = True
+        assert state.connected_via_http3
+        state.connected_via_http3 = False
+        assert not state.connected_via_http3
+
+        # Native hooks
+        state.connection_fsm.fail()
+        assert state.connection_fsm.fault.is_active
+        state.connection_fsm.disconnect()
+        assert state.connection_fsm.disconnected.is_active
+        state.connection_fsm.start_negotiating()
+        assert state.connection_fsm.negotiating_baud.is_active
+        state.cloud_fsm.disable()
+        assert state.cloud_fsm.disabled.is_active
+    finally:
+        state.cleanup()
+

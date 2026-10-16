@@ -534,10 +534,10 @@ def test_runtime_write_with_quota_property(
 
             res = await write_quota_fn(target_file, data)
             if len(data) > free_bytes:
-                assert res is False
+                assert not res
                 assert svc.state.file_storage_limit_rejections == initial_rejections + 1
             else:
-                assert res is True
+                assert res
                 assert target_file.read_bytes() == data
 
             # Error path fallback

@@ -152,7 +152,6 @@ class SerialTransport:
         self.serial: serialx.AsyncSerial | None = None
 
         self.stop_event = asyncio.Event()
-        self.is_negotiating = False
         self.negotiation_future: asyncio.Future[bool] | None = None
         self.consecutive_crc_errors = 0
         self.tx_sequence_id = 0
@@ -557,9 +556,21 @@ class SerialTransport:
             logger.error("Serial write failed", error=str(exc))
             return False
 
+    @property
+    def is_negotiating(self) -> bool:
+        return self.state.connection_fsm.negotiating_baud.is_active
+
+    @is_negotiating.setter
+    def is_negotiating(self, value: bool) -> None:
+        if value:
+            self.state.connection_fsm.start_negotiating()
+        else:
+            if self.state.connection_fsm.negotiating_baud.is_active:
+                self.state.connection_fsm.connect()
+
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)
-        self.is_negotiating = True
+        self.state.connection_fsm.start_negotiating()
         try:
             self.negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
@@ -571,7 +582,8 @@ class SerialTransport:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
-            self.is_negotiating = False
+            if self.state.connection_fsm.negotiating_baud.is_active:
+                self.state.connection_fsm.connect()
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
         await self.send_raw(status.value, pb.AckPacket(command_id=command_id), seq_id)

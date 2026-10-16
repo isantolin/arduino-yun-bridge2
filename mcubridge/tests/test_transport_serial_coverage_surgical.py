@@ -268,3 +268,13 @@ async def test_connect_and_run_negotiation_failure(
     mocker.patch.object(transport, "negotiate_baudrate", new=AsyncMock(return_value=False))
     with pytest.raises(ConnectionError, match="Baudrate negotiation failed"):
         await transport.connect_and_run()
+
+
+def test_serial_transport_is_negotiating_property(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    transport = SerialTransport(mock_config, mock_state, None)
+    assert not transport.is_negotiating
+    transport.is_negotiating = True
+    assert transport.is_negotiating
+    transport.is_negotiating = False
+    assert not transport.is_negotiating
+

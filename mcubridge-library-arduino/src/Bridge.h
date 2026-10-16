@@ -243,7 +243,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   struct StatusVisitor {
     BridgeClass& self;
-    rpc::StatusCode s;
+    rpc::StatusCode s{rpc::StatusCode::STATUS_UNSPECIFIED};
     void operator()(etl::span<const uint8_t> p) const {
       if (self._status_handler.is_valid()) {
         self._status_handler(s, p);

@@ -119,7 +119,7 @@ jobs:
         if: always()
         run: |
           mkdir -p arduino-logs
-          python tools/profiling/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
+          PYTHONPATH=. python tools/profiling/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -319,15 +319,12 @@ jobs:
           arduino-cli lib install wolfSSL WiFiNINA
       - name: Install Renode
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/bin"
-          RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.linux-dotnet.tar.gz"
-          if curl -fsSL -o /tmp/renode.tar.gz "$RENODE_URL"; then
-            mkdir -p /opt/renode
-            tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1
-            echo "/opt/renode" >> $GITHUB_PATH
-            rm -f /tmp/renode.tar.gz
+          RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.deb"
+          if curl -fsSL -o /tmp/renode.deb "$RENODE_URL"; then
+            sudo apt-get update && sudo apt-get install -y /tmp/renode.deb
+            rm -f /tmp/renode.deb
           else
-            echo "::warning::Failed to download Renode binary. Fallback to skip mode."
+            echo "::warning::Failed to download Renode package. Fallback to skip mode."
           fi
       - name: Run Renode E2E Test Suite
         run: |

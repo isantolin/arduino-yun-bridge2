@@ -2,7 +2,6 @@
 """Deep profiling of Arduino ELF files to identify largest symbols using pyelftools."""
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -13,7 +12,11 @@ from elftools.elf.sections import SymbolTableSection
 
 import typer
 
-from tools.boards import (
+repo_root = Path(__file__).resolve().parents[2]
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from tools.boards import (  # noqa: E402
     BOARDS_BY_SLUG as SUPPORTED_BOARDS,
     FLASH_SECTION_NAMES,
     RAM_SECTION_NAMES,

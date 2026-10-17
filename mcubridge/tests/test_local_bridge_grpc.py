@@ -119,6 +119,37 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     sent = stream.sent_message
     assert sent.value == 512
 
+    # 6. PinSubscribe (valid mode)
+    service.state.connection_fsm.connect()
+    mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=True)
+    stream = _make_mock_stream(
+        pb.PinSubscribeRequest(
+            pin=13,
+            mode=pb.PinModeType.PIN_INPUT_PULLUP,
+            interval_ms=100,
+            hysteresis=1,
+            enabled=True,
+        )
+    )
+    await local_svc.PinSubscribe(stream)
+    sent = stream.sent_message
+    assert sent.pin == 13
+    assert sent.success is True
+
+    # PinSubscribe (invalid mode enum fallback to INPUT)
+    stream = _make_mock_stream(
+        pb.PinSubscribeRequest(
+            pin=13,
+            mode=9999,
+            interval_ms=100,
+            hysteresis=1,
+            enabled=True,
+        )
+    )
+    await local_svc.PinSubscribe(stream)
+    sent = stream.sent_message
+    assert sent.pin == 13
+
 
 async def test_local_bridge_datastore_and_mailbox(tmp_path: Path) -> None:
     service, local_svc, _ = _make_service(_make_config(tmp_path))
@@ -565,6 +596,23 @@ async def test_local_bridge_service_subscribe_console(tmp_path: Path) -> None:
     asyncio.create_task(_push())
     with pytest.raises(OSError):
         await local_svc.SubscribeConsole(mock_stream.as_stream())
+
+
+async def test_local_bridge_service_subscribe_console_normal_close_and_adapter_cleanup(tmp_path: Path) -> None:
+    svc, local_svc, _ = _make_service(_make_config(tmp_path))
+    stream = _make_mock_stream(pb.SubscribeRequest())
+
+    async def _producer() -> None:
+        await asyncio.sleep(0.01)
+        if svc.console_queues:
+            adapter = svc.console_queues[-1]
+            await adapter.put(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"normal close"))
+            svc.console_queues.remove(adapter)
+            adapter.close()
+
+    asyncio.create_task(_producer())
+    await local_svc.SubscribeConsole(stream)
+    assert stream.sent_message.payload == b"normal close"
 
 
 async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, mocker: MockerFixture) -> None:

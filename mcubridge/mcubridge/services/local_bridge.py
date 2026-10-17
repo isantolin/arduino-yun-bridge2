@@ -427,7 +427,4 @@ RPC_DISPATCH_TABLE: Final[
             Callable[[LocalBridgeService, Any], Coroutine[Any, Any, ProtobufMessage]],
         ],
     ]
-] = {
-    spec.name: (spec.request_type, getattr(LocalBridgeService, spec.handler_name))
-    for spec in LOCAL_RPC_SPECS
-}
+] = {spec.name: (spec.request_type, getattr(LocalBridgeService, spec.handler_name)) for spec in LOCAL_RPC_SPECS}

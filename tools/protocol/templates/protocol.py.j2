@@ -79,7 +79,6 @@ class CommandSpec:
     expected_responses: frozenset[int]
     paired_request_id: int | None
     auth_field: str | None
-    rpc_method: str | None = None
     requires_ack: bool = False
     expects_direct_response: bool = False
     pre_sync_allowed: bool = False
@@ -110,7 +109,6 @@ COMMAND_SPECS: Final[dict[int, CommandSpec]] = {
         expected_responses=frozenset({% if spec.expected_responses %}{ {%- for r in spec.expected_responses %}Command.{{ r }}.value,{%- endfor %} }{% else %}(){% endif %}),
         paired_request_id={% if spec.paired_request_id %}Command.{{ spec.paired_request_id }}.value{% else %}None{% endif %},
         auth_field={{ spec.auth_field|tojson if spec.auth_field else 'None' }},
-        rpc_method={{ spec.rpc_method|tojson if spec.rpc_method else 'None' }},
         requires_ack={{ spec.requires_ack }},
         expects_direct_response={{ spec.expects_direct_response }},
         pre_sync_allowed={{ spec.pre_sync_allowed }},

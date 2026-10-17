@@ -272,7 +272,6 @@ def test_command_specs_multidimensional_integrity() -> None:
         assert spec.pre_sync_allowed == opts.pre_sync_allowed
         assert spec.cloud_topic == (opts.cloud_topic or None)
         assert spec.auth_field == (opts.auth_field or None)
-        assert spec.rpc_method == (opts.rpc_method or None)
         if opts.pb_message:
             assert spec.pb_class is getattr(pb, opts.pb_message)
             assert spec.payload_field is not None
@@ -281,7 +280,10 @@ def test_command_specs_multidimensional_integrity() -> None:
         if opts.response_command:
             assert spec.expected_responses == frozenset({getattr(protocol.Command, opts.response_command).value})
         if spec.paired_request_id:
-            assert any(s.expected_responses and spec.command_id in s.expected_responses for s in protocol.COMMAND_SPECS.values())
+            assert any(
+                s.expected_responses and spec.command_id in s.expected_responses
+                for s in protocol.COMMAND_SPECS.values()
+            )
 
 
 def test_runtime_config_defaults_reference_canonical_metadata() -> None:
@@ -461,6 +463,20 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.services.local_bridge import LocalBridgeService, RPC_DISPATCH_TABLE
 
     assert len(RPC_DISPATCH_TABLE) == 22
+    service_desc = pb.DESCRIPTOR.services_by_name["LocalBridge"]
+    unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
+    assert len(unary_methods) == 22
+
     for spec in protocol.LOCAL_RPC_SPECS:
+        assert spec.name in unary_methods
+        method_desc = unary_methods[spec.name]
+        assert spec.request_type is getattr(pb, method_desc.input_type.name)
+        assert spec.response_type is getattr(pb, method_desc.output_type.name)
         assert hasattr(LocalBridgeService, spec.handler_name)
         assert callable(getattr(LocalBridgeService, spec.handler_name))
+        assert hasattr(LocalBridgeService, spec.name)
+        assert callable(getattr(LocalBridgeService, spec.name))
+
+        dispatch_req, dispatch_handler = RPC_DISPATCH_TABLE[spec.name]
+        assert dispatch_req is spec.request_type
+        assert dispatch_handler is getattr(LocalBridgeService, spec.handler_name)

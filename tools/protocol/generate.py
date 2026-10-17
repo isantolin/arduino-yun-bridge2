@@ -141,7 +141,6 @@ class CommandDef:
     response_command: str | None = None
     request_command: str | None = None
     auth_field: str | None = None
-    rpc_method: str | None = None
     action_routes: list[dict[str, str]] = field(default_factory=_default_action_routes)
     mcu_handler: str | None = None
     mcu_unsupported_reason: str | None = None
@@ -362,9 +361,7 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
                 cloud_topic=opts.cloud_topic or None,
                 pb_message=opts.pb_message or None,
                 response_command=opts.response_command or None,
-                request_command=opts.request_command or None,
                 auth_field=opts.auth_field or None,
-                rpc_method=opts.rpc_method or None,
                 action_routes=action_routes,
                 mcu_handler=opts.mcu_handler or None,
                 mcu_unsupported_reason=opts.mcu_unsupported_reason or None,
@@ -700,7 +697,6 @@ def _build_command_context(
                 "expected_responses": resps,
                 "paired_request_id": cmd.request_command,
                 "auth_field": cmd.auth_field,
-                "rpc_method": cmd.rpc_method,
                 "requires_ack": cmd.requires_ack,
                 "expects_direct_response": cmd.expects_direct_response,
                 "pre_sync_allowed": cmd.pre_sync_allowed,

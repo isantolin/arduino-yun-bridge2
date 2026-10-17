@@ -10,6 +10,7 @@ exclude =
 
     typings,
     .tox,
+    .venv,
     build,
     dist,
     openwrt-sdk,

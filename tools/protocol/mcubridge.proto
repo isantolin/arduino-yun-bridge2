@@ -984,8 +984,8 @@ message ActionRouteDef {
 }
 
 message CommandOptions {
-  reserved 2, 4;
-  reserved "directions", "expects_direct_response";
+  reserved 2, 4, 10, 12;
+  reserved "directions", "expects_direct_response", "request_command", "rpc_method";
   string category = 1;
   bool requires_ack = 3;
   string description = 5;
@@ -993,9 +993,7 @@ message CommandOptions {
   bool pre_sync_allowed = 7;
   string pb_message = 8;
   string response_command = 9;
-  string request_command = 10;
   string auth_field = 11;
-  string rpc_method = 12;
   repeated ActionRouteDef action_routes = 13;
   string mcu_handler = 14;
   string mcu_unsupported_reason = 15;
@@ -1075,7 +1073,6 @@ enum Command {
     category: "system"
     response_command: "CMD_GET_VERSION_RESP"
     auth_field: "system_version"
-    rpc_method: "GetVersion"
     action_routes: [
       {
         topic: "SYSTEM"
@@ -1095,7 +1092,6 @@ enum Command {
     category: "system"
     response_command: "CMD_GET_FREE_MEMORY_RESP"
     auth_field: "system_free_memory"
-    rpc_method: "GetFreeMemory"
     action_routes: [
       {
         topic: "SYSTEM"
@@ -1189,7 +1185,6 @@ enum Command {
     requires_ack: true
     pb_message: "PinMode"
     auth_field: "digital_mode"
-    rpc_method: "SetPinMode"
     action_routes: [
       {
         topic: "DIGITAL"
@@ -1212,7 +1207,6 @@ enum Command {
     requires_ack: true
     pb_message: "DigitalWrite"
     auth_field: "digital_write"
-    rpc_method: "DigitalWrite"
     action_routes: [
       {
         topic: "DIGITAL"
@@ -1226,7 +1220,6 @@ enum Command {
     requires_ack: true
     pb_message: "AnalogWrite"
     auth_field: "analog_write"
-    rpc_method: "AnalogWrite"
     action_routes: [
       {
         topic: "ANALOG"
@@ -1240,7 +1233,6 @@ enum Command {
     pb_message: "PinRead"
     response_command: "CMD_DIGITAL_READ_RESP"
     auth_field: "digital_read"
-    rpc_method: "DigitalRead"
     mcu_unsupported_reason: "unsupported_digital_read"
     is_query: true
     action_routes: [
@@ -1258,7 +1250,6 @@ enum Command {
     pb_message: "PinRead"
     response_command: "CMD_ANALOG_READ_RESP"
     auth_field: "analog_read"
-    rpc_method: "AnalogRead"
     mcu_unsupported_reason: "unsupported_analog_read"
     is_query: true
     action_routes: [
@@ -1287,7 +1278,6 @@ enum Command {
     pb_message: "PinSubscribeRequest"
     response_command: "CMD_PIN_SUBSCRIBE_RESP"
     auth_field: "gpio_subscribe"
-    rpc_method: "PinSubscribe"
   }];
   CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
     category: "gpio"
@@ -1313,7 +1303,6 @@ enum Command {
     requires_ack: true
     pb_message: "DatastorePut"
     auth_field: "datastore_put"
-    rpc_method: "DatastorePut"
     mcu_handler: "on_mcu_datastore_put"
   }];
   CMD_DATASTORE_GET = 113 [(cmd_opts) = {
@@ -1321,7 +1310,6 @@ enum Command {
     pb_message: "DatastoreGet"
     response_command: "CMD_DATASTORE_GET_RESP"
     auth_field: "datastore_get"
-    rpc_method: "DatastoreGet"
     mcu_handler: "on_mcu_datastore_get"
     is_query: true
     action_routes: [
@@ -1341,7 +1329,6 @@ enum Command {
     category: "mailbox"
     response_command: "CMD_MAILBOX_READ_RESP"
     auth_field: "mailbox_read"
-    rpc_method: "MailboxRead"
     mcu_handler: "on_mcu_mailbox_read"
   }];
   CMD_MAILBOX_PROCESSED = 129 [(cmd_opts) = {
@@ -1361,7 +1348,6 @@ enum Command {
     cloud_topic: "mailbox/incoming"
     pb_message: "MailboxPush"
     auth_field: "mailbox_write"
-    rpc_method: "MailboxPush"
     mcu_handler: "on_mcu_mailbox_push"
   }];
   CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {
@@ -1377,7 +1363,6 @@ enum Command {
     requires_ack: true
     pb_message: "FileWrite"
     auth_field: "file_write"
-    rpc_method: "FileWrite"
     mcu_handler: "on_mcu_file_write"
     action_routes: [
       {
@@ -1401,7 +1386,6 @@ enum Command {
     pb_message: "FileRead"
     response_command: "CMD_FILE_READ_RESP"
     auth_field: "file_read"
-    rpc_method: "FileRead"
     mcu_handler: "on_mcu_file_read"
     is_query: true
     action_routes: [
@@ -1425,7 +1409,6 @@ enum Command {
     category: "filesystem"
     pb_message: "FileRemove"
     auth_field: "file_remove"
-    rpc_method: "FileRemove"
     mcu_handler: "on_mcu_file_remove"
     action_routes: [
       {
@@ -1454,7 +1437,6 @@ enum Command {
     pb_message: "ProcessRunAsync"
     response_command: "CMD_PROCESS_RUN_ASYNC_RESP"
     auth_field: "shell_run_async"
-    rpc_method: "ProcessRunAsync"
     mcu_handler: "on_mcu_process_run_async"
     action_routes: [
       {
@@ -1471,7 +1453,6 @@ enum Command {
     pb_message: "ProcessPoll"
     response_command: "CMD_PROCESS_POLL_RESP"
     auth_field: "shell_poll"
-    rpc_method: "ProcessPoll"
     mcu_handler: "on_mcu_process_poll"
     action_routes: [
       {
@@ -1487,7 +1468,6 @@ enum Command {
     category: "process"
     pb_message: "ProcessKill"
     auth_field: "shell_kill"
-    rpc_method: "ProcessKill"
     mcu_handler: "on_mcu_process_kill"
     action_routes: [
       {
@@ -1526,7 +1506,6 @@ enum Command {
     pb_message: "SpiTransfer"
     response_command: "CMD_SPI_TRANSFER_RESP"
     auth_field: "spi_transfer"
-    rpc_method: "SpiTransfer"
     is_query: true
     action_routes: [
       {
@@ -1563,7 +1542,6 @@ enum Command {
     requires_ack: true
     pb_message: "SpiConfig"
     auth_field: "spi_config"
-    rpc_method: "SpiConfigure"
     action_routes: [
       {
         topic: "SPI"

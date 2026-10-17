@@ -47,7 +47,9 @@ class TopicRoute:
         if self.topic == Topic.SYSTEM or self.topic == "system":
             return None
         if self.topic in (Topic.DIGITAL, Topic.ANALOG, "digital", "analog", "d", "a"):
-            return "write" if len(self.segments) == 1 else (self.segments[1].lower() if len(self.segments) > 1 else None)
+            return (
+                "write" if len(self.segments) == 1 else (self.segments[1].lower() if len(self.segments) > 1 else None)
+            )
         if self.topic in (Topic.CONSOLE, "console"):
             return "in" if self.identifier == "in" else (self.identifier or None)
         return self.identifier or None

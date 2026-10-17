@@ -218,7 +218,7 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
     return runtime_config_fields
 
 
-def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpec:
+def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:
     if pb_module is not None:
         mcubridge_pb2 = pb_module
     else:
@@ -235,7 +235,6 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
     cloud_suffixes_opt = options.Extensions[mcubridge_pb2.cloud_suffixes]
     cloud_defaults_opt = options.Extensions[mcubridge_pb2.cloud_defaults]
     status_reasons_opt = options.Extensions[mcubridge_pb2.status_reasons]
-    cloud_subscriptions_opt = options.Extensions[mcubridge_pb2.cloud_subscriptions]
     topics_opt = options.Extensions[mcubridge_pb2.topics]
     actions_opt = options.Extensions[mcubridge_pb2.actions]
     architectures_opt = options.Extensions[mcubridge_pb2.architectures]
@@ -253,11 +252,6 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
     for field_desc in mcubridge_pb2.StatusReasons.DESCRIPTOR.fields:
         status_reasons.setdefault(field_desc.name, field_desc.name)
 
-    cloud_subscriptions: list[dict[str, Any]] = []
-    for sub in cloud_subscriptions_opt:
-        sub_dict = _dump_proto_message(sub)
-        sub_dict.setdefault("qos", 1)
-        cloud_subscriptions.append(sub_dict)
     topics = [_dump_proto_message(t) for t in topics_opt]
     actions = [_dump_proto_message(a) for a in actions_opt]
 
@@ -320,7 +314,6 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
         "commands": commands,
         "statuses": statuses,
         "handshake": handshake,
-        "cloud_subscriptions": cloud_subscriptions,
         "actions": actions,
         "topics": topics,
         "capabilities": capabilities,
@@ -404,7 +397,9 @@ def _build_constant_context(spec: dict[str, Any], version: str) -> dict[str, Any
     }
 
 
-def _build_runtime_config_constants(spec: dict[str, Any], python_constants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_runtime_config_constants(
+    spec: dict[str, Any], python_constants: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     existing_constant_names = {constant["name"] for constant in python_constants}
     runtime_config_constants: list[dict[str, Any]] = []
     for config_field in spec["runtime_config_fields"]:
@@ -511,46 +506,7 @@ def _build_action_context(spec: dict[str, Any]) -> dict[str, Any]:
         for prefix, items in grouped_action_items.items()
     ]
 
-    valid_topic_names = {topic["name"] for topic in spec["topics"]}
-    subscriptions: list[dict[str, Any]] = []
-    for subscription in spec["cloud_subscriptions"]:
-        segments: list[str] = []
-        topic_name = subscription["topic"]
-        for segment in subscription.get("segments", []):
-            if segment == "+":
-                segments.append("CLOUD_WILDCARD_SINGLE")
-            elif segment == "#":
-                segments.append("CLOUD_WILDCARD_MULTI")
-            else:
-                action_prefix = "PIN" if topic_name in ("DIGITAL", "ANALOG") else topic_name
-                matched_action = next(
-                    (
-                        action
-                        for action in spec["actions"]
-                        if topic_name in valid_topic_names
-                        and action["name"].startswith(f"{action_prefix}_")
-                        and action["value"] == segment
-                    ),
-                    None,
-                )
-                if matched_action:
-                    if topic_name in ("DIGITAL", "ANALOG"):
-                        action_class = "PinAction"
-                    elif topic_name == "DATASTORE":
-                        action_class = "DatastoreAction"
-                    else:
-                        action_class = f"{topic_name.lower().title()}Action"
-                    segments.append(f"{action_class}.{matched_action['name'].split('_', 1)[1]}.value")
-                else:
-                    segments.append(f'"{segment}"')
-        subscriptions.append(
-            {
-                "topic": topic_name,
-                "qos": subscription["qos"],
-                "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
-            }
-        )
-    return {"grouped_actions": grouped_actions, "subscriptions": subscriptions}
+    return {"grouped_actions": grouped_actions}
 
 
 def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, str]], list[dict[str, str]]]:

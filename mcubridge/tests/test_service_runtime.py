@@ -25,7 +25,7 @@ from mcubridge.protocol.protocol import (
     SystemAction,
     Topic,
 )
-from mcubridge.protocol.structures import TopicRoute
+from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
@@ -1326,12 +1326,10 @@ async def test_service_supervisor_circuit_breaker(service_stack: tuple[BridgeSer
     assert call_count == 15
 
 
-def test_runtime_action_dispatch_canonical_completeness() -> None:
-    """Verify that _RUNTIME_ACTION_DISPATCH is fully populated with valid handler callables. [SIL-2]"""
-    from mcubridge.services.runtime import RUNTIME_ACTION_DISPATCH
-
-    assert len(RUNTIME_ACTION_DISPATCH) == 23
-    for (topic, scope, _action), handler in RUNTIME_ACTION_DISPATCH.items():
+def test_runtime_action_dispatch_canonical_completeness(mock_bridge_service: BridgeService) -> None:
+    """Verify that action_dispatch is fully populated with valid handler callables. [SIL-2]"""
+    assert len(mock_bridge_service.action_dispatch) == 23
+    for (topic, scope, _action), handler in mock_bridge_service.action_dispatch.items():
         assert isinstance(topic, protocol.Topic)
         assert scope in ("mcu", "local")
         assert callable(handler)

@@ -190,154 +190,6 @@ option (rpc.pb.architectures) = {
   display_name: "Raspberry Pi RP2040"
 };
 option (rpc.pb.cloud_defaults) = {default_topic_prefix: "br"};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "DIGITAL"
-  segments: [
-    "+",
-    "mode"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "DIGITAL"
-  segments: [
-    "+",
-    "read"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "DIGITAL"
-  segments: ["+"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "ANALOG"
-  segments: [
-    "+",
-    "read"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "ANALOG"
-  segments: ["+"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "CONSOLE"
-  segments: ["in"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "DATASTORE"
-  segments: [
-    "put",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "DATASTORE"
-  segments: [
-    "get",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "MAILBOX"
-  segments: ["write"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "MAILBOX"
-  segments: ["read"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SHELL"
-  segments: ["run_async"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SHELL"
-  segments: [
-    "poll",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SHELL"
-  segments: [
-    "kill",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SYSTEM"
-  segments: [
-    "free_memory",
-    "get"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SYSTEM"
-  segments: [
-    "version",
-    "get"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SYSTEM"
-  segments: [
-    "bridge",
-    "handshake",
-    "get"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SYSTEM"
-  segments: [
-    "bridge",
-    "summary",
-    "get"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SYSTEM"
-  segments: [
-    "bridge",
-    "state",
-    "get"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "FILE"
-  segments: [
-    "write",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "FILE"
-  segments: [
-    "read",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "FILE"
-  segments: [
-    "remove",
-    "#"
-  ]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SPI"
-  segments: ["begin"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SPI"
-  segments: ["end"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SPI"
-  segments: ["transfer"]
-};
-option (rpc.pb.cloud_subscriptions) = {
-  topic: "SPI"
-  segments: ["config"]
-};
 option (rpc.pb.cloud_suffixes) = {
   incoming_available: "incoming_available"
   outgoing_available: "outgoing_available"
@@ -944,12 +796,6 @@ message StatusReasons {
   string unsupported_analog_read = 23;
 }
 
-message CloudSubscription {
-  string topic = 1;
-  repeated string segments = 2;
-  uint32 qos = 3;
-}
-
 message TopicConfig {
   string name = 1;
   string value = 2;
@@ -1021,7 +867,6 @@ extend google.protobuf.FileOptions {
   CloudSuffixes cloud_suffixes = 1005;
   CloudDefaults cloud_defaults = 1006;
   StatusReasons status_reasons = 1007;
-  repeated CloudSubscription cloud_subscriptions = 1008;
   repeated TopicConfig topics = 1009;
   repeated ActionConfig actions = 1010;
   repeated ArchConfig architectures = 1011;

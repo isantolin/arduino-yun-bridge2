@@ -95,12 +95,6 @@ class {{ action.class_name }}(StrEnum):
 
 {% endfor %}
 
-CLOUD_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (
-    {%- for sub in subscriptions %}
-    (Topic.{{ sub.topic }}, {{ sub.segments_tuple }}, {{ sub.qos }}),
-    {%- endfor %}
-)
-
 
 @dataclass(frozen=True, slots=True)
 class OperationSpec:
@@ -224,67 +218,65 @@ class ProtocolRegistry:
         return None
 
 
-OPERATIONS: Final[tuple[OperationSpec, ...]] = (
-{%- for op in operations %}
-    OperationSpec(
-        name={{ op.name|tojson }},
-        {%- if op.command_id %}
-        command_id={{ op.command_id }},
-        {%- endif %}
-        {%- if op.rpc_name %}
-        rpc_name={{ op.rpc_name|tojson }},
-        {%- endif %}
-        {%- if op.pb_class %}
-        pb_class={{ op.pb_class }},
-        {%- endif %}
-        {%- if op.payload_field %}
-        payload_field={{ op.payload_field|tojson }},
-        {%- endif %}
-        {%- if op.cloud_topic %}
-        cloud_topic={{ op.cloud_topic|tojson }},
-        {%- endif %}
-        {%- if op.expected_responses %}
-        expected_responses=frozenset({ {%- for r in op.expected_responses %}{{ r }},{%- endfor %} }),
-        {%- endif %}
-        {%- if op.paired_request_id %}
-        paired_request_id={{ op.paired_request_id }},
-        {%- endif %}
-        {%- if op.auth_field %}
-        auth_field={{ op.auth_field|tojson }},
-        {%- endif %}
-        {%- if op.requires_ack %}
-        requires_ack=True,
-        {%- endif %}
-        {%- if op.expects_direct_response %}
-        expects_direct_response=True,
-        {%- endif %}
-        {%- if op.pre_sync_allowed %}
-        pre_sync_allowed=True,
-        {%- endif %}
-        {%- if op.request_type %}
-        request_type={{ op.request_type }},
-        {%- endif %}
-        {%- if op.response_type %}
-        response_type={{ op.response_type }},
-        {%- endif %}
-        {%- if op.default_factory %}
-        default_factory={{ op.default_factory }},
-        {%- endif %}
-        {%- if op.handler_name %}
-        handler_name={{ op.handler_name|tojson }},
-        {%- endif %}
-        {%- if op.is_gateway %}
-        is_gateway=True,
-        {%- endif %}
-        {%- if op.metrics_blob_field %}
-        metrics_blob_field={{ op.metrics_blob_field|tojson }},
-        {%- endif %}
-    ),
-{%- endfor %}
-)
-
 REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
-    OPERATIONS,
+    operations=(
+{%- for op in operations %}
+        OperationSpec(
+            name={{ op.name|tojson }},
+            {%- if op.command_id %}
+            command_id={{ op.command_id }},
+            {%- endif %}
+            {%- if op.rpc_name %}
+            rpc_name={{ op.rpc_name|tojson }},
+            {%- endif %}
+            {%- if op.pb_class %}
+            pb_class={{ op.pb_class }},
+            {%- endif %}
+            {%- if op.payload_field %}
+            payload_field={{ op.payload_field|tojson }},
+            {%- endif %}
+            {%- if op.cloud_topic %}
+            cloud_topic={{ op.cloud_topic|tojson }},
+            {%- endif %}
+            {%- if op.expected_responses %}
+            expected_responses=frozenset({ {%- for r in op.expected_responses %}{{ r }},{%- endfor %} }),
+            {%- endif %}
+            {%- if op.paired_request_id %}
+            paired_request_id={{ op.paired_request_id }},
+            {%- endif %}
+            {%- if op.auth_field %}
+            auth_field={{ op.auth_field|tojson }},
+            {%- endif %}
+            {%- if op.requires_ack %}
+            requires_ack=True,
+            {%- endif %}
+            {%- if op.expects_direct_response %}
+            expects_direct_response=True,
+            {%- endif %}
+            {%- if op.pre_sync_allowed %}
+            pre_sync_allowed=True,
+            {%- endif %}
+            {%- if op.request_type %}
+            request_type={{ op.request_type }},
+            {%- endif %}
+            {%- if op.response_type %}
+            response_type={{ op.response_type }},
+            {%- endif %}
+            {%- if op.default_factory %}
+            default_factory={{ op.default_factory }},
+            {%- endif %}
+            {%- if op.handler_name %}
+            handler_name={{ op.handler_name|tojson }},
+            {%- endif %}
+            {%- if op.is_gateway %}
+            is_gateway=True,
+            {%- endif %}
+            {%- if op.metrics_blob_field %}
+            metrics_blob_field={{ op.metrics_blob_field|tojson }},
+            {%- endif %}
+        ),
+{%- endfor %}
+    ),
     topic_lookup={
         {%- for topic in topics %}
         {{ topic.value|tojson }}: Topic.{{ topic.name }},

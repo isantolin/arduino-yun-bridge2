@@ -92,7 +92,6 @@ from .ubus import UbusService
 __all__ = [
     "BridgeService",
     "LocalBridgeService",
-    "RUNTIME_ACTION_DISPATCH",
     "_PendingMcuRead",
 ]
 
@@ -189,6 +188,10 @@ class BridgeService:
         ] = {
             topic: getattr(self, handler_name)
             for topic, handler_name in protocol.REGISTRY.topic_dispatch_handlers.items()
+        }
+        # [SIL-2] O(1) Action Dispatch Registry driven by Protocol SSOT
+        self.action_dispatch: Final[dict[tuple[Topic, str, Any], Callable[..., Coroutine[Any, Any, None]]]] = {
+            key: getattr(self, handler_name) for key, handler_name in protocol.REGISTRY.action_routes.items()
         }
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
@@ -875,14 +878,14 @@ class BridgeService:
         act_val = getattr(act, "value", str(act))
         with structlog.contextvars.bound_contextvars(file_action=act_val, file_target=target):
             if target.startswith(MCU_FS_PREFIX):
-                if handler := RUNTIME_ACTION_DISPATCH.get((Topic.FILE, "mcu", cast(FileAction, act))):
-                    await handler(self, target, inbound)
+                if handler := self.action_dispatch.get((Topic.FILE, "mcu", cast(FileAction, act))):
+                    await handler(target, inbound)
                 return
 
             if self._get_safe_path(target) and (
-                handler := RUNTIME_ACTION_DISPATCH.get((Topic.FILE, "local", cast(FileAction, act)))
+                handler := self.action_dispatch.get((Topic.FILE, "local", cast(FileAction, act)))
             ):
-                await handler(self, target, inbound)
+                await handler(target, inbound)
 
     def _file_response_topic(self, target: str) -> str:
         return topic_path(
@@ -989,8 +992,8 @@ class BridgeService:
             logger.warning("Unrecognized shell action segment", action=raw_act, error=str(exc))
             return
         with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
-            if handler := RUNTIME_ACTION_DISPATCH.get((Topic.SHELL, "local", act)):
-                await handler(self, pid, inbound)
+            if handler := self.action_dispatch.get((Topic.SHELL, "local", act)):
+                await handler(pid, inbound)
 
     async def handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
         pl = inbound.payload
@@ -1068,8 +1071,8 @@ class BridgeService:
     async def handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
-        if handler := RUNTIME_ACTION_DISPATCH.get((Topic.SPI, "mcu", cast(SpiAction, route.identifier))):
-            await handler(self, route, inbound)
+        if handler := self.action_dispatch.get((Topic.SPI, "mcu", cast(SpiAction, route.identifier))):
+            await handler(route, inbound)
 
     async def _reply_cloud_ok(self, *segments: Any, success: bool, inbound: pb.CloudQueuedPublish) -> None:
         if inbound.correlation_data or inbound.response_topic:
@@ -1129,8 +1132,8 @@ class BridgeService:
                 action = PinAction(raw_action)
             except ValueError:
                 return
-        if handler := RUNTIME_ACTION_DISPATCH.get((route.topic, "mcu", action)):
-            await handler(self, route, pin, inbound)
+        if handler := self.action_dispatch.get((route.topic, "mcu", action)):
+            await handler(route, pin, inbound)
 
     async def handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
         await cast(SerialTransport, self.serial).send(
@@ -1163,8 +1166,8 @@ class BridgeService:
     async def handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
-        if handler := RUNTIME_ACTION_DISPATCH.get((Topic.SYSTEM, "mcu", cast(SystemAction, route.identifier))):
-            await handler(self, route, inbound)
+        if handler := self.action_dispatch.get((Topic.SYSTEM, "mcu", cast(SystemAction, route.identifier))):
+            await handler(route, inbound)
         else:
             logger.warning("Unrecognized system action requested", action=route.identifier)
 
@@ -1761,11 +1764,3 @@ class BridgeService:
         except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
             log.critical("Supervisor task failed unexpectedly", error=str(exc))
             raise
-
-
-RUNTIME_ACTION_DISPATCH: Final[
-    dict[
-        tuple[Topic, str, Any],
-        Callable[..., Coroutine[Any, Any, None]],
-    ]
-] = {key: getattr(BridgeService, handler_name) for key, handler_name in protocol.REGISTRY.action_routes.items()}

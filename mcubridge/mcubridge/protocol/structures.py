@@ -49,8 +49,6 @@ _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 _VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = tuple(sorted(VOLATILE_STORAGE_PATHS))
 _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields)
 
-from .topics import TopicRoute
-
 
 # =============================================================================
 # 2. Security and Policy Helpers (Direct Protobuf)

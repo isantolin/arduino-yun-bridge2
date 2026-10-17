@@ -106,3 +106,42 @@ def test_metadata_json_is_read_from_compiler_output(tmp_path: Path) -> None:
     write_metadata_json(UNO_METADATA, metadata_file)
 
     assert read_metadata_json(metadata_file) == UNO_METADATA
+
+
+def test_metadata_resolves_transitive_macro_definitions(tmp_path: Path) -> None:
+    variant = tmp_path / "variants" / "mkr"
+    variant.mkdir(parents=True)
+    (variant / "pins_arduino.h").write_text(
+        "#define NUM_DIGITAL_PINS (15u)\n"
+        "#define NUM_ANALOG_INPUTS (7u)\n"
+        "#define PIN_LED (6u)\n"
+        "#define LED_BUILTIN PIN_LED\n"
+        "#define PIN_SPI_SS (4u)\n"
+        "#define PIN_SPI_MOSI (8u)\n"
+        "#define PIN_SPI_MISO (10u)\n"
+        "#define PIN_SPI_SCK (9u)\n"
+        "#define PIN_WIRE_SDA (11u)\n"
+        "#define PIN_WIRE_SCL (12u)\n",
+        encoding="utf-8",
+    )
+    properties = (
+        f"build.f_cpu=48000000ul\n"
+        f"build.mcu=cortex-m0plus\n"
+        f"build.variant.path={variant}\n"
+    )
+
+    metadata = metadata_from_properties("arduino:samd:mkrwifi1010", properties)
+    assert metadata == ArduinoCoreMetadata(
+        fqbn="arduino:samd:mkrwifi1010",
+        mcu="cortex-m0plus",
+        frequency_hz=48_000_000,
+        led_builtin=6,
+        digital_pins=15,
+        analog_inputs=7,
+        spi_ss=4,
+        spi_mosi=8,
+        spi_miso=10,
+        spi_sck=9,
+        i2c_sda=11,
+        i2c_scl=12,
+    )

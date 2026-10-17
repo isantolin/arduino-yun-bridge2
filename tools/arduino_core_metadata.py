@@ -67,9 +67,20 @@ def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[st
         tokens = trimmed.removeprefix("#").strip().split(None, 2)
         if len(tokens) >= 3 and tokens[0] == "define":
             name, val = tokens[1], tokens[2]
-            if name in REQUIRED_PIN_MACROS:
-                macros[name] = val.split("//", maxsplit=1)[0].strip()
+            macros[name] = val.split("//", maxsplit=1)[0].strip()
     return macros
+
+
+def _resolve_macro(name: str, macros: dict[str, str], seen: set[str] | None = None) -> str:
+    visited = seen or set()
+    if name not in macros or name in visited:
+        return macros.get(name, name)
+    visited.add(name)
+    raw = macros[name]
+    token = raw.strip().strip("()").strip().rstrip("uUlL")
+    if token in macros:
+        return _resolve_macro(token, macros, visited)
+    return raw
 
 
 def _parse_integer(value: str, name: str) -> int:
@@ -107,15 +118,15 @@ def metadata_from_properties(fqbn: str, output: str) -> ArduinoCoreMetadata:
         fqbn=fqbn,
         mcu=properties["build.mcu"],
         frequency_hz=_parse_integer(properties["build.f_cpu"], "build.f_cpu"),
-        led_builtin=_parse_integer(macros["LED_BUILTIN"], "LED_BUILTIN"),
-        digital_pins=_parse_integer(macros["NUM_DIGITAL_PINS"], "NUM_DIGITAL_PINS"),
-        analog_inputs=_parse_integer(macros["NUM_ANALOG_INPUTS"], "NUM_ANALOG_INPUTS"),
-        spi_ss=_parse_integer(macros["PIN_SPI_SS"], "PIN_SPI_SS"),
-        spi_mosi=_parse_integer(macros["PIN_SPI_MOSI"], "PIN_SPI_MOSI"),
-        spi_miso=_parse_integer(macros["PIN_SPI_MISO"], "PIN_SPI_MISO"),
-        spi_sck=_parse_integer(macros["PIN_SPI_SCK"], "PIN_SPI_SCK"),
-        i2c_sda=_parse_integer(macros["PIN_WIRE_SDA"], "PIN_WIRE_SDA"),
-        i2c_scl=_parse_integer(macros["PIN_WIRE_SCL"], "PIN_WIRE_SCL"),
+        led_builtin=_parse_integer(_resolve_macro("LED_BUILTIN", macros), "LED_BUILTIN"),
+        digital_pins=_parse_integer(_resolve_macro("NUM_DIGITAL_PINS", macros), "NUM_DIGITAL_PINS"),
+        analog_inputs=_parse_integer(_resolve_macro("NUM_ANALOG_INPUTS", macros), "NUM_ANALOG_INPUTS"),
+        spi_ss=_parse_integer(_resolve_macro("PIN_SPI_SS", macros), "PIN_SPI_SS"),
+        spi_mosi=_parse_integer(_resolve_macro("PIN_SPI_MOSI", macros), "PIN_SPI_MOSI"),
+        spi_miso=_parse_integer(_resolve_macro("PIN_SPI_MISO", macros), "PIN_SPI_MISO"),
+        spi_sck=_parse_integer(_resolve_macro("PIN_SPI_SCK", macros), "PIN_SPI_SCK"),
+        i2c_sda=_parse_integer(_resolve_macro("PIN_WIRE_SDA", macros), "PIN_WIRE_SDA"),
+        i2c_scl=_parse_integer(_resolve_macro("PIN_WIRE_SCL", macros), "PIN_WIRE_SCL"),
     )
 
 

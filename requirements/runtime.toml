@@ -332,7 +332,7 @@ rationale = "Parallel test execution worker pool for high-speed deterministic te
 
 [[dev_dependency]]
 name = "pytest-mock"
-pip = "pytest-mock==3.16.0"
+pip = "pytest-mock==3.17.0"
 rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]

@@ -63,7 +63,6 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
-    TopicRoute,
     allows_topic,
     create_queued_publish,
     get_ssl_context,
@@ -72,7 +71,7 @@ from ..protocol.structures import (
     load_tls_session_ticket,
     save_tls_session_ticket,
 )
-from ..protocol.topics import Topic, get_topic_for_message, parse_subtopic, parse_topic, topic_path
+from ..protocol.topics import Topic, TopicRoute, get_topic_for_message, parse_subtopic, parse_topic, topic_path
 from ..state.context import (
     DaemonLifecycleMachine,
     FileTransferMachine,

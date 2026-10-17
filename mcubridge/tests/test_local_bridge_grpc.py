@@ -17,8 +17,7 @@ from grpclib.server import Stream
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import Command
-from mcubridge.services.local_bridge import RPC_DISPATCH_TABLE
+from mcubridge.protocol.protocol import Command, REGISTRY
 from mcubridge.services.runtime import BridgeService, LocalBridgeService
 from mcubridge.state.context import ProcessContext, create_runtime_state
 
@@ -53,12 +52,15 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         method.name: method for method in methods if not method.client_streaming and not method.server_streaming
     }
 
-    assert set(RPC_DISPATCH_TABLE) == set(unary_methods)
-    assert "SubscribeConsole" not in RPC_DISPATCH_TABLE
+    local_rpc_map = {op.rpc_name or op.name: op for op in REGISTRY.local_rpc_specs}
+    assert set(local_rpc_map) == set(unary_methods)
+    assert "SubscribeConsole" not in local_rpc_map
     for name, method in unary_methods.items():
-        request_type, handler = RPC_DISPATCH_TABLE[name]
-        assert request_type.DESCRIPTOR.full_name == method.input_type.full_name
-        assert callable(handler)
+        op = local_rpc_map[name]
+        assert op.request_type is not None
+        assert op.request_type.DESCRIPTOR.full_name == method.input_type.full_name
+        assert op.handler_name is not None
+        assert hasattr(LocalBridgeService, op.handler_name)
 
 
 async def test_local_bridge_pin_operations(tmp_path: Path) -> None:

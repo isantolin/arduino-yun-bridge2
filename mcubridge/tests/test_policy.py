@@ -43,13 +43,13 @@ class TestAllowedCommandPolicy:
 
 
 class TestTopicAuthorization:
-    @given(entry=st.sampled_from(list(protocol.TOPIC_AUTH_MAP.items())))
+    @given(entry=st.sampled_from(list(protocol.REGISTRY.topic_auth_map.items())))
     def test_default_policy_allows_all_tracked_actions(self, entry: tuple[tuple[str, str], str]) -> None:
         """Property: Default permissive policy allows all tracked service actions."""
         (topic, action), _ = entry
         assert allows_topic(_make_auth(), topic, action)
 
-    @given(entry=st.sampled_from(list(protocol.TOPIC_AUTH_MAP.items())))
+    @given(entry=st.sampled_from(list(protocol.REGISTRY.topic_auth_map.items())))
     def test_selective_action_denial_and_case_insensitivity(self, entry: tuple[tuple[str, str], str]) -> None:
         """Property: Disabling a specific permission flag rejects the action under any case variation."""
         (topic, action), field_name = entry

@@ -60,7 +60,6 @@ from ..protocol.protocol import (
     SpiAction,
     Status,
     SystemAction,
-    response_to_request,
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
@@ -187,7 +186,10 @@ class BridgeService:
         # [SIL-2] O(1) Topic Dispatch Registry driven by Protocol SSOT
         self._topic_dispatch: Final[
             dict[Topic, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
-        ] = {topic: getattr(self, handler_name) for topic, handler_name in protocol.TOPIC_DISPATCH_HANDLERS.items()}
+        ] = {
+            topic: getattr(self, handler_name)
+            for topic, handler_name in protocol.REGISTRY.topic_dispatch_handlers.items()
+        }
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
@@ -208,15 +210,15 @@ class BridgeService:
             {
                 s.value: functools.partial(self.handle_mcu_status, s)
                 for s in Status
-                if s.value not in protocol.MCU_DISPATCH_HANDLERS
+                if s.value not in protocol.REGISTRY.mcu_dispatch_handlers
             }
             | {
                 code: cast(McuHandler, operator.attrgetter(handler_path)(self))
-                for code, handler_path in protocol.MCU_DISPATCH_HANDLERS.items()
+                for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items()
             }
             | {
                 code: functools.partial(self.unsupported_mcu_request, msg=reason)
-                for code, reason in protocol.MCU_UNSUPPORTED_REASONS.items()
+                for code, reason in protocol.REGISTRY.mcu_unsupported_reasons.items()
             }
         )
 
@@ -514,7 +516,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        spec = protocol.COMMAND_SPECS.get(command_id)
+        spec = protocol.REGISTRY.get(command_id)
         if not (
             self.state.is_synchronized or command_id in _STATUS_VALUES or (spec is not None and spec.pre_sync_allowed)
         ):
@@ -536,7 +538,7 @@ class BridgeService:
 
                 if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
                     await serial.acknowledge(command_id, sequence_id)
-            elif response_to_request(command_id) is None:
+            elif spec is None or spec.paired_request_id is None:
                 self.state.metrics.unknown_command_count.inc()
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
@@ -568,7 +570,7 @@ class BridgeService:
                             await self.state.link_sync_event.wait()
                     except TimeoutError:
                         logger.error("Timed out waiting for MCU link synchronization")
-                action = self.deduce_action(route)
+                action = route.action
                 topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
                 if action and not (
                     allows_topic(self.state.topic_authorization, topic_str, action)
@@ -1381,13 +1383,6 @@ class BridgeService:
         clean = s.upper().removeprefix("A")
         return int(clean) if clean.isdigit() else -1
 
-    def deduce_action(self, r: TopicRoute) -> str | None:
-        if r.topic == Topic.SYSTEM:
-            return None
-        if r.topic in (Topic.DIGITAL, Topic.ANALOG):
-            return "write" if len(r.segments) == 1 else (r.segments[1].lower() if len(r.segments) > 1 else None)
-        return "in" if r.topic == Topic.CONSOLE and r.identifier == "in" else (r.identifier or None)
-
     async def reject_cloud(self, ctx: Any, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_cloud_status_report(
@@ -1773,4 +1768,4 @@ RUNTIME_ACTION_DISPATCH: Final[
         tuple[Topic, str, Any],
         Callable[..., Coroutine[Any, Any, None]],
     ]
-] = {key: getattr(BridgeService, handler_name) for key, handler_name in protocol.COMMAND_ACTION_ROUTES.items()}
+] = {key: getattr(BridgeService, handler_name) for key, handler_name in protocol.REGISTRY.action_routes.items()}

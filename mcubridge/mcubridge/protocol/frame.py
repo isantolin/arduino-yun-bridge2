@@ -93,8 +93,7 @@ def build_frame(
     else:
         # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
         if isinstance(payload, ProtobufMessage):
-            # [SIL-2] Use descriptor-based field mapping to eliminate manual string logic.
-            spec = protocol.MESSAGE_SPECS.get(payload.DESCRIPTOR.name)
+            spec = protocol.REGISTRY.get(payload)
             if spec is not None and spec.payload_field:
                 getattr(envelope, spec.payload_field).CopyFrom(payload)
         else:

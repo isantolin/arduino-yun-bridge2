@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 from collections.abc import Callable, Coroutine
-from typing import Any, Final, Protocol
+from typing import Any, Protocol
 
 import anyio
 from anyio.streams.memory import MemoryObjectSendStream
@@ -20,8 +20,7 @@ from ..protocol import mcubridge_pb2 as pb
 from ..protocol.mcubridge_grpc import LocalBridgeBase
 from ..protocol.protocol import (
     AEAD_NONCE_SIZE,
-    LOCAL_RPC_SPECS,
-    QUERY_TOPIC_ACTIONS,
+    REGISTRY,
     Command,
     Topic,
 )
@@ -32,8 +31,6 @@ __all__ = [
     "ConsoleQueueTarget",
     "LocalBridgeService",
     "MemoryQueueAdapter",
-    "QUERY_TOPIC_ACTIONS",
-    "RPC_DISPATCH_TABLE",
     "parse_serial_response",
 ]
 
@@ -109,7 +106,6 @@ class LocalBridgeRuntime(Protocol):
     async def run_process(self, command: str, /) -> int: ...
     async def poll_process(self, pid: int, /) -> pb.ProcessPollResponse: ...
     async def kill_process(self, pid: int, /) -> tuple[bool, str | None]: ...
-    def deduce_action(self, route: Any, /) -> Any: ...
     async def handle_request(self, inbound: Any, /) -> None: ...
 
 
@@ -260,12 +256,12 @@ class LocalBridgeService(LocalBridgeBase):
     async def execute_publish(self, req: pb.CloudQueuedPublish) -> pb.CloudQueuedPublish:
         has_correlation = req.HasField("correlation_data")
         route = parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
-        action = self.runtime_service.deduce_action(route) if route else None
+        action = route.action if route else None
 
         is_query = has_correlation or (
             route is not None
             and (
-                (route.topic, action) in QUERY_TOPIC_ACTIONS
+                (route.topic, action) in REGISTRY.query_topic_actions
                 or (
                     route.topic == Topic.SYSTEM
                     and ("get" in route.segments or action in ("version", "freeram", "bridge"))
@@ -305,15 +301,15 @@ class LocalBridgeService(LocalBridgeBase):
 
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
         """[SIL-2] Dispatch and execute an RPC by name, returning serialized response."""
-        handler_entry = RPC_DISPATCH_TABLE.get(method_name)
-        if not handler_entry:
+        spec = REGISTRY.get(method_name)
+        if not spec or not spec.request_type or not spec.handler_name:
             raise ValueError(f"Unknown RPC method: {method_name}")
-        req_cls, handler = handler_entry
-        req = req_cls()
+        req = spec.request_type()
         if payload_bytes:
             req.ParseFromString(payload_bytes)
+        handler = getattr(self, spec.handler_name)
         with structlog.contextvars.bound_contextvars(rpc_method=method_name):
-            resp = await handler(self, req)
+            resp = await handler(req)
             return resp.SerializeToString()
 
     async def _handle_unary[ReqT: ProtobufMessage, RespT: ProtobufMessage](
@@ -417,14 +413,3 @@ class LocalBridgeService(LocalBridgeBase):
             adapter.close()
             if adapter in self.runtime_service.console_queues:
                 self.runtime_service.console_queues.remove(adapter)
-
-
-RPC_DISPATCH_TABLE: Final[
-    dict[
-        str,
-        tuple[
-            type[ProtobufMessage],
-            Callable[[LocalBridgeService, Any], Coroutine[Any, Any, ProtobufMessage]],
-        ],
-    ]
-] = {spec.name: (spec.request_type, getattr(LocalBridgeService, spec.handler_name)) for spec in LOCAL_RPC_SPECS}

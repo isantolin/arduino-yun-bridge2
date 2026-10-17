@@ -8,16 +8,49 @@ from __future__ import annotations
 
 import functools
 import posixpath
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Final
 
 import parse
 import structlog
 from google.protobuf.message import Message as ProtobufMessage
 
-from .protocol import COMMAND_SPECS, MESSAGE_SPECS, TOPIC_LOOKUP, Topic
-from .structures import TopicRoute
+from .protocol import REGISTRY, Topic
 
 logger = structlog.get_logger(__name__)
+
+_FLAVOR_SEGMENTS: Final[frozenset[str]] = frozenset({"response", "value"})
+
+
+@dataclass(slots=True, frozen=True)
+class TopicRoute:
+    """Parsed representation of a CLOUD topic targeting the daemon. [SIL-2]"""
+
+    raw: str = ""
+    prefix: str = ""
+    topic: Topic | str = ""
+    segments: tuple[str, ...] = ()
+
+    @property
+    def identifier(self) -> str:
+        return self.segments[0] if self.segments else ""
+
+    @property
+    def remainder(self) -> tuple[str, ...]:
+        return self.segments[1:]
+
+    @property
+    def action(self) -> str | None:
+        """Infer the canonical action for authorization and dispatch. [SIL-2]"""
+        if not self.segments or not _FLAVOR_SEGMENTS.isdisjoint(self.segments):
+            return None
+        if self.topic == Topic.SYSTEM or self.topic == "system":
+            return None
+        if self.topic in (Topic.DIGITAL, Topic.ANALOG, "digital", "analog", "d", "a"):
+            return "write" if len(self.segments) == 1 else (self.segments[1].lower() if len(self.segments) > 1 else None)
+        if self.topic in (Topic.CONSOLE, "console"):
+            return "in" if self.identifier == "in" else (self.identifier or None)
+        return self.identifier or None
 
 
 def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
@@ -28,25 +61,9 @@ def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
 
 def get_topic_for_message(prefix: str, message: ProtobufMessage | type[ProtobufMessage] | int | str) -> str | None:
     """Resolve the canonical CLOUD topic for a given message instance, class, command ID or enum name. [SIL-2]"""
-    if isinstance(message, int):
-        spec = COMMAND_SPECS.get(message)
-        rel = spec.cloud_topic if spec else None
-    elif isinstance(message, str):
-        spec = MESSAGE_SPECS.get(message)
-        rel = spec.cloud_topic if spec else None
-    elif isinstance(message, ProtobufMessage):
-        spec = MESSAGE_SPECS.get(message.DESCRIPTOR.name)
-        rel = spec.cloud_topic if spec else None
-    elif hasattr(message, "DESCRIPTOR"):
-        desc = message.DESCRIPTOR
-        name = getattr(desc, "name", "")
-        spec = MESSAGE_SPECS.get(name)
-        rel = spec.cloud_topic if spec else None
-    else:
-        rel = None
-
-    if rel:
-        return topic_path(prefix, *rel.split("/"))
+    spec = REGISTRY.get(message)
+    if spec and spec.cloud_topic:
+        return topic_path(prefix, *spec.cloud_topic.split("/"))
     return None
 
 
@@ -93,7 +110,7 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
         seg = str(parsed_svc["service"]).lower()
         segments = ()
 
-    topic_enum = TOPIC_LOOKUP.get(seg)
+    topic_enum = REGISTRY.lookup_topic(seg)
     if topic_enum is None:
         logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name)
         return None

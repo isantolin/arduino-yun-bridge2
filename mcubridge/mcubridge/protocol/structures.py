@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import functools
-import itertools
 import re
 import ssl
 from collections.abc import Iterable
@@ -48,43 +47,9 @@ PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 _VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = tuple(sorted(VOLATILE_STORAGE_PATHS))
-_FLAVOR_SEGMENTS: Final[frozenset[str]] = frozenset({"response", "value"})
 _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields)
 
-
-@functools.lru_cache(maxsize=1)
-def _get_action_lookup_map() -> dict[str, Any]:
-    from .protocol import FileAction, ShellAction, SystemAction
-
-    return {e.value: e for e in itertools.chain(FileAction, ShellAction, SystemAction)}
-
-
-@dataclass(slots=True, frozen=True)
-class TopicRoute:
-    """Parsed representation of an CLOUD topic targeting the daemon."""
-
-    raw: str
-    prefix: str
-    topic: Any  # Avoid circular import with .protocol.Topic
-    segments: tuple[str, ...]
-
-    @property
-    def identifier(self) -> str:
-        return self.segments[0] if self.segments else ""
-
-    @property
-    def action(self) -> Any:
-        """Infer the service action from the first segment if applicable.
-        Ignore segments that indicate a response flavor.
-        """
-        if not self.segments or not _FLAVOR_SEGMENTS.isdisjoint(self.segments):
-            return None
-        val = self.segments[0]
-        return _get_action_lookup_map().get(val, val)
-
-    @property
-    def remainder(self) -> tuple[str, ...]:
-        return self.segments[1:]
+from .topics import TopicRoute
 
 
 # =============================================================================
@@ -111,10 +76,7 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
 
 def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
     """Check if a specific topic/action combination is authorized. [SIL-2]"""
-    return bool(
-        (field_name := protocol.TOPIC_AUTH_MAP.get((topic.lower(), action.lower())))
-        and getattr(auth, field_name, False)
-    )
+    return protocol.REGISTRY.allows_topic(auth, topic, action)
 
 
 # =============================================================================

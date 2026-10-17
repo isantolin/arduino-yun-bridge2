@@ -38,9 +38,9 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import (
     DEFAULT_CLOUD_PORT,
-    GATEWAY_RPC_SPECS,
     PROTOCOL_VERSION,
-    GatewayRpcSpec,
+    REGISTRY,
+    OperationSpec,
 )
 from statemachine import State, StateMachine
 
@@ -705,13 +705,14 @@ class GatewayLocalBridgeService:
 
     def __mapping__(self) -> dict[str, Handler]:
         mapping: dict[str, Handler] = {
-            f"/rpc.pb.LocalBridge/{spec.name}": Handler(
-                getattr(self, spec.name),
+            f"/rpc.pb.LocalBridge/{spec.rpc_name or spec.name}": Handler(
+                getattr(self, spec.rpc_name or spec.name),
                 Cardinality.UNARY_UNARY,
                 spec.request_type,
                 spec.response_type,
             )
-            for spec in GATEWAY_RPC_SPECS
+            for spec in REGISTRY.gateway_rpc_specs
+            if spec.request_type is not None and spec.response_type is not None
         }
         mapping["/rpc.pb.LocalBridge/Publish"] = Handler(
             self.Publish,
@@ -845,22 +846,30 @@ class GatewayLocalBridgeService:
                     self.gateway.console_queues[device_id].remove(adapter)
 
     @staticmethod
-    def create_forwarder(spec: GatewayRpcSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
+    def create_forwarder(spec: OperationSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
+        name = spec.rpc_name or spec.name
+        resp_cls = spec.response_type
+        default_factory = spec.default_factory
+        if resp_cls is None or not callable(default_factory):
+            raise ValueError(f"Gateway RPC {name} requires response_type and default_factory")
+        default_resp = default_factory()
+
         async def forwarder(self: GatewayLocalBridgeService, stream: Stream[Any, Any]) -> None:
             await self._forward_rpc(
                 stream,
-                spec.name,
-                spec.response_type,
-                spec.default_factory(),
+                name,
+                resp_cls,
+                default_resp,
             )
 
-        forwarder.__name__ = spec.name
-        forwarder.__qualname__ = f"GatewayLocalBridgeService.{spec.name}"
+        forwarder.__name__ = name
+        forwarder.__qualname__ = f"GatewayLocalBridgeService.{name}"
         return forwarder
 
 
-for _spec in GATEWAY_RPC_SPECS:
-    setattr(GatewayLocalBridgeService, _spec.name, GatewayLocalBridgeService.create_forwarder(_spec))
+for _spec in REGISTRY.gateway_rpc_specs:
+    _name = _spec.rpc_name or _spec.name
+    setattr(GatewayLocalBridgeService, _name, GatewayLocalBridgeService.create_forwarder(_spec))
 
 LocalBridgeBase.register(GatewayLocalBridgeService)
 

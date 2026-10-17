@@ -7,7 +7,7 @@ from typing import Any, cast
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import COMMAND_SPECS, TOPIC_LOOKUP, Topic
+from mcubridge.protocol.protocol import REGISTRY, Topic
 from mcubridge.protocol.topics import (
     get_topic_for_message,
     parse_topic,
@@ -52,13 +52,15 @@ def test_parse_topic_mismatched_prefix_rejected(
     assert parse_topic(prefix_a, raw) is None
 
 
-_KNOWN_COMMAND_IDS = [spec.command_id for spec in COMMAND_SPECS.values() if spec.cloud_topic is not None]
+_KNOWN_COMMAND_IDS = [
+    spec.command_id for spec in REGISTRY.operations if spec.command_id is not None and spec.cloud_topic is not None
+]
 
 
 @given(
     prefix=_SAFE_TEXT,
     invalid_service=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=8, max_size=16).filter(
-        lambda s: s not in TOPIC_LOOKUP
+        lambda s: s not in REGISTRY.topic_lookup
     ),
     segments=st.lists(_SAFE_TEXT, max_size=2),
 )
@@ -87,7 +89,9 @@ def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) ->
     res = get_topic_for_message(prefix, command_id)
     assert res is not None
     assert res.startswith(prefix)
-    expected_topic = COMMAND_SPECS[command_id].cloud_topic
+    spec = REGISTRY.get(command_id)
+    assert spec is not None
+    expected_topic = spec.cloud_topic
     assert expected_topic is not None
     assert expected_topic in res
 
@@ -121,7 +125,7 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
         "shell": Topic.SHELL,
     }
     for alias, expected_topic in expected_aliases.items():
-        assert TOPIC_LOOKUP[alias] == expected_topic
+        assert REGISTRY.lookup_topic(alias) == expected_topic
         route = parse_topic("prefix", f"prefix/{alias}/13/read")
         assert route is not None
         assert route.topic == expected_topic

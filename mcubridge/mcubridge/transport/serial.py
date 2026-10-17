@@ -44,10 +44,8 @@ from mcubridge.protocol import is_system_command, protocol
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import (
-    COMMAND_SPECS,
+    REGISTRY,
     Status,
-    expected_responses,
-    response_to_request,
 )
 from mcubridge.protocol.structures import (
     PendingCommand,
@@ -412,15 +410,16 @@ class SerialTransport:
                     logger.debug("Marking pending command success on ACK")
                     pending.mark_success(payload)
             return
+        spec = REGISTRY.get(command_id)
+        paired_req_id = spec.paired_request_id if spec else None
         logger.debug(
-            "Correlation check response_to_request",
-            resp_req=response_to_request(command_id),
+            "Correlation check paired_request_id",
+            resp_req=paired_req_id,
             pending_cmd=pending.command_id,
         )
-        if response_to_request(command_id) == pending.command_id:
+        if paired_req_id == pending.command_id:
             logger.debug("Marking pending command success on response")
             resp_payload = payload
-            spec = COMMAND_SPECS.get(command_id)
             if isinstance(payload, bytes) and spec is not None and spec.pb_class is not None:
                 try:
                     msg = spec.pb_class()
@@ -456,7 +455,7 @@ class SerialTransport:
         if not self.serial or not self.serial.is_open:
             return False
 
-        spec = COMMAND_SPECS.get(command_id)
+        spec = REGISTRY.get(command_id)
         is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
 
@@ -466,7 +465,10 @@ class SerialTransport:
         effective_timeout = timeout if timeout is not None else self._response_timeout
 
         async with self._flow_lock:
-            pending = PendingCommand(command_id=command_id, expected_resp_ids=list(expected_responses(command_id)))
+            pending = PendingCommand(
+                command_id=command_id,
+                expected_resp_ids=list(spec.expected_responses) if spec else [],
+            )
             self.current_command = pending
             try:
                 retryer = tenacity.AsyncRetrying(

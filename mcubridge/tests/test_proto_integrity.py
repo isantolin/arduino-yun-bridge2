@@ -244,7 +244,11 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
     }
 
     assert expected_names == actual_names
-    pre_sync_specs = {spec.command_id for spec in protocol.COMMAND_SPECS.values() if spec.pre_sync_allowed}
+    pre_sync_specs = {
+        spec.command_id
+        for spec in protocol.REGISTRY.operations
+        if spec.command_id is not None and spec.pre_sync_allowed
+    }
     assert {protocol.Command[name].value for name in expected_names} == pre_sync_specs
 
 
@@ -252,18 +256,20 @@ def test_topic_lookup_matches_schema_metadata() -> None:
     topic_configs = pb.DESCRIPTOR.GetOptions().Extensions[pb.topics]
     for topic_config in topic_configs:
         enum_val = protocol.Topic[topic_config.name]
-        assert protocol.TOPIC_LOOKUP[topic_config.value] == enum_val
+        assert protocol.REGISTRY.lookup_topic(topic_config.value) == enum_val
         for alias in topic_config.aliases:
-            assert protocol.TOPIC_LOOKUP[alias] == enum_val
+            assert protocol.REGISTRY.lookup_topic(alias) == enum_val
 
 
 def test_command_specs_multidimensional_integrity() -> None:
-    """Verify that every command has a canonical CommandSpec matching Protobuf descriptors."""
-    assert len(protocol.COMMAND_SPECS) == len(pb.Command.DESCRIPTOR.values) - 1
+    """Verify that every command has a canonical OperationSpec matching Protobuf descriptors."""
+    commands_count = len(pb.Command.DESCRIPTOR.values) - 1
+    assert len(protocol.REGISTRY.by_command_id) == commands_count
     for val in pb.Command.DESCRIPTOR.values:
         if val.name == "CMD_UNSPECIFIED":
             continue
-        spec = protocol.COMMAND_SPECS[val.number]
+        spec = protocol.REGISTRY.get(val.number)
+        assert spec is not None
         assert spec.command_id == val.number
         assert spec.name == val.name
         opts = val.GetOptions().Extensions[pb.cmd_opts]
@@ -275,14 +281,14 @@ def test_command_specs_multidimensional_integrity() -> None:
         if opts.pb_message:
             assert spec.pb_class is getattr(pb, opts.pb_message)
             assert spec.payload_field is not None
-            msg_spec = protocol.MESSAGE_SPECS[opts.pb_message]
+            msg_spec = protocol.REGISTRY.get(opts.pb_message)
+            assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
         if opts.response_command:
             assert spec.expected_responses == frozenset({getattr(protocol.Command, opts.response_command).value})
         if spec.paired_request_id:
             assert any(
-                s.expected_responses and spec.command_id in s.expected_responses
-                for s in protocol.COMMAND_SPECS.values()
+                s.expected_responses and spec.command_id in s.expected_responses for s in protocol.REGISTRY.operations
             )
 
 
@@ -425,58 +431,55 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.services.runtime import BridgeService
 
     assert hasattr(pb, "ActionRouteDef")
-    assert len(protocol.TOPIC_DISPATCH_HANDLERS) == 9
-    for topic, handler_name in protocol.TOPIC_DISPATCH_HANDLERS.items():
+    assert len(protocol.REGISTRY.topic_dispatch_handlers) == 9
+    for topic, handler_name in protocol.REGISTRY.topic_dispatch_handlers.items():
         assert isinstance(topic, protocol.Topic)
         assert hasattr(BridgeService, handler_name)
         assert callable(getattr(BridgeService, handler_name))
 
-    assert len(protocol.COMMAND_ACTION_ROUTES) == 23
-    for (topic, scope, _action), handler_name in protocol.COMMAND_ACTION_ROUTES.items():
+    assert len(protocol.REGISTRY.action_routes) == 23
+    for (topic, scope, _action), handler_name in protocol.REGISTRY.action_routes.items():
         assert isinstance(topic, protocol.Topic)
         assert scope in ("mcu", "local")
         assert hasattr(BridgeService, handler_name)
         assert callable(getattr(BridgeService, handler_name))
 
-    assert len(protocol.MCU_DISPATCH_HANDLERS) == 26
-    for code, handler_path in protocol.MCU_DISPATCH_HANDLERS.items():
+    assert len(protocol.REGISTRY.mcu_dispatch_handlers) == 26
+    for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr == "handshake"
         assert callable(operator.attrgetter(root_attr))
 
-    assert len(protocol.MCU_UNSUPPORTED_REASONS) == 2
-    assert protocol.MCU_UNSUPPORTED_REASONS[protocol.Command.CMD_DIGITAL_READ.value] == (
+    assert len(protocol.REGISTRY.mcu_unsupported_reasons) == 2
+    assert protocol.REGISTRY.mcu_unsupported_reasons[protocol.Command.CMD_DIGITAL_READ.value] == (
         protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
     )
-    assert protocol.MCU_UNSUPPORTED_REASONS[protocol.Command.CMD_ANALOG_READ.value] == (
+    assert protocol.REGISTRY.mcu_unsupported_reasons[protocol.Command.CMD_ANALOG_READ.value] == (
         protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
     )
 
-    assert len(protocol.QUERY_TOPIC_ACTIONS) == 5
-    for topic, action in protocol.QUERY_TOPIC_ACTIONS:
+    assert len(protocol.REGISTRY.query_topic_actions) == 5
+    for topic, action in protocol.REGISTRY.query_topic_actions:
         assert isinstance(topic, protocol.Topic)
         assert isinstance(action, str)
 
-    assert len(protocol.LOCAL_RPC_SPECS) == 22
-    assert len(protocol.GATEWAY_RPC_SPECS) == 21
-    from mcubridge.services.local_bridge import LocalBridgeService, RPC_DISPATCH_TABLE
+    assert len(protocol.REGISTRY.local_rpc_specs) == 22
+    assert len(protocol.REGISTRY.gateway_rpc_specs) == 21
+    from mcubridge.services.local_bridge import LocalBridgeService
 
-    assert len(RPC_DISPATCH_TABLE) == 22
     service_desc = pb.DESCRIPTOR.services_by_name["LocalBridge"]
     unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
     assert len(unary_methods) == 22
 
-    for spec in protocol.LOCAL_RPC_SPECS:
-        assert spec.name in unary_methods
-        method_desc = unary_methods[spec.name]
+    for spec in protocol.REGISTRY.local_rpc_specs:
+        method_name = spec.rpc_name or spec.name
+        assert method_name in unary_methods
+        method_desc = unary_methods[method_name]
         assert spec.request_type is getattr(pb, method_desc.input_type.name)
         assert spec.response_type is getattr(pb, method_desc.output_type.name)
+        assert spec.handler_name is not None
         assert hasattr(LocalBridgeService, spec.handler_name)
         assert callable(getattr(LocalBridgeService, spec.handler_name))
-        assert hasattr(LocalBridgeService, spec.name)
-        assert callable(getattr(LocalBridgeService, spec.name))
-
-        dispatch_req, dispatch_handler = RPC_DISPATCH_TABLE[spec.name]
-        assert dispatch_req is spec.request_type
-        assert dispatch_handler is getattr(LocalBridgeService, spec.handler_name)
+        assert hasattr(LocalBridgeService, method_name)
+        assert callable(getattr(LocalBridgeService, method_name))

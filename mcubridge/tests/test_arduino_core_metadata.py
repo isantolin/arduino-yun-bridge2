@@ -124,11 +124,7 @@ def test_metadata_resolves_transitive_macro_definitions(tmp_path: Path) -> None:
         "#define PIN_WIRE_SCL (12u)\n",
         encoding="utf-8",
     )
-    properties = (
-        f"build.f_cpu=48000000ul\n"
-        f"build.mcu=cortex-m0plus\n"
-        f"build.variant.path={variant}\n"
-    )
+    properties = f"build.f_cpu=48000000ul\nbuild.mcu=cortex-m0plus\nbuild.variant.path={variant}\n"
 
     metadata = metadata_from_properties("arduino:samd:mkrwifi1010", properties)
     assert metadata == ArduinoCoreMetadata(

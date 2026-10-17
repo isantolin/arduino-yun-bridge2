@@ -23,9 +23,9 @@ from ..protocol.protocol import (
     REGISTRY,
     Command,
     Topic,
+    parse_topic,
 )
 from ..protocol.structures import is_command_allowed
-from ..protocol.topics import parse_topic
 
 __all__ = [
     "ConsoleQueueTarget",

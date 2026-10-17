@@ -24,8 +24,8 @@ from mcubridge.protocol.protocol import (
     Status,
     SystemAction,
     Topic,
+    TopicRoute,
 )
-from mcubridge.protocol.topics import TopicRoute
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state

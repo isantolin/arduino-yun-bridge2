@@ -8,9 +8,8 @@ from typing import Any, Protocol
 import structlog
 
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, Topic
+from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, Topic, topic_path
 from ..protocol.structures import create_queued_publish
-from ..protocol.topics import topic_path
 
 from mcubridge.state.context import RuntimeState
 

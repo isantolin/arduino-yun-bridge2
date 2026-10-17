@@ -7,8 +7,9 @@ from typing import Any, cast
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import REGISTRY, Topic
-from mcubridge.protocol.topics import (
+from mcubridge.protocol.protocol import (
+    REGISTRY,
+    Topic,
     get_topic_for_message,
     parse_topic,
     topic_path,

@@ -11,26 +11,27 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import structures
+from mcubridge.protocol.protocol import Topic, TopicRoute
 
 
 def test_topic_route_properties() -> None:
 
-    route = structures.TopicRoute(
+    route = TopicRoute(
         raw="prefix/file/read",
         prefix="prefix",
-        topic="file",
+        topic=Topic.FILE,
         segments=("read", "subpath"),
     )
     assert route.identifier == "read"
     assert route.remainder == ("subpath",)
     assert route.action == "read"
 
-    route_empty = structures.TopicRoute(raw="prefix", prefix="prefix", topic="", segments=())
+    route_empty = TopicRoute(raw="prefix", prefix="prefix", segments=())
     assert route_empty.identifier == ""
     assert route_empty.remainder == ()
     assert route_empty.action is None
 
-    route_resp = structures.TopicRoute(raw="prefix/d/response", prefix="prefix", topic="d", segments=("response",))
+    route_resp = TopicRoute(raw="prefix/d/response", prefix="prefix", topic=Topic.DIGITAL, segments=("response",))
     assert route_resp.action is None
 
 

@@ -60,6 +60,12 @@ from ..protocol.protocol import (
     SpiAction,
     Status,
     SystemAction,
+    Topic,
+    TopicRoute,
+    get_topic_for_message,
+    parse_subtopic,
+    parse_topic,
+    topic_path,
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
@@ -71,7 +77,6 @@ from ..protocol.structures import (
     load_tls_session_ticket,
     save_tls_session_ticket,
 )
-from ..protocol.topics import Topic, TopicRoute, get_topic_for_message, parse_subtopic, parse_topic, topic_path
 from ..state.context import (
     DaemonLifecycleMachine,
     FileTransferMachine,
@@ -573,7 +578,7 @@ class BridgeService:
                     except TimeoutError:
                         logger.error("Timed out waiting for MCU link synchronization")
                 action = route.action
-                topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
+                topic_str = route.topic.value
                 if action and not (
                     allows_topic(self.state.topic_authorization, topic_str, action)
                     if self.state.topic_authorization
@@ -874,7 +879,7 @@ class BridgeService:
         act, target = route.action, "/".join(route.remainder)
         if not (act and target):
             return
-        act_val = getattr(act, "value", str(act))
+        act_val = act
         with structlog.contextvars.bound_contextvars(file_action=act_val, file_target=target):
             if target.startswith(MCU_FS_PREFIX):
                 if handler := self.action_dispatch.get((Topic.FILE, "mcu", cast(FileAction, act))):

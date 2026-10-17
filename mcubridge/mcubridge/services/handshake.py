@@ -43,12 +43,8 @@ from ..config.const import (
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol
-from ..protocol.protocol import Command, Status
-from ..protocol.structures import (
-    PROTOBUF_CONTENT_TYPE,
-    create_queued_publish,
-)
-from ..protocol.topics import get_topic_for_message
+from ..protocol.protocol import Command, Status, get_topic_for_message
+from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from ..state.context import RuntimeState
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 import typer
@@ -243,3 +244,100 @@ def test_main_rejects_missing_sketch(tmp_path: Path) -> None:
     missing_sketch = tmp_path / "missing.ino"
     with pytest.raises(typer.BadParameter, match="Sketch does not exist"):
         renode_runner.main(sketch=missing_sketch)
+
+
+def test_renode_state_on_line_capabilities_received() -> None:
+    state = renode_runner.RenodeState()
+    assert not state.capabilities_event.is_set()
+    state.on_line("MCU capabilities received: ...", "daemon-stdout")
+    assert state.capabilities_event.is_set()
+    assert state.sync_event.is_set()
+    # Empty line ignored
+    state.on_line("   ", "daemon-stdout")
+
+
+def test_ensure_cloud_gateway_already_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = renode_runner.RenodeState()
+
+    def mock_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: float = 0.5) -> bool:
+        _ = (host, port, timeout, interval)
+        return True
+
+    monkeypatch.setattr(renode_runner, "wait_for_tcp_ready", mock_tcp_ready)
+    proc = renode_runner.ensure_cloud_gateway(state)
+    assert proc is None
+
+
+def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = renode_runner.RenodeState()
+    ready_sequence = [False, True]
+
+    def mock_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: float = 0.5) -> bool:
+        _ = (host, port, timeout, interval)
+        return ready_sequence.pop(0)
+
+    monkeypatch.setattr(renode_runner, "wait_for_tcp_ready", mock_tcp_ready)
+
+    class MockPopen:
+        stdout = None
+
+    def mock_popen(*args: Any, **kwargs: Any) -> MockPopen:
+        _ = (args, kwargs)
+        return MockPopen()
+
+    def mock_start_thread(*args: Any, **kwargs: Any) -> None:
+        _ = (args, kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+    monkeypatch.setattr(renode_runner, "start_daemon_thread", mock_start_thread)
+
+    proc = renode_runner.ensure_cloud_gateway(state)
+    assert proc is not None
+
+
+def test_ensure_cloud_gateway_spawn_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = renode_runner.RenodeState()
+
+    def mock_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: float = 0.5) -> bool:
+        _ = (host, port, timeout, interval)
+        return False
+
+    monkeypatch.setattr(renode_runner, "wait_for_tcp_ready", mock_tcp_ready)
+
+    class MockPopen:
+        stdout = None
+
+    def mock_popen(*args: Any, **kwargs: Any) -> MockPopen:
+        _ = (args, kwargs)
+        return MockPopen()
+
+    terminated: list[bool] = []
+
+    def mock_terminate(procs: Any, timeout: float = 1.0) -> None:
+        _ = (procs, timeout)
+        terminated.append(True)
+
+    def mock_start_thread(*args: Any, **kwargs: Any) -> None:
+        _ = (args, kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+    monkeypatch.setattr(renode_runner, "start_daemon_thread", mock_start_thread)
+    monkeypatch.setattr(renode_runner, "terminate_process_tree", mock_terminate)
+
+    proc = renode_runner.ensure_cloud_gateway(state)
+    assert proc is None
+    assert len(terminated) == 1
+
+
+def test_run_single_client_script_runpy_fallback(tmp_path: Path) -> None:
+    script = tmp_path / "test_runpy.py"
+    output_file = tmp_path / "out.txt"
+    script.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        f"Path({str(output_file)!r}).write_text(' '.join(sys.argv), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    passed = renode_runner.run_single_client_script(script, device_id="mkr-special")
+    assert passed is True
+    assert "--device-id mkr-special" in output_file.read_text(encoding="utf-8")

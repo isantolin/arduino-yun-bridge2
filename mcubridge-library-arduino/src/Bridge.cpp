@@ -260,20 +260,35 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 
 void BridgeClass::setStream(Stream& stream) {
   _stream = &stream;
-  if constexpr (bridge::hal::CurrentArchTraits::id ==
-                bridge::hal::ArchId::ARCH_AVR) {
-    if (_stream == &Serial
-#if defined(HAVE_HWSERIAL1)
-        || _stream == &Serial1
-#endif
-    ) {
-      _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    } else {
-      _hardware_serial = nullptr;
-    }
-  } else {
-    _hardware_serial = nullptr;
+#if defined(SERIAL_PORT_LINUXBRIDGE)
+  if (_stream == &SERIAL_PORT_LINUXBRIDGE) {
+    _hardware_serial = static_cast<HardwareSerial*>(_stream);
+    return;
   }
+#endif
+#if defined(SERIAL_PORT_HARDWARE)
+  if (_stream == &SERIAL_PORT_HARDWARE) {
+    _hardware_serial = static_cast<HardwareSerial*>(_stream);
+    return;
+  }
+#endif
+#if defined(Serial)
+  if (_stream == &Serial) {
+#if defined(ARDUINO_ARCH_SAMD)
+    _hardware_serial = nullptr;
+#else
+    _hardware_serial = static_cast<HardwareSerial*>(_stream);
+#endif
+    return;
+  }
+#endif
+#if defined(Serial1)
+  if (_stream == &Serial1) {
+    _hardware_serial = static_cast<HardwareSerial*>(_stream);
+    return;
+  }
+#endif
+  _hardware_serial = nullptr;
 }
 
 void BridgeClass::_initializeRuntime() {
@@ -311,9 +326,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
-  if constexpr (bridge::hal::CurrentArchTraits::id ==
-                bridge::hal::ArchId::ARCH_AVR)
-    if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
+  if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
   _state_flags.set(FLAG_TX_ENABLED, true);
   _timers.clear();
   _timers.register_timer([]() { Bridge._onAckTimeout(); }, _ack_timeout_ms,

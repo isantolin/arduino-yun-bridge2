@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import json
 import os
 import runpy
 import shutil
@@ -64,15 +65,18 @@ def _empty_output_lines() -> list[tuple[str, str]]:
 @dataclass
 class RenodeState:
     output_lines: list[tuple[str, str]] = field(default_factory=_empty_output_lines)
+    lock: threading.Lock = field(default_factory=threading.Lock)
     sync_event: threading.Event = field(default_factory=threading.Event)
     capabilities_event: threading.Event = field(default_factory=threading.Event)
 
     def on_line(self, line: str, source: str) -> None:
         clean_line = line.strip()
-        self.output_lines.append((source, clean_line))
-
-        if source in ("daemon-stdout", "daemon-stderr"):
-            if "Capabilities discovery complete" in clean_line:
+        if not clean_line:
+            return
+        with self.lock:
+            self.output_lines.append((source, clean_line))
+            logger.info("Process output", source=source, line=clean_line)
+            if "Capabilities discovery complete" in clean_line or "MCU capabilities received" in clean_line:
                 self.capabilities_event.set()
                 self.sync_event.set()
             elif (
@@ -133,6 +137,7 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     daemon_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
     daemon_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
     daemon_env["MCUBRIDGE_DEVICE_ID"] = "mkr-01"
+    daemon_env["MCUBRIDGE_DEBUG"] = "1"
 
     return fake_uci_dir, storage_path, daemon_env
 
@@ -143,6 +148,7 @@ def run_single_client_script(
     led_builtin_pin: int = 6,
 ) -> bool:
     """Execute a single client test script with main() injection."""
+    logger.info("Running client test in-process", script=script_path.name)
     try:
         spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
         if spec and spec.loader:
@@ -162,11 +168,19 @@ def run_single_client_script(
                 if "led_builtin_pin" in sig.parameters:
                     kwargs["led_builtin_pin"] = led_builtin_pin
                 main_fn(**kwargs)
+                logger.info("Test passed", script=script_path.name)
                 return True
-        runpy.run_path(str(script_path), run_name="__main__")
+        orig_argv = sys.argv[:]
+        try:
+            sys.argv = [str(script_path), "--device-id", device_id]
+            runpy.run_path(str(script_path), run_name="__main__")
+        finally:
+            sys.argv = orig_argv
+        logger.info("Test passed", script=script_path.name)
         return True
     except SystemExit as exc:
-        if exc.code == 0:
+        if exc.code in (0, None):
+            logger.info("Test passed", script=script_path.name)
             return True
         logger.error("Test failed with exit code", script=script_path.name, code=exc.code)
         return False
@@ -198,6 +212,43 @@ def run_client_scripts(
             os.environ.pop("MCUBRIDGE_NON_INTERACTIVE", None)
         else:
             os.environ["MCUBRIDGE_NON_INTERACTIVE"] = old_non_interactive
+
+
+def ensure_cloud_gateway(state: RenodeState) -> subprocess.Popen[str] | None:
+    """Start Managed Cloud Gateway for Renode if not already listening."""
+    gateway_proc: subprocess.Popen[str] | None = None
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+        logger.info("Starting Managed Cloud Gateway for Renode...")
+        gateway_env = dict(os.environ)
+        gateway_env["PYTHONUNBUFFERED"] = "1"
+        gateway_cmd = [
+            sys.executable,
+            "-u",
+            str(repo_root / "mcubridge-gateway" / "gateway.py"),
+            "--no-tls",
+            "--port",
+            str(CLOUD_PORT),
+        ]
+        gateway_proc = subprocess.Popen(
+            gateway_cmd,
+            env=gateway_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
+
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=30.0):
+        logger.error("Cloud Gateway not available for Renode")
+        if gateway_proc:
+            terminate_process_tree([gateway_proc], timeout=1.0)
+        return None
+
+    return gateway_proc
+
+
+_ensure_cloud_gateway = ensure_cloud_gateway
 
 
 def run_renode_emulation(
@@ -280,53 +331,67 @@ def run_renode_emulation(
 
         fake_uci_dir, storage_path, daemon_env = _setup_fake_uci(str(pty_link))
 
-        gateway_cmd = [
-            sys.executable,
-            "-m",
-            "mcubridge_gateway.main",
-            "--no-tls",
-            "--port",
-            str(CLOUD_PORT),
-        ]
-        gateway_proc = subprocess.Popen(
-            gateway_cmd,
-            env=daemon_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
-
-        if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=10.0):
+        gateway_proc = _ensure_cloud_gateway(state)
+        if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
             logger.error("Gateway did not start in time")
             return False
 
-        daemon_cmd = [sys.executable, "-m", "mcubridge.main", "--debug"]
+        daemon_cmd = [
+            sys.executable,
+            "-u",
+            "-m",
+            "mcubridge.daemon",
+        ]
+        logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
         daemon_proc = subprocess.Popen(
             daemon_cmd,
             env=daemon_env,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             bufsize=1,
         )
-        start_daemon_thread(stream_pump, "daemon", daemon_proc.stdout, state.on_line, "daemon")
+        start_daemon_thread(stream_pump, "daemon-stdout", daemon_proc.stdout, state.on_line, "daemon-stdout")
+        start_daemon_thread(stream_pump, "daemon-stderr", daemon_proc.stderr, state.on_line, "daemon-stderr")
 
-        logger.info("Waiting for MCU/daemon link synchronization...")
-        if not state.sync_event.wait(timeout=20.0):
+        time.sleep(0.5)
+        if daemon_proc.poll() is not None:
+            logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
+            return False
+
+        logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
+        if not state.sync_event.wait(timeout=60.0):
             logger.error("MCU/daemon link failed to synchronize within timeout")
             return False
 
-        state.capabilities_event.wait(timeout=10.0)
+        logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
+        state.capabilities_event.wait(timeout=30.0)
         time.sleep(1.0)
 
-        return run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
+        all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
+        if all_passed:
+            status_file = Path("/tmp/mcubridge_status.json")
+            if status_file.exists():
+                try:
+                    from tools.audit.audit_bridge_status import audit_status_dict
+
+                    status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
+                    if status_errors:
+                        logger.error("Post-execution status health check failed", errors=status_errors)
+                        all_passed = False
+                    else:
+                        logger.info("Post-execution status health check passed (100% clean)")
+                except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+                    logger.error("Failed auditing bridge status", error=str(exc))
+                    all_passed = False
+
+        return all_passed
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
         procs = [p for p in (daemon_proc, gateway_proc, socat_proc, renode_proc) if p is not None]
-        terminate_process_tree(procs, timeout=2.0)
+        terminate_process_tree(procs, timeout=5.0)
         if fake_uci_dir and fake_uci_dir.exists():
             shutil.rmtree(fake_uci_dir, ignore_errors=True)
         if storage_path and storage_path.exists():

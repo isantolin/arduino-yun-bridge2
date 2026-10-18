@@ -257,6 +257,7 @@ def run_renode_emulation(
     timeout_seconds: float = 90.0,
     port: int = DEFAULT_RENODE_PORT,
     led_builtin_pin: int = 6,
+    log_dir: Path | None = None,
 ) -> bool:
     """Run full Renode ARM emulation with socat PTY bridge and client tests."""
     renode_bin = shutil.which("renode")
@@ -389,6 +390,14 @@ def run_renode_emulation(
         return all_passed
 
     finally:
+        if log_dir is not None:
+            log_file = log_dir / "renode_execution.log"
+            try:
+                with log_file.open("w", encoding="utf-8") as f:
+                    for src, line in state.output_lines:
+                        f.write(f"[{src}] {line}\n")
+            except OSError as exc:
+                logger.warning("Could not write renode execution log", error=str(exc))
         shutil.rmtree(temp_dir, ignore_errors=True)
         procs = [p for p in (daemon_proc, gateway_proc, socat_proc, renode_proc) if p is not None]
         terminate_process_tree(procs, timeout=5.0)
@@ -452,6 +461,7 @@ def run_matrix(
                 test_scripts=test_paths,
                 timeout_seconds=timeout_seconds,
                 led_builtin_pin=led_pin,
+                log_dir=summary_dir,
             )
             if success:
                 logger.info("Renode Emulation PASSED for board", board=board_fqbn)

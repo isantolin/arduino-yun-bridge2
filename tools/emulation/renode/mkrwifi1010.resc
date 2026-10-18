@@ -10,11 +10,13 @@ machine LoadPlatformDescription $ORIGIN/mkrwifi1010.repl
 emulation CreateServerSocketTerminal $UART_PORT "term" false
 connector Connect sysbus.uart0 term
 
-# Load ELF binary
+# Load ELF binary and configure Vector Table Offset for SAMD application
 macro reset
 ---
     sysbus LoadELF $ELF_PATH
+    cpu VectorTableOffset 0x2000
 ---
 
 runMacro $reset
 start
+

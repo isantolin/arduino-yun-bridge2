@@ -48,10 +48,8 @@ coverage.xml
 *_pb2.py
 *_pb2.pyi
 *_grpc.py
-mcubridge.pb.c
-mcubridge.pb.h
-validate.pb.c
-validate.pb.h
+*.pb.c
+*.pb.h
 validate_pb2.py
 validate_pb2.pyi
 tools/protocol/buf/

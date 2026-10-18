@@ -8,12 +8,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
-import functools
 import posixpath
 from typing import Any, Final
 
 from google.protobuf.message import Message as ProtobufMessage
-import parse
 import structlog
 
 from . import mcubridge_pb2 as pb
@@ -125,8 +123,6 @@ class TopicRoute:
         """Infer the canonical action for authorization and dispatch. [SIL-2]"""
         if not self.segments or not _FLAVOR_SEGMENTS.isdisjoint(self.segments):
             return None
-        if self.topic == Topic.SYSTEM:
-            return None
         if self.topic in (Topic.DIGITAL, Topic.ANALOG):
             return (
                 "write" if len(self.segments) == 1 else (self.segments[1].lower() if len(self.segments) > 1 else None)
@@ -158,7 +154,6 @@ class OperationSpec:
     handler_name: str | None = None
     is_gateway: bool = False
     metrics_blob_field: str | None = None
-
 
 class ProtocolRegistry:
     """Unified Single Source of Truth protocol registry for MCU Bridge. [SIL-2]"""
@@ -257,26 +252,51 @@ class ProtocolRegistry:
             return self.by_name.get(getattr(key.DESCRIPTOR, "name", ""))
         return None
 
+    def topic_path(self, prefix: str, topic: str | Topic, *segments: str | int) -> str:
+        """[SIL-2] Construct topic path using direct join/filter delegation."""
+        parts = [clean for s in (prefix, topic, *segments) if (clean := str(s).strip("/"))]
+        return posixpath.join(*parts) if parts else ""
+
     def get_topic_for_message(
         self, prefix: str, message: ProtobufMessage | type[ProtobufMessage] | int | str
     ) -> str | None:
         """Resolve canonical CLOUD topic for a given message, class, command ID or enum name. [SIL-2]"""
         spec = self.get(message)
         if spec and spec.cloud_topic:
-            return topic_path(prefix, *spec.cloud_topic.split("/"))
+            return self.topic_path(prefix, *spec.cloud_topic.split("/"))
         return None
 
     def parse_topic(self, prefix: str, topic_name: str) -> TopicRoute | None:
-        """Parse incoming CLOUD topic into TopicRoute. [SIL-2]"""
-        return parse_topic(prefix, topic_name)
+        """Parse incoming CLOUD topic into TopicRoute natively using self.lookup_topic. [SIL-2]"""
+        if not topic_name or not prefix:
+            return None
 
-    def topic_path(self, prefix: str, topic: str | Topic, *segments: str | int) -> str:
-        """[SIL-2] Construct topic path using direct join/filter delegation."""
-        return topic_path(prefix, topic, *segments)
+        prefix_segs = tuple(filter(None, prefix.split("/")))
+        topic_segs = tuple(filter(None, topic_name.split("/")))
+        if (
+            not prefix_segs
+            or not topic_segs
+            or len(topic_segs) <= len(prefix_segs)
+            or topic_segs[: len(prefix_segs)] != prefix_segs
+        ):
+            return None
 
-    def parse_subtopic(self, path: str, format_spec: str) -> dict[str, Any] | None:
-        """Extract structured named fields from subtopic remainder using declarative parse pattern. [SIL-2]"""
-        return parse_subtopic(path, format_spec)
+        prefix_canonical = "/".join(prefix_segs)
+        seg = topic_segs[len(prefix_segs)].lower()
+        segments = topic_segs[len(prefix_segs) + 1 :]
+
+        topic_enum = self.lookup_topic(seg)
+        if topic_enum is None:
+            logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name)
+            return None
+
+        return TopicRoute(
+            raw=topic_name,
+            prefix=prefix_canonical,
+            topic=topic_enum,
+            segments=segments,
+        )
+
 
 
 
@@ -424,78 +444,3 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- endfor %}
 
 
-def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
-    """[SIL-2] Construct topic path using direct join/filter delegation."""
-    parts = [clean for s in (prefix, topic, *segments) if (clean := str(s).strip("/"))]
-    return posixpath.join(*parts) if parts else ""
-
-
-def get_topic_for_message(prefix: str, message: ProtobufMessage | type[ProtobufMessage] | int | str) -> str | None:
-    """Resolve the canonical CLOUD topic for a given message instance, class, command ID or enum name. [SIL-2]"""
-    return REGISTRY.get_topic_for_message(prefix, message)
-
-
-@functools.cache
-def _get_prefix_segs(prefix: str) -> tuple[str, ...]:
-    """Cache prefix segment splits. [SIL-2]"""
-    return tuple(filter(None, prefix.split("/")))
-
-
-@functools.lru_cache(maxsize=32)
-def _get_topic_parser(prefix_canonical: str) -> tuple[parse.Parser, parse.Parser]:
-    """Compile declarative topic parsers for prefix with and without remainder segments. [SIL-2]"""
-    return (
-        parse.compile(f"{prefix_canonical}/{{service}}/{{remainder}}"),
-        parse.compile(f"{prefix_canonical}/{{service}}"),
-    )
-
-
-@functools.lru_cache(maxsize=256)
-def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
-    """Parse an incoming CLOUD topic into a TopicRoute using declarative parse patterns. [SIL-2]"""
-    if not topic_name or not prefix:
-        return None
-
-    prefix_segs = _get_prefix_segs(prefix)
-    prefix_canonical = "/".join(prefix_segs)
-    clean_topic = "/".join(filter(None, topic_name.split("/")))
-    if not prefix_canonical or not clean_topic:
-        return None
-
-    full_parser, svc_parser = _get_topic_parser(prefix_canonical)
-    parsed = full_parser.parse(clean_topic)
-    if parsed is not None:
-        seg = str(parsed["service"]).lower()
-        remainder = str(parsed["remainder"])
-        segments = tuple(filter(None, remainder.split("/")))
-    else:
-        parsed_svc = svc_parser.parse(clean_topic)
-        if parsed_svc is None:
-            return None
-        seg = str(parsed_svc["service"]).lower()
-        segments = ()
-
-    topic_enum = REGISTRY.lookup_topic(seg)
-    if topic_enum is None:
-        logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name)
-        return None
-
-    return TopicRoute(
-        raw=topic_name,
-        prefix=prefix_canonical,
-        topic=topic_enum,
-        segments=segments,
-    )
-
-
-@functools.lru_cache(maxsize=64)
-def _get_subtopic_parser(format_spec: str) -> parse.Parser:
-    """Compile and cache subtopic format parser for structured path segments. [SIL-2]"""
-    return parse.compile(format_spec)
-
-
-def parse_subtopic(path: str, format_spec: str) -> dict[str, Any] | None:
-    """Extract structured named fields from subtopic remainder using declarative parse pattern. [SIL-2]"""
-    clean_path = path.strip("/")
-    result = _get_subtopic_parser(format_spec).parse(clean_path)
-    return dict(result.named) if result is not None else None

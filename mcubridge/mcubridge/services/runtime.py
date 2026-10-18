@@ -59,17 +59,11 @@ from ..protocol.protocol import (
     ShellAction,
     SpiAction,
     Status,
-    SystemAction,
     Topic,
     TopicRoute,
-    get_topic_for_message,
-    parse_subtopic,
-    parse_topic,
-    topic_path,
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
-    allows_topic,
     create_queued_publish,
     get_ssl_context,
     is_command_allowed,
@@ -304,7 +298,7 @@ class BridgeService:
         reply_context: Any | None = None,
     ) -> None:
         """Enqueue a Protobuf StatusReport message to the cloud. [SIL-2]"""
-        topic = get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or ""
+        topic = protocol.REGISTRY.get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or ""
         await self.enqueue_cloud_publish(
             topic,
             report.SerializeToString(),
@@ -550,27 +544,24 @@ class BridgeService:
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
     async def handle_request(self, inbound: Any) -> None:
-        if isinstance(inbound, pb.CloudQueuedPublish):
-            request = inbound
-        else:
+        if not isinstance(inbound, pb.CloudQueuedPublish):
             props = getattr(inbound, "properties", None)
-            rt = getattr(inbound, "response_topic", None)
-            if rt is None and props:
-                rt = getattr(props, "ResponseTopic", None)
-            cd = getattr(inbound, "correlation_data", None)
-            if cd is None and props:
-                cd = getattr(props, "CorrelationData", None)
-
+            rt = getattr(inbound, "response_topic", None) or (getattr(props, "ResponseTopic", None) if props else None)
+            cd = getattr(inbound, "correlation_data", None) or (
+                getattr(props, "CorrelationData", None) if props else None
+            )
             request = pb.CloudQueuedPublish(
                 topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
                 payload=bytes(getattr(inbound, "payload", b"")),
                 correlation_data=bytes(cd) if cd else b"",
                 response_topic=str(rt) if rt else "",
             )
+        else:
+            request = inbound
 
         topic_val = request.topic_name or getattr(request, "topic", "")
         with structlog.contextvars.bound_contextvars(topic=topic_val):
-            if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
+            if route := protocol.REGISTRY.parse_topic(self.state.cloud_topic_prefix, topic_val):
                 if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
                     try:
                         with anyio.fail_after(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
@@ -580,9 +571,8 @@ class BridgeService:
                 action = route.action
                 topic_str = route.topic.value
                 if action and not (
-                    allows_topic(self.state.topic_authorization, topic_str, action)
-                    if self.state.topic_authorization
-                    else False
+                    self.state.topic_authorization
+                    and protocol.REGISTRY.allows_topic(self.state.topic_authorization, topic_str, action)
                 ):
                     await self.reject_cloud(request, route.topic, action)
                     return
@@ -614,7 +604,7 @@ class BridgeService:
         reply_context: Any | None = None,
     ) -> None:
         await self.enqueue_cloud_publish(
-            get_topic_for_message(self.state.cloud_topic_prefix, msg) or "",
+            protocol.REGISTRY.get_topic_for_message(self.state.cloud_topic_prefix, msg) or "",
             payload,
             content_type=content_type,
             message_expiry_interval=message_expiry_interval,
@@ -750,7 +740,9 @@ class BridgeService:
     async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
         req = q.popleft() if q else None
         await self.enqueue_cloud_publish(
-            topic_path(self.state.cloud_topic_prefix, tp, str(req.pin) if req else "unknown", "value"),
+            protocol.REGISTRY.topic_path(
+                self.state.cloud_topic_prefix, tp, str(req.pin) if req else "unknown", "value"
+            ),
             str(p.value).encode(),
             message_expiry_interval=protocol.CLOUD_EXPIRY_PIN,
             user_properties=((PROP_KEY_BRIDGE_PIN, str(req.pin) if req else "unknown"),),
@@ -862,7 +854,7 @@ class BridgeService:
                 logger.debug("Mailbox incoming queue empty during cloud read")
                 data = b""
             await self.enqueue_cloud_publish(
-                topic_path(
+                protocol.REGISTRY.topic_path(
                     self.state.cloud_topic_prefix, Topic.MAILBOX, MailboxAction.READ, protocol.CLOUD_SUFFIX_RESPONSE
                 ),
                 data,
@@ -873,26 +865,18 @@ class BridgeService:
         await self.local_bridge_service.execute_file_remove(pb.FileRemove(path=target))
 
     async def handle_file(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return
         act, target = route.action, "/".join(route.remainder)
         if not (act and target):
             return
-        act_val = act
-        with structlog.contextvars.bound_contextvars(file_action=act_val, file_target=target):
-            if target.startswith(MCU_FS_PREFIX):
-                if handler := self.action_dispatch.get((Topic.FILE, "mcu", cast(FileAction, act))):
-                    await handler(target, inbound)
-                return
-
-            if self._get_safe_path(target) and (
-                handler := self.action_dispatch.get((Topic.FILE, "local", cast(FileAction, act)))
-            ):
+        with structlog.contextvars.bound_contextvars(file_action=act, file_target=target):
+            scope = "mcu" if target.startswith(MCU_FS_PREFIX) else ("local" if self._get_safe_path(target) else None)
+            if scope and (handler := self.action_dispatch.get((Topic.FILE, scope, act))):
                 await handler(target, inbound)
 
     def _file_response_topic(self, target: str) -> str:
-        return topic_path(
+        return protocol.REGISTRY.topic_path(
             self.state.cloud_topic_prefix,
             Topic.FILE,
             FileAction.READ,
@@ -902,7 +886,7 @@ class BridgeService:
 
     async def _publish_file_write_ack(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         await self.enqueue_cloud_publish(
-            topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
+            protocol.REGISTRY.topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
             inbound.payload,
             reply_context=inbound,
         )
@@ -979,25 +963,18 @@ class BridgeService:
         await self.local_bridge_service.execute_process_kill(pb.ProcessKill(pid=pid))
 
     async def handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        raw_act: str | None = None
-        pid: int = 0
-        if len(route.segments) == 2 and (parsed := parse_subtopic("/".join(route.segments), "{action}/{pid:d}")):
-            raw_act = str(parsed["action"])
-            pid = int(parsed["pid"])
-        elif route.segments:
-            raw_act = route.segments[0]
-
-        if not raw_act:
+        if not route.segments:
             logger.warning("Shell operation rejected: missing action segment", topic=route.raw)
             return
-        try:
-            act = ShellAction(raw_act)
-        except ValueError as exc:
-            logger.warning("Unrecognized shell action segment", action=raw_act, error=str(exc))
+        raw_act = route.segments[0]
+        pid = int(route.segments[1]) if len(route.segments) == 2 and route.segments[1].isdigit() else 0
+
+        handler = self.action_dispatch.get((Topic.SHELL, "local", raw_act))
+        if not handler:
+            logger.warning("Unrecognized or missing shell action segment", action=raw_act, topic=route.raw)
             return
-        with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
-            if handler := self.action_dispatch.get((Topic.SHELL, "local", act)):
-                await handler(pid, inbound)
+        with structlog.contextvars.bound_contextvars(shell_action=raw_act, pid=pid):
+            await handler(pid, inbound)
 
     async def handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
         pl = inbound.payload
@@ -1013,7 +990,7 @@ class BridgeService:
             logger.error("Shell run_async rejected", error=str(exc))
             payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
         await self.enqueue_cloud_publish(
-            topic_path(
+            protocol.REGISTRY.topic_path(
                 self.state.cloud_topic_prefix,
                 Topic.SHELL,
                 ShellAction.RUN_ASYNC,
@@ -1027,7 +1004,7 @@ class BridgeService:
     async def handle_shell_poll(self, pid: int, inbound: pb.CloudQueuedPublish) -> None:
         batch = await self.local_bridge_service.execute_process_poll(pb.ProcessPoll(pid=pid))
         await self.enqueue_cloud_publish(
-            topic_path(
+            protocol.REGISTRY.topic_path(
                 self.state.cloud_topic_prefix,
                 Topic.SHELL,
                 ShellAction.POLL,
@@ -1052,7 +1029,7 @@ class BridgeService:
         res = await self.local_bridge_service.execute_spi_transfer(pb.SpiTransfer(data=inbound.payload))
         if res.data:
             await self.enqueue_cloud_publish(
-                topic_path(
+                protocol.REGISTRY.topic_path(
                     self.state.cloud_topic_prefix,
                     Topic.SPI,
                     SpiAction.TRANSFER,
@@ -1075,13 +1052,13 @@ class BridgeService:
     async def handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
-        if handler := self.action_dispatch.get((Topic.SPI, "mcu", cast(SpiAction, route.identifier))):
+        if handler := self.action_dispatch.get((Topic.SPI, "mcu", route.identifier)):
             await handler(route, inbound)
 
     async def _reply_cloud_ok(self, *segments: Any, success: bool, inbound: pb.CloudQueuedPublish) -> None:
         if inbound.correlation_data or inbound.response_topic:
             await self.enqueue_cloud_publish(
-                topic_path(self.state.cloud_topic_prefix, *segments, protocol.CLOUD_SUFFIX_RESPONSE),
+                protocol.REGISTRY.topic_path(self.state.cloud_topic_prefix, *segments, protocol.CLOUD_SUFFIX_RESPONSE),
                 b"OK" if success else b"ERROR",
                 reply_context=inbound,
             )
@@ -1117,11 +1094,9 @@ class BridgeService:
 
     async def handle_pin_write(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
-        if route.topic == Topic.DIGITAL:
-            res = await self.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=pin, value=val))
-        else:
-            res = await self.local_bridge_service.execute_analog_write(pb.AnalogWrite(pin=pin, value=val))
-        await self._reply_cloud_ok(route.topic, str(pin), success=(res.status == "ok"), inbound=inbound)
+        writer = self.write_digital_pin if route.topic == Topic.DIGITAL else self.write_analog_pin
+        ok = await writer(pin, val)
+        await self._reply_cloud_ok(route.topic, str(pin), success=ok, inbound=inbound)
 
     async def handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
@@ -1129,13 +1104,7 @@ class BridgeService:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        raw_action = route.segments[1] if len(route.segments) == 2 else None
-        action: PinAction | None = None
-        if raw_action is not None:
-            try:
-                action = PinAction(raw_action)
-            except ValueError:
-                return
+        action = route.segments[1] if len(route.segments) == 2 else None
         if handler := self.action_dispatch.get((route.topic, "mcu", action)):
             await handler(route, pin, inbound)
 
@@ -1170,7 +1139,7 @@ class BridgeService:
     async def handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
-        if handler := self.action_dispatch.get((Topic.SYSTEM, "mcu", cast(SystemAction, route.identifier))):
+        if handler := self.action_dispatch.get((Topic.SYSTEM, "mcu", route.identifier)):
             await handler(route, inbound)
         else:
             logger.warning("Unrecognized system action requested", action=route.identifier)
@@ -1401,7 +1370,7 @@ class BridgeService:
     async def publish_datastore_value(
         self, key: str, val: bytes, reply_context: Any | None = None, error: str | None = None
     ) -> None:
-        tp = topic_path(
+        tp = protocol.REGISTRY.topic_path(
             self.state.cloud_topic_prefix, Topic.DATASTORE, DatastoreAction.GET, *filter(None, key.split("/"))
         )
         props = (

@@ -8,7 +8,7 @@ from typing import Any, Protocol
 import structlog
 
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, Topic, topic_path
+from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, REGISTRY, Topic
 from ..protocol.structures import create_queued_publish
 
 from mcubridge.state.context import RuntimeState
@@ -91,7 +91,7 @@ class GpioService:
         # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(event.pin), "update"),
+                REGISTRY.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(event.pin), "update"),
                 str(event.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )

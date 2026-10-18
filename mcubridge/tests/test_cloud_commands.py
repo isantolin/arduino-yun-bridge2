@@ -11,7 +11,7 @@ from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Topic, TopicRoute, parse_topic, topic_path
+from mcubridge.protocol.protocol import REGISTRY, Command, Topic, TopicRoute
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -51,8 +51,8 @@ async def test_cloud_command_pin_dispatch_property(
     svc, state, serial_mock, mock_publish = _make_service()
     try:
         args_path = [str(pin), "mode"] if is_mode else [str(pin)]
-        t_path = topic_path(state.cloud_topic_prefix, Topic.DIGITAL, *args_path)
-        route = parse_topic(state.cloud_topic_prefix, t_path)
+        t_path = REGISTRY.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, *args_path)
+        route = REGISTRY.parse_topic(state.cloud_topic_prefix, t_path)
         assert route is not None
 
         inbound = pb.CloudQueuedPublish(

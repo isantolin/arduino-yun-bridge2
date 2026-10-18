@@ -9,12 +9,11 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from google.protobuf.message import EncodeError as ProtobufSerializationError
-from dirty_equals import IsPartialDict
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Status, parse_topic
+from mcubridge.protocol.protocol import REGISTRY, Status
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -154,7 +153,7 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     get_topic = f"{prefix}/datastore/get/temp"
 
     # PUT Action
-    route_put = parse_topic(prefix, put_topic)
+    route_put = REGISTRY.parse_topic(prefix, put_topic)
     assert route_put is not None
     msg_put = pb.CloudQueuedPublish(topic_name=put_topic, payload=b"25.4")
     handle_ds: Callable[..., Awaitable[None]] = svc.handle_datastore
@@ -162,7 +161,7 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     cache.set.assert_awaited_with("temp", b"25.4")
 
     # GET Action (Cache Hit)
-    route_get = parse_topic(prefix, get_topic)
+    route_get = REGISTRY.parse_topic(prefix, get_topic)
     assert route_get is not None
     msg_get = pb.CloudQueuedPublish(topic_name=get_topic, payload=b"")
     await handle_ds(route_get, msg_get)
@@ -182,7 +181,7 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     write_topic = f"{prefix}/mailbox/write"
 
     # WRITE Action
-    route_write = parse_topic(prefix, write_topic)
+    route_write = REGISTRY.parse_topic(prefix, write_topic)
     assert route_write is not None
     msg_write = pb.CloudQueuedPublish(topic_name=write_topic, payload=b"hello-mcu")
     handle_mb: Callable[..., Awaitable[None]] = svc.handle_mailbox
@@ -258,7 +257,7 @@ async def test_cloud_events_and_direct_rpc_dispatch(
 
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     from mcubridge.protocol import protocol
-    from mcubridge.protocol.protocol import SystemAction, Topic, parse_topic, topic_path
+    from mcubridge.protocol.protocol import REGISTRY, SystemAction, Topic
 
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
@@ -269,8 +268,8 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     handle_system: Callable[..., Awaitable[None]] = svc.handle_system
 
     # Bootloader action
-    t_bootloader = topic_path(mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BOOTLOADER)
-    route_bootloader = parse_topic(mock_bridge_state.cloud_topic_prefix, t_bootloader)
+    t_bootloader = REGISTRY.topic_path(mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BOOTLOADER)
+    route_bootloader = REGISTRY.parse_topic(mock_bridge_state.cloud_topic_prefix, t_bootloader)
     assert route_bootloader is not None
     await handle_system(route_bootloader, pb.CloudQueuedPublish())
     mock_serial.send.assert_awaited_with(
@@ -278,17 +277,19 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     )
 
     # Version action
-    t_version = topic_path(mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET)
-    route_version = parse_topic(mock_bridge_state.cloud_topic_prefix, t_version)
+    t_version = REGISTRY.topic_path(
+        mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET
+    )
+    route_version = REGISTRY.parse_topic(mock_bridge_state.cloud_topic_prefix, t_version)
     assert route_version is not None
     await handle_system(route_version, pb.CloudQueuedPublish())
     assert mock_bridge_state.mcu_version == (2, 8, 5)
 
     # Bridge summary / handshake action
-    t_summary = topic_path(
+    t_summary = REGISTRY.topic_path(
         mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BRIDGE, SystemAction.SUMMARY, SystemAction.GET
     )
-    route_summary = parse_topic(mock_bridge_state.cloud_topic_prefix, t_summary)
+    route_summary = REGISTRY.parse_topic(mock_bridge_state.cloud_topic_prefix, t_summary)
     assert route_summary is not None
     await handle_system(route_summary, pb.CloudQueuedPublish())
     mock_publisher.assert_awaited()
@@ -411,16 +412,3 @@ def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, moc
     svc.lifecycle_fsm.stop()
     assert not svc.is_running
     assert not svc.is_draining
-
-
-def test_parse_subtopic_and_compile_parser() -> None:
-    """Validate declarative subtopic pattern parsing using parse library. [SIL-2]"""
-    from mcubridge.protocol.protocol import parse_subtopic
-
-    parsed = parse_subtopic("pins/13/read", "pins/{pin:d}/{action}")
-    assert parsed == IsPartialDict({"pin": 13, "action": "read"})
-
-    parsed_ds = parse_subtopic("datastore/cache/sensor1", "datastore/{bucket}/{key}")
-    assert parsed_ds == IsPartialDict({"bucket": "cache", "key": "sensor1"})
-
-    assert parse_subtopic("invalid/format", "pins/{pin:d}/{action}") is None

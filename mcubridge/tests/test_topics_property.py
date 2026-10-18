@@ -10,9 +10,6 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import (
     REGISTRY,
     Topic,
-    get_topic_for_message,
-    parse_topic,
-    topic_path,
 )
 
 _SAFE_TEXT = st.text(
@@ -29,8 +26,8 @@ _SAFE_TEXT = st.text(
 )
 def test_topic_path_parse_topic_isomorphism(prefix: str, topic: Topic, segments: list[str]) -> None:
     """Property: Any valid (prefix, topic, *segments) tuple roundtrips through parse_topic idempotently."""
-    raw = topic_path(prefix, topic.value, *segments)
-    route = parse_topic(prefix, raw)
+    raw = REGISTRY.topic_path(prefix, topic.value, *segments)
+    route = REGISTRY.parse_topic(prefix, raw)
     assert route is not None
     assert route.raw == raw
     assert route.prefix == prefix
@@ -49,8 +46,8 @@ def test_parse_topic_mismatched_prefix_rejected(
 ) -> None:
     """Property: A topic constructed with prefix_b is deterministically rejected when parsed with distinct prefix_a."""
     assume(prefix_a != prefix_b)
-    raw = topic_path(prefix_b, topic.value, *segments)
-    assert parse_topic(prefix_a, raw) is None
+    raw = REGISTRY.topic_path(prefix_b, topic.value, *segments)
+    assert REGISTRY.parse_topic(prefix_a, raw) is None
 
 
 _KNOWN_COMMAND_IDS = [
@@ -67,18 +64,18 @@ _KNOWN_COMMAND_IDS = [
 )
 def test_parse_topic_unrecognized_service_rejected(prefix: str, invalid_service: str, segments: list[str]) -> None:
     """Property: Any service segment not recognized in Topic enum or aliases returns None."""
-    raw = topic_path(prefix, invalid_service, *segments)
-    assert parse_topic(prefix, raw) is None
+    raw = REGISTRY.topic_path(prefix, invalid_service, *segments)
+    assert REGISTRY.parse_topic(prefix, raw) is None
 
 
 @given(s=_SAFE_TEXT)
 def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     """Property: Empty prefix or empty topic string always returns None."""
-    assert parse_topic("", s) is None
-    assert parse_topic(s, "") is None
-    assert parse_topic("", "") is None
-    assert parse_topic("prefix", "///") is None
-    assert parse_topic("///", "prefix/gpio/13") is None
+    assert REGISTRY.parse_topic("", s) is None
+    assert REGISTRY.parse_topic(s, "") is None
+    assert REGISTRY.parse_topic("", "") is None
+    assert REGISTRY.parse_topic("prefix", "///") is None
+    assert REGISTRY.parse_topic("///", "prefix/gpio/13") is None
 
 
 @given(
@@ -87,7 +84,7 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
 )
 def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) -> None:
     """Property: get_topic_for_message returns exact topic path for all registered commands."""
-    res = get_topic_for_message(prefix, command_id)
+    res = REGISTRY.get_topic_for_message(prefix, command_id)
     assert res is not None
     assert res.startswith(prefix)
     spec = REGISTRY.get(command_id)
@@ -104,19 +101,19 @@ def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) ->
 def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
     """Property: get_topic_for_message returns None for any unregistered command ID."""
     assume(unknown_id not in _KNOWN_COMMAND_IDS)
-    assert get_topic_for_message(prefix, unknown_id) is None
+    assert REGISTRY.get_topic_for_message(prefix, unknown_id) is None
 
 
 def test_topics_canonical_service_paths() -> None:
     """Validate canonical service topic paths."""
-    assert topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
-    assert topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
-    assert topic_path("p", Topic.SPI, "transfer") == "p/spi/transfer"
-    assert topic_path("p", Topic.DATASTORE, "key", "get") == "p/datastore/key/get"
-    assert topic_path("p", Topic.FILE, "path/to/file", "read") == "p/file/path/to/file/read"
-    assert topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
-    assert topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
-    assert topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
+    assert REGISTRY.topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
+    assert REGISTRY.topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
+    assert REGISTRY.topic_path("p", Topic.SPI, "transfer") == "p/spi/transfer"
+    assert REGISTRY.topic_path("p", Topic.DATASTORE, "key", "get") == "p/datastore/key/get"
+    assert REGISTRY.topic_path("p", Topic.FILE, "path/to/file", "read") == "p/file/path/to/file/read"
+    assert REGISTRY.topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
+    assert REGISTRY.topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
+    assert REGISTRY.topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
 
 
 def test_topic_aliases_resolve_to_canonical_topics() -> None:
@@ -127,7 +124,7 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
     }
     for alias, expected_topic in expected_aliases.items():
         assert REGISTRY.lookup_topic(alias) == expected_topic
-        route = parse_topic("prefix", f"prefix/{alias}/13/read")
+        route = REGISTRY.parse_topic("prefix", f"prefix/{alias}/13/read")
         assert route is not None
         assert route.topic == expected_topic
         assert route.segments == ("13", "read")
@@ -135,26 +132,26 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
 
 def test_topics_edge_cases() -> None:
     """Validate topic parsing and formatting edge cases."""
-    assert parse_topic("br", "br/invalid_topic/foo") is None
-    assert parse_topic("", "foo") is None
-    assert parse_topic("br", "") is None
-    assert topic_path("", Topic.SYSTEM) == "system"
-    assert topic_path("", Topic.SYSTEM, "") == "system"
+    assert REGISTRY.parse_topic("br", "br/invalid_topic/foo") is None
+    assert REGISTRY.parse_topic("", "foo") is None
+    assert REGISTRY.parse_topic("br", "") is None
+    assert REGISTRY.topic_path("", Topic.SYSTEM) == "system"
+    assert REGISTRY.topic_path("", Topic.SYSTEM, "") == "system"
 
 
 def test_get_topic_for_message_all_types() -> None:
     """[SIL-2] Test get_topic_for_message across all message input types (str, message, class, invalid)."""
-    assert get_topic_for_message("bridge", "VersionResponse") == "bridge/system/version/value"
-    assert get_topic_for_message("bridge", "NonExistentMsg") is None
+    assert REGISTRY.get_topic_for_message("bridge", "VersionResponse") == "bridge/system/version/value"
+    assert REGISTRY.get_topic_for_message("bridge", "NonExistentMsg") is None
 
     resp = pb.VersionResponse()
-    assert get_topic_for_message("bridge", resp) == "bridge/system/version/value"
+    assert REGISTRY.get_topic_for_message("bridge", resp) == "bridge/system/version/value"
 
-    assert get_topic_for_message("bridge", pb.VersionResponse) == "bridge/system/version/value"
+    assert REGISTRY.get_topic_for_message("bridge", pb.VersionResponse) == "bridge/system/version/value"
 
     class DummyMsg:
         class DESCRIPTOR:
             name = "NonExistent"
 
-    assert get_topic_for_message("bridge", cast(Any, DummyMsg)) is None
-    assert get_topic_for_message("bridge", cast(Any, 3.14)) is None
+    assert REGISTRY.get_topic_for_message("bridge", cast(Any, DummyMsg)) is None
+    assert REGISTRY.get_topic_for_message("bridge", cast(Any, 3.14)) is None

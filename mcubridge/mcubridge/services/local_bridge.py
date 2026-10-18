@@ -23,7 +23,6 @@ from ..protocol.protocol import (
     REGISTRY,
     Command,
     Topic,
-    parse_topic,
 )
 from ..protocol.structures import is_command_allowed
 
@@ -255,7 +254,7 @@ class LocalBridgeService(LocalBridgeBase):
 
     async def execute_publish(self, req: pb.CloudQueuedPublish) -> pb.CloudQueuedPublish:
         has_correlation = req.HasField("correlation_data")
-        route = parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
+        route = REGISTRY.parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
         action = route.action if route else None
 
         is_query = has_correlation or (

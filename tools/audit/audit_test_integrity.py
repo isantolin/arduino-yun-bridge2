@@ -98,6 +98,7 @@ ALLOWLIST_PY_HELPERS = {
     "auth_interceptor",
     "handle_command_response",
     "unsupported_mcu_request",
+    "lookup_topic",
 }
 
 

@@ -12,7 +12,7 @@ import structlog
 from .config import const
 from .protocol import mcubridge_pb2 as pb
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
-from .protocol.protocol import Topic, topic_path
+from .protocol.protocol import REGISTRY, Topic
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
@@ -26,7 +26,7 @@ def _build_metrics_message(
     *,
     expiry_seconds: float,
 ) -> pb.CloudQueuedPublish:
-    topic = topic_path(
+    topic = REGISTRY.topic_path(
         state.cloud_topic_prefix,
         Topic.SYSTEM,
         "metrics",
@@ -199,7 +199,7 @@ def _build_bridge_snapshot_message(
     segments: Sequence[str] = (
         ("bridge", "handshake", "value") if flavor == "handshake" else ("bridge", "summary", "value")
     )
-    topic = topic_path(
+    topic = REGISTRY.topic_path(
         state.cloud_topic_prefix,
         Topic.SYSTEM,
         *segments,

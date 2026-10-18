@@ -533,6 +533,11 @@ def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, Any]], dict[str, 
         if hasattr(pb_module, "rpc_aliases"):
             for extra_alias in method_opts.Extensions[pb_module.rpc_aliases]:
                 rpc_aliases_map[extra_alias] = method.name
+        rpc_command = ""
+        if hasattr(pb_module, "rpc_command") and method_opts.HasExtension(pb_module.rpc_command):
+            rpc_command = method_opts.Extensions[pb_module.rpc_command]
+        else:
+            rpc_command = f"CMD_{JinjaGenerator.snake_case(method.name).upper()}"
         spec: dict[str, Any] = {
             "name": method.name,
             "req_cls": req_cls,
@@ -540,33 +545,10 @@ def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, Any]], dict[str, 
             "default_factory": default_factory,
             "handler_name": f"execute_{JinjaGenerator.snake_case(method.name)}",
             "rpc_topic": rpc_topic,
+            "rpc_command": rpc_command,
         }
         rpc_specs.append(spec)
     return rpc_specs, rpc_aliases_map
-
-
-def _correlate_rpc_commands(
-    commands: list[dict[str, Any]],
-    rpc_specs: list[dict[str, Any]],
-) -> dict[str, dict[str, str]]:
-    """Match LocalBridge RPC methods to MCU commands strictly via Protobuf message types. [SIL-2]"""
-    commands_by_name = {c["name"]: c for c in commands}
-    rpc_by_cmd: dict[str, dict[str, str]] = {}
-    for rpc in rpc_specs:
-        req_cls, resp_cls = rpc["req_cls"], rpc["resp_cls"]
-        for cmd in commands:
-            resp_cmd_name = cmd.get("response_command")
-            resp_cmd = commands_by_name.get(resp_cmd_name) if resp_cmd_name else None
-            resp_pb = resp_cmd.get("pb_message") if resp_cmd else None
-            cmd_pb = cmd.get("pb_message")
-            if cmd_pb == req_cls:
-                if not resp_pb or resp_cls == "GenericResponse" or resp_pb == resp_cls:
-                    rpc_by_cmd[cmd["name"]] = rpc
-                    break
-            elif resp_pb and resp_pb == resp_cls:
-                rpc_by_cmd[cmd["name"]] = rpc
-                break
-    return rpc_by_cmd
 
 
 def _build_command_operation(
@@ -663,7 +645,8 @@ def _build_operations_context(
     telemetry_topic_field_map: dict[str, str],
     rpc_specs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    rpc_by_cmd = _correlate_rpc_commands(commands, rpc_specs)
+    commands_by_name = {c["name"]: c for c in commands}
+    rpc_by_cmd = {rpc["rpc_command"]: rpc for rpc in rpc_specs if rpc.get("rpc_command") in commands_by_name}
 
     operations = [
         _build_command_operation(cmd, pb_module, payload_fields_by_msg, rpc_by_cmd.get(cmd["name"])) for cmd in commands

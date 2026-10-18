@@ -854,6 +854,7 @@ extend google.protobuf.MessageOptions {
 extend google.protobuf.MethodOptions {
   string rpc_topic = 1032;
   repeated string rpc_aliases = 1033;
+  string rpc_command = 1034;
 }
 
 extend google.protobuf.EnumOptions {
@@ -2325,6 +2326,7 @@ service LocalBridge {
   }
   rpc SpiConfigure(rpc.pb.SpiConfig) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "spi.configure";
+    option (rpc.pb.rpc_command) = "CMD_SPI_SET_CONFIG";
   }
 
   // System Telemetry & Introspection

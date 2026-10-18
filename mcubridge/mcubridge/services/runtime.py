@@ -565,6 +565,7 @@ class BridgeService:
                         await self.state.link_sync_event.wait()
                 except TimeoutError:
                     logger.error("Timed out waiting for MCU link synchronization")
+                    return
 
             try:
                 resp_bytes = await self.local_bridge_service.execute_rpc(spec.name, request.payload)

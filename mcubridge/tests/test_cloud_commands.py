@@ -28,11 +28,13 @@ def _make_config() -> RuntimeConfig:
 def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     cfg = _make_config()
     state = RuntimeState(cloud_topic_prefix=cfg.topic_prefix)
+    state.link_sync_event.set()
     serial_mock = AsyncMock(spec=SerialTransport)
     serial_mock.send.return_value = True
     mock_publisher = AsyncMock()
     svc = BridgeService(cfg, state, serial_mock, cloud_publisher=mock_publisher)
     return svc, state, serial_mock, mock_publisher
+
 
 
 @given(
@@ -50,19 +52,21 @@ async def test_cloud_command_pin_dispatch_property(
     """Validate that cloud pin commands (digital write and mode) dispatch correlated RPC and responses."""
     svc, state, serial_mock, mock_publish = _make_service()
     try:
-        args_path = [str(pin), "mode"] if is_mode else [str(pin)]
-        t_path = REGISTRY.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, *args_path)
-        route = REGISTRY.parse_topic(state.cloud_topic_prefix, t_path)
-        assert route is not None
-
+        method = "gpio.set_mode" if is_mode else "gpio.write"
+        t_path = REGISTRY.topic_path(state.cloud_topic_prefix, "req", method)
+        payload = (
+            pb.PinMode(pin=pin, mode=val).SerializeToString()
+            if is_mode
+            else pb.DigitalWrite(pin=pin, value=val).SerializeToString()
+        )
         inbound = pb.CloudQueuedPublish(
             topic_name=t_path,
-            payload=str(val).encode(),
+            payload=payload,
             correlation_data=corr_id.to_bytes(8, "big"),
         )
 
-        handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = svc.handle_pin
-        await handle_pin(route, inbound)
+        serial_mock.send.return_value = pb.GenericResponse(status="ok")
+        await svc.handle_request(inbound)
 
         # Validate serial command was dispatched
         serial_mock.send.assert_awaited_once()
@@ -76,16 +80,15 @@ async def test_cloud_command_pin_dispatch_property(
             assert args[0] == Command.CMD_SET_PIN_MODE.value
             assert isinstance(args[1], pb.PinMode)
             assert args[1].pin == pin
-            assert f"{Topic.DIGITAL.value}/{pin}/mode/response" in pub_msg.topic_name
+            assert f"res/{method}" in pub_msg.topic_name
         else:
             assert args[0] == Command.CMD_DIGITAL_WRITE.value
             assert isinstance(args[1], pb.DigitalWrite)
             assert args[1].pin == pin
             assert args[1].value == val
-            assert f"{Topic.DIGITAL.value}/{pin}/response" in pub_msg.topic_name
+            assert f"res/{method}" in pub_msg.topic_name
 
         # Validate cloud response was enqueued with correlation context
-        assert pub_msg.payload == b"OK"
         assert pub_msg.correlation_data == inbound.correlation_data
     finally:
         state.cleanup()

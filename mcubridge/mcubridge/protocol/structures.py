@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
-import functools
 import re
 import ssl
 from collections.abc import Iterable

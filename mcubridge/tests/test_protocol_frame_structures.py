@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ssl
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from hypothesis import given
@@ -245,7 +244,6 @@ def test_pending_command_methods() -> None:
 
 
 def test_get_ssl_context_insecure() -> None:
-    import ssl
 
     cfg_insecure = pb.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)
     ctx = structures.get_ssl_context(cfg_insecure)

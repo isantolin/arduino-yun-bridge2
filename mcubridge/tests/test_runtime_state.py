@@ -340,9 +340,8 @@ def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocke
     # 4. configure with non_tmp path not allowed covers (lines 593->598, 604->612, 618-619)
     runtime_state.configure()
     assert runtime_state.datastore_cache is None
-    assert runtime_state.tls_session_cache is not None
 
-    # 5. configure when LmdbCache raises OSError on datastore and tls_sessions (lines 607-609, 615-617)
+    # 5. configure when LmdbCache raises OSError on datastore (lines 607-609, 615-617)
     runtime_state.allow_non_tmp_paths = True
     runtime_state.file_system_root = "/tmp/mcubridge_test_fs"
 
@@ -354,7 +353,6 @@ def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocke
     mocker.patch("mcubridge.state.context.LmdbCache", side_effect=mock_cache_factory)
     runtime_state.configure()
     assert runtime_state.datastore_cache is None
-    assert runtime_state.tls_session_cache is not None
 
     # 6. build_status_snapshot when daemon telemetry raises NoSuchProcess (lines 723-724)
 

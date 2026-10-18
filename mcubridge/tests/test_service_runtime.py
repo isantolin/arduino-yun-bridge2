@@ -1145,10 +1145,6 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     mocker.patch("mcubridge.services.runtime.Channel")
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
 
-    mock_tls_cache = MagicMock(spec=["_mem"])
-    mock_tls_cache._mem = {f"tls_ticket:{svc.config.cloud_host}:{svc.config.cloud_port}": b"cached_ticket"}
-    svc.state.tls_session_cache = mock_tls_cache
-
     with pytest.raises(ConnectionError, match="Cloud session stream disconnected"):
         await svc.connect_cloud_session(MagicMock())
 
@@ -1188,7 +1184,7 @@ async def test_runtime_service_edge_branches(
     await svc.handle_request(inbound_put)
     assert mock_publisher.await_count == 2
 
-    # 3. connect_cloud_session when load_tls_session_ticket returns None (lines 1606->1613)
+    # 3. connect_cloud_session stream connection error
     mock_channel = MagicMock()
     mock_stub = MagicMock()
     mock_stream = AsyncMock()
@@ -1196,8 +1192,6 @@ async def test_runtime_service_edge_branches(
     mock_stub.Session.open.return_value = mock_stream
     mocker.patch("mcubridge.services.runtime.Channel", return_value=mock_channel)
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
-    mocker.patch("mcubridge.services.runtime.load_tls_session_ticket", return_value=None)
-    runtime_state.tls_session_cache = MagicMock()
     mock_tls = MagicMock()
 
     with pytest.raises(ConnectionError):

@@ -36,7 +36,6 @@ def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     return svc, state, serial_mock, mock_publisher
 
 
-
 @given(
     pin=st.integers(0, 64),
     val=st.integers(0, 2),

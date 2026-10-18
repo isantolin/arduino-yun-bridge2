@@ -32,6 +32,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
 
 from ..config.const import (
+    MCU_FS_PREFIX,
     PROCESS_TERM_GRACE_PERIOD_SECONDS,
     PROP_KEY_BRIDGE_DATASTORE_KEY,
     PROP_KEY_BRIDGE_ERROR,
@@ -1008,6 +1009,34 @@ class BridgeService:
         except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
             logger.debug("Safe file remove failed", path=str(path), error=str(exc))
             return False
+
+    async def read_mcu_file(self, target: str) -> bytes:
+        serial = self.serial
+        if not serial:
+            return b""
+        async with self._mcu_read_lock:
+            pending = _PendingMcuRead(asyncio.get_running_loop().create_future())
+            pending.fsm.start_transfer()
+            self.pending_mcu_read = pending
+            clean_path = target.lstrip("/").removeprefix(MCU_FS_PREFIX)
+            if not await serial.send_raw(
+                Command.CMD_FILE_READ.value,
+                pb.FileRead(path=clean_path),
+            ):
+                pending.fsm.abort()
+                logger.error("MCU file read dispatch failed")
+                self.pending_mcu_read = None
+                return b""
+            try:
+                timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
+                with anyio.fail_after(timeout_seconds):
+                    return await pending.future
+            except TimeoutError:
+                pending.fsm.timeout()
+                logger.error("Timed out waiting for MCU file read response")
+                return b""
+            finally:
+                self.pending_mcu_read = None
 
     async def write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:
         async with self._storage_lock:

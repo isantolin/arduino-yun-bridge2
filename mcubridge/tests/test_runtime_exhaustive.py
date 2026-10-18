@@ -119,8 +119,8 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
 
     # Console input topic
     req_console = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/console/in",
-        payload=b"help\n",
+        topic_name=f"{state.cloud_topic_prefix}/req/console.write",
+        payload=pb.ConsoleWrite(data=b"help\n").SerializeToString(),
     )
     await service.handle_request(req_console)
     assert len(state.console_to_mcu_queue) == 0  # Should be flushed immediately to serial
@@ -128,8 +128,8 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
 
     # Mailbox write topic
     req_mb = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/mailbox/write",
-        payload=b"ping",
+        topic_name=f"{state.cloud_topic_prefix}/req/mailbox.push",
+        payload=pb.MailboxPush(data=b"ping").SerializeToString(),
     )
     await service.handle_request(req_mb)
     serial.send.assert_awaited()

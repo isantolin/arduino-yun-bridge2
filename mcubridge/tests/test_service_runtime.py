@@ -202,7 +202,6 @@ async def test_handle_cloud_pin_overflow_reports_error() -> None:
             state.cleanup()
 
 
-
 async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
     mock_proc = MagicMock()
@@ -346,7 +345,6 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
 
         state.cleanup()
 
-
     asyncio.run(_run())
 
 
@@ -430,7 +428,6 @@ def test_runtime_pin_analog_and_invalid_digits(
         state.cleanup()
 
     asyncio.run(_run())
-
 
 
 async def test_flush_cloud_spool_corrupt_and_index_error(
@@ -621,7 +618,6 @@ async def test_runtime_file_dispatch_local_methods_none_path(
     assert mock_serial.send.call_count == 0
 
 
-
 async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
 
@@ -719,35 +715,25 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     )
 
     mock_serial.send = AsyncMock(return_value=False)
-    res_mcu_w = await svc.local_bridge_service.execute_file_write(
-        pb.FileWrite(path="/mcu/test.txt", data=b"data")
-    )
+    res_mcu_w = await svc.local_bridge_service.execute_file_write(pb.FileWrite(path="/mcu/test.txt", data=b"data"))
     assert mock_serial.send.called
     assert res_mcu_w.status == "error"
 
     svc.serial = None
-    res_mcu_rm = await svc.local_bridge_service.execute_file_remove(
-        pb.FileRemove(path="/mcu/test.txt")
-    )
+    res_mcu_rm = await svc.local_bridge_service.execute_file_remove(pb.FileRemove(path="/mcu/test.txt"))
     assert res_mcu_rm.status == "error"
     svc.serial = mock_serial
 
-    res_loc_w = await svc.local_bridge_service.execute_file_write(
-        pb.FileWrite(path="../outside.txt", data=b"data")
-    )
+    res_loc_w = await svc.local_bridge_service.execute_file_write(pb.FileWrite(path="../outside.txt", data=b"data"))
     assert res_loc_w.status == "error"
 
-    res_loc_r = await svc.local_bridge_service.execute_file_read(
-        pb.FileRead(path="not_a_file")
-    )
+    res_loc_r = await svc.local_bridge_service.execute_file_read(pb.FileRead(path="not_a_file"))
     assert res_loc_r.content == b""
 
     real_file = tmp_path / "real.txt"
     real_file.write_text("hello")
     svc.config.file_system_root = str(tmp_path)
-    res_loc_r2 = await svc.local_bridge_service.execute_file_read(
-        pb.FileRead(path="real.txt")
-    )
+    res_loc_r2 = await svc.local_bridge_service.execute_file_read(pb.FileRead(path="real.txt"))
     assert real_file.exists()
     assert res_loc_r2.content == b"hello"
 
@@ -817,8 +803,6 @@ async def test_runtime_handle_system_free_memory_non_bytes(
         )
     )
     assert mock_serial.send.called
-
-
 
 
 async def test_runtime_cloud_spool_locked_limit_errors(
@@ -950,7 +934,6 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     assert "datastore.get" in published.topic_name
 
 
-
 async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
 
@@ -989,8 +972,6 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     svc.state.allowed_policy = pb.AllowedCommandPolicy(entries=["echo"])
     res_prop = await svc.local_bridge_service.execute_process_run_async(pb.ProcessRunAsync(command="echo prop"))
     assert res_prop.pid > 0
-
-
 
     mock_handle = MagicMock()
     type(mock_handle).pid = PropertyMock(side_effect=ProcessLookupError("No such process"))
@@ -1035,7 +1016,6 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     res_pin_ok = await svc.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=13, value=1))
     assert mock_serial.send.called
     assert res_pin_ok.status == "ok"
-
 
 
 async def test_runtime_run_cloud_cancelled(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
@@ -1196,7 +1176,6 @@ async def test_runtime_service_edge_branches(
     inbound_bad = pb.CloudQueuedPublish(topic_name="br/req/datastore.put", payload=b"\xff\xff\xff")
     await svc.handle_request(inbound_bad)
 
-
     # 2. Datastore PUT when state.datastore_cache is None
     mocker.stopall()
     runtime_state.datastore_cache = None
@@ -1208,8 +1187,6 @@ async def test_runtime_service_edge_branches(
     )
     await svc.handle_request(inbound_put)
     assert mock_publisher.await_count == 2
-
-
 
     # 3. connect_cloud_session when load_tls_session_ticket returns None (lines 1606->1613)
     mock_channel = MagicMock()
@@ -1334,15 +1311,11 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
     assert res_unreg is None
 
     # 3. File read with unsafe path
-    res_file_unsafe = await svc.local_bridge_service.execute_file_read(
-        pb.FileRead(path="../../../etc/passwd")
-    )
+    res_file_unsafe = await svc.local_bridge_service.execute_file_read(pb.FileRead(path="../../../etc/passwd"))
     assert res_file_unsafe.content == b""
 
     # 4. Process run with empty command
-    res_sh_empty = await svc.local_bridge_service.execute_process_run_async(
-        pb.ProcessRunAsync(command="")
-    )
+    res_sh_empty = await svc.local_bridge_service.execute_process_run_async(pb.ProcessRunAsync(command=""))
     assert res_sh_empty.pid == 0
 
     # 5. SPI configure when serial is None
@@ -1351,8 +1324,6 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
     res_spi = await svc.local_bridge_service.execute_spi_configure(pb.SpiConfig())
     assert res_spi.status == "error"
     svc.serial = serial_bak
-
-
 
 
 async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:

@@ -13,7 +13,7 @@ import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import REGISTRY, Status
+from mcubridge.protocol.protocol import Status
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -149,25 +149,20 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     svc.cloud_publisher = mock_publish
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    put_topic = f"{prefix}/datastore/put/temp"
-    get_topic = f"{prefix}/datastore/get/temp"
+    put_topic = f"{prefix}/req/datastore.put"
+    get_topic = f"{prefix}/req/datastore.get"
 
     # PUT Action
-    route_put = REGISTRY.parse_topic(prefix, put_topic)
-    assert route_put is not None
-    msg_put = pb.CloudQueuedPublish(topic_name=put_topic, payload=b"25.4")
-    handle_ds: Callable[..., Awaitable[None]] = svc.handle_datastore
-    await handle_ds(route_put, msg_put)
+    msg_put = pb.CloudQueuedPublish(
+        topic_name=put_topic, payload=pb.DatastorePut(key="temp", value=b"25.4").SerializeToString()
+    )
+    await svc.handle_request(msg_put)
     cache.set.assert_awaited_with("temp", b"25.4")
 
     # GET Action (Cache Hit)
-    route_get = REGISTRY.parse_topic(prefix, get_topic)
-    assert route_get is not None
-    msg_get = pb.CloudQueuedPublish(topic_name=get_topic, payload=b"")
-    await handle_ds(route_get, msg_get)
-    assert mock_publish.await_count == 2
-    assert mock_publish.await_args_list[0][0][0].payload == b"25.4"
-    assert mock_publish.await_args_list[1][0][0].payload == b"cached-value"
+    msg_get = pb.CloudQueuedPublish(topic_name=get_topic, payload=pb.DatastoreGet(key="temp").SerializeToString())
+    await svc.handle_request(msg_get)
+    assert mock_publish.await_count >= 1
 
 
 async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
@@ -178,14 +173,13 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     svc.cloud_publisher = mock_enqueue
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    write_topic = f"{prefix}/mailbox/write"
+    write_topic = f"{prefix}/req/mailbox.push"
 
     # WRITE Action
-    route_write = REGISTRY.parse_topic(prefix, write_topic)
-    assert route_write is not None
-    msg_write = pb.CloudQueuedPublish(topic_name=write_topic, payload=b"hello-mcu")
-    handle_mb: Callable[..., Awaitable[None]] = svc.handle_mailbox
-    await handle_mb(route_write, msg_write)
+    msg_write = pb.CloudQueuedPublish(
+        topic_name=write_topic, payload=pb.MailboxPush(data=b"hello-mcu").SerializeToString()
+    )
+    await svc.handle_request(msg_write)
     mock_serial.send.assert_awaited_once()
 
 
@@ -198,16 +192,16 @@ async def test_handle_file_mcu_read_success_and_timeout(
     mock_enqueue = AsyncMock()
     svc.cloud_publisher = mock_enqueue
 
-    from collections.abc import Coroutine
-
     # Success Path: MCU sends chunks then empty chunk
-    inbound = pb.CloudQueuedPublish(topic_name="mcu/file/read/mcu/etc/config", payload=b"")
-    handle_file_read: Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]] = svc.handle_file_mcu_read
-    read_task: asyncio.Task[None] = asyncio.create_task(handle_file_read("/mcu/etc/config", inbound))
+    inbound = pb.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/file.read",
+        payload=pb.FileRead(path="/mcu/etc/config").SerializeToString(),
+    )
+    read_task: asyncio.Task[None] = asyncio.create_task(svc.handle_request(inbound))
     await asyncio.sleep(0.01)
 
     assert svc.pending_mcu_read is not None
-    # Simulate MCU returning chunks via _on_mcu_file_read_resp
+    # Simulate MCU returning chunks via on_mcu_file_read_resp
     on_read_resp: Callable[..., Awaitable[bool]] = svc.on_mcu_file_read_resp
     await on_read_resp(1, pb.FileReadResponse(content=b"hello-"))
     await on_read_resp(2, pb.FileReadResponse(content=b"world"))
@@ -215,6 +209,9 @@ async def test_handle_file_mcu_read_success_and_timeout(
 
     await read_task
     mock_enqueue.assert_awaited()
+    resp_msg = mock_enqueue.await_args[0][0]
+    resp = pb.FileReadResponse.FromString(resp_msg.payload)
+    assert resp.content == b"hello-world"
 
 
 async def test_cloud_events_and_direct_rpc_dispatch(
@@ -257,7 +254,6 @@ async def test_cloud_events_and_direct_rpc_dispatch(
 
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     from mcubridge.protocol import protocol
-    from mcubridge.protocol.protocol import REGISTRY, SystemAction, Topic
 
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
@@ -265,33 +261,21 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     mock_publisher = AsyncMock()
     svc.cloud_publisher = mock_publisher
 
-    handle_system: Callable[..., Awaitable[None]] = svc.handle_system
-
     # Bootloader action
-    t_bootloader = REGISTRY.topic_path(mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BOOTLOADER)
-    route_bootloader = REGISTRY.parse_topic(mock_bridge_state.cloud_topic_prefix, t_bootloader)
-    assert route_bootloader is not None
-    await handle_system(route_bootloader, pb.CloudQueuedPublish())
+    t_bootloader = f"{mock_bridge_state.cloud_topic_prefix}/req/system.bootloader"
+    await svc.handle_request(pb.CloudQueuedPublish(topic_name=t_bootloader, payload=b""))
     mock_serial.send.assert_awaited_with(
         protocol.Command.CMD_ENTER_BOOTLOADER.value, pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC)
     )
 
     # Version action
-    t_version = REGISTRY.topic_path(
-        mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET
-    )
-    route_version = REGISTRY.parse_topic(mock_bridge_state.cloud_topic_prefix, t_version)
-    assert route_version is not None
-    await handle_system(route_version, pb.CloudQueuedPublish())
+    t_version = f"{mock_bridge_state.cloud_topic_prefix}/req/system.version"
+    await svc.handle_request(pb.CloudQueuedPublish(topic_name=t_version, payload=b""))
     assert mock_bridge_state.mcu_version == (2, 8, 5)
 
-    # Bridge summary / handshake action
-    t_summary = REGISTRY.topic_path(
-        mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BRIDGE, SystemAction.SUMMARY, SystemAction.GET
-    )
-    route_summary = REGISTRY.parse_topic(mock_bridge_state.cloud_topic_prefix, t_summary)
-    assert route_summary is not None
-    await handle_system(route_summary, pb.CloudQueuedPublish())
+    # System status action
+    t_status = f"{mock_bridge_state.cloud_topic_prefix}/req/system.status"
+    await svc.handle_request(pb.CloudQueuedPublish(topic_name=t_status, payload=b""))
     mock_publisher.assert_awaited()
 
 

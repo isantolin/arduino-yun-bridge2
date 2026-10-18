@@ -166,7 +166,6 @@ class LocalBridgeService(LocalBridgeBase):
         await self.runtime_service.store_and_publish_datastore_value(req.key, req.value)
         return pb.GenericResponse(status="ok")
 
-
     async def execute_datastore_get(self, req: pb.DatastoreGet) -> pb.DatastoreGetResponse:
         c = self.runtime_service.state.datastore_cache
         val = (await c.get(req.key, b"")) if c else b""
@@ -174,6 +173,9 @@ class LocalBridgeService(LocalBridgeBase):
 
     async def execute_mailbox_push(self, req: pb.MailboxPush) -> pb.GenericResponse:
         await self.runtime_service.state.mailbox_queue.append(req.data)
+        serial = self.runtime_service.serial
+        if serial:
+            await serial.send(Command.CMD_MAILBOX_PUSH.value, req)
         return pb.GenericResponse(status="ok")
 
     async def execute_mailbox_read(self, _req: pb.SubscribeRequest) -> pb.MailboxReadResponse:
@@ -212,10 +214,8 @@ class LocalBridgeService(LocalBridgeBase):
     async def execute_file_read(self, req: pb.FileRead) -> pb.FileReadResponse:
         clean = req.path.lstrip("/")
         if clean.startswith(MCU_FS_PREFIX):
-            serial = self.runtime_service.serial
-            clean_path = clean.removeprefix(MCU_FS_PREFIX)
-            res = (await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=clean_path))) if serial else None
-            return parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse())
+            content = await self.runtime_service.read_mcu_file(clean)
+            return pb.FileReadResponse(content=content)
         content = await self.runtime_service.safe_file_read(req.path)
         return pb.FileReadResponse(content=content or b"")
 
@@ -229,7 +229,6 @@ class LocalBridgeService(LocalBridgeBase):
             lambda: self.runtime_service.safe_file_remove(req.path),
             "Path not allowed or not found",
         )
-
 
     async def execute_process_run_async(self, req: pb.ProcessRunAsync) -> pb.ProcessRunAsyncResponse:
         allowed = is_command_allowed(self.runtime_service.state.allowed_policy, req.command)
@@ -260,7 +259,10 @@ class LocalBridgeService(LocalBridgeBase):
         return pb.GenericResponse(status="ok" if ok else "error")
 
     async def execute_get_version(self, _req: pb.SubscribeRequest) -> pb.VersionResponse:
-        return await self._send_serial_query(Command.CMD_GET_VERSION, b"", pb.VersionResponse)
+        resp = await self._send_serial_query(Command.CMD_GET_VERSION, b"", pb.VersionResponse)
+        if resp.major or resp.minor or resp.patch:
+            self.runtime_service.state.mcu_version = (resp.major, resp.minor, resp.patch)
+        return resp
 
     async def execute_get_free_memory(self, _req: pb.SubscribeRequest) -> pb.FreeMemoryResponse:
         return await self._send_serial_query(Command.CMD_GET_FREE_MEMORY, b"", pb.FreeMemoryResponse)

@@ -89,8 +89,8 @@ async def test_cloud_file_write_asserts_serial(
     service, state, serial = service_setup
     serial.send.return_value = True
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/file/write/mcu/test.txt",
-        payload=b"new_data",
+        topic_name=f"{state.cloud_topic_prefix}/req/file.write",
+        payload=pb.FileWrite(path="mcu/test.txt", data=b"new_data").SerializeToString(),
     )
 
     await service.handle_request(msg)
@@ -106,8 +106,8 @@ async def test_cloud_datastore_put_asserts_cache(
 ) -> None:
     service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/datastore/put/my_key",
-        payload=b"my_value",
+        topic_name=f"{state.cloud_topic_prefix}/req/datastore.put",
+        payload=pb.DatastorePut(key="my_key", value=b"my_value").SerializeToString(),
     )
 
     await service.handle_request(msg)
@@ -130,7 +130,7 @@ async def test_mcu_datastore_put_asserts_cloud(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(pb.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/datastore/get/mcu_key"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/datastore.get"
     assert queued_pub.payload == b"mcu_val"
 
 
@@ -150,7 +150,7 @@ async def test_local_bridge_datastore_put_persists_and_publishes(
     publish_call = mock_pub.await_args
     assert publish_call is not None
     queued_pub = cast(pb.CloudQueuedPublish, publish_call.args[0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/datastore/get/local_key"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/datastore.get"
     assert queued_pub.payload == b"local_value"
 
 
@@ -175,8 +175,8 @@ async def test_cloud_mailbox_write_asserts_serial(
     service, state, serial = service_setup
     serial.send.return_value = True
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/mailbox/write",
-        payload=b"outbound_box",
+        topic_name=f"{state.cloud_topic_prefix}/req/mailbox.push",
+        payload=pb.MailboxPush(data=b"outbound_box").SerializeToString(),
     )
 
     await service.handle_request(msg)
@@ -211,8 +211,8 @@ async def test_cloud_spi_transfer_asserts_serial(
     service, state, serial = service_setup
     serial.send.return_value = True
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/spi/transfer",
-        payload=b"\x01\x02\x03",
+        topic_name=f"{state.cloud_topic_prefix}/req/spi.transfer",
+        payload=pb.SpiTransfer(data=b"\x01\x02\x03").SerializeToString(),
     )
 
     await service.handle_request(msg)
@@ -228,8 +228,8 @@ async def test_cloud_file_host_write_asserts_cache(
 ) -> None:
     service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/file/write/test.txt",
-        payload=b"host_file_payload",
+        topic_name=f"{state.cloud_topic_prefix}/req/file.write",
+        payload=pb.FileWrite(path="test.txt", data=b"host_file_payload").SerializeToString(),
     )
 
     await service.handle_request(msg)
@@ -238,8 +238,9 @@ async def test_cloud_file_host_write_asserts_cache(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(pb.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/file/read/test.txt"
-    assert queued_pub.payload == b"host_file_payload"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/file.write"
+    resp = pb.GenericResponse.FromString(queued_pub.payload)
+    assert resp.status == "ok"
 
 
 async def test_cloud_file_host_read_asserts_read(
@@ -248,8 +249,8 @@ async def test_cloud_file_host_read_asserts_read(
     service, state, _serial = service_setup
     (Path(service.config.file_system_root) / "test.txt").write_bytes(b"disk_data")
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/file/read/test.txt",
-        payload=b"",
+        topic_name=f"{state.cloud_topic_prefix}/req/file.read",
+        payload=pb.FileRead(path="test.txt").SerializeToString(),
     )
 
     await service.handle_request(msg)
@@ -257,8 +258,9 @@ async def test_cloud_file_host_read_asserts_read(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(pb.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/file/read/response/test.txt"
-    assert queued_pub.payload == b"disk_data"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/file.read"
+    resp = pb.FileReadResponse.FromString(queued_pub.payload)
+    assert resp.content == b"disk_data"
 
 
 async def test_cloud_shell_poll_asserts_cloud(
@@ -270,15 +272,15 @@ async def test_cloud_shell_poll_asserts_cloud(
     await asyncio.sleep(0.05)
 
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/shell/poll/{pid}",
-        payload=b"",
+        topic_name=f"{state.cloud_topic_prefix}/req/process.poll",
+        payload=pb.ProcessPoll(pid=pid).SerializeToString(),
     )
     await service.handle_request(msg)
 
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(pb.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/sh/poll/{pid}/response"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/process.poll"
     resp = pb.ProcessPollResponse.FromString(queued_pub.payload)
     assert resp.exit_code == 0
     assert resp.stdout_data == b"out\n"
@@ -293,8 +295,8 @@ async def test_cloud_shell_kill_asserts_cloud(
     assert pid in state.running_processes
 
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/shell/kill/{pid}",
-        payload=b"",
+        topic_name=f"{state.cloud_topic_prefix}/req/process.kill",
+        payload=pb.ProcessKill(pid=pid).SerializeToString(),
     )
     await service.handle_request(msg)
 
@@ -306,14 +308,15 @@ async def test_cloud_shell_run_asserts_exec(
 ) -> None:
     service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/shell/run_async",
-        payload=b"echo hello",
+        topic_name=f"{state.cloud_topic_prefix}/req/process.run_async",
+        payload=pb.ProcessRunAsync(command="echo hello").SerializeToString(),
     )
     await service.handle_request(msg)
 
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(pb.CloudQueuedPublish, mock_pub.call_args[0][0])
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/process.run_async"
     resp = pb.ProcessRunAsyncResponse.FromString(queued_pub.payload)
     assert resp.pid > 0
     await service.kill_process(resp.pid)

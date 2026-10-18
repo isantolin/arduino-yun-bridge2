@@ -41,9 +41,7 @@ def test_topic_path_parse_topic_isomorphism(prefix: str, direction: str, method:
     direction=st.sampled_from(["req", "res", "evt"]),
     method=_SAFE_TEXT,
 )
-def test_parse_topic_mismatched_prefix_rejected(
-    prefix_a: str, prefix_b: str, direction: str, method: str
-) -> None:
+def test_parse_topic_mismatched_prefix_rejected(prefix_a: str, prefix_b: str, direction: str, method: str) -> None:
     """Property: A topic constructed with prefix_b is deterministically rejected when parsed with distinct prefix_a."""
     assume(prefix_a != prefix_b)
     raw = REGISTRY.topic_path(prefix_b, direction, method)

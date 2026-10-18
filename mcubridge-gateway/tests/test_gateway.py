@@ -988,10 +988,10 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         assert rpc_stream.send_message.called
 
     # 9. Publish RPC (console routing and missing device_id)
-    # 9. Publish RPC (console routing and missing device_id)
     stream_pub_no_dev = MockGrpcStream(request=pb.CloudQueuedPublish(topic_name="br/test"), metadata={})
-    await local_svc.Publish(stream_pub_no_dev.as_stream())
-    assert stream_pub_no_dev.send_message.called
+    with pytest.raises(GRPCError) as pub_no_dev_exc:
+        await local_svc.Publish(stream_pub_no_dev.as_stream())
+    assert pub_no_dev_exc.value.status == Status.INVALID_ARGUMENT
 
     stream_pub_none = MockGrpcStream(request=None, metadata={"x-device-id": "dev-1"})
     await local_svc.Publish(stream_pub_none.as_stream())

@@ -48,7 +48,7 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                       └────────────────────────────────────────────────────────┘
 
 Notas:
-- Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 22 métodos tipados de `LocalBridge` + `SubscribeConsole`), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
+- Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
 - Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
 - Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con streaming de eventos simétrico en tiempo real (p.ej. `Bridge.sendPinEvent` sobre `CHANNEL_TELEMETRY`).
@@ -131,9 +131,9 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 - **BridgeService (Python 3.13.9+)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
 - **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola, aplicando la política de seguridad y controlando la concurrencia.
-- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas, caché de session tickets TLS 1.3) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
+- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte polimórfico transparente para `serialx.AsyncSerial` (UART POSIX) y `AsyncTcpConnection` (WiFi TCP / sockets de red).
-- **gRPC Bidirectional Stream (HTTP/3 QUIC + TLS 1.3 0-RTT)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway, soportando reanudación de sesión 0-RTT mediante tickets de sesión persistidos en LMDB.
+- **gRPC Bidirectional Stream (HTTP/3 QUIC + TLS 1.3)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway delegando la negociación y reanudación de sesión TLS 1.3 a OpenSSL y el stack estándar de Python.
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.2 (`pb_decode_noinit`); no se afirma certificación SIL-2.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante streaming gRPC.
 
@@ -696,10 +696,17 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 
 #### Control Bidireccional de GPIO desde Cloud Gateway
 
-El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante `send_command`:
-- **Comando Cloud**: Tópico `br/gpio/pin/<pin>/set` con payload Protobuf `PinControlRequest { state = "1" | "0" | "HIGH" | "LOW" }` o cambio de modo `br/gpio/pin/<pin>/mode` (`INPUT`, `OUTPUT`, `INPUT_PULLUP`).
-- **Ejecución en Daemon**: El daemon valida la autorización (`cloud_allow_digital_write`), despacha `CMD_DIGITAL_WRITE` al MCU, y emite de vuelta `PinControlResponse { status: "ok", data: { pin: N, state: "1" } }`.
+El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante invocaciones tipadas de `LocalBridge` o despacho de comandos en tópicos canónicos:
+- **Comandos Canónicos Cloud**:
+  - Escritura digital: `{prefix}/req/gpio.write` (o `devices/{device_id}/req/gpio.write`) con payload Protobuf `DigitalWrite { pin, value }`.
+  - Modo de pin: `{prefix}/req/gpio.set_mode` con payload Protobuf `PinMode { pin, mode }`.
+  - Lectura digital: `{prefix}/req/gpio.read` con payload Protobuf `PinRead { pin }`.
+  - Escritura analógica: `{prefix}/req/gpio.analog_write` con payload Protobuf `AnalogWrite { pin, value }`.
+  - Lectura analógica: `{prefix}/req/gpio.analog_read` con payload Protobuf `PinRead { pin }`.
+  - Suscripción de pin: `{prefix}/req/gpio.subscribe` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
+- **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `CMD_DIGITAL_WRITE`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
 - **Correlación Asíncrona**: Cada request/response se correlaciona con `sequence_id` garantizando entrega determinista fin a fin.
+- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/gpio.pin_update` (o `br/gpio/pin_update`).
 
 #### GPIO Frame Examples (Hex Dump)
 
@@ -844,16 +851,17 @@ El Cloud Gateway centralizado (`mcubridge-gateway`) expone el servicio `LocalBri
 
 #### Métodos Soportados en `GatewayLocalBridgeService`
 
-El servicio implementa 22 operaciones unarias y 1 endpoint de streaming:
+El servicio implementa 25 operaciones unarias y 1 endpoint de streaming (26 operaciones en total):
 1. **Control de Pines (GPIO):** `SetPinMode`, `DigitalWrite`, `DigitalRead`, `AnalogWrite`, `AnalogRead`, `PinSubscribe`.
 2. **Datastore en Memoria:** `DatastorePut`, `DatastoreGet`.
 3. **Mailbox FIFO:** `MailboxPush`, `MailboxRead`.
 4. **Sistema de Archivos:** `FileWrite`, `FileRead`, `FileRemove`.
 5. **Gestión de Procesos:** `ProcessRunAsync`, `ProcessPoll`, `ProcessKill`.
 6. **Bus SPI:** `SpiTransfer`, `SpiConfigure`.
-7. **Introspección y Telemetría:** `GetVersion`, `GetFreeMemory`, `GetStatus`.
-8. **Publicación Genérica:** `Publish`.
-9. **Streaming de Consola en Tiempo Real:** `SubscribeConsole` (multiplexa chunks de consola recibidos en telemetría hacia los clientes suscriptos).
+7. **Introspección y Control de Sistema:** `GetVersion`, `GetFreeMemory`, `GetStatus`, `EnterBootloader`.
+8. **Consola y Sincronización Temporal:** `ConsoleWrite`, `ClockSync`.
+9. **Publicación Genérica:** `Publish`.
+10. **Streaming de Consola en Tiempo Real:** `SubscribeConsole` (multiplexa chunks de consola recibidos en telemetría hacia los clientes suscriptos).
 
 #### Invariante de Resolución Explícita de Dispositivo
 
@@ -1053,3 +1061,56 @@ pinMode(m.pin, OUTPUT);
 digitalWrite(m.pin, m.value ? HIGH : LOW);
 ```
 Esto previene que pines no inicializados o en estado de alta impedancia (tri-state) activen accidentalmente resistencias internas de pull-up débiles al recibir comandos de escritura alta, asegurando una conducción firme a nivel lógico de 5V (o 3.3V según la arquitectura) hacia la carga o actuador.
+
+---
+
+## 11. Topología Canónica de Tópicos Cloud y Enrutamiento Simplificado
+
+Bajo la estricta **regla de cero backward compatibility** (cero shims, cero compatibilidad hacia atrás y cero ramas legacy), el ecosistema erradica la proliferación histórica de prefijos y subárboles heterogéneos (`action/`, `command/`, etc.). Todos los mensajes intercambiados a través del Cloud Gateway se estructuran bajo una convención unívoca, determinista y fuertemente tipada.
+
+### 11.1 Estructura Canónica de Tópicos
+
+El protocolo define dos esquemas canónicos de tópicos:
+
+#### 1. Formato Local / Dispositivo Directo (`{prefix}/{direction}/{method}`)
+Utilizado por el daemon de borde cuando procesa rutas relativas a su propio prefijo configurado:
+- **`{prefix}`**: Prefijo raíz configurado para el dispositivo (por defecto `br`, definido en UCI o `mcubridge.proto`).
+- **`{direction}`**: Token canónico obligatorio en minúscula que define la semántica y dirección del mensaje:
+  - `req`: Peticiones / comandos RPC entrantes desde la nube o clientes hacia el daemon.
+  - `res`: Respuestas y retornos generados por el daemon tras la ejecución del RPC.
+  - `evt`: Eventos asíncronos y telemetría emitidos espontáneamente por el daemon hacia el Gateway (`status_online`, `pin_event`, etc.).
+- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `gpio.write`, `gpio.set_mode`, `file.read`, `system.version`, `datastore.put`, `mailbox.push`).
+
+Ejemplos:
+- Petición de escritura GPIO: `br/req/gpio.write`
+- Respuesta a lectura de archivo: `br/res/file.read`
+- Evento de cambio de pin: `br/evt/gpio.event`
+
+#### 2. Formato Flota / Multi-Dispositivo (`devices/{device_id}/{direction}/{method}`)
+Utilizado por el `mcubridge-gateway` central para el enrutamiento Hub-and-Spoke de mensajes hacia y desde dispositivos específicos de la flota:
+- **`devices`**: Namespace raíz fijo para la flota.
+- **`{device_id}`**: Identificador único de hardware o aprovisionamiento del dispositivo (p.ej. `yun-mcu-01`).
+- **`{direction}`**: `req`, `res` o `evt`.
+- **`{method}`**: Identificador canónico de la operación.
+
+Ejemplos:
+- Petición remota a un nodo: `devices/yun-01/req/gpio.write`
+- Retorno de telemetría de un nodo: `devices/yun-01/evt/status_online`
+
+### 11.2 Resolución Declarativa en la Fuente de Verdad (SSOT)
+
+La resolución y parseo de tópicos se delega exclusivamente en la infraestructura generada en `protocol.py`:
+- `REGISTRY.get_topic_for_message(prefix, message)`: Resuelve el tópico canónico correspondiente a un tipo de mensaje Protobuf o comando ID.
+- `REGISTRY.parse_topic(prefix, topic_name)`: Parsea y valida el tópico entrante, retornando un `TopicRoute` inmutable con campos fuertemente tipados (`raw`, `prefix`, `device_id`, `direction`, `method`) o `None` si la estructura viola el contrato normativo.
+
+Cualquier tópico que no cumpla exactamente con los esquemas canónicos es rechazado de inmediato sin fallbacks ni transformaciones heurísticas.
+
+---
+
+## 12. Gestión de Sesiones TLS/SSL y Delegación Nativa
+
+Para optimizar el uso de recursos y eliminar complejidad innecesaria en el Linux MPU, el daemon delega íntegramente la gestión criptográfica de sesiones TLS/SSL a la biblioteca estándar de Python (`ssl`) y a OpenSSL:
+
+1. **Erradicación de Shims de Tickets LMDB**: Se eliminó la persistencia simulada de session tickets en bases de datos LMDB (`save_tls_session_ticket`, `load_tls_session_ticket`, `tls_session_cache`), eliminando I/O de disco innecesario y handles de base de datos redundantes.
+2. **Contexto SSL Unificado**: La configuración de seguridad se centraliza en `get_ssl_context(cfg)`, la cual instancia directamente `ssl.create_default_context()` y mapea las opciones normativas (`cloud_cafile`, `cloud_certfile`, `cloud_keyfile`, verificación de certificados y selección de ciphers TLS 1.3).
+3. **Gestión Automática en Memoria**: OpenSSL gestiona el ciclo de vida, la negociación criptográfica y la reanudación segura de sesiones TLS 1.3 de forma transparente en memoria, garantizando máxima velocidad en reconexiones sin vulnerar las políticas de seguridad FIPS 140-3.

@@ -26,7 +26,7 @@
 ### 3. Lifecycle Management, Wireless Expansion & Hardware Resilience (Q3 2026)
 - **Transparent Wireless Transports**: Native WiFi TCP stream (`AsyncTcpConnection`, `WiFiClient`) and Bluetooth SPP/BLE UART (`BluetoothSerial`).
 - **Nanopb 0.4.9.2 Zero-Copy Deserialization**: Ecosystem upgrade with `pb_decode_noinit` eliminating redundant memory operations on static buffers.
-- **TLS 1.3 0-RTT Session Ticket Persistence**: LMDB transactional session caching for zero-roundtrip gRPC reconnection upon network recovery.
+- **TLS 1.3 Native Session Resumption**: Standard OpenSSL and Python standard library delegation for fast gRPC reconnection upon network recovery without custom LMDB ticket shims.
 - **Host Benchmarking & Memory Profiling**: `tools/profiling/benchmark_performance.py` measures Python/Linux framing, AEAD, Protobuf, and LMDB throughput plus host-process memory. These results do not establish AVR performance, MCU SRAM use, or WCET. Target-specific AVR cycle/runtime measurement remains a separate validation item.
 - **Safe-Bootloader Handshake**: Protocol extension to trigger MCU bootloader mode via RPC.
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.

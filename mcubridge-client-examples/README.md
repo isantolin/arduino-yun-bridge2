@@ -20,7 +20,7 @@ Todos los clientes se comunican **exclusivamente con el Cloud Gateway** mediante
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │       Protobuf Cloud Gateway (Dedicated Central Server)     │
-│  - GatewayLocalBridgeService (22 RPCs + SubscribeConsole)   │
+│  - GatewayLocalBridgeService (25 RPCs + SubscribeConsole)   │
 │  - Enrutamiento estricto por metadato 'x-device-id'         │
 │  - Multiplexación N:1 de dispositivos de borde              │
 └──────────────────┬──────────────────────────────────────────┘
@@ -51,6 +51,24 @@ El Cloud Gateway opera en una topología **Hub-and-Spoke (N:1)** donde múltiple
    - Si un cliente no envía el metadato `x-device-id`, el Gateway rechaza la llamada con error `GRPCError(Status.INVALID_ARGUMENT, "Missing x-device-id in request metadata")`.
    - Si el dispositivo solicitado no mantiene una sesión gRPC activa con el Gateway, se devuelve inmediatamente `GRPCError(Status.UNAVAILABLE, "Device '<id>' is not connected to gateway")`.
 3. **Cero Tolerancia a Fallbacks Legacy:** No existe selección por omisión, auto-descubrimiento heurístico ni compatibilidad hacia sockets locales en los clientes.
+
+---
+
+## Topología de Tópicos Canónicos Cloud
+
+Para clientes que utilizan el método genérico `Publish` o procesan flujos de telemetría y eventos en tiempo real, el direccionamiento se rige estrictamente por la **regla de cero backward**:
+
+- **Tópico de Flota (enrutamiento en Gateway):** `devices/{device_id}/{direction}/{method}`
+- **Tópico de Borde (enrutamiento en Daemon):** `{prefix}/{direction}/{method}`
+
+Donde:
+- `direction`: Obligatoriamente uno de tres tokens en minúscula:
+  - `req`: Comandos / solicitudes dirigidas al microcontrolador o daemon.
+  - `res`: Respuestas directas a solicitudes previas.
+  - `evt`: Eventos asíncronos y telemetría espontánea (`status_online`, `pin_event`, etc.).
+- `method`: Nombre canónico del método u operación (`gpio.write`, `file.read`, `datastore.put`, etc.).
+
+Todo tópico que no respete esta estructura exacta de 3 segmentos es rechazado de inmediato.
 
 ---
 

@@ -798,8 +798,10 @@ class GatewayLocalBridgeService:
         device_id = self.resolve_device_id(stream)
         if not device_id:
             logger.warning("Publish rejected: missing explicit device_id")
-            await stream.send_message(pb.CloudQueuedPublish())
-            return
+            raise GRPCError(
+                Status.INVALID_ARGUMENT,
+                "Explicit device resolution required: missing 'x-device-id' metadata header",
+            )
         with structlog.contextvars.bound_contextvars(
             target_device_id=device_id,
             topic=req.topic_name,
@@ -869,7 +871,8 @@ class GatewayLocalBridgeService:
 
 for _spec in REGISTRY.rpc_specs:
     _name = _spec.rpc_name or _spec.name
-    setattr(GatewayLocalBridgeService, _name, GatewayLocalBridgeService.create_forwarder(_spec))
+    if _name not in GatewayLocalBridgeService.__dict__:
+        setattr(GatewayLocalBridgeService, _name, GatewayLocalBridgeService.create_forwarder(_spec))
 
 LocalBridgeBase.register(GatewayLocalBridgeService)
 

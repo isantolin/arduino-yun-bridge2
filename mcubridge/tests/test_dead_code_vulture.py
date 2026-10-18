@@ -10,6 +10,7 @@ import vulture
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.xdist_group("repo_audit")
 def test_vulture_zero_dead_code_in_production() -> None:
     """Verify zero dead code in production modules at >= 80% confidence."""

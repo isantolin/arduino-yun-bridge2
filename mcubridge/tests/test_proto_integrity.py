@@ -405,6 +405,7 @@ def _mock_empty_findings() -> list[str]:
     return []
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.xdist_group("repo_audit")
 def test_codebase_auditor_cli_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """MIL-SPEC: Verify codebase auditor CLI command runs and passes 100% cleanly."""

@@ -5,7 +5,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 ## Key Capabilities
 
 - **Hub-and-Spoke (N:1) Architecture**: Multiplexes hundreds or thousands of remote Arduino edge nodes over outbound-only connections, completely bypassing edge NAT and firewall restrictions.
-- **Northbound LocalBridge RPC Hub (`GatewayLocalBridgeService`)**: Implements all 22 typed `LocalBridge` RPC methods plus real-time console streaming (`SubscribeConsole`), routing calls seamlessly to the target edge device over active session streams.
+- **Northbound LocalBridge RPC Hub (`GatewayLocalBridgeService`)**: Implements all 25 typed `LocalBridge` unary RPC methods plus real-time console streaming (`SubscribeConsole`), routing calls seamlessly to the target edge device over active session streams.
 - **Strictly Explicit Device Resolution (`x-device-id`)**: All client RPC invocations must specify the target device ID via gRPC metadata (`x-device-id`). Unspecified device IDs fail with `INVALID_ARGUMENT`, and disconnected devices fail with `UNAVAILABLE`. No guessing, no defaults, and no legacy fallbacks.
 - **gRPC Bidirectional Streaming**: Ultra-low latency asynchronous transport powered by `grpclib` and `uvloop`.
 - **Deterministic Session Lifecycle FSM**: Connection, mTLS authentication, active streaming, and teardown managed deterministically by `GatewaySessionMachine` (`connected` $\rightarrow$ `authenticated` $\rightarrow$ `active` $\rightarrow$ `closed`).
@@ -63,7 +63,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 
 ## Supported `LocalBridge` RPC Methods
 
-`GatewayLocalBridgeService` exposes all 22 unary operations and the real-time streaming console endpoint defined in `tools/protocol/mcubridge.proto`:
+`GatewayLocalBridgeService` exposes all 25 unary operations and the real-time streaming console endpoint defined in `tools/protocol/mcubridge.proto`:
 
 | Category | RPC Method | Request Message | Response Message | Description |
 |---|---|---|---|---|
@@ -85,11 +85,33 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 | | `ProcessKill` | `ProcessKill` | `GenericResponse` | Terminates a running process via PID. |
 | **SPI Bus** | `SpiTransfer` | `SpiTransfer` | `SpiTransferResponse` | Executes full-duplex SPI master byte transfers. |
 | | `SpiConfigure` | `SpiConfig` | `GenericResponse` | Configures SPI clock, bit order, and data mode. |
-| **System Info** | `GetVersion` | `SubscribeRequest` | `VersionResponse` | Retrieves protocol and firmware versions. |
+| **System Info & Control** | `GetVersion` | `SubscribeRequest` | `VersionResponse` | Retrieves protocol and firmware versions. |
 | | `GetFreeMemory` | `SubscribeRequest` | `FreeMemoryResponse` | Retrieves available SRAM on the MCU. |
 | | `GetStatus` | `SubscribeRequest` | `BridgeStatus` | Retrieves synchronization and link status snapshot. |
+| | `EnterBootloader` | `EnterBootloader` | `GenericResponse` | Commands MCU to enter bootloader mode. |
+| **Console & Clock** | `ConsoleWrite` | `ConsoleWrite` | `GenericResponse` | Writes text to MCU serial console. |
+| | `ClockSync` | `ClockSyncRequest` | `ClockSyncResponse` | Synchronizes wall clock between MPU and MCU. |
 | **Generic** | `Publish` | `CloudQueuedPublish` | `CloudQueuedPublish` | Direct raw publish / envelope dispatch. |
 | **Streaming** | `SubscribeConsole` | `SubscribeRequest` | `stream CloudQueuedPublish` | Real-time multiplexed stream of MCU console output. |
+
+---
+
+## Canonical Cloud Topics & Routing Topology
+
+In accordance with the **zero-backward compatibility rule**, all pub/sub, command dispatch, and telemetry routing through the Cloud Gateway strictly follow the canonical 3-segment topic format:
+
+- **Fleet-Wide Scoped:** `devices/{device_id}/{direction}/{method}`
+- **Edge Local Scoped:** `{prefix}/{direction}/{method}`
+
+Where:
+- `{device_id}`: Explicit target or originating edge device identifier (e.g. `yun-mcu-01`).
+- `{direction}`: Strictly one of three lowercase direction tokens:
+  - `req`: Inbound RPC commands/requests destined for the edge daemon.
+  - `res`: Outbound command execution returns/replies emitted by the edge daemon.
+  - `evt`: Asynchronous telemetry reports and spontaneous event broadcasts (e.g. `status_online`, `pin_event`).
+- `{method}`: Canonical operation or event name matching `tools/protocol/mcubridge.proto` (e.g. `gpio.write`, `gpio.set_mode`, `file.read`, `system.version`, `datastore.put`, `mailbox.push`).
+
+All routing is resolved declaratively via the protocol Single Source of Truth (`REGISTRY.get_topic_for_message` and `REGISTRY.parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
 
 ---
 

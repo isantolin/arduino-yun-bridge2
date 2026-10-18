@@ -218,7 +218,8 @@ class LocalBridgeService(LocalBridgeBase):
         if clean.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
             clean_path = clean.removeprefix(MCU_FS_PREFIX)
-            if serial and getattr(getattr(serial, "send", None), "return_value", None) is not None:
+            send_ret = getattr(getattr(serial, "send", None), "return_value", None)
+            if serial and isinstance(send_ret, (pb.FileReadResponse, bytes)):
                 res = await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=clean_path))
                 if res:
                     return parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse())

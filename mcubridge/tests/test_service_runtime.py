@@ -972,6 +972,12 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     svc.state.allowed_policy = pb.AllowedCommandPolicy(entries=["echo"])
     res_prop = await svc.local_bridge_service.execute_process_run_async(pb.ProcessRunAsync(command="echo prop"))
     assert res_prop.pid > 0
+    for _ in range(50):
+        poll_res = await svc.poll_process(res_prop.pid)
+        if poll_res.finished:
+            break
+        await asyncio.sleep(0.01)
+    await svc.kill_process(res_prop.pid)
 
     mock_handle = MagicMock()
     type(mock_handle).pid = PropertyMock(side_effect=ProcessLookupError("No such process"))

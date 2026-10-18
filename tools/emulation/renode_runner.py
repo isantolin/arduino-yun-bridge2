@@ -479,12 +479,14 @@ def run_matrix(
             fail_count += 1
 
     summary_file = summary_dir / "renode_summary.md"
+    summary_json_file = summary_dir / "renode_summary.json"
     rows: list[str] = [
         "### 🔬 Renode ARM Hardware Emulation Matrix (Instruction-Accurate)\n",
         "| Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |",
         "| :--- | :---: | :---: | :---: | :---: |",
     ]
 
+    boards_data: list[dict[str, str]] = []
     for (board_fqbn, board_name), c_stat, e_stat in zip(
         MATRIX_BOARDS, compilation_status, emulation_status, strict=True
     ):
@@ -495,13 +497,27 @@ def run_matrix(
         else:
             overall = "❌ FAIL"
         rows.append(f"| **{board_name}**<br>`{board_fqbn}` | ARM Cortex-M0+ | {c_stat} | {e_stat} | **{overall}** |")
+        boards_data.append(
+            {
+                "board_fqbn": board_fqbn,
+                "board_name": board_name,
+                "architecture": "ARM Cortex-M0+",
+                "compilation": c_stat,
+                "emulation": e_stat,
+                "result": overall,
+            }
+        )
 
     summary_content = "\n".join(rows) + "\n"
     summary_file.write_text(summary_content, encoding="utf-8")
+    summary_json_file.write_text(
+        json.dumps({"engine": "Renode (Instruction-Accurate)", "boards": boards_data}, indent=2),
+        encoding="utf-8",
+    )
     print(summary_content)
 
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if step_summary:
+    if step_summary and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY"):
         try:
             with Path(step_summary).open("a", encoding="utf-8") as f:
                 f.write(summary_content)

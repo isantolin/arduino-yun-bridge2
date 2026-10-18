@@ -572,12 +572,14 @@ def run_matrix(
             fail_count += 1
 
     summary_file = summary_dir / "simavr_summary.md"
+    summary_json_file = summary_dir / "simavr_summary.json"
     rows: list[str] = [
         "### 🔬 simavr AVR Hardware Emulation Matrix (Cycle-Accurate)\n",
         "| Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |",
         "| :--- | :---: | :---: | :---: | :---: |",
     ]
 
+    boards_data: list[dict[str, str]] = []
     for (board_fqbn, board_name), c_stat, e_stat in zip(
         MATRIX_BOARDS, compilation_status, emulation_status, strict=True
     ):
@@ -588,13 +590,27 @@ def run_matrix(
         else:
             overall = "❌ FAIL"
         rows.append(f"| **{board_name}**<br>`{board_fqbn}` | AVR 8-bit | {c_stat} | {e_stat} | **{overall}** |")
+        boards_data.append(
+            {
+                "board_fqbn": board_fqbn,
+                "board_name": board_name,
+                "architecture": "AVR 8-bit",
+                "compilation": c_stat,
+                "emulation": e_stat,
+                "result": overall,
+            }
+        )
 
     summary_content = "\n".join(rows) + "\n"
     summary_file.write_text(summary_content, encoding="utf-8")
+    summary_json_file.write_text(
+        json.dumps({"engine": "simavr (Cycle-Accurate)", "boards": boards_data}, indent=2),
+        encoding="utf-8",
+    )
     print(summary_content)
 
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if step_summary:
+    if step_summary and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY"):
         try:
             with Path(step_summary).open("a", encoding="utf-8") as f:
                 f.write(summary_content)
@@ -603,7 +619,12 @@ def run_matrix(
 
     simavr_logs_dir = repo_root / "simavr-logs"
     if simavr_logs_dir.exists():
-        shutil.copy2(summary_file, simavr_logs_dir / "simavr_summary.md")
+        target_path = simavr_logs_dir / "simavr_summary.md"
+        if summary_file.resolve() != target_path.resolve():
+            shutil.copy2(summary_file, target_path)
+        target_json = simavr_logs_dir / "simavr_summary.json"
+        if summary_json_file.resolve() != target_json.resolve():
+            shutil.copy2(summary_json_file, target_json)
 
     return fail_count
 

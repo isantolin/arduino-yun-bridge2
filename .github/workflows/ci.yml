@@ -41,7 +41,7 @@ jobs:
         if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor' || matrix.env == 'arduino'
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
-          sudo npm install -g @bufbuild/buf
+          sudo npm install -g --allow-scripts=@bufbuild/buf @bufbuild/buf
           python -m pip install semgrep protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
@@ -266,6 +266,7 @@ jobs:
     timeout-minutes: 15
     env:
       SIMAVR_METRICS_DIR: simavr-logs
+      CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-protoc
@@ -301,6 +302,7 @@ jobs:
     timeout-minutes: 15
     env:
       RENODE_METRICS_DIR: renode-logs
+      CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-protoc
@@ -425,22 +427,17 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Generate Memory Summary
+      - name: Generate Memory & Hardware Emulation Summary
         run: |
           # 1. Advanced Symbol Profiling (cat pre-generated report via pyelftools)
           if [ -f arduino-logs/symbol_profile.md ]; then
             cat arduino-logs/symbol_profile.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # 2. simavr AVR Hardware Emulation Summary
-          if [ -f simavr-logs/simavr_summary.md ]; then
-            cat simavr-logs/simavr_summary.md >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-          # 3. Renode ARM Hardware Emulation Summary
-          if [ -f renode-logs/renode_summary.md ]; then
-            cat renode-logs/renode_summary.md >> "$GITHUB_STEP_SUMMARY"
-          fi
+          # 2. Consolidated Multi-Architecture Hardware Emulation Matrix
+          python tools/ci/consolidate_emulation_summary.py \
+            --simavr-dir simavr-logs \
+            --renode-dir renode-logs
 
       - name: Generate Daemon Profile
         env:

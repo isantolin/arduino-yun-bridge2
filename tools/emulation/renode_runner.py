@@ -361,7 +361,7 @@ def run_renode_emulation(
             return False
 
         logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
-        if not state.sync_event.wait(timeout=max(timeout_seconds, 90.0)):
+        if not state.sync_event.wait(timeout=max(timeout_seconds, 150.0)):
             logger.error("MCU/daemon link failed to synchronize within timeout")
             return False
 

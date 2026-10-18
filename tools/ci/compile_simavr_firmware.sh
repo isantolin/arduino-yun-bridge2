@@ -31,7 +31,7 @@ echo "[simavr-build] Installing required library dependencies..."
 if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
     echo "[simavr-build] Generating protocol bindings..."
     python3 "${ROOT_DIR}/tools/protocol/generate.py" \
-        --spec "${ROOT_DIR}/tools/protocol/mcubridge.proto" \
+        --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
         --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
         --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
         --cpp-structs "${LIB_DIR}/src/protocol/rpc_structs.h" \

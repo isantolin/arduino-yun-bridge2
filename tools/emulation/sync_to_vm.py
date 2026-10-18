@@ -142,7 +142,7 @@ def sync(
     print("\n[0/7] Ensuring generated protocol definitions and schemas are up-to-date...")
     from tools.protocol.generate import main as generate_protocol
 
-    generate_protocol(spec_file=REPO_ROOT / "tools" / "protocol" / "mcubridge.proto")
+    generate_protocol(spec_file=REPO_ROOT / "tools" / "protocol" / "cloud_gateway.proto")
 
     # 1. Sync mcubridge python package
     pkg_src = REPO_ROOT / "mcubridge" / "mcubridge"

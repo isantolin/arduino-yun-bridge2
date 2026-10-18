@@ -8,7 +8,7 @@ from tools.protocol import generate
 
 def test_build_protocol_context_contains_template_data() -> None:
     spec = generate.load_spec_from_proto(
-        generate.REPO_ROOT / "tools" / "protocol" / "mcubridge.proto",
+        generate.REPO_ROOT / "tools" / "protocol" / "cloud_gateway.proto",
         pb_module=mcubridge_pb2,
     )
     version = Version(generate.VERSION_PATH.read_text(encoding="utf-8").strip())

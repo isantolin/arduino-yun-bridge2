@@ -56,7 +56,7 @@ WOLF_INC="$WOLF_ROOT/src"
 # Install dependencies
 echo "Generating protocol bindings..."
 python3 ./tools/protocol/generate.py \
-    --spec ./tools/protocol/mcubridge.proto \
+    --spec ./tools/protocol/cloud_gateway.proto \
     --py ./mcubridge/mcubridge/protocol/protocol.py \
     --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
     --cpp-structs ./mcubridge-library-arduino/src/protocol/rpc_structs.h \

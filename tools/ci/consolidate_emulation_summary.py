@@ -49,8 +49,8 @@ def _load_engine_boards(
                 for b in data.get("boards", [])
             ]
             return boards
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as exc:
+            typer.echo(f"[WARN] Failed to load/parse {json_path}: {exc}", err=True)
 
     md_path = summary_dir / md_filename
     if md_path.exists():
@@ -72,8 +72,8 @@ def _load_engine_boards(
                         }
                     )
             return boards
-        except OSError:
-            pass
+        except OSError as exc:
+            typer.echo(f"[WARN] Failed to read {md_path}: {exc}", err=True)
 
     return []
 

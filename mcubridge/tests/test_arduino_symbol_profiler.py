@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, cast
 
-import pytest
 from typer.testing import CliRunner
 
 from tools.profiling.arduino_symbol_profiler import (
@@ -17,6 +18,26 @@ from tools.profiling.arduino_symbol_profiler import (
 )
 
 runner = CliRunner()
+
+
+def ensure_test_elf(target_path: Path) -> Path:
+    """Ensure a syntactically valid ELF file exists at target_path for pyelftools inspection."""
+    if target_path.exists():
+        return target_path
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    compiler = shutil.which("gcc") or shutil.which("cc") or shutil.which("clang")
+    if compiler:
+        code = (
+            b"int my_ram_var = 123; "
+            b"int my_poly_bridge_func(void) { return my_ram_var; } "
+            b"int main(void) { return my_poly_bridge_func(); }"
+        )
+        subprocess.run(
+            [compiler, "-x", "c", "-", "-o", str(target_path), "-nostdlib", "-Wl,-e,0"],
+            input=code,
+            check=True,
+        )
+    return target_path
 
 
 def test_detect_board_label() -> None:
@@ -36,12 +57,8 @@ def test_detect_board_label() -> None:
     assert label_generic == "generic_board"
 
 
-def test_extract_symbols_real_elf() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    elf_path = repo_root / "arduino-build" / "arduino-avr-mega" / "BridgeControl" / "BridgeControl.ino.elf"
-    if not elf_path.exists():
-        pytest.skip(f"Build artifact not found: {elf_path}")
-
+def test_extract_symbols_real_elf(tmp_path: Path) -> None:
+    elf_path = ensure_test_elf(tmp_path / "arduino-avr-mega" / "BridgeControl" / "BridgeControl.ino.elf")
     symbols = extract_symbols(elf_path, limit=5)
     assert len(symbols) > 0
     assert len(symbols) <= 5
@@ -67,14 +84,12 @@ def test_profile_elf_valid_and_invalid(tmp_path: Path) -> None:
     assert "Symbol Profiling (pyelftools)" in output
     assert "No symbols found or file unreadable" in output
 
-    # 2. Real ELF if available
-    repo_root = Path(__file__).resolve().parents[2]
-    real_elf = repo_root / "arduino-build" / "arduino-avr-mega" / "BridgeControl" / "BridgeControl.ino.elf"
-    if real_elf.exists():
-        real_output = profile_elf(repo_root / "arduino-build", real_elf)
-        assert "Symbol Profiling (pyelftools)" in real_output
-        assert "BridgeControl.ino.elf" in real_output
-        assert "B" in real_output
+    # 2. Real ELF file
+    real_elf = ensure_test_elf(tmp_path / "arduino-avr-mega" / "BridgeControl" / "BridgeControl.ino.elf")
+    real_output = profile_elf(tmp_path / "arduino-avr-mega", real_elf)
+    assert "Symbol Profiling (pyelftools)" in real_output
+    assert "BridgeControl.ino.elf" in real_output
+    assert "B" in real_output
 
 
 def test_cli_main_nonexistent_directory(tmp_path: Path) -> None:
@@ -84,15 +99,8 @@ def test_cli_main_nonexistent_directory(tmp_path: Path) -> None:
 
 
 def test_cli_main_with_output(tmp_path: Path) -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    candidate_dirs = [
-        repo_root / "arduino-build" / "arduino-avr-mega",
-        repo_root / "arduino-build" / "arduino-samd-mkrwifi1010",
-        repo_root / "arduino-build" / "arduino-esp32-nano_nora",
-    ]
-    build_dir = next((d for d in candidate_dirs if d.exists() and list(d.rglob("*.elf"))), None)
-    if build_dir is None:
-        pytest.skip("No build artifacts found for supported target boards (Mega, MKR WiFi 1010, Nano ESP32)")
+    build_dir = tmp_path / "arduino-avr-mega"
+    ensure_test_elf(build_dir / "BridgeControl" / "BridgeControl.ino.elf")
 
     out_file = tmp_path / "report.md"
     result = runner.invoke(cast(Any, cli), [str(build_dir), "--output", str(out_file)])
@@ -102,11 +110,9 @@ def test_cli_main_with_output(tmp_path: Path) -> None:
     assert "Symbol Profiling (pyelftools)" in content
 
 
-def test_extract_elf_memory_table() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    build_dir = repo_root / "arduino-build" / "arduino-avr-mega"
-    if not build_dir.exists():
-        pytest.skip(f"Build directory not found: {build_dir}")
+def test_extract_elf_memory_table(tmp_path: Path) -> None:
+    build_dir = tmp_path / "arduino-avr-mega"
+    ensure_test_elf(build_dir / "BridgeControl" / "BridgeControl.ino.elf")
 
     table = extract_elf_memory_table(build_dir)
     assert table is not None
@@ -115,11 +121,9 @@ def test_extract_elf_memory_table() -> None:
     assert "`BridgeControl`" in table
 
 
-def test_extract_elf_memory_table_esp32() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    build_dir = repo_root / "arduino-build" / "arduino-esp32-nano_nora"
-    if not build_dir.exists():
-        pytest.skip(f"Build directory not found: {build_dir}")
+def test_extract_elf_memory_table_esp32(tmp_path: Path) -> None:
+    build_dir = tmp_path / "arduino-esp32-nano_nora"
+    ensure_test_elf(build_dir / "BridgeControl" / "BridgeControl.ino.elf")
 
     table = extract_elf_memory_table(build_dir)
     assert table is not None

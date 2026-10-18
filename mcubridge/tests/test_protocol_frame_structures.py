@@ -11,7 +11,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import Topic, TopicRoute
+from mcubridge.protocol.protocol import REGISTRY, Topic, TopicRoute
 
 
 def test_topic_route_properties() -> None:
@@ -380,3 +380,11 @@ def test_structures_coverage_boost() -> None:
     ta = pb.TopicAuthorization()
     ta.file_read = True
     assert ta.file_read
+
+    class MockAllowAllAuth:
+        allow_all = True
+
+    assert REGISTRY.allows_topic(MockAllowAllAuth(), "d", "write") is True
+    assert REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE) is not None
+    assert REGISTRY.get(pb.DigitalWrite) is not None
+    assert REGISTRY.get(pb.DigitalWrite()) is not None

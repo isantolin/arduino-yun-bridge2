@@ -207,22 +207,10 @@ class ProtocolRegistry:
                 self.by_name[op.rpc_name] = op
             if op.pb_class is not None:
                 self.by_type.setdefault(op.pb_class, op)
-                pb_name = (
-                    getattr(op.pb_class.DESCRIPTOR, "name", None)
-                    if hasattr(op.pb_class, "DESCRIPTOR")
-                    else getattr(op.pb_class, "__name__", None)
-                )
-                if pb_name:
-                    self.by_name.setdefault(pb_name, op)
+                self.by_name.setdefault(op.pb_class.DESCRIPTOR.name, op)
             if op.request_type is not None:
                 self.by_type.setdefault(op.request_type, op)
-                req_name = (
-                    getattr(op.request_type.DESCRIPTOR, "name", None)
-                    if hasattr(op.request_type, "DESCRIPTOR")
-                    else getattr(op.request_type, "__name__", None)
-                )
-                if req_name:
-                    self.by_name.setdefault(req_name, op)
+                self.by_name.setdefault(op.request_type.DESCRIPTOR.name, op)
 
     def lookup_topic(self, segment: str) -> Topic | None:
         return self.topic_lookup.get(segment.lower())
@@ -248,8 +236,6 @@ class ProtocolRegistry:
             return self.by_type.get(type(key)) or self.by_name.get(key.DESCRIPTOR.name)
         if hasattr(key, "value") and isinstance(key.value, int):
             return self.by_command_id.get(key.value)
-        if hasattr(key, "DESCRIPTOR"):
-            return self.by_name.get(getattr(key.DESCRIPTOR, "name", ""))
         return None
 
     def topic_path(self, prefix: str, topic: str | Topic, *segments: str | int) -> str:

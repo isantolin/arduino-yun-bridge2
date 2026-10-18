@@ -273,13 +273,21 @@ def run_renode_emulation(
     state = RenodeState()
     renode_dir = repo_root / "tools" / "emulation" / "renode"
     resc_template = renode_dir / "mkrwifi1010.resc"
+    repl_template = renode_dir / "mkrwifi1010.repl"
 
     temp_dir = Path(tempfile.mkdtemp(prefix="renode_run_"))
     temp_resc = temp_dir / "run.resc"
+    renode_log = temp_dir / "renode.log"
+    template_content = resc_template.read_text(encoding="utf-8")
+    rendered_resc = (
+        template_content
+        .replace("$ELF_PATH", f"@{firmware_path.resolve()}")
+        .replace("$UART_PORT", str(port))
+        .replace("$ORIGIN/mkrwifi1010.repl", f"@{repl_template.resolve()}")
+    )
     resc_lines = [
-        f"$ELF_PATH = @{firmware_path.resolve()}",
-        f"$UART_PORT = {port}",
-        f"include @{resc_template.resolve()}",
+        f"logFile @{renode_log.resolve()} true",
+        rendered_resc,
         "",
     ]
     temp_resc.write_text("\n".join(resc_lines), encoding="utf-8")
@@ -294,6 +302,13 @@ def run_renode_emulation(
     storage_path: Path | None = None
 
     try:
+        gateway_proc = _ensure_cloud_gateway(state)
+        if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=15.0):
+            logger.error("Gateway did not start in time")
+            return False
+
+        fake_uci_dir, storage_path, daemon_env = _setup_fake_uci(str(pty_link))
+
         logger.info("Starting Renode headless instance...", port=port, elf=str(firmware_path))
         renode_cmd = [renode_bin, "--console", "--disable-gui", "--plain", "-e", f"include @{temp_resc}"]
         renode_proc = subprocess.Popen(
@@ -328,13 +343,6 @@ def run_renode_emulation(
 
         if not wait_for_path_ready(pty_link, timeout=5.0):
             logger.error("PTY bridge device never appeared", path=str(pty_link))
-            return False
-
-        fake_uci_dir, storage_path, daemon_env = _setup_fake_uci(str(pty_link))
-
-        gateway_proc = _ensure_cloud_gateway(state)
-        if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
-            logger.error("Gateway did not start in time")
             return False
 
         daemon_cmd = [
@@ -390,17 +398,20 @@ def run_renode_emulation(
         return all_passed
 
     finally:
+        procs = [p for p in (daemon_proc, gateway_proc, socat_proc, renode_proc) if p is not None]
+        terminate_process_tree(procs, timeout=5.0)
         if log_dir is not None:
             log_file = log_dir / "renode_execution.log"
             try:
                 with log_file.open("w", encoding="utf-8") as f:
                     for src, line in state.output_lines:
                         f.write(f"[{src}] {line}\n")
+                    if renode_log.exists():
+                        f.write("\n=== RENODE INTERNAL LOG ===\n")
+                        f.write(renode_log.read_text(encoding="utf-8", errors="replace"))
             except OSError as exc:
                 logger.warning("Could not write renode execution log", error=str(exc))
         shutil.rmtree(temp_dir, ignore_errors=True)
-        procs = [p for p in (daemon_proc, gateway_proc, socat_proc, renode_proc) if p is not None]
-        terminate_process_tree(procs, timeout=5.0)
         if fake_uci_dir and fake_uci_dir.exists():
             shutil.rmtree(fake_uci_dir, ignore_errors=True)
         if storage_path and storage_path.exists():

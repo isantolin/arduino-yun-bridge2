@@ -15,24 +15,21 @@ from mcubridge.protocol.protocol import REGISTRY, Topic, TopicRoute
 
 
 def test_topic_route_properties() -> None:
-
     route = TopicRoute(
-        raw="prefix/file/read",
-        prefix="prefix",
-        topic=Topic.FILE,
-        segments=("read", "subpath"),
+        raw="devices/dev1/req/gpio.write",
+        prefix="devices/dev1",
+        device_id="dev1",
+        direction="req",
+        method="gpio.write",
     )
-    assert route.identifier == "read"
-    assert route.remainder == ("subpath",)
-    assert route.action == "read"
+    assert route.device_id == "dev1"
+    assert route.direction == "req"
+    assert route.method == "gpio.write"
+    assert route.action == "write"
 
-    route_empty = TopicRoute(raw="prefix", prefix="prefix", segments=())
-    assert route_empty.identifier == ""
-    assert route_empty.remainder == ()
+    route_empty = TopicRoute()
+    assert route_empty.method == ""
     assert route_empty.action is None
-
-    route_resp = TopicRoute(raw="prefix/d/response", prefix="prefix", topic=Topic.DIGITAL, segments=("response",))
-    assert route_resp.action is None
 
 
 @given(

@@ -21,6 +21,8 @@ from ..protocol.mcubridge_grpc import LocalBridgeBase
 from ..protocol.protocol import (
     AEAD_NONCE_SIZE,
     BOOTLOADER_MAGIC,
+    MAX_DATASTORE_KEY_LENGTH,
+    MAX_DATASTORE_VALUE_SIZE,
     REGISTRY,
     Command,
 )
@@ -155,6 +157,8 @@ class LocalBridgeService(LocalBridgeBase):
         return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
 
     async def execute_datastore_put(self, req: pb.DatastorePut) -> pb.GenericResponse:
+        if len(req.key.encode("utf-8")) > MAX_DATASTORE_KEY_LENGTH or len(req.value) > MAX_DATASTORE_VALUE_SIZE:
+            return pb.GenericResponse(status="error")
         await self.runtime_service.store_and_publish_datastore_value(req.key, req.value)
         return pb.GenericResponse(status="ok")
 
@@ -390,6 +394,15 @@ class LocalBridgeService(LocalBridgeBase):
 
     async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
         await self._handle_unary(stream, "GetStatus", self.execute_get_status)
+
+    async def EnterBootloader(self, stream: Stream[pb.EnterBootloader, pb.GenericResponse]) -> None:
+        await self._handle_unary(stream, "EnterBootloader", self.execute_enter_bootloader)
+
+    async def ConsoleWrite(self, stream: Stream[pb.ConsoleWrite, pb.GenericResponse]) -> None:
+        await self._handle_unary(stream, "ConsoleWrite", self.execute_console_write)
+
+    async def ClockSync(self, stream: Stream[pb.ClockSyncRequest, pb.ClockSyncResponse]) -> None:
+        await self._handle_unary(stream, "ClockSync", self.execute_clock_sync)
 
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is not None:

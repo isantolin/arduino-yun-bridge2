@@ -430,20 +430,6 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.protocol import mcubridge_pb2 as pb
     from mcubridge.services.runtime import BridgeService
 
-    assert hasattr(pb, "ActionRouteDef")
-    assert len(protocol.REGISTRY.topic_dispatch_handlers) == 9
-    for topic, handler_name in protocol.REGISTRY.topic_dispatch_handlers.items():
-        assert isinstance(topic, protocol.Topic)
-        assert hasattr(BridgeService, handler_name)
-        assert callable(getattr(BridgeService, handler_name))
-
-    assert len(protocol.REGISTRY.action_routes) == 23
-    for (topic, scope, _action), handler_name in protocol.REGISTRY.action_routes.items():
-        assert isinstance(topic, protocol.Topic)
-        assert scope in ("mcu", "local")
-        assert hasattr(BridgeService, handler_name)
-        assert callable(getattr(BridgeService, handler_name))
-
     assert len(protocol.REGISTRY.mcu_dispatch_handlers) == 26
     for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items():
         assert isinstance(code, int)
@@ -459,21 +445,14 @@ def test_proto_dispatch_handlers_ssot() -> None:
         protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
     )
 
-    assert len(protocol.REGISTRY.query_topic_actions) == 5
-    for topic, action in protocol.REGISTRY.query_topic_actions:
-        assert isinstance(topic, protocol.Topic)
-        assert isinstance(action, str)
-
-    assert len(protocol.REGISTRY.rpc_specs) == 22
-    assert len(protocol.REGISTRY.local_rpc_specs) == 22
-    assert len(protocol.REGISTRY.gateway_rpc_specs) == 22
+    assert len(protocol.REGISTRY.rpc_specs) == 25
     from mcubridge.services.local_bridge import LocalBridgeService
 
     service_desc = pb.DESCRIPTOR.services_by_name["LocalBridge"]
     unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
-    assert len(unary_methods) == 22
+    assert len(unary_methods) == 25
 
-    for spec in protocol.REGISTRY.local_rpc_specs:
+    for spec in protocol.REGISTRY.rpc_specs:
         method_name = spec.rpc_name or spec.name
         assert method_name in unary_methods
         method_desc = unary_methods[method_name]

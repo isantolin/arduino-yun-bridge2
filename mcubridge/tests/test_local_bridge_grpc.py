@@ -52,7 +52,7 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         method.name: method for method in methods if not method.client_streaming and not method.server_streaming
     }
 
-    local_rpc_map = {op.rpc_name or op.name: op for op in REGISTRY.local_rpc_specs}
+    local_rpc_map = {op.rpc_name or op.name: op for op in REGISTRY.rpc_specs}
     assert set(local_rpc_map) == set(unary_methods)
     assert "SubscribeConsole" not in local_rpc_map
     for name, method in unary_methods.items():
@@ -566,10 +566,9 @@ async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
     await local_svc.Publish(stream_none.as_stream())
     stream_none.send_message.assert_not_called()
 
-    # Test Publish with message & correlation
     req_msg = pb.CloudQueuedPublish(
-        topic_name="br/datastore/put/test_key",
-        payload=b"val",
+        topic_name="br/req/datastore.put",
+        payload=pb.DatastorePut(key="test_key", value=b"val").SerializeToString(),
         correlation_data=b"123456789012",
     )
     mock_stream = MockGrpcStream(request=req_msg)

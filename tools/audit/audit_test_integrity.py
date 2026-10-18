@@ -99,6 +99,7 @@ ALLOWLIST_PY_HELPERS = {
     "handle_command_response",
     "unsupported_mcu_request",
     "lookup_topic",
+    "request_mcu_version",
 }
 
 

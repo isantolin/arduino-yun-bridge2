@@ -21,32 +21,32 @@ _SAFE_TEXT = st.text(
 
 @given(
     prefix=_SAFE_TEXT,
-    topic=st.sampled_from(list(Topic)),
-    segments=st.lists(_SAFE_TEXT, max_size=4),
+    direction=st.sampled_from(["req", "res", "evt"]),
+    method=_SAFE_TEXT,
 )
-def test_topic_path_parse_topic_isomorphism(prefix: str, topic: Topic, segments: list[str]) -> None:
-    """Property: Any valid (prefix, topic, *segments) tuple roundtrips through parse_topic idempotently."""
-    raw = REGISTRY.topic_path(prefix, topic.value, *segments)
+def test_topic_path_parse_topic_isomorphism(prefix: str, direction: str, method: str) -> None:
+    """Property: Any valid (prefix, direction, method) tuple roundtrips through parse_topic idempotently."""
+    raw = REGISTRY.topic_path(prefix, direction, method)
     route = REGISTRY.parse_topic(prefix, raw)
     assert route is not None
     assert route.raw == raw
     assert route.prefix == prefix
-    assert route.topic == topic
-    assert route.segments == tuple(segments)
+    assert route.direction == direction
+    assert route.method == method
 
 
 @given(
     prefix_a=_SAFE_TEXT,
     prefix_b=_SAFE_TEXT,
-    topic=st.sampled_from(list(Topic)),
-    segments=st.lists(_SAFE_TEXT, max_size=2),
+    direction=st.sampled_from(["req", "res", "evt"]),
+    method=_SAFE_TEXT,
 )
 def test_parse_topic_mismatched_prefix_rejected(
-    prefix_a: str, prefix_b: str, topic: Topic, segments: list[str]
+    prefix_a: str, prefix_b: str, direction: str, method: str
 ) -> None:
     """Property: A topic constructed with prefix_b is deterministically rejected when parsed with distinct prefix_a."""
     assume(prefix_a != prefix_b)
-    raw = REGISTRY.topic_path(prefix_b, topic.value, *segments)
+    raw = REGISTRY.topic_path(prefix_b, direction, method)
     assert REGISTRY.parse_topic(prefix_a, raw) is None
 
 
@@ -124,10 +124,6 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
     }
     for alias, expected_topic in expected_aliases.items():
         assert REGISTRY.lookup_topic(alias) == expected_topic
-        route = REGISTRY.parse_topic("prefix", f"prefix/{alias}/13/read")
-        assert route is not None
-        assert route.topic == expected_topic
-        assert route.segments == ("13", "read")
 
 
 def test_topics_edge_cases() -> None:
@@ -183,7 +179,6 @@ def test_registry_fleet_and_direction_topic_parsing() -> None:
     assert route_fleet.direction == "req"
     assert route_fleet.method == "gpio.write"
     assert route_fleet.prefix == "devices/arduino-01"
-    assert route_fleet.identifier == "gpio.write"
     assert route_fleet.action == "write"
 
     # 2. Canonical Direction topic: {prefix}/{direction}/{method}
@@ -193,9 +188,4 @@ def test_registry_fleet_and_direction_topic_parsing() -> None:
     assert route_dir.direction == "req"
     assert route_dir.method == "gpio.write"
     assert route_dir.prefix == "yun/bridge"
-
-    # 3. Direct Service legacy topic: {prefix}/{service}/{action}
-    route_svc = REGISTRY.parse_topic("yun/bridge", "yun/bridge/d/13/write")
-    assert route_svc is not None
-    assert route_svc.topic == Topic.DIGITAL
-    assert route_svc.segments == ("13", "write")
+    assert route_dir.action == "write"

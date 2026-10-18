@@ -17,6 +17,7 @@ macro reset
     cpu VectorTableOffset 0x2000
     cpu SP `sysbus ReadDoubleWord 0x2000`
     cpu PC `sysbus ReadDoubleWord 0x2004`
+    cpu LogFunctionNames true true
 ---
 
 sysbus LogPeripheralAccess sysbus.uart0 true

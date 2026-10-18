@@ -295,7 +295,7 @@ def run_renode_emulation(
 
     try:
         logger.info("Starting Renode headless instance...", port=port, elf=str(firmware_path))
-        renode_cmd = [renode_bin, "--disable-gui", "-e", f"include @{temp_resc}"]
+        renode_cmd = [renode_bin, "--console", "--disable-gui", "--plain", "-e", f"include @{temp_resc}"]
         renode_proc = subprocess.Popen(
             renode_cmd,
             stdout=subprocess.PIPE,
@@ -517,11 +517,7 @@ def run_matrix(
     print(summary_content)
 
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if (
-        step_summary
-        and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY")
-        and "PYTEST_CURRENT_TEST" not in os.environ
-    ):
+    if step_summary and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY") and "PYTEST_CURRENT_TEST" not in os.environ:
         try:
             with Path(step_summary).open("a", encoding="utf-8") as f:
                 f.write(summary_content)

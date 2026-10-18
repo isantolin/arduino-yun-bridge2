@@ -610,7 +610,11 @@ def run_matrix(
     print(summary_content)
 
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if step_summary and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY"):
+    if (
+        step_summary
+        and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY")
+        and "PYTEST_CURRENT_TEST" not in os.environ
+    ):
         try:
             with Path(step_summary).open("a", encoding="utf-8") as f:
                 f.write(summary_content)

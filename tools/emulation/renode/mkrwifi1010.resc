@@ -19,6 +19,7 @@ macro reset
     cpu PC `sysbus ReadDoubleWord 0x2004`
 ---
 
+sysbus LogPeripheralAccess sysbus.uart0 true
 runMacro $reset
 start
 

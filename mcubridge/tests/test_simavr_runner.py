@@ -149,6 +149,7 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
     monkeypatch.setattr(simavr_runner, "run_simavr_emulation", mock_emulation)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
@@ -176,6 +177,7 @@ def test_run_matrix_compilation_failure(tmp_path: Path, monkeypatch: pytest.Monk
     monkeypatch.setattr(subprocess, "run", mock_compile_error)
     monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_success)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 1
@@ -200,6 +202,7 @@ def test_run_matrix_skipped_board(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(subprocess, "run", mock_compile_skip)
     monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_success)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
@@ -232,6 +235,7 @@ def test_run_matrix_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
     monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_failure)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 1

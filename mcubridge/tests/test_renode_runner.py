@@ -145,6 +145,7 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(renode_runner, "run_renode_emulation", _mock_renode_success)
     monkeypatch.setattr(renode_runner.shutil, "which", _mock_which_renode_and_socat)
     monkeypatch.setenv("RENODE_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = renode_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
@@ -174,6 +175,7 @@ def test_run_matrix_renode_not_installed(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
     monkeypatch.setattr(renode_runner.shutil, "which", _mock_which_socat_only)
     monkeypatch.setenv("RENODE_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = renode_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
@@ -195,6 +197,7 @@ def test_run_matrix_compilation_failure(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr(subprocess, "run", mock_compile_error)
     monkeypatch.setenv("RENODE_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = renode_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 1
@@ -222,6 +225,7 @@ def test_run_matrix_emulation_failure(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(renode_runner, "run_renode_emulation", _mock_renode_failure)
     monkeypatch.setattr(renode_runner.shutil, "which", _mock_which_renode_only)
     monkeypatch.setenv("RENODE_METRICS_DIR", str(tmp_path / "metrics"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
     fail_count = renode_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 1

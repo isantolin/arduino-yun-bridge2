@@ -273,17 +273,19 @@ class ProtocolRegistry:
 
         prefix_segs = tuple(filter(None, prefix.split("/")))
         topic_segs = tuple(filter(None, topic_name.split("/")))
+        prefix_len = len(prefix_segs)
         if (
             not prefix_segs
             or not topic_segs
-            or len(topic_segs) <= len(prefix_segs)
-            or topic_segs[: len(prefix_segs)] != prefix_segs
+            or len(topic_segs) <= prefix_len
+            or topic_segs[:prefix_len] != prefix_segs
         ):
             return None
 
         prefix_canonical = "/".join(prefix_segs)
-        seg = topic_segs[len(prefix_segs)].lower()
-        segments = topic_segs[len(prefix_segs) + 1 :]
+        seg = topic_segs[prefix_len].lower()
+        start_idx = prefix_len + 1
+        segments = topic_segs[start_idx:]
 
         topic_enum = self.lookup_topic(seg)
         if topic_enum is None:

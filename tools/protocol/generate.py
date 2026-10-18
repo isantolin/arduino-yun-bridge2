@@ -794,7 +794,7 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
     proto_files = sorted(proto_path.parent.glob("*.proto"))
     options_files = sorted(proto_path.parent.glob("*.options"))
     input_paths = [
-        args.spec.resolve(),
+        proto_path.resolve(),
         Path(__file__).resolve(),
         *proto_files,
         *options_files,

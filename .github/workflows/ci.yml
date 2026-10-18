@@ -449,7 +449,7 @@ jobs:
           # 1. Mandatory Protocol Generation (Required for imports)
           pip install jinja2 nanopb black httpx
           python tools/protocol/generate.py \
-            --spec tools/protocol/mcubridge.proto \
+            --spec tools/protocol/cloud_gateway.proto \
             --py mcubridge/mcubridge/protocol/protocol.py \
             --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 

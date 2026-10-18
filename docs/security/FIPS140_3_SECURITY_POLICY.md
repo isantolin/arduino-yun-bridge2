@@ -77,7 +77,7 @@ Session keys are derived using HKDF-SHA256 with the shared secret as input key m
 
 ### 4.2 Anti-Replay Nonce Layout
 Every encrypted frame carries a 12-byte nonce: a four-byte direction prefix (`MCU\0` for MCU-originated frames or `MPU\0` for MPU-originated frames), followed by an eight-byte big-endian counter.
-The canonical prefixes are generated from `mcubridge.proto`. Receivers validate the nonce length and monotonic counter suffix, require per-link replay state, and remain prefix-permissive to preserve interoperability with existing peers. Replay checks compare the counter to the last accepted counter.
+The canonical prefixes are generated from `config_schema.proto`. Receivers validate the nonce length and monotonic counter suffix, require per-link replay state, and remain prefix-permissive to preserve interoperability with existing peers. Replay checks compare the counter to the last accepted counter.
 
 ### 4.3 Key Zeroization (*Safe Memory Scrubbing*)
 * **C++ MCU**: Memory containing $K_{session}$ and intermediate buffers is zeroized using `wc_ForceZero()` to defeat compiler dead-store elimination.

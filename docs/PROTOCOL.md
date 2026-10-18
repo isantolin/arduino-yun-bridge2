@@ -57,10 +57,10 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo vive íntegramente en `tools/protocol/mcubridge.proto` (mensajes, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
+La **fuente de verdad machine-readable** del protocolo vive modularizada en `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto` para mensajes, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
 ### Serialización de Payloads (Protobuf)
-Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC (`RpcEnvelope`).
+Todos los payloads del protocolo se definen como mensajes en los schemas bajo `tools/protocol/` y se serializan como **protobuf** dentro del frame RPC (`RpcEnvelope`).
 
 - **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`), orquestadas de forma centralizada y determinista por el catálogo `REGISTRY` (`protocol.py`).
 - **C++ (MCU):** usa Nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
@@ -82,13 +82,13 @@ La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
 - Eliminación de ramas de código inalcanzables según la arquitectura.
 - Reducción del uso de RAM al mover constantes a la sección de solo lectura del binario.
 
-Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía el generador):
+Qué se centraliza en los esquemas Protobuf modulares (y se genera a Python/C++ vía el generador):
 
-- **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones estáticas del generador Nanopb (`mcubridge.options`).
+- **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones estáticas del generador Nanopb (`mcu_wire.options` / `config_schema.options`).
 - **Defaults compartidos y metadatos de configuración**: los defaults de `RuntimeConfig`, las constantes referenciadas y los defaults de tópicos se declaran en el schema. Los bindings/clientes consumen los valores generados; UCI puede sobrescribir las opciones de despliegue.
 - **Reservas de compatibilidad**: los nombres y números retirados permanecen reservados en el schema. Buf comprueba compatibilidad de wire (`WIRE`); el API fuente de los bindings generados sí puede cambiar.
 
-Este documento **no duplica listados enumerados** para evitar drift; esos catálogos se consideran canónicos en `mcubridge.proto` y en los bindings generados.
+Este documento **no duplica listados enumerados** para evitar drift; esos catálogos se consideran canónicos en los schemas y en los bindings generados.
 
 Qué **sigue** siendo una decisión de despliegue/runtime y no forma parte del contrato compartido:
 
@@ -98,7 +98,7 @@ Al ejecutar:
 
 ```bash
 python3 tools/protocol/generate.py \
-  --spec tools/protocol/mcubridge.proto \
+  --spec tools/protocol/cloud_gateway.proto \
   --py mcubridge/mcubridge/protocol/protocol.py \
   --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
   --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h \
@@ -437,7 +437,7 @@ dmesg -n 1
 Este protocolo binario se usa entre microcontrolador (MCU) y procesador Linux (MPU). Refleja el comportamiento publicado en el daemon y el firmware.
 
 La comunicación sigue un modelo de RPC: normalmente el MPU inicia peticiones y el MCU responde, pero existen comandos **bidireccionales** (por ejemplo consola/mailbox/archivo) que se interpretan como “push simétrico”.
-Los payloads de cada comando se serializan con **protobuf**. Las definiciones viven en `tools/protocol/mcubridge.proto` y se generan structs nativos para C++ (`rpc_structs.h` / `mcubridge.pb.h`) y módulos de mensajes para Python (`mcubridge_pb2.py` / `protocol.py`). El frame RPC transporta el payload serializado como bytes opacos dentro del sobre `RpcEnvelope`.
+Los payloads de cada comando se serializan con **protobuf**. Las definiciones viven en los esquemas bajo `tools/protocol/` y se generan structs nativos para C++ (`rpc_structs.h` / `mcu_wire.pb.h`) y módulos de mensajes para Python (`mcubridge_pb2.py` / `protocol.py`). El frame RPC transporta el payload serializado como bytes opacos dentro del sobre `RpcEnvelope`.
 ## 1.1 Contrato de direccionalidad y ACK
 
 ### Tipos de mensajes
@@ -497,7 +497,7 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 ### 3.1.1 Seguridad AEAD (ChaCha20-Poly1305)
 
 Si el enlace está sincronizado y el comando no está en la lista de exclusión:
-- **Nonce (12 bytes):** Prefijo direccional de 4 bytes (`MCU\0` MCU → MPU, `MPU\0` MPU → MCU) + contador monótono de 8 bytes en big-endian. El prefijo se genera desde las opciones canónicas de `mcubridge.proto`.
+- **Nonce (12 bytes):** Prefijo direccional de 4 bytes (`MCU\0` MCU → MPU, `MPU\0` MPU → MCU) + contador monótono de 8 bytes en big-endian. El prefijo se genera desde las opciones canónicas de `config_schema.proto`.
 - **Payload:** Datos cifrados.
 - **Tag (16 bytes):** Firma de autenticidad Poly1305 sobre el Header (Associated Data) + Payload.
 
@@ -686,7 +686,7 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 
 #### Notas de Implementación
 
-- `CMD_XOFF` y `CMD_XON` **no requieren ACK** (`requires_ack = false` en `mcubridge.proto`).
+- `CMD_XOFF` y `CMD_XON` **no requieren ACK** (`requires_ack = false` en `mcu_wire.proto`).
 - Son comandos unidireccionales MCU → Linux únicamente.
 - El daemon debe aplicar el gating de forma **global** (todos los comandos, no solo consola).
 - La pausa debe liberarse inmediatamente ante pérdida de conexión serial.
@@ -797,7 +797,7 @@ Respuestas (Linux → MCU):
 - **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: protobuf `ProcessPollResponse { status, exit_code, stdout_data: bytes, stderr_data: bytes, finished, stdout_truncated, stderr_truncated }`.
 
 Notas:
-- Todos los payloads de proceso usan mensajes protobuf definidos en `tools/protocol/mcubridge.proto`.
+- Todos los payloads de proceso usan mensajes protobuf definidos en los schemas bajo `tools/protocol/`.
 - El daemon envía ACK primero (con `AckPacket`) y luego la respuesta de negocio en un frame separado.
 - `CMD_PROCESS_KILL` se confirma con `STATUS_ACK` conteniendo `AckPacket`.
 
@@ -809,7 +809,7 @@ El MCU expone operaciones deterministas del bus SPI de hardware para control de 
 - **`0xB1` (177) CMD_SPI_TRANSFER (Linux → MCU)**: Payload protobuf `SpiTransfer { data: bytes }`. Realiza una transferencia síncrona full-duplex de bytes sobre el bus SPI. Espera respuesta directa de negocio.
 - **`0xB2` (178) CMD_SPI_TRANSFER_RESP (MCU → Linux)**: Payload protobuf `SpiTransferResponse { data: bytes }`. Retorna los datos leídos del bus durante la transferencia.
 - **`0xB3` (179) CMD_SPI_END (Linux → MCU)**: Payload vacío. Desactiva el bus SPI liberando los pines asociados y requiere confirmación `STATUS_ACK`.
-- **`0xB4` (180) CMD_SPI_SET_CONFIG (Linux → MCU)**: Payload protobuf `SpiConfig { bit_order: SpiBitOrder, data_mode: SpiDataMode, frequency: uint32 }`; `frequency` se expresa en Hz. Los valores de ambos enums se definen canónicamente en `mcubridge.proto`. Requiere `STATUS_ACK`.
+- **`0xB4` (180) CMD_SPI_SET_CONFIG (Linux → MCU)**: Payload protobuf `SpiConfig { bit_order: SpiBitOrder, data_mode: SpiDataMode, frequency: uint32 }`; `frequency` se expresa en Hz. Los valores de ambos enums se definen canónicamente en `config_schema.proto`. Requiere `STATUS_ACK`.
 
 ### 5.9 Sincronización de Reloj (Clock Sync: 0xC0 – 0xC1 / 192 – 193)
 
@@ -1082,7 +1082,7 @@ El protocolo define dos esquemas canónicos de tópicos:
 
 #### 1. Formato Local / Dispositivo Directo (`{prefix}/{direction}/{method}`)
 Utilizado por el daemon de borde cuando procesa rutas relativas a su propio prefijo configurado:
-- **`{prefix}`**: Prefijo raíz configurado para el dispositivo (por defecto `br`, definido en UCI o `mcubridge.proto`).
+- **`{prefix}`**: Prefijo raíz configurado para el dispositivo (por defecto `br`, definido en UCI o `config_schema.proto`).
 - **`{direction}`**: Token canónico obligatorio en minúscula que define la semántica y dirección del mensaje:
   - `req`: Peticiones / comandos RPC entrantes desde la nube o clientes hacia el daemon.
   - `res`: Respuestas y retornos generados por el daemon tras la ejecución del RPC.

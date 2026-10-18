@@ -62,21 +62,21 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (julio 2026)
 
-- **Migración Integral a gRPC para Enlace con la Nube (v2.8.5)**: Reemplazo del protocolo de red TCP/TLS crudo en la conexión MPU-Nube por una arquitectura moderna y eficiente de **gRPC sobre HTTP/3 (QUIC) asíncrono y bidireccional (streaming) con soporte de fallback HTTP/2**. El daemon y el Cloud Gateway ahora se comunican de forma determinista mediante stubs de servicio tipados generados a partir de `mcubridge.proto` usando `grpclib`.
+- **Migración Integral a gRPC para Enlace con la Nube (v2.8.5)**: Reemplazo del protocolo de red TCP/TLS crudo en la conexión MPU-Nube por una arquitectura moderna y eficiente de **gRPC sobre HTTP/3 (QUIC) asíncrono y bidireccional (streaming) con soporte de fallback HTTP/2**. El daemon y el Cloud Gateway ahora se comunican de forma determinista mediante stubs de servicio tipados generados a partir de los esquemas en `tools/protocol/` (`cloud_gateway.proto`) usando `grpclib`.
 - **Exclusión de Archivos Autogenerados**: Los archivos autogenerados de gRPC y Protobuf (`*_grpc.py` y `*_pb2.py`) han sido excluidos formalmente de las validaciones estáticas de tipos y linters en `pyproject.toml`, e incorporados al archivo `.gitignore`.
 - **Consolidación de RPC en Cloud Gateway & Eliminación de Sockets UNIX (v2.8.5)**: Reemplazo integral de los sockets UNIX locales para clientes por el servicio gRPC `GatewayLocalBridgeService` en el Cloud Gateway centralizado, con resolución estrictamente explícita de dispositivo (`x-device-id`). Los clientes externos y herramientas CLI interactúan a través de gRPC tipado hacia el Gateway, mientras que el IPC local en OpenWrt Linux MPU se resuelve de forma nativa a través de UBUS (`ubus call mcubridge ...`).
 - **Exclusión de Directorios Temporales**: Optimización del linter (`black`/`ruff`) excluyendo `.tmp_tests` para evitar bloqueos e inconsistencias durante compilaciones concurrentes y ejecuciones de tests E2E.
 
 ### Novedades (junio 2026)
 
-- **Migración Integral a Protobuf (v2.8.5)**: Las estructuras de telemetría, métricas y políticas de seguridad han sido migradas íntegramente de `msgspec` a **Protobuf + Nanopb**. Esto establece una Fuente Única de Verdad (SSOT) en `mcubridge.proto`, garantizando una consistencia binaria absoluta y reduciendo el overhead de procesamiento en el MPU.
+- **Migración Integral a Protobuf (v2.8.5)**: Las estructuras de telemetría, métricas y políticas de seguridad han sido migradas íntegramente de `msgspec` a **Protobuf + Nanopb**. Esto establece una Fuente Única de Verdad (SSOT) en los esquemas bajo `tools/protocol/`, garantizando una consistencia binaria absoluta y reduciendo el overhead de procesamiento en el MPU.
 - **Optimización de Despacho (Switch-based)**: El despacho de comandos en el MCU se ha refactorizado a una estructura `switch` optimizada sobre punteros a métodos, reduciendo el consumo de RAM respecto a las tablas de salto estáticas previas.
 - **De-bloating de Flash (MCU)**: Consolidación de instanciaciones de Nanopb en archivos `.cpp` para evitar la duplicación de símbolos en el firmware, maximizando el espacio libre en MCUs con recursos limitados.
 
 ### Novedades (marzo 2026)
 
 - **Unificación de Componentes (Shell + Process):** Eliminación de la capa redundante `ShellComponent`. Toda la lógica de comandos shell/consola vía gRPC/IPC ha sido absorbida por el **ProcessComponent**, centralizando la gestión de PIDs, concurrencia y políticas de seguridad en un solo módulo determinista.
-- **Serialización protobuf/nanopb:** Todos los payloads RPC se definen en `mcubridge.proto` y se serializan como **protobuf**: clases `Packet` generadas en Python y structs `rpc::payload::*` sobre nanopb en C++.
+- **Serialización protobuf/nanopb:** Todos los payloads RPC se definen en los esquemas Protobuf modulares y se serializan como **protobuf**: clases `Packet` generadas en Python y structs `rpc::payload::*` sobre nanopb en C++.
 - **Soporte PWM (Analog Write):** Implementación completa de `analog_write()` en el cliente Python, permitiendo el control de actuadores y regulación de potencia vía sockets locales e IPC.
 - **Validación E2E Analógica:** Los tests de integración ahora cubren lecturas y escrituras analógicas de forma nativa.
 

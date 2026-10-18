@@ -12,7 +12,7 @@ Use these guidelines when working in this repository. Follow the user's request 
 
 - Python runtime and tooling requirements are defined in `pyproject.toml` and `tox.ini`. Follow the configured formatting, lint, and strict type-checking rules.
 - The Python daemon, gateway, client examples, Arduino library, LuCI application, and shared tools live in `mcubridge/`, `mcubridge-gateway/`, `mcubridge-client-examples/`, `mcubridge-library-arduino/`, `luci-app-mcubridge/`, and `tools/`.
-- When changing data shared across the MCU/MPU protocol, update the canonical schema in `tools/protocol/mcubridge.proto` and its generated outputs using the repository's documented generator. Add or update relevant tests.
+- When changing data shared across the MCU/MPU protocol, update the canonical schema in `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto`) and its generated outputs using the repository's documented generator. Add or update relevant tests.
 - Follow the allocation, timing, and toolchain constraints of the specific Arduino target when changing firmware. Check the applicable build configuration rather than assuming one constraint applies to every target.
 
 ## Validation

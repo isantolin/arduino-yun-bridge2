@@ -1082,13 +1082,15 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
     if not template_paths:
         raise FileNotFoundError(f"No protocol templates found in {templates_dir}")
 
+    proto_files = sorted(proto_path.parent.glob("*.proto"))
+    options_files = sorted(proto_path.parent.glob("*.options"))
     input_paths = [
         args.spec.resolve(),
-        proto_path,
         Path(__file__).resolve(),
+        *proto_files,
+        *options_files,
         proto_path.parent / "buf.yaml",
         proto_path.parent / "buf.gen.yaml",
-        proto_path.parent / "mcubridge.options",
         repo_root / "requirements" / "runtime.toml",
         repo_root / ".github" / "actions" / "setup-protoc" / "action.yml",
         *template_paths,

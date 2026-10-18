@@ -197,7 +197,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert retired_constants.isdisjoint(constant_fields)
 
     descriptor_file = descriptor_pb2.FileDescriptorProto()
-    descriptor_file.ParseFromString(file_desc.serialized_pb)
+    descriptor_file.ParseFromString(pb.Constants.DESCRIPTOR.file.serialized_pb)
     constants_proto = next(message for message in descriptor_file.message_type if message.name == "Constants")
     reserved_constant_numbers = {
         number for item in constants_proto.reserved_range for number in range(item.start, item.end)
@@ -206,7 +206,9 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert expected_reserved_numbers <= reserved_constant_numbers
     assert retired_constants <= set(constants_proto.reserved_name)
 
-    channel_enum = next(enum for enum in descriptor_file.enum_type if enum.name == "ChannelId")
+    channel_descriptor_file = descriptor_pb2.FileDescriptorProto()
+    channel_descriptor_file.ParseFromString(pb.ChannelId.DESCRIPTOR.file.serialized_pb)
+    channel_enum = next(enum for enum in channel_descriptor_file.enum_type if enum.name == "ChannelId")
     reserved_channel_numbers = {
         number for item in channel_enum.reserved_range for number in range(item.start, item.end + 1)
     }

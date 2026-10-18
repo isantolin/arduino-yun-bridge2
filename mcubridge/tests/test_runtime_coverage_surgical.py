@@ -209,7 +209,8 @@ async def test_handle_file_mcu_read_success_and_timeout(
 
     await read_task
     mock_enqueue.assert_awaited()
-    resp_msg = mock_enqueue.await_args[0][0]
+    assert mock_enqueue.await_args is not None
+    resp_msg: pb.CloudQueuedPublish = mock_enqueue.await_args[0][0]
     resp = pb.FileReadResponse.FromString(resp_msg.payload)
     assert resp.content == b"hello-world"
 

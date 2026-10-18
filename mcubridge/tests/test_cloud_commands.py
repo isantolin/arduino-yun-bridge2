@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
@@ -54,7 +54,7 @@ async def test_cloud_command_pin_dispatch_property(
         method = "gpio.set_mode" if is_mode else "gpio.write"
         t_path = REGISTRY.topic_path(state.cloud_topic_prefix, "req", method)
         payload = (
-            pb.PinMode(pin=pin, mode=val).SerializeToString()
+            pb.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
             if is_mode
             else pb.DigitalWrite(pin=pin, value=val).SerializeToString()
         )

@@ -576,7 +576,7 @@ class BridgeService:
                     resp_bytes,
                     reply_context=request,
                 )
-            except (RuntimeError, ValueError, OSError, TimeoutError, ProtobufDecodeError) as exc:
+            except (RuntimeError, ValueError, OSError, ProtobufDecodeError) as exc:
                 logger.error("RPC execution failed", method=route.method, error=str(exc))
                 err_topic = request.response_topic or protocol.REGISTRY.topic_path(
                     route.prefix or self.state.cloud_topic_prefix, "res", route.method

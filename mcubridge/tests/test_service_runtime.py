@@ -7,7 +7,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import lmdb
 import pytest
@@ -1391,3 +1391,58 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
     res_spi_cmd = await svc.spi_send_command(Command.CMD_SPI_BEGIN)
     assert res_spi_cmd is None
     svc.serial = serial_bak
+
+
+async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
+    svc = mock_bridge_service
+    svc.state.link_sync_event.set()
+
+    prefix = svc.state.cloud_topic_prefix
+
+    # 1. Successful RPC dispatch on {prefix}/req/gpio.write
+    req_dw = pb.DigitalWrite(pin=13, value=1)
+    pub_req = pb.CloudQueuedPublish(
+        topic_name=f"{prefix}/req/gpio.write",
+        payload=req_dw.SerializeToString(),
+    )
+    mock_serial.send.return_value = True
+
+    enqueued: list[tuple[str, bytes]] = []
+
+    async def mock_enqueue(topic: str, payload: bytes, *args: Any, **kwargs: Any) -> None:
+        enqueued.append((topic, payload))
+
+    svc.enqueue_cloud_publish = mock_enqueue  # type: ignore[assignment]
+
+    await svc.handle_request(pub_req)
+    assert len(enqueued) == 1
+    assert enqueued[0][0] == f"{prefix}/res/gpio.write"
+    resp = pb.GenericResponse()
+    resp.ParseFromString(enqueued[0][1])
+    assert resp.status == "ok"
+
+    # 2. Fleet topic: devices/yun-01/req/gpio.write
+    enqueued.clear()
+    pub_fleet = pb.CloudQueuedPublish(
+        topic_name="devices/yun-01/req/gpio.write",
+        payload=req_dw.SerializeToString(),
+    )
+    await svc.handle_request(pub_fleet)
+    assert len(enqueued) == 1
+    assert enqueued[0][0] == "devices/yun-01/res/gpio.write"
+
+    # 3. RPC execution exception: replies with error
+    enqueued.clear()
+    with patch.object(svc.local_bridge_service, "execute_rpc", side_effect=RuntimeError("hardware failure")):
+        await svc.handle_request(pub_req)
+    assert len(enqueued) == 1
+    assert enqueued[0][0] == f"{prefix}/res/gpio.write"
+    assert b"error:hardware failure" in enqueued[0][1]
+
+    # 4. Unauthorized RPC method
+    enqueued.clear()
+    auth = pb.TopicAuthorization(digital_write=False)
+    svc.state.topic_authorization = auth
+    await svc.handle_request(pub_req)
+    # Rejected -> nothing enqueued on res topic
+    assert not any(topic.endswith("/res/gpio.write") for topic, _ in enqueued)

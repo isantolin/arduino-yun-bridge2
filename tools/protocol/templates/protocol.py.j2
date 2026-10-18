@@ -103,33 +103,18 @@ class {{ action.class_name }}(StrEnum):
 
 @dataclass(slots=True, frozen=True)
 class TopicRoute:
-    """Parsed representation of a CLOUD topic targeting the daemon. [SIL-2]"""
+    """Canonical representation of an enrouted topic targeting the daemon. [SIL-2]"""
 
     raw: str = ""
     prefix: str = ""
-    topic: Topic = Topic.SYSTEM
-    segments: tuple[str, ...] = ()
-
-    @property
-    def identifier(self) -> str:
-        return self.segments[0] if self.segments else ""
-
-    @property
-    def remainder(self) -> tuple[str, ...]:
-        return self.segments[1:]
+    device_id: str = ""
+    direction: str = ""
+    method: str = ""
 
     @property
     def action(self) -> str | None:
-        """Infer the canonical action for authorization and dispatch. [SIL-2]"""
-        if not self.segments or not _FLAVOR_SEGMENTS.isdisjoint(self.segments):
-            return None
-        if self.topic in (Topic.DIGITAL, Topic.ANALOG):
-            return (
-                "write" if len(self.segments) == 1 else (self.segments[1].lower() if len(self.segments) > 1 else None)
-            )
-        if self.topic == Topic.CONSOLE:
-            return "in" if self.identifier == "in" else (self.identifier or None)
-        return self.identifier or None
+        """Infer canonical action from method."""
+        return self.method.split(".", 1)[1] if "." in self.method else self.method or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +124,7 @@ class OperationSpec:
     name: str
     command_id: int | None = None
     rpc_name: str | None = None
+    rpc_topic: str | None = None
     pb_class: type[Any] | None = None
     payload_field: str | None = None
     cloud_topic: str | None = None
@@ -152,8 +138,8 @@ class OperationSpec:
     response_type: type[ProtobufMessage] | None = None
     default_factory: Callable[[], ProtobufMessage] | None = None
     handler_name: str | None = None
-    is_gateway: bool = False
     metrics_blob_field: str | None = None
+
 
 class ProtocolRegistry:
     """Unified Single Source of Truth protocol registry for MCU Bridge. [SIL-2]"""
@@ -163,40 +149,30 @@ class ProtocolRegistry:
         "by_command_id",
         "by_name",
         "by_type",
+        "rpc_aliases",
         "topic_lookup",
-        "topic_dispatch_handlers",
-        "action_routes",
         "mcu_dispatch_handlers",
         "mcu_unsupported_reasons",
-        "query_topic_actions",
         "topic_auth_map",
-        "local_rpc_specs",
-        "gateway_rpc_specs",
+        "rpc_specs",
     )
 
     def __init__(
         self,
         operations: tuple[OperationSpec, ...],
         *,
+        rpc_aliases: dict[str, str] | None = None,
         topic_lookup: dict[str, Topic],
-        topic_dispatch_handlers: dict[Topic, str],
-        action_routes: dict[tuple[Topic, str, Any], str],
         mcu_dispatch_handlers: dict[int, str],
         mcu_unsupported_reasons: dict[int, str],
-        query_topic_actions: frozenset[tuple[Topic, Any]],
         topic_auth_map: dict[tuple[str, str], str],
     ) -> None:
         self.operations = operations
         self.topic_lookup = topic_lookup
-        self.topic_dispatch_handlers = topic_dispatch_handlers
-        self.action_routes = action_routes
         self.mcu_dispatch_handlers = mcu_dispatch_handlers
         self.mcu_unsupported_reasons = mcu_unsupported_reasons
-        self.query_topic_actions = query_topic_actions
         self.topic_auth_map = topic_auth_map
-
-        self.local_rpc_specs = tuple(op for op in operations if op.handler_name is not None)
-        self.gateway_rpc_specs = tuple(op for op in operations if op.is_gateway)
+        self.rpc_specs = tuple(op for op in operations if op.handler_name is not None)
 
         self.by_command_id = {op.command_id: op for op in operations if op.command_id is not None}
         self.by_name = {op.name: op for op in operations}
@@ -212,6 +188,14 @@ class ProtocolRegistry:
                 self.by_type.setdefault(op.request_type, op)
                 self.by_name.setdefault(op.request_type.DESCRIPTOR.name, op)
 
+        self.rpc_aliases = dict(rpc_aliases or {})
+        for alias, target_name in self.rpc_aliases.items():
+            if target_op := self.by_name.get(target_name):
+                self.by_name[alias] = target_op
+                self.by_name[alias.lower()] = target_op
+                self.by_name[alias.replace(".", "_")] = target_op
+                self.by_name[alias.replace(".", "/")] = target_op
+
     def lookup_topic(self, segment: str) -> Topic | None:
         return self.topic_lookup.get(segment.lower())
 
@@ -223,6 +207,14 @@ class ProtocolRegistry:
             return True
         field_name = self.get_auth_field(topic, action)
         return bool(field_name and getattr(auth, field_name, False))
+
+    def allows_method(self, auth: Any, spec: OperationSpec) -> bool:
+        """Verify whether authorization config permits executing this RPC operation."""
+        if getattr(auth, "allow_all", False):
+            return True
+        if spec.auth_field and getattr(auth, spec.auth_field, False):
+            return True
+        return False
 
     def get(self, key: Any) -> OperationSpec | None:
         """Polymorphic O(1) operation lookup. [SIL-2]"""
@@ -253,36 +245,56 @@ class ProtocolRegistry:
         return None
 
     def parse_topic(self, prefix: str, topic_name: str) -> TopicRoute | None:
-        """Parse incoming CLOUD topic into TopicRoute natively using self.lookup_topic. [SIL-2]"""
-        if not topic_name or not prefix:
+        """Parse incoming CLOUD topic into TopicRoute natively. [SIL-2]"""
+        if not topic_name:
+            return None
+
+        raw_parts = tuple(filter(None, topic_name.split("/")))
+        if not raw_parts:
+            return None
+
+        # 1. Canonical Fleet Topic: devices/{device_id}/{direction}/{method}
+        if len(raw_parts) >= 4 and raw_parts[0] == "devices":
+            dev_id = raw_parts[1]
+            direction = raw_parts[2].lower()
+            if direction not in ("req", "res", "evt"):
+                return None
+            method = "/".join(raw_parts[3:])
+            return TopicRoute(
+                raw=topic_name,
+                prefix=f"devices/{dev_id}",
+                device_id=dev_id,
+                direction=direction,
+                method=method,
+            )
+
+        if not prefix:
             return None
 
         prefix_segs = tuple(filter(None, prefix.split("/")))
-        topic_segs = tuple(filter(None, topic_name.split("/")))
         prefix_len = len(prefix_segs)
         if (
             not prefix_segs
-            or not topic_segs
-            or len(topic_segs) <= prefix_len
-            or topic_segs[:prefix_len] != prefix_segs
+            or len(raw_parts) <= prefix_len + 1
+            or raw_parts[:prefix_len] != prefix_segs
         ):
             return None
 
         prefix_canonical = "/".join(prefix_segs)
-        seg = topic_segs[prefix_len].lower()
-        start_idx = prefix_len + 1
-        segments = topic_segs[start_idx:]
+        rem_segs = raw_parts[prefix_len:]
+        direction = rem_segs[0].lower()
 
-        topic_enum = self.lookup_topic(seg)
-        if topic_enum is None:
-            logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name)
+        # 2. Canonical Direction Topic: {prefix}/{req|res|evt}/{method...}
+        if direction not in ("req", "res", "evt"):
             return None
 
+        method = "/".join(rem_segs[1:])
         return TopicRoute(
             raw=topic_name,
             prefix=prefix_canonical,
-            topic=topic_enum,
-            segments=segments,
+            device_id="",
+            direction=direction,
+            method=method,
         )
 
 
@@ -298,6 +310,9 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- endif %}
             {%- if op.rpc_name %}
             rpc_name={{ op.rpc_name|tojson }},
+            {%- endif %}
+            {%- if op.rpc_topic %}
+            rpc_topic={{ op.rpc_topic|tojson }},
             {%- endif %}
             {%- if op.pb_class %}
             pb_class={{ op.pb_class }},
@@ -338,32 +353,22 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- if op.handler_name %}
             handler_name={{ op.handler_name|tojson }},
             {%- endif %}
-            {%- if op.is_gateway %}
-            is_gateway=True,
-            {%- endif %}
             {%- if op.metrics_blob_field %}
             metrics_blob_field={{ op.metrics_blob_field|tojson }},
             {%- endif %}
         ),
 {%- endfor %}
     ),
+    rpc_aliases={
+        {%- for alias, target_name in rpc_aliases.items()|sort %}
+        {{ alias|tojson }}: {{ target_name|tojson }},
+        {%- endfor %}
+    },
     topic_lookup={
         {%- for topic in topics %}
         {{ topic.value|tojson }}: Topic.{{ topic.name }},
         {%- for alias in topic.aliases %}
         {{ alias|tojson }}: Topic.{{ topic.name }},
-        {%- endfor %}
-        {%- endfor %}
-    },
-    topic_dispatch_handlers={
-        {%- for topic in topics if topic.handler %}
-        Topic.{{ topic.name }}: {{ topic.handler|tojson }},
-        {%- endfor %}
-    },
-    action_routes={
-        {%- for cmd in commands %}
-        {%- for r in cmd.action_routes if r.handler %}
-        (Topic.{{ r.topic }}, {{ r.scope|tojson }}, {{ (r.action_enum ~ '.' ~ r.action) if r.action else 'None' }}): {{ r.handler|tojson }},
         {%- endfor %}
         {%- endfor %}
     },
@@ -380,13 +385,6 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
         Command.{{ c.name }}.value: STATUS_REASON_{{ c.mcu_unsupported_reason|upper }},
         {%- endfor %}
     },
-    query_topic_actions=frozenset({
-        {%- for c in commands if c.is_query %}
-        {%- for r in c.action_routes if r.action and r.action_enum %}
-        (Topic.{{ r.topic }}, {{ r.action_enum }}.{{ r.action }}),
-        {%- endfor %}
-        {%- endfor %}
-    }),
     topic_auth_map={
         {%- for (topic, action), field_name in topic_auth_map.items()|sort %}
         ("{{ topic }}", "{{ action }}"): "{{ field_name }}",

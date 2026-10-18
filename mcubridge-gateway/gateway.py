@@ -711,7 +711,7 @@ class GatewayLocalBridgeService:
                 spec.request_type,
                 spec.response_type,
             )
-            for spec in REGISTRY.gateway_rpc_specs
+            for spec in REGISTRY.rpc_specs
             if spec.request_type is not None and spec.response_type is not None
         }
         mapping["/rpc.pb.LocalBridge/Publish"] = Handler(
@@ -867,7 +867,7 @@ class GatewayLocalBridgeService:
         return forwarder
 
 
-for _spec in REGISTRY.gateway_rpc_specs:
+for _spec in REGISTRY.rpc_specs:
     _name = _spec.rpc_name or _spec.name
     setattr(GatewayLocalBridgeService, _name, GatewayLocalBridgeService.create_forwarder(_spec))
 

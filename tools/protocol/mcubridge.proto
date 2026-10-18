@@ -851,6 +851,11 @@ extend google.protobuf.MessageOptions {
   string msg_error_init = 1031;
 }
 
+extend google.protobuf.MethodOptions {
+  string rpc_topic = 1032;
+  repeated string rpc_aliases = 1033;
+}
+
 extend google.protobuf.EnumOptions {
   string enum_cloud_topic = 1021;
 }
@@ -2257,41 +2262,93 @@ message SubscribeRequest {}
 
 service LocalBridge {
   // Hardware & Pin Operations
-  rpc SetPinMode(rpc.pb.PinMode) returns (rpc.pb.GenericResponse);
-  rpc DigitalWrite(rpc.pb.DigitalWrite) returns (rpc.pb.GenericResponse);
-  rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse);
-  rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.GenericResponse);
-  rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse);
-  rpc PinSubscribe(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse);
+  rpc SetPinMode(rpc.pb.PinMode) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "gpio.set_mode";
+  }
+  rpc DigitalWrite(rpc.pb.DigitalWrite) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "gpio.write";
+  }
+  rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse) {
+    option (rpc.pb.rpc_topic) = "gpio.read";
+  }
+  rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "gpio.analog_write";
+  }
+  rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse) {
+    option (rpc.pb.rpc_topic) = "gpio.analog_read";
+  }
+  rpc PinSubscribe(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse) {
+    option (rpc.pb.rpc_topic) = "gpio.subscribe";
+  }
 
   // Datastore Key-Value Operations
-  rpc DatastorePut(rpc.pb.DatastorePut) returns (rpc.pb.GenericResponse);
-  rpc DatastoreGet(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse);
+  rpc DatastorePut(rpc.pb.DatastorePut) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "datastore.put";
+  }
+  rpc DatastoreGet(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse) {
+    option (rpc.pb.rpc_topic) = "datastore.get";
+  }
 
   // Mailbox FIFO Operations
-  rpc MailboxPush(rpc.pb.MailboxPush) returns (rpc.pb.GenericResponse);
-  rpc MailboxRead(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse);
+  rpc MailboxPush(rpc.pb.MailboxPush) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "mailbox.push";
+  }
+  rpc MailboxRead(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse) {
+    option (rpc.pb.rpc_topic) = "mailbox.read";
+  }
 
   // File System Operations
-  rpc FileWrite(rpc.pb.FileWrite) returns (rpc.pb.GenericResponse);
-  rpc FileRead(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse);
-  rpc FileRemove(rpc.pb.FileRemove) returns (rpc.pb.GenericResponse);
+  rpc FileWrite(rpc.pb.FileWrite) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "file.write";
+  }
+  rpc FileRead(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse) {
+    option (rpc.pb.rpc_topic) = "file.read";
+  }
+  rpc FileRemove(rpc.pb.FileRemove) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "file.remove";
+  }
 
   // Process & Shell Execution
-  rpc ProcessRunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse);
-  rpc ProcessPoll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse);
-  rpc ProcessKill(rpc.pb.ProcessKill) returns (rpc.pb.GenericResponse);
+  rpc ProcessRunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse) {
+    option (rpc.pb.rpc_topic) = "process.run_async";
+  }
+  rpc ProcessPoll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse) {
+    option (rpc.pb.rpc_topic) = "process.poll";
+  }
+  rpc ProcessKill(rpc.pb.ProcessKill) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "process.kill";
+  }
 
   // SPI Bus Operations
-  rpc SpiTransfer(rpc.pb.SpiTransfer) returns (rpc.pb.SpiTransferResponse);
-  rpc SpiConfigure(rpc.pb.SpiConfig) returns (rpc.pb.GenericResponse);
+  rpc SpiTransfer(rpc.pb.SpiTransfer) returns (rpc.pb.SpiTransferResponse) {
+    option (rpc.pb.rpc_topic) = "spi.transfer";
+  }
+  rpc SpiConfigure(rpc.pb.SpiConfig) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "spi.configure";
+  }
 
   // System Telemetry & Introspection
-  rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse);
-  rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse);
-  rpc GetStatus(rpc.pb.SubscribeRequest) returns (rpc.pb.BridgeStatus);
+  rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse) {
+    option (rpc.pb.rpc_topic) = "system.version";
+  }
+  rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse) {
+    option (rpc.pb.rpc_topic) = "system.free_memory";
+  }
+  rpc GetStatus(rpc.pb.SubscribeRequest) returns (rpc.pb.BridgeStatus) {
+    option (rpc.pb.rpc_topic) = "system.status";
+  }
+  rpc EnterBootloader(rpc.pb.EnterBootloader) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "system.bootloader";
+  }
 
   // Real-Time Console Streaming & Generic Fallback
+  rpc ConsoleWrite(rpc.pb.ConsoleWrite) returns (rpc.pb.GenericResponse) {
+    option (rpc.pb.rpc_topic) = "console.write";
+    option (rpc.pb.rpc_aliases) = "console.in";
+  }
+  rpc ClockSync(rpc.pb.ClockSyncRequest) returns (rpc.pb.ClockSyncResponse) {
+    option (rpc.pb.rpc_topic) = "clock.sync";
+  }
   rpc SubscribeConsole(rpc.pb.SubscribeRequest) returns (stream rpc.pb.CloudQueuedPublish);
   rpc Publish(rpc.pb.CloudQueuedPublish) returns (rpc.pb.CloudQueuedPublish);
 }

@@ -20,9 +20,9 @@ from ..protocol import mcubridge_pb2 as pb
 from ..protocol.mcubridge_grpc import LocalBridgeBase
 from ..protocol.protocol import (
     AEAD_NONCE_SIZE,
+    BOOTLOADER_MAGIC,
     REGISTRY,
     Command,
-    Topic,
 )
 from ..protocol.structures import is_command_allowed
 
@@ -252,21 +252,25 @@ class LocalBridgeService(LocalBridgeBase):
     async def execute_get_status(self, _req: pb.SubscribeRequest) -> pb.BridgeStatus:
         return self.runtime_service.state.build_status_snapshot()
 
+    async def execute_enter_bootloader(self, req: pb.EnterBootloader) -> pb.GenericResponse:
+        serial = self.runtime_service.serial
+        magic = req.magic or BOOTLOADER_MAGIC
+        ok = bool(serial and await serial.send(Command.CMD_ENTER_BOOTLOADER.value, pb.EnterBootloader(magic=magic)))
+        return pb.GenericResponse(status="ok" if ok else "error")
+
+    async def execute_console_write(self, req: pb.ConsoleWrite) -> pb.GenericResponse:
+        if pl := req.data:
+            self.runtime_service.state.console_to_mcu_queue.append(pl)
+            await self.runtime_service.flush_console_queue()
+        return pb.GenericResponse(status="ok")
+
+    async def execute_clock_sync(self, req: pb.ClockSyncRequest) -> pb.ClockSyncResponse:
+        return await self._send_serial_query(Command.CMD_CLOCK_SYNC, req, pb.ClockSyncResponse)
+
     async def execute_publish(self, req: pb.CloudQueuedPublish) -> pb.CloudQueuedPublish:
         has_correlation = req.HasField("correlation_data")
         route = REGISTRY.parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
-        action = route.action if route else None
-
-        is_query = has_correlation or (
-            route is not None
-            and (
-                (route.topic, action) in REGISTRY.query_topic_actions
-                or (
-                    route.topic == Topic.SYSTEM
-                    and ("get" in route.segments or action in ("version", "freeram", "bridge"))
-                )
-            )
-        )
+        is_query = has_correlation or (route is not None and route.direction == "req")
 
         correlation = (
             req.correlation_data if has_correlation else (secrets.token_bytes(AEAD_NONCE_SIZE) if is_query else b"")

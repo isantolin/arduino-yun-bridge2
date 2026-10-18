@@ -509,13 +509,13 @@ def _build_action_context(spec: dict[str, Any]) -> dict[str, Any]:
     return {"grouped_actions": grouped_actions}
 
 
-def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
     file_desc = pb_module.DESCRIPTOR
     service_desc = file_desc.services_by_name.get("LocalBridge")
     if not service_desc:
-        return [], []
-    local_specs: list[dict[str, str]] = []
-    gateway_specs: list[dict[str, str]] = []
+        return [], {}
+    rpc_specs: list[dict[str, Any]] = []
+    rpc_aliases_map: dict[str, str] = {}
     for method in service_desc.methods:
         if method.client_streaming or method.server_streaming:
             continue
@@ -526,27 +526,33 @@ def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, str]], list[dict[
             resp_opts.Extensions[pb_module.msg_error_init] if resp_opts.HasExtension(pb_module.msg_error_init) else ""
         )
         default_factory = f"lambda: pb.{resp_cls}({error_init})" if error_init else f"pb.{resp_cls}"
-        spec = {
+        method_opts = method.GetOptions()
+        rpc_topic = method_opts.Extensions[pb_module.rpc_topic] if method_opts.HasExtension(pb_module.rpc_topic) else ""
+        if rpc_topic:
+            rpc_aliases_map[rpc_topic] = method.name
+        if hasattr(pb_module, "rpc_aliases"):
+            for extra_alias in method_opts.Extensions[pb_module.rpc_aliases]:
+                rpc_aliases_map[extra_alias] = method.name
+        spec: dict[str, Any] = {
             "name": method.name,
             "req_cls": req_cls,
             "resp_cls": resp_cls,
             "default_factory": default_factory,
             "handler_name": f"execute_{JinjaGenerator.snake_case(method.name)}",
+            "rpc_topic": rpc_topic,
         }
-        local_specs.append(spec)
-        if method.input_type != method.output_type:
-            gateway_specs.append(spec)
-    return local_specs, gateway_specs
+        rpc_specs.append(spec)
+    return rpc_specs, rpc_aliases_map
 
 
 def _correlate_rpc_commands(
     commands: list[dict[str, Any]],
-    local_rpc_specs: list[dict[str, str]],
+    rpc_specs: list[dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
     """Match LocalBridge RPC methods to MCU commands strictly via Protobuf message types. [SIL-2]"""
     commands_by_name = {c["name"]: c for c in commands}
     rpc_by_cmd: dict[str, dict[str, str]] = {}
-    for rpc in local_rpc_specs:
+    for rpc in rpc_specs:
         req_cls, resp_cls = rpc["req_cls"], rpc["resp_cls"]
         for cmd in commands:
             resp_cmd_name = cmd.get("response_command")
@@ -568,7 +574,6 @@ def _build_command_operation(
     pb_module: Any,
     payload_fields: dict[str, str],
     matched_rpc: dict[str, str] | None,
-    gateway_rpc_names: set[str],
 ) -> dict[str, Any]:
     """Build an OperationSpec dictionary from a Command dict."""
     cmd_name = cmd["name"]
@@ -602,7 +607,8 @@ def _build_command_operation(
         op["response_type"] = f"pb.{matched_rpc['resp_cls']}"
         op["default_factory"] = matched_rpc["default_factory"]
         op["handler_name"] = matched_rpc["handler_name"]
-        op["is_gateway"] = matched_rpc["name"] in gateway_rpc_names
+        if matched_rpc.get("rpc_topic"):
+            op["rpc_topic"] = matched_rpc["rpc_topic"]
     return op
 
 
@@ -655,15 +661,12 @@ def _build_operations_context(
     pb_module: Any,
     payload_fields_by_msg: dict[str, str],
     telemetry_topic_field_map: dict[str, str],
-    local_rpc_specs: list[dict[str, str]],
-    gateway_rpc_specs: list[dict[str, str]],
+    rpc_specs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    gateway_rpc_names = {r["name"] for r in gateway_rpc_specs}
-    rpc_by_cmd = _correlate_rpc_commands(commands, local_rpc_specs)
+    rpc_by_cmd = _correlate_rpc_commands(commands, rpc_specs)
 
     operations = [
-        _build_command_operation(cmd, pb_module, payload_fields_by_msg, rpc_by_cmd.get(cmd["name"]), gateway_rpc_names)
-        for cmd in commands
+        _build_command_operation(cmd, pb_module, payload_fields_by_msg, rpc_by_cmd.get(cmd["name"])) for cmd in commands
     ]
 
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
@@ -675,9 +678,9 @@ def _build_operations_context(
             "response_type": f"pb.{rpc['resp_cls']}",
             "default_factory": rpc["default_factory"],
             "handler_name": rpc["handler_name"],
-            "is_gateway": rpc["name"] in gateway_rpc_names,
+            "rpc_topic": rpc.get("rpc_topic"),
         }
-        for rpc in local_rpc_specs
+        for rpc in rpc_specs
         if rpc["name"] not in matched_rpc_names
     )
 
@@ -802,7 +805,7 @@ def build_protocol_context(spec: dict[str, Any], version: str) -> dict[str, Any]
     descriptor_context = _build_descriptor_context(pb_module)
     telemetry_topic_field_map, telemetry_default_field = _build_telemetry_field_context(pb_module)
     payload_fields_by_msg = {p["name"]: p["field"] for p in descriptor_context["payload_fields"]}
-    local_rpc_specs, gateway_rpc_specs = _build_rpc_context(pb_module)
+    rpc_specs, rpc_aliases = _build_rpc_context(pb_module)
     commands = spec["commands"]
     operations = _build_operations_context(
         commands,
@@ -810,8 +813,7 @@ def build_protocol_context(spec: dict[str, Any], version: str) -> dict[str, Any]
         pb_module,
         payload_fields_by_msg,
         telemetry_topic_field_map,
-        local_rpc_specs,
-        gateway_rpc_specs,
+        rpc_specs,
     )
     return {
         **constant_context,
@@ -819,6 +821,7 @@ def build_protocol_context(spec: dict[str, Any], version: str) -> dict[str, Any]
         **action_context,
         **descriptor_context,
         "operations": operations,
+        "rpc_aliases": rpc_aliases,
         "ack_commands": [command for command in commands if command.get("requires_ack")],
         "pre_sync_allowed_commands": [command for command in commands if command.get("pre_sync_allowed")],
         "response_only_commands": [command for command in commands if command.get("expects_direct_response")],

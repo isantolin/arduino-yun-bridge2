@@ -155,3 +155,47 @@ def test_get_topic_for_message_all_types() -> None:
 
     assert REGISTRY.get_topic_for_message("bridge", cast(Any, DummyMsg)) is None
     assert REGISTRY.get_topic_for_message("bridge", cast(Any, 3.14)) is None
+
+
+def test_registry_rpc_aliases_proto_ssot() -> None:
+    """[SIL-2] Verify that rpc_aliases are populated from .proto and resolve correctly."""
+    assert REGISTRY.rpc_aliases
+    assert "gpio.write" in REGISTRY.rpc_aliases
+    assert REGISTRY.rpc_aliases["gpio.write"] == "DigitalWrite"
+    assert "datastore.put" in REGISTRY.rpc_aliases
+    assert REGISTRY.rpc_aliases["datastore.put"] == "DatastorePut"
+
+    spec_dw = REGISTRY.get("gpio.write")
+    assert spec_dw is not None
+    assert spec_dw.rpc_name == "DigitalWrite"
+
+    spec_ds = REGISTRY.get("datastore.put")
+    assert spec_ds is not None
+    assert spec_ds.rpc_name == "DatastorePut"
+
+
+def test_registry_fleet_and_direction_topic_parsing() -> None:
+    """[SIL-2] Verify parsing of fleet and direction-based canonical topics."""
+    # 1. Fleet topic: devices/{device_id}/{direction}/{method}
+    route_fleet = REGISTRY.parse_topic("any_prefix", "devices/arduino-01/req/gpio.write")
+    assert route_fleet is not None
+    assert route_fleet.device_id == "arduino-01"
+    assert route_fleet.direction == "req"
+    assert route_fleet.method == "gpio.write"
+    assert route_fleet.prefix == "devices/arduino-01"
+    assert route_fleet.identifier == "gpio.write"
+    assert route_fleet.action == "write"
+
+    # 2. Canonical Direction topic: {prefix}/{direction}/{method}
+    route_dir = REGISTRY.parse_topic("yun/bridge", "yun/bridge/req/gpio.write")
+    assert route_dir is not None
+    assert route_dir.device_id == ""
+    assert route_dir.direction == "req"
+    assert route_dir.method == "gpio.write"
+    assert route_dir.prefix == "yun/bridge"
+
+    # 3. Direct Service legacy topic: {prefix}/{service}/{action}
+    route_svc = REGISTRY.parse_topic("yun/bridge", "yun/bridge/d/13/write")
+    assert route_svc is not None
+    assert route_svc.topic == Topic.DIGITAL
+    assert route_svc.segments == ("13", "write")

@@ -464,8 +464,9 @@ def test_proto_dispatch_handlers_ssot() -> None:
         assert isinstance(topic, protocol.Topic)
         assert isinstance(action, str)
 
+    assert len(protocol.REGISTRY.rpc_specs) == 22
     assert len(protocol.REGISTRY.local_rpc_specs) == 22
-    assert len(protocol.REGISTRY.gateway_rpc_specs) == 21
+    assert len(protocol.REGISTRY.gateway_rpc_specs) == 22
     from mcubridge.services.local_bridge import LocalBridgeService
 
     service_desc = pb.DESCRIPTOR.services_by_name["LocalBridge"]

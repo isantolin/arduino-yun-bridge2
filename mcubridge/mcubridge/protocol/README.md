@@ -6,16 +6,16 @@ This directory contains the **Source of Truth** for the MCU Bridge Protocol.
 
 The system is designed with a strict layering to separate the wire protocol from the application logic.
 
-### 1. The Protocol Contract (`protocol/protocol.py`)
-- **Role:** Low-level Protocol Constants.
-- **Content:** Command IDs, Status Codes, Binary Format definitions, Magic Numbers.
+### 1. The Protocol Contract & Runtime SSOT (`protocol/protocol.py`)
+- **Role:** Protocol Constants and Centralized Single Source of Truth (`REGISTRY`).
+- **Content:** Command IDs, Status Codes, Binary Format definitions, Magic Numbers, and the unified immutable `REGISTRY` (`OperationSpec`) with $O(1)$ dispatch tables and topic resolution.
 - **Origin:** Auto-generated from `tools/protocol/mcubridge.proto` using `tools/protocol/generate.py`.
 - **Modification Policy:** **DO NOT EDIT MANUALLY.**
 
-### 2. The Data Structures (`protocol/structures.py`)
-- **Role:** Typed Single Source of Truth.
-- **Content:** Protobuf-backed wrappers and validation helpers for all RPC packets.
-- **Benefit:** Provides automatic validation, binary parsing, and high-performance serialization via `google.protobuf`.
+### 2. The Protobuf Runtime & Structures (`protocol/mcubridge_pb2.py` & `protocol/structures.py`)
+- **Role:** Typed Protobuf Bindings and Security/Policy Helpers.
+- **Content:** Native `google.protobuf` message classes, binary parsing utilities, and policy validation functions (`is_command_allowed`).
+- **Benefit:** Provides compile-time typing, binary parsing, and high-performance serialization via `google.protobuf`.
 
 ### 3. The Application Defaults (`mcubridge.config.const`)
 - **Role:** Application Configuration Defaults.

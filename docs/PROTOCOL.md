@@ -57,23 +57,24 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo se vive íntegramente en `tools/protocol/mcubridge.proto` (mensajes, constantes de aplicación, namespaces, contrato binario y IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
+La **fuente de verdad machine-readable** del protocolo vive íntegramente en `tools/protocol/mcubridge.proto` (mensajes, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
 ### Serialización de Payloads (Protobuf)
-Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC.
+Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC (`RpcEnvelope`).
 
-- **Python (daemon):** usa clases `Packet` generadas en `structures.py` sobre `google.protobuf`.
-- **C++ (MCU):** usa nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
+- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`), orquestadas de forma centralizada y determinista por el catálogo `REGISTRY` (`protocol.py`).
+- **C++ (MCU):** usa Nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
 
-El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre nanopb/protobuf, manteniendo las restricciones de tamaño definidas para los targets.
+El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre Nanopb/protobuf, manteniendo las restricciones estáticas de tamaño definidas para los targets de hardware.
 
 ### Validación Estática (C++)
-La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado.
+La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y fuertemente tipado.
 
 ### Despacho de Comandos (Binary Search Dispatch)
 El MCU utiliza un despacho basado en una tabla estática `k_dispatch_table[]` ordenada por `command_id`, almacenada en PROGMEM para AVR. El lookup se realiza con `etl::lower_bound` (O(log N) sobre tabla contigua), evitando la dependencia en rangos de enum contiguos y reduciendo el uso de RAM. El costo y los límites temporales deben medirse en cada target; esta implementación no acredita por sí sola una conformidad SIL-2.
 
 - **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
+- **Catálogo Centralizado de Operaciones (`REGISTRY` SSOT)**: En Python, `REGISTRY` (`protocol.py`) unifica de forma inmutable todas las operaciones del sistema (`OperationSpec`), indexando por `command_id`, nombre RPC, tópicos canónicos y tipos de mensaje en $O(1)$.
 
 ### Determinismo C++17 y Zero-Cost Abstractions
 La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
@@ -83,7 +84,7 @@ La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
 
 Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía el generador):
 
-- **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones del generador.
+- **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones estáticas del generador Nanopb (`mcubridge.options`).
 - **Defaults compartidos y metadatos de configuración**: los defaults de `RuntimeConfig`, las constantes referenciadas y los defaults de tópicos se declaran en el schema. Los bindings/clientes consumen los valores generados; UCI puede sobrescribir las opciones de despliegue.
 - **Reservas de compatibilidad**: los nombres y números retirados permanecen reservados en el schema. Buf comprueba compatibilidad de wire (`WIRE`); el API fuente de los bindings generados sí puede cambiar.
 
@@ -95,12 +96,19 @@ Qué **sigue** siendo una decisión de despliegue/runtime y no forma parte del c
 
 Al ejecutar:
 
-- `python3 tools/protocol/generate.py --py mcubridge/mcubridge/protocol/protocol.py --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h`
+```bash
+python3 tools/protocol/generate.py \
+  --spec tools/protocol/mcubridge.proto \
+  --py mcubridge/mcubridge/protocol/protocol.py \
+  --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
+  --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h \
+  --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+```
 
-…se regeneran los bindings de enums/constantes. Además, el generador produce structs protobuf para ambos lados:
+…se regeneran los bindings de enums/constantes y el registro `REGISTRY`. Además, el generador produce artefactos protobuf para ambos lados:
 
-- **Python:** clases `Packet` en `structures.py` (tipado estático)
-- **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` con `encode()`/`decode()` (estáticos, sin heap). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
+- **Python:** módulos de mensajes `mcubridge_pb2.py`, stubs `mcubridge_pb2.pyi`, servicios `mcubridge_grpc.py` y catálogo de operaciones unificado `protocol.py`.
+- **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` y cabeceras Nanopb `mcubridge.pb.h` / `mcubridge.pb.c` con `encode()`/`decode()` (estáticos, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
 
@@ -429,7 +437,7 @@ dmesg -n 1
 Este protocolo binario se usa entre microcontrolador (MCU) y procesador Linux (MPU). Refleja el comportamiento publicado en el daemon y el firmware.
 
 La comunicación sigue un modelo de RPC: normalmente el MPU inicia peticiones y el MCU responde, pero existen comandos **bidireccionales** (por ejemplo consola/mailbox/archivo) que se interpretan como “push simétrico”.
-Los payloads de cada comando se serializan con **protobuf**. Las definiciones viven en `tools/protocol/mcubridge.proto` y se generan structs nativos para C++ (`rpc_structs.h`) y clases `Packet` para Python (`structures.py`). El frame RPC transporta el payload serializado como bytes opacos.
+Los payloads de cada comando se serializan con **protobuf**. Las definiciones viven en `tools/protocol/mcubridge.proto` y se generan structs nativos para C++ (`rpc_structs.h` / `mcubridge.pb.h`) y módulos de mensajes para Python (`mcubridge_pb2.py` / `protocol.py`). El frame RPC transporta el payload serializado como bytes opacos dentro del sobre `RpcEnvelope`.
 ## 1.1 Contrato de direccionalidad y ACK
 
 ### Tipos de mensajes
@@ -504,7 +512,7 @@ CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE
 | **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
 | **COBS/R** | Framing / Escaping | **Externa**: `PacketSerial2` (`COBSR`). | **Externa**: `cobs` (módulo `cobsr` de PyPI). |
 | **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL). | **Interna**: `binascii.crc32` (IEEE 802.3). |
-| **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf`, clases `Packet` en `structures.py`). |
+| **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `REGISTRY` en `protocol.py`). |
 | **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
 
 ## 4. Códigos de estado (`Status`)

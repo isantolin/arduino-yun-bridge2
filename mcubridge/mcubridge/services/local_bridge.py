@@ -157,10 +157,15 @@ class LocalBridgeService(LocalBridgeBase):
         return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
 
     async def execute_datastore_put(self, req: pb.DatastorePut) -> pb.GenericResponse:
-        if len(req.key.encode("utf-8")) > MAX_DATASTORE_KEY_LENGTH or len(req.value) > MAX_DATASTORE_VALUE_SIZE:
+        if (
+            not req.key
+            or len(req.key.encode("utf-8")) > MAX_DATASTORE_KEY_LENGTH
+            or len(req.value) > MAX_DATASTORE_VALUE_SIZE
+        ):
             return pb.GenericResponse(status="error")
         await self.runtime_service.store_and_publish_datastore_value(req.key, req.value)
         return pb.GenericResponse(status="ok")
+
 
     async def execute_datastore_get(self, req: pb.DatastoreGet) -> pb.DatastoreGetResponse:
         c = self.runtime_service.state.datastore_cache
@@ -184,7 +189,8 @@ class LocalBridgeService(LocalBridgeBase):
         local_op: Callable[[], Coroutine[Any, Any, bool]],
         error_msg: str,
     ) -> pb.GenericResponse:
-        if request.path.startswith(MCU_FS_PREFIX):
+        clean_path = request.path.lstrip("/")
+        if clean_path.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
             ok = bool(await serial.send(cmd.value, mcu_msg)) if serial else False
             return pb.GenericResponse(status="ok" if ok else "error")
@@ -193,31 +199,37 @@ class LocalBridgeService(LocalBridgeBase):
         return pb.GenericResponse(status="error", message=error_msg)
 
     async def execute_file_write(self, req: pb.FileWrite) -> pb.GenericResponse:
+        clean = req.path.lstrip("/")
+        mcu_path = clean.removeprefix(MCU_FS_PREFIX) if clean.startswith(MCU_FS_PREFIX) else req.path
         return await self._execute_file_mutation(
             req,
             Command.CMD_FILE_WRITE,
-            pb.FileWrite(path=req.path.removeprefix(MCU_FS_PREFIX), data=req.data),
+            pb.FileWrite(path=mcu_path, data=req.data),
             lambda: self.runtime_service.safe_file_write(req.path, req.data),
             "Path not allowed or quota exceeded",
         )
 
     async def execute_file_read(self, req: pb.FileRead) -> pb.FileReadResponse:
-        if req.path.startswith(MCU_FS_PREFIX):
+        clean = req.path.lstrip("/")
+        if clean.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
-            clean_path = req.path.removeprefix(MCU_FS_PREFIX)
+            clean_path = clean.removeprefix(MCU_FS_PREFIX)
             res = (await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=clean_path))) if serial else None
             return parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse())
         content = await self.runtime_service.safe_file_read(req.path)
         return pb.FileReadResponse(content=content or b"")
 
     async def execute_file_remove(self, req: pb.FileRemove) -> pb.GenericResponse:
+        clean = req.path.lstrip("/")
+        mcu_path = clean.removeprefix(MCU_FS_PREFIX) if clean.startswith(MCU_FS_PREFIX) else req.path
         return await self._execute_file_mutation(
             req,
             Command.CMD_FILE_REMOVE,
-            pb.FileRemove(path=req.path.removeprefix(MCU_FS_PREFIX)),
+            pb.FileRemove(path=mcu_path),
             lambda: self.runtime_service.safe_file_remove(req.path),
             "Path not allowed or not found",
         )
+
 
     async def execute_process_run_async(self, req: pb.ProcessRunAsync) -> pb.ProcessRunAsyncResponse:
         allowed = is_command_allowed(self.runtime_service.state.allowed_policy, req.command)

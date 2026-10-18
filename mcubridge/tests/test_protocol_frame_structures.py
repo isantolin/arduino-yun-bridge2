@@ -11,7 +11,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import REGISTRY, Topic, TopicRoute
+from mcubridge.protocol.protocol import REGISTRY, TopicRoute
 
 
 def test_topic_route_properties() -> None:

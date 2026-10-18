@@ -11,7 +11,7 @@ from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import REGISTRY, Command, Topic, TopicRoute
+from mcubridge.protocol.protocol import REGISTRY, Command, Topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport

@@ -255,7 +255,7 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
 
 
 def test_topic_lookup_matches_schema_metadata() -> None:
-    topic_configs = pb.DESCRIPTOR.GetOptions().Extensions[pb.topics]
+    topic_configs = pb.Constants.DESCRIPTOR.file.GetOptions().Extensions[pb.topics]
     for topic_config in topic_configs:
         enum_val = protocol.Topic[topic_config.name]
         assert protocol.REGISTRY.lookup_topic(topic_config.value) == enum_val
@@ -451,7 +451,11 @@ def test_proto_dispatch_handlers_ssot() -> None:
     assert len(protocol.REGISTRY.rpc_specs) == 25
     from mcubridge.services.local_bridge import LocalBridgeService
 
-    service_desc = pb.DESCRIPTOR.services_by_name["LocalBridge"]
+    service_desc = next(
+        dep.services_by_name["LocalBridge"]
+        for dep in [pb.DESCRIPTOR, *pb.DESCRIPTOR.dependencies]
+        if "LocalBridge" in dep.services_by_name
+    )
     unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
     assert len(unary_methods) == 25
 

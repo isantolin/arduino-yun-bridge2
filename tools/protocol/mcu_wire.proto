@@ -1,0 +1,355 @@
+syntax = "proto3";
+
+package rpc.pb;
+
+import "config_schema.proto";
+
+message VersionResponse {
+  uint32 major = 1;
+  uint32 minor = 2;
+  uint32 patch = 3;
+}
+
+message FreeMemoryResponse {
+  uint32 value = 1;
+}
+
+message Capabilities {
+  uint32 ver = 1;
+  uint32 arch = 2;
+  uint32 dig = 3;
+  uint32 ana = 4;
+  bool watchdog = 5;
+  bool debug_frames = 6;
+  bool debug_io = 7;
+  bool eeprom = 8;
+  bool dac = 9;
+  bool hw_serial1 = 10;
+  bool fpu = 11;
+  bool logic_3v3 = 12;
+  bool big_buffer = 13;
+  bool i2c = 14;
+  bool spi = 15;
+  bool sd = 16;
+  uint32 feat = 17;
+  string board_name = 18;
+  bool clock_sync = 19;
+}
+
+message PinMode {
+  uint32 pin = 1;
+  PinModeType mode = 2;
+}
+
+message DigitalWrite {
+  uint32 pin = 1;
+  uint32 value = 2;
+}
+
+message AnalogWrite {
+  uint32 pin = 1;
+  uint32 value = 2;
+}
+
+message PinRead {
+  uint32 pin = 1;
+}
+
+message ClockSyncRequest {
+  uint64 host_time_us = 1;
+}
+
+message ClockSyncResponse {
+  uint64 host_time_us = 1;
+  uint32 mcu_time_us = 2;
+}
+
+message PinSubscribeRequest {
+  uint32 pin = 1;
+  PinModeType mode = 2;
+  uint32 interval_ms = 3;
+  uint32 hysteresis = 4;
+  bool enabled = 5;
+}
+
+message PinSubscribeResponse {
+  option (msg_error_init) = "success=False";
+  uint32 pin = 1;
+  bool success = 2;
+}
+
+message PinUpdateEvent {
+  uint32 pin = 1;
+  uint32 value = 2;
+  uint32 timestamp_micros = 3;
+}
+
+message DigitalReadResponse {
+  uint32 value = 1;
+}
+
+message AnalogReadResponse {
+  uint32 value = 1;
+}
+
+message ConsoleWrite {
+  bytes data = 1;
+}
+
+message DatastorePut {
+  string key = 1;
+  bytes value = 2;
+}
+
+message DatastoreGet {
+  string key = 1;
+}
+
+message DatastoreGetResponse {
+  bytes value = 1;
+}
+
+message MailboxPush {
+  bytes data = 1;
+}
+
+message MailboxProcessed {
+  uint32 message_id = 1;
+}
+
+message MailboxAvailableResponse {
+  uint32 count = 1;
+}
+
+message MailboxReadResponse {
+  bytes content = 1;
+}
+
+message FileWrite {
+  string path = 1;
+  bytes data = 2;
+}
+
+message FileRead {
+  string path = 1;
+}
+
+message FileRemove {
+  string path = 1;
+}
+
+message FileReadResponse {
+  bytes content = 1;
+}
+
+message ProcessRunAsync {
+  string command = 1;
+}
+
+message ProcessRunAsyncResponse {
+  option (msg_error_init) = "pid=0";
+  uint32 pid = 1;
+}
+
+message ProcessPoll {
+  uint32 pid = 1;
+}
+
+message ProcessPollResponse {
+  option (msg_error_init) = "finished=True";
+  uint32 status = 1;
+  uint32 exit_code = 2;
+  bytes stdout_data = 3;
+  bytes stderr_data = 4;
+  bool finished = 5;
+  bool stdout_truncated = 6;
+  bool stderr_truncated = 7;
+}
+
+message ProcessKill {
+  uint32 pid = 1;
+}
+
+message GenericResponse {
+  option (msg_error_init) = "status=\"error\"";
+  string status = 1;
+  string message = 2;
+}
+
+message AckPacket {
+  uint32 command_id = 1;
+}
+
+message HandshakeConfig {
+  uint32 ack_timeout_ms = 1;
+  uint32 ack_retry_limit = 2;
+  uint32 response_timeout_ms = 3;
+}
+
+message SetBaudratePacket {
+  uint32 baudrate = 1;
+}
+
+message LinkSync {
+  bytes nonce = 1;
+  bytes tag = 2;
+}
+
+message EnterBootloader {
+  uint32 magic = 1;
+}
+
+message SpiTransfer {
+  bytes data = 1;
+}
+
+message SpiTransferResponse {
+  bytes data = 1;
+}
+
+enum SpiBitOrder {
+  SPI_BIT_ORDER_LSB_FIRST = 0;
+  SPI_BIT_ORDER_MSB_FIRST = 1;
+}
+
+enum SpiDataMode {
+  SPI_DATA_MODE_0 = 0;
+  SPI_DATA_MODE_1 = 4;
+  SPI_DATA_MODE_2 = 8;
+  SPI_DATA_MODE_3 = 12;
+}
+
+message SpiConfig {
+  SpiBitOrder bit_order = 1;
+  SpiDataMode data_mode = 2;
+  uint32 frequency = 3;
+}
+
+message SupervisorSnapshot {
+  uint32 restarts = 1;
+  float last_failure_unix = 2;
+  string last_exception = 3;
+  float backoff_seconds = 4;
+  bool fatal = 5;
+}
+
+message CloudDropCount {
+  string topic = 1;
+  uint32 count = 2;
+}
+
+message QueueDepths {
+  uint32 cloud_publish = 1;
+  uint32 console = 2;
+  uint32 mailbox_outgoing = 3;
+  uint32 mailbox_incoming = 4;
+  uint32 running_processes = 5;
+}
+
+message SupervisorEntry {
+  string name = 1;
+  SupervisorSnapshot stats = 2;
+}
+
+message ComponentRetry {
+  string component = 1;
+  uint32 count = 2;
+}
+
+message McuStatusCount {
+  string status = 1;
+  uint32 count = 2;
+}
+
+message DaemonMetrics {
+  uint32 cloud_queue_depth = 1;
+  uint32 cloud_dropped_messages = 2;
+  repeated CloudDropCount cloud_drop_counts = 3;
+  uint32 cloud_spool_corrupt_dropped = 4;
+  uint32 cloud_spool_dropped_limit = 5;
+  uint32 cloud_spool_trim_events = 6;
+  double cloud_spool_last_trim_unix = 7;
+  bool cloud_spool_degraded = 8;
+  string cloud_spool_failure_reason = 9;
+  uint32 cloud_spool_pending_messages = 10;
+  QueueDepths queue_depths = 11;
+  bool link_synchronised = 12;
+  uint32 unknown_command_count = 13;
+  uint32 unknown_command_last_id = 14;
+  repeated SupervisorEntry supervisors = 15;
+  double heartbeat_unix = 16;
+  bool watchdog_enabled = 17;
+  double watchdog_interval = 18;
+  uint64 serial_bytes_sent = 19;
+  uint64 serial_bytes_received = 20;
+  uint64 serial_frames_sent = 21;
+  uint64 serial_frames_received = 22;
+  uint32 serial_retries = 23;
+  uint32 serial_failures = 24;
+  uint32 serial_crc_errors = 25;
+  uint32 serial_decode_errors = 26;
+  double serial_latency_ms = 27;
+  double rpc_latency_ms = 28;
+  uint32 handshake_attempts = 29;
+  uint32 handshake_successes = 30;
+  string handshake_state = 31;
+  string link_state = 32;
+  uint64 watchdog_beats = 33;
+  double uptime_seconds = 34;
+  uint64 cloud_messages_published = 35;
+  repeated ComponentRetry retries = 36;
+  repeated McuStatusCount mcu_status_counts = 37;
+}
+
+message RpcEnvelope {
+  uint32 version = 1;
+  uint32 command_id = 2;
+  uint32 sequence_id = 3;
+  bytes nonce = 4;
+  ChannelId channel_id = 5;
+  QosProfile qos = 43;
+  oneof payload_type {
+    bytes encrypted_payload_with_tag = 6;
+    VersionResponse version_response = 7;
+    FreeMemoryResponse free_memory_response = 8;
+    Capabilities capabilities = 9;
+    PinMode pin_mode = 10;
+    DigitalWrite digital_write = 11;
+    AnalogWrite analog_write = 12;
+    PinRead pin_read = 13;
+    DigitalReadResponse digital_read_response = 14;
+    AnalogReadResponse analog_read_response = 15;
+    ConsoleWrite console_write = 16;
+    DatastorePut datastore_put = 17;
+    DatastoreGet datastore_get = 18;
+    DatastoreGetResponse datastore_get_response = 19;
+    MailboxPush mailbox_push = 20;
+    MailboxProcessed mailbox_processed = 21;
+    MailboxAvailableResponse mailbox_available_response = 22;
+    MailboxReadResponse mailbox_read_response = 23;
+    FileWrite file_write = 24;
+    FileRead file_read = 25;
+    FileRemove file_remove = 26;
+    FileReadResponse file_read_response = 27;
+    ProcessRunAsync process_run_async = 28;
+    ProcessRunAsyncResponse process_run_async_response = 29;
+    ProcessPoll process_poll = 30;
+    ProcessPollResponse process_poll_response = 31;
+    ProcessKill process_kill = 32;
+    GenericResponse generic_response = 33;
+    AckPacket ack_packet = 34;
+    HandshakeConfig handshake_config = 35;
+    SetBaudratePacket set_baudrate_packet = 36;
+    LinkSync link_sync = 37;
+    EnterBootloader enter_bootloader = 38;
+    SpiTransfer spi_transfer = 39;
+    SpiTransferResponse spi_transfer_response = 40;
+    SpiConfig spi_config = 41;
+    DaemonMetrics daemon_metrics = 42;
+    ClockSyncRequest clock_sync_request = 44;
+    ClockSyncResponse clock_sync_response = 45;
+    PinSubscribeRequest pin_subscribe_request = 46;
+    PinSubscribeResponse pin_subscribe_response = 47;
+    PinUpdateEvent pin_update_event = 48;
+  }
+}

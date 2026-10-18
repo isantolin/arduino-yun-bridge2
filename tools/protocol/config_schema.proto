@@ -1,0 +1,1710 @@
+syntax = "proto3";
+
+package rpc.pb;
+
+import "google/protobuf/descriptor.proto";
+
+option (rpc.pb.actions) = {
+  name: "FILE_READ"
+  value: "read"
+  description: "Read file content"
+};
+option (rpc.pb.actions) = {
+  name: "FILE_WRITE"
+  value: "write"
+  description: "Write file content"
+};
+option (rpc.pb.actions) = {
+  name: "FILE_REMOVE"
+  value: "remove"
+  description: "Remove file"
+};
+option (rpc.pb.actions) = {
+  name: "SPI_BEGIN"
+  value: "begin"
+  description: "Initialize SPI bus"
+};
+option (rpc.pb.actions) = {
+  name: "SPI_END"
+  value: "end"
+  description: "Deinitialize SPI bus"
+};
+option (rpc.pb.actions) = {
+  name: "SPI_TRANSFER"
+  value: "transfer"
+  description: "Full-duplex SPI transfer"
+};
+option (rpc.pb.actions) = {
+  name: "SPI_CONFIG"
+  value: "config"
+  description: "Configure SPI parameters"
+};
+option (rpc.pb.actions) = {
+  name: "SHELL_RUN_ASYNC"
+  value: "run_async"
+  description: "Run shell command asynchronously"
+};
+option (rpc.pb.actions) = {
+  name: "SHELL_POLL"
+  value: "poll"
+  description: "Poll shell command status"
+};
+option (rpc.pb.actions) = {
+  name: "SHELL_KILL"
+  value: "kill"
+  description: "Kill shell command"
+};
+option (rpc.pb.actions) = {
+  name: "MAILBOX_WRITE"
+  value: "write"
+  description: "Write to mailbox"
+};
+option (rpc.pb.actions) = {
+  name: "DATASTORE_GET"
+  value: "get"
+  description: "Get datastore value"
+};
+option (rpc.pb.actions) = {
+  name: "DATASTORE_PUT"
+  value: "put"
+  description: "Put datastore value"
+};
+option (rpc.pb.actions) = {
+  name: "PIN_MODE"
+  value: "mode"
+  description: "Set pin mode"
+};
+option (rpc.pb.actions) = {
+  name: "PIN_READ"
+  value: "read"
+  description: "Read pin value"
+};
+option (rpc.pb.actions) = {
+  name: "CONSOLE_IN"
+  value: "in"
+  description: "Console input"
+};
+option (rpc.pb.actions) = {
+  name: "CONSOLE_OUT"
+  value: "out"
+  description: "Console output"
+};
+option (rpc.pb.actions) = {
+  name: "MAILBOX_READ"
+  value: "read"
+  description: "Read from mailbox"
+};
+option (rpc.pb.actions) = {
+  name: "MAILBOX_INCOMING"
+  value: "incoming"
+  description: "Mailbox incoming messages"
+};
+option (rpc.pb.actions) = {
+  name: "MAILBOX_PROCESSED"
+  value: "processed"
+  description: "Mailbox processed notifications"
+};
+option (rpc.pb.actions) = {
+  name: "MAILBOX_ERRORS"
+  value: "errors"
+  description: "Mailbox error topic"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_FREE_MEMORY"
+  value: "free_memory"
+  description: "System free memory"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_VERSION"
+  value: "version"
+  description: "System version"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_BOOTLOADER"
+  value: "bootloader"
+  description: "Enter bootloader mode"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_GET"
+  value: "get"
+  description: "Get system info"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_VALUE"
+  value: "value"
+  description: "Value payload segment"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_METRICS"
+  value: "metrics"
+  description: "Metrics topic"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_BRIDGE"
+  value: "bridge"
+  description: "Bridge snapshots"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_HANDSHAKE"
+  value: "handshake"
+  description: "Handshake snapshot"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_SUMMARY"
+  value: "summary"
+  description: "Bridge summary snapshot"
+};
+option (rpc.pb.actions) = {
+  name: "SYSTEM_STATE"
+  value: "state"
+  description: "Bridge state snapshot"
+};
+option (rpc.pb.architectures) = {
+  name: "avr"
+  value: 1
+  display_name: "Atmel AVR"
+};
+option (rpc.pb.architectures) = {
+  name: "esp32"
+  value: 2
+  display_name: "Espressif ESP32"
+};
+option (rpc.pb.architectures) = {
+  name: "esp8266"
+  value: 3
+  display_name: "Espressif ESP8266"
+};
+option (rpc.pb.architectures) = {
+  name: "samd"
+  value: 4
+  display_name: "Microchip SAMD"
+};
+option (rpc.pb.architectures) = {
+  name: "sam"
+  value: 5
+  display_name: "Microchip SAM"
+};
+option (rpc.pb.architectures) = {
+  name: "rp2040"
+  value: 6
+  display_name: "Raspberry Pi RP2040"
+};
+option (rpc.pb.cloud_defaults) = {default_topic_prefix: "br"};
+option (rpc.pb.cloud_suffixes) = {
+  incoming_available: "incoming_available"
+  outgoing_available: "outgoing_available"
+  response: "response"
+  error: "error"
+};
+option (rpc.pb.constants) = {
+  aead_nonce_size: 12
+  aead_tag_size: 16
+  aead_key_size: 32
+  protocol_version: 2
+  default_baudrate: 115200
+  default_safe_baudrate: 115200
+  default_cloud_port: 8443
+  max_payload_size: 64
+  max_filepath_length: 64
+  max_datastore_key_length: 32
+  default_ack_timeout_ms: 200
+  default_retry_limit: 5
+  max_pending_tx_frames: 2
+  uint8_mask: 255
+  uint16_max: 65535
+  bootloader_magic: 3735929054
+  crc_size: 4
+  crc_covered_header_size: 7
+  crc32_mask: 4294967295
+  nonce_counter_mask: 18446744073709551615
+  frame_delimiter: 0
+  status_code_min: 48
+  status_code_max: 63
+  system_command_min: 64
+  system_command_max: 79
+  max_serial_frame_bytes: 1024
+  default_serial_handshake_fatal_failures: 15
+  cloud_expiry_pin: 5
+  cloud_expiry_console: 5
+  cloud_expiry_datastore: 60
+  default_process_max_output_bytes: 65536
+  default_console_queue_limit_bytes: 16384
+  sync_timeout_ms: 30000
+  max_datastore_value_size: 255
+};
+option (rpc.pb.handshake) = {
+  nonce_length: 16
+  tag_length: 16
+  ack_timeout_min_ms: 25
+  ack_timeout_max_ms: 60000
+  response_timeout_min_ms: 100
+  response_timeout_max_ms: 180000
+  retry_limit_min: 1
+  retry_limit_max: 8
+  hkdf_salt: "mcubridge-v2"
+  hkdf_info_auth: "handshake-auth"
+  hkdf_info_session: "session-key"
+  hkdf_output_length: 32
+  nonce_random_bytes: 8
+  nonce_counter_bytes: 8
+  mcu_aead_nonce_prefix: 1296258304
+  mpu_aead_nonce_prefix: 1297110272
+};
+option (rpc.pb.hardware) = {
+  max_observers_avr: 4
+  max_observers_other: 8
+  rx_history_size: 1
+  rx_buffer_size_avr: 256
+  rx_buffer_size_other: 512
+  max_pending_tx_frames_avr: 1
+  max_pending_tx_frames_other: 8
+  console_rx_buffer_size_avr: 32
+  console_rx_buffer_size_other: 64
+  console_tx_buffer_size_avr: 32
+  console_tx_buffer_size_other: 60
+  mailbox_rx_buffer_size_avr: 64
+  mailbox_rx_buffer_size_other: 128
+  max_pending_datastore: 1
+  max_pending_process_polls: 1
+  file_large_warning_bytes: 1048576
+  startup_drain_per_tick: 64
+  startup_drain_final: 256
+  startup_stabilization_ms: 50
+  baudrate_change_delay_ms: 50
+  max_consecutive_crc_errors: 5
+  rx_dedupe_interval_ms: 1000
+  flow_control_xoff_threshold: 48
+  flow_control_xon_threshold: 16
+  hkdf_key_length: 32
+  key_and_digest_buffer_size: 64
+  fallback_free_memory: 1024
+  capabilities_feat_extended: 1
+  serial_timeout_ms: 50
+  spi_timeout_ms: 50
+  bootloader_delay_ms: 100
+  file_max_read_chunks: 256
+  sha256_digest_size: 32
+  sha256_kat_buffer_size: 64
+  hkdf_handshake_key_length: 32
+  hkdf_handshake_full_tag_size: 32
+  max_safety_pins: 8
+  max_pin_subscriptions: 8
+};
+option (rpc.pb.status_reasons) = {
+  invalid_path: "invalid_path"
+  read_failed: "read_failed"
+  remove_failed: "remove_failed"
+  write_failed: "write_failed"
+  mailbox_incoming_overflow: "mailbox_incoming_overflow"
+  mailbox_outgoing_overflow: "mailbox_outgoing_overflow"
+  process_limit_reached: "process_limit_reached"
+  command_validation_failed: "command_validation_failed"
+  process_run_async_failed: "process_run_async_failed"
+  process_run_internal_error: "process_run_internal_error"
+  process_kill_malformed: "process_kill_malformed"
+  process_not_found: "process_not_found"
+  process_kill_failed: "process_kill_failed"
+  datastore_put_failed: "datastore_put_failed"
+  mailbox_push_failed: "mailbox_push_failed"
+  mailbox_processed_failed: "mailbox_processed_failed"
+  sync_auth_mismatch: "sync_auth_mismatch"
+  sync_length_mismatch: "sync_length_mismatch"
+  mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
+  mcu_file_read_timeout: "mcu_file_read_timeout"
+  pending_pin_overflow: "pending-pin-overflow"
+  unsupported_digital_read: "linux_originates_digital_read_requests"
+  unsupported_analog_read: "linux_originates_analog_read_requests"
+};
+option (rpc.pb.topics) = {
+  name: "ANALOG"
+  value: "a"
+  description: "Analog pin operations"
+  aliases: "analog"
+  handler: "handle_pin"
+};
+option (rpc.pb.topics) = {
+  name: "CONSOLE"
+  value: "console"
+  description: "Remote console"
+  handler: "handle_console"
+};
+option (rpc.pb.topics) = {
+  name: "DATASTORE"
+  value: "datastore"
+  description: "Key-value storage"
+  handler: "handle_datastore"
+};
+option (rpc.pb.topics) = {
+  name: "DIGITAL"
+  value: "d"
+  description: "Digital pin operations"
+  aliases: "digital"
+  handler: "handle_pin"
+};
+option (rpc.pb.topics) = {
+  name: "FILE"
+  value: "file"
+  description: "File system operations"
+  handler: "handle_file"
+};
+option (rpc.pb.topics) = {
+  name: "MAILBOX"
+  value: "mailbox"
+  description: "Message passing"
+  handler: "handle_mailbox"
+};
+option (rpc.pb.topics) = {
+  name: "SHELL"
+  value: "sh"
+  description: "Shell command execution"
+  aliases: "shell"
+  handler: "handle_shell"
+};
+option (rpc.pb.topics) = {
+  name: "SPI"
+  value: "spi"
+  description: "SPI bus operations"
+  handler: "handle_spi"
+};
+option (rpc.pb.topics) = {
+  name: "STATUS"
+  value: "status"
+  description: "System status reporting"
+};
+option (rpc.pb.topics) = {
+  name: "SYSTEM"
+  value: "system"
+  description: "System control and info"
+  handler: "handle_system"
+};
+option (rpc.pb.topics) = {
+  name: "CLOCK"
+  value: "clock"
+  description: "Clock synchronization"
+};
+
+message Constants {
+  reserved 14 to 20, 24, 27, 29, 31, 33 to 34, 39 to 53, 67 to 68;
+  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max";
+  uint32 aead_nonce_size = 1 [
+    (cpp_name) = "RPC_AEAD_NONCE_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "AEAD_NONCE_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 aead_tag_size = 2 [
+    (cpp_name) = "RPC_AEAD_TAG_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "AEAD_TAG_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 aead_key_size = 3 [
+    (cpp_name) = "RPC_AEAD_KEY_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "AEAD_KEY_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 protocol_version = 4 [
+    (cpp_name) = "PROTOCOL_VERSION",
+    (cpp_type) = "uint8_t",
+    (py_name) = "PROTOCOL_VERSION",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 default_baudrate = 5 [
+    (cpp_name) = "RPC_DEFAULT_BAUDRATE",
+    (cpp_type) = "unsigned long",
+    (py_name) = "DEFAULT_BAUDRATE",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 default_safe_baudrate = 6 [
+    (cpp_name) = "RPC_DEFAULT_SAFE_BAUDRATE",
+    (cpp_type) = "unsigned long",
+    (py_name) = "DEFAULT_SAFE_BAUDRATE",
+    (py_type) = "int"
+  ];
+  uint32 default_cloud_port = 7 [
+    (py_name) = "DEFAULT_CLOUD_PORT",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 max_payload_size = 8 [
+    (cpp_name) = "MAX_PAYLOAD_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_PAYLOAD_SIZE",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 max_filepath_length = 9 [
+    (cpp_name) = "RPC_MAX_FILEPATH_LENGTH",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_FILEPATH_LENGTH",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 max_datastore_key_length = 10 [
+    (cpp_name) = "RPC_MAX_DATASTORE_KEY_LENGTH",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_DATASTORE_KEY_LENGTH",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 default_ack_timeout_ms = 11 [
+    (cpp_name) = "RPC_DEFAULT_ACK_TIMEOUT_MS",
+    (cpp_type) = "unsigned int",
+    (py_name) = "DEFAULT_ACK_TIMEOUT_MS",
+    (py_type) = "int"
+  ];
+  uint32 default_retry_limit = 12 [
+    (cpp_name) = "RPC_DEFAULT_RETRY_LIMIT",
+    (cpp_type) = "uint8_t",
+    (py_name) = "DEFAULT_RETRY_LIMIT",
+    (py_type) = "int"
+  ];
+  uint32 max_pending_tx_frames = 13 [
+    (cpp_name) = "RPC_MAX_PENDING_TX_FRAMES",
+    (cpp_type) = "uint8_t",
+    (py_name) = "MAX_PENDING_TX_FRAMES",
+    (py_type) = "int"
+  ];
+  uint32 uint8_mask = 21 [
+    (cpp_name) = "RPC_UINT8_MASK",
+    (cpp_type) = "uint8_t",
+    (py_name) = "UINT8_MASK",
+    (py_type) = "int"
+  ];
+  uint32 uint16_max = 22 [
+    (cpp_name) = "RPC_UINT16_MAX",
+    (cpp_type) = "uint16_t",
+    (py_name) = "UINT16_MAX",
+    (py_type) = "int"
+  ];
+  uint32 bootloader_magic = 23 [
+    (cpp_name) = "RPC_BOOTLOADER_MAGIC",
+    (cpp_type) = "uint32_t",
+    (py_name) = "BOOTLOADER_MAGIC",
+    (py_type) = "int"
+  ];
+  uint32 crc_size = 25 [
+    (cpp_name) = "RPC_CRC_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "CRC_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 crc_covered_header_size = 26 [
+    (cpp_name) = "RPC_CRC_COVERED_HEADER_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "CRC_COVERED_HEADER_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 crc32_mask = 28 [
+    (cpp_name) = "RPC_CRC32_MASK",
+    (cpp_type) = "uint32_t",
+    (py_name) = "CRC32_MASK",
+    (py_type) = "int"
+  ];
+  uint64 nonce_counter_mask = 30 [
+    (cpp_name) = "RPC_NONCE_COUNTER_MASK",
+    (cpp_type) = "uint64_t",
+    (py_name) = "NONCE_COUNTER_MASK",
+    (py_type) = "int"
+  ];
+  uint32 frame_delimiter = 32 [
+    (cpp_name) = "RPC_FRAME_DELIMITER",
+    (cpp_type) = "uint8_t",
+    (py_name) = "FRAME_DELIMITER",
+    (py_type) = "bytes"
+  ];
+  uint32 status_code_min = 35 [
+    (cpp_name) = "RPC_STATUS_CODE_MIN",
+    (cpp_type) = "uint8_t",
+    (py_name) = "STATUS_CODE_MIN",
+    (py_type) = "int"
+  ];
+  uint32 status_code_max = 36 [
+    (cpp_name) = "RPC_STATUS_CODE_MAX",
+    (cpp_type) = "uint8_t",
+    (py_name) = "STATUS_CODE_MAX",
+    (py_type) = "int"
+  ];
+  uint32 system_command_min = 37 [
+    (cpp_name) = "RPC_SYSTEM_COMMAND_MIN",
+    (cpp_type) = "uint16_t",
+    (py_name) = "SYSTEM_COMMAND_MIN",
+    (py_type) = "int"
+  ];
+  uint32 system_command_max = 38 [
+    (cpp_name) = "RPC_SYSTEM_COMMAND_MAX",
+    (cpp_type) = "uint16_t",
+    (py_name) = "SYSTEM_COMMAND_MAX",
+    (py_type) = "int"
+  ];
+  uint32 max_serial_frame_bytes = 54 [
+    (py_name) = "MAX_SERIAL_FRAME_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 default_serial_handshake_fatal_failures = 55 [
+    (py_name) = "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES",
+    (py_type) = "int"
+  ];
+  uint32 cloud_expiry_pin = 57 [
+    (py_name) = "CLOUD_EXPIRY_PIN",
+    (py_type) = "int"
+  ];
+  uint32 cloud_expiry_console = 58 [
+    (py_name) = "CLOUD_EXPIRY_CONSOLE",
+    (py_type) = "int"
+  ];
+  uint32 cloud_expiry_datastore = 59 [
+    (py_name) = "CLOUD_EXPIRY_DATASTORE",
+    (py_type) = "int"
+  ];
+  uint32 default_process_max_output_bytes = 62 [
+    (py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 default_console_queue_limit_bytes = 63 [
+    (py_name) = "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 sync_timeout_ms = 65 [
+    (cpp_name) = "SYNC_TIMEOUT_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "SYNC_TIMEOUT_MS",
+    (py_type) = "int"
+  ];
+  uint32 max_datastore_value_size = 66 [
+    (cpp_name) = "RPC_MAX_DATASTORE_VALUE_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_DATASTORE_VALUE_SIZE",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+}
+
+message Hardware {
+  uint32 max_observers_avr = 1;
+  uint32 max_observers_other = 2;
+  uint32 rx_history_size = 3;
+  uint32 rx_buffer_size_avr = 4;
+  uint32 rx_buffer_size_other = 5;
+  uint32 max_pending_tx_frames_avr = 6;
+  uint32 max_pending_tx_frames_other = 7;
+  uint32 console_rx_buffer_size_avr = 8;
+  uint32 console_rx_buffer_size_other = 9;
+  uint32 console_tx_buffer_size_avr = 10;
+  uint32 console_tx_buffer_size_other = 11;
+  uint32 mailbox_rx_buffer_size_avr = 12;
+  uint32 mailbox_rx_buffer_size_other = 13;
+  uint32 max_pending_datastore = 14;
+  uint32 max_pending_process_polls = 15;
+  uint32 file_large_warning_bytes = 16 [
+    (py_name) = "FILE_LARGE_WARNING_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 startup_drain_per_tick = 17;
+  uint32 startup_drain_final = 18;
+  uint32 startup_stabilization_ms = 19;
+  uint32 baudrate_change_delay_ms = 20;
+  uint32 max_consecutive_crc_errors = 21;
+  uint32 rx_dedupe_interval_ms = 22;
+  uint32 flow_control_xoff_threshold = 23 [
+    (py_name) = "FLOW_CONTROL_XOFF_THRESHOLD",
+    (py_type) = "int"
+  ];
+  uint32 flow_control_xon_threshold = 24 [
+    (py_name) = "FLOW_CONTROL_XON_THRESHOLD",
+    (py_type) = "int"
+  ];
+  uint32 hkdf_key_length = 25;
+  uint32 key_and_digest_buffer_size = 26;
+  reserved 27 to 31;
+  reserved "avr_digital_pins", "avr_analog_pins", "samd_digital_pins", "samd_analog_pins", "fallback_max_pin";
+  uint32 fallback_free_memory = 32;
+  uint32 capabilities_feat_extended = 33;
+  uint32 serial_timeout_ms = 34 [
+    (cpp_name) = "RPC_SERIAL_TIMEOUT_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "SERIAL_TIMEOUT_MS",
+    (py_type) = "int"
+  ];
+  uint32 spi_timeout_ms = 35 [
+    (cpp_name) = "RPC_SPI_TIMEOUT_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "SPI_TIMEOUT_MS",
+    (py_type) = "int"
+  ];
+  uint32 bootloader_delay_ms = 36;
+  uint32 file_max_read_chunks = 37;
+  uint32 sha256_digest_size = 38 [
+    (cpp_name) = "RPC_SHA256_DIGEST_SIZE",
+    (cpp_type) = "uint8_t",
+    (py_name) = "SHA256_DIGEST_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 sha256_kat_buffer_size = 39 [
+    (cpp_name) = "RPC_SHA256_KAT_BUFFER_SIZE",
+    (cpp_type) = "uint8_t",
+    (py_name) = "SHA256_KAT_BUFFER_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 hkdf_handshake_key_length = 40;
+  uint32 hkdf_handshake_full_tag_size = 41;
+  uint32 max_safety_pins = 42 [
+    (cpp_name) = "MAX_SAFETY_PINS",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_SAFETY_PINS",
+    (py_type) = "int"
+  ];
+  uint32 max_pin_subscriptions = 43 [
+    (cpp_name) = "MAX_PIN_SUBSCRIPTIONS",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_PIN_SUBSCRIPTIONS",
+    (py_type) = "int"
+  ];
+  uint32 max_mailbox_queue_size_other = 44;
+}
+
+message Handshake {
+  uint32 nonce_length = 1 [
+    (cpp_name) = "RPC_HANDSHAKE_NONCE_LENGTH",
+    (cpp_type) = "unsigned int",
+    (py_name) = "HANDSHAKE_NONCE_LENGTH",
+    (py_type) = "int"
+  ];
+  uint32 tag_length = 2 [
+    (cpp_name) = "RPC_HANDSHAKE_TAG_LENGTH",
+    (cpp_type) = "unsigned int",
+    (py_name) = "HANDSHAKE_TAG_LENGTH",
+    (py_type) = "int"
+  ];
+  uint32 ack_timeout_min_ms = 5 [
+    (cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "HANDSHAKE_ACK_TIMEOUT_MIN_MS",
+    (py_type) = "int"
+  ];
+  uint32 ack_timeout_max_ms = 6 [
+    (cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "HANDSHAKE_ACK_TIMEOUT_MAX_MS",
+    (py_type) = "int"
+  ];
+  uint32 response_timeout_min_ms = 7 [
+    (cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
+    (py_type) = "int"
+  ];
+  uint32 response_timeout_max_ms = 8 [
+    (cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
+    (py_type) = "int"
+  ];
+  uint32 retry_limit_min = 9 [
+    (cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MIN",
+    (cpp_type) = "uint8_t",
+    (py_name) = "HANDSHAKE_RETRY_LIMIT_MIN",
+    (py_type) = "int"
+  ];
+  uint32 retry_limit_max = 10 [
+    (cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MAX",
+    (cpp_type) = "uint8_t",
+    (py_name) = "HANDSHAKE_RETRY_LIMIT_MAX",
+    (py_type) = "int"
+  ];
+  string hkdf_salt = 12 [
+    (py_name) = "HANDSHAKE_HKDF_SALT",
+    (py_type) = "bytes"
+  ];
+  string hkdf_info_auth = 13 [
+    (py_name) = "HANDSHAKE_HKDF_INFO_AUTH",
+    (py_type) = "bytes"
+  ];
+  string hkdf_info_session = 14 [
+    (py_name) = "HANDSHAKE_HKDF_INFO_SESSION",
+    (py_type) = "bytes"
+  ];
+  uint32 hkdf_output_length = 15 [
+    (cpp_name) = "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH",
+    (cpp_type) = "unsigned int",
+    (py_name) = "HANDSHAKE_HKDF_OUTPUT_LENGTH",
+    (py_type) = "int"
+  ];
+  uint32 nonce_random_bytes = 16 [
+    (cpp_name) = "RPC_HANDSHAKE_NONCE_RANDOM_BYTES",
+    (cpp_type) = "unsigned int",
+    (py_name) = "HANDSHAKE_NONCE_RANDOM_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 nonce_counter_bytes = 17 [
+    (cpp_name) = "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
+    (cpp_type) = "unsigned int",
+    (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 mcu_aead_nonce_prefix = 18 [
+    (cpp_name) = "RPC_MCU_AEAD_NONCE_PREFIX",
+    (cpp_type) = "uint32_t",
+    (py_name) = "MCU_AEAD_NONCE_PREFIX",
+    (py_type) = "int"
+  ];
+  uint32 mpu_aead_nonce_prefix = 19 [
+    (cpp_name) = "RPC_MPU_AEAD_NONCE_PREFIX",
+    (cpp_type) = "uint32_t",
+    (py_name) = "MPU_AEAD_NONCE_PREFIX",
+    (py_type) = "int"
+  ];
+}
+
+message CloudSuffixes {
+  string incoming_available = 1;
+  string outgoing_available = 2;
+  string response = 3;
+  string error = 4;
+}
+
+message CloudDefaults {
+  string default_topic_prefix = 1;
+}
+
+message StatusReasons {
+  string invalid_path = 1;
+  string read_failed = 2;
+  string remove_failed = 3;
+  string write_failed = 4;
+  string mailbox_incoming_overflow = 5;
+  string mailbox_outgoing_overflow = 6;
+  string process_limit_reached = 7;
+  string command_validation_failed = 8;
+  string process_run_async_failed = 9;
+  string process_run_internal_error = 10;
+  string process_kill_malformed = 11;
+  string process_not_found = 12;
+  string process_kill_failed = 13;
+  string datastore_put_failed = 14;
+  string mailbox_push_failed = 15;
+  string mailbox_processed_failed = 16;
+  string sync_auth_mismatch = 17;
+  string sync_length_mismatch = 18;
+  string mcu_file_read_dispatch_failed = 19;
+  string mcu_file_read_timeout = 20;
+  string pending_pin_overflow = 21;
+  string unsupported_digital_read = 22;
+  string unsupported_analog_read = 23;
+}
+
+message TopicConfig {
+  string name = 1;
+  string value = 2;
+  string description = 3;
+  repeated string aliases = 4;
+  string handler = 5;
+}
+
+message ActionConfig {
+  string name = 1;
+  string value = 2;
+  string description = 3;
+}
+
+message ArchConfig {
+  string name = 1;
+  uint32 value = 2;
+  string display_name = 3;
+}
+
+message CapConfig {
+  string name = 1;
+  uint32 value = 2;
+}
+
+message ActionRouteDef {
+  string topic = 1;
+  string scope = 2;
+  string action_enum = 3;
+  string action = 4;
+  string handler = 5;
+}
+
+message CommandOptions {
+  reserved 2, 4, 10, 12;
+  reserved "directions", "expects_direct_response", "request_command", "rpc_method";
+  string category = 1;
+  bool requires_ack = 3;
+  string description = 5;
+  string cloud_topic = 6;
+  bool pre_sync_allowed = 7;
+  string pb_message = 8;
+  string response_command = 9;
+  string auth_field = 11;
+  repeated ActionRouteDef action_routes = 13;
+  string mcu_handler = 14;
+  string mcu_unsupported_reason = 15;
+  bool is_query = 16;
+}
+
+extend google.protobuf.MessageOptions {
+  string msg_cloud_topic = 1020;
+  string msg_error_init = 1031;
+}
+
+extend google.protobuf.MethodOptions {
+  string rpc_topic = 1032;
+  repeated string rpc_aliases = 1033;
+  string rpc_command = 1034;
+}
+
+extend google.protobuf.EnumOptions {
+  string enum_cloud_topic = 1021;
+}
+
+message StatusOptions {
+  string description = 1;
+  string mcu_handler = 2;
+}
+
+extend google.protobuf.FileOptions {
+  Constants constants = 1001;
+  Hardware hardware = 1002;
+  Handshake handshake = 1003;
+  CloudSuffixes cloud_suffixes = 1005;
+  CloudDefaults cloud_defaults = 1006;
+  StatusReasons status_reasons = 1007;
+  repeated TopicConfig topics = 1009;
+  repeated ActionConfig actions = 1010;
+  repeated ArchConfig architectures = 1011;
+  repeated CapConfig capabilities = 1012;
+}
+
+extend google.protobuf.EnumValueOptions {
+  CommandOptions cmd_opts = 1013;
+  StatusOptions status_opts = 1014;
+}
+
+extend google.protobuf.FieldOptions {
+  string cpp_name = 1015;
+  string cpp_type = 1016;
+  string py_name = 1017;
+  string py_type = 1018;
+  bool client_constant = 1019;
+  string config_default = 1022;
+  string config_desc = 1023;
+  bool config_volatile = 1024;
+  double config_min = 1025;
+  double config_max = 1026;
+  string uci_option = 1027;
+  string telemetry_topic_match = 1028;
+  bool telemetry_topic_default = 1029;
+  string config_default_ref = 1030;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  option (enum_cloud_topic) = "system/status";
+  OK = 48 [(status_opts) = {description: "Operation completed successfully."}];
+  ERROR = 49 [(status_opts) = {description: "Generic failure."}];
+  CMD_UNKNOWN = 50 [(status_opts) = {description: "Command not recognized."}];
+  MALFORMED = 51 [(status_opts) = {description: "Payload had invalid structure."}];
+  OVERFLOW = 52 [(status_opts) = {description: "Frame exceeded buffer size."}];
+  CRC_MISMATCH = 53 [(status_opts) = {description: "CRC check failed."}];
+  TIMEOUT = 54 [(status_opts) = {description: "Operation timed out."}];
+  NOT_IMPLEMENTED = 55 [(status_opts) = {description: "Command defined but not supported."}];
+  ACK = 56 [(status_opts) = {
+    description: "Generic acknowledgement for fire-and-forget commands."
+    mcu_handler: "on_mcu_ack"
+  }];
+}
+
+enum Command {
+  CMD_UNSPECIFIED = 0;
+  CMD_GET_VERSION = 64 [(cmd_opts) = {
+    category: "system"
+    response_command: "CMD_GET_VERSION_RESP"
+    auth_field: "system_version"
+    action_routes: [
+      {
+        topic: "SYSTEM"
+        scope: "mcu"
+        action_enum: "SystemAction"
+        action: "VERSION"
+        handler: "handle_system_version"
+      }
+    ]
+  }];
+  CMD_GET_VERSION_RESP = 65 [(cmd_opts) = {
+    category: "system"
+    cloud_topic: "system/version/value"
+    pb_message: "VersionResponse"
+  }];
+  CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {
+    category: "system"
+    response_command: "CMD_GET_FREE_MEMORY_RESP"
+    auth_field: "system_free_memory"
+    action_routes: [
+      {
+        topic: "SYSTEM"
+        scope: "mcu"
+        action_enum: "SystemAction"
+        action: "FREE_MEMORY"
+        handler: "handle_system_free_memory"
+      }
+    ]
+  }];
+  CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = {
+    category: "system"
+    cloud_topic: "system/free_memory/value"
+    pb_message: "FreeMemoryResponse"
+  }];
+  CMD_LINK_SYNC = 68 [(cmd_opts) = {
+    category: "system"
+    description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
+    pb_message: "LinkSync"
+    response_command: "CMD_LINK_SYNC_RESP"
+  }];
+  CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = {
+    category: "system"
+    pre_sync_allowed: true
+    pb_message: "LinkSync"
+    mcu_handler: "handshake.handle_link_sync_resp"
+  }];
+  CMD_LINK_RESET = 70 [(cmd_opts) = {
+    category: "system"
+    description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
+    response_command: "CMD_LINK_RESET_RESP"
+  }];
+  CMD_LINK_RESET_RESP = 71 [(cmd_opts) = {
+    category: "system"
+    pre_sync_allowed: true
+    mcu_handler: "handshake.handle_link_reset_resp"
+  }];
+  CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {
+    category: "system"
+    response_command: "CMD_GET_CAPABILITIES_RESP"
+    action_routes: [
+      {
+        topic: "SYSTEM"
+        scope: "mcu"
+        action_enum: "SystemAction"
+        action: "BRIDGE"
+        handler: "handle_system_bridge"
+      }
+    ]
+  }];
+  CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
+    category: "system"
+    cloud_topic: "system/capabilities/value"
+    pb_message: "Capabilities"
+    mcu_handler: "handshake.handle_capabilities_resp"
+  }];
+  CMD_SET_BAUDRATE = 74 [(cmd_opts) = {
+    category: "system"
+    requires_ack: true
+    pb_message: "SetBaudratePacket"
+    response_command: "CMD_SET_BAUDRATE_RESP"
+  }];
+  CMD_SET_BAUDRATE_RESP = 75 [(cmd_opts) = {category: "system"}];
+  CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {
+    category: "system"
+    requires_ack: true
+    pb_message: "EnterBootloader"
+    auth_field: "system_bootloader"
+    action_routes: [
+      {
+        topic: "SYSTEM"
+        scope: "mcu"
+        action_enum: "SystemAction"
+        action: "BOOTLOADER"
+        handler: "handle_system_bootloader"
+      }
+    ]
+  }];
+  CMD_XOFF = 78 [(cmd_opts) = {
+    requires_ack: false
+    description: "Pause transmission (Flow Control)"
+    mcu_handler: "handle_mcu_xoff"
+  }];
+  CMD_XON = 79 [(cmd_opts) = {
+    requires_ack: false
+    description: "Resume transmission (Flow Control)"
+    mcu_handler: "handle_mcu_xon"
+  }];
+  CMD_SET_PIN_MODE = 80 [(cmd_opts) = {
+    category: "gpio"
+    requires_ack: true
+    pb_message: "PinMode"
+    auth_field: "digital_mode"
+    action_routes: [
+      {
+        topic: "DIGITAL"
+        scope: "mcu"
+        action_enum: "PinAction"
+        action: "MODE"
+        handler: "handle_pin_mode"
+      },
+      {
+        topic: "ANALOG"
+        scope: "mcu"
+        action_enum: "PinAction"
+        action: "MODE"
+        handler: "handle_pin_mode"
+      }
+    ]
+  }];
+  CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {
+    category: "gpio"
+    requires_ack: true
+    pb_message: "DigitalWrite"
+    auth_field: "digital_write"
+    action_routes: [
+      {
+        topic: "DIGITAL"
+        scope: "mcu"
+        handler: "handle_pin_write"
+      }
+    ]
+  }];
+  CMD_ANALOG_WRITE = 82 [(cmd_opts) = {
+    category: "gpio"
+    requires_ack: true
+    pb_message: "AnalogWrite"
+    auth_field: "analog_write"
+    action_routes: [
+      {
+        topic: "ANALOG"
+        scope: "mcu"
+        handler: "handle_pin_write"
+      }
+    ]
+  }];
+  CMD_DIGITAL_READ = 83 [(cmd_opts) = {
+    category: "gpio"
+    pb_message: "PinRead"
+    response_command: "CMD_DIGITAL_READ_RESP"
+    auth_field: "digital_read"
+    mcu_unsupported_reason: "unsupported_digital_read"
+    is_query: true
+    action_routes: [
+      {
+        topic: "DIGITAL"
+        scope: "mcu"
+        action_enum: "PinAction"
+        action: "READ"
+        handler: "handle_pin_read"
+      }
+    ]
+  }];
+  CMD_ANALOG_READ = 84 [(cmd_opts) = {
+    category: "gpio"
+    pb_message: "PinRead"
+    response_command: "CMD_ANALOG_READ_RESP"
+    auth_field: "analog_read"
+    mcu_unsupported_reason: "unsupported_analog_read"
+    is_query: true
+    action_routes: [
+      {
+        topic: "ANALOG"
+        scope: "mcu"
+        action_enum: "PinAction"
+        action: "READ"
+        handler: "handle_pin_read"
+      }
+    ]
+  }];
+  CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = {
+    category: "gpio"
+    pb_message: "DigitalReadResponse"
+    mcu_handler: "on_mcu_digital_read_resp"
+  }];
+  CMD_ANALOG_READ_RESP = 86 [(cmd_opts) = {
+    category: "gpio"
+    pb_message: "AnalogReadResponse"
+    mcu_handler: "on_mcu_analog_read_resp"
+  }];
+  CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {
+    category: "gpio"
+    requires_ack: true
+    pb_message: "PinSubscribeRequest"
+    response_command: "CMD_PIN_SUBSCRIBE_RESP"
+    auth_field: "gpio_subscribe"
+  }];
+  CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
+    category: "gpio"
+    pb_message: "PinSubscribeResponse"
+    mcu_handler: "on_mcu_pin_subscribe_resp"
+  }];
+  CMD_PIN_UPDATE_EVENT = 89 [(cmd_opts) = {
+    category: "gpio"
+    cloud_topic: "gpio/pin_update"
+    pb_message: "PinUpdateEvent"
+    mcu_handler: "on_mcu_pin_update_event"
+  }];
+  CMD_CONSOLE_WRITE = 96 [(cmd_opts) = {
+    category: "console"
+    requires_ack: true
+    pb_message: "ConsoleWrite"
+    cloud_topic: "console/out"
+    auth_field: "console_input"
+    mcu_handler: "on_mcu_console_write"
+  }];
+  CMD_DATASTORE_PUT = 112 [(cmd_opts) = {
+    category: "datastore"
+    requires_ack: true
+    pb_message: "DatastorePut"
+    auth_field: "datastore_put"
+    mcu_handler: "on_mcu_datastore_put"
+  }];
+  CMD_DATASTORE_GET = 113 [(cmd_opts) = {
+    category: "datastore"
+    pb_message: "DatastoreGet"
+    response_command: "CMD_DATASTORE_GET_RESP"
+    auth_field: "datastore_get"
+    mcu_handler: "on_mcu_datastore_get"
+    is_query: true
+    action_routes: [
+      {
+        topic: "DATASTORE"
+        scope: "local"
+        action_enum: "DatastoreAction"
+        action: "GET"
+      }
+    ]
+  }];
+  CMD_DATASTORE_GET_RESP = 114 [(cmd_opts) = {
+    category: "datastore"
+    pb_message: "DatastoreGetResponse"
+  }];
+  CMD_MAILBOX_READ = 128 [(cmd_opts) = {
+    category: "mailbox"
+    response_command: "CMD_MAILBOX_READ_RESP"
+    auth_field: "mailbox_read"
+    mcu_handler: "on_mcu_mailbox_read"
+  }];
+  CMD_MAILBOX_PROCESSED = 129 [(cmd_opts) = {
+    category: "mailbox"
+    cloud_topic: "mailbox/processed"
+    pb_message: "MailboxProcessed"
+    mcu_handler: "on_mcu_mailbox_processed"
+  }];
+  CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {
+    category: "mailbox"
+    response_command: "CMD_MAILBOX_AVAILABLE_RESP"
+    mcu_handler: "on_mcu_mailbox_available"
+  }];
+  CMD_MAILBOX_PUSH = 131 [(cmd_opts) = {
+    category: "mailbox"
+    requires_ack: true
+    cloud_topic: "mailbox/incoming"
+    pb_message: "MailboxPush"
+    auth_field: "mailbox_write"
+    mcu_handler: "on_mcu_mailbox_push"
+  }];
+  CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {
+    category: "mailbox"
+    pb_message: "MailboxReadResponse"
+  }];
+  CMD_MAILBOX_AVAILABLE_RESP = 133 [(cmd_opts) = {
+    category: "mailbox"
+    pb_message: "MailboxAvailableResponse"
+  }];
+  CMD_FILE_WRITE = 144 [(cmd_opts) = {
+    category: "filesystem"
+    requires_ack: true
+    pb_message: "FileWrite"
+    auth_field: "file_write"
+    mcu_handler: "on_mcu_file_write"
+    action_routes: [
+      {
+        topic: "FILE"
+        scope: "mcu"
+        action_enum: "FileAction"
+        action: "WRITE"
+        handler: "handle_file_mcu_write"
+      },
+      {
+        topic: "FILE"
+        scope: "local"
+        action_enum: "FileAction"
+        action: "WRITE"
+        handler: "handle_file_local_write"
+      }
+    ]
+  }];
+  CMD_FILE_READ = 145 [(cmd_opts) = {
+    category: "filesystem"
+    pb_message: "FileRead"
+    response_command: "CMD_FILE_READ_RESP"
+    auth_field: "file_read"
+    mcu_handler: "on_mcu_file_read"
+    is_query: true
+    action_routes: [
+      {
+        topic: "FILE"
+        scope: "mcu"
+        action_enum: "FileAction"
+        action: "READ"
+        handler: "handle_file_mcu_read"
+      },
+      {
+        topic: "FILE"
+        scope: "local"
+        action_enum: "FileAction"
+        action: "READ"
+        handler: "handle_file_local_read"
+      }
+    ]
+  }];
+  CMD_FILE_REMOVE = 146 [(cmd_opts) = {
+    category: "filesystem"
+    pb_message: "FileRemove"
+    auth_field: "file_remove"
+    mcu_handler: "on_mcu_file_remove"
+    action_routes: [
+      {
+        topic: "FILE"
+        scope: "mcu"
+        action_enum: "FileAction"
+        action: "REMOVE"
+        handler: "handle_file_mcu_remove"
+      },
+      {
+        topic: "FILE"
+        scope: "local"
+        action_enum: "FileAction"
+        action: "REMOVE"
+        handler: "execute_local_file_remove"
+      }
+    ]
+  }];
+  CMD_FILE_READ_RESP = 147 [(cmd_opts) = {
+    category: "filesystem"
+    pb_message: "FileReadResponse"
+    mcu_handler: "on_mcu_file_read_resp"
+  }];
+  CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
+    category: "process"
+    pb_message: "ProcessRunAsync"
+    response_command: "CMD_PROCESS_RUN_ASYNC_RESP"
+    auth_field: "shell_run_async"
+    mcu_handler: "on_mcu_process_run_async"
+    action_routes: [
+      {
+        topic: "SHELL"
+        scope: "local"
+        action_enum: "ShellAction"
+        action: "RUN_ASYNC"
+        handler: "handle_shell_run_async"
+      }
+    ]
+  }];
+  CMD_PROCESS_POLL = 162 [(cmd_opts) = {
+    category: "process"
+    pb_message: "ProcessPoll"
+    response_command: "CMD_PROCESS_POLL_RESP"
+    auth_field: "shell_poll"
+    mcu_handler: "on_mcu_process_poll"
+    action_routes: [
+      {
+        topic: "SHELL"
+        scope: "local"
+        action_enum: "ShellAction"
+        action: "POLL"
+        handler: "handle_shell_poll"
+      }
+    ]
+  }];
+  CMD_PROCESS_KILL = 163 [(cmd_opts) = {
+    category: "process"
+    pb_message: "ProcessKill"
+    auth_field: "shell_kill"
+    mcu_handler: "on_mcu_process_kill"
+    action_routes: [
+      {
+        topic: "SHELL"
+        scope: "local"
+        action_enum: "ShellAction"
+        action: "KILL"
+        handler: "execute_shell_kill"
+      }
+    ]
+  }];
+  CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = {
+    category: "process"
+    pb_message: "ProcessRunAsyncResponse"
+  }];
+  CMD_PROCESS_POLL_RESP = 166 [(cmd_opts) = {
+    category: "process"
+    pb_message: "ProcessPollResponse"
+  }];
+  CMD_SPI_BEGIN = 176 [(cmd_opts) = {
+    category: "spi"
+    requires_ack: true
+    auth_field: "spi_begin"
+    action_routes: [
+      {
+        topic: "SPI"
+        scope: "mcu"
+        action_enum: "SpiAction"
+        action: "BEGIN"
+        handler: "handle_spi_begin"
+      }
+    ]
+  }];
+  CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
+    category: "spi"
+    pb_message: "SpiTransfer"
+    response_command: "CMD_SPI_TRANSFER_RESP"
+    auth_field: "spi_transfer"
+    is_query: true
+    action_routes: [
+      {
+        topic: "SPI"
+        scope: "mcu"
+        action_enum: "SpiAction"
+        action: "TRANSFER"
+        handler: "handle_spi_transfer"
+      }
+    ]
+  }];
+  CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = {
+    category: "spi"
+    cloud_topic: "spi/transfer/resp"
+    pb_message: "SpiTransferResponse"
+    mcu_handler: "on_mcu_spi_transfer_resp"
+  }];
+  CMD_SPI_END = 179 [(cmd_opts) = {
+    category: "spi"
+    requires_ack: true
+    auth_field: "spi_end"
+    action_routes: [
+      {
+        topic: "SPI"
+        scope: "mcu"
+        action_enum: "SpiAction"
+        action: "END"
+        handler: "handle_spi_end"
+      }
+    ]
+  }];
+  CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {
+    category: "spi"
+    requires_ack: true
+    pb_message: "SpiConfig"
+    auth_field: "spi_config"
+    action_routes: [
+      {
+        topic: "SPI"
+        scope: "mcu"
+        action_enum: "SpiAction"
+        action: "CONFIG"
+        handler: "handle_spi_config"
+      }
+    ]
+  }];
+  CMD_CLOCK_SYNC = 192 [(cmd_opts) = {
+    category: "clock"
+    pb_message: "ClockSyncRequest"
+    response_command: "CMD_CLOCK_SYNC_RESP"
+    auth_field: "clock_sync"
+  }];
+  CMD_CLOCK_SYNC_RESP = 193 [(cmd_opts) = {
+    category: "clock"
+    pb_message: "ClockSyncResponse"
+    mcu_handler: "on_mcu_clock_sync_resp"
+  }];
+}
+
+enum ChannelId {
+  reserved 1, 3;
+  reserved "CHANNEL_CONSOLE", "CHANNEL_DATA";
+  CHANNEL_CONTROL = 0;
+  CHANNEL_TELEMETRY = 2;
+}
+
+enum QosProfile {
+  QOS_RELIABLE = 0;
+  QOS_BEST_EFFORT = 1;
+}
+
+enum SafetyPinState {
+  SAFE_PIN_LOW = 0;
+  SAFE_PIN_HIGH = 1;
+  SAFE_PIN_INPUT = 2;
+  SAFE_PIN_INPUT_PULLUP = 3;
+}
+
+enum PinModeType {
+  PIN_INPUT = 0;
+  PIN_OUTPUT = 1;
+  PIN_INPUT_PULLUP = 2;
+}
+
+message AllowedCommandPolicy {
+  repeated string entries = 1;
+}
+
+message TopicAuthorization {
+  bool file_read = 1;
+  bool file_write = 2;
+  bool file_remove = 3;
+  bool datastore_get = 4;
+  bool datastore_put = 5;
+  bool mailbox_read = 6;
+  bool mailbox_write = 7;
+  bool shell_run_async = 8;
+  bool shell_poll = 9;
+  bool shell_kill = 10;
+  bool console_input = 11;
+  bool digital_write = 12;
+  bool digital_read = 13;
+  bool digital_mode = 14;
+  bool analog_write = 15;
+  bool analog_read = 16;
+  bool system_version = 17;
+  bool system_free_memory = 18;
+  bool system_bootloader = 19;
+  bool spi_begin = 20;
+  bool spi_end = 21;
+  bool spi_transfer = 22;
+  bool spi_config = 23;
+  bool clock_sync = 24;
+  bool gpio_subscribe = 25;
+}
+
+message RuntimeConfig {
+  string serial_port = 1 [
+    (config_default) = "/dev/ttyATH0",
+    (config_desc) = "MCU physical serial device",
+    (uci_option) = "serial_port"
+  ];
+  uint32 serial_baud = 2 [
+    (config_default_ref) = "constants.default_baudrate",
+    (config_desc) = "Operating serial baud rate",
+    (uci_option) = "serial_baud"
+  ];
+  uint32 serial_safe_baud = 3 [
+    (config_default_ref) = "constants.default_safe_baudrate",
+    (config_desc) = "Safe fallback serial baud rate",
+    (uci_option) = "serial_safe_baud"
+  ];
+  string cloud_host = 4 [
+    (config_default) = "127.0.0.1",
+    (config_desc) = "Cloud Gateway host IP or domain",
+    (uci_option) = "cloud_host",
+    (client_constant) = true
+  ];
+  uint32 cloud_port = 5 [
+    (config_default_ref) = "constants.default_cloud_port",
+    (config_min) = 1,
+    (config_max) = 65535,
+    (config_desc) = "Cloud Gateway port",
+    (uci_option) = "cloud_port"
+  ];
+  optional string cloud_user = 6 [
+    (config_desc) = "Cloud authentication username",
+    (uci_option) = "cloud_user"
+  ];
+  optional string cloud_pass = 7 [
+    (config_desc) = "Cloud authentication password",
+    (uci_option) = "cloud_pass"
+  ];
+  bool cloud_tls = 8 [
+    (config_default) = "true",
+    (config_desc) = "Enable TLS encryption for Cloud connection",
+    (uci_option) = "cloud_tls"
+  ];
+  optional string cloud_cafile = 9 [
+    (config_default) = "/etc/ssl/certs/ca-certificates.crt",
+    (config_desc) = "Path to CA certificates bundle",
+    (uci_option) = "cloud_cafile"
+  ];
+  optional string cloud_certfile = 10 [
+    (config_desc) = "Path to client certificate for mTLS",
+    (uci_option) = "cloud_certfile"
+  ];
+  optional string cloud_keyfile = 11 [
+    (config_desc) = "Path to client private key for mTLS",
+    (uci_option) = "cloud_keyfile"
+  ];
+  string topic_prefix = 12 [
+    (config_default_ref) = "cloud_defaults.default_topic_prefix",
+    (config_desc) = "Topic prefix for cloud messages",
+    (uci_option) = "topic_prefix"
+  ];
+  repeated string allowed_commands = 13 [
+    (config_desc) = "List of permitted shell commands",
+    (uci_option) = "allowed_commands"
+  ];
+  string file_system_root = 14 [
+    (config_default) = "/tmp/yun_files",
+    (config_volatile) = true,
+    (config_desc) = "Base directory for MCU file operations (RAM)",
+    (uci_option) = "file_system_root"
+  ];
+  uint32 process_timeout = 15 [
+    (config_default) = "10",
+    (config_min) = 1,
+    (config_max) = 3600,
+    (config_desc) = "Subprocess execution timeout in seconds",
+    (uci_option) = "process_timeout"
+  ];
+  bool cloud_tls_insecure = 16 [
+    (config_default) = "false",
+    (config_desc) = "Disable TLS hostname verification",
+    (uci_option) = "cloud_tls_insecure"
+  ];
+  uint32 file_write_max_bytes = 17 [
+    (config_default) = "262144",
+    (config_desc) = "Maximum bytes per file write transaction"
+  ];
+  uint32 file_storage_quota_bytes = 18 [
+    (config_default) = "8388608",
+    (config_desc) = "Maximum total file storage quota in bytes"
+  ];
+  uint32 cloud_queue_limit = 19 [
+    (config_default) = "256",
+    (config_desc) = "Maximum outbound cloud messages in queue"
+  ];
+  uint32 reconnect_delay = 20 [
+    (config_default) = "5",
+    (config_desc) = "Delay between cloud reconnect attempts in seconds"
+  ];
+  uint32 status_interval = 21 [
+    (config_default) = "5",
+    (config_min) = 1,
+    (config_desc) = "Status snapshot update interval in seconds",
+    (uci_option) = "status_interval"
+  ];
+  bool debug = 22 [
+    (config_default) = "false",
+    (config_desc) = "Enable verbose debug logging",
+    (uci_option) = "debug"
+  ];
+  uint32 console_queue_limit_bytes = 23 [
+    (config_default_ref) = "constants.default_console_queue_limit_bytes",
+    (config_desc) = "Maximum buffered console output bytes"
+  ];
+  uint32 mailbox_queue_limit = 24 [
+    (config_default) = "64",
+    (config_desc) = "Maximum messages in mailbox queue"
+  ];
+  uint32 mailbox_queue_bytes_limit = 25 [
+    (config_default) = "65536",
+    (config_desc) = "Maximum total bytes in mailbox queue"
+  ];
+  uint32 pending_pin_request_limit = 26 [
+    (config_default) = "32",
+    (config_desc) = "Maximum pending GPIO pin requests"
+  ];
+  float serial_retry_timeout = 27 [
+    (config_default) = "10.0",
+    (config_desc) = "General serial retry timeout in seconds"
+  ];
+  float serial_response_timeout = 28 [
+    (config_default) = "20.0",
+    (config_desc) = "General serial response timeout in seconds"
+  ];
+  uint32 serial_retry_attempts = 29 [
+    (config_default) = "5",
+    (config_desc) = "Maximum frame retry attempts"
+  ];
+  uint32 serial_fallback_threshold = 30 [
+    (config_default) = "5",
+    (config_desc) = "Failures before fallback to safe baudrate"
+  ];
+  float serial_handshake_min_interval = 31 [
+    (config_default) = "0.0",
+    (config_desc) = "Minimum interval between handshakes in seconds"
+  ];
+  uint32 serial_handshake_fatal_failures = 32 [
+    (config_default_ref) = "constants.default_serial_handshake_fatal_failures",
+    (config_desc) = "Handshake failures triggering daemon restart"
+  ];
+  bool cloud_enabled = 33 [
+    (config_default) = "true",
+    (config_desc) = "Enable Cloud Gateway connectivity",
+    (uci_option) = "cloud_enabled"
+  ];
+  bool watchdog_enabled = 34 [
+    (config_default) = "false",
+    (config_desc) = "Enable hardware watchdog monitoring",
+    (uci_option) = "watchdog_enabled"
+  ];
+  float watchdog_interval = 35 [
+    (config_default) = "5.0",
+    (config_min) = 0.5,
+    (config_max) = 300.0,
+    (config_desc) = "Watchdog strobe interval in seconds",
+    (uci_option) = "watchdog_interval"
+  ];
+  bytes serial_shared_secret = 36 [
+    (config_default) = "failsafe_secret_mode",
+    (config_desc) = "ChaCha20-Poly1305 AEAD shared secret",
+    (uci_option) = "serial_shared_secret"
+  ];
+  string cloud_spool_dir = 37 [
+    (config_default) = "/tmp/mcubridge/spool",
+    (config_volatile) = true,
+    (config_desc) = "Volatile spool directory (RAM)",
+    (uci_option) = "cloud_spool_dir"
+  ];
+  uint32 process_max_output_bytes = 38 [
+    (config_default_ref) = "constants.default_process_max_output_bytes",
+    (config_desc) = "Maximum process output bytes",
+    (uci_option) = "process_max_output_bytes"
+  ];
+  uint32 process_max_concurrent = 39 [
+    (config_default) = "4",
+    (config_desc) = "Maximum concurrent processes",
+    (uci_option) = "process_max_concurrent"
+  ];
+  float bridge_summary_interval = 43 [
+    (config_default) = "60.0",
+    (config_desc) = "Summary log interval in seconds"
+  ];
+  float bridge_handshake_interval = 44 [
+    (config_default) = "300.0",
+    (config_desc) = "Handshake refresh interval in seconds"
+  ];
+  bool allow_non_tmp_paths = 45 [
+    (config_default) = "false",
+    (config_desc) = "Allow paths outside /tmp (flash wear risk)",
+    (uci_option) = "allow_non_tmp_paths"
+  ];
+  AllowedCommandPolicy allowed_policy = 46;
+  TopicAuthorization topic_authorization = 47;
+  bool cloud_http3_enabled = 48 [
+    (config_default) = "false",
+    (config_desc) = "Enable HTTP/3 QUIC cloud transport",
+    (uci_option) = "cloud_http3_enabled"
+  ];
+  uint32 cloud_http3_port = 49 [
+    (config_default_ref) = "constants.default_cloud_port",
+    (config_min) = 1,
+    (config_max) = 65535,
+    (config_desc) = "HTTP/3 UDP port",
+    (uci_option) = "cloud_http3_port"
+  ];
+  string cloud_http3_congestion_control = 50 [
+    (config_default) = "bbr",
+    (config_desc) = "QUIC congestion control algorithm",
+    (uci_option) = "cloud_http3_congestion_control"
+  ];
+  uint32 respawn_threshold = 51 [
+    (config_default) = "3600",
+    (config_desc) = "Procd service respawn timeout threshold in seconds",
+    (uci_option) = "respawn_threshold"
+  ];
+  uint32 respawn_timeout = 52 [
+    (config_default) = "5",
+    (config_desc) = "Procd service respawn restart delay timeout in seconds",
+    (uci_option) = "respawn_timeout"
+  ];
+  uint32 respawn_retry = 53 [
+    (config_default) = "0",
+    (config_desc) = "Procd service respawn maximum retry count (0 for infinite)",
+    (uci_option) = "respawn_retry"
+  ];
+}

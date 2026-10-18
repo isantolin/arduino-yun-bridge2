@@ -47,7 +47,12 @@ def _make_mock_stream(req_msg: object) -> MockGrpcStream[Any, Any]:
 
 
 def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
-    methods = pb.DESCRIPTOR.services_by_name["LocalBridge"].methods
+    service_desc = next(
+        dep.services_by_name["LocalBridge"]
+        for dep in [pb.DESCRIPTOR, *pb.DESCRIPTOR.dependencies]
+        if "LocalBridge" in dep.services_by_name
+    )
+    methods = service_desc.methods
     unary_methods = {
         method.name: method for method in methods if not method.client_streaming and not method.server_streaming
     }

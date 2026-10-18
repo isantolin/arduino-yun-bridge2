@@ -152,15 +152,22 @@ _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
 
 
 def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFieldDef]:
-    runtime_config_desc = file_desc.message_types_by_name.get("RuntimeConfig")
+    all_descs = [file_desc, *file_desc.dependencies]
+    runtime_config_desc = None
+    for dep in all_descs:
+        if "RuntimeConfig" in dep.message_types_by_name:
+            runtime_config_desc = dep.message_types_by_name["RuntimeConfig"]
+            break
     if not runtime_config_desc:
         return []
 
-    file_options = file_desc.GetOptions()
-    default_sources = {
-        "constants": file_options.Extensions[pb_module.constants],
-        "cloud_defaults": file_options.Extensions[pb_module.cloud_defaults],
-    }
+    default_sources: dict[str, Any] = {}
+    for dep in all_descs:
+        opts = dep.GetOptions()
+        if opts.HasExtension(pb_module.constants):
+            default_sources["constants"] = opts.Extensions[pb_module.constants]
+        if opts.HasExtension(pb_module.cloud_defaults):
+            default_sources["cloud_defaults"] = opts.Extensions[pb_module.cloud_defaults]
     runtime_config_fields: list[ConfigFieldDef] = []
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
@@ -227,7 +234,16 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, A
             sys.path.insert(0, proto_dir)
         mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
     file_desc = mcubridge_pb2.DESCRIPTOR
-    options = file_desc.GetOptions()
+    all_descs = [file_desc, *file_desc.dependencies]
+
+    options = None
+    for dep in all_descs:
+        opts = dep.GetOptions()
+        if opts.HasExtension(mcubridge_pb2.constants):
+            options = opts
+            break
+    if options is None:
+        options = file_desc.GetOptions()
 
     constants_opt = options.Extensions[mcubridge_pb2.constants]
     hardware_opt = options.Extensions[mcubridge_pb2.hardware]
@@ -261,7 +277,14 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, A
     capabilities = {cap.name: cap.value for cap in capabilities_opt}
 
     # Load Command enum
-    command_enum_desc = file_desc.enum_types_by_name["Command"]
+    command_enum_desc = None
+    for dep in all_descs:
+        if "Command" in dep.enum_types_by_name:
+            command_enum_desc = dep.enum_types_by_name["Command"]
+            break
+    if not command_enum_desc:
+        raise ValueError("Command enum not found in protocol descriptors")
+
     commands: list[dict[str, Any]] = []
     for val in command_enum_desc.values:
         if val.name == "CMD_UNSPECIFIED":
@@ -282,19 +305,28 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, A
     # Load Message & Enum CLOUD topics
     message_topics = {
         msg_name: opts.Extensions[mcubridge_pb2.msg_cloud_topic]
-        for msg_name, msg_desc in file_desc.message_types_by_name.items()
+        for dep in all_descs
+        for msg_name, msg_desc in dep.message_types_by_name.items()
         if (opts := msg_desc.GetOptions()).HasExtension(mcubridge_pb2.msg_cloud_topic)
     }
     message_topics.update(
         {
             f"{enum_name}_ENUM": opts.Extensions[mcubridge_pb2.enum_cloud_topic]
-            for enum_name, enum_desc in file_desc.enum_types_by_name.items()
+            for dep in all_descs
+            for enum_name, enum_desc in dep.enum_types_by_name.items()
             if (opts := enum_desc.GetOptions()).HasExtension(mcubridge_pb2.enum_cloud_topic)
         }
     )
 
     # Load Status enum
-    status_enum_desc = file_desc.enum_types_by_name["Status"]
+    status_enum_desc = None
+    for dep in all_descs:
+        if "Status" in dep.enum_types_by_name:
+            status_enum_desc = dep.enum_types_by_name["Status"]
+            break
+    if not status_enum_desc:
+        raise ValueError("Status enum not found in protocol descriptors")
+
     statuses = [
         {
             "name": val.name,
@@ -511,7 +543,12 @@ def _build_action_context(spec: dict[str, Any]) -> dict[str, Any]:
 
 def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
     file_desc = pb_module.DESCRIPTOR
-    service_desc = file_desc.services_by_name.get("LocalBridge")
+    all_descs = [file_desc, *file_desc.dependencies]
+    service_desc = None
+    for dep in all_descs:
+        if "LocalBridge" in dep.services_by_name:
+            service_desc = dep.services_by_name["LocalBridge"]
+            break
     if not service_desc:
         return [], {}
     rpc_specs: list[dict[str, Any]] = []
@@ -685,7 +722,13 @@ def _build_operations_context(
 
 def _build_descriptor_context(pb_module: Any) -> dict[str, Any]:
     file_desc = pb_module.DESCRIPTOR
-    envelope_desc = file_desc.message_types_by_name.get("RpcEnvelope")
+    all_descs = [file_desc, *file_desc.dependencies]
+    envelope_desc = None
+    for dep in all_descs:
+        if "RpcEnvelope" in dep.message_types_by_name:
+            envelope_desc = dep.message_types_by_name["RpcEnvelope"]
+            break
+
     payload_fields: list[dict[str, str]] = []
     payload_structs: list[dict[str, str]] = []
     if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
@@ -703,7 +746,12 @@ def _build_descriptor_context(pb_module: Any) -> dict[str, Any]:
     mcu_names: set[str] = set(payload_names)
     if envelope_desc:
         mcu_names.add("RpcEnvelope")
-    all_structs = [{"name": name} for name in file_desc.message_types_by_name if name in mcu_names]
+    all_struct_names: list[str] = []
+    for dep in all_descs:
+        for name in dep.message_types_by_name:
+            if name in mcu_names and name not in all_struct_names:
+                all_struct_names.append(name)
+    all_structs = [{"name": name} for name in all_struct_names]
 
     topic_auth_map: dict[tuple[str, str], str] = {}
     auth_message = getattr(pb_module, "TopicAuthorization", None)
@@ -1058,14 +1106,16 @@ def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, P
 def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> list[Path]:
     explicit_outputs = [path for path in (args.cpp, args.cpp_structs, args.py, args.py_client) if path]
     outputs = list(explicit_outputs)
+    proto_stems = ("mcubridge", "mcu_wire", "config_schema", "cloud_gateway")
     if args.cpp:
-        outputs.extend((args.cpp.parent / "mcubridge.pb.h", args.cpp.parent / "mcubridge.pb.c"))
+        for stem in proto_stems:
+            outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
 
     python_output_dirs = {path.parent for path in (args.py, args.py_client) if path}
     for output_dir in python_output_dirs:
-        outputs.extend(
-            output_dir / file_name for file_name in ("mcubridge_pb2.py", "mcubridge_pb2.pyi", "mcubridge_grpc.py")
-        )
+        for stem in proto_stems:
+            outputs.extend((output_dir / f"{stem}_pb2.py", output_dir / f"{stem}_pb2.pyi"))
+        outputs.append(output_dir / "mcubridge_grpc.py")
 
     explicit_output_dirs = {path.parent for path in explicit_outputs}
     outputs.extend(
@@ -1138,12 +1188,14 @@ def _dispatch_generated_file(
     src: Path,
     targets: list[Path | None],
     transform: Callable[[str], str] | None = None,
+    dest_name: str | None = None,
 ) -> None:
     if not src.exists():
         raise FileNotFoundError(f"Expected generated protocol artifact is missing: {src}")
     data = transform(src.read_text(encoding="utf-8")).encode("utf-8") if transform else src.read_bytes()
+    out_name = dest_name or src.name
     for target_dir in filter(None, targets):
-        target = target_dir / src.name
+        target = target_dir / out_name
         if not target.is_file() or target.read_bytes() != data:
             target.write_bytes(data)
     src.unlink(missing_ok=True)
@@ -1201,24 +1253,49 @@ def main(
     py_targets = [args.py.parent if args.py else None, args.py_client.parent if args.py_client else None]
     cpp_targets = [args.cpp.parent if args.cpp else None]
 
-    _dispatch_generated_file(
-        proto_path.parent / "mcubridge.pb.h",
-        cpp_targets,
-        lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
-    )
-    _dispatch_generated_file(proto_path.parent / "mcubridge.pb.c", cpp_targets)
-    _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.py", py_targets)
-    _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.pyi", py_targets)
+    proto_stems = ("mcubridge", "mcu_wire", "config_schema", "cloud_gateway")
+
+    def _sanitize_pb2(text: str) -> str:
+        text = re.sub(
+            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|mcubridge_pb2)\b",
+            r"from . import \1",
+            text,
+            flags=re.MULTILINE,
+        )
+        return re.sub(
+            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|mcubridge_pb2)\b",
+            r"from .\1",
+            text,
+            flags=re.MULTILINE,
+        )
+
+    for stem in proto_stems:
+        _dispatch_generated_file(
+            proto_path.parent / f"{stem}.pb.h",
+            cpp_targets,
+            lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
+        )
+        _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
+        _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.py", py_targets, _sanitize_pb2)
+        _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.pyi", py_targets)
 
     def _sanitize_grpc_bindings(text: str) -> str:
-        text = text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
+        text = re.sub(
+            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|mcubridge_pb2)\b",
+            r"from . import \1",
+            text,
+            flags=re.MULTILINE,
+        )
         return text.replace("if typing.TYPE_CHECKING:\n    import grpclib.server", "import grpclib.server")
 
     _dispatch_generated_file(
-        proto_path.parent / "mcubridge_grpc.py",
+        proto_path.parent / "cloud_gateway_grpc.py",
         py_targets,
         _sanitize_grpc_bindings,
+        dest_name="mcubridge_grpc.py",
     )
+    for grpc_file in proto_path.parent.glob("*_grpc.py"):
+        grpc_file.unlink(missing_ok=True)
 
     # Render Jinja2 artifacts declaratively
     py_context = context | {

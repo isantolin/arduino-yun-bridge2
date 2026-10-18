@@ -308,7 +308,6 @@ class RuntimeState:
     cloud_drop_counts: dict[str, int]
     allow_non_tmp_paths: bool
     datastore_cache: LmdbCache | None
-    tls_session_cache: LmdbCache | None
     mailbox_queue: LmdbDeque
     mailbox_incoming_queue: LmdbDeque
     serial_tx_allowed: asyncio.Event
@@ -412,7 +411,6 @@ class RuntimeState:
         self.cloud_drop_counts: dict[str, int] = kwargs.get("cloud_drop_counts") or {}
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
         self.datastore_cache: LmdbCache | None = kwargs.get("datastore_cache")
-        self.tls_session_cache: LmdbCache | None = kwargs.get("tls_session_cache")
 
         self.mailbox_queue: LmdbDeque = kwargs.get("mailbox_queue") or LmdbDeque(path=":memory:")
         self.mailbox_incoming_queue: LmdbDeque = kwargs.get("mailbox_incoming_queue") or LmdbDeque(path=":memory:")
@@ -714,10 +712,6 @@ class RuntimeState:
             _safe_close(self.datastore_cache)
             self.datastore_cache = None
 
-        if self.tls_session_cache is not None:
-            _safe_close(self.tls_session_cache)
-            self.tls_session_cache = None
-
         # Re-initialize transient queues
         self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
@@ -740,16 +734,6 @@ class RuntimeState:
             except (OSError, RuntimeError):
                 logger.warning("Datastore falling back to RAM cache")
                 self.datastore_cache = None
-
-        # [SIL-2] Initialize TLS 1.3 / QUIC 0-RTT session ticket cache with LMDB
-        if tls_dir := self.get_storage_subdir("tls_sessions"):
-            try:
-                self.tls_session_cache = LmdbCache(str(tls_dir / "tls_lmdb"))
-            except (OSError, RuntimeError):
-                logger.warning("TLS session cache falling back to RAM cache")
-                self.tls_session_cache = LmdbCache(":memory:")
-        else:
-            self.tls_session_cache = LmdbCache(":memory:")
 
     def build_serial_pipeline_snapshot(self) -> pb.SerialPipelineSnapshot:
         def _to_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:

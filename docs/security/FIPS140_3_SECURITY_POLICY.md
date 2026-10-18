@@ -83,6 +83,5 @@ The canonical prefixes are generated from `mcubridge.proto`. Receivers validate 
 * **C++ MCU**: Memory containing $K_{session}$ and intermediate buffers is zeroized using `wc_ForceZero()` to defeat compiler dead-store elimination.
 * **Python MPU**: `secure_zero()` overwrites the supplied mutable `bytearray` or writable `memoryview`. It cannot guarantee removal of immutable copies or every copy retained by the interpreter, allocator, or native libraries; it is not a process-wide zeroization guarantee.
 
-### 4.4 TLS 1.3 0-RTT Session Ticket Management (Cloud Gateway)
-* **Storage**: Ephemeral session tickets for fast gRPC 0-RTT re-handshakes are cached in LMDB (`RuntimeState.tls_session_cache`) with process-level access permissions.
-* **Lifecycle & Anti-Replay**: Session tickets have strict time-to-live bounds and single-use resumption policies, preventing TLS 1.3 early-data replay attacks.
+### 4.4 TLS 1.3 Session Management (Cloud Gateway)
+* **Lifecycle**: Ephemeral session tickets for fast gRPC re-handshakes are managed natively by OpenSSL / TLS 1.3 stack with strict time-to-live bounds and single-use resumption policies, preventing TLS 1.3 early-data replay attacks.

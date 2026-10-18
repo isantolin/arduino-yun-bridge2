@@ -56,7 +56,6 @@ ALLOWLIST_PY_HELPERS = {
     "runtime_config_factory",
     "load_runtime_config_from_json",
     "replace_cloud_publish",
-    "build_cached_ssl_context",
     "extract_nonce_counter",
     "secure_zero",
     "get_subscriptions",

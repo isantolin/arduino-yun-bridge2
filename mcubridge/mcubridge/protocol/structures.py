@@ -129,74 +129,32 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
             setattr(cfg.topic_authorization, name, True)
 
 
-@functools.lru_cache(maxsize=4)
-def build_cached_ssl_context(
-    cloud_cafile: str, cloud_certfile: str, cloud_keyfile: str, cloud_tls_insecure: bool
-) -> ssl.SSLContext:
-    if cloud_cafile:
-        ca_path = Path(cloud_cafile)
-        if not ca_path.exists():
-            raise RuntimeError(f"Cloud TLS CA file missing: {cloud_cafile}")
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
-    else:
-        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
-    context.minimum_version = CLOUD_TLS_MIN_VERSION
-
-    if cloud_tls_insecure:
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-
-    if cloud_certfile:
-        context.load_cert_chain(cloud_certfile, cloud_keyfile)
-
-    return context
-
-
-def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
-    """Create an ssl.SSLContext based on cfg. [SIL-2]"""
+def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
+    """Create a standard ssl.SSLContext based on cfg. [SIL-2]"""
     if not cfg.cloud_tls:
         return None
 
     try:
-        return build_cached_ssl_context(cfg.cloud_cafile, cfg.cloud_certfile, cfg.cloud_keyfile, cfg.cloud_tls_insecure)
+        if cfg.cloud_cafile:
+            ca_path = Path(cfg.cloud_cafile)
+            if not ca_path.exists():
+                raise RuntimeError(f"Cloud TLS CA file missing: {cfg.cloud_cafile}")
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
+        else:
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+        context.minimum_version = CLOUD_TLS_MIN_VERSION
+
+        if cfg.cloud_tls_insecure:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+        if cfg.cloud_certfile:
+            context.load_cert_chain(cfg.cloud_certfile, cfg.cloud_keyfile)
+
+        return context
     except (OSError, ValueError) as exc:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
-
-
-def save_tls_session_ticket(cache: Any | None, host: str, port: int, ticket_bytes: bytes) -> None:
-    """Persist TLS 1.3 / QUIC 0-RTT session ticket into LMDB storage. [SIL-2]"""
-    if cache is None or not ticket_bytes:
-        return
-    key = f"tls_ticket:{host}:{port}"
-    if hasattr(cache, "_mem"):
-        cache._mem[key] = ticket_bytes
-    if hasattr(cache, "env") and cache.env and hasattr(cache, "db"):
-        try:
-            with cache.env.begin(write=True, db=cache.db) as txn:
-                txn.put(key.encode("utf-8"), ticket_bytes)
-        except (OSError, RuntimeError) as exc:
-            logger.warning("Failed to persist TLS session ticket", host=host, port=port, error=str(exc))
-
-
-def load_tls_session_ticket(cache: Any | None, host: str, port: int) -> bytes | None:
-    """Retrieve persisted TLS 1.3 / QUIC 0-RTT session ticket from LMDB storage. [SIL-2]"""
-    if cache is None:
-        return None
-    key = f"tls_ticket:{host}:{port}"
-    if hasattr(cache, "_mem") and getattr(cache, "is_mem", False):
-        return cache._mem.get(key)
-    if hasattr(cache, "env") and cache.env and hasattr(cache, "db"):
-        try:
-            with cache.env.begin(db=cache.db, buffers=True) as txn:
-                val = txn.get(key.encode("utf-8"))
-                return bytes(val) if val is not None else None
-        except (OSError, RuntimeError) as exc:
-            logger.debug("Storage cache read failure", key=key, error=str(exc))
-            return None
-    if hasattr(cache, "_mem"):
-        return cache._mem.get(key)
-    return None
 
 
 # =============================================================================

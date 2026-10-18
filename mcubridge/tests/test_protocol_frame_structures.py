@@ -244,47 +244,14 @@ def test_pending_command_methods() -> None:
     assert cmd2.completion.is_set()
 
 
-def test_tls_session_ticket_uncovered_branches() -> None:
+def test_get_ssl_context_insecure() -> None:
     import ssl
-    from unittest.mock import MagicMock
 
     cfg_insecure = pb.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)
     ctx = structures.get_ssl_context(cfg_insecure)
     assert ctx is not None
     assert ctx.check_hostname is False
     assert ctx.verify_mode == ssl.CERT_NONE
-
-    structures.save_tls_session_ticket(None, "host", 443, b"ticket")
-    structures.save_tls_session_ticket(object(), "host", 443, b"")
-    assert structures.load_tls_session_ticket(None, "host", 443) is None
-
-    mem_cache = MagicMock()
-    mem_cache.is_mem = True
-    mem_cache._mem = {}
-    structures.save_tls_session_ticket(mem_cache, "host", 443, b"ticket")
-    assert structures.load_tls_session_ticket(mem_cache, "host", 443) == b"ticket"
-
-    disk_cache = MagicMock()
-    disk_cache.is_mem = False
-    disk_cache.env = MagicMock()
-    disk_cache.db = MagicMock()
-    disk_cache.env.begin.side_effect = OSError("write error")
-    structures.save_tls_session_ticket(disk_cache, "host", 443, b"ticket")
-    assert structures.load_tls_session_ticket(disk_cache, "host", 443) is None
-
-    valid_disk_cache = MagicMock()
-    valid_disk_cache.is_mem = False
-    valid_disk_cache.env = MagicMock()
-    valid_disk_cache.db = MagicMock()
-    mock_txn = MagicMock()
-    mock_txn.get.return_value = b"ticket-from-disk"
-    valid_disk_cache.env.begin.return_value.__enter__.return_value = mock_txn
-    structures.save_tls_session_ticket(valid_disk_cache, "host", 443, b"ticket-from-disk")
-    mock_txn.put.assert_called_once_with(b"tls_ticket:host:443", b"ticket-from-disk")
-    assert structures.load_tls_session_ticket(valid_disk_cache, "host", 443) == b"ticket-from-disk"
-
-    mock_txn.get.return_value = None
-    assert structures.load_tls_session_ticket(valid_disk_cache, "host", 443) is None
 
 
 def test_protocol_frame_validation_error_paths() -> None:
@@ -328,21 +295,11 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     raw_frame = frame.build_frame(command_id=1, sequence_id=1, payload=unmapped_msg)
     assert len(raw_frame) > 0
 
-    # 3. structures.build_cached_ssl_context with valid cafile (line 179)
+    # 3. structures.get_ssl_context with valid cafile
     ca_file = tmp_path / "test_ca.crt"
     ca_file.write_text("dummy ca content")
-    with pytest.raises(ssl.SSLError):
-        # ssl.create_default_context with dummy ca will raise SSLError but covers line 179
-        structures.build_cached_ssl_context(str(ca_file), "", "", False)
-
-    # 4. structures.save_tls_session_ticket on cache without _mem (line 213->215)
-    mock_env_cache = MagicMock()
-    delattr(mock_env_cache, "_mem")
-    structures.save_tls_session_ticket(mock_env_cache, "host1", 443, b"ticket")
-    assert mock_env_cache.env.begin.called
-
-    # 5. structures.load_tls_session_ticket on cache without _mem or env (line 240)
-    assert structures.load_tls_session_ticket(object(), "host2", 443) is None
+    with pytest.raises(RuntimeError, match="TLS setup failed"):
+        structures.get_ssl_context(pb.RuntimeConfig(cloud_tls=True, cloud_cafile=str(ca_file)))
 
     # 6. structures.validate_config with cloud_http3_port=0 and >0 (line 159->162)
     cfg_http3_zero = pb.RuntimeConfig(

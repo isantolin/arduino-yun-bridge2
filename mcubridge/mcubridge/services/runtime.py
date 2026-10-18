@@ -61,8 +61,6 @@ from ..protocol.structures import (
     get_ssl_context,
     is_command_allowed,
     iter_chunks,
-    load_tls_session_ticket,
-    save_tls_session_ticket,
 )
 from ..state.context import (
     DaemonLifecycleMachine,
@@ -1255,17 +1253,6 @@ class BridgeService:
         else:
             self.state.cloud_fsm.connect_http2()
 
-        if self.state and getattr(self.state, "tls_session_cache", None) is not None and tls_context:
-            cached_ticket = load_tls_session_ticket(
-                self.state.tls_session_cache, self.config.cloud_host, self.config.cloud_port
-            )
-            if cached_ticket:
-                logger.info(
-                    "0-RTT TLS session ticket loaded from LMDB",
-                    host=self.config.cloud_host,
-                    port=self.config.cloud_port,
-                )
-
         channel = Channel(
             self.config.cloud_host,
             self.config.cloud_port,
@@ -1277,15 +1264,6 @@ class BridgeService:
             async with stub.Session.open(metadata={"x-device-id": self.state.device_id}) as stream:
                 self.cloud_stream = stream
                 logger.info("Connected to Cloud Gateway via gRPC.")
-
-                # Persist TLS 1.3 / QUIC session ticket for 0-RTT resumption [SIL-2]
-                if self.state and getattr(self.state, "tls_session_cache", None) is not None and tls_context:
-                    save_tls_session_ticket(
-                        self.state.tls_session_cache,
-                        self.config.cloud_host,
-                        self.config.cloud_port,
-                        b"TLS13_SESSION_TICKET_V1",
-                    )
 
                 # Emit status online event
                 await self.send_cloud_event("status_online", "info", "Device online")

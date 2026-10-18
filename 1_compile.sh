@@ -300,7 +300,7 @@ echo "[INFO] Synchronizing runtime dependency manifests..."
 
 echo "[INFO] Regenerating protocol files from spec..."
 "$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
-    --spec "$REPO_ROOT/tools/protocol/mcubridge.proto" \
+    --spec "$REPO_ROOT/tools/protocol/cloud_gateway.proto" \
     --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
     --cpp-structs "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_structs.h" \

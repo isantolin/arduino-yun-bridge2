@@ -1,14 +1,16 @@
 # Protocol Code Generation
 
 The files in this directory describe the RPC protocol shared between the MCU
-(Arduino) and the MPU (Linux). The canonical definition lives in `mcubridge.proto`
-(messages, enums, constants, runtime configuration defaults, command metadata,
-and Cloud topics).
+(Arduino) and the MPU (Linux). The canonical definitions are modularized across:
+- `config_schema.proto`: system constants, custom options, enums, runtime configuration.
+- `mcu_wire.proto`: physical wire frames, RPC envelopes, and bounded static payloads.
+- `cloud_gateway.proto`: telemetry reports, cloud envelopes, and gRPC services.
+
 Running the generator updates all derived artifacts to stay in sync.
 
 ```bash
 python3 tools/protocol/generate.py \
-  --spec tools/protocol/mcubridge.proto \
+  --spec tools/protocol/cloud_gateway.proto \
   --py mcubridge/mcubridge/protocol/protocol.py \
   --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
   --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h \
@@ -17,11 +19,11 @@ python3 tools/protocol/generate.py \
 
 The command refreshes:
 
-- `mcubridge/mcubridge/protocol/protocol.py` — Python enums and constants from `mcubridge.proto`.
+- `mcubridge/mcubridge/protocol/protocol.py` — Python enums and constants from the schema.
 - `mcubridge-library-arduino/src/protocol/rpc_protocol.h`, `rpc_hw_config.h`, and `rpc_structs.h` — C++ protocol declarations and Nanopb helpers.
-- `mcubridge/mcubridge/protocol/mcubridge_pb2.py` + `.pyi` — Python protobuf bindings from `mcubridge.proto`.
-- `mcubridge/mcubridge/protocol/mcubridge_grpc.py` — Python gRPC bindings from `mcubridge.proto`.
-- `mcubridge-library-arduino/src/protocol/mcubridge.pb.h` + `.pb.c` — C Nanopb structs from `mcubridge.proto`.
+- `mcubridge/mcubridge/protocol/mcubridge_pb2.py` + `.pyi` — Python protobuf bindings.
+- `mcubridge/mcubridge/protocol/mcubridge_grpc.py` — Python gRPC bindings.
+- `mcubridge-library-arduino/src/protocol/mcu_wire.pb.h` + `config_schema.pb.h` — C Nanopb structs for MCU.
 - `mcubridge-client-examples/mcubridge_client/protocol.py` — Python client library enums and protocol constants.
 - LuCI defaults and schema artifacts rendered from the same protocol metadata.
 

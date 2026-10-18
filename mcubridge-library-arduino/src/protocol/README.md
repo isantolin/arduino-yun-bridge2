@@ -3,9 +3,9 @@
 This directory contains the auto-generated C++ protocol definitions for the Arduino MCU Bridge v2.
 
 ## Source of Truth
-The protocol is formally defined in two files at the repository root:
-- `tools/protocol/mcubridge.proto` — enums, constants, command IDs, Cloud topics, and payload message schemas (proto3).
-- Generated nanopb bindings: `mcubridge.pb.h` / `mcubridge.pb.c` — C structs for all Protobuf messages (no heap, static sizing).
+The protocol is formally defined in modular proto3 files under `tools/protocol/`:
+- `config_schema.proto` & `mcu_wire.proto` — enums, constants, command IDs, and wire frame schemas.
+- Generated nanopb bindings: `config_schema.pb.h`/`.c` and `mcu_wire.pb.h`/`.c` — C structs for all MCU messages (no heap, static sizing).
 
 All files in this directory should be considered **read-only artifacts** of the generation process, with the exception of helper classes that wrap the generated structures.
 

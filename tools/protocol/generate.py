@@ -710,9 +710,12 @@ def _is_string_keyed_mapping(value: object) -> TypeGuard[dict[str, object]]:
 def _resolve_proto_path(spec_path: Path) -> Path:
     resolved_spec = spec_path.resolve()
     if resolved_spec.is_dir():
-        return (resolved_spec / "cloud_gateway.proto").resolve()
+        candidate = resolved_spec / "cloud_gateway.proto"
+        return candidate.resolve() if candidate.exists() else resolved_spec
     if resolved_spec.name in ("mcubridge.proto", "mcubridge.toml"):
-        return (resolved_spec.parent / "cloud_gateway.proto").resolve()
+        candidate = resolved_spec.parent / "cloud_gateway.proto"
+        if candidate.exists() or not resolved_spec.exists():
+            return candidate.resolve()
     return resolved_spec
 
 

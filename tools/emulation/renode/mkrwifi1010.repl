@@ -36,21 +36,35 @@ uart0: UART.SAMD5_UART @ sysbus 0x42001C00
 gclk: Memory.ArrayMemory @ sysbus 0x40000C00
     size: 0x20
 
+pm: Memory.ArrayMemory @ sysbus 0x40000400
+    size: 0x80
+
+sysctrl: Memory.ArrayMemory @ sysbus 0x40000800
+    size: 0x80
+
+nvmctrl: Memory.ArrayMemory @ sysbus 0x41004000
+    size: 0x80
+
+usb: Memory.ArrayMemory @ sysbus 0x41005000
+    size: 0x1000
+
+adc: Memory.ArrayMemory @ sysbus 0x42004000
+    size: 0x80
+
+dac: Memory.ArrayMemory @ sysbus 0x42004800
+    size: 0x80
+
+nvm_calib: Memory.MappedMemory @ sysbus 0x00806000
+    size: 0x1000
+
 sysbus:
     init:
-        Tag <0x00806000 0x1000> "NVM Software Calibration Area" 0xFFFFFFFF
         Tag <0x40000000 0x08> "Peripheral Access Controller 0"
-        Tag <0x40000400 0x80> "Power Manager"
-        Tag <0x40000800 0x0C> "System Control 0"
-        Tag <0x4000080C 0x04> "System Control: Power and Clocks Status" 0xFFFFFFFF
-        Tag <0x40000810 0x70> "System Control 1"
         Tag <0x40001000 0x10> "Watchdog Timer"
         Tag <0x40001800 0x40> "External Interrupt Controller"
         Tag <0x41000000 0x08> "Peripheral Access Controller 1"
         Tag <0x41002000 0x2000> "Device Service Unit"
-        Tag <0x41004000 0x80> "Non-Volatile Memory Controller"
         Tag <0x41004800 0x80> "Direct Memory Access Controller"
-        Tag <0x41005000 0x1000> "Universal Serial Bus"
         Tag <0x41006000 0x1000> "Cortex-M0+ Micro-Trace Buffer"
         Tag <0x42000000 0x08> "Peripheral Access Controller 2"
         Tag <0x42000400 0x80> "Event System Interface"
@@ -65,8 +79,6 @@ sysbus:
         Tag <0x42002C00 0x040> "Basic Timer Counter 3"
         Tag <0x42003000 0x040> "Basic Timer Counter 4"
         Tag <0x42003400 0x040> "Basic Timer Counter 5"
-        Tag <0x42004000 0x80> "Analog Digital Converter"
         Tag <0x42004400 0x40> "Analog Comparators"
-        Tag <0x42004800 0x10> "Digital Analog Converter"
         Tag <0x42004C00 0x40> "Peripheral Touch Controller"
         Tag <0x42005000 0x40> "Inter-IC Sound Interface"

@@ -49,6 +49,10 @@ configure_logging(console=True)
 logger = structlog.get_logger("renode_runner")
 
 
+if Path("/tmp/renode").exists() and "/tmp/renode" not in os.environ.get("PATH", "").split(os.pathsep):
+    os.environ["PATH"] = f"/tmp/renode{os.pathsep}{os.environ.get('PATH', '')}"
+
+
 def default_client_test_paths() -> list[Path]:
     return [
         repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
@@ -309,8 +313,17 @@ def run_renode_emulation(
 
         fake_uci_dir, storage_path, daemon_env = _setup_fake_uci(str(pty_link))
 
-        logger.info("Starting Renode headless instance...", port=port, elf=str(firmware_path))
-        renode_cmd = [renode_bin, "--console", "--disable-gui", "--plain", "-e", f"include @{temp_resc}"]
+        renode_cmd = [
+            renode_bin,
+            "--disable-gui",
+            "--hide-monitor",
+            "--hide-analyzers",
+            "-P",
+            "-1",
+            "--plain",
+            "-e",
+            f"include @{temp_resc}",
+        ]
         renode_proc = subprocess.Popen(
             renode_cmd,
             stdout=subprocess.PIPE,

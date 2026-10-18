@@ -16,7 +16,10 @@ cpu VectorTableOffset 0x2000
 cpu SP `sysbus ReadDoubleWord 0x2000`
 cpu PC `sysbus ReadDoubleWord 0x2004`
 
-logLevel 0 sysbus.uart0
-sysbus LogPeripheralAccess sysbus.uart0 true
+# Initialize SYSCTRL PCLKSR (all clocks ready) and NVM calibration
+sysbus WriteDoubleWord 0x4000080C 0x0000FFFF
+sysbus WriteDoubleWord 0x00806020 0xFFFFFFFF
+sysbus WriteDoubleWord 0x00806024 0xFFFFFFFF
+
 start
 

@@ -96,8 +96,10 @@ def _mock_renode_success(
     timeout_seconds: float = 90.0,
     port: int = 12345,
     led_builtin_pin: int = 6,
+    log_dir: Path | None = None,
+    **kwargs: Any,
 ) -> bool:
-    _ = (firmware_path, test_scripts, timeout_seconds, port, led_builtin_pin)
+    _ = (firmware_path, test_scripts, timeout_seconds, port, led_builtin_pin, log_dir, kwargs)
     return True
 
 
@@ -107,8 +109,10 @@ def _mock_renode_failure(
     timeout_seconds: float = 90.0,
     port: int = 12345,
     led_builtin_pin: int = 6,
+    log_dir: Path | None = None,
+    **kwargs: Any,
 ) -> bool:
-    _ = (firmware_path, test_scripts, timeout_seconds, port, led_builtin_pin)
+    _ = (firmware_path, test_scripts, timeout_seconds, port, led_builtin_pin, log_dir, kwargs)
     return False
 
 

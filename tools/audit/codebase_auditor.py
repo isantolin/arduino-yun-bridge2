@@ -236,7 +236,7 @@ def audit_config_suppressions() -> list[str]:
 def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     """Audit Protobuf definitions with Buf (lint and breaking change checks) [SIL-2]."""
     print("Auditing Protobuf definitions...")
-    target = proto_path or (ROOT / "tools" / "protocol" / "mcubridge.proto")
+    target = proto_path or (ROOT / "tools" / "protocol" / "cloud_gateway.proto")
     if not target.exists():
         return [f"Protobuf spec missing: {target}"]
 
@@ -250,7 +250,7 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
         ("Buf Build Failure", module_dir, ("build",)),
         ("Buf Format Violation", ROOT, ("format", "-d", str(module_dir), "--exit-code")),
     ]
-    if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "mcubridge.proto"):
+    if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "cloud_gateway.proto"):
         checks.append(
             (
                 "Buf Breaking Change Violation",
@@ -296,8 +296,10 @@ def audit_proto_usage() -> list[str]:
     generated_names = {
         "config_schema.json",
         "defaults.sh",
-        "mcubridge.pb.c",
-        "mcubridge.pb.h",
+        "config_schema.pb.c",
+        "config_schema.pb.h",
+        "mcu_wire.pb.c",
+        "mcu_wire.pb.h",
         "rpc_hw_config.h",
         "rpc_protocol.h",
         "rpc_structs.h",

@@ -20,7 +20,7 @@
 #include <pb_decode.h>
 #include <pb_encode.h>
 
-#include "mcubridge.pb.h"
+#include "mcu_wire.pb.h"
 #include "rpc_protocol.h"
 
 namespace rpc {

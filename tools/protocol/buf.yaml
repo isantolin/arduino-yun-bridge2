@@ -7,7 +7,6 @@ lint:
     - FILE_LOWER_SNAKE_CASE
   except:
     - PACKAGE_DIRECTORY_MATCH
-    - IMPORT_NO_PUBLIC
 # Generated source APIs may be retired; wire-level compatibility remains enforced.
 breaking:
   use:

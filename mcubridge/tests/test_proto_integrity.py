@@ -394,13 +394,14 @@ def test_rpc_envelope_strong_typing() -> None:
 
 
 def test_mcubridge_options_cleanliness() -> None:
-    """SIL-2: Verify mcubridge.options has no orphaned DataFormats definitions."""
-    options_path = Path(__file__).resolve().parent.parent.parent / "tools" / "protocol" / "mcubridge.options"
-    assert options_path.exists()
-    content = options_path.read_text(encoding="utf-8")
-
-    assert "DataFormats" not in content
-    assert "data_formats" not in content
+    """SIL-2: Verify protocol options files have no orphaned DataFormats definitions."""
+    protocol_dir = Path(__file__).resolve().parent.parent.parent / "tools" / "protocol"
+    options_files = list(protocol_dir.glob("*.options"))
+    assert options_files
+    for opt_path in options_files:
+        content = opt_path.read_text(encoding="utf-8")
+        assert "DataFormats" not in content
+        assert "data_formats" not in content
 
 
 def _mock_empty_findings() -> list[str]:

@@ -46,7 +46,7 @@ ls -la "${PACKETSERIAL_PATH}/src" || echo "PACKETSERIAL_PATH/src not found"
 
 echo "[emulator] Generating protocol bindings..."
 if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/mcubridge.proto" \
+    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
     --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \
@@ -73,7 +73,8 @@ NANOPB_SOURCES=(
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
-    "${SRC_DIR}/protocol/mcubridge.pb.c"
+    "${SRC_DIR}/protocol/config_schema.pb.c"
+    "${SRC_DIR}/protocol/mcu_wire.pb.c"
 )
 
 echo "[emulator] Compiling native bridge emulator (Base)..."

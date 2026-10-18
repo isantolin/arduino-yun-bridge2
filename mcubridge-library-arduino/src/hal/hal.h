@@ -14,7 +14,7 @@
 #include <etl/string_view.h>
 #include <stdint.h>
 
-#include "protocol/mcubridge.pb.h"
+#include "protocol/mcu_wire.pb.h"
 
 namespace bridge::hal {
 

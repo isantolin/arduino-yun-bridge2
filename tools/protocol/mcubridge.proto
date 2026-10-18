@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package rpc.pb;
-
-import public "cloud_gateway.proto";
-import public "config_schema.proto";
-import public "mcu_wire.proto";

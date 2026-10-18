@@ -225,649 +225,336 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
     return runtime_config_fields
 
 
-def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:
-    if pb_module is not None:
-        mcubridge_pb2 = pb_module
-    else:
-        proto_dir = str(proto_path.parent)
-        if proto_dir not in sys.path:
-            sys.path.insert(0, proto_dir)
-        mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
-    file_desc = mcubridge_pb2.DESCRIPTOR
-    all_descs = [file_desc, *file_desc.dependencies]
-
-    options = None
-    for dep in all_descs:
-        opts = dep.GetOptions()
-        if opts.HasExtension(mcubridge_pb2.constants):
-            options = opts
-            break
-    if options is None:
-        options = file_desc.GetOptions()
-
-    constants_opt = options.Extensions[mcubridge_pb2.constants]
-    hardware_opt = options.Extensions[mcubridge_pb2.hardware]
-    handshake_opt = options.Extensions[mcubridge_pb2.handshake]
-    cloud_suffixes_opt = options.Extensions[mcubridge_pb2.cloud_suffixes]
-    cloud_defaults_opt = options.Extensions[mcubridge_pb2.cloud_defaults]
-    status_reasons_opt = options.Extensions[mcubridge_pb2.status_reasons]
-    topics_opt = options.Extensions[mcubridge_pb2.topics]
-    actions_opt = options.Extensions[mcubridge_pb2.actions]
-    architectures_opt = options.Extensions[mcubridge_pb2.architectures]
-    capabilities_opt = options.Extensions[mcubridge_pb2.capabilities]
-
-    constants = _dump_proto_message(constants_opt)
-    hardware = _dump_proto_message(hardware_opt)
-    handshake = _dump_proto_message(handshake_opt)
-    cloud_suffixes = _dump_proto_message(cloud_suffixes_opt)
-    for field_desc in mcubridge_pb2.CloudSuffixes.DESCRIPTOR.fields:
-        cloud_suffixes.setdefault(field_desc.name, field_desc.name)
-
-    cloud_defaults = _dump_proto_message(cloud_defaults_opt)
-    status_reasons = _dump_proto_message(status_reasons_opt)
-    for field_desc in mcubridge_pb2.StatusReasons.DESCRIPTOR.fields:
-        status_reasons.setdefault(field_desc.name, field_desc.name)
-
-    topics = [_dump_proto_message(t) for t in topics_opt]
-    actions = [_dump_proto_message(a) for a in actions_opt]
-
-    architectures = {arch.name: arch.value for arch in architectures_opt}
-    architecture_display_names = {arch.name: arch.display_name for arch in architectures_opt if arch.display_name}
-
-    capabilities = {cap.name: cap.value for cap in capabilities_opt}
-
-    # Load Command enum
-    command_enum_desc = None
-    for dep in all_descs:
-        if "Command" in dep.enum_types_by_name:
-            command_enum_desc = dep.enum_types_by_name["Command"]
-            break
-    if not command_enum_desc:
-        raise ValueError("Command enum not found in protocol descriptors")
-
-    commands: list[dict[str, Any]] = []
-    for val in command_enum_desc.values:
-        if val.name == "CMD_UNSPECIFIED":
-            continue
-        opts = val.GetOptions().Extensions[mcubridge_pb2.cmd_opts]
-        cmd = _dump_proto_message(opts)
-        cmd["name"] = val.name
-        cmd["value"] = val.number
-        cmd["expects_direct_response"] = bool(opts.response_command)
-        commands.append(cmd)
-
-    # Automatically derive bidirectional request_command pairing from response_command
-    req_map = {cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")}
-    for cmd in commands:
-        if not cmd.get("request_command") and cmd["name"] in req_map:
-            cmd["request_command"] = req_map[cmd["name"]]
-
-    # Load Message & Enum CLOUD topics
-    message_topics = {
-        msg_name: opts.Extensions[mcubridge_pb2.msg_cloud_topic]
-        for dep in all_descs
-        for msg_name, msg_desc in dep.message_types_by_name.items()
-        if (opts := msg_desc.GetOptions()).HasExtension(mcubridge_pb2.msg_cloud_topic)
-    }
-    message_topics.update(
-        {
-            f"{enum_name}_ENUM": opts.Extensions[mcubridge_pb2.enum_cloud_topic]
-            for dep in all_descs
-            for enum_name, enum_desc in dep.enum_types_by_name.items()
-            if (opts := enum_desc.GetOptions()).HasExtension(mcubridge_pb2.enum_cloud_topic)
-        }
-    )
-
-    # Load Status enum
-    status_enum_desc = None
-    for dep in all_descs:
-        if "Status" in dep.enum_types_by_name:
-            status_enum_desc = dep.enum_types_by_name["Status"]
-            break
-    if not status_enum_desc:
-        raise ValueError("Status enum not found in protocol descriptors")
-
-    statuses = [
-        {
-            "name": val.name,
-            "value": val.number,
-            "description": (s_opts := val.GetOptions().Extensions[mcubridge_pb2.status_opts]).description,
-            "mcu_handler": s_opts.mcu_handler or None,
-        }
-        for val in status_enum_desc.values
-        if val.name != "STATUS_UNSPECIFIED"
-    ]
-
-    runtime_config_fields = _load_runtime_config_fields(file_desc, mcubridge_pb2)
-
-    return {
-        "constants": constants,
-        "hardware": hardware,
-        "commands": commands,
-        "statuses": statuses,
-        "handshake": handshake,
-        "actions": actions,
-        "topics": topics,
-        "capabilities": capabilities,
-        "architectures": architectures,
-        "cloud_suffixes": cloud_suffixes,
-        "cloud_defaults": cloud_defaults,
-        "status_reasons": status_reasons,
-        "architecture_display_names": architecture_display_names,
-        "message_topics": message_topics,
-        "runtime_config_fields": runtime_config_fields,
-        "constants_opt": constants_opt,
-        "hardware_opt": hardware_opt,
-        "handshake_opt": handshake_opt,
-        "pb_module": mcubridge_pb2,
-    }
-
-
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
 
-def _build_constant_context(spec: dict[str, Any], version: str) -> dict[str, Any]:
-    parsed_version = Version(version)
-    v_major, v_minor, v_patch = (
-        parsed_version.major,
-        parsed_version.minor,
-        parsed_version.micro,
-    )
-    cpp_constants: list[dict[str, Any]] = []
-    python_constants: list[dict[str, Any]] = []
-    client_constants: list[dict[str, Any]] = []
-    pb_module = spec["pb_module"]
+def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
+    parsed = Version(version)
+    v_major, v_minor, v_patch = parsed.major, parsed.minor, parsed.micro
 
-    for pb_obj in (spec["constants_opt"], spec["hardware_opt"]):
-        for proto_field in pb_obj.DESCRIPTOR.fields:
-            opts = proto_field.GetOptions()
-            val = getattr(pb_obj, proto_field.name)
-            cpp_name = opts.Extensions[pb_module.cpp_name]
-            if cpp_name:
-                cpp_constants.append(
-                    {
-                        "name": cpp_name,
-                        "type": opts.Extensions[pb_module.cpp_type],
-                        "value": val,
-                    }
-                )
+    if isinstance(spec_or_pb, dict) and "pb_module" in spec_or_pb:
+        pb_module = spec_or_pb["pb_module"]
+    else:
+        pb_module = spec_or_pb
 
-            py_name = opts.Extensions[pb_module.py_name]
-            py_type = opts.Extensions[pb_module.py_type]
-            if py_name:
-                if py_name == "FRAME_DELIMITER":
-                    formatted_val: Any = f"bytes([ {val} ])"
-                elif py_type == "bytes":
-                    formatted_val = f'b"{val}"'
-                elif py_type == "str":
-                    formatted_val = f'"{val}"'
-                else:
-                    formatted_val = val
-                constant = {"name": py_name, "type": py_type, "value": formatted_val}
-                python_constants.append(constant)
-                if pb_obj is spec["constants_opt"] and opts.Extensions[pb_module.client_constant]:
-                    client_constants.append(constant)
-    cpp_constants.extend(
-        [
-            {"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major},
-            {"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor},
-            {"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch},
-        ]
+    all_descs = [pb_module.DESCRIPTOR, *pb_module.DESCRIPTOR.dependencies]
+
+    opts = next(d.GetOptions() for d in all_descs if d.GetOptions().HasExtension(pb_module.constants))
+    c_opt, hw_opt, hs_opt = (
+        opts.Extensions[pb_module.constants],
+        opts.Extensions[pb_module.hardware],
+        opts.Extensions[pb_module.handshake],
     )
-    python_constants.extend(
-        {"name": f"CLOUD_SUFFIX_{key.upper()}", "type": "str", "value": f'"{value}"'}
-        for key, value in spec["cloud_suffixes"].items()
-    )
-    return {
-        "constants": cpp_constants,
-        "python_constants": python_constants,
-        "client_constants": client_constants,
-        "v_major": v_major,
-        "v_minor": v_minor,
-        "v_patch": v_patch,
+    cmd_enum = next(d.enum_types_by_name["Command"] for d in all_descs if "Command" in d.enum_types_by_name)
+    status_enum = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
+    env_desc = next(d.message_types_by_name["RpcEnvelope"] for d in all_descs if "RpcEnvelope" in d.message_types_by_name)
+    svc_desc = next(d.services_by_name["LocalBridge"] for d in all_descs if "LocalBridge" in d.services_by_name)
+
+    # 1. Constants
+    cpp_consts, py_consts, client_consts = [], [], []
+    for pb_obj in (c_opt, hw_opt):
+        for f in pb_obj.DESCRIPTOR.fields:
+            fo = f.GetOptions()
+            val = getattr(pb_obj, f.name)
+            cpp_n, cpp_t = fo.Extensions[pb_module.cpp_name], fo.Extensions[pb_module.cpp_type]
+            if cpp_n:
+                cpp_consts.append({"name": cpp_n, "type": cpp_t, "value": val})
+            py_n, py_t = fo.Extensions[pb_module.py_name], fo.Extensions[pb_module.py_type]
+            if py_n:
+                fmt_val = f"bytes([ {val} ])" if py_n == "FRAME_DELIMITER" else f'b"{val}"' if py_t == "bytes" else f'"{val}"' if py_t == "str" else val
+                c_def = {"name": py_n, "type": py_t, "value": fmt_val}
+                py_consts.append(c_def)
+                if pb_obj is c_opt and fo.Extensions[pb_module.client_constant]:
+                    client_consts.append(c_def)
+
+    for n, v in [("FIRMWARE_VERSION_MAJOR", v_major), ("FIRMWARE_VERSION_MINOR", v_minor), ("FIRMWARE_VERSION_PATCH", v_patch)]:
+        cpp_consts.append({"name": n, "type": "uint8_t", "value": v})
+        py_consts.append({"name": n, "type": "int", "value": v})
+        client_consts.append({"name": n, "type": "int", "value": v})
+
+    cloud_suffixes = _dump_proto_message(opts.Extensions[pb_module.cloud_suffixes])
+    for f in pb_module.CloudSuffixes.DESCRIPTOR.fields:
+        cloud_suffixes.setdefault(f.name, f.name)
+
+    for n, v in cloud_suffixes.items():
+        cpp_consts.append({"name": f"RPC_CLOUD_SUFFIX_{n.upper()}", "type": "const char*", "value": f'"{v}"'})
+        py_consts.append({"name": f"CLOUD_SUFFIX_{n.upper()}", "type": "str", "value": f'"{v}"'})
+
+    # Handshake
+    hs_cpp, hs_py = [], []
+    for f in hs_opt.DESCRIPTOR.fields:
+        fo = f.GetOptions()
+        val = getattr(hs_opt, f.name)
+        cn, ct = fo.Extensions[pb_module.cpp_name], fo.Extensions[pb_module.cpp_type]
+        if cn:
+            hs_cpp.append({"name": cn, "type": ct, "value": val})
+        pn, pt = fo.Extensions[pb_module.py_name], fo.Extensions[pb_module.py_type]
+        if pn:
+            fmt_v = f"bytes([ {val} ])" if pn == "FRAME_DELIMITER" else f'b"{val}"' if pt == "bytes" else f'"{val}"' if pt == "str" else val
+            hs_py.append({"name": pn, "type": pt, "value": fmt_v})
+
+    salt, info_a, info_s = hs_opt.hkdf_salt, hs_opt.hkdf_info_auth, hs_opt.hkdf_info_session
+    handshake_dict = {
+        "hkdf_salt": salt, "hkdf_salt_bytes": ", ".join(f"0x{ord(c):02X}" for c in salt), "hkdf_salt_len": len(salt),
+        "hkdf_info_auth": info_a, "hkdf_info_auth_bytes": ", ".join(f"0x{ord(c):02X}" for c in info_a), "hkdf_info_auth_len": len(info_a),
+        "hkdf_info_session": info_s, "hkdf_info_session_bytes": ", ".join(f"0x{ord(c):02X}" for c in info_s), "hkdf_info_session_len": len(info_s),
     }
 
-
-def _build_runtime_config_constants(
-    spec: dict[str, Any], python_constants: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    existing_constant_names = {constant["name"] for constant in python_constants}
-    runtime_config_constants: list[dict[str, Any]] = []
-    for config_field in spec["runtime_config_fields"]:
-        if (
-            config_field.default_value is None
-            or config_field.field_type == "list"
-            or config_field.config_default_ref is not None
-        ):
+    commands = []
+    for v in cmd_enum.values:
+        if v.name == "CMD_UNSPECIFIED":
             continue
-        const_name = f"DEFAULT_{config_field.name.upper()}"
-        if const_name in existing_constant_names:
-            continue
-        if config_field.field_type == "bytes":
-            value = f'b"{config_field.raw_default}"'
-        elif config_field.field_type == "str":
-            value = f'"{config_field.default_value}"'
-        else:
-            value = str(config_field.default_value)
-        runtime_config_constants.append({"name": const_name, "type": config_field.field_type, "value": value})
-    return runtime_config_constants
+        co = v.GetOptions().Extensions[pb_module.cmd_opts]
+        cmd = _dump_proto_message(co)
+        cmd["name"] = v.name
+        cmd["value"] = v.number
+        cmd["expects_direct_response"] = bool(co.response_command)
+        commands.append(cmd)
+    req_map = {c["response_command"]: c["name"] for c in commands if c.get("response_command")}
+    for c in commands:
+        if not c.get("request_command") and c["name"] in req_map:
+            c["request_command"] = req_map[c["name"]]
 
+    statuses = [
+        {"name": v.name, "value": v.number, "description": (so := v.GetOptions().Extensions[pb_module.status_opts]).description, "mcu_handler": so.mcu_handler or None}
+        for v in status_enum.values if v.name != "STATUS_UNSPECIFIED"
+    ]
 
-def _build_client_runtime_config_constants(spec: dict[str, Any]) -> list[dict[str, Any]]:
-    client_constants: list[dict[str, Any]] = []
-    for config_field in spec["runtime_config_fields"]:
-        if not config_field.client_constant:
-            continue
-        if config_field.default_value is None:
-            raise ValueError(f"Client constant '{config_field.name}' must have a default value")
-        if config_field.field_type not in {"str", "bool", "int", "float"}:
-            raise ValueError(f"Unsupported client constant type '{config_field.field_type}'")
-        client_constants.append(
-            {
-                "name": f"DEFAULT_{config_field.name.upper()}",
-                "type": config_field.field_type,
-                "value": config_field.default_value,
-            }
-        )
-    return client_constants
+    # Structs & Envelopes
+    payload_fields, payload_structs = [], []
+    for f in env_desc.oneofs_by_name["payload_type"].fields:
+        if f.message_type:
+            item = {"name": f.message_type.name, "field": f.name}
+            payload_fields.append(item)
+            if f.message_type.name != "DaemonMetrics":
+                payload_structs.append(item)
+    payload_names = [p["name"] for p in payload_structs]
+    mcu_names = set(payload_names) | {"RpcEnvelope"}
+    all_structs = [{"name": n} for d in all_descs for n in d.message_types_by_name if n in mcu_names]
 
-
-def _build_handshake_context(spec: dict[str, Any], pb_module: Any) -> dict[str, Any]:
-    handshake_constants: list[dict[str, Any]] = []
-    python_handshake_constants: list[dict[str, Any]] = []
-    for proto_field in spec["handshake_opt"].DESCRIPTOR.fields:
-        opts = proto_field.GetOptions()
-        name = opts.Extensions[pb_module.cpp_name]
-        if name:
-            handshake_constants.append(
-                {
-                    "name": name,
-                    "type": opts.Extensions[pb_module.cpp_type],
-                    "value": getattr(spec["handshake_opt"], proto_field.name),
-                }
-            )
-        py_name = opts.Extensions[pb_module.py_name]
-        if py_name:
-            value = getattr(spec["handshake_opt"], proto_field.name)
-            py_type = opts.Extensions[pb_module.py_type]
-            if py_name == "FRAME_DELIMITER":
-                formatted_value: Any = f"bytes([ {value} ])"
-            elif py_type == "bytes":
-                formatted_value: Any = f'b"{value}"'
-            elif py_type == "str":
-                formatted_value = f'"{value}"'
-            else:
-                formatted_value = value
-            python_handshake_constants.append({"name": py_name, "type": py_type, "value": formatted_value})
-    handshake = {
-        "hkdf_salt": spec["handshake"]["hkdf_salt"],
-        "hkdf_salt_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec["handshake"]["hkdf_salt"]),
-        "hkdf_salt_len": len(spec["handshake"]["hkdf_salt"]),
-        "hkdf_info_auth": spec["handshake"]["hkdf_info_auth"],
-        "hkdf_info_auth_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec["handshake"]["hkdf_info_auth"]),
-        "hkdf_info_auth_len": len(spec["handshake"]["hkdf_info_auth"]),
-        "hkdf_info_session": spec["handshake"]["hkdf_info_session"],
-        "hkdf_info_session_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec["handshake"]["hkdf_info_session"]),
-        "hkdf_info_session_len": len(spec["handshake"]["hkdf_info_session"]),
-    }
-    return {
-        "handshake_constants": handshake_constants,
-        "python_handshake_constants": python_handshake_constants,
-        "handshake": handshake,
-    }
-
-
-def _build_action_context(spec: dict[str, Any]) -> dict[str, Any]:
-    grouped_action_items: dict[str, list[dict[str, Any]]] = {}
-    for action in spec["actions"]:
-        if "_" in action["name"]:
-            prefix, suffix = action["name"].split("_", 1)
-            grouped_action_items.setdefault(prefix, []).append(
-                {
-                    "name": suffix,
-                    "value": action["value"],
-                    "description": action["description"],
-                }
-            )
+    # Actions & Topics
+    action_items: dict[str, list[dict[str, Any]]] = {}
+    for a in opts.Extensions[pb_module.actions]:
+        if "_" in a.name:
+            pfx, sfx = a.name.split("_", 1)
+            action_items.setdefault(pfx, []).append({"name": sfx, "value": a.value, "description": a.description})
     grouped_actions = [
-        {
-            "class_name": "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action",
-            "action_items": items,
-        }
-        for prefix, items in grouped_action_items.items()
+        {"class_name": "DatastoreAction" if p == "DATASTORE" else f"{p.lower().title()}Action", "action_items": items}
+        for p, items in action_items.items()
     ]
+    topics = [{"name": t.name, "value": t.value, "description": t.description, "aliases": list(t.aliases), "handler": t.handler} for t in opts.Extensions[pb_module.topics]]
 
-    return {"grouped_actions": grouped_actions}
-
-
-def _build_rpc_context(pb_module: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    file_desc = pb_module.DESCRIPTOR
-    all_descs = [file_desc, *file_desc.dependencies]
-    service_desc = None
-    for dep in all_descs:
-        if "LocalBridge" in dep.services_by_name:
-            service_desc = dep.services_by_name["LocalBridge"]
-            break
-    if not service_desc:
-        return [], {}
-    rpc_specs: list[dict[str, Any]] = []
-    rpc_aliases_map: dict[str, str] = {}
-    for method in service_desc.methods:
-        if method.client_streaming or method.server_streaming:
+    # RPC Context
+    rpc_specs, rpc_aliases = [], {}
+    for m in svc_desc.methods:
+        if m.client_streaming or m.server_streaming:
             continue
-        req_cls = method.input_type.name
-        resp_cls = method.output_type.name
-        resp_opts = method.output_type.GetOptions()
-        error_init = (
-            resp_opts.Extensions[pb_module.msg_error_init] if resp_opts.HasExtension(pb_module.msg_error_init) else ""
-        )
-        default_factory = f"lambda: pb.{resp_cls}({error_init})" if error_init else f"pb.{resp_cls}"
-        method_opts = method.GetOptions()
-        rpc_topic = method_opts.Extensions[pb_module.rpc_topic] if method_opts.HasExtension(pb_module.rpc_topic) else ""
-        if rpc_topic:
-            rpc_aliases_map[rpc_topic] = method.name
-        if hasattr(pb_module, "rpc_aliases"):
-            for extra_alias in method_opts.Extensions[pb_module.rpc_aliases]:
-                rpc_aliases_map[extra_alias] = method.name
-        rpc_command = ""
-        if hasattr(pb_module, "rpc_command") and method_opts.HasExtension(pb_module.rpc_command):
-            rpc_command = method_opts.Extensions[pb_module.rpc_command]
-        else:
-            rpc_command = f"CMD_{JinjaGenerator.snake_case(method.name).upper()}"
-        spec: dict[str, Any] = {
-            "name": method.name,
-            "req_cls": req_cls,
-            "resp_cls": resp_cls,
-            "default_factory": default_factory,
-            "handler_name": f"execute_{JinjaGenerator.snake_case(method.name)}",
-            "rpc_topic": rpc_topic,
-            "rpc_command": rpc_command,
-        }
-        rpc_specs.append(spec)
-    return rpc_specs, rpc_aliases_map
+        mo = m.output_type.GetOptions()
+        err_init = mo.Extensions[pb_module.msg_error_init] if mo.HasExtension(pb_module.msg_error_init) else ""
+        m_opts = m.GetOptions()
+        rt = m_opts.Extensions[pb_module.rpc_topic] if m_opts.HasExtension(pb_module.rpc_topic) else ""
+        if rt:
+            rpc_aliases[rt] = m.name
+        for a in m_opts.Extensions[pb_module.rpc_aliases]:
+            rpc_aliases[a] = m.name
+        rpc_cmd = m_opts.Extensions[pb_module.rpc_command] if m_opts.HasExtension(pb_module.rpc_command) else f"CMD_{JinjaGenerator.snake_case(m.name).upper()}"
+        rpc_specs.append({
+            "name": m.name, "req_cls": m.input_type.name, "resp_cls": m.output_type.name,
+            "default_factory": f"lambda: pb.{m.output_type.name}({err_init})" if err_init else f"pb.{m.output_type.name}",
+            "handler_name": f"execute_{JinjaGenerator.snake_case(m.name)}",
+            "rpc_topic": rt, "rpc_command": rpc_cmd,
+        })
 
+    # Telemetry
+    telem_fields = pb_module.TelemetryReport.DESCRIPTOR.fields
+    telem_map, default_telem = {}, None
+    for f in telem_fields:
+        fo = f.GetOptions()
+        if fo.HasExtension(pb_module.telemetry_topic_match):
+            telem_map[fo.Extensions[pb_module.telemetry_topic_match]] = f.name
+        elif fo.HasExtension(pb_module.telemetry_topic_default):
+            default_telem = f.name
 
-def _build_command_operation(
-    cmd: dict[str, Any],
-    pb_module: Any,
-    payload_fields: dict[str, str],
-    matched_rpc: dict[str, str] | None,
-) -> dict[str, Any]:
-    """Build an OperationSpec dictionary from a Command dict."""
-    cmd_name = cmd["name"]
-    pb_msg = cmd.get("pb_message")
-    pb_cls = pb_msg if (pb_msg and hasattr(pb_module, pb_msg)) else None
-    op: dict[str, Any] = {
-        "name": cmd_name,
-        "command_id": f"Command.{cmd_name}.value",
-    }
-    if pb_cls:
-        op["pb_class"] = f"pb.{pb_cls}"
-    if pb_msg and pb_msg in payload_fields:
-        op["payload_field"] = payload_fields[pb_msg]
-    if cmd.get("cloud_topic"):
-        op["cloud_topic"] = cmd["cloud_topic"]
-    if cmd.get("response_command"):
-        op["expected_responses"] = [f"Command.{cmd['response_command']}.value"]
-    if cmd.get("request_command"):
-        op["paired_request_id"] = f"Command.{cmd['request_command']}.value"
-    if cmd.get("auth_field"):
-        op["auth_field"] = cmd["auth_field"]
-    if cmd.get("requires_ack"):
-        op["requires_ack"] = True
-    if cmd.get("expects_direct_response"):
-        op["expects_direct_response"] = True
-    if cmd.get("pre_sync_allowed"):
-        op["pre_sync_allowed"] = True
-    if matched_rpc:
-        op["rpc_name"] = matched_rpc["name"]
-        op["request_type"] = f"pb.{matched_rpc['req_cls']}"
-        op["response_type"] = f"pb.{matched_rpc['resp_cls']}"
-        op["default_factory"] = matched_rpc["default_factory"]
-        op["handler_name"] = matched_rpc["handler_name"]
-        if matched_rpc.get("rpc_topic"):
-            op["rpc_topic"] = matched_rpc["rpc_topic"]
-    return op
+    # Operations
+    cmd_by_name = {c["name"]: c for c in commands}
+    rpc_by_cmd = {r["rpc_command"]: r for r in rpc_specs if r["rpc_command"] in cmd_by_name}
+    p_fields_map = {p["name"]: p["field"] for p in payload_fields}
 
-
-def _build_telemetry_operations(
-    message_topics: dict[str, str],
-    payload_fields: dict[str, str],
-    telemetry_topic_field_map: dict[str, str],
-    pb_module: Any,
-    seen_names: set[str],
-) -> list[dict[str, Any]]:
-    """Build telemetry and envelope payload OperationSpec dictionaries."""
-    operations: list[dict[str, Any]] = []
-    for msg_name, topic in message_topics.items():
-        actual_name = msg_name.removesuffix("_ENUM")
-        if actual_name in seen_names:
-            continue
-        blob_field = next((bf for tm, bf in telemetry_topic_field_map.items() if tm in topic), None)
-        if blob_field is None and "status" in topic:
-            blob_field = "system_status_blob"
-        op: dict[str, Any] = {"name": actual_name, "cloud_topic": topic}
-        if hasattr(pb_module, actual_name):
-            op["pb_class"] = f"pb.{actual_name}"
-        if actual_name in payload_fields:
-            op["payload_field"] = payload_fields[actual_name]
-        if blob_field:
-            op["metrics_blob_field"] = blob_field
+    operations = []
+    for cmd in commands:
+        c_name = cmd["name"]
+        pb_msg = cmd.get("pb_message")
+        pb_cls = pb_msg if (pb_msg and hasattr(pb_module, pb_msg)) else None
+        matched_rpc = rpc_by_cmd.get(c_name)
+        op: dict[str, Any] = {"name": c_name, "command_id": f"Command.{c_name}.value"}
+        if pb_cls:
+            op["pb_class"] = f"pb.{pb_cls}"
+        if pb_msg and pb_msg in p_fields_map:
+            op["payload_field"] = p_fields_map[pb_msg]
+        if cmd.get("cloud_topic"):
+            op["cloud_topic"] = cmd["cloud_topic"]
+        if cmd.get("response_command"):
+            op["expected_responses"] = [f"Command.{cmd['response_command']}.value"]
+        if cmd.get("request_command"):
+            op["paired_request_id"] = f"Command.{cmd['request_command']}.value"
+        if cmd.get("auth_field"):
+            op["auth_field"] = cmd["auth_field"]
+        if cmd.get("requires_ack"):
+            op["requires_ack"] = True
+        if cmd.get("expects_direct_response"):
+            op["expects_direct_response"] = True
+        if cmd.get("pre_sync_allowed"):
+            op["pre_sync_allowed"] = True
+        if matched_rpc:
+            op.update({
+                "rpc_name": matched_rpc["name"], "request_type": f"pb.{matched_rpc['req_cls']}",
+                "response_type": f"pb.{matched_rpc['resp_cls']}", "default_factory": matched_rpc["default_factory"],
+                "handler_name": matched_rpc["handler_name"],
+            })
+            if matched_rpc.get("rpc_topic"):
+                op["rpc_topic"] = matched_rpc["rpc_topic"]
         operations.append(op)
-        seen_names.add(actual_name)
-
-    for msg_name, field_name in payload_fields.items():
-        if msg_name in seen_names:
-            continue
-        blob_field = next((bf for tm, bf in telemetry_topic_field_map.items() if tm in msg_name.lower()), None)
-        op_payload: dict[str, Any] = {"name": msg_name, "payload_field": field_name}
-        if hasattr(pb_module, msg_name):
-            op_payload["pb_class"] = f"pb.{msg_name}"
-        if msg_name in message_topics:
-            op_payload["cloud_topic"] = message_topics[msg_name]
-        if blob_field:
-            op_payload["metrics_blob_field"] = blob_field
-        operations.append(op_payload)
-        seen_names.add(msg_name)
-
-    return operations
-
-
-def _build_operations_context(
-    commands: list[dict[str, Any]],
-    message_topics: dict[str, str],
-    pb_module: Any,
-    payload_fields_by_msg: dict[str, str],
-    telemetry_topic_field_map: dict[str, str],
-    rpc_specs: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    commands_by_name = {c["name"]: c for c in commands}
-    rpc_by_cmd = {rpc["rpc_command"]: rpc for rpc in rpc_specs if rpc.get("rpc_command") in commands_by_name}
-
-    operations = [
-        _build_command_operation(cmd, pb_module, payload_fields_by_msg, rpc_by_cmd.get(cmd["name"])) for cmd in commands
-    ]
 
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
-    operations.extend(
-        {
-            "name": rpc["name"],
-            "rpc_name": rpc["name"],
-            "request_type": f"pb.{rpc['req_cls']}",
-            "response_type": f"pb.{rpc['resp_cls']}",
-            "default_factory": rpc["default_factory"],
-            "handler_name": rpc["handler_name"],
-            "rpc_topic": rpc.get("rpc_topic"),
-        }
-        for rpc in rpc_specs
-        if rpc["name"] not in matched_rpc_names
-    )
+    for rpc in rpc_specs:
+        if rpc["name"] not in matched_rpc_names:
+            operations.append({
+                "name": rpc["name"], "rpc_name": rpc["name"], "request_type": f"pb.{rpc['req_cls']}",
+                "response_type": f"pb.{rpc['resp_cls']}", "default_factory": rpc["default_factory"],
+                "handler_name": rpc["handler_name"], "rpc_topic": rpc.get("rpc_topic"),
+            })
+
+    # Message topics
+    msg_topics = {
+        m_name: (m_desc.GetOptions().Extensions[pb_module.msg_cloud_topic])
+        for d in all_descs for m_name, m_desc in d.message_types_by_name.items()
+        if m_desc.GetOptions().HasExtension(pb_module.msg_cloud_topic)
+    }
+    msg_topics.update({
+        f"{e_name}_ENUM": (e_desc.GetOptions().Extensions[pb_module.enum_cloud_topic])
+        for d in all_descs for e_name, e_desc in d.enum_types_by_name.items()
+        if e_desc.GetOptions().HasExtension(pb_module.enum_cloud_topic)
+    })
 
     seen_names = {op["name"] for op in operations}
     seen_names.update(op["rpc_name"] for op in operations if "rpc_name" in op)
     seen_names.update(op["pb_class"].removeprefix("pb.") for op in operations if "pb_class" in op)
 
-    operations.extend(
-        _build_telemetry_operations(
-            message_topics,
-            payload_fields_by_msg,
-            telemetry_topic_field_map,
-            pb_module,
-            seen_names,
-        )
-    )
-    return operations
+    for msg_name, topic in msg_topics.items():
+        act_name = msg_name.removesuffix("_ENUM")
+        if act_name in seen_names:
+            continue
+        blob_field = next((bf for tm, bf in telem_map.items() if tm in topic), None)
+        if blob_field is None and "status" in topic:
+            blob_field = "system_status_blob"
+        op = {"name": act_name, "cloud_topic": topic}
+        if hasattr(pb_module, act_name):
+            op["pb_class"] = f"pb.{act_name}"
+        if act_name in p_fields_map:
+            op["payload_field"] = p_fields_map[act_name]
+        if blob_field:
+            op["metrics_blob_field"] = blob_field
+        operations.append(op)
+        seen_names.add(act_name)
 
+    for msg_name, f_name in p_fields_map.items():
+        if msg_name in seen_names:
+            continue
+        blob_field = next((bf for tm, bf in telem_map.items() if tm in msg_name.lower()), None)
+        op_payload = {"name": msg_name, "payload_field": f_name}
+        if hasattr(pb_module, msg_name):
+            op_payload["pb_class"] = f"pb.{msg_name}"
+        if msg_name in msg_topics:
+            op_payload["cloud_topic"] = msg_topics[msg_name]
+        if blob_field:
+            op_payload["metrics_blob_field"] = blob_field
+        operations.append(op_payload)
+        seen_names.add(msg_name)
 
-def _build_descriptor_context(pb_module: Any) -> dict[str, Any]:
-    file_desc = pb_module.DESCRIPTOR
-    all_descs = [file_desc, *file_desc.dependencies]
-    envelope_desc = None
-    for dep in all_descs:
-        if "RpcEnvelope" in dep.message_types_by_name:
-            envelope_desc = dep.message_types_by_name["RpcEnvelope"]
-            break
+    # Runtime Config
+    cfg_fields = _load_runtime_config_fields(pb_module.DESCRIPTOR, pb_module)
+    cfg_names = {c["name"] for c in py_consts}
+    rt_consts = [
+        {"name": f"DEFAULT_{f.name.upper()}", "type": f.field_type,
+         "value": f'b"{f.raw_default}"' if f.field_type == "bytes" else f'"{f.default_value}"' if f.field_type == "str" else str(f.default_value)}
+        for f in cfg_fields
+        if f.default_value is not None and f.field_type != "list" and f.config_default_ref is None and f"DEFAULT_{f.name.upper()}" not in cfg_names
+    ]
+    cl_rt_consts = [
+        {"name": f"DEFAULT_{f.name.upper()}", "type": f.field_type, "value": f.default_value}
+        for f in cfg_fields if f.client_constant and f.default_value is not None
+    ]
 
-    payload_fields: list[dict[str, str]] = []
-    payload_structs: list[dict[str, str]] = []
-    if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
-        for field_desc in envelope_desc.oneofs_by_name["payload_type"].fields:
-            if field_desc.message_type:
-                payload = {
-                    "name": field_desc.message_type.name,
-                    "field": field_desc.name,
-                }
-                payload_fields.append(payload)
-                if field_desc.message_type.name != "DaemonMetrics":
-                    payload_structs.append(payload)
+    # Topic Auth Map
+    topic_auth_map = {}
+    auth_fields = [f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields]
+    for n in auth_fields:
+        for prefix in ("bridge_", "gpio_", "system_", "shell_"):
+            if n.startswith(prefix):
+                topic_auth_map[(prefix.removesuffix("_").upper(), n[len(prefix):].upper())] = n
+                break
+        else:
+            parts = n.split("_", 1)
+            if len(parts) == 2:
+                topic_auth_map[(parts[0].upper(), parts[1].upper())] = n
 
-    payload_names: set[str] = {s["name"] for s in payload_structs}
-    mcu_names: set[str] = set(payload_names)
-    if envelope_desc:
-        mcu_names.add("RpcEnvelope")
-    all_struct_names: list[str] = []
-    for dep in all_descs:
-        for name in dep.message_types_by_name:
-            if name in mcu_names and name not in all_struct_names:
-                all_struct_names.append(name)
-    all_structs = [{"name": name} for name in all_struct_names]
+    status_reasons = _dump_proto_message(opts.Extensions[pb_module.status_reasons])
+    for f in pb_module.StatusReasons.DESCRIPTOR.fields:
+        status_reasons.setdefault(f.name, f.name)
 
-    topic_auth_map: dict[tuple[str, str], str] = {}
-    auth_message = getattr(pb_module, "TopicAuthorization", None)
-    if auth_message:
-        topic_prefixes = {"analog": "a", "digital": "d", "shell": "sh"}
-        for auth_field in auth_message.DESCRIPTOR.fields:
-            name = auth_field.name
-            if name == "console_input":
-                topic_auth_map[("console", "in")] = name
-                continue
-            for prefix, abbreviation in topic_prefixes.items():
-                if name.startswith(f"{prefix}_"):
-                    topic_auth_map[(abbreviation, name.removeprefix(f"{prefix}_"))] = name
-                    break
-            else:
-                parts = name.split("_", 1)
-                if len(parts) == 2:
-                    topic_auth_map[(parts[0], parts[1])] = name
+    hw_dict = _dump_proto_message(hw_opt)
+
     return {
-        "all_structs": all_structs,
-        "payload_fields": payload_fields,
-        "payload_structs": payload_structs,
-        "payload_names": [payload["name"] for payload in payload_structs],
-        "topic_auth_map": topic_auth_map,
+        "constants": cpp_consts, "python_constants": py_consts, "client_constants": client_consts,
+        "v_major": v_major, "v_minor": v_minor, "v_patch": v_patch,
+        "handshake_constants": hs_cpp, "python_handshake_constants": hs_py, "handshake": handshake_dict,
+        "grouped_actions": grouped_actions, "all_structs": all_structs, "payload_fields": payload_fields,
+        "payload_structs": payload_structs, "payload_names": payload_names,
+        "operations": operations, "rpc_aliases": rpc_aliases, "topic_auth_map": topic_auth_map,
+        "ack_commands": [c for c in commands if c["requires_ack"]],
+        "pre_sync_allowed_commands": [c for c in commands if c["pre_sync_allowed"]],
+        "response_only_commands": [c for c in commands if c["expects_direct_response"]],
+        "runtime_config_constants": rt_consts, "client_runtime_config_constants": cl_rt_consts,
+        "runtime_config_fields": cfg_fields,
+        "capabilities": {c.name: c.value for c in opts.Extensions[pb_module.capabilities]},
+        "architectures": {a.name: a.value for a in opts.Extensions[pb_module.architectures]},
+        "architecture_display_names": {a.name: a.display_name for a in opts.Extensions[pb_module.architectures] if a.display_name},
+        "cloud_suffixes": cloud_suffixes,
+        "cloud_defaults": _dump_proto_message(opts.Extensions[pb_module.cloud_defaults]),
+        "status_reasons": status_reasons,
+        "statuses": statuses, "commands": commands, "topics": topics, "message_topics": msg_topics,
+        "telemetry_topic_field_map": telem_map, "telemetry_default_field": default_telem,
+        "spi_bit_orders": [{"name": v.name, "value": v.number} for v in pb_module.SpiBitOrder.DESCRIPTOR.values],
+        "spi_data_modes": [{"name": v.name, "value": v.number} for v in pb_module.SpiDataMode.DESCRIPTOR.values],
+        "hardware": hw_dict,
     }
 
 
-def _build_telemetry_field_context(pb_module: Any) -> tuple[dict[str, str], str]:
-    telemetry_fields = pb_module.TelemetryReport.DESCRIPTOR.fields
-    topic_match_extension = pb_module.telemetry_topic_match
-    topic_default_extension = pb_module.telemetry_topic_default
-    topic_field_map: dict[str, str] = {}
-    default_field: str | None = None
+def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:
+    if pb_module is None:
+        proto_dir = str(proto_path.parent)
+        if proto_dir not in sys.path:
+            sys.path.insert(0, proto_dir)
+        cfg_mod = importlib.import_module("config_schema_pb2")
+        wire_mod = importlib.import_module("mcu_wire_pb2")
+        cloud_mod = importlib.import_module("cloud_gateway_pb2")
 
-    for field_desc in telemetry_fields:
-        options = field_desc.GetOptions()
-        has_topic_match = options.HasExtension(topic_match_extension)
-        has_default = options.HasExtension(topic_default_extension)
-        if has_topic_match and has_default:
-            raise ValueError(f"Telemetry field '{field_desc.name}' cannot be both matched and default")
+        class _UnifiedProto:
+            def __init__(self) -> None:
+                for m in (cfg_mod, wire_mod, cloud_mod):
+                    for k in dir(m):
+                        if not k.startswith("__"):
+                            setattr(self, k, getattr(m, k))
+                self.DESCRIPTOR = cloud_mod.DESCRIPTOR
 
-        if has_topic_match:
-            topic_match = options.Extensions[topic_match_extension]
-            if not topic_match:
-                raise ValueError(f"Telemetry field '{field_desc.name}' has an empty topic match")
-            if topic_match in topic_field_map:
-                raise ValueError(f"Duplicate telemetry topic match '{topic_match}'")
-            topic_field_map[topic_match] = field_desc.name
-        elif has_default:
-            if not options.Extensions[topic_default_extension]:
-                raise ValueError(f"Telemetry default marker for '{field_desc.name}' must be true")
-            if default_field is not None:
-                raise ValueError(f"Multiple telemetry default fields: '{default_field}' and '{field_desc.name}'")
-            default_field = field_desc.name
-        else:
-            raise ValueError(f"Telemetry field '{field_desc.name}' has no routing metadata")
-
-    if default_field is None:
-        raise ValueError("TelemetryReport must define exactly one default field")
-    if not topic_field_map:
-        raise ValueError("TelemetryReport must define at least one topic match")
-
-    return topic_field_map, default_field
-
-
-def build_protocol_context(spec: dict[str, Any], version: str) -> dict[str, Any]:
-    """Build all template data from the protocol model and its descriptors."""
-    constant_context = _build_constant_context(spec, version)
-    pb_module = spec["pb_module"]
-    handshake_context = _build_handshake_context(spec, pb_module)
-    action_context = _build_action_context(spec)
-    descriptor_context = _build_descriptor_context(pb_module)
-    telemetry_topic_field_map, telemetry_default_field = _build_telemetry_field_context(pb_module)
-    payload_fields_by_msg = {p["name"]: p["field"] for p in descriptor_context["payload_fields"]}
-    rpc_specs, rpc_aliases = _build_rpc_context(pb_module)
-    commands = spec["commands"]
-    operations = _build_operations_context(
-        commands,
-        spec["message_topics"],
-        pb_module,
-        payload_fields_by_msg,
-        telemetry_topic_field_map,
-        rpc_specs,
-    )
+        pb_module = _UnifiedProto()
+    ctx = build_protocol_context(pb_module, "0.0.0")
     return {
-        **constant_context,
-        **handshake_context,
-        **action_context,
-        **descriptor_context,
-        "operations": operations,
-        "rpc_aliases": rpc_aliases,
-        "ack_commands": [command for command in commands if command.get("requires_ack")],
-        "pre_sync_allowed_commands": [command for command in commands if command.get("pre_sync_allowed")],
-        "response_only_commands": [command for command in commands if command.get("expects_direct_response")],
-        "runtime_config_constants": _build_runtime_config_constants(spec, constant_context["python_constants"]),
-        "client_runtime_config_constants": _build_client_runtime_config_constants(spec),
-        "runtime_config_fields": spec["runtime_config_fields"],
-        "capabilities": spec["capabilities"],
-        "architectures": spec["architectures"],
-        "architecture_display_names": spec["architecture_display_names"],
-        "cloud_suffixes": spec["cloud_suffixes"],
-        "cloud_defaults": spec["cloud_defaults"],
-        "status_reasons": spec["status_reasons"],
-        "statuses": spec["statuses"],
-        "commands": commands,
-        "topics": spec["topics"],
-        "message_topics": spec["message_topics"],
-        "telemetry_topic_field_map": telemetry_topic_field_map,
-        "telemetry_default_field": telemetry_default_field,
-        "spi_bit_orders": [
-            {"name": value.name, "value": value.number} for value in pb_module.SpiBitOrder.DESCRIPTOR.values
-        ],
-        "spi_data_modes": [
-            {"name": value.name, "value": value.number} for value in pb_module.SpiDataMode.DESCRIPTOR.values
-        ],
-        "hardware": spec["hardware"],
+        "commands": ctx["commands"],
+        "runtime_config_fields": ctx["runtime_config_fields"],
+        "pb_module": pb_module,
+        "spec_context": ctx,
     }
 
 
@@ -878,45 +565,7 @@ class JinjaGenerator:
             keep_trailing_newline=True,
         )
         cast(dict[str, Any], self.env.filters)["cpp_digits"] = self._cpp_digit_separator
-        cast(dict[str, Any], self.env.filters)["snakecase"] = self._snake_case
-        cast(dict[str, Any], self.env.filters)["py_str"] = self._py_str
-
-    @staticmethod
-    def _split_py_string(s: str, width: int = 70) -> list[str]:
-        words = s.split(" ")
-        lines: list[str] = []
-        current: list[str] = []
-        current_len = 0
-        for w in words:
-            added_len = len(w) + (1 if current else 0)
-            if current and current_len + added_len > width:
-                lines.append(" ".join(current) + " ")
-                current = [w]
-                current_len = len(w)
-            else:
-                current.append(w)
-                current_len += added_len
-        if current:
-            lines.append(" ".join(current))
-        return lines
-
-    @staticmethod
-    def _py_str(value: object, indent: int = 8, max_width: int = 100) -> str:
-        """Format a Python literal, splitting long strings into parenthesized chunks. [SIL-2]"""
-        if value is None:
-            return "None"
-        if not isinstance(value, str):
-            return json.dumps(value)
-        encoded = json.dumps(value)
-        if len(encoded) + indent <= max_width:
-            return encoded
-        target_width = max(20, max_width - indent - 8)
-        parts = JinjaGenerator._split_py_string(value, width=target_width)
-        if len(parts) <= 1:
-            return encoded
-        indent_str = " " * indent
-        formatted_parts = [f"{indent_str}    {json.dumps(p)}" for p in parts]
-        return "(\n" + "\n".join(formatted_parts) + f"\n{indent_str})"
+        cast(dict[str, Any], self.env.filters)["snakecase"] = self.snake_case
 
     @staticmethod
     def _cpp_digit_separator(value: object) -> str:
@@ -929,8 +578,6 @@ class JinjaGenerator:
     @staticmethod
     def snake_case(s: str) -> str:
         return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
-
-    _snake_case = snake_case
 
     def render_template(
         self,
@@ -1062,7 +709,11 @@ def _is_string_keyed_mapping(value: object) -> TypeGuard[dict[str, object]]:
 
 def _resolve_proto_path(spec_path: Path) -> Path:
     resolved_spec = spec_path.resolve()
-    return (resolved_spec.parent / "mcubridge.proto").resolve() if resolved_spec.suffix == ".toml" else resolved_spec
+    if resolved_spec.is_dir():
+        return (resolved_spec / "cloud_gateway.proto").resolve()
+    if resolved_spec.name in ("mcubridge.proto", "mcubridge.toml"):
+        return (resolved_spec.parent / "cloud_gateway.proto").resolve()
+    return resolved_spec
 
 
 def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, Path | None, bool, bool]]:
@@ -1106,16 +757,21 @@ def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, P
 def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> list[Path]:
     explicit_outputs = [path for path in (args.cpp, args.cpp_structs, args.py, args.py_client) if path]
     outputs = list(explicit_outputs)
-    proto_stems = ("mcubridge", "mcu_wire", "config_schema", "cloud_gateway")
     if args.cpp:
-        for stem in proto_stems:
+        for stem in ("config_schema", "mcu_wire"):
             outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
 
     python_output_dirs = {path.parent for path in (args.py, args.py_client) if path}
     for output_dir in python_output_dirs:
-        for stem in proto_stems:
+        for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
             outputs.extend((output_dir / f"{stem}_pb2.py", output_dir / f"{stem}_pb2.pyi"))
-        outputs.append(output_dir / "mcubridge_grpc.py")
+        outputs.extend(
+            (
+                output_dir / "mcubridge_pb2.py",
+                output_dir / "mcubridge_pb2.pyi",
+                output_dir / "mcubridge_grpc.py",
+            )
+        )
 
     explicit_output_dirs = {path.parent for path in explicit_outputs}
     outputs.extend(
@@ -1253,35 +909,57 @@ def main(
     py_targets = [args.py.parent if args.py else None, args.py_client.parent if args.py_client else None]
     cpp_targets = [args.cpp.parent if args.cpp else None]
 
-    proto_stems = ("mcubridge", "mcu_wire", "config_schema", "cloud_gateway")
-
     def _sanitize_pb2(text: str) -> str:
         text = re.sub(
-            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|mcubridge_pb2)\b",
+            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b",
             r"from . import \1",
             text,
             flags=re.MULTILINE,
         )
         return re.sub(
-            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|mcubridge_pb2)\b",
+            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b",
             r"from .\1",
             text,
             flags=re.MULTILINE,
         )
 
-    for stem in proto_stems:
+    for stem in ("config_schema", "mcu_wire"):
         _dispatch_generated_file(
             proto_path.parent / f"{stem}.pb.h",
             cpp_targets,
             lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
         )
         _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
+
+    for leftover in (proto_path.parent / "cloud_gateway.pb.h", proto_path.parent / "cloud_gateway.pb.c"):
+        leftover.unlink(missing_ok=True)
+
+    for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.py", py_targets, _sanitize_pb2)
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.pyi", py_targets)
 
+    unified_py = (
+        '"""Consolidated Python protobuf entrypoint for MCU Bridge v2."""\n'
+        "from . import config_schema_pb2 as config_schema_pb2\n"
+        "from . import mcu_wire_pb2 as mcu_wire_pb2\n"
+        "from . import cloud_gateway_pb2 as cloud_gateway_pb2\n"
+        "from .config_schema_pb2 import *\n"
+        "from .mcu_wire_pb2 import *\n"
+        "from .cloud_gateway_pb2 import *\n\n"
+        "DESCRIPTOR = cloud_gateway_pb2.DESCRIPTOR\n"
+    )
+    unified_pyi = (
+        "from .config_schema_pb2 import *\n"
+        "from .mcu_wire_pb2 import *\n"
+        "from .cloud_gateway_pb2 import *\n"
+    )
+    for py_dir in filter(None, py_targets):
+        (py_dir / "mcubridge_pb2.py").write_text(unified_py, encoding="utf-8")
+        (py_dir / "mcubridge_pb2.pyi").write_text(unified_pyi, encoding="utf-8")
+
     def _sanitize_grpc_bindings(text: str) -> str:
         text = re.sub(
-            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|mcubridge_pb2)\b",
+            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b",
             r"from . import \1",
             text,
             flags=re.MULTILINE,

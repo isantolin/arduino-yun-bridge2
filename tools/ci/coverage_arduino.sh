@@ -95,7 +95,8 @@ THIRD_PARTY_SOURCES=(
     "${SRC_ROOT}/pb_encode.c"
     "${SRC_ROOT}/pb_decode.c"
     "${SRC_ROOT}/pb_common.c"
-    "${SRC_ROOT}/protocol/mcubridge.pb.c"
+    "${SRC_ROOT}/protocol/config_schema.pb.c"
+    "${SRC_ROOT}/protocol/mcu_wire.pb.c"
 )
 
 # Flags with coverage instrumentation (first-party code only).

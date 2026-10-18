@@ -702,22 +702,6 @@ def _build_operations_context(
 
 def _build_descriptor_context(pb_module: Any) -> dict[str, Any]:
     file_desc = pb_module.DESCRIPTOR
-    all_message_names = list(file_desc.message_types_by_name)
-    options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
-    options_content = options_path.read_text(encoding="utf-8")
-    skipped_messages: set[str] = set()
-    for line in options_content.splitlines():
-        trimmed = line.strip()
-        if not trimmed or trimmed.startswith("#"):
-            continue
-        parts = trimmed.split()
-        if len(parts) >= 2 and parts[0].startswith("rpc.pb.") and "skip_message:true" in parts[1:]:
-            msg_name = parts[0].removeprefix("rpc.pb.")
-            if msg_name.isidentifier():
-                skipped_messages.add(msg_name)
-    all_structs = [
-        {"name": name} for name in all_message_names if name not in skipped_messages and name != "RpcContainer"
-    ]
     envelope_desc = file_desc.message_types_by_name.get("RpcEnvelope")
     payload_fields: list[dict[str, str]] = []
     payload_structs: list[dict[str, str]] = []
@@ -729,8 +713,14 @@ def _build_descriptor_context(pb_module: Any) -> dict[str, Any]:
                     "field": field_desc.name,
                 }
                 payload_fields.append(payload)
-                if field_desc.message_type.name not in skipped_messages:
+                if field_desc.message_type.name != "DaemonMetrics":
                     payload_structs.append(payload)
+
+    payload_names: set[str] = {s["name"] for s in payload_structs}
+    mcu_names: set[str] = set(payload_names)
+    if envelope_desc:
+        mcu_names.add("RpcEnvelope")
+    all_structs = [{"name": name} for name in file_desc.message_types_by_name if name in mcu_names]
 
     topic_auth_map: dict[tuple[str, str], str] = {}
     auth_message = getattr(pb_module, "TopicAuthorization", None)

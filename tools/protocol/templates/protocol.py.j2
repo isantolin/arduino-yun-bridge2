@@ -249,7 +249,7 @@ class ProtocolRegistry:
         if not topic_name:
             return None
 
-        raw_parts = tuple(filter(None, topic_name.split("/")))
+        raw_parts = [p for p in topic_name.split("/") if p]
         if not raw_parts:
             return None
 
@@ -271,13 +271,9 @@ class ProtocolRegistry:
         if not prefix:
             return None
 
-        prefix_segs = tuple(filter(None, prefix.split("/")))
+        prefix_segs = [p for p in prefix.split("/") if p]
         prefix_len = len(prefix_segs)
-        if (
-            not prefix_segs
-            or len(raw_parts) <= prefix_len + 1
-            or raw_parts[:prefix_len] != prefix_segs
-        ):
+        if not prefix_segs or len(raw_parts) <= prefix_len + 1 or raw_parts[:prefix_len] != prefix_segs:
             return None
 
         prefix_canonical = "/".join(prefix_segs)

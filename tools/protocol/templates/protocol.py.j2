@@ -165,13 +165,12 @@ class ProtocolRegistry:
         topic_lookup: dict[str, Topic],
         mcu_dispatch_handlers: dict[int, str],
         mcu_unsupported_reasons: dict[int, str],
-        topic_auth_map: dict[tuple[str, str], str],
+        topic_auth_map: dict[tuple[str, str], str] | None = None,
     ) -> None:
         self.operations = operations
         self.topic_lookup = topic_lookup
         self.mcu_dispatch_handlers = mcu_dispatch_handlers
         self.mcu_unsupported_reasons = mcu_unsupported_reasons
-        self.topic_auth_map = topic_auth_map
         self.rpc_specs = tuple(op for op in operations if op.handler_name is not None)
 
         self.by_command_id = {op.command_id: op for op in operations if op.command_id is not None}
@@ -196,11 +195,36 @@ class ProtocolRegistry:
                 self.by_name[alias.replace(".", "_")] = target_op
                 self.by_name[alias.replace(".", "/")] = target_op
 
+        # Registry-driven topic authorization map [SIL-2 / SSOT]
+        self.topic_auth_map: dict[tuple[str, str], str] = dict(topic_auth_map or {})
+        for op in operations:
+            if not op.auth_field:
+                continue
+            if "_" in op.auth_field:
+                pfx, sfx = op.auth_field.split("_", 1)
+                self.topic_auth_map.setdefault((pfx.upper(), sfx.upper()), op.auth_field)
+                self.topic_auth_map.setdefault((pfx.lower(), sfx.lower()), op.auth_field)
+                for alias_str, topic_enum in topic_lookup.items():
+                    if topic_enum.name.lower() == pfx.lower() or topic_enum.value.lower() == pfx.lower():
+                        self.topic_auth_map.setdefault((alias_str.lower(), sfx.lower()), op.auth_field)
+                        self.topic_auth_map.setdefault((alias_str.upper(), sfx.upper()), op.auth_field)
+
     def lookup_topic(self, segment: str) -> Topic | None:
         return self.topic_lookup.get(segment.lower())
 
     def get_auth_field(self, topic: str, action: str) -> str | None:
-        return self.topic_auth_map.get((topic.lower(), action.lower()))
+        norm_topic = self.lookup_topic(topic)
+        top_name = norm_topic.name if norm_topic is not None else topic.upper()
+        act_name = action.upper()
+        top_val = norm_topic.value if norm_topic is not None else topic.lower()
+        act_val = action.lower()
+        return (
+            self.topic_auth_map.get((topic, action))
+            or self.topic_auth_map.get((top_name, act_name))
+            or self.topic_auth_map.get((top_val, act_val))
+            or self.topic_auth_map.get((topic.lower(), action.lower()))
+            or self.topic_auth_map.get((topic.upper(), action.upper()))
+        )
 
     def allows_topic(self, auth: Any, topic: str, action: str) -> bool:
         if getattr(auth, "allow_all", False):
@@ -379,11 +403,6 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
     mcu_unsupported_reasons={
         {%- for c in commands if c.mcu_unsupported_reason %}
         Command.{{ c.name }}.value: STATUS_REASON_{{ c.mcu_unsupported_reason|upper }},
-        {%- endfor %}
-    },
-    topic_auth_map={
-        {%- for (topic, action), field_name in topic_auth_map.items()|sort %}
-        ("{{ topic }}", "{{ action }}"): "{{ field_name }}",
         {%- endfor %}
     },
 )

@@ -34,27 +34,63 @@ def _write_board_metadata(output_dir: Path, fqbn: str, led_pin: int = 13) -> Non
     )
 
 
+def _mock_supports_true(path: str) -> bool:
+    _ = path
+    return True
+
+
+def _mock_supports_false(path: str) -> bool:
+    _ = path
+    return False
+
+
+def _mock_supports_usr_only(path: str) -> bool:
+    return path == "/usr/bin/qemu-system-xtensa"
+
+
+def _mock_which_qemu(cmd: str) -> str | None:
+    _ = cmd
+    return "/usr/bin/qemu-system-xtensa"
+
+
+def _mock_which_none(cmd: str) -> str | None:
+    _ = cmd
+    return None
+
+
+def _mock_which_usr(cmd: str) -> str | None:
+    return f"/usr/bin/{cmd}"
+
+
+def _mock_find_qemu() -> str | None:
+    return "/usr/bin/qemu-system-xtensa"
+
+
+def _mock_find_qemu_none() -> str | None:
+    return None
+
+
 def test_supports_esp32s3(monkeypatch: pytest.MonkeyPatch) -> None:
     def mock_run_supported(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         _ = (cmd, kwargs)
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="Supported machines:\nesp32s3\nesp32")
 
     monkeypatch.setattr(subprocess, "run", mock_run_supported)
-    assert qemu_runner._supports_esp32s3("/fake/qemu") is True
+    assert qemu_runner.supports_esp32s3("/fake/qemu") is True
 
     def mock_run_unsupported(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         _ = (cmd, kwargs)
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="Supported machines:\nsim\nqemu-xtensa")
 
     monkeypatch.setattr(subprocess, "run", mock_run_unsupported)
-    assert qemu_runner._supports_esp32s3("/fake/qemu") is False
+    assert qemu_runner.supports_esp32s3("/fake/qemu") is False
 
     def mock_run_error(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         _ = (cmd, kwargs)
         raise OSError("Executable failed")
 
     monkeypatch.setattr(subprocess, "run", mock_run_error)
-    assert qemu_runner._supports_esp32s3("/fake/qemu") is False
+    assert qemu_runner.supports_esp32s3("/fake/qemu") is False
 
 
 def test_find_qemu_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -65,18 +101,18 @@ def test_find_qemu_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     fake_qemu.chmod(0o755)
 
     monkeypatch.setattr(qemu_runner, "QEMU_SEARCH_DIRS", (fake_bin_dir,))
-    monkeypatch.setattr(qemu_runner, "_supports_esp32s3", lambda p: True)
+    monkeypatch.setattr(qemu_runner, "supports_esp32s3", _mock_supports_true)
 
     assert qemu_runner.find_qemu_binary() == str(fake_qemu)
 
     # If it does not support esp32s3, fallback to PATH
-    monkeypatch.setattr(qemu_runner, "_supports_esp32s3", lambda p: p == "/usr/bin/qemu-system-xtensa")
-    monkeypatch.setattr(qemu_runner.shutil, "which", lambda cmd: "/usr/bin/qemu-system-xtensa")
+    monkeypatch.setattr(qemu_runner, "supports_esp32s3", _mock_supports_usr_only)
+    monkeypatch.setattr(qemu_runner.shutil, "which", _mock_which_qemu)
 
     assert qemu_runner.find_qemu_binary() == "/usr/bin/qemu-system-xtensa"
 
     # If neither supports it, return None
-    monkeypatch.setattr(qemu_runner, "_supports_esp32s3", lambda p: False)
+    monkeypatch.setattr(qemu_runner, "supports_esp32s3", _mock_supports_false)
     assert qemu_runner.find_qemu_binary() is None
 
 
@@ -121,7 +157,7 @@ def test_audit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qemu_runner, "Path", mock_path)
 
     # File missing -> returns True
-    assert qemu_runner._audit_status() is True
+    assert qemu_runner.audit_status() is True
 
     # Valid status with 0 errors
     status_file.write_text(
@@ -134,11 +170,11 @@ def test_audit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         ),
         encoding="utf-8",
     )
-    assert qemu_runner._audit_status() is True
+    assert qemu_runner.audit_status() is True
 
     # Corrupt json -> returns False
     status_file.write_text("invalid json", encoding="utf-8")
-    assert qemu_runner._audit_status() is False
+    assert qemu_runner.audit_status() is False
 
 
 def _mock_qemu_success(
@@ -181,7 +217,7 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         return subprocess.CompletedProcess(cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: "/usr/bin/qemu-system-xtensa")
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
     monkeypatch.setattr(qemu_runner, "run_qemu_emulation", _mock_qemu_success)
     monkeypatch.setenv("QEMU_METRICS_DIR", str(tmp_path / "metrics"))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
@@ -218,7 +254,7 @@ def test_run_matrix_qemu_not_installed(tmp_path: Path, monkeypatch: pytest.Monke
         return subprocess.CompletedProcess(cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: None)
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu_none)
     monkeypatch.setenv("QEMU_METRICS_DIR", str(tmp_path / "metrics"))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
@@ -241,7 +277,7 @@ def test_run_matrix_compilation_failure(tmp_path: Path, monkeypatch: pytest.Monk
         return subprocess.CompletedProcess(cmd, returncode=1)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_error)
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: "/usr/bin/qemu-system-xtensa")
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
     monkeypatch.setenv("QEMU_METRICS_DIR", str(tmp_path / "metrics"))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
 
@@ -268,7 +304,7 @@ def test_run_matrix_emulation_failure(tmp_path: Path, monkeypatch: pytest.Monkey
         return subprocess.CompletedProcess(cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: "/usr/bin/qemu-system-xtensa")
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
     monkeypatch.setattr(qemu_runner, "run_qemu_emulation", _mock_qemu_failure)
     monkeypatch.setenv("QEMU_METRICS_DIR", str(tmp_path / "metrics"))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
@@ -286,12 +322,12 @@ def test_run_qemu_emulation_missing_tools(tmp_path: Path, monkeypatch: pytest.Mo
     fake_img.write_text("IMG", encoding="utf-8")
 
     # Missing qemu
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: None)
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu_none)
     assert qemu_runner.run_qemu_emulation(fake_img, []) is False
 
     # Missing socat
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: "/usr/bin/qemu-system-xtensa")
-    monkeypatch.setattr(qemu_runner.shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
+    monkeypatch.setattr(qemu_runner.shutil, "which", _mock_which_none)
     assert qemu_runner.run_qemu_emulation(fake_img, []) is False
 
 
@@ -313,16 +349,48 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
     fake_img.write_text("IMG", encoding="utf-8")
     log_dir = tmp_path / "logs"
 
-    monkeypatch.setattr(qemu_runner, "find_qemu_binary", lambda: "/usr/bin/qemu-system-xtensa")
-    monkeypatch.setattr(qemu_runner.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
-    monkeypatch.setattr(qemu_runner, "ensure_cloud_gateway", lambda state: None)
-    monkeypatch.setattr(qemu_runner, "wait_for_tcp_ready", lambda host, port, timeout: True)
-    monkeypatch.setattr(
-        qemu_runner, "setup_fake_uci", lambda slave: (tmp_path / "uci", tmp_path / "db", {"FAKE": "1"})
-    )
-    monkeypatch.setattr(qemu_runner, "wait_for_path_ready", lambda path, timeout: True)
-    monkeypatch.setattr(qemu_runner, "run_client_scripts", lambda scripts, env, timeout, led_builtin_pin: True)
-    monkeypatch.setattr(qemu_runner, "_audit_status", lambda: True)
+    def mock_ensure_gateway(state: Any) -> subprocess.Popen[str] | None:
+        _ = state
+        return None
+
+    def mock_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: float = 0.5) -> bool:
+        _ = (host, port, timeout, interval)
+        return True
+
+    def mock_setup_uci(slave: str) -> tuple[Path, Path, dict[str, str]]:
+        _ = slave
+        return (tmp_path / "uci", tmp_path / "db", {"FAKE": "1"})
+
+    def mock_path_ready(path: Path, timeout: float = 5.0, interval: float = 0.05) -> bool:
+        _ = (path, timeout, interval)
+        return True
+
+    def mock_run_scripts(
+        scripts: list[Path],
+        env: dict[str, str],
+        timeout: float,
+        led_builtin_pin: int = 13,
+    ) -> bool:
+        _ = (scripts, env, timeout, led_builtin_pin)
+        return True
+
+    def mock_audit() -> bool:
+        return True
+
+    def mock_start_thread(*args: Any, **kwargs: Any) -> None:
+        _ = (args, kwargs)
+
+    def mock_terminate(procs: Any, timeout: float = 5.0) -> None:
+        _ = (procs, timeout)
+
+    monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
+    monkeypatch.setattr(qemu_runner.shutil, "which", _mock_which_usr)
+    monkeypatch.setattr(qemu_runner, "ensure_cloud_gateway", mock_ensure_gateway)
+    monkeypatch.setattr(qemu_runner, "wait_for_tcp_ready", mock_tcp_ready)
+    monkeypatch.setattr(qemu_runner, "setup_fake_uci", mock_setup_uci)
+    monkeypatch.setattr(qemu_runner, "wait_for_path_ready", mock_path_ready)
+    monkeypatch.setattr(qemu_runner, "run_client_scripts", mock_run_scripts)
+    monkeypatch.setattr(qemu_runner, "audit_status", mock_audit)
 
     class MockPopen:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -334,8 +402,8 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
             return None
 
     monkeypatch.setattr(subprocess, "Popen", MockPopen)
-    monkeypatch.setattr(qemu_runner, "start_daemon_thread", lambda *args, **kwargs: None)
-    monkeypatch.setattr(qemu_runner, "terminate_process_tree", lambda procs, timeout=5.0: None)
+    monkeypatch.setattr(qemu_runner, "start_daemon_thread", mock_start_thread)
+    monkeypatch.setattr(qemu_runner, "terminate_process_tree", mock_terminate)
 
     # Mock QemuState to immediately set events
     original_state_cls = qemu_runner.QemuState

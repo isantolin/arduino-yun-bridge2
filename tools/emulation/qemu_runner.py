@@ -55,7 +55,7 @@ QEMU_SEARCH_DIRS: tuple[Path, ...] = (Path("/tmp/qemu-esp32/bin"), Path("/opt/qe
 logger = structlog.get_logger("qemu_runner")
 
 
-def _supports_esp32s3(binary_path: str) -> bool:
+def supports_esp32s3(binary_path: str) -> bool:
     """Verify that the QEMU binary supports the esp32s3 machine (Espressif fork)."""
     try:
         res = subprocess.run(
@@ -75,12 +75,12 @@ def find_qemu_binary() -> str | None:
     # 1. Search known Espressif installation directories first
     for directory in QEMU_SEARCH_DIRS:
         candidate = directory / "qemu-system-xtensa"
-        if candidate.is_file() and os.access(candidate, os.X_OK) and _supports_esp32s3(str(candidate)):
+        if candidate.is_file() and os.access(candidate, os.X_OK) and supports_esp32s3(str(candidate)):
             return str(candidate)
 
     # 2. Search PATH, ensuring the binary is the Espressif fork supporting esp32s3
     found = shutil.which("qemu-system-xtensa")
-    if found is not None and _supports_esp32s3(found):
+    if found is not None and supports_esp32s3(found):
         return found
 
     return None
@@ -114,7 +114,7 @@ def build_qemu_command(qemu_bin: str, flash_image: Path, port: int) -> list[str]
     ]
 
 
-def _audit_status() -> bool:
+def audit_status() -> bool:
     status_file = Path("/tmp/mcubridge_status.json")
     if not status_file.exists():
         return True
@@ -230,7 +230,7 @@ def run_qemu_emulation(
         time.sleep(1.0)
 
         all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
-        return all_passed and _audit_status()
+        return all_passed and audit_status()
 
     finally:
         procs = [p for p in (daemon_proc, gateway_proc, socat_proc, qemu_proc) if p is not None]

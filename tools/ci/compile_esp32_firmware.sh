@@ -85,7 +85,7 @@ BUILD_FLAGS=(
     "--build-property" "build.psram_type=qspi"
     "--build-property" "build.cdc_on_boot=0"
     "--build-property" "build.dfu_on_boot=0"
-    "--build-property" "build.defines=-DBOARD_HAS_PIN_REMAP '-DUSB_MANUFACTURER=\"Arduino\"' '-DUSB_PRODUCT=\"Nano ESP32\"'"
+    "--build-property" "build.defines=-DBOARD_HAS_PIN_REMAP -DBOARD_USES_HW_GPIO_NUMBERS '-DUSB_MANUFACTURER=\"Arduino\"' '-DUSB_PRODUCT=\"Nano ESP32\"'"
     "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite"
     "--build-path" "$OUTPUT_DIR"
 )

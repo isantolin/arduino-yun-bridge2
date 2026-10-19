@@ -81,6 +81,7 @@ def _load_engine_boards(
 def generate_consolidated_markdown(
     simavr_dir: Path,
     renode_dir: Path,
+    qemu_dir: Path | None = None,
 ) -> str:
     """Build unified multi-architecture hardware emulation table."""
     all_boards: list[dict[str, str]] = []
@@ -102,6 +103,16 @@ def generate_consolidated_markdown(
         default_arch="ARM Cortex-M0+",
     )
     all_boards.extend(renode_boards)
+
+    if qemu_dir is not None:
+        qemu_boards = _load_engine_boards(
+            qemu_dir,
+            "qemu_summary.json",
+            "qemu_summary.md",
+            default_engine="QEMU Espressif (Instruction-Accurate)",
+            default_arch="Xtensa LX7 (ESP32-S3)",
+        )
+        all_boards.extend(qemu_boards)
 
     header = [
         "### 🔬 Multi-Architecture Hardware Emulation Matrix",
@@ -138,6 +149,10 @@ def main(
         Path,
         typer.Option("--renode-dir", help="Directory containing renode logs and summaries"),
     ] = Path("renode-logs"),
+    qemu_dir: Annotated[
+        Path | None,
+        typer.Option("--qemu-dir", help="Directory containing qemu logs and summaries"),
+    ] = Path("qemu-logs"),
     output: Annotated[
         Path | None,
         typer.Option("--output", "-o", help="Optional output path for consolidated markdown"),
@@ -148,7 +163,7 @@ def main(
     ] = True,
 ) -> None:
     """Consolidate hardware emulation results into single matrix markdown."""
-    markdown_content = generate_consolidated_markdown(simavr_dir, renode_dir)
+    markdown_content = generate_consolidated_markdown(simavr_dir, renode_dir, qemu_dir=qemu_dir)
     print(markdown_content)
 
     if output:

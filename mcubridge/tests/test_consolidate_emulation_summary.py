@@ -24,8 +24,10 @@ def test_generate_consolidated_markdown_empty(tmp_path: Path) -> None:
 def test_generate_consolidated_markdown_from_json(tmp_path: Path) -> None:
     s_dir = tmp_path / "simavr"
     r_dir = tmp_path / "renode"
+    q_dir = tmp_path / "qemu"
     s_dir.mkdir()
     r_dir.mkdir()
+    q_dir.mkdir()
 
     (s_dir / "simavr_summary.json").write_text(
         json.dumps(
@@ -65,21 +67,45 @@ def test_generate_consolidated_markdown_from_json(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    content = consolidate_emulation_summary.generate_consolidated_markdown(s_dir, r_dir)
+    (q_dir / "qemu_summary.json").write_text(
+        json.dumps(
+            {
+                "engine": "QEMU Espressif (Instruction-Accurate)",
+                "boards": [
+                    {
+                        "board_fqbn": "arduino:esp32:nano_nora",
+                        "board_name": "Arduino Nano ESP32 (ESP32-S3)",
+                        "architecture": "Xtensa LX7 (ESP32-S3)",
+                        "compilation": "✅ Compiled",
+                        "emulation": "✅ Passed (100% E2E)",
+                        "result": "✅ PASS",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    content = consolidate_emulation_summary.generate_consolidated_markdown(s_dir, r_dir, qemu_dir=q_dir)
     assert "Arduino Mega 2560" in content
     assert "arduino:avr:mega" in content
     assert "simavr (Cycle-Accurate)" in content
     assert "Arduino MKR WiFi 1010" in content
     assert "arduino:samd:mkrwifi1010" in content
     assert "Renode (Instruction-Accurate)" in content
+    assert "Arduino Nano ESP32" in content
+    assert "arduino:esp32:nano_nora" in content
+    assert "QEMU Espressif (Instruction-Accurate)" in content
     assert "✅ PASS" in content
 
 
 def test_generate_consolidated_markdown_fallback_md(tmp_path: Path) -> None:
     s_dir = tmp_path / "simavr"
     r_dir = tmp_path / "renode"
+    q_dir = tmp_path / "qemu"
     s_dir.mkdir()
     r_dir.mkdir()
+    q_dir.mkdir()
 
     sample_md = (
         "### simavr\n\n"
@@ -90,9 +116,20 @@ def test_generate_consolidated_markdown_fallback_md(tmp_path: Path) -> None:
     )
     (s_dir / "simavr_summary.md").write_text(sample_md, encoding="utf-8")
 
-    content = consolidate_emulation_summary.generate_consolidated_markdown(s_dir, r_dir)
+    qemu_md = (
+        "### QEMU Xtensa\n\n"
+        "| Board | Arch | Comp | Emu | Result |\n"
+        "| :--- | :---: | :---: | :---: | :---: |\n"
+        "| **Arduino Nano ESP32 (ESP32-S3)**<br>`arduino:esp32:nano_nora` | Xtensa LX7 (ESP32-S3) | ✅ Compiled | "
+        "✅ Passed (100% E2E) | **✅ PASS** |\n"
+    )
+    (q_dir / "qemu_summary.md").write_text(qemu_md, encoding="utf-8")
+
+    content = consolidate_emulation_summary.generate_consolidated_markdown(s_dir, r_dir, qemu_dir=q_dir)
     assert "Arduino Mega 2560" in content
     assert "AVR 8-bit" in content
+    assert "Arduino Nano ESP32" in content
+    assert "Xtensa LX7 (ESP32-S3)" in content
     assert "✅ PASS" in content
 
 
@@ -100,8 +137,10 @@ def test_main_cli_writes_output_and_step_summary(tmp_path: Path, monkeypatch: py
 
     s_dir = tmp_path / "simavr"
     r_dir = tmp_path / "renode"
+    q_dir = tmp_path / "qemu"
     s_dir.mkdir()
     r_dir.mkdir()
+    q_dir.mkdir()
 
     out_file = tmp_path / "unified.md"
     step_file = tmp_path / "step_summary.md"
@@ -110,6 +149,7 @@ def test_main_cli_writes_output_and_step_summary(tmp_path: Path, monkeypatch: py
     consolidate_emulation_summary.main(
         simavr_dir=s_dir,
         renode_dir=r_dir,
+        qemu_dir=q_dir,
         output=out_file,
         step_summary=True,
     )

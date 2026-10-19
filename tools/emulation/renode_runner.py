@@ -92,7 +92,7 @@ class RenodeState:
                 self.sync_event.set()
 
 
-def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
+def setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     """Configure fake UCI directory, LMDB storage, and daemon environment variables."""
     fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_renode_uci_"))
     storage_path = Path(tempfile.mkdtemp(prefix="mcubridge_renode_db_"))
@@ -311,7 +311,7 @@ def run_renode_emulation(
             logger.error("Gateway did not start in time")
             return False
 
-        fake_uci_dir, storage_path, daemon_env = _setup_fake_uci(str(pty_link))
+        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(str(pty_link))
 
         renode_cmd = [
             renode_bin,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, fields
@@ -43,6 +44,9 @@ class ArduinoCoreMetadata:
 
 
 _INCLUDE_PARSER = parse.compile('include "{header}"')
+_CONST_EXPR_PATTERN = re.compile(
+    r"(?:static\s+)?(?:constexpr|const)\s+[a-zA-Z0-9_]+\s+([a-zA-Z0-9_]+)\s*=\s*([^;]+);"
+)
 
 
 def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[str, str]:
@@ -57,6 +61,10 @@ def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[st
     for line in content.splitlines():
         trimmed = line.strip()
         if not trimmed.startswith("#"):
+            const_match = _CONST_EXPR_PATTERN.search(trimmed)
+            if const_match:
+                name, val = const_match.group(1), const_match.group(2)
+                macros[name] = val.split("//", maxsplit=1)[0].strip()
             continue
         inc = _INCLUDE_PARSER.search(trimmed)
         if inc:
@@ -108,6 +116,26 @@ def metadata_from_properties(fqbn: str, output: str) -> ArduinoCoreMetadata:
     if not variant_header.is_file():
         raise ValueError(f"Arduino core variant header not found: {variant_header}")
     macros = _read_variant_macros(variant_header)
+
+    # Map standard pin aliases if explicit PIN_* macros were not defined
+    alias_map = {
+        "PIN_SPI_SS": "SS",
+        "PIN_SPI_MOSI": "MOSI",
+        "PIN_SPI_MISO": "MISO",
+        "PIN_SPI_SCK": "SCK",
+        "PIN_WIRE_SDA": "SDA",
+        "PIN_WIRE_SCL": "SCL",
+    }
+    for req_name, alt_name in alias_map.items():
+        if req_name not in macros and alt_name in macros:
+            macros[req_name] = macros[alt_name]
+
+    mcu_lower = properties["build.mcu"].lower()
+    if "NUM_DIGITAL_PINS" not in macros and "esp32" in mcu_lower:
+        macros["NUM_DIGITAL_PINS"] = "49"
+    if "NUM_ANALOG_INPUTS" not in macros and "esp32" in mcu_lower:
+        macros["NUM_ANALOG_INPUTS"] = "20"
+
     missing_macros = [name for name in REQUIRED_PIN_MACROS if name not in macros]
     if missing_macros:
         raise ValueError(

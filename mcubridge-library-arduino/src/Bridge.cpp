@@ -272,17 +272,19 @@ void BridgeClass::setStream(Stream& stream) {
     return;
   }
 #endif
-#if defined(Serial)
-  if (_stream == &Serial) {
 #if defined(ARDUINO_ARCH_SAMD)
+  if (_stream == &Serial) {
     _hardware_serial = nullptr;
+    return;
+  }
 #else
+  if (_stream == &Serial) {
     _hardware_serial = static_cast<HardwareSerial*>(_stream);
-#endif
     return;
   }
 #endif
-#if defined(Serial1)
+#if defined(Serial1) || defined(HAVE_HWSERIAL1) || \
+    (defined(SOC_UART_NUM) && SOC_UART_NUM > 1)
   if (_stream == &Serial1) {
     _hardware_serial = static_cast<HardwareSerial*>(_stream);
     return;

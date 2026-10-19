@@ -54,7 +54,7 @@ BOARD_NANO_ESP32: Final[BoardSpec] = BoardSpec(
     detailed_name="Arduino Nano ESP32",
     max_flash=3_145_728,
     max_ram=327_680,
-    emulator=None,
+    emulator="qemu",
 )
 
 OFFICIAL_BOARDS: Final[tuple[BoardSpec, ...]] = (
@@ -72,6 +72,10 @@ SIMAVR_BOARDS: Final[list[tuple[str, str]]] = [
 
 RENODE_BOARDS: Final[list[tuple[str, str]]] = [
     (b.fqbn, b.detailed_name) for b in OFFICIAL_BOARDS if b.emulator == "renode"
+]
+
+QEMU_BOARDS: Final[list[tuple[str, str]]] = [
+    (b.fqbn, b.detailed_name) for b in OFFICIAL_BOARDS if b.emulator == "qemu"
 ]
 
 FLASH_SECTION_NAMES: Final[frozenset[str]] = frozenset(

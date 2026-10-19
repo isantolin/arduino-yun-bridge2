@@ -12,6 +12,7 @@ from tools.boards import (
     BOARDS_BY_SLUG,
     FLASH_SECTION_NAMES,
     OFFICIAL_BOARDS,
+    QEMU_BOARDS,
     RAM_SECTION_NAMES,
     RENODE_BOARDS,
     SIMAVR_BOARDS,
@@ -44,7 +45,7 @@ def test_official_boards_metadata() -> None:
 
     assert BOARD_NANO_ESP32.fqbn == "arduino:esp32:nano_nora"
     assert BOARD_NANO_ESP32.slug == "arduino-esp32-nano_nora"
-    assert BOARD_NANO_ESP32.emulator is None
+    assert BOARD_NANO_ESP32.emulator == "qemu"
     assert BOARD_NANO_ESP32.max_flash == 3_145_728
     assert BOARD_NANO_ESP32.max_ram == 327_680
 
@@ -72,6 +73,7 @@ def test_board_lookups() -> None:
 def test_emulation_matrices() -> None:
     assert SIMAVR_BOARDS == [("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)")]
     assert RENODE_BOARDS == [("arduino:samd:mkrwifi1010", "Arduino MKR WiFi 1010 (ATSAMD21G18A)")]
+    assert QEMU_BOARDS == [("arduino:esp32:nano_nora", "Arduino Nano ESP32")]
 
 
 def test_section_names() -> None:

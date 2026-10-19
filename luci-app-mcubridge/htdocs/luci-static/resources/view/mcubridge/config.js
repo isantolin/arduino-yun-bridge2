@@ -150,9 +150,8 @@ return view.extend({
 		applySchemaDefault(o, 'cloud_spool_dir', false);
 		o.validate = function (section_id, value) {
 			if (!value || value === '') return _('Spool directory cannot be empty.');
-			if (!value.startsWith('/')) return _('Spool directory must be an absolute path.');
-			if (value.startsWith('/tmp') || value.startsWith('/run') || value.startsWith('/var/run') || value.startsWith('/mnt')) return true;
-			return _('For Flash safety, use a path under /tmp, /run, /var/run, or /mnt.');
+			if (!value.startsWith('/tmp')) return _('For Flash safety, spool directory must be under /tmp.');
+			return true;
 		};
 
 		o = s.option(form.Value, 'file_system_root', _('File System Root'),
@@ -194,6 +193,7 @@ return view.extend({
 			o = s.option(form.Flag, opt[0], opt[1], opt[2]);
 			o.rmempty = false;
 			o.default = '1';
+			applySchemaDefault(o, opt[0], true);
 		});
 
 		o = s.option(form.Value, 'serial_shared_secret', _('Serial Shared Secret'),

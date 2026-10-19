@@ -35,6 +35,7 @@ from ..protocol.protocol import (
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..protocol.structures import (
+    VOLATILE_STORAGE_PATHS,
     PendingPinRequest,
     create_allowed_policy,
 )
@@ -370,7 +371,6 @@ class RuntimeState:
     serial_pipeline_last: dict[str, Any] | None
     process_output_limit: int
     process_max_concurrent: int
-    unknown_command_count: int
     unknown_command_last_id: int
     config_source: str
     serial_ack_timeout_ms: int
@@ -381,10 +381,6 @@ class RuntimeState:
     supervisor_failures: int
     last_supervisor_error: str | None
     cloud_dropped_messages: int
-    serial_decode_errors: int
-    handshake_attempts: int
-    handshake_successes: int
-    watchdog_beats: int
     cloud_spool_corrupt_dropped: int
     cloud_spool_dropped_limit: int
     cloud_spool_trim_events: int
@@ -489,7 +485,6 @@ class RuntimeState:
         self.serial_pipeline_last: dict[str, Any] | None = kwargs.get("serial_pipeline_last")
         self.process_output_limit: int = kwargs.get("process_output_limit", protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
         self.process_max_concurrent: int = kwargs.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
-        self.unknown_command_count: int = kwargs.get("unknown_command_count", 0)
         self.unknown_command_last_id: int = kwargs.get("unknown_command_last_id", 0)
         self.config_source: str = kwargs.get("config_source", "uci")
         self.serial_ack_timeout_ms: int = kwargs.get("serial_ack_timeout_ms", int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000))
@@ -503,10 +498,15 @@ class RuntimeState:
         self.last_supervisor_error: str | None = kwargs.get("last_supervisor_error")
 
         self.cloud_dropped_messages: int = kwargs.get("cloud_dropped_messages", 0)
-        self.serial_decode_errors: int = kwargs.get("serial_decode_errors", 0)
-        self.handshake_attempts: int = kwargs.get("handshake_attempts", 0)
-        self.handshake_successes: int = kwargs.get("handshake_successes", 0)
-        self.watchdog_beats: int = kwargs.get("watchdog_beats", 0)
+        for _counter_field in (
+            "unknown_command_count",
+            "serial_decode_errors",
+            "handshake_attempts",
+            "handshake_successes",
+            "watchdog_beats",
+        ):
+            if _counter_field in kwargs:
+                setattr(self, _counter_field, int(kwargs[_counter_field]))
 
         self.cloud_spool_corrupt_dropped: int = kwargs.get("cloud_spool_corrupt_dropped", 0)
         self.cloud_spool_dropped_limit: int = kwargs.get("cloud_spool_dropped_limit", 0)
@@ -679,13 +679,55 @@ class RuntimeState:
         self.handshake_fatal_count = value
 
     @property
+    def unknown_command_count(self) -> int:
+        return self.metrics.unknown_command_count.value
+
+    @unknown_command_count.setter
+    def unknown_command_count(self, value: int) -> None:
+        self.metrics.unknown_command_count._count = value
+
+    @property
+    def serial_decode_errors(self) -> int:
+        return self.metrics.serial_decode_errors.value
+
+    @serial_decode_errors.setter
+    def serial_decode_errors(self, value: int) -> None:
+        self.metrics.serial_decode_errors._count = value
+
+    @property
+    def handshake_attempts(self) -> int:
+        return self.metrics.handshake_attempts.value
+
+    @handshake_attempts.setter
+    def handshake_attempts(self, value: int) -> None:
+        self.metrics.handshake_attempts._count = value
+
+    @property
+    def handshake_successes(self) -> int:
+        return self.metrics.handshake_successes.value
+
+    @handshake_successes.setter
+    def handshake_successes(self, value: int) -> None:
+        self.metrics.handshake_successes._count = value
+
+    @property
+    def watchdog_beats(self) -> int:
+        return self.metrics.watchdog_beats.value
+
+    @watchdog_beats.setter
+    def watchdog_beats(self, value: int) -> None:
+        self.metrics.watchdog_beats._count = value
+
+    @property
     def allowed_commands(self) -> tuple[str, ...]:
         """Return the current allowed command list from policy."""
         return tuple(self.allowed_policy.entries)
 
     def get_storage_subdir(self, subdir: str) -> Path | None:
         """Resolve, validate, and create a managed storage directory under file_system_root. [SIL-2]"""
-        if (self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/")) and self.file_system_root:
+        if self.file_system_root and (
+            self.allow_non_tmp_paths or self.file_system_root.startswith(tuple(VOLATILE_STORAGE_PATHS))
+        ):
             directory = Path(self.file_system_root) / subdir
             try:
                 directory.mkdir(parents=True, exist_ok=True)
@@ -792,7 +834,7 @@ class RuntimeState:
             mcu_status_counts=mcu_status_counts,
         )
         for field in pb.DaemonMetrics.DESCRIPTOR.fields:
-            if field.name not in ("uptime_seconds", "unknown_command_count") and hasattr(self.metrics, field.name):
+            if field.name != "uptime_seconds" and hasattr(self.metrics, field.name):
                 metric = getattr(self.metrics, field.name)
                 if hasattr(metric, "value"):
                     setattr(snapshot, field.name, metric.value)

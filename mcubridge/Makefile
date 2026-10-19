@@ -128,7 +128,7 @@ define Package/$(PKG_NAME)/install
 
 	# Core scripts (install stripping .py extension and ensuring hyphenated command names)
 	[ -d $(PKG_BUILD_DIR)/scripts ] && \
-		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py'); do \
+		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py' ! -name '__init__.py'); do \
 			cmd=$$(basename $$f .py | tr '_' '-'); \
 			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd"; \
 		done || true

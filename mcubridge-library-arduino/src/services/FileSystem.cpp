@@ -8,10 +8,6 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
-namespace {
-constexpr size_t kReadChunkSize = 64U;
-}  // namespace
-
 FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path,
@@ -28,11 +24,12 @@ void FileSystemClass::read(
     etl::string_view path,
     typename FileSystemClass::FileSystemReadHandler handler) {
   _pending_reads.clear();
-  _pending_reads.push(handler);
   rpc::payload::FileRead p = {};
   rpc::Payload::copy_to_pb_string(p.path, path);
 
-  Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_READ, 0, p);
+  if (Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_READ, 0, p)) {
+    _pending_reads.push(handler);
+  }
 }
 
 void FileSystemClass::remove(etl::string_view path) {
@@ -68,7 +65,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
           finished = true;
           return;
         }
-        etl::array<uint8_t, kReadChunkSize> buffer;
+        etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
         auto res = bridge::hal::readFileChunk(
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {

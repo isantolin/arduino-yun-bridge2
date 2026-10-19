@@ -79,7 +79,6 @@ class GatewayDeviceSession:
     stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope] | None
     metrics: FleetMetrics | None
     gateway: Any | None
-    pending_commands: dict[int, asyncio.Future[pb.CommandResponse]]
     console_queues: list[Any]
     fsm: GatewaySessionMachine
 
@@ -94,7 +93,6 @@ class GatewayDeviceSession:
         self.stream = stream
         self.metrics = metrics
         self.gateway = gateway
-        self.pending_commands = {}
         self.console_queues = []
         self.fsm = GatewaySessionMachine()
 
@@ -116,10 +114,6 @@ class GatewayDeviceSession:
         if self.fsm.closed.is_active:
             return
         self.fsm.close()
-        for fut in list(self.pending_commands.values()):
-            if not fut.done():
-                fut.set_exception(ConnectionResetError(f"Device {self.device_id} disconnected during execution"))
-        self.pending_commands.clear()
         self.console_queues.clear()
 
         if self.gateway is not None and hasattr(self.gateway, "pending_commands"):

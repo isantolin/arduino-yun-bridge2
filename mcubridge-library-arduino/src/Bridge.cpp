@@ -133,8 +133,10 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
          rpc_pb_PinRead, false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handlePinSubscribe, rpc_pb_PinSubscribeRequest, true, false>},
+#if BRIDGE_ENABLE_CONSOLE
     {rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
      &BridgeClass::_dispatchTargetWithMsg<Console, &ConsoleClass::_push, rpc_pb_ConsoleWrite, true, false>},
+#endif
 #if BRIDGE_ENABLE_DATASTORE
     {rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP),
      &BridgeClass::_dispatchTargetWithMsg<DataStore, &DataStoreClass::_onResponse, rpc_pb_DatastoreGetResponse, true, false>},
@@ -800,10 +802,15 @@ void BridgeClass::_handleStatusAck(
 
 void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
   _ack_timeout_ms = static_cast<uint16_t>(etl::clamp<uint32_t>(
-      msg.ack_timeout_ms, 0U, 65535U));  // [SIL-2] range-safe narrowing
+      msg.ack_timeout_ms, rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS,
+      rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS));  // [SIL-2] range-safe narrowing
   _retry_limit = static_cast<uint8_t>(etl::clamp<uint32_t>(
-      msg.ack_retry_limit, 0U, 255U));  // [SIL-2] range-safe narrowing
-  _response_timeout_ms = msg.response_timeout_ms;
+      msg.ack_retry_limit, rpc::RPC_HANDSHAKE_RETRY_LIMIT_MIN,
+      rpc::RPC_HANDSHAKE_RETRY_LIMIT_MAX));  // [SIL-2] range-safe narrowing
+  _response_timeout_ms = etl::clamp<uint32_t>(
+      msg.response_timeout_ms, rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
+      rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS);
+  _timers.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
 }
 
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
@@ -818,22 +825,27 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   const uint16_t raw_cmd = envelope.command_id;
   const bool is_excluded = rpc::is_system_command(raw_cmd);
   if (isSynchronized() && !_shared_secret.empty() && !is_excluded) {
-    if (envelope.payload_type.encrypted_payload_with_tag.size < 16) {
+    if (envelope.payload_type.encrypted_payload_with_tag.size <
+        rpc::RPC_AEAD_TAG_SIZE) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
     const size_t ct_size =
-        envelope.payload_type.encrypted_payload_with_tag.size - 16;
+        envelope.payload_type.encrypted_payload_with_tag.size -
+        rpc::RPC_AEAD_TAG_SIZE;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_pl;
     const auto payload_span = etl::span<const uint8_t>(
         envelope.payload_type.encrypted_payload_with_tag.bytes,
         envelope.payload_type.encrypted_payload_with_tag.size);
     if (!rpc::security::aead_decrypt_frame(
             raw_cmd, envelope.sequence_id, payload_span.first(ct_size),
-            _session_key, etl::span<const uint8_t>(envelope.nonce.bytes, 12),
-            payload_span.last(16), dec_pl) ||
+            _session_key,
+            etl::span<const uint8_t>(envelope.nonce.bytes,
+                                     rpc::RPC_AEAD_NONCE_SIZE),
+            payload_span.last(rpc::RPC_AEAD_TAG_SIZE), dec_pl) ||
         !rpc::security::validate_frame_nonce(
-            etl::span<const uint8_t>(envelope.nonce.bytes, 12),
+            etl::span<const uint8_t>(envelope.nonce.bytes,
+                                     rpc::RPC_AEAD_NONCE_SIZE),
             &_rx_nonce_counter)) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;

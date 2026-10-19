@@ -325,10 +325,9 @@ def run_emulation(
         status_file = Path("/tmp/mcubridge_status.json")
         is_synced = wait_for_daemon_sync(status_file, timeout=15.0)
 
-        if is_synced:
-            logger.info("Daemon/MCU synchronization established successfully.")
-        else:
-            logger.warning("Synchronization check timed out after 15s; proceeding with test execution.")
+        if not is_synced:
+            raise RuntimeError("Synchronization check timed out after 15s; aborting test execution.")
+        logger.info("Daemon/MCU synchronization established successfully.")
 
         # 4. Run scripts via in-process library execution
         if run_scripts:

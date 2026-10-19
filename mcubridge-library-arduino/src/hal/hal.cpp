@@ -84,27 +84,21 @@ void watchdog_kick() {
   }
 }
 
-uint16_t getFreeMemory() {
+uint32_t getFreeMemory() {
   if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
     int v;
-    return static_cast<uint16_t>(
+    return static_cast<uint32_t>(
         reinterpret_cast<uintptr_t>(&v) -
         (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start)
                        : reinterpret_cast<uintptr_t>(__brkval)));
-#else
-    return static_cast<uint16_t>(Traits::default_free_memory);
 #endif
   } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
-    return static_cast<uint16_t>(ESP.getFreeHeap());
-#else
-    return static_cast<uint16_t>(Traits::default_free_memory);
+    return static_cast<uint32_t>(ESP.getFreeHeap());
 #endif
-  } else if constexpr (Traits::id == ArchId::ARCH_HOST) {
-    return static_cast<uint16_t>(Traits::default_free_memory);
   }
-  return static_cast<uint16_t>(Traits::default_free_memory);
+  return Traits::default_free_memory;
 }
 
 static volatile uint32_t s_stack_canary = STACK_CANARY_VALUE;

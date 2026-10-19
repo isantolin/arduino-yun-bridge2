@@ -1089,13 +1089,13 @@ async def test_gateway_device_session_lifecycle() -> None:
     from gateway import GatewayDeviceSession
 
     fleet = FleetMetrics()
-    session = GatewayDeviceSession(device_id="dev-test", metrics=fleet)
+    fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    mock_gw = MagicMock(pending_commands={("dev-test", 1): fut})
+    session = GatewayDeviceSession(device_id="dev-test", metrics=fleet, gateway=mock_gw)
     assert session.current_state_value == "connected"
     session.activate()
     assert session.current_state_value == "active"
 
-    fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
-    session.pending_commands[1] = fut
     q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     session.console_queues.append(q)
 

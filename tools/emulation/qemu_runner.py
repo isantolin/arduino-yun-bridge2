@@ -168,7 +168,7 @@ def run_qemu_emulation(
             logger.error("Gateway did not start in time")
             return False
 
-        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(str(pty_link))
+        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(str(pty_link), device_id="esp32-01")
 
         qemu_cmd = build_qemu_command(qemu_bin, flash_image, port)
         logger.info("Spawning QEMU (headless)", cmd=qemu_cmd)
@@ -229,7 +229,13 @@ def run_qemu_emulation(
         state.capabilities_event.wait(timeout=30.0)
         time.sleep(1.0)
 
-        all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
+        all_passed = run_client_scripts(
+            test_scripts,
+            daemon_env,
+            timeout_seconds,
+            device_id="esp32-01",
+            led_builtin_pin=led_builtin_pin,
+        )
         return all_passed and audit_status()
 
     finally:

@@ -12,11 +12,7 @@ from elftools.elf.sections import SymbolTableSection
 
 import typer
 
-repo_root = Path(__file__).resolve().parents[2]
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
-from tools.boards import (  # noqa: E402
+from tools.boards import (
     BOARDS_BY_SLUG as SUPPORTED_BOARDS,
     FLASH_SECTION_NAMES,
     RAM_SECTION_NAMES,

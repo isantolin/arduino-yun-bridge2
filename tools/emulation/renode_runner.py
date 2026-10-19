@@ -92,7 +92,7 @@ class RenodeState:
                 self.sync_event.set()
 
 
-def setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
+def setup_fake_uci(slave_name: str, *, device_id: str = "mkr-01") -> tuple[Path, Path, dict[str, str]]:
     """Configure fake UCI directory, LMDB storage, and daemon environment variables."""
     fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_renode_uci_"))
     storage_path = Path(tempfile.mkdtemp(prefix="mcubridge_renode_db_"))
@@ -140,7 +140,7 @@ def setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     daemon_env["MCUBRIDGE_CLOUD_PORT"] = str(CLOUD_PORT)
     daemon_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
     daemon_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
-    daemon_env["MCUBRIDGE_DEVICE_ID"] = "mkr-01"
+    daemon_env["MCUBRIDGE_DEVICE_ID"] = device_id
     daemon_env["MCUBRIDGE_DEBUG"] = "1"
 
     return fake_uci_dir, storage_path, daemon_env
@@ -198,6 +198,7 @@ def run_client_scripts(
     daemon_env: dict[str, str],
     timeout_seconds: float,
     *,
+    device_id: str = "mkr-01",
     led_builtin_pin: int,
 ) -> bool:
     _ = (daemon_env, timeout_seconds)
@@ -208,7 +209,7 @@ def run_client_scripts(
             if not test_path.exists():
                 logger.warning("Test script not found, skipping", path=str(test_path))
                 continue
-            if not run_single_client_script(test_path, device_id="mkr-01", led_builtin_pin=led_builtin_pin):
+            if not run_single_client_script(test_path, device_id=device_id, led_builtin_pin=led_builtin_pin):
                 return False
         return True
     finally:
@@ -421,8 +422,8 @@ def run_renode_emulation(
                         f.write(f"[{src}] {line}\n")
                     if renode_log.exists():
                         f.write("\n=== RENODE INTERNAL LOG ===\n")
-                        f.write(renode_log.read_text(encoding="utf-8", errors="replace"))
-            except OSError as exc:
+                        f.write(renode_log.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError) as exc:
                 logger.warning("Could not write renode execution log", error=str(exc))
         shutil.rmtree(temp_dir, ignore_errors=True)
         if fake_uci_dir and fake_uci_dir.exists():

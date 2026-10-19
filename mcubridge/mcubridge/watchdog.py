@@ -140,7 +140,6 @@ class WatchdogKeepalive:
             if self._state is not None:
                 # [SIL-2] Direct metrics recording
                 self._state.watchdog_beats += 1
-                self._state.metrics.watchdog_beats.inc()
                 self._state.last_watchdog_beat = time.time()
 
     async def run(self) -> None:

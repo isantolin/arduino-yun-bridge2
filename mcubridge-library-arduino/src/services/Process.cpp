@@ -9,7 +9,6 @@
 
 namespace {
 
-constexpr size_t kProcessCommandBufferSize = 64U;
 constexpr int32_t kProcessInvalidPid = -1;
 
 }  // namespace
@@ -27,7 +26,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  etl::string<kProcessCommandBufferSize> command_buffer;
+  etl::string<rpc::MAX_PAYLOAD_SIZE> command_buffer;
   bool ok = true;
   if (cmd.size() <= command_buffer.available()) {
     command_buffer.append(cmd.begin(), cmd.end());

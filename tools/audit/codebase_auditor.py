@@ -143,6 +143,17 @@ def audit_ast_integrity() -> list[str]:
                     for alias in node.names
                     if alias.name == "TYPE_CHECKING" or alias.asname == "TYPE_CHECKING"
                 )
+            elif isinstance(node, ast.Call):
+                findings.extend(
+                    f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
+                    f"errors={kw.value.value!r} silent error masking is strictly prohibited."
+                    for kw in node.keywords
+                    if (
+                        kw.arg == "errors"
+                        and isinstance(kw.value, ast.Constant)
+                        and kw.value.value in ("ignore", "replace", "backslashreplace")
+                    )
+                )
 
     return findings
 

@@ -513,14 +513,14 @@ class BridgeService:
                     except ProtobufDecodeError as exc:
                         logger.error("Failed to decode MCU Protobuf payload", error=str(exc))
                         self.state.serial_decode_errors += 1
-                        self.state.metrics.serial_decode_errors.inc()
                         await serial.send(Status.MALFORMED.value, b"")
                         return
 
                 if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
                     await serial.acknowledge(command_id, sequence_id)
             elif spec is None or spec.paired_request_id is None:
-                self.state.metrics.unknown_command_count.inc()
+                self.state.unknown_command_count += 1
+                self.state.unknown_command_last_id = command_id
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
     async def handle_request(self, inbound: Any) -> None:
@@ -786,6 +786,7 @@ class BridgeService:
         await self.gpio.handle_pin_update_event(p)
 
     async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
+        self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
         text = ""
         if payload:
             try:
@@ -1038,6 +1039,9 @@ class BridgeService:
 
     async def write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:
         async with self._storage_lock:
+            if self.state.file_write_max_bytes > 0 and len(data) > self.state.file_write_max_bytes:
+                self.state.file_write_limit_rejections += 1
+                return False
             try:
                 usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
@@ -1243,15 +1247,6 @@ class BridgeService:
     async def connect_cloud_session(self, tls_context: Any) -> None:
         self.state.cloud_fsm.start_connecting()
         logger.info("Connecting to Cloud Gateway", host=self.config.cloud_host, port=self.config.cloud_port)
-        if self.config.cloud_http3_enabled:
-            logger.info(
-                "Attempting primary connection via gRPC over HTTP/3 (QUIC)",
-                port=self.config.cloud_http3_port,
-            )
-            self.state.cloud_fsm.connect_http3()
-            logger.info("Connected to Cloud Gateway via gRPC over HTTP/3 (QUIC).")
-        else:
-            self.state.cloud_fsm.connect_http2()
 
         channel = Channel(
             self.config.cloud_host,
@@ -1262,6 +1257,15 @@ class BridgeService:
         stub = CloudBridgeStub(channel)
         try:
             async with stub.Session.open(metadata={"x-device-id": self.state.device_id}) as stream:
+                if self.config.cloud_http3_enabled:
+                    logger.info(
+                        "Attempting primary connection via gRPC over HTTP/3 (QUIC)",
+                        port=self.config.cloud_http3_port,
+                    )
+                    self.state.cloud_fsm.connect_http3()
+                    logger.info("Connected to Cloud Gateway via gRPC over HTTP/3 (QUIC).")
+                else:
+                    self.state.cloud_fsm.connect_http2()
                 self.cloud_stream = stream
                 logger.info("Connected to Cloud Gateway via gRPC.")
 

@@ -263,7 +263,6 @@ class SerialHandshakeManager:
             self._state.last_handshake_unix = time.time()
             self._state.handshake_last_started = time.monotonic()
             self._state.handshake_attempts += 1
-            self._state.metrics.handshake_attempts.inc()
             self.transition(HandshakeEvent.RESET)  # Ensure clean slate
             return await self.synchronize_attempt()
 
@@ -626,7 +625,6 @@ class SerialHandshakeManager:
         self._state.link_last_nonce_counter = 0
         self._state.connection_fsm.synchronize()
         self._state.handshake_successes += 1
-        self._state.metrics.handshake_successes.inc()
         duration = round(self._state.handshake_last_duration, 3)
         await self.publish_handshake_event(
             "success",

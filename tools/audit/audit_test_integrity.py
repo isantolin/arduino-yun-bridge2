@@ -200,15 +200,15 @@ def audit_test_only_hooks() -> list[str]:
     ]
     py_test_files = list((ROOT / "mcubridge" / "tests").rglob("*.py"))
 
-    py_prod_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in py_prod_files)
-    py_test_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in py_test_files)
+    py_prod_text = "\n".join(f.read_text(encoding="utf-8") for f in py_prod_files)
+    py_test_text = "\n".join(f.read_text(encoding="utf-8") for f in py_test_files)
 
     for pfile in py_prod_files:
         try:
-            tree = ast.parse(pfile.read_text(encoding="utf-8"), filename=str(pfile))
+            file_content = pfile.read_text(encoding="utf-8")
+            tree = ast.parse(file_content, filename=str(pfile))
         except (SyntaxError, UnicodeDecodeError):
             continue
-        file_content = pfile.read_text(encoding="utf-8", errors="ignore")
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 name = node.name

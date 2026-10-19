@@ -55,10 +55,10 @@ inline __attribute__((always_inline)) void memory_fence() {
 void watchdog_kick();
 
 /**
- * @brief Get the amount of free RAM available. * @return Free bytes or
- * UINT16_MAX if detection fails.
+ * @brief Get the amount of free RAM available.
+ * @return Free bytes or default_free_memory if detection fails.
  */
-uint16_t getFreeMemory();
+uint32_t getFreeMemory();
 
 /**
  * @brief Validate if a pin number is valid for the current board.

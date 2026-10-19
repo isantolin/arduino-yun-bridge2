@@ -85,7 +85,7 @@ def test_run_client_scripts(tmp_path: Path) -> None:
     s1.write_text("def main(host=None, port=None, device_id=None):\n    pass\n", encoding="utf-8")
     missing = tmp_path / "does_not_exist.py"
 
-    passed = simavr_runner.run_client_scripts([s1, missing], {}, 10.0, led_builtin_pin=9)
+    passed = simavr_runner.run_client_scripts([s1, missing], led_builtin_pin=9)
     assert passed is True
 
 

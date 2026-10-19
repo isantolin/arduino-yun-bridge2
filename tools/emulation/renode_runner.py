@@ -195,13 +195,10 @@ def run_single_client_script(
 
 def run_client_scripts(
     test_scripts: list[Path],
-    daemon_env: dict[str, str],
-    timeout_seconds: float,
     *,
     device_id: str = "mkr-01",
     led_builtin_pin: int,
 ) -> bool:
-    _ = (daemon_env, timeout_seconds)
     old_non_interactive = os.environ.get("MCUBRIDGE_NON_INTERACTIVE")
     os.environ["MCUBRIDGE_NON_INTERACTIVE"] = "1"
     try:
@@ -392,7 +389,7 @@ def run_renode_emulation(
         state.capabilities_event.wait(timeout=30.0)
         time.sleep(1.0)
 
-        all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
+        all_passed = run_client_scripts(test_scripts, led_builtin_pin=led_builtin_pin)
         if all_passed:
             status_file = Path("/tmp/mcubridge_status.json")
             if status_file.exists():

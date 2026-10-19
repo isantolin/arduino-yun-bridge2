@@ -25,9 +25,9 @@ class MockRuntimeFacade:
         self.run_process = AsyncMock(return_value=123)
         self.kill_process = AsyncMock(return_value=(True, None))
         self.reset_link = AsyncMock(return_value=True)
-        self.write_digital_pin = AsyncMock(return_value=True)
-        self.write_analog_pin = AsyncMock(return_value=True)
         self.local_bridge_service = MagicMock()
+        self.local_bridge_service.execute_digital_write = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+        self.local_bridge_service.execute_analog_write = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.local_bridge_service.execute_mailbox_push = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.local_bridge_service.execute_datastore_put = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.local_bridge_service.execute_file_write = AsyncMock(return_value=pb.GenericResponse(status="ok"))
@@ -201,7 +201,7 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
 
     assert res == {"status": "ok", "pin": 13, "value": 1}
     await asyncio.sleep(0.01)
-    mock_runtime.write_digital_pin.assert_awaited_once_with(13, 1)
+    mock_runtime.local_bridge_service.execute_digital_write.assert_awaited_once_with(pb.DigitalWrite(pin=13, value=1))
 
 
 async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None:
@@ -210,7 +210,7 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
 
     assert res == {"status": "ok", "pin": 9, "value": 128}
     await asyncio.sleep(0.01)
-    mock_runtime.write_analog_pin.assert_awaited_once_with(9, 128)
+    mock_runtime.local_bridge_service.execute_analog_write.assert_awaited_once_with(pb.AnalogWrite(pin=9, value=128))
 
 
 async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None:

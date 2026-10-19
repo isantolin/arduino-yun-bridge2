@@ -481,16 +481,6 @@ class BridgeService:
             return True
         return False
 
-    async def write_digital_pin(self, pin: int, value: int) -> bool:
-        """Send CMD_DIGITAL_WRITE to MCU over serial transport. [SIL-2]"""
-        resp = await self.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=pin, value=value))
-        return resp.status == "ok"
-
-    async def write_analog_pin(self, pin: int, value: int) -> bool:
-        """Send CMD_ANALOG_WRITE to MCU over serial transport. [SIL-2]"""
-        resp = await self.local_bridge_service.execute_analog_write(pb.AnalogWrite(pin=pin, value=value))
-        return resp.status == "ok"
-
     # --- Dispatchers ---
 
     async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | ProtobufMessage) -> None:
@@ -817,20 +807,15 @@ class BridgeService:
     # --- Low-level Helpers ---
 
     async def request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return False
-        pl = await serial.send(Command.CMD_GET_VERSION.value, b"")
-        p: pb.VersionResponse | None = None
-        if isinstance(pl, pb.VersionResponse):
-            p = pl
-        elif isinstance(pl, bytes):
-            try:
-                p = pb.VersionResponse.FromString(pl)
-            except ProtobufDecodeError as exc:
-                logger.error("Failed to decode VersionResponse payload", error=str(exc))
-                return False
-        else:
+        pl = await self.serial.send(Command.CMD_GET_VERSION.value, b"")
+        if not isinstance(pl, (pb.VersionResponse, bytes)):
+            return False
+        try:
+            p = pl if isinstance(pl, pb.VersionResponse) else pb.VersionResponse.FromString(pl)
+        except ProtobufDecodeError as exc:
+            logger.error("Failed to decode VersionResponse payload", error=str(exc))
             return False
         self.state.mcu_version = (p.major, p.minor, p.patch)
 

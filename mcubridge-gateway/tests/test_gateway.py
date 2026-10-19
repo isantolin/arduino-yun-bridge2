@@ -920,19 +920,19 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
 
     # 5. Metadata resolution edge cases
     stream_empty_meta = MockGrpcStream(metadata=None)
-    assert local_svc.resolve_device_id(stream_empty_meta.as_stream()) is None
+    assert extract_device_id_from_metadata(stream_empty_meta.as_stream().metadata) is None
 
     stream_empty_list = MockGrpcStream(metadata={"x-device-id": []})
-    assert local_svc.resolve_device_id(stream_empty_list.as_stream()) is None
+    assert extract_device_id_from_metadata(stream_empty_list.as_stream().metadata) is None
 
     stream_bytes_meta = MockGrpcStream(metadata={"device-id": b"dev-bytes"})
-    assert local_svc.resolve_device_id(stream_bytes_meta.as_stream()) == "dev-bytes"
+    assert extract_device_id_from_metadata(stream_bytes_meta.as_stream().metadata) == "dev-bytes"
 
     stream_str_meta = MockGrpcStream(metadata={"device_id": "dev-str"})
-    assert local_svc.resolve_device_id(stream_str_meta.as_stream()) == "dev-str"
+    assert extract_device_id_from_metadata(stream_str_meta.as_stream().metadata) == "dev-str"
 
     stream_list_bytes = MockGrpcStream(metadata={"x-device-id": [b"dev-first"]})
-    assert local_svc.resolve_device_id(stream_list_bytes.as_stream()) == "dev-first"
+    assert extract_device_id_from_metadata(stream_list_bytes.as_stream().metadata) == "dev-first"
 
     # 6. Stream returns None (client disconnect before sending request)
     stream_none = MockGrpcStream(request=None, metadata={"x-device-id": "dev-1"})
@@ -1092,18 +1092,18 @@ async def test_gateway_device_session_lifecycle() -> None:
     fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
     mock_gw = MagicMock(pending_commands={("dev-test", 1): fut})
     session = GatewayDeviceSession(device_id="dev-test", metrics=fleet, gateway=mock_gw)
-    assert session.current_state_value == "connected"
-    session.activate()
-    assert session.current_state_value == "active"
+    assert session.fsm.current_state_value == "connected"
+    session.fsm.activate()
+    assert session.fsm.current_state_value == "active"
 
     q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     session.console_queues.append(q)
 
     session.close()
-    assert session.current_state_value == "closed"
+    assert session.fsm.current_state_value == "closed"
     assert fut.done()
     assert isinstance(fut.exception(), ConnectionResetError)
     assert len(session.console_queues) == 0
     # Closing an already closed session is a safe no-op
     session.close()
-    assert session.current_state_value == "closed"
+    assert session.fsm.current_state_value == "closed"

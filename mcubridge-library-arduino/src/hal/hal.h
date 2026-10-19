@@ -113,16 +113,6 @@ enum class SafetyPinState : uint8_t {
 void applySafetyPin(uint8_t pin, SafetyPinState state);
 
 /**
- * @brief Get the architecture specific ID.
- */
-uint8_t getArchId();
-
-/**
- * @brief Get architecture specific pin counts.
- */
-void getPinCounts(uint8_t& digital, uint8_t& analog);
-
-/**
  * @brief [SIL-2] Value of the stack boundary sentinel canary.
  */
 inline constexpr uint32_t STACK_CANARY_VALUE = 0x55AA55AA;
@@ -144,11 +134,6 @@ void initStackCanary();
  * overflow/corrupt.
  */
 bool checkStackOverflow();
-
-/**
- * @brief [SIL-2] Get free stack margin in bytes.
- */
-uint16_t getFreeStackMargin();
 
 /**
  * @brief Run Power-On Self-Tests (SRAM March Test, Memory

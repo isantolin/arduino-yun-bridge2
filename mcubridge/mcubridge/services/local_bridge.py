@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, Protocol
 
 import anyio
@@ -13,6 +13,7 @@ import structlog
 import structlog.contextvars
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
+from grpclib.const import Cardinality, Handler
 from grpclib.server import Stream
 
 from ..config.const import MCU_FS_PREFIX
@@ -25,6 +26,7 @@ from ..protocol.protocol import (
     MAX_DATASTORE_VALUE_SIZE,
     REGISTRY,
     Command,
+    OperationSpec,
 )
 from ..protocol.structures import is_command_allowed
 
@@ -32,6 +34,7 @@ __all__ = [
     "ConsoleQueueTarget",
     "LocalBridgeService",
     "MemoryQueueAdapter",
+    "build_local_bridge_mapping",
     "parse_serial_response",
 ]
 
@@ -112,11 +115,44 @@ class LocalBridgeRuntime(Protocol):
     async def handle_request(self, inbound: Any, /) -> None: ...
 
 
-class LocalBridgeService(LocalBridgeBase):
+def build_local_bridge_mapping(service: Any) -> dict[str, Handler]:
+    """Build grpclib route mapping for LocalBridge services from protocol SSOT. [SIL-2]"""
+    mapping: dict[str, Handler] = {
+        f"/rpc.pb.LocalBridge/{spec.rpc_name or spec.name}": Handler(
+            getattr(service, spec.rpc_name or spec.name),
+            Cardinality.UNARY_UNARY,
+            spec.request_type,
+            spec.response_type,
+        )
+        for spec in REGISTRY.rpc_specs
+        if spec.request_type is not None and spec.response_type is not None
+    }
+    mapping["/rpc.pb.LocalBridge/Publish"] = Handler(
+        service.Publish,
+        Cardinality.UNARY_UNARY,
+        pb.CloudQueuedPublish,
+        pb.CloudQueuedPublish,
+    )
+    mapping["/rpc.pb.LocalBridge/SubscribeConsole"] = Handler(
+        service.SubscribeConsole,
+        Cardinality.UNARY_STREAM,
+        pb.SubscribeRequest,
+        pb.CloudQueuedPublish,
+    )
+    return mapping
+
+
+class LocalBridgeService:
     """Implementation of the Local gRPC service for local MPU clients and Cloud Gateway forwarding."""
 
     def __init__(self, runtime_service: LocalBridgeRuntime) -> None:
         self.runtime_service = runtime_service
+
+    def __getattr__(self, name: str) -> Any:
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def __mapping__(self) -> dict[str, Handler]:
+        return build_local_bridge_mapping(self)
 
     # --- Core Business Logic Execution (Zero-Duplication) ---
 
@@ -345,79 +381,19 @@ class LocalBridgeService(LocalBridgeBase):
             with structlog.contextvars.bound_contextvars(rpc=rpc_name):
                 await stream.send_message(await handler(req))
 
-    # --- LocalBridgeBase Stream Handlers (with structlog contextvars propagation) ---
+    @staticmethod
+    def create_unary_handler(spec: OperationSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
+        name = spec.rpc_name or spec.name
+        handler_name = spec.handler_name
+        if not handler_name:
+            raise ValueError(f"LocalBridge RPC {name} requires handler_name")
 
-    async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "SetPinMode", self.execute_set_pin_mode)
+        async def unary_handler(self: LocalBridgeService, stream: Stream[Any, Any]) -> None:
+            await self._handle_unary(stream, name, getattr(self, handler_name))
 
-    async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "DigitalWrite", self.execute_digital_write)
-
-    async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
-        await self._handle_unary(stream, "DigitalRead", self.execute_digital_read)
-
-    async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "AnalogWrite", self.execute_analog_write)
-
-    async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
-        await self._handle_unary(stream, "AnalogRead", self.execute_analog_read)
-
-    async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
-        await self._handle_unary(stream, "PinSubscribe", self.execute_pin_subscribe)
-
-    async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "DatastorePut", self.execute_datastore_put)
-
-    async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
-        await self._handle_unary(stream, "DatastoreGet", self.execute_datastore_get)
-
-    async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "MailboxPush", self.execute_mailbox_push)
-
-    async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
-        await self._handle_unary(stream, "MailboxRead", self.execute_mailbox_read)
-
-    async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "FileWrite", self.execute_file_write)
-
-    async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
-        await self._handle_unary(stream, "FileRead", self.execute_file_read)
-
-    async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "FileRemove", self.execute_file_remove)
-
-    async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
-        await self._handle_unary(stream, "ProcessRunAsync", self.execute_process_run_async)
-
-    async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
-        await self._handle_unary(stream, "ProcessPoll", self.execute_process_poll)
-
-    async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "ProcessKill", self.execute_process_kill)
-
-    async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
-        await self._handle_unary(stream, "SpiTransfer", self.execute_spi_transfer)
-
-    async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "SpiConfigure", self.execute_spi_configure)
-
-    async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
-        await self._handle_unary(stream, "GetVersion", self.execute_get_version)
-
-    async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
-        await self._handle_unary(stream, "GetFreeMemory", self.execute_get_free_memory)
-
-    async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
-        await self._handle_unary(stream, "GetStatus", self.execute_get_status)
-
-    async def EnterBootloader(self, stream: Stream[pb.EnterBootloader, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "EnterBootloader", self.execute_enter_bootloader)
-
-    async def ConsoleWrite(self, stream: Stream[pb.ConsoleWrite, pb.GenericResponse]) -> None:
-        await self._handle_unary(stream, "ConsoleWrite", self.execute_console_write)
-
-    async def ClockSync(self, stream: Stream[pb.ClockSyncRequest, pb.ClockSyncResponse]) -> None:
-        await self._handle_unary(stream, "ClockSync", self.execute_clock_sync)
+        unary_handler.__name__ = name
+        unary_handler.__qualname__ = f"LocalBridgeService.{name}"
+        return unary_handler
 
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is not None:
@@ -444,3 +420,11 @@ class LocalBridgeService(LocalBridgeBase):
             adapter.close()
             if adapter in self.runtime_service.console_queues:
                 self.runtime_service.console_queues.remove(adapter)
+
+
+for _spec in REGISTRY.rpc_specs:
+    _name = _spec.rpc_name or _spec.name
+    if _name not in LocalBridgeService.__dict__:
+        setattr(LocalBridgeService, _name, LocalBridgeService.create_unary_handler(_spec))
+
+LocalBridgeBase.register(LocalBridgeService)

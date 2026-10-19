@@ -27,13 +27,8 @@ class Target:
     host: str | None = None
     user: str | None = None
     ssh_args: list[str] = field(default_factory=list[str])
-    extra_args: list[str] = field(default_factory=list[str])
     tags: set[str] = field(default_factory=set[str])
     local: bool = False
-    timeout: float | None = None
-    retries: int = 0
-    env: dict[str, str] = field(default_factory=dict[str, str])
-    notes: str | None = None
 
 
 def _coerce_list(value: Any) -> list[str]:
@@ -51,15 +46,6 @@ def _coerce_tags(value: Any) -> set[str]:
     if isinstance(value, str):
         return {value}
     return {str(item) for item in value}
-
-
-def _coerce_env(value: Any) -> dict[str, str]:
-    if not isinstance(value, dict):
-        return {}
-    res: dict[str, str] = {}
-    for k, v in cast(dict[Any, Any], value).items():
-        res[str(k)] = str(v)
-    return res
 
 
 def requires_led_builtin_pin(test_name: str) -> bool:
@@ -83,8 +69,6 @@ def load_manifest(path: Path) -> list[Target]:
         default_ssh = _coerce_list(defaults_data.get("ssh"))
         default_tags = _coerce_tags(defaults_data.get("tags"))
         default_user = defaults_data.get("user")
-        default_timeout = defaults_data.get("timeout")
-        default_retries = defaults_data.get("retries", 0)
 
         targets_data = data.get("targets", [])
         if not targets_data:
@@ -105,10 +89,6 @@ def load_manifest(path: Path) -> list[Target]:
             user = entry.get("user") if "user" in entry else default_user
             ssh_args = _coerce_list(entry.get("ssh")) if "ssh" in entry else list(default_ssh)
             tags = default_tags | _coerce_tags(entry.get("tags"))
-            extra_args = _coerce_list(entry.get("extra_args")) if "extra_args" in entry else []
-            timeout_val = entry.get("timeout") if "timeout" in entry else default_timeout
-            retries = entry.get("retries") if "retries" in entry else default_retries
-            env = _coerce_env(entry.get("env"))
 
             parsed.append(
                 Target(
@@ -116,13 +96,8 @@ def load_manifest(path: Path) -> list[Target]:
                     host=host or None,
                     user=user or None,
                     ssh_args=ssh_args,
-                    extra_args=extra_args,
                     tags=tags,
                     local=local,
-                    timeout=timeout_val,
-                    retries=retries,
-                    env=env,
-                    notes=entry.get("notes"),
                 )
             )
         return parsed

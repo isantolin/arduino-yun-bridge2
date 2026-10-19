@@ -111,8 +111,6 @@ void initStackCanary() {
   s_stack_canary = STACK_CANARY_VALUE;
 }
 
-uint16_t getFreeStackMargin() { return getFreeMemory(); }
-
 bool checkStackOverflow() {
 #if defined(ARDUINO_ARCH_AVR)
   char* heap_ptr = (__brkval == 0 ? &__heap_start : __brkval);
@@ -121,7 +119,7 @@ bool checkStackOverflow() {
   }
 #endif
   return (s_stack_canary == STACK_CANARY_VALUE) &&
-         (getFreeStackMargin() >= MIN_STACK_MARGIN_BYTES);
+         (getFreeMemory() >= MIN_STACK_MARGIN_BYTES);
 }
 
 static bool run_sram_march_test() {
@@ -196,12 +194,9 @@ void applySafetyPin(uint8_t pin, SafetyPinState state) {
 
 void fillCapabilities(rpc_pb_Capabilities& caps) {
   caps.ver = rpc::PROTOCOL_VERSION;
-  caps.arch = getArchId();
-  uint8_t dig = 0;
-  uint8_t ana = 0;
-  getPinCounts(dig, ana);
-  caps.dig = dig;
-  caps.ana = ana;
+  caps.arch = CURRENT_ARCH;
+  caps.dig = NUM_DIGITAL_PINS;
+  caps.ana = NUM_ANALOG_INPUTS;
   caps.watchdog = bridge::config::ENABLE_WATCHDOG;
 
 #if defined(ARDUINO_AVR_MEGA2560) || defined(ARDUINO_AVR_MEGA)
@@ -219,9 +214,7 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
 #else
   const etl::string_view name = "GENERIC";
 #endif
-  const size_t copy_len = etl::min(name.size(), sizeof(caps.board_name) - 1);
-  etl::copy_n(name.begin(), copy_len, caps.board_name);
-  caps.board_name[copy_len] = '\0';
+  rpc::Payload::copy_to_pb_string(caps.board_name, name);
 
 #if defined(BRIDGE_ENABLE_DEBUG_FRAMES)
   caps.debug_frames = true;
@@ -256,12 +249,6 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
   caps.sd = !!hasSD();
   caps.clock_sync = true;
 }
-
-void getPinCounts(uint8_t& digital, uint8_t& analog) {
-  digital = NUM_DIGITAL_PINS;
-  analog = NUM_ANALOG_INPUTS;
-}
-uint8_t getArchId() { return CURRENT_ARCH; }
 
 [[noreturn]] void enterBootloader() {
   forceSafeState();

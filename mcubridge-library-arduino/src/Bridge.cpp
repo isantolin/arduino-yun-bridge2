@@ -340,7 +340,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _timers.register_timer([]() { Bridge._onBaudrateChange(); },
                          bridge::config::BAUDRATE_CHANGE_DELAY_MS,
                          etl::timer::mode::SINGLE_SHOT);
-  _timers.register_timer([]() { Bridge._onBootloaderDelay(); },
+  _timers.register_timer([]() { bridge::hal::enterBootloader(); },
                          bridge::config::BOOTLOADER_DELAY_MS,
                          etl::timer::mode::SINGLE_SHOT);
   // [SIL-2/H-2] Handshake response watchdog: fires EvTimeout if MPU does not
@@ -380,11 +380,11 @@ void BridgeClass::_serialTask() {
   const int avail = _stream->available();
   if (!_state_flags.test(FLAG_SERIAL_XOFF) &&
       avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
-    signalXoff();
+    (void)sendFrame(rpc::CommandId::CMD_XOFF);
     _state_flags.set(FLAG_SERIAL_XOFF, true);
   } else if (_state_flags.test(FLAG_SERIAL_XOFF) &&
              avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
-    signalXon();
+    (void)sendFrame(rpc::CommandId::CMD_XON);
     _state_flags.set(FLAG_SERIAL_XOFF, false);
   }
 }
@@ -470,9 +470,7 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   _tx_envelope.version = rpc::PROTOCOL_VERSION;
   _tx_envelope.command_id = command_id;
   _tx_envelope.sequence_id = sequence_id;
-  etl::copy_n(nonce.begin(), rpc::RPC_AEAD_NONCE_SIZE,
-              _tx_envelope.nonce.bytes);
-  _tx_envelope.nonce.size = static_cast<pb_size_t>(rpc::RPC_AEAD_NONCE_SIZE);
+  rpc::Payload::copy_to_pb_bytes(_tx_envelope.nonce, nonce);
   const size_t pl_size = etl::min(final_payload.size(),
                                   static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
   _tx_envelope.which_payload_type =
@@ -567,7 +565,6 @@ void BridgeClass::_onBaudrateChange() {
     _fsm.receive(bridge::fsm::EvBaudrateApplied());
   }
 }
-void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 
 void BridgeClass::_handleSetBaudrate(const rpc_pb_SetBaudratePacket& msg) {
   if (msg.baudrate == 0 || msg.baudrate == _pending_baudrate) return;
@@ -622,7 +619,7 @@ void BridgeClass::_handlePinSubscribe(const bridge::router::CommandContext& ctx,
   } else {
     if (it == _pin_subscriptions.end() && !_pin_subscriptions.full()) {
       _pin_subscriptions.push_back(
-          {static_cast<uint8_t>(m.pin), 0, 0, 0, 0, false});
+          {static_cast<uint8_t>(m.pin), 0, 0, 0, 0, 0, false});
       it = _pin_subscriptions.end() - 1;
     }
     if (it != _pin_subscriptions.end()) {
@@ -713,9 +710,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
     return;
   }
   rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
-  const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
-  resp.data.size = static_cast<pb_size_t>(to_copy);
-  if (to_copy > 0) etl::copy_n(work_buf.data(), to_copy, resp.data.bytes);
+  rpc::Payload::copy_to_pb_bytes(resp.data, work_buf.data(), len);
   if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp))
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -736,8 +731,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
   const size_t n_size =
       etl::min(static_cast<size_t>(m.nonce.size),
                static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
-  etl::copy_n(m.nonce.bytes, n_size, resp.nonce.bytes);
-  resp.nonce.size = static_cast<pb_size_t>(n_size);
+  rpc::Payload::copy_to_pb_bytes(resp.nonce, m.nonce.bytes, n_size);
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
     if (rpc::security::handshake_authenticate(
@@ -745,9 +739,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
             etl::span<const uint8_t>(m.nonce.bytes, n_size),
             etl::span<const uint8_t>(m.tag.bytes, m.tag.size),
             etl::span<uint8_t>(out_tag))) {
-      etl::copy_n(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH,
-                  resp.tag.bytes);
-      resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+      rpc::Payload::copy_to_pb_bytes(resp.tag, out_tag.data(),
+                                     rpc::RPC_HANDSHAKE_TAG_LENGTH);
       rpc::security::derive_session_key(
           etl::span<const uint8_t>(_shared_secret),
           etl::span<const uint8_t>(m.nonce.bytes, n_size),
@@ -849,10 +842,9 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
-    etl::copy_n(dec_pl.data(), ct_size,
-                envelope.payload_type.encrypted_payload_with_tag.bytes);
-    envelope.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(ct_size);
+    rpc::Payload::copy_to_pb_bytes(
+        envelope.payload_type.encrypted_payload_with_tag, dec_pl.data(),
+        ct_size);
   }
   _dispatchCommand(envelope);
 }
@@ -861,15 +853,6 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   if (_shared_secret.empty()) return true;
   if (rpc::is_system_command(cmd)) return true;
   return _fsm.isSynchronized();
-}
-
-void BridgeClass::signalXoff() {
-  const bool sent = sendFrame(rpc::CommandId::CMD_XOFF);
-  (void)sent;
-}
-void BridgeClass::signalXon() {
-  const bool sent = sendFrame(rpc::CommandId::CMD_XON);
-  (void)sent;
 }
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
@@ -894,7 +877,7 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
   if (!_state_flags.test(FLAG_TX_ENABLED)) {
     return false;
   }
-  if (qos == rpc_pb_QosProfile_QOS_RELIABLE && is_reliable_cmd(raw_cmd)) {
+  if (qos == rpc_pb_QosProfile_QOS_RELIABLE && rpc::requires_ack(raw_cmd)) {
     return _enqueuePendingTx(
         raw_cmd, seq, [fields, src](uint8_t* dst, size_t cap, size_t& written) {
           pb_ostream_t out_stream = pb_ostream_from_buffer(dst, cap);

@@ -62,10 +62,6 @@ class BridgeRuntimeFacade(Protocol):
 
     async def reset_link(self) -> bool: ...
 
-    async def write_digital_pin(self, pin: int, value: int) -> bool: ...
-
-    async def write_analog_pin(self, pin: int, value: int) -> bool: ...
-
     clock_sync: Any
 
     gpio: Any
@@ -290,8 +286,12 @@ class UbusService:
         proto = pb.DigitalWrite()
         ParseDict(msg, proto, ignore_unknown_fields=True)
         pin, val = proto.pin, proto.value
-        writer = self.runtime.write_digital_pin if kind == "digital" else self.runtime.write_analog_pin
-        self.schedule_async(writer(pin, val))
+        coro = (
+            self.runtime.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=pin, value=val))
+            if kind == "digital"
+            else self.runtime.local_bridge_service.execute_analog_write(pb.AnalogWrite(pin=pin, value=val))
+        )
+        self.schedule_async(coro)
         return {"status": "ok", "pin": pin, "value": val}
 
     def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:

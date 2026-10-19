@@ -231,8 +231,6 @@ def run_qemu_emulation(
 
         all_passed = run_client_scripts(
             test_scripts,
-            daemon_env,
-            timeout_seconds,
             device_id="esp32-01",
             led_builtin_pin=led_builtin_pin,
         )

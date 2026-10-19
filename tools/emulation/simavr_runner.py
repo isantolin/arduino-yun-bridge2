@@ -379,7 +379,7 @@ def run_simavr_emulation(
     state.capabilities_event.wait(timeout=30.0)
     time.sleep(1.0)
 
-    all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
+    all_passed = run_client_scripts(test_scripts, led_builtin_pin=led_builtin_pin)
     if all_passed:
         # [SIL-2 / Rule 29] Audit runtime status snapshot before teardown
         status_file = Path("/tmp/mcubridge_status.json")
@@ -451,11 +451,10 @@ def run_single_client_script(
 
 def run_client_scripts(
     test_scripts: list[Path],
-    daemon_env: dict[str, str],
-    timeout_seconds: float,
+    *,
+    device_id: str = "yun-01",
     led_builtin_pin: int,
 ) -> bool:
-    _ = (daemon_env, timeout_seconds)
     old_non_interactive = os.environ.get("MCUBRIDGE_NON_INTERACTIVE")
     os.environ["MCUBRIDGE_NON_INTERACTIVE"] = "1"
     try:
@@ -463,7 +462,7 @@ def run_client_scripts(
             if not test_path.exists():
                 logger.warning("Test script not found, skipping", path=str(test_path))
                 continue
-            if not run_single_client_script(test_path, device_id="yun-01", led_builtin_pin=led_builtin_pin):
+            if not run_single_client_script(test_path, device_id=device_id, led_builtin_pin=led_builtin_pin):
                 return False
         return True
     finally:

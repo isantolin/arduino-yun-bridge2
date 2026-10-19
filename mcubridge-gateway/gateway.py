@@ -14,10 +14,9 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Final, Protocol, cast
+from typing import Annotated, Any, Final, cast
 
 import anyio
-from anyio.streams.memory import MemoryObjectSendStream
 import grpclib.events
 import httpx
 import prometheus_client
@@ -28,7 +27,7 @@ import typer
 import uvloop
 from google.protobuf.message import DecodeError
 from google.protobuf.message import Message as ProtobufMessage
-from grpclib.const import Cardinality, Handler, Status
+from grpclib.const import Handler, Status
 from grpclib.exceptions import GRPCError
 from grpclib.protocol import Peer
 from grpclib.reflection.service import ServerReflection
@@ -42,6 +41,11 @@ from mcubridge.protocol.protocol import (
     PROTOCOL_VERSION,
     REGISTRY,
     OperationSpec,
+)
+from mcubridge.services.local_bridge import (
+    ConsoleQueueTarget,
+    MemoryQueueAdapter,
+    build_local_bridge_mapping,
 )
 from statemachine import State, StateMachine
 
@@ -95,20 +99,6 @@ class GatewayDeviceSession:
         self.gateway = gateway
         self.console_queues = []
         self.fsm = GatewaySessionMachine()
-
-    @property
-    def current_state_value(self) -> str:
-        return str(self.fsm.current_state_value)
-
-    @property
-    def active(self) -> Any:
-        return self.fsm.active
-
-    def authenticate(self) -> None:
-        self.fsm.authenticate()
-
-    def activate(self) -> None:
-        self.fsm.activate()
 
     def close(self) -> None:
         if self.fsm.closed.is_active:
@@ -563,10 +553,10 @@ class CloudBridgeService(CloudBridgeBase):
             gateway=self.gateway,
         )
         if is_authenticated:
-            session_fsm.authenticate()
+            session_fsm.fsm.authenticate()
 
         with structlog.contextvars.bound_contextvars(device_id=device_id):
-            logger.info("Device connected", state=session_fsm.current_state_value)
+            logger.info("Device connected", state=session_fsm.fsm.current_state_value)
             self.gateway.connections[device_id] = stream
             self.gateway.sessions[device_id] = session_fsm
             self.gateway.metrics.devices_connected.inc()
@@ -578,8 +568,8 @@ class CloudBridgeService(CloudBridgeBase):
                         logger.warning("Invalid cloud envelope")
                         continue
 
-                    if not session_fsm.active.is_active:
-                        session_fsm.activate()
+                    if not session_fsm.fsm.active.is_active:
+                        session_fsm.fsm.activate()
 
                     if envelope.device_id and envelope.device_id != device_id:
                         old_device_id = device_id
@@ -611,7 +601,7 @@ class CloudBridgeService(CloudBridgeBase):
             finally:
                 with anyio.CancelScope(shield=True):
                     session_fsm.close()
-                    logger.info("Device disconnected", state=session_fsm.current_state_value)
+                    logger.info("Device disconnected", state=session_fsm.fsm.current_state_value)
                     self.gateway.sessions.pop(device_id, None)
                     self.gateway.connections.pop(device_id, None)
 
@@ -654,38 +644,6 @@ class CloudBridgeService(CloudBridgeBase):
                 await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
 
 
-class ConsoleQueueTarget(Protocol):
-    def put_nowait(self, item: pb.CloudQueuedPublish) -> None: ...
-    async def put(self, item: pb.CloudQueuedPublish) -> None: ...
-
-
-class MemoryQueueAdapter:
-    """Adapts an AnyIO MemoryObjectSendStream to queue-compatible API. [SIL-2]"""
-
-    __slots__ = ("_send_stream",)
-    _send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
-
-    def __init__(self, send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]) -> None:
-        self._send_stream = send_stream
-
-    def put_nowait(self, item: pb.CloudQueuedPublish) -> None:
-        try:
-            self._send_stream.send_nowait(item)
-        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
-            logger.debug("Console stream subscriber disconnected during put_nowait", error=str(exc))
-        except anyio.WouldBlock as exc:
-            logger.warning("Console stream subscriber buffer full, dropping message", error=str(exc))
-
-    async def put(self, item: pb.CloudQueuedPublish) -> None:
-        try:
-            await self._send_stream.send(item)
-        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
-            logger.debug("Console stream subscriber disconnected during put", error=str(exc))
-
-    def close(self) -> None:
-        self._send_stream.close()
-
-
 class GatewayLocalBridgeService:
     """[SIL-2] Northbound LocalBridge gRPC service hosted on the Gateway for clients.
 
@@ -699,33 +657,7 @@ class GatewayLocalBridgeService:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __mapping__(self) -> dict[str, Handler]:
-        mapping: dict[str, Handler] = {
-            f"/rpc.pb.LocalBridge/{spec.rpc_name or spec.name}": Handler(
-                getattr(self, spec.rpc_name or spec.name),
-                Cardinality.UNARY_UNARY,
-                spec.request_type,
-                spec.response_type,
-            )
-            for spec in REGISTRY.rpc_specs
-            if spec.request_type is not None and spec.response_type is not None
-        }
-        mapping["/rpc.pb.LocalBridge/Publish"] = Handler(
-            self.Publish,
-            Cardinality.UNARY_UNARY,
-            pb.CloudQueuedPublish,
-            pb.CloudQueuedPublish,
-        )
-        mapping["/rpc.pb.LocalBridge/SubscribeConsole"] = Handler(
-            self.SubscribeConsole,
-            Cardinality.UNARY_STREAM,
-            pb.SubscribeRequest,
-            pb.CloudQueuedPublish,
-        )
-        return mapping
-
-    def resolve_device_id(self, stream: Stream[Any, Any]) -> str | None:
-        """Extract explicit target device ID from request metadata."""
-        return extract_device_id_from_metadata(stream.metadata)
+        return build_local_bridge_mapping(self)
 
     async def _forward_rpc(
         self,
@@ -740,7 +672,7 @@ class GatewayLocalBridgeService:
         if req is None:
             return
 
-        device_id = self.resolve_device_id(stream)
+        device_id = extract_device_id_from_metadata(stream.metadata)
         if not device_id:
             logger.warning("LocalBridge call rejected: missing explicit device_id", method=method_name)
             raise GRPCError(
@@ -790,7 +722,7 @@ class GatewayLocalBridgeService:
         req = await stream.recv_message()
         if req is None:
             return
-        device_id = self.resolve_device_id(stream)
+        device_id = extract_device_id_from_metadata(stream.metadata)
         if not device_id:
             logger.warning("Publish rejected: missing explicit device_id")
             raise GRPCError(
@@ -810,7 +742,7 @@ class GatewayLocalBridgeService:
         req = await stream.recv_message()
         if req is None:
             return
-        device_id = self.resolve_device_id(stream)
+        device_id = extract_device_id_from_metadata(stream.metadata)
         if not device_id:
             logger.warning("SubscribeConsole rejected: missing explicit device_id")
             raise GRPCError(

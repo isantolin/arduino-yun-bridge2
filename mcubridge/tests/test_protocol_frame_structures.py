@@ -56,9 +56,9 @@ def test_create_allowed_policy() -> None:
 
 def test_allows_topic() -> None:
     auth = pb.TopicAuthorization(digital_read=True, digital_write=False)
-    assert structures.allows_topic(auth, "d", "read") is True
-    assert structures.allows_topic(auth, "d", "write") is False
-    assert structures.allows_topic(auth, "unknown", "action") is False
+    assert REGISTRY.allows_topic(auth, "d", "read") is True
+    assert REGISTRY.allows_topic(auth, "d", "write") is False
+    assert REGISTRY.allows_topic(auth, "unknown", "action") is False
 
 
 def _valid_runtime_config() -> pb.RuntimeConfig:
@@ -170,30 +170,6 @@ def test_get_ssl_context() -> None:
     )
     with pytest.raises(RuntimeError, match="Both cloud_certfile and cloud_keyfile|TLS setup failed"):
         structures.get_ssl_context(cfg_mtls_invalid)
-
-
-def test_replace_cloud_publish() -> None:
-    original = pb.CloudQueuedPublish(
-        topic_name="old_topic",
-        payload=b"old_payload",
-        qos=1,
-    )
-    replaced = structures.replace_cloud_publish(
-        original,
-        topic_name="new_topic",
-        user_properties=[("key1", "val1")],
-        subscription_identifier=[100],
-    )
-    assert replaced.topic_name == "new_topic"
-    assert len(replaced.user_properties) == 1
-    assert replaced.user_properties[0].key == "key1"
-    assert list(replaced.subscription_identifier) == [100]
-
-    # None and empty variations
-    res_none = structures.replace_cloud_publish(original, subscription_identifier=None)
-    assert len(res_none.subscription_identifier) == 0
-    res_empty = structures.replace_cloud_publish(original, user_properties=[], subscription_identifier=[])
-    assert len(res_empty.user_properties) == 0
 
 
 def test_resolve_cloud_context() -> None:

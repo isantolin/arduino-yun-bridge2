@@ -15,7 +15,6 @@ from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.security.security import (
     extract_nonce_counter,
     generate_nonce_with_counter,
-    secure_zero,
     validate_nonce_counter,
     verify_crypto_integrity,
 )
@@ -125,17 +124,6 @@ def test_security_crypto_integrity_public_api() -> None:
     """Verify the cryptographic Known Answer Tests remain green."""
     assert verify_crypto_integrity()
 
-
-@given(data=st.binary(min_size=1, max_size=128))
-def test_secure_zero_property(data: bytes) -> None:
-    """Verify secure_zero clears bytearray and memoryview buffers in-place."""
-    buf = bytearray(data)
-    secure_zero(buf)
-    assert all(b == 0 for b in buf)
-
-    mv_buf = bytearray(data)
-    secure_zero(memoryview(mv_buf))
-    assert all(b == 0 for b in mv_buf)
 
 
 @given(

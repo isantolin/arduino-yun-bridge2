@@ -206,45 +206,6 @@ class LmdbCache:
             logger.error("LmdbCache get failed", path=self.path, key=key, error=exc)
             return default
 
-    async def pop(self, key: str, default: T | None = None) -> bytes | T | None:
-        if self.is_mem:
-            return self._mem.pop(key, default)
-        if not self.env:
-            return default
-        try:
-            with self.env.begin(write=True, db=self.db, buffers=True) as txn:
-                val = txn.pop(key.encode("utf-8"), db=self.db)
-                if val is not None:
-                    return bytes(val)
-                return default
-        except (lmdb.Error, OSError) as exc:
-            logger.error("LmdbCache pop failed", path=self.path, key=key, error=exc)
-            return default
-
-    async def delete(self, key: str) -> bool:
-        if self.is_mem:
-            return self._mem.pop(key, None) is not None
-        if not self.env:
-            return False
-        try:
-            with self.env.begin(write=True, db=self.db) as txn:
-                return txn.delete(key.encode("utf-8"), db=self.db)
-        except (lmdb.Error, OSError) as exc:
-            logger.error("LmdbCache delete failed", path=self.path, key=key, error=exc)
-            return False
-
-    async def clear(self) -> None:
-        if self.is_mem:
-            self._mem.clear()
-        elif self.env and self.db:
-            with self.env.begin(write=True, db=self.db) as txn:
-                txn.drop(self.db, delete=False)
-
-    async def vacuum(self) -> None:
-        """[SIL-2] Compact LMDB cache storage to reclaim disk space."""
-        if not self.is_mem and self.env:
-            await anyio.to_thread.run_sync(vacuum_lmdb_env, self.path, "cache.db", self.env, self._open_env)
-
     def __len__(self) -> int:
         if self.is_mem:
             return len(self._mem)
@@ -257,18 +218,6 @@ class LmdbCache:
             logger.error("LmdbCache len failed", path=self.path, error=exc)
             return 0
 
-    async def contains(self, key: str) -> bool:
-        if self.is_mem:
-            return key in self._mem
-        if not self.env:
-            return False
-        try:
-            with self.env.begin(db=self.db, buffers=True) as txn:
-                return txn.get(key.encode("utf-8"), db=self.db) is not None
-        except (lmdb.Error, OSError) as exc:
-            logger.error("LmdbCache contains failed", path=self.path, key=key, error=exc)
-            return False
-
     def __contains__(self, key: str) -> bool:
         if self.is_mem:
             return key in self._mem
@@ -280,19 +229,6 @@ class LmdbCache:
         except (lmdb.Error, OSError) as exc:
             logger.error("LmdbCache __contains__ failed", path=self.path, key=key, error=exc)
             return False
-
-    async def items(self) -> list[tuple[str, bytes]]:
-        if self.is_mem:
-            return list(self._mem.items())
-        if not self.env:
-            return []
-        try:
-            with self.env.begin(db=self.db, buffers=True) as txn:
-                cur = txn.cursor(self.db)
-                return [(bytes(k).decode("utf-8"), bytes(v)) for k, v in cur]
-        except (lmdb.Error, OSError, UnicodeDecodeError) as exc:
-            logger.error("LmdbCache items failed", path=self.path, error=exc)
-            return []
 
     async def close(self) -> None:
         if self.env:

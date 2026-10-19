@@ -19,7 +19,6 @@ import asyncio
 import errno
 import logging
 import sys
-from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 import anyio
@@ -141,12 +140,10 @@ class SerialTransport:
         config: RuntimeConfig,
         state: RuntimeState,
         service: SerialBridgeService | None,
-        runner_fn: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.config = config
         self.state = state
         self.service: SerialBridgeService | None = service
-        self._runner_fn = runner_fn
         self.serial: serialx.AsyncSerial | None = None
 
         self.stop_event = asyncio.Event()
@@ -199,19 +196,6 @@ class SerialTransport:
         except (asyncio.CancelledError, SystemExit) as exc:
             logger.info("Serial transport lifecycle terminated", reason=type(exc).__name__)
         except SerialHandshakeFatal:
-            raise
-
-    async def connect(self) -> None:
-        """Single-shot connection method for compatibility."""
-        try:
-            if self._runner_fn is not None:
-                await self._runner_fn()
-            else:
-                await self.connect_and_run()
-        except asyncio.CancelledError:
-            logger.info("Serial transport cancelled")
-        except SerialHandshakeFatal as exc:
-            logger.error("Fatal serial handshake error", error=str(exc))
             raise
 
     async def connect_and_run(self) -> None:

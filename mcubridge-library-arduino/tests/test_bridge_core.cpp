@@ -564,7 +564,7 @@ void test_bridge_fsm_resets_and_link_reset() {
   rpc_pb_RpcEnvelope env_hc = rpc_pb_RpcEnvelope_init_default;
   env_hc.which_payload_type = 0;
   bridge::router::CommandContext hc_ctx(
-      &env_hc, static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET), 44, false,
+      &env_hc, static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET), 44,
       false);
   ba.handleLinkReset(hc_ctx);
 
@@ -962,7 +962,7 @@ void test_bridge_fault_injection_kat_and_post() {
   ba.setTxEnabled(true);
 
   // 7. Decode payload with null fields or null dest
-  bridge::router::CommandContext ctx(nullptr, 0, 0, false, false);
+  bridge::router::CommandContext ctx(nullptr, 0, 0, false);
   TEST_ASSERT_FALSE(ba.decodePayload(ctx, nullptr, (void*)1));
   TEST_ASSERT_FALSE(ba.decodePayload(ctx, (const pb_msgdesc_t*)1, nullptr));
 
@@ -986,7 +986,7 @@ void test_bridge_fault_injection_kat_and_post() {
   spi_req_data.data.bytes[1] = 0x22;
   bridge::router::CommandContext spi_ctx_data(
       nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 99,
-      false, false);
+      false);
   ba.handleSpiTransfer(spi_ctx_data, spi_req_data);
   ba.setTxEnabled(false);
   ba.handleSpiTransfer(spi_ctx_data, spi_req_data);

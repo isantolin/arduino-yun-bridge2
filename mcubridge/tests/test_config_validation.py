@@ -6,19 +6,21 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config import settings as config_settings
-from mcubridge.config.settings import RuntimeConfig, runtime_config_factory
+from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.protocol.structures import validate_config
 
 
 def _valid_base_config() -> RuntimeConfig:
-    cfg = runtime_config_factory()
-    cfg.serial_port = "/dev/null"
-    cfg.topic_prefix = "mcubridge"
-    cfg.file_system_root = "/tmp/fs"
-    cfg.cloud_spool_dir = "/tmp/spool"
-    cfg.serial_shared_secret = b"secret1234"
-    cfg.allow_non_tmp_paths = True
-    return cfg
+    return load_runtime_config(
+        overrides={
+            "serial_port": "/dev/null",
+            "topic_prefix": "mcubridge",
+            "file_system_root": "/tmp/fs",
+            "cloud_spool_dir": "/tmp/spool",
+            "serial_shared_secret": b"secret1234",
+            "allow_non_tmp_paths": True,
+        }
+    )
 
 
 def test_runtime_config_topic_and_paths() -> None:
@@ -30,7 +32,7 @@ def test_runtime_config_topic_and_paths() -> None:
         "serial_shared_secret": b"secret1234",
         "allow_non_tmp_paths": True,
     }
-    config = config_settings.load_runtime_config_from_json(raw)
+    config = config_settings.load_runtime_config(overrides=raw)
     assert config.topic_prefix == "/demo//prefix/"
     assert config.file_system_root == "/tmp/tests/bridge"
 
@@ -45,7 +47,7 @@ def test_runtime_config_rejects_empty_topic() -> None:
         "allow_non_tmp_paths": True,
     }
     with pytest.raises(ValueError, match=r"topic_prefix: does not match regex pattern"):
-        config_settings.load_runtime_config_from_json(raw)
+        config_settings.load_runtime_config(overrides=raw)
 
 
 def test_runtime_config_rejects_non_positive_status_interval() -> None:

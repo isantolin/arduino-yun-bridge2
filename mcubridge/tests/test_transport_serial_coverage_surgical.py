@@ -196,14 +196,6 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
     assert pending.response_payload == b"content"
 
 
-async def test_connect_without_runner_fn(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    transport = SerialTransport(mock_config, mock_state, None)
-    mock_run = AsyncMock()
-    transport.connect_and_run = mock_run
-    await transport.connect()
-    mock_run.assert_awaited_once()
-
-
 async def test_logging_not_debug_branches(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:

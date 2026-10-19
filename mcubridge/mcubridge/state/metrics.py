@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,45 +14,33 @@ logger = structlog.get_logger("mcubridge.state.metrics")
 class CounterMetric:
     """Lightweight deterministic counter primitive."""
 
-    _count: int = 0
+    value: int = 0
 
     def inc(self, amount: int = 1) -> None:
-        self._count += amount
-
-    @property
-    def value(self) -> int:
-        return self._count
+        self.value += amount
 
 
 @dataclass
 class FloatGaugeMetric:
     """Lightweight latency / gauge primitive."""
 
-    _val: float = 0.0
+    value: float = 0.0
 
     def set(self, val: float) -> None:
-        self._val = val
+        self.value = val
 
     def observe(self, val: float) -> None:
-        self._val = val
-
-    @property
-    def value(self) -> float:
-        return self._val
+        self.value = val
 
 
 @dataclass
 class StateMetric:
     """Lightweight discrete state tracking primitive."""
 
-    _state: str = "disconnected"
+    value: str = "disconnected"
 
     def state(self, val: str | Any) -> None:
-        self._state = str(getattr(val, "value", val))
-
-    @property
-    def value(self) -> str:
-        return self._state
+        self.value = str(getattr(val, "value", val))
 
 
 class LabeledCounter:
@@ -76,24 +63,11 @@ class LabeledCounter:
         return [(k, c.value) for k, c in self._counters.items()]
 
 
-class InfoMetric:
-    """Lightweight build info metadata container."""
-
-    def __init__(self) -> None:
-        self.data: dict[str, str] = {}
-
-    def info(self, data: dict[str, str]) -> None:
-        self.data.update(data)
-
-
 class DaemonMetrics:
     """Formal native metrics container for McuBridge edge daemon without external dependencies."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         del args, kwargs
-
-        # Supervisor Metrics
-        self.supervisor_failures = LabeledCounter()
 
         # CLOUD Metrics
         self.cloud_messages_published = CounterMetric()
@@ -119,9 +93,6 @@ class DaemonMetrics:
         self.watchdog_beats = CounterMetric()
         self.uptime_seconds = FloatGaugeMetric()
 
-        # Info Metric (build metadata — set once at startup)
-        self.build_info = InfoMetric()
-
         # FSM State Metrics
         self.link_state = StateMetric("disconnected")
         self.handshake_state = StateMetric("unsynchronized")
@@ -129,13 +100,3 @@ class DaemonMetrics:
         # Connection/Operation Retry Metrics
         self.retries = LabeledCounter()
 
-        self._set_build_info()
-
-    def _set_build_info(self) -> None:
-        """Populate build info from package metadata."""
-        try:
-            version = importlib.metadata.version("mcubridge")
-        except importlib.metadata.PackageNotFoundError as exc:
-            logger.debug("Package metadata not found; using development version string", error=str(exc))
-            version = "dev"
-        self.build_info.info({"version": version, "python": "3.13"})

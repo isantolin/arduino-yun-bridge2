@@ -91,14 +91,12 @@ struct CommandContext {
   uint16_t raw_command;
   uint16_t sequence_id;
   bool is_duplicate;
-  bool requires_ack;
   CommandContext(const rpc_pb_RpcEnvelope* f, uint16_t cmd, uint16_t seq,
-                 bool dup, bool ack)
+                 bool dup)
       : envelope(f),
         raw_command(cmd),
         sequence_id(seq),
-        is_duplicate(dup),
-        requires_ack(ack) {}
+        is_duplicate(dup) {}
 };
 
 }  // namespace router
@@ -474,13 +472,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return true;
   }
 
-  template <typename MsgType, typename Handler>
-  bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
-                    bool retransmit_on_dup = false) {
-    return _dispatchCmd<MsgType, Handler>(
-        ctx, handler, rpc::requires_ack(ctx.raw_command), retransmit_on_dup);
-  }
-
   // [SIL-2] Reusable template command dispatchers — eliminating repetitive
   // per-command wrapper methods. Zero-heap, zero-copy, compile-time bound.
   template <auto MemberFn, bool NeedsAck = true, bool RetransmitOnDup = false,
@@ -515,18 +506,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
         ctx,
         [&self](const bridge::router::CommandContext&, const MsgType& m) {
           (self.*MemberFn)(m);
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  template <auto StaticFn, typename MsgType, bool NeedsAck = true,
-            bool RetransmitOnDup = false, bool CheckDup = true>
-  static void _dispatchStaticWithCtxMsg(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<MsgType>(
-        ctx,
-        [](const bridge::router::CommandContext& c, const MsgType& m) {
-          StaticFn(c, m);
         },
         NeedsAck, RetransmitOnDup, CheckDup);
   }

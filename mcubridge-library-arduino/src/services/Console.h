@@ -5,7 +5,6 @@
 
 #undef min
 #undef max
-#include <etl/bitset.h>
 #include <etl/circular_buffer.h>
 #include <etl/vector.h>
 
@@ -14,12 +13,15 @@
 
 class ConsoleClass : public Stream, public bridge::BridgeObserver {
  public:
-  ConsoleClass();
+  ConsoleClass() = default;
   void begin();
   void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
 
-  void onLost() override { _flags.reset(BEGUN); }
+  void onLost() override {
+    _rx_buffer.clear();
+    _tx_buffer.clear();
+  }
 
   // Stream implementation
   size_t write(uint8_t c) override;
@@ -30,8 +32,6 @@ class ConsoleClass : public Stream, public bridge::BridgeObserver {
   void flush() override {}
 
  private:
-  enum Flags { BEGUN = 0 };
-  etl::bitset<1> _flags;
   etl::circular_buffer<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE>
       _rx_buffer;
   etl::vector<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> _tx_buffer;

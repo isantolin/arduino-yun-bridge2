@@ -45,7 +45,6 @@ def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
-_VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = tuple(sorted(VOLATILE_STORAGE_PATHS))
 _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields)
 
 
@@ -69,11 +68,6 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
     items = {item for c in entries if c for item in _TOKEN_SEP.split(c.strip().lower()) if item}
     normalised = ["*"] if "*" in items else sorted(items)
     return pb.AllowedCommandPolicy(entries=normalised)
-
-
-def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
-    """Check if a specific topic/action combination is authorized. [SIL-2]"""
-    return protocol.REGISTRY.allows_topic(auth, topic, action)
 
 
 # =============================================================================
@@ -174,32 +168,6 @@ class PendingPinRequest:
 
 
 # --- CLOUD Spool Helpers ---
-
-
-UserProperty = tuple[str, str]
-
-
-def replace_cloud_publish(message: pb.CloudQueuedPublish, **kwargs: Any) -> pb.CloudQueuedPublish:
-    """Create a new CloudQueuedPublish with fields replaced."""
-    newpb_obj = pb.CloudQueuedPublish()
-    newpb_obj.CopyFrom(message)
-    for k, v in kwargs.items():
-        if k == "user_properties":
-            newpb_obj.ClearField("user_properties")
-            if v:
-                newpb_obj.user_properties.extend(
-                    [
-                        item if isinstance(item, pb.UserProperty) else pb.UserProperty(key=item[0], value=item[1])
-                        for item in v
-                    ]
-                )
-        elif k == "subscription_identifier":
-            newpb_obj.ClearField("subscription_identifier")
-            if v:
-                newpb_obj.subscription_identifier.extend(v)
-        else:
-            setattr(newpb_obj, k, v)
-    return newpb_obj
 
 
 def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -> pb.CloudQueuedPublish:

@@ -169,9 +169,6 @@ async def test_gpio_service() -> None:
         assert res_dis["status"] == "ok"
         assert 13 not in state.pin_subscriptions
 
-        # Test get_subscriptions
-        assert gpio.get_subscriptions() == state.pin_subscriptions
-
         # Test rejection by MCU
         mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=False)
         res_rej = await gpio.subscribe_pin(13, enabled=True)
@@ -287,8 +284,8 @@ async def test_clock_sync_fsm_lifecycle() -> None:
         await clock.sync_now()
         assert clock.fsm.current_state_value == "unsupported"
 
-        # Reconnect / recheck
-        clock.fsm.recheck_capability()
+        # Reconnect / reset to idle
+        clock.fsm.disconnect()
         assert clock.fsm.current_state_value == "idle"
 
         # Successful sync -> synchronized
@@ -360,7 +357,7 @@ async def test_clock_sync_initial_probe_failure() -> None:
         service.cleanup()
 
 
-async def test_clock_sync_worker_start_stop_lifecycle() -> None:
+async def test_clock_sync_worker_run_lifecycle() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     mock_serial = AsyncMock(spec=SerialTransport)
@@ -368,27 +365,11 @@ async def test_clock_sync_worker_start_stop_lifecycle() -> None:
 
     try:
         clock = service.clock_sync
-        assert not clock.is_running
-        assert clock.task is None
-
-        # Start worker
-        await clock.start()
-        assert clock.is_running
-        assert clock.task is not None
-
-        # Calling start again while running is a no-op
-        await clock.start()
-        assert clock.is_running
-
-        # Stop worker
-        await clock.stop()
-        assert not clock.is_running
-        assert clock.task is None
+        task = asyncio.create_task(clock.run())
+        await asyncio.sleep(0.02)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
         assert clock.fsm.current_state_value == "idle"
-
-        # Calling stop when already stopped is a clean no-op
-        await clock.stop()
-        assert not clock.is_running
     finally:
         service.cleanup()
 
@@ -410,19 +391,21 @@ async def test_clock_sync_loop_exception_handling() -> None:
         mock_serial.send = AsyncMock(side_effect=TimeoutError("serial timeout"))
 
         # Run loop iteration under exception via public lifecycle
-        await clock.start()
+        task = asyncio.create_task(clock.run())
         await asyncio.sleep(0.05)
         assert clock.fsm.degraded.is_active
-        await clock.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
         assert clock.fsm.idle.is_active
 
         # Test disconnected branch in loop
         state.connection_fsm.disconnect()
         assert not state.is_connected
-        await clock.start()
+        task2 = asyncio.create_task(clock.run())
         await asyncio.sleep(0.05)
         assert clock.fsm.idle.is_active
-        await clock.stop()
+        task2.cancel()
+        await asyncio.gather(task2, return_exceptions=True)
 
         assert clock.fsm.idle.is_active
     finally:
@@ -475,10 +458,11 @@ async def test_clock_sync_loop_unsupported_branch(mock_bridge_service: BridgeSer
     clock.fsm.mark_unsupported()
     assert clock.fsm.unsupported.is_active
 
-    await clock.start()
+    task = asyncio.create_task(clock.run())
     await asyncio.sleep(0.03)
     assert clock.fsm.unsupported.is_active
-    await clock.stop()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_clock_sync_loop_degraded_branch(
@@ -493,10 +477,11 @@ async def test_clock_sync_loop_degraded_branch(
 
     assert svc.serial is not None
     svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
-    await clock.start()
+    task = asyncio.create_task(clock.run())
     await asyncio.sleep(0.03)
     assert clock.fsm.degraded.is_active
-    await clock.stop()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_clock_sync_loop_idle_exception_marks_unsupported(
@@ -511,10 +496,11 @@ async def test_clock_sync_loop_idle_exception_marks_unsupported(
 
     assert svc.serial is not None
     svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
-    await clock.start()
+    task = asyncio.create_task(clock.run())
     await asyncio.sleep(0.03)
     assert clock.fsm.unsupported.is_active
-    await clock.stop()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeService) -> None:
@@ -526,21 +512,9 @@ async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeSe
     clock.fsm.sync_success()
     assert clock.fsm.synchronized.is_active
 
-    await clock.start()
+    task = asyncio.create_task(clock.run())
     await asyncio.sleep(0.03)
     assert clock.fsm.idle.is_active
-    await clock.stop()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
-
-async def test_clock_sync_loop_normal_exit_branch(mock_bridge_service: BridgeService) -> None:
-    from mcubridge.services.clock_sync import ClockSyncService
-
-    svc = mock_bridge_service
-    clock = ClockSyncService(svc, sync_interval_seconds=0.001)
-    svc.state.connection_fsm.connect()
-
-    await clock.start()
-    assert clock.is_running
-    await asyncio.sleep(0.01)
-    await clock.stop()
-    assert not clock.is_running

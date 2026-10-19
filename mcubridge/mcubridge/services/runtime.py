@@ -435,7 +435,7 @@ class BridgeService:
 
     def cleanup(self) -> None:
         self.ubus_service.stop()
-        self.clock_sync.stop_sync()
+        self.clock_sync.fsm.disconnect()
 
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.

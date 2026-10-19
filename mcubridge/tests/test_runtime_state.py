@@ -426,7 +426,7 @@ def test_runtime_state_fsm_properties_and_branches() -> None:
 
         # Cloud degraded property
         state.cloud_fsm.connect_http3()
-        assert state.is_cloud_connected
+        assert state.cloud_fsm.connected_http3.is_active
         state.cloud_spool_degraded = True
         assert state.cloud_spool_degraded
         state.cloud_spool_degraded = True

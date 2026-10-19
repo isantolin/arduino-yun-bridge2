@@ -2,8 +2,6 @@
 #define BRIDGE_ARCH_TRAITS_H
 
 #include <Arduino.h>
-#include <etl/algorithm.h>
-#include <etl/array.h>
 #include <stdint.h>
 
 namespace bridge::hal {
@@ -45,8 +43,6 @@ struct ArchTraits {
     if constexpr (Id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
       wdt_enable(WDTO_15MS);
-      static etl::array<volatile uint8_t, 1> s = {0};
-      etl::for_each(s.begin(), s.end(), [](volatile uint8_t&) {});
       asm volatile("" ::: "memory");
       ::delay(20);
       __builtin_trap();

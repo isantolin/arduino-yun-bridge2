@@ -97,6 +97,3 @@ class GpioService:
             )
         )
 
-    def get_subscriptions(self) -> dict[int, dict[str, Any]]:
-        """Retrieve list of currently active pin subscriptions."""
-        return self._runtime.state.pin_subscriptions

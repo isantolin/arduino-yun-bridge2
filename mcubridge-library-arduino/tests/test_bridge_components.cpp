@@ -307,14 +307,11 @@ void test_pending_rpc_manager() {
   bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2> mgr;
   TEST_ASSERT_TRUE(mgr.empty());
   TEST_ASSERT_FALSE(mgr.full());
-  TEST_ASSERT_EQUAL(0, mgr.size());
-  TEST_ASSERT_EQUAL(2, mgr.capacity());
-  TEST_ASSERT_EQUAL(2, mgr.available());
 
   auto h = bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2>::
       HandlerType::create<test_rpc_mgr_callback>();
   TEST_ASSERT_TRUE(mgr.push(h));
-  TEST_ASSERT_EQUAL(1, mgr.size());
+  TEST_ASSERT_FALSE(mgr.empty());
   TEST_ASSERT_TRUE(mgr.push(h));
   TEST_ASSERT_FALSE(mgr.push(h));
   TEST_ASSERT_TRUE(mgr.full());
@@ -324,7 +321,7 @@ void test_pending_rpc_manager() {
   TEST_ASSERT_TRUE(mgr.dispatch(
       resp, [](const auto& handler, const auto& msg) { handler(msg); }));
   TEST_ASSERT_TRUE(g_rpc_mgr_cb_called);
-  TEST_ASSERT_EQUAL(1, mgr.size());
+  TEST_ASSERT_FALSE(mgr.empty());
   mgr.pop();
   TEST_ASSERT_TRUE(mgr.empty());
   TEST_ASSERT_FALSE(mgr.dispatch(resp, [](const auto&, const auto&) {}));
@@ -363,7 +360,7 @@ void test_process_edges() {
       "pwd", {},
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
-  TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
+  TEST_ASSERT_FALSE(Process._pending_run_async.empty());
 
   rpc::payload::ProcessRunAsyncResponse p_resp;
   p_resp.pid = 42;
@@ -373,7 +370,7 @@ void test_process_edges() {
   // 4. Invalid callback should not enqueue
   Process.reset();
   Process.runAsync("ls", {}, ProcessType::ProcessRunHandler{});
-  TEST_ASSERT_EQUAL(0, Process._pending_run_async.size());
+  TEST_ASSERT_TRUE(Process._pending_run_async.empty());
 
   // 5. Oversized arg failure
   etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
@@ -412,7 +409,7 @@ void test_process_edges() {
   Process.reset();
   Process.poll(
       10, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
-  TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
+  TEST_ASSERT_FALSE(Process._pending_polls.empty());
   Process.poll(
       11, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
 
@@ -700,7 +697,7 @@ void test_spi_edges() {
   spi_req.data.size = 0;
   bridge::router::CommandContext spi_ctx(
       nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 42,
-      false, false);
+      false);
   ba.handleSpiTransfer(spi_ctx, spi_req);
   ba.setTxEnabled(false);
   ba.handleSpiTransfer(spi_ctx, spi_req);

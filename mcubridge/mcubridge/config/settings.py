@@ -64,32 +64,6 @@ def coerce_commands(v: Any) -> list[str]:
     return [] if v is None else [str(v)]
 
 
-def runtime_config_factory(
-    pb_msg: pb.RuntimeConfig | None = None,
-    *,
-    bypass_defaults: bool = False,
-    validate: bool = True,
-    **kwargs: Any,
-) -> pb.RuntimeConfig:
-    """Factory: create a validated pb.RuntimeConfig from kwargs or a pre-built message."""
-    if pb_msg is not None:
-        return pb_msg
-    if not bypass_defaults:
-        defaults = get_default_config()
-        for k, v in defaults.items():
-            if k not in kwargs:
-                kwargs[k] = v
-    if isinstance(kwargs.get("serial_shared_secret"), str):
-        kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode("utf-8")
-    cfg = pb.RuntimeConfig(**kwargs)
-    if validate:
-        validate_config(cfg)
-    return cfg
-
-
-# [SIL-2] RuntimeConfig is pb.RuntimeConfig at type-check time (zero wrapper).
-# At runtime, this callable factory applies defaults + validate_config(),
-# preserving backward compatibility with direct construction from kwargs.
 RuntimeConfig = pb.RuntimeConfig
 
 
@@ -205,33 +179,3 @@ def load_runtime_config(
         logger.critical("Configuration validation failed", error=str(e))
         raise
 
-
-def load_runtime_config_from_json(
-    data: str | bytes | dict[str, Any],
-    overrides: dict[str, Any] | None = None,
-) -> RuntimeConfig:
-    """Load, parse, and validate RuntimeConfig from JSON or Dict using native Protobuf json_format. [SIL-2]"""
-    msg = pb.RuntimeConfig()
-    defaults = get_default_config()
-    for k, v in defaults.items():
-        if isinstance(v, bytes):
-            defaults[k] = v.decode("utf-8")
-    json_format.ParseDict(defaults, msg, ignore_unknown_fields=True)
-
-    if isinstance(data, (str, bytes)):
-        json_format.Parse(data, msg, ignore_unknown_fields=True)
-    else:
-        norm_data, secret = normalize_config_dict(data)
-        json_format.ParseDict(norm_data, msg, ignore_unknown_fields=True)
-        if secret is not None:
-            msg.serial_shared_secret = secret
-
-    if overrides:
-        norm_overrides, ov_secret = normalize_config_dict(overrides)
-        json_format.ParseDict(norm_overrides, msg, ignore_unknown_fields=True)
-        if ov_secret is not None:
-            msg.serial_shared_secret = ov_secret
-
-    validate_config(msg)
-    _config_source[0] = "json"
-    return msg

@@ -24,21 +24,16 @@ SERIAL_MIN_ACK_TIMEOUT: Final[float] = float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 
 
 # -- Cloud TLS & Spool Parameters --
 CLOUD_TLS_MIN_VERSION: Final[TLSVersion] = TLSVersion.TLSv1_2
-SPOOL_BACKOFF_MULTIPLIER: Final[float] = 5.0
-SPOOL_BACKOFF_MIN_SECONDS: Final[float] = 5.0
-SPOOL_BACKOFF_MAX_SECONDS: Final[float] = 60.0
 
 # -- File System Operational Parameters --
 MCU_FS_PREFIX: Final[str] = "mcu/"
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
-SYSTEMD_PRIVATE_PREFIX: Final[str] = "systemd-private-"
 
 # -- Telemetry & Status Paths --
 STATUS_FILE_PATH: Final[str] = "/tmp/mcubridge_status.json"
 BRIDGE_SNAPSHOT_EXPIRY_SECONDS: Final[int] = 30
 
 # -- Security Constraints --
-MIN_SERIAL_SHARED_SECRET_LEN: Final[int] = 8
 ALLOWED_COMMAND_WILDCARD: Final[str] = "*"
 TOPIC_FORBIDDEN_REASON: Final[str] = "topic-action-forbidden"
 
@@ -47,12 +42,8 @@ WATCHDOG_TRIGGER_TOKEN: Final[bytes] = b"WATCHDOG=trigger\n"
 WATCHDOG_MIN_INTERVAL: Final[float] = 0.5
 
 # -- Task Supervisor (Internal Timing) --
-SUPERVISOR_DEFAULT_RESTART_INTERVAL: Final[float] = 60.0
 SUPERVISOR_DEFAULT_MIN_BACKOFF: Final[float] = 1.0
 SUPERVISOR_DEFAULT_MAX_BACKOFF: Final[float] = 30.0
-SUPERVISOR_STATUS_RESTART_INTERVAL: Final[float] = 120.0
-SUPERVISOR_STATUS_MAX_BACKOFF: Final[float] = 10.0
-SUPERVISOR_MIN_RESTART_WINDOW: Final[float] = 1.0
 
 # -- Telemetry and Metadata Property Keys --
 PROP_KEY_BRIDGE_SPOOL: Final[str] = "bridge-spool"

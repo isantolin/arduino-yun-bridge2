@@ -26,7 +26,6 @@ from statemachine.exceptions import TransitionNotAllowed
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 from cryptography.hazmat.primitives import hashes, hmac
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from google.protobuf.message import (
@@ -432,7 +431,6 @@ class SerialHandshakeManager:
         # [SIL-2] Ensure session key is derived on successful sync
         if self._config.serial_shared_secret:
             self._state.link_session_key = self.calculate_session_key(self._config.serial_shared_secret, nonce)
-            self._state.link_aead_cipher = ChaCha20Poly1305(self._state.link_session_key)
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
@@ -543,24 +541,10 @@ class SerialHandshakeManager:
                 fatal_detail or "",
             )
         self._maybe_schedule_handshake_backoff(reason)
-        extra: dict[str, Any] = {
-            "duration_seconds": round(
-                self._state.handshake_last_duration,
-                3,
-            )
-        }
-        extra["fatal"] = is_fatal
-        extra["fatal_count"] = self._state.handshake_fatal_count
-        extra["fatal_threshold"] = self._fatal_threshold
-        if self._state.handshake_fatal_count > 0:
-            extra["fatal_unix"] = self._state.handshake_fatal_unix
-            if self._state.handshake_fatal_detail:
-                extra["fatal_detail"] = self._state.handshake_fatal_detail
         await self.publish_handshake_event(
             "failure",
             reason=reason,
             detail=fatal_detail if is_fatal else detail,
-            extra=extra,
         )
 
     async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
@@ -592,7 +576,6 @@ class SerialHandshakeManager:
         *,
         reason: str | None = None,
         detail: str | None = None,
-        extra: dict[str, Any] | None = None,
     ) -> None:
         # [SIL-2] Holistic Handshake Snapshot via Protobuf
         snapshot = self._state.build_handshake_snapshot()
@@ -625,11 +608,7 @@ class SerialHandshakeManager:
         self._state.link_last_nonce_counter = 0
         self._state.connection_fsm.synchronize()
         self._state.handshake_successes += 1
-        duration = round(self._state.handshake_last_duration, 3)
-        await self.publish_handshake_event(
-            "success",
-            extra={"duration_seconds": duration},
-        )
+        await self.publish_handshake_event("success")
 
     def _maybe_schedule_handshake_backoff(self, reason: str) -> float | None:
         streak = max(1, self._state.handshake_failure_streak)

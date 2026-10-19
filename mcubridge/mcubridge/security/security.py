@@ -6,7 +6,6 @@ do not imply FIPS 140-3 validation or process-wide secret zeroization.
 
 from __future__ import annotations
 
-import ctypes
 import os
 
 import structlog
@@ -18,13 +17,6 @@ from ..protocol import protocol
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 logger = structlog.get_logger("mcubridge.security")
-
-
-def secure_zero(data: bytearray | memoryview) -> None:
-    """Overwrite this mutable buffer in place; other copies are not covered."""
-    data[:] = protocol.FRAME_DELIMITER * len(data)
-    buf = (ctypes.c_char * len(data)).from_buffer(data)
-    ctypes.memset(ctypes.addressof(buf), 0, len(data))
 
 
 def generate_nonce_with_counter(

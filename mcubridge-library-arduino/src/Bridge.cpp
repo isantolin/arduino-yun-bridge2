@@ -198,8 +198,7 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
       etl::find(_rx_history.begin(), _rx_history.end(), envelope.sequence_id);
   const bool is_duplicate = (it != _rx_history.end());
   const bridge::router::CommandContext ctx(&envelope, cmd_id,
-                                           envelope.sequence_id, is_duplicate,
-                                           rpc::requires_ack(cmd_id));
+                                           envelope.sequence_id, is_duplicate);
 
   if (!is_duplicate) {
     if (_rx_history.full()) _rx_history.pop();

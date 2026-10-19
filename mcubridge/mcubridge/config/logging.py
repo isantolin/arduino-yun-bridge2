@@ -104,12 +104,3 @@ def configure_logging(
     root_logger.setLevel(level)
     logging.getLogger("statemachine").setLevel(logging.WARNING)
 
-
-def reset_handlers() -> None:
-    """Close and clear all handlers on the root logger."""
-    root_logger = logging.getLogger()
-    if _LoggingState.current_handler is not None and _LoggingState.current_handler in root_logger.handlers:
-        root_logger.removeHandler(_LoggingState.current_handler)
-        _LoggingState.current_handler.close()
-        _LoggingState.current_handler = None
-    logging.lastResort = None

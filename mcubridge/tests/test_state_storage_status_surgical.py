@@ -148,39 +148,6 @@ async def test_lmdb_deque_multi_overflow_trimming(
     await deque.close()
 
 
-async def test_lmdb_cache_pop_delete_vacuum_lifecycle(tmp_path: object) -> None:
-    """Verify LmdbCache pop, delete, and vacuum operations on disk and memory."""
-    db_path = str(tmp_path) + "/kv_ops.db"
-    kv = LmdbCache(db_path)
-
-    await kv.set("alpha", b"111")
-    await kv.set("beta", b"222")
-
-    # pop existing and default
-    assert await kv.pop("alpha") == b"111"
-    assert await kv.pop("alpha", b"missing") == b"missing"
-    assert await kv.get("alpha") is None
-
-    # delete existing and missing
-    assert await kv.delete("beta") is True
-    assert await kv.delete("beta") is False
-
-    # vacuum
-    await kv.vacuum()
-    await kv.close()
-
-    # Memory mode coverage
-    mem_kv = LmdbCache(":memory:")
-    await mem_kv.set("m1", b"mem_val")
-    assert await mem_kv.get("m1") == b"mem_val"
-    assert await mem_kv.pop("m1") == b"mem_val"
-    assert await mem_kv.pop("m1", b"none") == b"none"
-    assert await mem_kv.delete("m1") is False
-    await mem_kv.clear()
-    await mem_kv.vacuum()
-    await mem_kv.close()
-
-
 async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
     """Verify fallback and error paths for LmdbCache and _vacuum_lmdb_env."""
     # 1. Vacuum with None env
@@ -188,24 +155,11 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
 
     db_path = str(tmp_path) + "/edge_branches.db"
     kv = LmdbCache(db_path)
-
-    # 2. None env fallback on pop and delete
-    saved_env = kv.env
-    kv.env = None
-    assert await kv.pop("k", b"def") == b"def"
-    assert await kv.delete("k") is False
-    kv.env = saved_env
-
-    # 3. LMDB Error on pop and delete
-    mock_env = MagicMock()
-    mock_env.begin.side_effect = lmdb.Error("Database locked")
-    kv.env = mock_env
-    assert await kv.pop("k", b"def") == b"def"
-    assert await kv.delete("k") is False
-    kv.env = saved_env
+    await kv.set("alpha", b"111")
+    assert await kv.get("alpha") == b"111"
     await kv.close()
 
-    # 4. Vacuum unlink OSError
+    # 2. Vacuum unlink OSError
     faulty_env = MagicMock()
     faulty_env.copy.side_effect = lmdb.Error("Copy fail")
     target_dir = tmp_path / "faulty"
@@ -218,46 +172,37 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
         compact_dir.rmdir()
 
 
-async def test_lmdb_cache_len_contains_items(tmp_path: Path) -> None:
-    """Verify LmdbCache __len__, contains, __contains__, and items on disk and memory."""
+async def test_lmdb_cache_len_contains(tmp_path: Path) -> None:
+    """Verify LmdbCache __len__ and __contains__ on disk and memory."""
     db_path = str(tmp_path / "cache_ext.db")
     kv = LmdbCache(db_path)
 
     assert len(kv) == 0
-    assert not await kv.contains("key1")
     assert "key1" not in kv
-    assert await kv.items() == []
 
     await kv.set("key1", b"val1")
     await kv.set("key2", b"val2")
 
     assert len(kv) == 2
-    assert await kv.contains("key1")
     assert "key1" in kv
     assert "key3" not in kv
-    assert set(await kv.items()) == {("key1", b"val1"), ("key2", b"val2")}
 
     # Error and fallback branches with env=None
     saved_env = kv.env
     kv.env = None
     assert len(kv) == 0
-    assert not await kv.contains("key1")
     assert "key1" not in kv
-    assert await kv.items() == []
     kv.env = saved_env
 
     # Memory mode verification
     mem_kv = LmdbCache(":memory:")
     assert len(mem_kv) == 0
-    assert not await mem_kv.contains("mkey")
     assert "mkey" not in mem_kv
-    assert await mem_kv.items() == []
 
     await mem_kv.set("mkey", b"mval")
+    assert await mem_kv.get("mkey") == b"mval"
     assert len(mem_kv) == 1
-    assert await mem_kv.contains("mkey")
     assert "mkey" in mem_kv
-    assert await mem_kv.items() == [("mkey", b"mval")]
     await mem_kv.close()
     await kv.close()
 

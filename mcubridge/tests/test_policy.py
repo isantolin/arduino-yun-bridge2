@@ -6,7 +6,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import allows_topic, create_allowed_policy, is_command_allowed
+from mcubridge.protocol.structures import create_allowed_policy, is_command_allowed
 
 _SAFE_TOKEN = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=12)
 _ARGS_STR = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_- ", max_size=10)
@@ -47,18 +47,18 @@ class TestTopicAuthorization:
     def test_default_policy_allows_all_tracked_actions(self, entry: tuple[tuple[str, str], str]) -> None:
         """Property: Default permissive policy allows all tracked service actions."""
         (topic, action), _ = entry
-        assert allows_topic(_make_auth(), topic, action)
+        assert protocol.REGISTRY.allows_topic(_make_auth(), topic, action)
 
     @given(entry=st.sampled_from(list(protocol.REGISTRY.topic_auth_map.items())))
     def test_selective_action_denial_and_case_insensitivity(self, entry: tuple[tuple[str, str], str]) -> None:
         """Property: Disabling a specific permission flag rejects the action under any case variation."""
         (topic, action), field_name = entry
         auth = _make_auth(**{field_name: False})
-        assert not allows_topic(auth, topic.upper(), action.upper())
-        assert not allows_topic(auth, topic.lower(), action.lower())
+        assert not protocol.REGISTRY.allows_topic(auth, topic.upper(), action.upper())
+        assert not protocol.REGISTRY.allows_topic(auth, topic.lower(), action.lower())
 
     @given(unknown_topic=st.text(alphabet="xyz123", min_size=6, max_size=10), action=_SAFE_TOKEN)
     def test_unknown_topics_and_actions_denied(self, unknown_topic: str, action: str) -> None:
         """Property: Any topic or action not defined in protocol authorization rules defaults to deny."""
         auth = _make_auth()
-        assert not allows_topic(auth, unknown_topic, action)
+        assert not protocol.REGISTRY.allows_topic(auth, unknown_topic, action)

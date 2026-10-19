@@ -27,9 +27,6 @@ class PendingRpcManager {
 
   [[nodiscard]] bool full() const { return _queue.full(); }
   [[nodiscard]] bool empty() const { return _queue.empty(); }
-  [[nodiscard]] size_t size() const { return _queue.size(); }
-  [[nodiscard]] size_t capacity() const { return _queue.capacity(); }
-  [[nodiscard]] size_t available() const { return _queue.available(); }
 
   bool push(const Handler& handler) {
     if (_queue.full()) {
@@ -62,11 +59,5 @@ class PendingRpcManager {
 };
 
 }  // namespace bridge
-
-namespace rpc {
-using bridge::PendingRpcManager;
-}  // namespace rpc
-
-using bridge::PendingRpcManager;
 
 #endif  // PROTOCOL_PENDING_RPC_H

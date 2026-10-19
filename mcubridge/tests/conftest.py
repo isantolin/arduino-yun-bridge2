@@ -24,7 +24,7 @@ from hypothesis import settings as hyp_settings
 from hypothesis import strategies as st
 from hypothesis.strategies import DrawFn
 from mcubridge.config import common, settings
-from mcubridge.config.logging import configure_logging, reset_handlers
+from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
@@ -231,7 +231,11 @@ def isolate_test_paths() -> Iterator[None]:
 def reset_logging_handlers():
     """Close and remove all logging handlers after each test to prevent ResourceWarnings."""
     yield
-    reset_handlers()
+    root_logger = logging.getLogger()
+    for handler in list(root_logger.handlers):
+        root_logger.removeHandler(handler)
+        handler.close()
+    logging.lastResort = None
 
 
 def _remove_persistent_test_path(path: Path) -> None:

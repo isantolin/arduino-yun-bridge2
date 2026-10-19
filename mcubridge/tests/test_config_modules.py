@@ -175,20 +175,6 @@ def test_load_runtime_config_http3() -> None:
     assert config.cloud_http3_congestion_control == "cubic"
 
 
-def test_settings_factory_bypass_defaults() -> None:
-    factory_fn: Any = settings.runtime_config_factory
-    cfg = factory_fn(
-        bypass_defaults=True,
-        validate=False,
-        serial_shared_secret="secretstring",
-        serial_port="/dev/ttyS0",
-        serial_baud=115200,
-        serial_safe_baud=115200,
-    )
-    assert cfg.serial_port == "/dev/ttyS0"
-    assert isinstance(cfg.serial_shared_secret, bytes)
-
-
 def test_settings_load_raw_config_empty_uci() -> None:
     empty_uci: dict[str, Any] = {}
     cfg_dict, source = settings.load_raw_config(uci_getter=lambda: empty_uci)
@@ -196,16 +182,13 @@ def test_settings_load_raw_config_empty_uci() -> None:
     assert "serial_port" in cfg_dict
 
 
-def test_settings_load_runtime_config_from_json_unknown_override() -> None:
+def test_settings_load_runtime_config_unknown_override() -> None:
     data = {"serial_port": "/dev/ttyACM0"}
-    cfg = settings.load_runtime_config_from_json(
-        data,
+    cfg = settings.load_runtime_config(
         overrides={"nonexistent_override_key": "ignored", "serial_baud": 230400},
+        raw_loader=lambda: (data, "test"),
     )
     assert cfg.serial_baud == 230400
-
-    cfg_str = settings.load_runtime_config_from_json('{"serial_port": "/dev/ttyS1"}')
-    assert cfg_str.serial_port == "/dev/ttyS1"
 
 
 @given(
@@ -282,22 +265,14 @@ def test_uci_edge_branches() -> None:
 def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeConfig, mocker: MockerFixture) -> None:
     from pathlib import Path
     from mcubridge.config.logging import configure_logging
-    from mcubridge.protocol import mcubridge_pb2 as pb
 
-    # 1. runtime_config_factory with pb_msg
-    existing_msg = pb.RuntimeConfig(serial_port="/dev/test_factory")
-    res_factory = settings.runtime_config_factory(pb_msg=existing_msg)
-    assert res_factory.serial_port == "/dev/test_factory"
-
-    # 2. load_runtime_config_from_json with dict and serial_shared_secret
-    cfg_json = settings.load_runtime_config_from_json(
-        {"serial_port": "/dev/ttyS0", "serial_shared_secret": b"secret_bytes_123"}
+    cfg_json = settings.load_runtime_config(
+        raw_loader=lambda: ({"serial_port": "/dev/ttyS0", "serial_shared_secret": b"secret_bytes_123"}, "test")
     )
     assert cfg_json.serial_shared_secret == b"secret_bytes_123"
 
-    # 3. load_runtime_config_from_json with overrides containing secret
-    cfg_overrides = settings.load_runtime_config_from_json(
-        {"serial_port": "/dev/ttyS0"},
+    cfg_overrides = settings.load_runtime_config(
+        raw_loader=lambda: ({"serial_port": "/dev/ttyS0"}, "test"),
         overrides={"serial_shared_secret": b"overridden_secret"},
     )
     assert cfg_overrides.serial_shared_secret == b"overridden_secret"

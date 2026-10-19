@@ -4,10 +4,7 @@
 
 #include "Bridge.h"
 
-ConsoleClass::ConsoleClass() : _flags(0) {}
-
 void ConsoleClass::begin() {
-  _flags.set(BEGUN);
   _rx_buffer.clear();
   _tx_buffer.clear();
 }

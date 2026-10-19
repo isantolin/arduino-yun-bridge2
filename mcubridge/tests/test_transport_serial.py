@@ -415,15 +415,17 @@ async def test_serial_transport_connect_exceptions(runtime_config: RuntimeConfig
     async def _cancel_run() -> None:
         raise asyncio.CancelledError()
 
-    transport_cancel = SerialTransport(runtime_config, runtime_state, AsyncMock(), runner_fn=_cancel_run)
-    await transport_cancel.connect()
+    transport_cancel = SerialTransport(runtime_config, runtime_state, AsyncMock())
+    transport_cancel.connect_and_run = _cancel_run
+    await transport_cancel.run()
 
     async def _fatal_run() -> None:
         raise SerialHandshakeFatal("Fatal")
 
-    transport_fatal = SerialTransport(runtime_config, runtime_state, AsyncMock(), runner_fn=_fatal_run)
+    transport_fatal = SerialTransport(runtime_config, runtime_state, AsyncMock())
+    transport_fatal.connect_and_run = _fatal_run
     with pytest.raises(SerialHandshakeFatal):
-        await transport_fatal.connect()
+        await transport_fatal.run()
 
 
 async def test_serial_correlate_frame_already_resolved(

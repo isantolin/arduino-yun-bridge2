@@ -24,14 +24,10 @@ from ..protocol.protocol import (
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_PENDING_PIN_REQUEST_LIMIT,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RETRY_LIMIT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..protocol.structures import (
@@ -313,13 +309,8 @@ class RuntimeState:
     mailbox_incoming_queue: LmdbDeque
     serial_tx_allowed: asyncio.Event
     console_to_mcu_queue: collections.deque[bytes]
-    console_queue_limit_bytes: int
-    console_queue_bytes: int
-    console_dropped_chunks: int
-    console_truncated_chunks: int
     running_processes: dict[int, ProcessContext]
     process_lock: asyncio.Lock
-    next_pid: int
     allowed_policy: pb.AllowedCommandPolicy
     topic_authorization: pb.TopicAuthorization | None
     process_timeout: int
@@ -336,21 +327,12 @@ class RuntimeState:
     pending_digital_reads: collections.deque[PendingPinRequest]
     pending_analog_reads: collections.deque[PendingPinRequest]
     mailbox_queue_limit: int
-    mailbox_queue_bytes_limit: int
-    pending_pin_request_limit: int
-    mailbox_queue_bytes: int
-    mailbox_dropped_messages: int
-    mailbox_truncated_messages: int
-    mailbox_incoming_queue_bytes: int
-    mailbox_incoming_dropped_messages: int
-    mailbox_incoming_truncated_messages: int
     mcu_version: tuple[int, int, int] | None
     mcu_capabilities: pb.Capabilities | dict[str, Any] | None
     link_handshake_nonce: bytes | None
     link_sync_event: asyncio.Event
     link_expected_tag: bytes | None
     link_session_key: bytes | None
-    link_aead_cipher: Any | None
     link_nonce_length: int
     link_nonce_counter: int
     link_last_nonce_counter: int
@@ -366,20 +348,13 @@ class RuntimeState:
     handshake_fatal_unix: float
     handshake_last_started: float
     serial_flow_stats: pb.SerialFlowSnapshot
-    serial_throughput_stats: pb.SerialThroughputStats
     serial_pipeline_inflight: dict[str, Any] | None
     serial_pipeline_last: dict[str, Any] | None
-    process_output_limit: int
     process_max_concurrent: int
     unknown_command_last_id: int
     config_source: str
-    serial_ack_timeout_ms: int
     serial_response_timeout_ms: int
-    serial_retry_limit: int
-    mcu_status_counts: dict[str, int]
     supervisor_stats: dict[str, pb.SupervisorSnapshot]
-    supervisor_failures: int
-    last_supervisor_error: str | None
     cloud_dropped_messages: int
     cloud_spool_corrupt_dropped: int
     cloud_spool_dropped_limit: int
@@ -413,17 +388,9 @@ class RuntimeState:
 
         self.serial_tx_allowed: asyncio.Event = kwargs.get("serial_tx_allowed") or asyncio.Event()
         self.console_to_mcu_queue: collections.deque[bytes] = kwargs.get("console_to_mcu_queue") or collections.deque()
-        self.console_queue_limit_bytes: int = kwargs.get(
-            "console_queue_limit_bytes", protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-        )
-
-        self.console_queue_bytes: int = kwargs.get("console_queue_bytes", 0)
-        self.console_dropped_chunks: int = kwargs.get("console_dropped_chunks", 0)
-        self.console_truncated_chunks: int = kwargs.get("console_truncated_chunks", 0)
 
         self.running_processes: dict[int, ProcessContext] = kwargs.get("running_processes") or {}
         self.process_lock: asyncio.Lock = kwargs.get("process_lock") or asyncio.Lock()
-        self.next_pid: int = kwargs.get("next_pid", 1)
         self.allowed_policy: pb.AllowedCommandPolicy = kwargs.get("allowed_policy") or create_allowed_policy([])
         self.topic_authorization: pb.TopicAuthorization | None = kwargs.get("topic_authorization")
         self.process_timeout: int = kwargs.get("process_timeout", DEFAULT_PROCESS_TIMEOUT)
@@ -446,15 +413,6 @@ class RuntimeState:
         )
 
         self.mailbox_queue_limit: int = kwargs.get("mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT)
-        self.mailbox_queue_bytes_limit: int = kwargs.get("mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT)
-        self.pending_pin_request_limit: int = kwargs.get("pending_pin_request_limit", DEFAULT_PENDING_PIN_REQUEST_LIMIT)
-        self.mailbox_queue_bytes: int = kwargs.get("mailbox_queue_bytes", 0)
-        self.mailbox_dropped_messages: int = kwargs.get("mailbox_dropped_messages", 0)
-        self.mailbox_truncated_messages: int = kwargs.get("mailbox_truncated_messages", 0)
-
-        self.mailbox_incoming_queue_bytes: int = kwargs.get("mailbox_incoming_queue_bytes", 0)
-        self.mailbox_incoming_dropped_messages: int = kwargs.get("mailbox_incoming_dropped_messages", 0)
-        self.mailbox_incoming_truncated_messages: int = kwargs.get("mailbox_incoming_truncated_messages", 0)
 
         self.mcu_version: tuple[int, int, int] | None = kwargs.get("mcu_version")
         self.mcu_capabilities: pb.Capabilities | dict[str, Any] | None = kwargs.get("mcu_capabilities")
@@ -462,7 +420,6 @@ class RuntimeState:
         self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
         self.link_expected_tag: bytes | None = kwargs.get("link_expected_tag")
         self.link_session_key: bytes | None = kwargs.get("link_session_key")
-        self.link_aead_cipher: Any | None = kwargs.get("link_aead_cipher")
         self.link_nonce_length: int = kwargs.get("link_nonce_length", 0)
         self.link_nonce_counter: int = kwargs.get("link_nonce_counter", 0)
         self.link_last_nonce_counter: int = kwargs.get("link_last_nonce_counter", 0)
@@ -478,24 +435,15 @@ class RuntimeState:
         self.handshake_fatal_unix: float = kwargs.get("handshake_fatal_unix", 0.0)
         self.handshake_last_started: float = kwargs.get("handshake_last_started", 0.0)
         self.serial_flow_stats: pb.SerialFlowSnapshot = kwargs.get("serial_flow_stats") or pb.SerialFlowSnapshot()
-        self.serial_throughput_stats: pb.SerialThroughputStats = (
-            kwargs.get("serial_throughput_stats") or pb.SerialThroughputStats()
-        )
         self.serial_pipeline_inflight: dict[str, Any] | None = kwargs.get("serial_pipeline_inflight")
         self.serial_pipeline_last: dict[str, Any] | None = kwargs.get("serial_pipeline_last")
-        self.process_output_limit: int = kwargs.get("process_output_limit", protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
         self.process_max_concurrent: int = kwargs.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
         self.unknown_command_last_id: int = kwargs.get("unknown_command_last_id", 0)
         self.config_source: str = kwargs.get("config_source", "uci")
-        self.serial_ack_timeout_ms: int = kwargs.get("serial_ack_timeout_ms", int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000))
         self.serial_response_timeout_ms: int = kwargs.get(
             "serial_response_timeout_ms", int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
         )
-        self.serial_retry_limit: int = kwargs.get("serial_retry_limit", DEFAULT_RETRY_LIMIT)
-        self.mcu_status_counts: dict[str, int] = kwargs.get("mcu_status_counts") or {}
         self.supervisor_stats: dict[str, pb.SupervisorSnapshot] = kwargs.get("supervisor_stats") or {}
-        self.supervisor_failures: int = kwargs.get("supervisor_failures", 0)
-        self.last_supervisor_error: str | None = kwargs.get("last_supervisor_error")
 
         self.cloud_dropped_messages: int = kwargs.get("cloud_dropped_messages", 0)
         for _counter_field in (
@@ -545,6 +493,10 @@ class RuntimeState:
             self.cloud_fsm.degrade()
 
     @property
+    def mcu_status_counts(self) -> dict[str, int]:
+        return dict(self.metrics.mcu_status_counts.items())
+
+    @property
     def device_id(self) -> str:
         return os.environ.get("MCUBRIDGE_DEVICE_ID") or socket.gethostname()
 
@@ -563,10 +515,6 @@ class RuntimeState:
     @property
     def is_synchronized(self) -> bool:
         return self.connection_fsm.synchronized.is_active or self.connection_fsm.paused.is_active
-
-    @property
-    def is_cloud_connected(self) -> bool:
-        return self.cloud_fsm.connected_http3.is_active or self.cloud_fsm.connected_http2.is_active
 
     @property
     def mcu_is_paused(self) -> bool:
@@ -684,7 +632,7 @@ class RuntimeState:
 
     @unknown_command_count.setter
     def unknown_command_count(self, value: int) -> None:
-        self.metrics.unknown_command_count._count = value
+        self.metrics.unknown_command_count.value = value
 
     @property
     def serial_decode_errors(self) -> int:
@@ -692,7 +640,7 @@ class RuntimeState:
 
     @serial_decode_errors.setter
     def serial_decode_errors(self, value: int) -> None:
-        self.metrics.serial_decode_errors._count = value
+        self.metrics.serial_decode_errors.value = value
 
     @property
     def handshake_attempts(self) -> int:
@@ -700,7 +648,7 @@ class RuntimeState:
 
     @handshake_attempts.setter
     def handshake_attempts(self, value: int) -> None:
-        self.metrics.handshake_attempts._count = value
+        self.metrics.handshake_attempts.value = value
 
     @property
     def handshake_successes(self) -> int:
@@ -708,7 +656,7 @@ class RuntimeState:
 
     @handshake_successes.setter
     def handshake_successes(self, value: int) -> None:
-        self.metrics.handshake_successes._count = value
+        self.metrics.handshake_successes.value = value
 
     @property
     def watchdog_beats(self) -> int:
@@ -716,7 +664,7 @@ class RuntimeState:
 
     @watchdog_beats.setter
     def watchdog_beats(self, value: int) -> None:
-        self.metrics.watchdog_beats._count = value
+        self.metrics.watchdog_beats.value = value
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
@@ -1015,7 +963,6 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     state = RuntimeState(
         cloud_topic_prefix=cfg.topic_prefix,
         cloud_queue_limit=cfg.cloud_queue_limit,
-        process_output_limit=cfg.process_max_output_bytes,
         process_timeout=cfg.process_timeout,
         process_max_concurrent=cfg.process_max_concurrent,
         file_system_root=cfg.file_system_root,

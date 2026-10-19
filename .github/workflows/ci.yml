@@ -342,13 +342,71 @@ jobs:
           path: renode-logs
           if-no-files-found: ignore
 
+  qemu-esp32-emulation:
+    name: QEMU Xtensa Emulation (Arduino Nano ESP32)
+    runs-on: ubuntu-26.04
+    needs: [tox-checks]
+    timeout-minutes: 15
+    env:
+      QEMU_METRICS_DIR: qemu-logs
+      CONSOLIDATE_EMULATION_SUMMARY: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-protoc
+      - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: qemu-esp32
+      - name: Setup Arduino CLI & Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y socat
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: Install Arduino ESP32 Core & Tools
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:esp32
+          python -m pip install pyserial esptool
+      - name: Cache Espressif QEMU
+        id: cache-qemu-esp32
+        uses: actions/cache@v6
+        with:
+          path: /opt/qemu-esp32
+          key: qemu-esp32-9.2.2-20260417-x86_64
+      - name: Install Espressif QEMU
+        if: steps.cache-qemu-esp32.outputs.cache-hit != 'true'
+        run: |
+          QEMU_URL="https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20260417/qemu-esp-develop-9.2.2-20260417-x86_64-linux-gnu.tar.xz"
+          if curl -fsSL -o /tmp/qemu-esp32.tar.xz "$QEMU_URL"; then
+            sudo mkdir -p /opt/qemu-esp32
+            sudo tar -xf /tmp/qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
+            rm -f /tmp/qemu-esp32.tar.xz
+          else
+            echo "::warning::Failed to download Espressif QEMU. Fallback to skip mode."
+          fi
+      - name: Add QEMU to PATH
+        run: |
+          if [ -d "/opt/qemu-esp32/bin" ]; then
+            echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Run QEMU ESP32-S3 E2E Test Suite
+        run: |
+          mkdir -p qemu-logs
+          tox -e qemu-esp32
+      - name: Upload QEMU Logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: qemu-logs
+          path: qemu-logs
+          if-no-files-found: ignore
+
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-26.04
-    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation]
+    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation]
     if: always()
     timeout-minutes: 3
     steps:
@@ -393,6 +451,13 @@ jobs:
           path: renode-logs
         continue-on-error: true
 
+      - name: Download QEMU Logs
+        uses: actions/download-artifact@v8
+        with:
+          name: qemu-logs
+          path: qemu-logs
+        continue-on-error: true
+
       - name: Verify Artifacts
         run: |
           echo "### Artifact Verification"
@@ -408,6 +473,10 @@ jobs:
           if [ -d "renode-logs" ]; then
             echo "Contents of renode-logs:"
             ls -la renode-logs/
+          fi
+          if [ -d "qemu-logs" ]; then
+            echo "Contents of qemu-logs:"
+            ls -la qemu-logs/
           fi
 
       - name: Generate Coverage Summary
@@ -437,7 +506,8 @@ jobs:
           # 2. Consolidated Multi-Architecture Hardware Emulation Matrix
           python tools/ci/consolidate_emulation_summary.py \
             --simavr-dir simavr-logs \
-            --renode-dir renode-logs
+            --renode-dir renode-logs \
+            --qemu-dir qemu-logs
 
       - name: Generate Daemon Profile
         env:

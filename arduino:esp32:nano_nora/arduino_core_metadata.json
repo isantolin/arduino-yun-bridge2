@@ -1,0 +1,14 @@
+{
+  "analog_inputs": 20,
+  "digital_pins": 49,
+  "fqbn": "/tmp/pytest-of-ignaciosantolin/pytest-323/popen-gw2/test_run_matrix_emulation_fail0/BridgeControl.ino",
+  "frequency_hz": 240000000,
+  "i2c_scl": 2,
+  "i2c_sda": 1,
+  "led_builtin": 13,
+  "mcu": "esp32s3",
+  "spi_miso": 13,
+  "spi_mosi": 11,
+  "spi_sck": 12,
+  "spi_ss": 10
+}

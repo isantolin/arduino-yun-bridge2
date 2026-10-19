@@ -358,24 +358,25 @@ jobs:
           cache-suffix: qemu-esp32
       - name: Setup Arduino CLI & Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y socat
+          sudo apt-get update && sudo apt-get install -y socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino ESP32 Core & Tools
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:esp32
+          arduino-cli lib install wolfSSL
           python -m pip install pyserial esptool
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
         uses: actions/cache@v6
         with:
           path: /opt/qemu-esp32
-          key: qemu-esp32-9.2.2-20260417-x86_64
+          key: qemu-xtensa-softmmu-9.2.2-20260417-x86_64
       - name: Install Espressif QEMU
         if: steps.cache-qemu-esp32.outputs.cache-hit != 'true'
         run: |
-          QEMU_URL="https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20260417/qemu-esp-develop-9.2.2-20260417-x86_64-linux-gnu.tar.xz"
+          QEMU_URL="https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20260417/qemu-xtensa-softmmu-esp_develop_9.2.2_20260417-x86_64-linux-gnu.tar.xz"
           if curl -fsSL -o /tmp/qemu-esp32.tar.xz "$QEMU_URL"; then
             sudo mkdir -p /opt/qemu-esp32
             sudo tar -xf /tmp/qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1

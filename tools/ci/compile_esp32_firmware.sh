@@ -24,6 +24,9 @@ USER_LIB_DIR="${HOME}/Arduino/libraries"
 mkdir -p "$USER_LIB_DIR"
 
 echo "[qemu-esp32-build] Installing required library dependencies..."
+if [ ! -d "$USER_LIB_DIR/wolfssl" ] && [ ! -d "$USER_LIB_DIR/wolfSSL/src/wolfssl" ]; then
+    arduino-cli lib install wolfSSL || true
+fi
 "${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
 
 # Generate protocol stubs if missing

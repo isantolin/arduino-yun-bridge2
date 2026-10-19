@@ -174,6 +174,14 @@ fi
 for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
     if [ -d "$wdir" ]; then
         mkdir -p "$wdir/src" "$wdir/wolfssl"
+        if [ ! -d "$wdir/src/wolfssl" ] && [ -d "$wdir/wolfssl/wolfcrypt" ]; then
+            cp -a "$wdir/wolfssl" "$wdir/src/wolfssl"
+        fi
+        if [ ! -d "$wdir/src/wolfcrypt" ] && [ -d "$wdir/wolfcrypt/src" ]; then
+            mkdir -p "$wdir/src/wolfcrypt"
+            cp -a "$wdir/wolfcrypt/src" "$wdir/src/wolfcrypt/src"
+            rm -f "$wdir/src/wolfcrypt/src/misc.c" "$wdir/src/wolfcrypt/src/evp.c" 2>/dev/null || true
+        fi
         if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
             cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
             cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
@@ -181,8 +189,24 @@ for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/wolfssl/user_settings.h"
+        if [ -d "$wdir/src/wolfssl" ]; then
+            cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/wolfssl/user_settings.h"
+        fi
         rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c 2>/dev/null || true
-        if ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
+        if [ ! -f "$wdir/library.properties" ] || ! grep -q "^name=" "$wdir/library.properties" 2>/dev/null; then
+            cat > "$wdir/library.properties" <<EOF
+name=wolfSSL
+version=${WOLFSSL_VERSION#v}
+author=wolfSSL Inc.
+maintainer=wolfSSL Inc. <facts@wolfssl.com>
+sentence=Lightweight SSL/TLS and cryptography library for embedded systems
+paragraph=wolfSSL embedded SSL/TLS library with wolfCrypt
+category=Communication
+url=https://www.wolfssl.com/
+architectures=*
+includes=wolfssl.h
+EOF
+        elif ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
             echo "includes=wolfssl.h" >> "$wdir/library.properties"
         fi
         for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do

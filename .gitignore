@@ -63,7 +63,6 @@ venv/
 sample-build/
 final-audit/
 arduino-build/
-openwrt-sdk-25.12.3-malta-be_gcc-14.3.0_musl.Linux-x86_64/
 .antigravitycli/
 
 # Generated type stubs (dynamic)
@@ -158,7 +157,7 @@ build_output/
 mock_path
 compile_commands.json
 
-openwrt-sdk-25.12.5-malta-be_gcc-14.3.0_musl.Linux-x86_64/build_dir/target-mips_24kc_musl/*
+openwrt-sdk-25.12.6-malta-be_gcc-14.3.0_musl.Linux-x86_64/build_dir/target-mips_24kc_musl/*
 mcubridge-library-arduino/tests/.Unity.install.lock
-gh_logs/1_Compile APKs for OpenWrt 25.12.5.txt
-gh_logs/Compile APKs for OpenWrt 25.12.5/system.txt
+gh_logs/1_Compile APKs for OpenWrt 25.12.6.txt
+gh_logs/Compile APKs for OpenWrt 25.12.6/system.txt

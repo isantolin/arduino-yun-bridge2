@@ -21,7 +21,7 @@ env:
 
 jobs:
   build-apk:
-    name: Compile APKs for OpenWrt 25.12.5
+    name: Compile APKs for OpenWrt 25.12.6
     runs-on: ubuntu-26.04
     timeout-minutes: 330
     steps:
@@ -39,7 +39,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: dl
-          key: ${{ runner.os }}-openwrt-dl-25.12.5
+          key: ${{ runner.os }}-openwrt-dl-25.12.6
           restore-keys: |
             ${{ runner.os }}-openwrt-dl-
 
@@ -50,18 +50,18 @@ jobs:
           path: |
             openwrt-sdk/staging_dir/hostpkg
             openwrt-sdk/staging_dir/host
-          key: ${{ runner.os }}-openwrt-host-25.12.5-${{ hashFiles('1_compile.sh', 'mcubridge-gateway/Makefile') }}
+          key: ${{ runner.os }}-openwrt-host-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge-gateway/Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-host-25.12.5-
+            ${{ runner.os }}-openwrt-host-25.12.6-
 
       # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
       - name: Cache OpenWrt SDK
         uses: actions/cache@v6
         with:
           path: openwrt-sdk
-          key: ${{ runner.os }}-openwrt-sdk-25.12.5-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}
+          key: ${{ runner.os }}-openwrt-sdk-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-sdk-25.12.5-
+            ${{ runner.os }}-openwrt-sdk-25.12.6-
 
       # [FIX CRÍTICO] Instalar la rama Nightly con el componente de código fuente "rust-src".
       # Esto nos permite compilar la biblioteca estándar de Rust ("std") al vuelo para la arquitectura MIPS
@@ -126,10 +126,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            openwrt-25.12.5-malta-be-vmlinux.elf
+            openwrt-25.12.6-malta-be-vmlinux.elf
             openwrt-malta-rootfs.img
             sys-apks
-          key: ${{ runner.os }}-openwrt-qemu-images-25.12.5
+          key: ${{ runner.os }}-openwrt-qemu-images-25.12.6
 
       - name: Install Verification Dependencies
         run: |
@@ -188,7 +188,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/mcubridge-openwrt-apk-feed
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=OpenWrt 25.12.5 APK Package Feed for Arduino Yun Bridge 2
+            org.opencontainers.image.description=OpenWrt 25.12.6 APK Package Feed for Arduino Yun Bridge 2
           tags: |
             type=ref,event=branch
             type=ref,event=tag

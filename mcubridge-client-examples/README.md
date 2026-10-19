@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![gRPC](https://img.shields.io/badge/gRPC-HTTP%2F2-244c5a?logo=grpc)](https://grpc.io/)
 [![Protobuf](https://img.shields.io/badge/Serialization-Protobuf_v3-green?logo=protobuf)](https://protobuf.dev/)
-[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.5-00B5E2?logo=openwrt)](https://openwrt.org/)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.6-00B5E2?logo=openwrt)](https://openwrt.org/)
 
 Este componente proporciona el SDK y la suite de herramientas CLI para que aplicaciones, dashboards y servicios de automatización interactúen con microcontroladores Arduino Yún a través del **Protobuf Cloud Gateway** centralizado (`mcubridge-gateway`).
 

@@ -1,7 +1,7 @@
 # Arduino MCU Bridge 2
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.5-00B5E2?logo=openwrt)](https://openwrt.org/releases/25.12.5)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.6-00B5E2?logo=openwrt)](https://openwrt.org/releases/25.12.6)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)](https://isocpp.org/)
 [![ETL](https://img.shields.io/badge/ETL-Embedded%20Template%20Library-green)](https://www.etlcpp.com/)
@@ -97,7 +97,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ### Novedades (OpenWrt 25.12)
 
 - **Detección de Hardware (Capabilities Discovery):** El protocolo incluye introspección (`CMD_GET_CAPABILITIES`) para conocer las características físicas del MCU (pines, arquitectura, features como EEPROM, DAC, FPU, I2C).
-- **Integración con APK:** Paquetización moderna utilizando el sistema de paquetes **APK** de OpenWrt 25.12.
+- **Integración con APK:** Paquetización moderna utilizando el sistema de paquetes **APK** de OpenWrt 25.12.6
 - **Transporte de Alto Rendimiento:** Uso de `python3-serialx` para un stack serie nativo sync/async con control directo de modem pins y transporte tipado.
 - **10/10 Eficiencia (uvloop):** Activación de `uvloop` (implementación de alto rendimiento basada en `libuv`) como bucle de eventos, ofreciendo un throughput 2-4x superior en operaciones seriales e IPC intensivas.
 - **Logging Hexadecimal:** Todo el tráfico binario se registra mediante volcados hexadecimales en syslog.
@@ -143,7 +143,7 @@ uci commit mcubridge
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.13+ (última versión del sistema). | Mantener compatibilidad con futuras versiones. | `tox -e py` |
-| Toolchain OpenWrt | SDK 25.12.5 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
+| Toolchain OpenWrt | SDK 25.12.6 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
 | MCU Firmware | C++17 / ETL; diseño orientado a seguridad. | Compilación y cobertura según la configuración elegida. | `./tools/ci/coverage_arduino.sh` |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:

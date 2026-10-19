@@ -12,7 +12,7 @@ Arduino MCU Bridge 2 is a communication system between Arduino-compatible microc
 *   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD, and Nanopb (0.4.9.2) with `pb_decode_noinit` for zero-copy, de-bloated payload parsing (ChaCha20-Poly1305).
 *   **Safety-oriented mechanisms:** Static allocation in selected firmware paths, SRAM POST, stack sentinel monitoring, observed execution-time tracking, and validation gates.
 *   **Cryptography:** Boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 for cryptographic self-validation.
-*   **OpenWrt:** Target OS is **OpenWrt 25.12.5** (APK based).
+*   **OpenWrt:** Target OS is **OpenWrt 25.12.6** (APK based).
 *   **Communication:** Custom binary RPC over serial UART and transparent wireless links (WiFi TCP + Bluetooth SPP) (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support and native TLS 1.3 session resumption) for external cloud connectivity + Local IPC over native OpenWrt UBUS and Northbound Gateway gRPC for distributed clients. Protocol validation uses O(1) `etl::find` logic.
 
 ## Core Rules & Priorities

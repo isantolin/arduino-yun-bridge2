@@ -12,16 +12,15 @@
 #include "config/bridge_config.h"
 #include "protocol/rpc_structs.h"
 
-#if !defined(MAILBOX_QUEUE_CAPACITY) || (MAILBOX_QUEUE_CAPACITY == 0)
-#undef MAILBOX_QUEUE_CAPACITY
-#define MAILBOX_QUEUE_CAPACITY 4
+#ifndef MAILBOX_QUEUE_CAPACITY
+#define MAILBOX_QUEUE_CAPACITY bridge::config::MAX_MAILBOX_QUEUE_SIZE
 #endif
 
 class MailboxClass : public bridge::BridgeObserver {
  public:
   using MessageCallback = etl::delegate<void(etl::span<const uint8_t>)>;
   using AvailableCallback = etl::delegate<void(uint32_t)>;
-  using MailboxBuffer = etl::vector<uint8_t, 64>;
+  using MailboxBuffer = etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE>;
 
   MailboxClass();
   static void push(etl::span<const uint8_t> data);

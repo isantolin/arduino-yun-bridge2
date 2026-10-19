@@ -471,3 +471,54 @@ def test_proto_dispatch_handlers_ssot() -> None:
         assert callable(getattr(LocalBridgeService, spec.handler_name))
         assert hasattr(LocalBridgeService, method_name)
         assert callable(getattr(LocalBridgeService, method_name))
+
+
+def test_hardware_options_completeness_ssot() -> None:
+    """SIL-2: Verify all Hardware fields in config_schema.proto are > 0 and C++ headers delegate to SSoT."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    hw_opts = pb.Hardware.DESCRIPTOR.file.GetOptions().Extensions[pb.hardware]
+    zero_fields = [f.name for f in pb.Hardware.DESCRIPTOR.fields if getattr(hw_opts, f.name) <= 0]
+    assert zero_fields == [], f"Hardware option fields with zero/unset values: {zero_fields}"
+
+    rpc_hw_header = (repo_root / "mcubridge-library-arduino/src/protocol/rpc_hw_config.h").read_text(encoding="utf-8")
+    assert "= 0U;" not in rpc_hw_header
+    assert "= 0UL;" not in rpc_hw_header
+
+    bridge_cfg = (repo_root / "mcubridge-library-arduino/src/config/bridge_config.h").read_text(encoding="utf-8")
+    assert "bridge::config::MAX_MAILBOX_QUEUE_SIZE" in bridge_cfg
+
+    mailbox_hdr = (repo_root / "mcubridge-library-arduino/src/services/Mailbox.h").read_text(encoding="utf-8")
+    assert "bridge::config::MAX_MAILBOX_QUEUE_SIZE" in mailbox_hdr
+    assert "rpc::MAX_PAYLOAD_SIZE" in mailbox_hdr
+
+
+def test_default_configuration_centralization_ssot() -> None:
+    """SIL-2: Verify OpenWrt scripts, LuCI Web UI, and Cloud Gateway consume defaults from SSoT artifacts."""
+    from tools.audit.validate_luci import validate_luci_app
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+
+    shell_consumers = [
+        repo_root / "3_install.sh",
+        repo_root / "mcubridge/mcubridge.init",
+        repo_root / "mcubridge/uci-defaults/96-mcubridge-flash-protection-paths",
+        repo_root / "mcubridge/uci-defaults/97-mcubridge-default-secret",
+        repo_root / "mcubridge/uci-defaults/98-mcubridge-default-serial",
+        repo_root / "mcubridge/uci-defaults/99-mcubridge-disable-askconsole",
+    ]
+    for script_path in shell_consumers:
+        content = script_path.read_text(encoding="utf-8")
+        assert "defaults.sh" in content, f"{script_path.name} must source defaults.sh"
+        assert "MCUBRIDGE_DEFAULT_" in content, f"{script_path.name} must use MCUBRIDGE_DEFAULT_* variables"
+
+    install_content = (repo_root / "3_install.sh").read_text(encoding="utf-8")
+    assert "\nDEFAULT_SERIAL_RESPONSE_TIMEOUT=" not in install_content
+    assert "0.75" not in install_content
+
+    gateway_content = (repo_root / "mcubridge-gateway/gateway.py").read_text(encoding="utf-8")
+    assert "DEFAULT_CLOUD_HOST" in gateway_content
+    assert "DEFAULT_CLOUD_PORT" in gateway_content
+    assert "8843" not in gateway_content
+
+    assert validate_luci_app(repo_root) == 0
+

@@ -26,12 +26,12 @@ LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 
-# Keep shell defaults aligned with mcubridge.const
-DEFAULT_SERIAL_RETRY_TIMEOUT="0.75"
-DEFAULT_SERIAL_RESPONSE_TIMEOUT="3.0"
-DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
-DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL="0.0"
-DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
+# [SSOT] Load canonical defaults generated from config_schema.proto
+if [ -f "$PROJECT_ROOT/mcubridge/scripts/defaults.sh" ]; then
+    . "$PROJECT_ROOT/mcubridge/scripts/defaults.sh"
+elif [ -f /usr/share/mcubridge/defaults.sh ]; then
+    . /usr/share/mcubridge/defaults.sh
+fi
 
 # [FIX] Flexible pattern to match standard OpenWrt APK naming convention (pkg_version...)
 PROJECT_APK_PATTERNS="\
@@ -216,7 +216,8 @@ ensure_secure_serial_secret() {
     current_secret=$(uci_get_general serial_shared_secret)
     if [ -n "$current_secret" ] \
         && [ "$current_secret" != "$SERIAL_SECRET_PLACEHOLDER" ] \
-        && [ "$current_secret" != "$BOOTSTRAP_SERIAL_SECRET" ]; then
+        && [ "$current_secret" != "$BOOTSTRAP_SERIAL_SECRET" ] \
+        && [ "$current_secret" != "${MCUBRIDGE_DEFAULT_SERIAL_SHARED_SECRET:-failsafe_secret_mode}" ]; then
         return
     fi
 
@@ -256,11 +257,11 @@ set_serial_uci_value() {
 }
 
 configure_serial_link_settings() {
-    set_serial_uci_value "serial_retry_timeout" "$DEFAULT_SERIAL_RETRY_TIMEOUT"
-    set_serial_uci_value "serial_retry_attempts" "$DEFAULT_SERIAL_RETRY_ATTEMPTS"
-    set_serial_uci_value "serial_response_timeout" "$DEFAULT_SERIAL_RESPONSE_TIMEOUT"
-    set_serial_uci_value "serial_handshake_min_interval" "$DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL"
-    set_serial_uci_value "serial_handshake_fatal_failures" "$DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES"
+    set_serial_uci_value "serial_retry_timeout" "${MCUBRIDGE_DEFAULT_SERIAL_RETRY_TIMEOUT:-10.0}"
+    set_serial_uci_value "serial_retry_attempts" "${MCUBRIDGE_DEFAULT_SERIAL_RETRY_ATTEMPTS:-5}"
+    set_serial_uci_value "serial_response_timeout" "${MCUBRIDGE_DEFAULT_SERIAL_RESPONSE_TIMEOUT:-20.0}"
+    set_serial_uci_value "serial_handshake_min_interval" "${MCUBRIDGE_DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL:-0.0}"
+    set_serial_uci_value "serial_handshake_fatal_failures" "${MCUBRIDGE_DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES:-15}"
     uci_commit_general
 }
 

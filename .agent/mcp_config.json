@@ -13,11 +13,15 @@
     },
     "semgrep": {
       "command": "/home/ignaciosantolin/.local/bin/semgrep",
-      "args": ["mcp"]
+      "args": [
+        "mcp"
+      ]
     },
     "serial-mcp-server": {
       "command": "/home/ignaciosantolin/.local/bin/serial-mcp-server",
-      "args": ["serve"]
+      "args": [
+        "serve"
+      ]
     }
   }
 }

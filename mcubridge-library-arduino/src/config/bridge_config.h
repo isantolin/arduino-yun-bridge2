@@ -55,7 +55,7 @@ inline constexpr bool ENABLE_WATCHDOG = true;
 inline constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 
 #ifndef MAILBOX_QUEUE_CAPACITY
-#define MAILBOX_QUEUE_CAPACITY 4  // Capacidad de elementos en la cola
+#define MAILBOX_QUEUE_CAPACITY bridge::config::MAX_MAILBOX_QUEUE_SIZE
 #endif
 
 // --- Feature Flags (Manual overrides via build system) ---

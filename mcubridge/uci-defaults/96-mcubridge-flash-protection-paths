@@ -4,8 +4,10 @@
 # allow_non_tmp_paths only affects file_system_root (File component).
 # Runs once on first boot / first install (uci-defaults).
 
-DEFAULT_FILE_ROOT="/tmp/yun_files"
-DEFAULT_SPOOL_DIR="/tmp/mcubridge/spool"
+[ -f /usr/share/mcubridge/defaults.sh ] && . /usr/share/mcubridge/defaults.sh
+
+DEFAULT_FILE_ROOT="${MCUBRIDGE_DEFAULT_FILE_SYSTEM_ROOT:-/tmp/yun_files}"
+DEFAULT_SPOOL_DIR="${MCUBRIDGE_DEFAULT_CLOUD_SPOOL_DIR:-/tmp/mcubridge/spool}"
 
 if ! command -v uci >/dev/null 2>&1; then
     exit 0

@@ -2,10 +2,36 @@
 'require view';
 'require form';
 'require uci';
+'require request';
 
 return view.extend({
-	render: function () {
+	load: function () {
+		return request.get(L.resource('view/mcubridge/config_schema.json')).then(function (res) {
+			return res.json();
+		}).catch(function () {
+			return { properties: {} };
+		});
+	},
+
+	render: function (schema) {
 		var m, s, o;
+		var props = (schema && schema.properties) ? schema.properties : {};
+
+		function applySchemaDefault(opt, fieldName, assignDefault) {
+			var spec = props[fieldName];
+			if (!spec || spec.default === undefined || spec.default === null) return;
+			if (spec.type === 'boolean') {
+				opt.default = spec.default ? '1' : '0';
+				return;
+			}
+			if (typeof spec.default === 'number' || (typeof spec.default === 'string' && spec.default !== '')) {
+				var valStr = String(spec.default);
+				opt.placeholder = valStr;
+				if (assignDefault) {
+					opt.default = valStr;
+				}
+			}
+		}
 
 		m = new form.Map('mcubridge', _('McuBridge Configuration'),
 			_('Configure the McuBridge daemon which proxies RPC frames between the MCU and the Cloud. Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot.'));
@@ -20,56 +46,53 @@ return view.extend({
 
 		o = s.option(form.Flag, 'debug', _('Enable Debug Logging'));
 		o.rmempty = false;
-		o.default = '0';
+		applySchemaDefault(o, 'debug', true);
 
 		o = s.option(form.Value, 'respawn_threshold', _('Respawn Threshold (s)'),
 			_('Procd service respawn timeout threshold in seconds.'));
 		o.datatype = 'uinteger';
-		o.placeholder = '3600';
-		o.default = '3600';
 		o.rmempty = true;
+		applySchemaDefault(o, 'respawn_threshold', true);
 
 		o = s.option(form.Value, 'respawn_timeout', _('Respawn Timeout (s)'),
 			_('Procd service respawn restart delay timeout in seconds.'));
 		o.datatype = 'uinteger';
-		o.placeholder = '5';
-		o.default = '5';
 		o.rmempty = true;
+		applySchemaDefault(o, 'respawn_timeout', true);
 
 		o = s.option(form.Value, 'respawn_retry', _('Respawn Retry Count'),
 			_('Procd service respawn maximum retry count (0 for infinite).'));
 		o.datatype = 'uinteger';
-		o.placeholder = '0';
-		o.default = '0';
 		o.rmempty = true;
+		applySchemaDefault(o, 'respawn_retry', true);
 
 		o = s.option(form.Value, 'serial_port', _('Serial Port'));
-		o.placeholder = '/dev/ttyATH0';
 		o.rmempty = false;
+		applySchemaDefault(o, 'serial_port', false);
 
 		o = s.option(form.ListValue, 'serial_baud', _('Serial Baud Rate'));
 		['2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400', '460800', '500000', '921600', '1000000'].forEach(function (b) {
 			o.value(b);
 		});
-		o.default = '115200';
 		o.rmempty = false;
+		applySchemaDefault(o, 'serial_baud', true);
 
 		o = s.option(form.ListValue, 'serial_safe_baud', _('Safe Serial Baud Rate'),
 			_('Initial baudrate for negotiation. Use 115200 for safety.'));
 		['2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400', '460800', '500000', '921600', '1000000'].forEach(function (b) {
 			o.value(b);
 		});
-		o.default = '115200';
 		o.rmempty = false;
+		applySchemaDefault(o, 'serial_safe_baud', true);
 
 		o = s.option(form.Value, 'cloud_host', _('Cloud Host'));
-		o.placeholder = '127.0.0.1';
 		o.rmempty = false;
+		applySchemaDefault(o, 'cloud_host', false);
 
 		o = s.option(form.Value, 'cloud_port', _('Cloud Port'));
 		o.datatype = 'port';
-		o.placeholder = '8443';
 		o.rmempty = false;
+		applySchemaDefault(o, 'cloud_port', false);
 
 		o = s.option(form.Value, 'cloud_user', _('Cloud Username'));
 		o.rmempty = true;
@@ -81,18 +104,18 @@ return view.extend({
 		o = s.option(form.Flag, 'cloud_tls', _('Enable TLS/SSL'),
 			_('Strongly recommended. Disabling TLS sends credentials and payloads in plaintext.'));
 		o.rmempty = false;
-		o.default = '1';
+		applySchemaDefault(o, 'cloud_tls', true);
 
 		o = s.option(form.Flag, 'cloud_tls_insecure', _('Disable TLS Hostname Verification'),
 			_('Equivalent to insecure TLS. Allows connecting via IP even when the certificate CN/SAN is a DNS name. Less secure; use only for trusted/self-hosted gateways.'));
 		o.depends('cloud_tls', '1');
 		o.rmempty = true;
-		o.default = '0';
+		applySchemaDefault(o, 'cloud_tls_insecure', true);
 
 		o = s.option(form.Value, 'cloud_cafile', _('CA File Path'));
-		o.placeholder = '/etc/ssl/certs/ca-certificates.crt';
 		o.depends('cloud_tls', '1');
 		o.rmempty = true;
+		applySchemaDefault(o, 'cloud_cafile', false);
 		o.validate = function (section_id, value) {
 			if (!value || value === '') return true;
 			if (!value.startsWith('/')) return _('CA file path must be absolute.');
@@ -113,8 +136,8 @@ return view.extend({
 
 		o = s.option(form.Value, 'topic_prefix', _('Topic Prefix'),
 			_('Base prefix used for messages (for example br/d/<pin>).'));
-		o.placeholder = 'br';
 		o.rmempty = false;
+		applySchemaDefault(o, 'topic_prefix', false);
 		o.validate = function (section_id, value) {
 			if (!value || value === '') return _('Topic prefix cannot be empty.');
 			if (/[#+]/.test(value)) return _('Topic prefix cannot contain wildcards.');
@@ -123,8 +146,8 @@ return view.extend({
 
 		o = s.option(form.Value, 'cloud_spool_dir', _('Cloud Spool Directory'),
 			_('Directory used to spool messages when the Cloud Gateway is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear.'));
-		o.placeholder = '/tmp/mcubridge/spool';
 		o.rmempty = false;
+		applySchemaDefault(o, 'cloud_spool_dir', false);
 		o.validate = function (section_id, value) {
 			if (!value || value === '') return _('Spool directory cannot be empty.');
 			if (!value.startsWith('/')) return _('Spool directory must be an absolute path.');
@@ -134,13 +157,13 @@ return view.extend({
 
 		o = s.option(form.Value, 'file_system_root', _('File System Root'),
 			_('Directory exposed for MCU file operations. Use /tmp for tmpfs (Flash-safe) or /mnt/<device> for external storage.'));
-		o.placeholder = '/tmp/yun_files';
 		o.rmempty = false;
+		applySchemaDefault(o, 'file_system_root', false);
 
 		o = s.option(form.Value, 'process_timeout', _('Process Timeout (s)'));
 		o.datatype = 'uinteger';
-		o.placeholder = '10';
 		o.rmempty = false;
+		applySchemaDefault(o, 'process_timeout', false);
 
 		o = s.option(form.Value, 'allowed_commands', _('Allowed Shell Commands'),
 			_('Space separated whitelist for shell execution (leave empty to disable).'));

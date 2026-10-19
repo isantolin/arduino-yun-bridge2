@@ -289,6 +289,8 @@ option (rpc.pb.hardware) = {
   hkdf_handshake_full_tag_size: 32
   max_safety_pins: 8
   max_pin_subscriptions: 8
+  max_mailbox_queue_size_other: 4
+  max_mailbox_queue_size_avr: 4
 };
 option (rpc.pb.status_reasons) = {
   invalid_path: "invalid_path"
@@ -664,6 +666,7 @@ message Hardware {
     (py_type) = "int"
   ];
   uint32 max_mailbox_queue_size_other = 44;
+  uint32 max_mailbox_queue_size_avr = 45;
 }
 
 message Handshake {

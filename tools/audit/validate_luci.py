@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -72,6 +73,34 @@ def validate_luci_app(root_dir: Path | None = None) -> int:
                 else:
                     sys.stderr.write(f"  ✖ Route '{route}' missing view file {expected_js}\n")
                     errors += 1
+
+    # 4. Validate SSoT schema default bindings in config.js
+    schema_file = luci_dir / "htdocs/luci-static/resources/view/mcubridge/config_schema.json"
+    config_js = luci_dir / "htdocs/luci-static/resources/view/mcubridge/config.js"
+    if schema_file.exists() and config_js.exists():
+        try:
+            schema_data = json.loads(schema_file.read_text(encoding="utf-8"))
+            schema_props = schema_data.get("properties", {})
+            js_content = config_js.read_text(encoding="utf-8")
+            refs = re.findall(r"applySchemaDefault\(\s*\w+\s*,\s*['\"]([^'\"]+)['\"]", js_content)
+            if not refs:
+                sys.stderr.write("  ✖ config.js does not contain any applySchemaDefault() calls\n")
+                errors += 1
+            else:
+                missing_props = [ref for ref in refs if ref not in schema_props]
+                if missing_props:
+                    sys.stderr.write(
+                        f"  ✖ config.js references missing schema properties: {', '.join(missing_props)}\n"
+                    )
+                    errors += 1
+                else:
+                    sys.stdout.write(
+                        f"  ✔ config.js SSoT schema defaults verified "
+                        f"({len(refs)} bindings aligned with config_schema.json)\n"
+                    )
+        except (OSError, json.JSONDecodeError) as exc:
+            sys.stderr.write(f"  ✖ Failed to verify config.js schema bindings: {exc}\n")
+            errors += 1
 
     if errors == 0:
         sys.stdout.write("[LuCI-JS] All LuCI JS components valid and ready.\n")

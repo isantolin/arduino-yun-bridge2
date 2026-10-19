@@ -37,6 +37,7 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import (
+    DEFAULT_CLOUD_HOST,
     DEFAULT_CLOUD_PORT,
     PROTOCOL_VERSION,
     REGISTRY,
@@ -889,7 +890,7 @@ class ProtobufGateway:
         key_file: str | None = None,
         ca_file: str | None = None,
         http3_enabled: bool = False,
-        http3_port: int = 8843,
+        http3_port: int = DEFAULT_CLOUD_PORT,
         metrics_port: int | None = None,
         tsdb_url: str | None = None,
         metrics_registry: prometheus_client.CollectorRegistry | None = None,
@@ -1032,14 +1033,14 @@ app = typer.Typer(help="MCU Bridge Protobuf Gateway", add_completion=False)
 
 @app.command()
 def main(
-    host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
+    host: Annotated[str, typer.Option(help="Host to bind to")] = DEFAULT_CLOUD_HOST,
     port: Annotated[int, typer.Option(help="Port to listen on")] = DEFAULT_CLOUD_PORT,
     no_tls: Annotated[bool, typer.Option("--no-tls", help="Disable TLS (insecure mode)")] = False,
     cert: Annotated[Path | None, typer.Option(help="Path to server SSL certificate file")] = None,
     key: Annotated[Path | None, typer.Option(help="Path to server SSL private key file")] = None,
     ca: Annotated[Path | None, typer.Option(help="Path to CA file for client certificate verification")] = None,
     http3: Annotated[bool, typer.Option("--http3", help="Enable HTTP/3 (QUIC) capability")] = False,
-    http3_port: Annotated[int, typer.Option(help="UDP Port for HTTP/3 QUIC listener")] = 8843,
+    http3_port: Annotated[int, typer.Option(help="UDP Port for HTTP/3 QUIC listener")] = DEFAULT_CLOUD_PORT,
     metrics_port: Annotated[int | None, typer.Option(help="Port for fleet Prometheus /metrics endpoint")] = None,
     tsdb_url: Annotated[str | None, typer.Option(help="HTTP endpoint URL for TSDB Line Protocol ingestion")] = None,
 ) -> None:

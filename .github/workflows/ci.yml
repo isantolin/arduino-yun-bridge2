@@ -53,7 +53,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
       - name: Check for Hardcoded Secrets
         if: matrix.env == 'lint'
@@ -102,7 +102,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores and Dependencies
         run: |
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr arduino:samd arduino:esp32
           arduino-cli lib install "Embedded Template Library ETL"
           arduino-cli lib install WiFiNINA
@@ -151,7 +151,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Dependencies
         run: |
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
           arduino-cli lib install "Embedded Template Library ETL"
       - name: Run All Tests with Coverage
@@ -221,7 +221,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
       - name: Install Arduino Dependencies
         run: |
@@ -254,7 +254,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
       - name: Run Fuzzing Campaign
         run: tox -e fuzz
@@ -280,7 +280,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino AVR Core & Libraries
         run: |
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
           arduino-cli lib install wolfSSL
       - name: Run simavr E2E Test Suite
@@ -316,7 +316,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino SAMD Core & Libraries
         run: |
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:samd
           arduino-cli lib install wolfSSL WiFiNINA
       - name: Install Renode
@@ -363,7 +363,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino ESP32 Core & Tools
         run: |
-          arduino-cli core update-index
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:esp32
           arduino-cli lib install wolfSSL
           python -m pip install pyserial esptool

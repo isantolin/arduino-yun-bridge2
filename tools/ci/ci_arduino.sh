@@ -25,7 +25,11 @@ fi
 
 # Update core index
 echo "Updating core index..."
-arduino-cli core update-index || { echo "Failed to update core index"; exit 1; }
+if ! arduino-cli core update-index; then
+    echo "[WARN] arduino-cli core update-index failed; bootstrapping package_index.tar.bz2 directly..."
+    mkdir -p "$HOME/.arduino15"
+    curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"
+fi
 
 # Install the supported board cores used by the compile matrix.
 echo "Installing Arduino AVR, SAMD, and ESP32 cores..."

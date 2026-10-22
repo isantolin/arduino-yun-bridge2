@@ -8,7 +8,6 @@ from collections.abc import AsyncGenerator, Callable
 import grpclib.events
 import structlog
 from grpclib.client import Channel
-from mcubridge.config.logging import configure_logging as configure_logging
 
 from .definitions import build_bridge_args
 from .env import dump_client_env

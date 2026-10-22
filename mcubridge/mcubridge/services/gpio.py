@@ -96,4 +96,3 @@ class GpioService:
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )
         )
-

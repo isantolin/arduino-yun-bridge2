@@ -44,9 +44,7 @@ class ArduinoCoreMetadata:
 
 
 _INCLUDE_PARSER = parse.compile('include "{header}"')
-_CONST_EXPR_PATTERN = re.compile(
-    r"(?:static\s+)?(?:constexpr|const)\s+[a-zA-Z0-9_]+\s+([a-zA-Z0-9_]+)\s*=\s*([^;]+);"
-)
+_CONST_EXPR_PATTERN = re.compile(r"(?:static\s+)?(?:constexpr|const)\s+[a-zA-Z0-9_]+\s+([a-zA-Z0-9_]+)\s*=\s*([^;]+);")
 
 
 def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[str, str]:

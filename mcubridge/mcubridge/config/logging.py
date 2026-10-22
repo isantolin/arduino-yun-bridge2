@@ -103,4 +103,3 @@ def configure_logging(
     _LoggingState.current_handler = handler
     root_logger.setLevel(level)
     logging.getLogger("statemachine").setLevel(logging.WARNING)
-

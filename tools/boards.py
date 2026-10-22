@@ -74,9 +74,7 @@ RENODE_BOARDS: Final[list[tuple[str, str]]] = [
     (b.fqbn, b.detailed_name) for b in OFFICIAL_BOARDS if b.emulator == "renode"
 ]
 
-QEMU_BOARDS: Final[list[tuple[str, str]]] = [
-    (b.fqbn, b.detailed_name) for b in OFFICIAL_BOARDS if b.emulator == "qemu"
-]
+QEMU_BOARDS: Final[list[tuple[str, str]]] = [(b.fqbn, b.detailed_name) for b in OFFICIAL_BOARDS if b.emulator == "qemu"]
 
 FLASH_SECTION_NAMES: Final[frozenset[str]] = frozenset(
     {

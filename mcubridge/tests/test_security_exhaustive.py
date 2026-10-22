@@ -125,7 +125,6 @@ def test_security_crypto_integrity_public_api() -> None:
     assert verify_crypto_integrity()
 
 
-
 @given(
     counter=st.integers(min_value=0, max_value=protocol.NONCE_COUNTER_MASK - 1),
     prefix=st.sampled_from([protocol.MPU_AEAD_NONCE_PREFIX, protocol.MCU_AEAD_NONCE_PREFIX]),

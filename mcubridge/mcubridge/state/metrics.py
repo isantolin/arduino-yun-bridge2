@@ -99,4 +99,3 @@ class DaemonMetrics:
 
         # Connection/Operation Retry Metrics
         self.retries = LabeledCounter()
-

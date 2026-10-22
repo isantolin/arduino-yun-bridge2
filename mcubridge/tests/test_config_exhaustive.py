@@ -198,4 +198,3 @@ def test_load_runtime_config_uci_invalid_fatal() -> None:
 def test_load_runtime_config_cli_invalid_fatal() -> None:
     with pytest.raises(ValueError, match="topic_prefix: value length must be at least 1"):
         load_runtime_config(overrides={"topic_prefix": ""})
-

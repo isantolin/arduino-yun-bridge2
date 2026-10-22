@@ -521,4 +521,3 @@ def test_default_configuration_centralization_ssot() -> None:
     assert "8843" not in gateway_content
 
     assert validate_luci_app(repo_root) == 0
-

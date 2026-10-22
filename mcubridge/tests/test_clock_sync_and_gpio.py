@@ -517,4 +517,3 @@ async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeSe
     assert clock.fsm.idle.is_active
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
-

@@ -178,4 +178,3 @@ def load_runtime_config(
             raise RuntimeError(f"Invalid system configuration: {e}") from e
         logger.critical("Configuration validation failed", error=str(e))
         raise
-

@@ -282,8 +282,7 @@ def run_renode_emulation(
     renode_log = temp_dir / "renode.log"
     template_content = resc_template.read_text(encoding="utf-8")
     rendered_resc = (
-        template_content
-        .replace("$ELF_PATH", f"@{firmware_path.resolve()}")
+        template_content.replace("$ELF_PATH", f"@{firmware_path.resolve()}")
         .replace("$UART_PORT", str(port))
         .replace("$ORIGIN/mkrwifi1010.repl", f"@{repl_template.resolve()}")
     )

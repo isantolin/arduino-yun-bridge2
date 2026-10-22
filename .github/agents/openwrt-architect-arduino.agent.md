@@ -1,1 +1,1 @@
-../../GEMINI.md
+../../.agents/rules/openwrt-architect-arduino.agent.md

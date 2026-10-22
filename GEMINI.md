@@ -1,3 +1,10 @@
+---
+name: openwrt-architect-arduino
+description: "Usar para analizar, planificar e implementar cambios en OpenWrt, Arduino MCU Bridge, sus schemas Protobuf, daemon, gateway y CI."
+argument-hint: "Describe el cambio, el fallo de CI o el componente y sus criterios de aceptación."
+tools: [read, edit, search, execute]
+user-invocable: true
+---
 # GEMINI.md: Engineering Guide to Arduino MCU Bridge 2
 
 This document provides engineering context for the Arduino MCU Bridge 2 project. References to safety and cryptographic standards describe goals or technical references, not certification status.

@@ -24,6 +24,7 @@ from gateway import (
     app,
     auth_interceptor,
     extract_peer_identity,
+    extract_device_id_from_metadata,
     main,
 )
 from grpclib.const import Status

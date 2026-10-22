@@ -99,7 +99,7 @@ rationale = "Asynchronous file I/O (anyio.Path), structured concurrency, and typ
 [[dependency]]
 name = "parse"
 openwrt = "python3-parse"
-pip = "parse==1.22.3"
+pip = "parse==1.22.4"
 rationale = "Declarative topic path parsing and compilation (SIL-2)"
 
 [[dependency]]
@@ -307,7 +307,7 @@ rationale = "Style guide enforcement and PEP 8 linter"
 
 [[dev_dependency]]
 name = "semgrep"
-pip = "semgrep==1.181.0"
+pip = "semgrep==1.182.1"
 rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and deterministic coding rules"
 
 [[dev_dependency]]
@@ -337,7 +337,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.2"
+pip = "hypothesis==6.170.5"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -377,7 +377,7 @@ rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
 
 [[dev_dependency]]
 name = "setuptools"
-pip = "setuptools==84.0.0"
+pip = "setuptools==84.2.1"
 rationale = "Core packaging and distribution utilities for Python environments"
 
 [[dev_dependency]]

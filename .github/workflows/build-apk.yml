@@ -87,7 +87,7 @@ jobs:
         run: |
           mkdir -p dl
           pip download --no-binary=:all: --no-deps -d dl -r requirements/runtime.txt
-          pip download --no-binary=:all: --no-deps -d dl "setuptools==84.0.0"
+          pip download --no-binary=:all: --no-deps -d dl "setuptools==84.2.1"
 
       - name: Compile Packages
         run: |

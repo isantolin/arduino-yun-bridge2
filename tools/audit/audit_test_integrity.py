@@ -50,6 +50,7 @@ IGNORED_IDENTIFIERS = {
 }
 
 ALLOWLIST_PY_HELPERS = {
+    "emit_bridge_snapshot",
     "hexdump_processor",
     "coerce_path",
     "coerce_commands",

@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Annotated
 
@@ -52,7 +51,7 @@ def main(
 
             shutil.rmtree(pkg_dest)
 
-        rel_target = os.path.relpath(src, dest)
+        rel_target = src.relative_to(dest, walk_up=True)
         pkg_dest.symlink_to(rel_target)
         print(f"[sync-feed] Linked {pkg_name} -> {rel_target}")
 

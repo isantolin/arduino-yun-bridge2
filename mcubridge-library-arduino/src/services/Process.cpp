@@ -27,22 +27,18 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   etl::string<rpc::MAX_PAYLOAD_SIZE> command_buffer;
-  bool ok = true;
-  if (cmd.size() <= command_buffer.available()) {
+  bool ok = (cmd.size() <= command_buffer.available());
+  if (ok) {
     command_buffer.append(cmd.begin(), cmd.end());
-  } else {
-    ok = false;
+    ok = etl::all_of(args.begin(), args.end(), [&](const auto& arg) {
+      if (1U + arg.size() > command_buffer.available()) {
+        return false;
+      }
+      command_buffer.append(" ");
+      command_buffer.append(arg.begin(), arg.end());
+      return true;
+    });
   }
-
-  etl::for_each(args.begin(), args.end(), [&](const auto& arg) {
-    if (!ok) return;
-    if (1U + arg.size() > command_buffer.available()) {
-      ok = false;
-      return;
-    }
-    command_buffer.append(" ");
-    command_buffer.append(arg.begin(), arg.end());
-  });
 
   if (!ok) {
     Bridge.emitStatus(

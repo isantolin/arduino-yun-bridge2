@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import esprima
+import typer
 
 
 def validate_luci_app(root_dir: Path | None = None) -> int:
@@ -146,17 +147,21 @@ def validate_luci_rpc_endpoint(host: str, user: str = "root", password: str = ""
         return 1
 
 
-def main() -> int:
+app = typer.Typer(add_completion=False)
+
+
+@app.command()
+def main(
+    rpc_host: str | None = typer.Option(None, "--rpc-host", help="Optional RPC host to validate"),
+) -> None:
     exit_code = validate_luci_app()
-    if "--rpc-host" in sys.argv:
-        idx = sys.argv.index("--rpc-host")
-        if idx + 1 < len(sys.argv):
-            rpc_host = sys.argv[idx + 1]
-            rpc_res = validate_luci_rpc_endpoint(rpc_host)
-            if rpc_res != 0:
-                return rpc_res
-    return exit_code
+    if rpc_host:
+        rpc_res = validate_luci_rpc_endpoint(rpc_host)
+        if rpc_res != 0:
+            raise typer.Exit(code=rpc_res)
+    if exit_code != 0:
+        raise typer.Exit(code=exit_code)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

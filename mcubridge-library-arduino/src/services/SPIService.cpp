@@ -39,24 +39,17 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   const uint32_t start = millis();
   size_t transferred = 0U;
 
-  bool timed_out = false;
-  etl::for_each(buffer.begin(), buffer.end(), [&](auto& b) {
-    if (timed_out) return;
+  const bool completed = etl::all_of(buffer.begin(), buffer.end(), [&](auto& b) {
     if (millis() - start > rpc::RPC_SPI_TIMEOUT_MS) {
-      timed_out = true;
-      return;
+      return false;
     }
     b = SPI.transfer(b);
     ++transferred;
+    return true;
   });
 
-  if (timed_out) {
-    SPI.endTransaction();
-    return 0;
-  }
-
   SPI.endTransaction();
-  return transferred;
+  return completed ? transferred : 0;
 }
 
 SPIServiceType SPIService;

@@ -54,11 +54,12 @@ def test_create_allowed_policy() -> None:
     assert policy_sorted.entries == ["cat", "grep", "ls"]
 
 
-def test_allows_topic() -> None:
+def test_allows_method() -> None:
     auth = pb.TopicAuthorization(digital_read=True, digital_write=False)
-    assert REGISTRY.allows_topic(auth, "d", "read") is True
-    assert REGISTRY.allows_topic(auth, "d", "write") is False
-    assert REGISTRY.allows_topic(auth, "unknown", "action") is False
+    spec_read = REGISTRY.get(pb.Command.CMD_DIGITAL_READ)
+    spec_write = REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE)
+    assert spec_read is not None and REGISTRY.allows_method(auth, spec_read) is True
+    assert spec_write is not None and REGISTRY.allows_method(auth, spec_write) is False
 
 
 def _valid_runtime_config() -> pb.RuntimeConfig:
@@ -312,7 +313,8 @@ def test_structures_coverage_boost() -> None:
     class MockAllowAllAuth:
         allow_all = True
 
-    assert REGISTRY.allows_topic(MockAllowAllAuth(), "d", "write") is True
+    spec_write = REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE)
+    assert spec_write is not None and REGISTRY.allows_method(MockAllowAllAuth(), spec_write) is True
     assert REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE) is not None
     assert REGISTRY.get(pb.DigitalWrite) is not None
     assert REGISTRY.get(pb.DigitalWrite()) is not None

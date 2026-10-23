@@ -87,7 +87,6 @@ ALLOWLIST_PY_HELPERS = {
     "lookup_topic",
     "request_mcu_version",
     "normalize_config_dict",
-    "allows_topic",
     "vacuum_lmdb_env",
     "connect_and_run",
 }

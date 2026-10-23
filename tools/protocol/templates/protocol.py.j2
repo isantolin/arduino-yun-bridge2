@@ -226,12 +226,6 @@ class ProtocolRegistry:
             or self.topic_auth_map.get((topic.upper(), action.upper()))
         )
 
-    def allows_topic(self, auth: Any, topic: str, action: str) -> bool:
-        if getattr(auth, "allow_all", False):
-            return True
-        field_name = self.get_auth_field(topic, action)
-        return bool(field_name and getattr(auth, field_name, False))
-
     def allows_method(self, auth: Any, spec: OperationSpec) -> bool:
         """Verify whether authorization config permits executing this RPC operation."""
         if getattr(auth, "allow_all", False):

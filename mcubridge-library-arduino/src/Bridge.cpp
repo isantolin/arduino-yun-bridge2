@@ -3,6 +3,7 @@
 #include <etl/absolute.h>
 #include <etl/algorithm.h>
 #include <etl/byte_stream.h>
+#include <etl/fixed_iterator.h>
 #include <etl/functional.h>
 #include <etl/iterator.h>
 #include <etl/utility.h>
@@ -399,6 +400,29 @@ void BridgeClass::_timerTask() {
   }
 }
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
+
+bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
+                                       uint32_t poll_delay_ms) {
+  // [SIL-2] Termination is guaranteed by the monotonic deadline: every
+  // unsuccessful poll advances time by at least one millisecond.
+  const uint32_t start_ms = ::millis();
+  const uint32_t step_ms = etl::max<uint32_t>(poll_delay_ms, 1U);
+  uint8_t cursor = 0U;
+  uint8_t sentinel = 0U;
+  const auto it = etl::find_if(etl::fixed_iterator<uint8_t*>(&cursor),
+                               etl::fixed_iterator<uint8_t*>(&sentinel),
+                               [this, start_ms, timeout_ms, step_ms](uint8_t) {
+                                 process();
+                                 if (isSynchronized()) return true;
+                                 if (::millis() - start_ms >= timeout_ms)
+                                   return true;
+                                 ::delay(step_ms);
+                                 return false;
+                               });
+  static_cast<void>(it);
+  if (!isSynchronized()) enterSafeState();
+  return isSynchronized();
+}
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid())
     _command_handler(*ctx.envelope);

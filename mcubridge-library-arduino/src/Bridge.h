@@ -110,12 +110,12 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
-  void awaitSynchronization(uint32_t poll_delay_ms = 10) {
-    while (!isSynchronized()) {
-      process();
-      ::delay(poll_delay_ms);
-    }
-  }
+  // [SIL-2] Bounded synchronization: polls process() until the link is
+  // synchronized or timeout_ms elapses. Enters safe state on timeout.
+  // Returns isSynchronized().
+  bool awaitSynchronization(
+      uint32_t timeout_ms = bridge::config::SYNC_TIMEOUT_MS,
+      uint32_t poll_delay_ms = 2);
   bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
   void resetWcetStats() { _wcet_max_micros = 0; }

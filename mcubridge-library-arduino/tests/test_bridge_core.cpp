@@ -218,11 +218,33 @@ void test_bridge_status_ack() {
 void test_bridge_post_and_stack_sentinel() {
   TEST_ASSERT_TRUE(bridge::hal::run_power_on_self_tests());
   TEST_ASSERT_TRUE(bridge::hal::checkStackOverflow());
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT16(bridge::hal::MIN_STACK_MARGIN_BYTES,
-                                      bridge::hal::getFreeStackMargin());
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(bridge::hal::MIN_STACK_MARGIN_BYTES,
+                                      bridge::hal::getFreeMemory());
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT16(bridge::hal::MIN_STACK_MARGIN_BYTES,
-                                      Bridge.getFreeStackMargin());
+}
+
+void test_bridge_await_synchronization_bounded() {
+  reset_bridge();
+  auto& ba = TestAccessor::create(Bridge);
+
+  // Timeout path: no MPU handshake -> bounded exit into safe state.
+  const uint32_t start_ms = bridge::test::fault::clock_ms();
+  TEST_ASSERT_FALSE(Bridge.awaitSynchronization(50U, 5U));
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(50U,
+                                      bridge::test::fault::clock_ms() - start_ms);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isTxEnabled());
+
+  // Zero poll delay is clamped to 1 ms so the deadline still terminates.
+  TEST_ASSERT_FALSE(Bridge.awaitSynchronization(3U, 0U));
+
+  // Already synchronized: returns immediately without advancing the clock.
+  reset_bridge();
+  ba.setSynchronized();
+  const uint32_t sync_start_ms = bridge::test::fault::clock_ms();
+  TEST_ASSERT_TRUE(Bridge.awaitSynchronization(50U, 5U));
+  TEST_ASSERT_EQUAL_UINT32(sync_start_ms, bridge::test::fault::clock_ms());
+  TEST_ASSERT_TRUE(ba.isTxEnabled());
 }
 
 void test_bridge_wcet_tracking() {
@@ -255,7 +277,14 @@ void test_bridge_handshake_timeout_not_sync() {
 }
 
 namespace {
-void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
+rpc::StatusCode g_last_status = rpc::StatusCode::STATUS_OK;
+size_t g_last_status_len = 0U;
+size_t g_status_calls = 0U;
+void capture_status_handler(rpc::StatusCode s, etl::span<const uint8_t> p) {
+  g_last_status = s;
+  g_last_status_len = p.size();
+  ++g_status_calls;
+}
 }  // namespace
 
 void test_bridge_queue_full_and_flow_control() {
@@ -271,22 +300,38 @@ void test_bridge_queue_full_and_flow_control() {
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
   TEST_ASSERT_FALSE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 105));
 
-  Bridge.signalXoff();
-  Bridge.signalXon();
+  // Flow-control frames are system commands: they bypass the full TX queue.
+  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_XOFF));
+  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_XON));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_bridge_emit_status_variants() {
   reset_bridge();
-  Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
+  g_status_calls = 0U;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_status_handler>());
+
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK);
+  TEST_ASSERT_EQUAL_UINT32(1U, g_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_OK),
+                        static_cast<int>(g_last_status));
+  TEST_ASSERT_EQUAL_UINT32(0U, g_last_status_len);
+
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view("Error"));
+  TEST_ASSERT_EQUAL_UINT32(2U, g_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_ERROR),
+                        static_cast<int>(g_last_status));
+  TEST_ASSERT_EQUAL_UINT32(5U, g_last_status_len);
+
+  const etl::array<uint8_t, 3> raw = {1U, 2U, 3U};
+  Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED,
+                    etl::span<const uint8_t>(raw.data(), raw.size()));
+  TEST_ASSERT_EQUAL_UINT32(3U, g_status_calls);
+  TEST_ASSERT_EQUAL_UINT32(3U, g_last_status_len);
 
   Bridge.onStatus(BridgeClass::StatusHandler());
-  Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED, F("FlashError"));
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
-  Bridge.emitStatus(rpc::StatusCode::STATUS_OK,
-                    (const __FlashStringHelper*)nullptr);
+  TEST_ASSERT_EQUAL_UINT32(3U, g_status_calls);
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
 }
 
@@ -1050,6 +1095,7 @@ int main() {
   RUN_TEST(test_bridge_dedup_console_write);
   RUN_TEST(test_bridge_status_ack);
   RUN_TEST(test_bridge_post_and_stack_sentinel);
+  RUN_TEST(test_bridge_await_synchronization_bounded);
   RUN_TEST(test_bridge_wcet_tracking);
   RUN_TEST(test_bridge_begin_null_secret);
   RUN_TEST(test_bridge_handshake_timeout_not_sync);

@@ -128,7 +128,6 @@ class TestAccessor : public BridgeClass {
     _pending_tx_queue.push_back({command_id, sequence_id, nullptr, length});
   }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
-  void onBootloaderDelay() { _onBootloaderDelay(); }
   void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
     _applyTimingConfig(msg);
   }

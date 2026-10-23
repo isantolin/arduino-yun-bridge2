@@ -103,32 +103,7 @@ void setup() {
     Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
     // [SIL-2] Bounded synchronization: wait for daemon handshake
-    {
-      constexpr size_t OUTER_STEPS = 300;
-      constexpr size_t INNER_STEPS = 50;
-      etl::array<uint8_t, OUTER_STEPS> outer_ticks{};
-      etl::array<uint8_t, INNER_STEPS> inner_polls{};
-      const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
-      auto sync_it =
-          etl::find_if(outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
-            if (Bridge.isSynchronized()) return true;
-            if (static_cast<int32_t>(millis() - sync_deadline) > 0) return true;
-            auto inner_it = etl::find_if(inner_polls.begin(), inner_polls.end(),
-                                         [&](uint8_t) {
-                                           if (Bridge.isSynchronized())
-                                             return true;
-                                           Bridge.process();
-                                           delay(2);
-                                           return false;
-                                         });
-            (void)inner_it;
-            return Bridge.isSynchronized();
-          });
-      (void)sync_it;
-      if (!Bridge.isSynchronized()) {
-        Bridge.enterSafeState();
-      }
-    }
+    Bridge.awaitSynchronization();
 
     if (Bridge.isSynchronized()) {
       digitalWrite(LED_BUILTIN, HIGH);
@@ -148,34 +123,7 @@ void loop() {
           client.connect(BRIDGE_HOST, BRIDGE_PORT)) {
         Bridge.setStream(client);
         Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
-        {
-          constexpr size_t OUTER_STEPS = 300;
-          constexpr size_t INNER_STEPS = 50;
-          etl::array<uint8_t, OUTER_STEPS> outer_ticks{};
-          etl::array<uint8_t, INNER_STEPS> inner_polls{};
-          const uint32_t sync_deadline =
-              millis() + bridge::config::SYNC_TIMEOUT_MS;
-          auto sync_it = etl::find_if(
-              outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
-                if (Bridge.isSynchronized()) return true;
-                if (static_cast<int32_t>(millis() - sync_deadline) > 0)
-                  return true;
-                auto inner_it = etl::find_if(inner_polls.begin(),
-                                             inner_polls.end(), [&](uint8_t) {
-                                               if (Bridge.isSynchronized())
-                                                 return true;
-                                               Bridge.process();
-                                               delay(2);
-                                               return false;
-                                             });
-                (void)inner_it;
-                return Bridge.isSynchronized();
-              });
-          (void)sync_it;
-          if (!Bridge.isSynchronized()) {
-            Bridge.enterSafeState();
-          }
-        }
+        Bridge.awaitSynchronization();
         if (Bridge.isSynchronized()) {
           digitalWrite(LED_BUILTIN, HIGH);
         }

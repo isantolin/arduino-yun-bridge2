@@ -130,7 +130,7 @@ class FaultState : public BaseBridgeState<FaultState, StateId::FAULT, EvReset> {
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_enter_state() override {
     bridge::hal::forceSafeState();
-    return etl::fsm_state_empty::No_State_Change;
+    return etl::ifsm_state::No_State_Change;
   }
 };
 
@@ -141,7 +141,7 @@ class EnteringBootloaderState
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_enter_state() override {
     bridge::hal::forceSafeState();
-    return etl::fsm_state_empty::No_State_Change;
+    return etl::ifsm_state::No_State_Change;
   }
 };
 

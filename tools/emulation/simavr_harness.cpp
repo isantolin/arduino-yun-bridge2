@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
+#include <etl/fixed_iterator.h>
 #include <etl/queue.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
@@ -242,14 +243,15 @@ class SimavrHardwareBridge {
       return;
     }
     is_draining_ = true;
-    etl::for_each(drain_batch_.begin(), drain_batch_.end(),
-                  [this](uint8_t& /* step */) {
-                    if (avr_uart_xon_ && !host_to_avr_fifo_.empty()) {
-                      const uint8_t byte = host_to_avr_fifo_.front();
-                      host_to_avr_fifo_.pop();
-                      avr_raise_irq(uart_in_irq_, byte);
-                    }
-                  });
+    uint8_t dummy = 0;
+    etl::fixed_iterator<uint8_t*> it(&dummy);
+    etl::for_each_n(it, DRAIN_BATCH_CYCLES, [this](uint8_t&) {
+      if (avr_uart_xon_ && !host_to_avr_fifo_.empty()) {
+        const uint8_t byte = host_to_avr_fifo_.front();
+        host_to_avr_fifo_.pop();
+        avr_raise_irq(uart_in_irq_, byte);
+      }
+    });
     is_draining_ = false;
   }
 
@@ -287,24 +289,24 @@ class SimavrHardwareBridge {
     }
     const uint8_t byte = static_cast<uint8_t>(value);
     bool delivered = false;
-    etl::array<uint8_t, 200> retry_batch{};
-    etl::for_each(
-        retry_batch.begin(), retry_batch.end(), [&](uint8_t& /* retry */) {
-          if (delivered) {
-            return;
-          }
-          const ssize_t written = write(self->master_fd_, &byte, 1);
-          if (written == 1) {
-            delivered = true;
-            return;
-          }
-          if (written < 0 &&
-              (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
-            struct timespec ts{};
-            ts.tv_nsec = 50000;  // 50 microseconds
-            nanosleep(&ts, nullptr);
-          }
-        });
+    uint8_t dummy = 0;
+    etl::fixed_iterator<uint8_t*> it(&dummy);
+    etl::for_each_n(it, 200, [&](uint8_t&) {
+      if (delivered) {
+        return;
+      }
+      const ssize_t written = write(self->master_fd_, &byte, 1);
+      if (written == 1) {
+        delivered = true;
+        return;
+      }
+      if (written < 0 &&
+          (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+        struct timespec ts{};
+        ts.tv_nsec = 50000;  // 50 microseconds
+        nanosleep(&ts, nullptr);
+      }
+    });
     if (!delivered) {
       fprintf(stderr, "[ERROR] simavr PTY write failed: byte 0x%02X lost\n",
               byte);
@@ -330,12 +332,13 @@ class SimavrHardwareBridge {
     drain_host_fifo_to_avr();
 
     /* Execute standard instruction batch for main loop processing */
-    etl::for_each(
-        step_batch_.begin(), step_batch_.end(), [this](uint8_t& /* step */) {
-          if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
-            avr_run(avr_);
-          }
-        });
+    uint8_t step_dummy = 0;
+    etl::fixed_iterator<uint8_t*> step_it(&step_dummy);
+    etl::for_each_n(step_it, BATCH_INSTRUCTION_CYCLES, [this](uint8_t&) {
+      if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
+        avr_run(avr_);
+      }
+    });
 
     /* Drain any remaining buffered bytes after AVR steps */
     drain_host_fifo_to_avr();
@@ -351,8 +354,6 @@ class SimavrHardwareBridge {
   bool is_draining_{false};
   etl::array<uint8_t, RX_BUFFER_CAPACITY> rx_buf_{};
   etl::queue<uint8_t, HOST_FIFO_CAPACITY> host_to_avr_fifo_{};
-  etl::array<uint8_t, DRAIN_BATCH_CYCLES> drain_batch_{};
-  etl::array<uint8_t, BATCH_INSTRUCTION_CYCLES> step_batch_{};
 };
 
 }  // namespace

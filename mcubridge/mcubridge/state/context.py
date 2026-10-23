@@ -482,12 +482,10 @@ class RuntimeState:
             start_value=self.cloud_link_state,
             listeners=[self],
         )
-        self._connected_via_http3: bool = bool(kwargs.get("connected_via_http3", False))
-        self._cloud_spool_degraded: bool = bool(kwargs.get("cloud_spool_degraded", False))
 
         if kwargs.get("mcu_is_paused", False):
             self.connection_fsm.pause()
-        if self._connected_via_http3:
+        if kwargs.get("connected_via_http3", False):
             self.cloud_fsm.connect_http3()
         if kwargs.get("cloud_spool_degraded", False):
             self.cloud_fsm.degrade()
@@ -531,28 +529,23 @@ class RuntimeState:
 
     @property
     def cloud_spool_degraded(self) -> bool:
-        return self._cloud_spool_degraded or self.cloud_fsm.spooling_degraded.is_active
+        return self.cloud_fsm.spooling_degraded.is_active
 
     @cloud_spool_degraded.setter
     def cloud_spool_degraded(self, value: bool) -> None:
-        self._cloud_spool_degraded = value
         if value:
             if not self.cloud_fsm.spooling_degraded.is_active and not self.cloud_fsm.disabled.is_active:
                 self.cloud_fsm.degrade()
         else:
             if self.cloud_fsm.spooling_degraded.is_active:
-                if self._connected_via_http3:
-                    self.cloud_fsm.connect_http3()
-                else:
-                    self.cloud_fsm.connect_http2()
+                self.cloud_fsm.connect_http3()
 
     @property
     def connected_via_http3(self) -> bool:
-        return self._connected_via_http3
+        return self.cloud_fsm.connected_http3.is_active
 
     @connected_via_http3.setter
     def connected_via_http3(self, value: bool) -> None:
-        self._connected_via_http3 = value
         if value and not self.cloud_fsm.connected_http3.is_active and not self.cloud_fsm.disabled.is_active:
             self.cloud_fsm.connect_http3()
 
@@ -593,24 +586,6 @@ class RuntimeState:
         """[SIL-2] Native hook executed on entering negotiating_baud state."""
         if getattr(self, "serial_tx_allowed", None) is not None:
             self.serial_tx_allowed.clear()
-
-    def on_enter_connected_http3(self) -> None:
-        """[SIL-2] Native hook executed on entering connected_http3 state."""
-        self._connected_via_http3 = True
-        self._cloud_spool_degraded = False
-
-    def on_enter_connected_http2(self) -> None:
-        """[SIL-2] Native hook executed on entering connected_http2 state."""
-        self._connected_via_http3 = False
-        self._cloud_spool_degraded = False
-
-    def on_enter_spooling_degraded(self) -> None:
-        """[SIL-2] Native hook executed on entering spooling_degraded state."""
-        self._cloud_spool_degraded = True
-
-    def on_enter_disabled(self) -> None:
-        """[SIL-2] Native hook executed on entering disabled state."""
-        self._connected_via_http3 = False
 
     @property
     def handshake_failures(self) -> int:

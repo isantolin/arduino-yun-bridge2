@@ -161,34 +161,21 @@ async def publish_bridge_snapshots(
         await asyncio.Event().wait()
         return
 
+    async def _snapshot_loop(flavor: str, interval: int) -> None:
+        while True:
+            try:
+                await emit_bridge_snapshot(state, enqueue, flavor=flavor)
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError) as e:
+                logger.error(f"Bridge {flavor} emit failed", error=str(e))
+            await asyncio.sleep(interval)
+
     async with asyncio.TaskGroup() as tg:
         if summary_seconds is not None:
-
-            async def _summary_loop() -> None:
-                while True:
-                    try:
-                        await emit_bridge_snapshot(state, enqueue, flavor="summary")
-                    except asyncio.CancelledError:
-                        raise
-                    except (OSError, RuntimeError) as e:
-                        logger.error("Bridge summary emit failed", error=str(e))
-                    await asyncio.sleep(summary_seconds)
-
-            tg.create_task(_summary_loop())
-
+            tg.create_task(_snapshot_loop("summary", summary_seconds))
         if handshake_seconds is not None:
-
-            async def _handshake_loop() -> None:
-                while True:
-                    try:
-                        await emit_bridge_snapshot(state, enqueue, flavor="handshake")
-                    except asyncio.CancelledError:
-                        raise
-                    except (OSError, RuntimeError) as e:
-                        logger.error("Bridge handshake emit failed", error=str(e))
-                    await asyncio.sleep(handshake_seconds)
-
-            tg.create_task(_handshake_loop())
+            tg.create_task(_snapshot_loop("handshake", handshake_seconds))
 
 
 def _build_bridge_snapshot_message(

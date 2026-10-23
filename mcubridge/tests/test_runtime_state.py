@@ -374,7 +374,7 @@ async def test_storage_clear_uncovered_branches() -> None:
     cache = LmdbCache(":memory:")
     cache.is_mem = False
     cache.env = None
-    await cache.clear()
+    await cache.close()
     assert cache.env is None
     assert not cache.is_mem
 

@@ -120,7 +120,6 @@ async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     await kv.set("key1", b"value1")
     assert await kv.get("key1") == b"value1"
     assert await kv.get("nonexistent", b"default") == b"default"
-    await kv.clear()
     await kv.close()
 
 

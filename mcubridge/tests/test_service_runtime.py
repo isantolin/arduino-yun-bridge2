@@ -1342,8 +1342,8 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
 
     enqueued: list[tuple[str, bytes]] = []
 
-    async def mock_enqueue(topic: str, payload: bytes, *args: Any, **kwargs: Any) -> None:
-        enqueued.append((topic, payload))
+    async def mock_enqueue(topic_name: str, payload: bytes, *args: Any, **kwargs: Any) -> None:
+        enqueued.append((topic_name, payload))
 
     svc.enqueue_cloud_publish = mock_enqueue
 

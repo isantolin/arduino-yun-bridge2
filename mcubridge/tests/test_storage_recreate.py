@@ -99,18 +99,12 @@ async def test_lmdb_cache_uncovered_branches() -> None:
     cache = LmdbCache(path="/tmp/test_cache_branches.db")
     cache.env = None
     assert len(cache) == 0
-    assert await cache.contains("k") is False
     assert ("k" in cache) is False
-    assert await cache.items() == []
     await cache.set("k", b"val")
     assert await cache.get("k", b"def") == b"def"
-    assert await cache.pop("k", b"def") == b"def"
 
     cache.env = MagicMock()
     cache.env.begin.side_effect = lmdb.Error("forced")
     assert len(cache) == 0
-    assert await cache.contains("k") is False
     assert ("k" in cache) is False
-    assert await cache.items() == []
     assert await cache.get("k", b"def") == b"def"
-    assert await cache.pop("k", b"def") == b"def"

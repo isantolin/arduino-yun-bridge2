@@ -18,6 +18,8 @@ import tokenize
 import tomllib
 from typing import cast
 
+from google.protobuf.descriptor import FileDescriptor
+
 import sys
 import typer
 import yaml
@@ -352,8 +354,7 @@ def _collect_identifier_suffixes() -> set[str]:
     return identifier_suffixes
 
 
-def _collect_extension_message_types(pb: object) -> set[str]:
-    descriptor = pb.DESCRIPTOR
+def _collect_extension_message_types(descriptor: FileDescriptor) -> set[str]:
     ext_types: set[str] = set()
     for ext in descriptor.extensions_by_name.values():
         if ext.message_type:
@@ -392,7 +393,7 @@ def audit_proto_usage() -> list[str]:
                 if value_desc.name not in identifier_suffixes
             )
 
-    extension_message_types = _collect_extension_message_types(pb)
+    extension_message_types = _collect_extension_message_types(pb.DESCRIPTOR)
     findings.extend(
         f"Unused Protobuf message: {message_desc.name}"
         for message_desc in pb.DESCRIPTOR.message_types_by_name.values()

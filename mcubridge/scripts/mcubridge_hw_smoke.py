@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import shutil
-import subprocess
 import sys
 import time
 from typing import Annotated, Any, cast
@@ -29,34 +27,20 @@ except (ImportError, TypeError) as exc:
 
 
 def ubus_call(obj: str, method: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """Call a UBUS method via python-ubus or fallback to ubus CLI binary."""
+    """Call a UBUS method directly via the native OpenWrt python-ubus library API. [Rule 37]"""
+    if ubus is None:
+        logger.error("Native OpenWrt python-ubus library is required for hardware smoke tests")
+        return None
     payload = params if params is not None else {}
-    if ubus is not None:
-        try:
-            conn: Any = ubus.connect()
-            if conn is not None:
-                res: Any = conn.call(obj, method, payload)
-                if isinstance(res, dict):
-                    return cast(dict[str, Any], res)
-                return {"result": res}
-        except (OSError, RuntimeError, AttributeError) as exc:
-            logger.debug("python-ubus call failed, attempting CLI fallback", method=method, error=str(exc))
-
-    ubus_bin = shutil.which("ubus")
-    if ubus_bin:
-        try:
-            args = [ubus_bin, "call", obj, method]
-            if payload:
-                args.append(json.dumps(payload))
-            proc = subprocess.run(args, check=False, capture_output=True, text=True, timeout=5)
-            if proc.returncode == 0 and proc.stdout.strip():
-                parsed: Any = json.loads(proc.stdout)
-                if isinstance(parsed, dict):
-                    return cast(dict[str, Any], parsed)
-                return {"result": parsed}
-        except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as exc:
-            logger.debug("ubus CLI call failed", method=method, error=str(exc))
-
+    try:
+        conn: Any = ubus.connect()
+        if conn is not None:
+            res: Any = conn.call(obj, method, payload)
+            if isinstance(res, dict):
+                return cast(dict[str, Any], res)
+            return {"result": res}
+    except (OSError, RuntimeError, AttributeError) as exc:
+        logger.error("python-ubus call failed", method=method, error=str(exc))
     return None
 
 

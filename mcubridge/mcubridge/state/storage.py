@@ -10,6 +10,7 @@ from typing import Any, TypeVar
 import anyio.to_thread
 import lmdb
 import structlog
+import tenacity
 
 logger = structlog.get_logger(__name__)
 
@@ -28,29 +29,36 @@ def _open_lmdb_env(
         p.parent.mkdir(parents=True, exist_ok=True)
         env_path = path
 
-    for attempt in range(2):
+    def _cleanup_corrupt_env(retry_state: tenacity.RetryCallState) -> None:
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        logger.warning("LMDB database corrupt or invalid, recreating", path=env_path, error=str(exc))
         try:
-            env = lmdb.open(
-                env_path,
-                max_dbs=1,
-                map_size=map_size,
-                readahead=False,
-                meminit=False,
-                map_async=True,
-                subdir=False,
-            )
-            db = env.open_db(db_name)
-            return env, db
-        except (lmdb.Error, OSError) as exc:
-            if attempt == 0:
-                logger.warning("LMDB database corrupt or invalid, recreating", path=env_path, error=str(exc))
-                target = Path(env_path)
-                try:
-                    target.unlink(missing_ok=True)
-                except OSError as e:
-                    logger.warning("Failed to unlink target path", path=str(target), error=str(e))
-            else:
-                logger.error("Failed to reinitialize LMDB environment", path=env_path, error=str(exc))
+            Path(env_path).unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning("Failed to unlink target path", path=str(Path(env_path)), error=str(e))
+
+    retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_attempt(2),
+        retry=tenacity.retry_if_exception_type((lmdb.Error, OSError)),
+        before_sleep=_cleanup_corrupt_env,
+        reraise=False,
+    )
+    try:
+        for attempt in retryer:
+            with attempt:
+                env = lmdb.open(
+                    env_path,
+                    max_dbs=1,
+                    map_size=map_size,
+                    readahead=False,
+                    meminit=False,
+                    map_async=True,
+                    subdir=False,
+                )
+                db = env.open_db(db_name)
+                return env, db
+    except tenacity.RetryError as exc:
+        logger.error("Failed to reinitialize LMDB environment", path=env_path, error=str(exc))
     return None, None
 
 

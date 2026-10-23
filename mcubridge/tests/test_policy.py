@@ -42,23 +42,21 @@ class TestAllowedCommandPolicy:
         assert not is_command_allowed(policy, "ls")
 
 
-class TestTopicAuthorization:
-    @given(entry=st.sampled_from(list(protocol.REGISTRY.topic_auth_map.items())))
-    def test_default_policy_allows_all_tracked_actions(self, entry: tuple[tuple[str, str], str]) -> None:
-        """Property: Default permissive policy allows all tracked service actions."""
-        (topic, action), _ = entry
-        assert protocol.REGISTRY.allows_topic(_make_auth(), topic, action)
+class TestMethodAuthorization:
+    @given(spec=st.sampled_from([s for s in protocol.REGISTRY.operations if s.auth_field]))
+    def test_default_policy_allows_all_tracked_actions(self, spec: protocol.OperationSpec) -> None:
+        """Property: Default permissive policy allows all tracked service operations."""
+        assert protocol.REGISTRY.allows_method(_make_auth(), spec)
 
-    @given(entry=st.sampled_from(list(protocol.REGISTRY.topic_auth_map.items())))
-    def test_selective_action_denial_and_case_insensitivity(self, entry: tuple[tuple[str, str], str]) -> None:
-        """Property: Disabling a specific permission flag rejects the action under any case variation."""
-        (topic, action), field_name = entry
-        auth = _make_auth(**{field_name: False})
-        assert not protocol.REGISTRY.allows_topic(auth, topic.upper(), action.upper())
-        assert not protocol.REGISTRY.allows_topic(auth, topic.lower(), action.lower())
+    @given(spec=st.sampled_from([s for s in protocol.REGISTRY.operations if s.auth_field]))
+    def test_selective_action_denial(self, spec: protocol.OperationSpec) -> None:
+        """Property: Disabling a specific permission flag rejects the operation."""
+        auth = _make_auth(**{spec.auth_field: False})
+        assert not protocol.REGISTRY.allows_method(auth, spec)
 
-    @given(unknown_topic=st.text(alphabet="xyz123", min_size=6, max_size=10), action=_SAFE_TOKEN)
-    def test_unknown_topics_and_actions_denied(self, unknown_topic: str, action: str) -> None:
-        """Property: Any topic or action not defined in protocol authorization rules defaults to deny."""
+    def test_unregistered_or_empty_auth_field_denied_without_allow_all(self) -> None:
+        """Property: Any operation without an auth_field defaults to deny unless allow_all is set."""
+        spec_unprotected = protocol.OperationSpec(command_id=999, name="unprotected")
         auth = _make_auth()
-        assert not protocol.REGISTRY.allows_topic(auth, unknown_topic, action)
+        assert not protocol.REGISTRY.allows_method(auth, spec_unprotected)
+        assert protocol.REGISTRY.allows_method(_make_auth(allow_all=True), spec_unprotected)

@@ -49,7 +49,7 @@ rationale = "High-performance native async HTTP client for TSDB metrics ingestio
 [[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
-pip = "serialx==1.14.0"
+pip = "serialx==1.15.0"
 rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]
@@ -181,7 +181,7 @@ rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 [[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools==1.84.0"
+pip = "grpcio-tools==1.84.1"
 rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
 
 [[dependency]]
@@ -252,7 +252,7 @@ rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.16.2"
+pip = "coverage==7.17.0"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
@@ -262,7 +262,7 @@ rationale = "Strict static type checker enforcing zero-warning type safety acros
 
 [[dev_dependency]]
 name = "ruff"
-pip = "ruff==0.17.1"
+pip = "ruff==0.17.2"
 rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]
@@ -337,7 +337,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.5"
+pip = "hypothesis==6.170.8"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]

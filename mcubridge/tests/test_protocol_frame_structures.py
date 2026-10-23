@@ -58,8 +58,10 @@ def test_allows_method() -> None:
     auth = pb.TopicAuthorization(digital_read=True, digital_write=False)
     spec_read = REGISTRY.get(pb.Command.CMD_DIGITAL_READ)
     spec_write = REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE)
-    assert spec_read is not None and REGISTRY.allows_method(auth, spec_read) is True
-    assert spec_write is not None and REGISTRY.allows_method(auth, spec_write) is False
+    assert spec_read is not None
+    assert REGISTRY.allows_method(auth, spec_read) is True
+    assert spec_write is not None
+    assert REGISTRY.allows_method(auth, spec_write) is False
 
 
 def _valid_runtime_config() -> pb.RuntimeConfig:
@@ -314,7 +316,8 @@ def test_structures_coverage_boost() -> None:
         allow_all = True
 
     spec_write = REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE)
-    assert spec_write is not None and REGISTRY.allows_method(MockAllowAllAuth(), spec_write) is True
+    assert spec_write is not None
+    assert REGISTRY.allows_method(MockAllowAllAuth(), spec_write) is True
     assert REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE) is not None
     assert REGISTRY.get(pb.DigitalWrite) is not None
     assert REGISTRY.get(pb.DigitalWrite()) is not None

@@ -51,7 +51,8 @@ class TestMethodAuthorization:
     @given(spec=st.sampled_from([s for s in protocol.REGISTRY.operations if s.auth_field]))
     def test_selective_action_denial(self, spec: protocol.OperationSpec) -> None:
         """Property: Disabling a specific permission flag rejects the operation."""
-        auth = _make_auth(**{spec.auth_field: False})
+        auth_field: str = str(spec.auth_field)
+        auth = _make_auth(**{auth_field: False})
         assert not protocol.REGISTRY.allows_method(auth, spec)
 
     def test_unregistered_or_empty_auth_field_denied_without_allow_all(self) -> None:
@@ -59,4 +60,8 @@ class TestMethodAuthorization:
         spec_unprotected = protocol.OperationSpec(command_id=999, name="unprotected")
         auth = _make_auth()
         assert not protocol.REGISTRY.allows_method(auth, spec_unprotected)
-        assert protocol.REGISTRY.allows_method(_make_auth(allow_all=True), spec_unprotected)
+
+        class AllowAllAuth:
+            allow_all = True
+
+        assert protocol.REGISTRY.allows_method(AllowAllAuth(), spec_unprotected)

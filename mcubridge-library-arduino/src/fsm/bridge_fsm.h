@@ -82,18 +82,15 @@ class UnsynchronizedState
 
 class HandshakeState
     : public BaseBridgeState<HandshakeState, StateId::HANDSHAKE,
-                             EvHandshakeComplete, EvHandshakeFailed, EvReset,
+                             EvHandshakeComplete, EvSendCritical, EvHandshakeFailed, EvReset,
                              EvTimeout> {
  public:
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage& msg) {
-    if (msg.get_message_id() == EvSendCritical::ID) {
-      return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
-    }
-    return this->get_state_id();
+  etl::fsm_state_id_t on_event(const EvSendCritical&) {
+    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
 };
 

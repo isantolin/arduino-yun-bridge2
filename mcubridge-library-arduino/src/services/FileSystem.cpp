@@ -54,16 +54,13 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0U;
   const uint32_t start_ms = millis();
 
-  bool finished = false;
   uint8_t dummy = 0U;
   etl::fixed_iterator<uint8_t*> fixed_it(&dummy);
 
-  etl::for_each_n(
-      fixed_it, bridge::config::FILE_MAX_READ_CHUNKS, [&](uint8_t&) {
-        if (finished) return;
+  const bool completed = etl::all_of(
+      fixed_it, fixed_it + bridge::config::FILE_MAX_READ_CHUNKS, [&](uint8_t) {
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-          finished = true;
-          return;
+          return false;
         }
         etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
         auto res = bridge::hal::readFileChunk(
@@ -71,8 +68,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         if (!res) {
           const bool sent = Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           (void)sent;
-          finished = true;
-          return;
+          return false;
         }
 
         rpc::payload::FileReadResponse p = {};
@@ -80,8 +76,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
             p.content,
             etl::span<const uint8_t>(buffer.data(), res->bytes_read));
         if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
-          finished = true;
-          return;
+          return false;
         }
 
         if (!res->has_more) {
@@ -89,12 +84,13 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
           const bool sent =
               Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
           (void)sent;
-          finished = true;
-          return;
+          return false;
         }
 
         offset += res->bytes_read;
+        return true;
       });
+  (void)completed;
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {

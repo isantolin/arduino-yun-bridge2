@@ -63,7 +63,7 @@ void test_bridge_packet_corruption_chaos() {
   etl::array<uint8_t, 3> truncated = {0x02, 0x01, 0x00};
   ba.invokePacketReceived(truncated);
 
-  TEST_ASSERT_TRUE(true);
+  TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
 }
 
 void test_bridge_dispatch_security_denial() {
@@ -93,9 +93,9 @@ void test_bridge_fsm_illegal_transitions() {
   auto& ba = TestAccessor::create(Bridge);
 
   ba.setIdle();
-  // EvAckReceived in Idle should be ignored
-  // We just verify it doesn't crash
-  TEST_ASSERT_TRUE(true);
+  // EvAckReceived in Idle should be ignored and keep link unsynchronized
+  ba.trigger(bridge::fsm::EvAckReceived());
+  TEST_ASSERT_TRUE(ba.isUnsynchronized());
 }
 
 }  // namespace

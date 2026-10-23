@@ -106,7 +106,7 @@ original_get_default_config = mcubridge.config.common.get_default_config
 
 
 class PatchedRuntimeConfig:
-    def __new__(_cls, *args: Any, **kwargs: Any) -> pb.RuntimeConfig:
+    def __new__(_cls: type[PatchedRuntimeConfig], *args: Any, **kwargs: Any) -> pb.RuntimeConfig:
         mappings = {
             "cloud_topic": "topic_prefix",
             "cloud_spool_dir": "cloud_spool_dir",
@@ -228,7 +228,7 @@ def isolate_test_paths() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def reset_logging_handlers():
+def reset_logging_handlers() -> Iterator[None]:
     """Close and remove all logging handlers after each test to prevent ResourceWarnings."""
     yield
     root_logger = logging.getLogger()
@@ -331,7 +331,7 @@ def runtime_state(runtime_config: pb.RuntimeConfig) -> Iterator[RuntimeState]:
 
 
 @pytest.fixture
-def real_config():
+def real_config() -> pb.RuntimeConfig:
     raw = settings.get_default_config()
     raw["serial_shared_secret"] = b"abcd1234"
     raw["serial_retry_timeout"] = 1.0
@@ -347,7 +347,9 @@ def real_config():
 
 
 @pytest.fixture
-def service_stack(runtime_config: pb.RuntimeConfig):
+def service_stack(
+    runtime_config: pb.RuntimeConfig,
+) -> Iterator[tuple[BridgeService, RuntimeState, SerialTransport]]:
     """Provide a complete service stack (Service, State, Serial) for integration testing."""
     state = create_runtime_state(runtime_config)
     serial = SerialTransport(runtime_config, state, None)

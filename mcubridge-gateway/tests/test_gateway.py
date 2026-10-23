@@ -499,7 +499,7 @@ async def test_send_command_success_and_correlation(mock_gateway: ProtobufGatewa
     mock_stream = AsyncMock()
     mock_gateway.connections["device-test"] = mock_stream
 
-    async def _send_and_respond():
+    async def _send_and_respond() -> None:
         await asyncio.sleep(0.01)
         assert mock_gateway.pending_commands == HasLen(1)
         key = list(mock_gateway.pending_commands.keys())[0]
@@ -530,7 +530,7 @@ async def test_send_command_device_disconnected_during_execution(mock_gateway: P
     mock_stream = AsyncMock()
     mock_gateway.connections["device-abort"] = mock_stream
 
-    async def _disconnect_device():
+    async def _disconnect_device() -> None:
         await asyncio.sleep(0.01)
         for (d_id, _), fut in list(mock_gateway.pending_commands.items()):
             if d_id == "device-abort":
@@ -873,6 +873,44 @@ async def test_dispatch_command_branches(
             assert expected_payload_substr in resp.payload
 
 
+async def _assert_local_bridge_rpc_matrix(
+    local_svc: GatewayLocalBridgeService, mock_gateway: ProtobufGateway
+) -> None:
+    rpc_cases: list[tuple[Any, Any, Any]] = [
+        (local_svc.SetPinMode, pb.PinMode(pin=1, mode=pb.PinModeType.PIN_OUTPUT), pb.GenericResponse(status="ok")),
+        (local_svc.DigitalRead, pb.PinRead(pin=13), pb.DigitalReadResponse(value=1)),
+        (local_svc.AnalogWrite, pb.AnalogWrite(pin=9, value=128), pb.GenericResponse(status="ok")),
+        (local_svc.AnalogRead, pb.PinRead(pin=0), pb.AnalogReadResponse(value=512)),
+        (
+            local_svc.PinSubscribe,
+            pb.PinSubscribeRequest(pin=2, enabled=True),
+            pb.PinSubscribeResponse(pin=2, success=True),
+        ),
+        (local_svc.DatastorePut, pb.DatastorePut(key="k", value=b"v"), pb.GenericResponse(status="ok")),
+        (local_svc.DatastoreGet, pb.DatastoreGet(key="k"), pb.DatastoreGetResponse(value=b"v")),
+        (local_svc.MailboxPush, pb.MailboxPush(data=b"m"), pb.GenericResponse(status="ok")),
+        (local_svc.MailboxRead, pb.SubscribeRequest(), pb.MailboxReadResponse(content=b"m")),
+        (local_svc.FileWrite, pb.FileWrite(path="f", data=b"d"), pb.GenericResponse(status="ok")),
+        (local_svc.FileRead, pb.FileRead(path="f"), pb.FileReadResponse(content=b"d")),
+        (local_svc.FileRemove, pb.FileRemove(path="f"), pb.GenericResponse(status="ok")),
+        (local_svc.ProcessRunAsync, pb.ProcessRunAsync(command="echo"), pb.ProcessRunAsyncResponse(pid=123)),
+        (local_svc.ProcessPoll, pb.ProcessPoll(pid=123), pb.ProcessPollResponse(status=0, finished=True)),
+        (local_svc.ProcessKill, pb.ProcessKill(pid=123), pb.GenericResponse(status="ok")),
+        (local_svc.SpiTransfer, pb.SpiTransfer(data=b"x"), pb.SpiTransferResponse(data=b"x")),
+        (local_svc.SpiConfigure, pb.SpiConfig(frequency=1000000), pb.GenericResponse(status="ok")),
+        (local_svc.GetVersion, pb.SubscribeRequest(), pb.VersionResponse(major=2, minor=0, patch=0)),
+        (local_svc.GetFreeMemory, pb.SubscribeRequest(), pb.FreeMemoryResponse(value=1024)),
+        (local_svc.GetStatus, pb.SubscribeRequest(), pb.BridgeStatus()),
+    ]
+    for rpc_fn, req_msg, resp_msg in rpc_cases:
+        rpc_stream = MockGrpcStream(request=req_msg, metadata={"x-device-id": "dev-1"})
+        mock_gateway.send_command = AsyncMock(
+            return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())
+        )
+        await rpc_fn(rpc_stream.as_stream())
+        assert rpc_stream.send_message.called
+
+
 async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGateway) -> None:
     local_svc = GatewayLocalBridgeService(mock_gateway)
 
@@ -920,20 +958,15 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     assert sub_unavail.value.status == Status.UNAVAILABLE
 
     # 5. Metadata resolution edge cases
-    stream_empty_meta = MockGrpcStream(metadata=None)
-    assert extract_device_id_from_metadata(stream_empty_meta.as_stream().metadata) is None
-
-    stream_empty_list = MockGrpcStream(metadata={"x-device-id": []})
-    assert extract_device_id_from_metadata(stream_empty_list.as_stream().metadata) is None
-
-    stream_bytes_meta = MockGrpcStream(metadata={"device-id": b"dev-bytes"})
-    assert extract_device_id_from_metadata(stream_bytes_meta.as_stream().metadata) == "dev-bytes"
-
-    stream_str_meta = MockGrpcStream(metadata={"device_id": "dev-str"})
-    assert extract_device_id_from_metadata(stream_str_meta.as_stream().metadata) == "dev-str"
-
-    stream_list_bytes = MockGrpcStream(metadata={"x-device-id": [b"dev-first"]})
-    assert extract_device_id_from_metadata(stream_list_bytes.as_stream().metadata) == "dev-first"
+    meta_cases: list[tuple[Any, str | None]] = [
+        (None, None),
+        ({"x-device-id": []}, None),
+        ({"device-id": b"dev-bytes"}, "dev-bytes"),
+        ({"device_id": "dev-str"}, "dev-str"),
+        ({"x-device-id": [b"dev-first"]}, "dev-first"),
+    ]
+    for meta_in, expected_dev in meta_cases:
+        assert extract_device_id_from_metadata(MockGrpcStream(metadata=meta_in).as_stream().metadata) == expected_dev
 
     # 6. Stream returns None (client disconnect before sending request)
     stream_none = MockGrpcStream(request=None, metadata={"x-device-id": "dev-1"})
@@ -954,39 +987,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     assert stream_err.sent_message.status == "error"
 
     # 8. Exhaustive invocation of all LocalBridge RPC methods on connected device
-    rpc_cases = [
-        (local_svc.SetPinMode, pb.PinMode(pin=1, mode=pb.PinModeType.PIN_OUTPUT), pb.GenericResponse(status="ok")),
-        (local_svc.DigitalRead, pb.PinRead(pin=13), pb.DigitalReadResponse(value=1)),
-        (local_svc.AnalogWrite, pb.AnalogWrite(pin=9, value=128), pb.GenericResponse(status="ok")),
-        (local_svc.AnalogRead, pb.PinRead(pin=0), pb.AnalogReadResponse(value=512)),
-        (
-            local_svc.PinSubscribe,
-            pb.PinSubscribeRequest(pin=2, enabled=True),
-            pb.PinSubscribeResponse(pin=2, success=True),
-        ),
-        (local_svc.DatastorePut, pb.DatastorePut(key="k", value=b"v"), pb.GenericResponse(status="ok")),
-        (local_svc.DatastoreGet, pb.DatastoreGet(key="k"), pb.DatastoreGetResponse(value=b"v")),
-        (local_svc.MailboxPush, pb.MailboxPush(data=b"m"), pb.GenericResponse(status="ok")),
-        (local_svc.MailboxRead, pb.SubscribeRequest(), pb.MailboxReadResponse(content=b"m")),
-        (local_svc.FileWrite, pb.FileWrite(path="f", data=b"d"), pb.GenericResponse(status="ok")),
-        (local_svc.FileRead, pb.FileRead(path="f"), pb.FileReadResponse(content=b"d")),
-        (local_svc.FileRemove, pb.FileRemove(path="f"), pb.GenericResponse(status="ok")),
-        (local_svc.ProcessRunAsync, pb.ProcessRunAsync(command="echo"), pb.ProcessRunAsyncResponse(pid=123)),
-        (local_svc.ProcessPoll, pb.ProcessPoll(pid=123), pb.ProcessPollResponse(status=0, finished=True)),
-        (local_svc.ProcessKill, pb.ProcessKill(pid=123), pb.GenericResponse(status="ok")),
-        (local_svc.SpiTransfer, pb.SpiTransfer(data=b"x"), pb.SpiTransferResponse(data=b"x")),
-        (local_svc.SpiConfigure, pb.SpiConfig(frequency=1000000), pb.GenericResponse(status="ok")),
-        (local_svc.GetVersion, pb.SubscribeRequest(), pb.VersionResponse(major=2, minor=0, patch=0)),
-        (local_svc.GetFreeMemory, pb.SubscribeRequest(), pb.FreeMemoryResponse(value=1024)),
-        (local_svc.GetStatus, pb.SubscribeRequest(), pb.BridgeStatus()),
-    ]
-    for rpc_fn, req_msg, resp_msg in rpc_cases:
-        rpc_stream = MockGrpcStream(request=req_msg, metadata={"x-device-id": "dev-1"})
-        mock_gateway.send_command = AsyncMock(
-            return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())
-        )
-        await rpc_fn(rpc_stream.as_stream())
-        assert rpc_stream.send_message.called
+    await _assert_local_bridge_rpc_matrix(local_svc, mock_gateway)
 
     # 9. Publish RPC (console routing and missing device_id)
     stream_pub_no_dev = MockGrpcStream(request=pb.CloudQueuedPublish(topic_name="br/test"), metadata={})

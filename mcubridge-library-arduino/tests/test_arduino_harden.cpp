@@ -50,7 +50,7 @@ void test_bridge_unknown_command_jump_table() {
   f.sequence_id = 1;
 
   ba.dispatch(f);
-  TEST_ASSERT_TRUE(true);
+  TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
 }
 
 void test_bridge_tx_queue_full_force() {
@@ -92,7 +92,7 @@ void test_bridge_packet_received_edge_cases() {
   buf[len - 1] ^= 0xFF;  // Break CRC
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
-  TEST_ASSERT_TRUE(true);
+  TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
 }
 
 void test_bridge_ack_orphans() {
@@ -115,7 +115,8 @@ void test_bridge_ack_orphans() {
 void test_bridge_begin_idempotency() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
   Bridge.begin(9600);
-  TEST_ASSERT_TRUE(true);
+  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_bridge_linksync_auth_failure() {
@@ -147,10 +148,12 @@ void test_bridge_retransmit_empty_queue() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  (void)ba;
 
-  // Calling internal retransmit on empty queue should be safe
-  TEST_ASSERT_TRUE(true);
+  // Calling internal timeout/flush on empty queue must remain safe and silent
+  ba.onAckTimeout();
+  ba.flushPendingTxQueue();
+  TEST_ASSERT_EQUAL_UINT32(0, stream.tx_buf.len);
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_bridge_security_pre_sync_rejection() {

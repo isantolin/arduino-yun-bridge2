@@ -151,13 +151,39 @@ _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
 }
 
 
+def _resolve_field_default(
+    field_desc: Any, opts: Any, pb_module: Any, default_sources: dict[str, Any]
+) -> tuple[Any, str | None]:
+    has_literal_default = opts.HasExtension(pb_module.config_default)
+    has_default_ref = opts.HasExtension(pb_module.config_default_ref)
+    if has_literal_default and has_default_ref:
+        raise ValueError(f"RuntimeConfig field '{field_desc.name}' has both default value and default reference")
+    if not has_default_ref:
+        return (opts.Extensions[pb_module.config_default] if has_literal_default else None), None
+    reference = opts.Extensions[pb_module.config_default_ref]
+    source_name, separator, field_name = reference.partition(".")
+    source = default_sources.get(source_name)
+    if not separator or not field_name or source is None:
+        raise ValueError(f"Invalid RuntimeConfig default reference '{reference}'")
+    if field_name not in source.DESCRIPTOR.fields_by_name:
+        raise ValueError(f"Unknown RuntimeConfig default reference '{reference}'")
+    return getattr(source, field_name), reference
+
+
+def _opt_ext(opts: Any, ext: Any, default: Any = None) -> Any:
+    return opts.Extensions[ext] if opts.HasExtension(ext) else default
+
+
 def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFieldDef]:
     all_descs = [file_desc, *file_desc.dependencies]
-    runtime_config_desc = None
-    for dep in all_descs:
-        if "RuntimeConfig" in dep.message_types_by_name:
-            runtime_config_desc = dep.message_types_by_name["RuntimeConfig"]
-            break
+    runtime_config_desc = next(
+        (
+            dep.message_types_by_name["RuntimeConfig"]
+            for dep in all_descs
+            if "RuntimeConfig" in dep.message_types_by_name
+        ),
+        None,
+    )
     if not runtime_config_desc:
         return []
 
@@ -168,37 +194,11 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
             default_sources["constants"] = opts.Extensions[pb_module.constants]
         if opts.HasExtension(pb_module.cloud_defaults):
             default_sources["cloud_defaults"] = opts.Extensions[pb_module.cloud_defaults]
+
     runtime_config_fields: list[ConfigFieldDef] = []
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
-        has_literal_default = opts.HasExtension(pb_module.config_default)
-        has_default_ref = opts.HasExtension(pb_module.config_default_ref)
-        config_default_ref: str | None = None
-        if has_literal_default and has_default_ref:
-            raise ValueError(f"RuntimeConfig field '{field_desc.name}' has both default value and default reference")
-        if has_default_ref:
-            reference = opts.Extensions[pb_module.config_default_ref]
-            config_default_ref = reference
-            source_name, separator, field_name = reference.partition(".")
-            source = default_sources.get(source_name)
-            if not separator or not field_name or source is None:
-                raise ValueError(f"Invalid RuntimeConfig default reference '{reference}'")
-            if field_name not in source.DESCRIPTOR.fields_by_name:
-                raise ValueError(f"Unknown RuntimeConfig default reference '{reference}'")
-            cfg_default = getattr(source, field_name)
-        else:
-            cfg_default = opts.Extensions[pb_module.config_default] if has_literal_default else None
-        cfg_desc = opts.Extensions[pb_module.config_desc] if opts.HasExtension(pb_module.config_desc) else ""
-        cfg_volatile = (
-            opts.Extensions[pb_module.config_volatile] if opts.HasExtension(pb_module.config_volatile) else False
-        )
-        cfg_min = opts.Extensions[pb_module.config_min] if opts.HasExtension(pb_module.config_min) else None
-        cfg_max = opts.Extensions[pb_module.config_max] if opts.HasExtension(pb_module.config_max) else None
-        uci_opt = opts.Extensions[pb_module.uci_option] if opts.HasExtension(pb_module.uci_option) else None
-        client_constant = (
-            opts.Extensions[pb_module.client_constant] if opts.HasExtension(pb_module.client_constant) else False
-        )
-
+        cfg_default, config_default_ref = _resolve_field_default(field_desc, opts, pb_module, default_sources)
         if field_desc.is_repeated:
             py_type, typed_val = "list", []
         elif field_desc.type in _FIELD_CONVERTERS:
@@ -213,13 +213,13 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
                 field_type=py_type,
                 default_value=typed_val,
                 raw_default=str(cfg_default) if cfg_default is not None else "",
-                description=cfg_desc,
-                is_volatile=cfg_volatile,
-                min_val=cfg_min,
-                max_val=cfg_max,
-                uci_option=uci_opt,
+                description=_opt_ext(opts, pb_module.config_desc, ""),
+                is_volatile=_opt_ext(opts, pb_module.config_volatile, False),
+                min_val=_opt_ext(opts, pb_module.config_min),
+                max_val=_opt_ext(opts, pb_module.config_max),
+                uci_option=_opt_ext(opts, pb_module.uci_option),
                 config_default_ref=config_default_ref,
-                client_constant=client_constant,
+                client_constant=_opt_ext(opts, pb_module.client_constant, False),
             )
         )
     return runtime_config_fields
@@ -480,6 +480,26 @@ def _build_command_operation(
     return op
 
 
+def _build_topic_or_payload_op(
+    name: str,
+    pb_module: Any,
+    *,
+    cloud_topic: str | None,
+    payload_field: str | None,
+    blob_field: str | None,
+) -> dict[str, Any]:
+    op: dict[str, Any] = {"name": name}
+    if cloud_topic:
+        op["cloud_topic"] = cloud_topic
+    if hasattr(pb_module, name):
+        op["pb_class"] = f"pb.{name}"
+    if payload_field:
+        op["payload_field"] = payload_field
+    if blob_field:
+        op["metrics_blob_field"] = blob_field
+    return op
+
+
 def _build_operations_catalog(
     commands: list[dict[str, Any]],
     rpc_specs: list[dict[str, Any]],
@@ -516,31 +536,33 @@ def _build_operations_catalog(
         act_name = msg_name.removesuffix("_ENUM")
         if act_name in seen_names:
             continue
-        blob_field = next((bf for tm, bf in telem_map.items() if tm in topic), None)
-        if blob_field is None and "status" in topic:
-            blob_field = "system_status_blob"
-        op_msg = {"name": act_name, "cloud_topic": topic}
-        if hasattr(pb_module, act_name):
-            op_msg["pb_class"] = f"pb.{act_name}"
-        if act_name in p_fields_map:
-            op_msg["payload_field"] = p_fields_map[act_name]
-        if blob_field:
-            op_msg["metrics_blob_field"] = blob_field
-        operations.append(op_msg)
+        blob_field = next((bf for tm, bf in telem_map.items() if tm in topic), None) or (
+            "system_status_blob" if "status" in topic else None
+        )
+        operations.append(
+            _build_topic_or_payload_op(
+                act_name,
+                pb_module,
+                cloud_topic=topic,
+                payload_field=p_fields_map.get(act_name),
+                blob_field=blob_field,
+            )
+        )
         seen_names.add(act_name)
 
     for msg_name, f_name in p_fields_map.items():
         if msg_name in seen_names:
             continue
         blob_field = next((bf for tm, bf in telem_map.items() if tm in msg_name.lower()), None)
-        op_payload = {"name": msg_name, "payload_field": f_name}
-        if hasattr(pb_module, msg_name):
-            op_payload["pb_class"] = f"pb.{msg_name}"
-        if msg_name in msg_topics:
-            op_payload["cloud_topic"] = msg_topics[msg_name]
-        if blob_field:
-            op_payload["metrics_blob_field"] = blob_field
-        operations.append(op_payload)
+        operations.append(
+            _build_topic_or_payload_op(
+                msg_name,
+                pb_module,
+                cloud_topic=msg_topics.get(msg_name),
+                payload_field=f_name,
+                blob_field=blob_field,
+            )
+        )
         seen_names.add(msg_name)
 
     return operations

@@ -83,6 +83,50 @@ def _buf_check(buf_bin: str, label: str, cwd: Path, *arguments: str) -> str | No
     return f"{label}:\n{output or 'command failed without output'}"
 
 
+def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
+    if isinstance(node, (ast.Try, ast.TryStar)):
+        return [
+            f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
+            f"Catching exceptions with 'pass' is strictly prohibited."
+            for handler in node.handlers
+            for stmt in handler.body
+            if isinstance(stmt, ast.Pass)
+        ]
+    if isinstance(node, ast.match_case):
+        return [
+            f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
+            f"Match case with 'pass' is strictly prohibited."
+            for stmt in node.body
+            if isinstance(stmt, ast.Pass)
+        ]
+    if (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
+        isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
+    ):
+        return [
+            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
+            f"TYPE_CHECKING dual-standard is strictly prohibited."
+        ]
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return [
+            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
+            f"TYPE_CHECKING dual-standard is strictly prohibited."
+            for alias in node.names
+            if alias.name == "TYPE_CHECKING" or alias.asname == "TYPE_CHECKING"
+        ]
+    if isinstance(node, ast.Call):
+        return [
+            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
+            f"errors={kw.value.value!r} silent error masking is strictly prohibited."
+            for kw in node.keywords
+            if (
+                kw.arg == "errors"
+                and isinstance(kw.value, ast.Constant)
+                and kw.value.value in ("ignore", "replace", "backslashreplace")
+            )
+        ]
+    return []
+
+
 def audit_ast_integrity() -> list[str]:
     """Audit Python AST for Rule 4 violations: except-pass, case-pass, and TYPE_CHECKING."""
     print("Auditing Python AST integrity (Rule 4)...")
@@ -114,46 +158,7 @@ def audit_ast_integrity() -> list[str]:
             findings.append(f"AST Parse Error: {rel_path} - {exc}")
             continue
         for node in ast.walk(tree):
-            if isinstance(node, (ast.Try, ast.TryStar)):
-                for handler in node.handlers:
-                    findings.extend(
-                        f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
-                        f"Catching exceptions with 'pass' is strictly prohibited."
-                        for stmt in handler.body
-                        if isinstance(stmt, ast.Pass)
-                    )
-            elif isinstance(node, ast.match_case):
-                findings.extend(
-                    f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
-                    f"Match case with 'pass' is strictly prohibited."
-                    for stmt in node.body
-                    if isinstance(stmt, ast.Pass)
-                )
-            elif (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
-                isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
-            ):
-                findings.append(
-                    f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
-                    f"TYPE_CHECKING dual-standard is strictly prohibited."
-                )
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                findings.extend(
-                    f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
-                    f"TYPE_CHECKING dual-standard is strictly prohibited."
-                    for alias in node.names
-                    if alias.name == "TYPE_CHECKING" or alias.asname == "TYPE_CHECKING"
-                )
-            elif isinstance(node, ast.Call):
-                findings.extend(
-                    f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
-                    f"errors={kw.value.value!r} silent error masking is strictly prohibited."
-                    for kw in node.keywords
-                    if (
-                        kw.arg == "errors"
-                        and isinstance(kw.value, ast.Constant)
-                        and kw.value.value in ("ignore", "replace", "backslashreplace")
-                    )
-                )
+            findings.extend(_inspect_ast_node(node, rel_path))
 
     return findings
 
@@ -277,10 +282,55 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     ]
 
 
-def audit_proto_usage() -> list[str]:
-    """Find generated constants and enum values with no source or test references."""
-    from mcubridge.protocol import mcubridge_pb2 as pb
+_PROTO_USAGE_SUFFIXES = {".py", ".pyi", ".h", ".hpp", ".cpp", ".c", ".ino", ".js", ".uc", ".sh", ".j2"}
+_PROTO_USAGE_IGNORED = {
+    ".git",
+    ".tox",
+    ".tmp_tests",
+    ".venv",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "openwrt-sdk",
+    "__pycache__",
+}
+_PROTO_GENERATED_NAMES = {
+    "config_schema.json",
+    "defaults.sh",
+    "config_schema.pb.c",
+    "config_schema.pb.h",
+    "mcu_wire.pb.c",
+    "mcu_wire.pb.h",
+    "rpc_hw_config.h",
+    "rpc_protocol.h",
+    "rpc_structs.h",
+}
 
+
+def _is_scannable_proto_source(path: Path) -> bool:
+    if not path.is_file() or path.suffix not in _PROTO_USAGE_SUFFIXES:
+        return False
+    if _PROTO_USAGE_IGNORED.intersection(path.parts) or path.name in _PROTO_GENERATED_NAMES:
+        return False
+    if path.name.endswith(("_pb2.py", "_pb2.pyi", "_grpc.py")):
+        return False
+    return not (path.name == "protocol.py" and path.parent.name in {"protocol", "mcubridge_client"})
+
+
+def _extract_file_identifiers(path: Path) -> set[str]:
+    content = path.read_text(encoding="utf-8")
+    if path.suffix in {".py", ".pyi"}:
+        return {
+            token.string
+            for token in tokenize.generate_tokens(io.StringIO(content).readline)
+            if token.type == tokenize.NAME
+        }
+    content_without_comments = re.sub(r"/\*.*?\*/|//[^\n]*", " ", content, flags=re.DOTALL)
+    return set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", content_without_comments))
+
+
+def _collect_identifier_suffixes() -> set[str]:
     source_roots = (
         ROOT / "mcubridge" / "mcubridge",
         ROOT / "mcubridge" / "scripts",
@@ -291,54 +341,12 @@ def audit_proto_usage() -> list[str]:
         ROOT / "luci-app-mcubridge",
         ROOT / "tools",
     )
-    source_suffixes = {".py", ".pyi", ".h", ".hpp", ".cpp", ".c", ".ino", ".js", ".uc", ".sh", ".j2"}
-    ignored_parts = {
-        ".git",
-        ".tox",
-        ".tmp_tests",
-        ".venv",
-        "build",
-        "coverage",
-        "dist",
-        "node_modules",
-        "openwrt-sdk",
-        "__pycache__",
-    }
-    generated_names = {
-        "config_schema.json",
-        "defaults.sh",
-        "config_schema.pb.c",
-        "config_schema.pb.h",
-        "mcu_wire.pb.c",
-        "mcu_wire.pb.h",
-        "rpc_hw_config.h",
-        "rpc_protocol.h",
-        "rpc_structs.h",
-    }
     identifiers: set[str] = set()
     for source_root in source_roots:
-        if not source_root.exists():
-            continue
-        for path in source_root.rglob("*"):
-            if (
-                not path.is_file()
-                or path.suffix not in source_suffixes
-                or ignored_parts.intersection(path.parts)
-                or path.name in generated_names
-                or path.name.endswith(("_pb2.py", "_pb2.pyi", "_grpc.py"))
-                or (path.name == "protocol.py" and path.parent.name in {"protocol", "mcubridge_client"})
-            ):
-                continue
-            content = path.read_text(encoding="utf-8")
-            if path.suffix in {".py", ".pyi"}:
-                identifiers.update(
-                    token.string
-                    for token in tokenize.generate_tokens(io.StringIO(content).readline)
-                    if token.type == tokenize.NAME
-                )
-            else:
-                content_without_comments = re.sub(r"/\*.*?\*/|//[^\n]*", " ", content, flags=re.DOTALL)
-                identifiers.update(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", content_without_comments))
+        if source_root.exists():
+            for path in source_root.rglob("*"):
+                if _is_scannable_proto_source(path):
+                    identifiers.update(_extract_file_identifiers(path))
 
     identifier_suffixes = identifiers.copy()
     for token in identifiers:
@@ -346,13 +354,26 @@ def audit_proto_usage() -> list[str]:
         while "_" in suffix:
             suffix = suffix.partition("_")[2]
             identifier_suffixes.add(suffix)
+    return identifier_suffixes
 
-    def is_referenced(name: str) -> bool:
-        return name in identifier_suffixes
 
+def _collect_extension_message_types(pb: object) -> set[str]:
+    descriptor = getattr(pb, "DESCRIPTOR")
+    ext_types: set[str] = set()
+    for ext in descriptor.extensions_by_name.values():
+        if ext.message_type:
+            ext_types.add(ext.message_type.name)
+            ext_types.update(field.message_type.name for field in ext.message_type.fields if field.message_type)
+    return ext_types
+
+
+def audit_proto_usage() -> list[str]:
+    """Find generated constants and enum values with no source or test references."""
+    from mcubridge.protocol import mcubridge_pb2 as pb
+
+    identifier_suffixes = _collect_identifier_suffixes()
     findings: list[str] = []
-    file_options = pb.DESCRIPTOR.GetOptions()
-    constants = file_options.Extensions[pb.constants]
+    constants = pb.DESCRIPTOR.GetOptions().Extensions[pb.constants]
     config_references = {
         field.GetOptions().Extensions[pb.config_default_ref].partition(".")[2]
         for field in pb.RuntimeConfig.DESCRIPTOR.fields
@@ -362,40 +383,26 @@ def audit_proto_usage() -> list[str]:
 
     for field_desc in pb.Constants.DESCRIPTOR.fields:
         options = field_desc.GetOptions()
-        names = {
-            field_desc.name,
-            options.Extensions[pb.py_name],
-            options.Extensions[pb.cpp_name],
-        }
-        if field_desc.name not in config_references and not any(name and is_referenced(name) for name in names):
+        names = {field_desc.name, options.Extensions[pb.py_name], options.Extensions[pb.cpp_name]}
+        if field_desc.name not in config_references and not any(name and name in identifier_suffixes for name in names):
             findings.append(
                 f"Unused Protobuf constant: Constants.{field_desc.name}={getattr(constants, field_desc.name)}"
             )
 
-    reflected_enum_names = {"Command", "Status"}
     for enum_desc in pb.DESCRIPTOR.enum_types_by_name.values():
-        if enum_desc.name in reflected_enum_names:
-            continue
-        findings.extend(
-            f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}"
-            for value_desc in enum_desc.values
-            if not is_referenced(value_desc.name)
-        )
+        if enum_desc.name not in {"Command", "Status"}:
+            findings.extend(
+                f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}"
+                for value_desc in enum_desc.values
+                if value_desc.name not in identifier_suffixes
+            )
 
-    extension_message_types = {
-        ext.message_type.name for ext in pb.DESCRIPTOR.extensions_by_name.values() if ext.message_type
-    }
-    for ext in pb.DESCRIPTOR.extensions_by_name.values():
-        if ext.message_type:
-            for field in ext.message_type.fields:
-                if field.message_type:
-                    extension_message_types.add(field.message_type.name)
-    for message_desc in pb.DESCRIPTOR.message_types_by_name.values():
-        if message_desc.name in extension_message_types:
-            continue
-        if not is_referenced(message_desc.name):
-            findings.append(f"Unused Protobuf message: {message_desc.name}")
-
+    extension_message_types = _collect_extension_message_types(pb)
+    findings.extend(
+        f"Unused Protobuf message: {message_desc.name}"
+        for message_desc in pb.DESCRIPTOR.message_types_by_name.values()
+        if message_desc.name not in extension_message_types and message_desc.name not in identifier_suffixes
+    )
     return findings
 
 

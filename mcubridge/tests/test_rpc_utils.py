@@ -5,7 +5,7 @@ from mcubridge.config import common
 from mcubridge.protocol import protocol
 
 
-def test_get_default_config_matches_constants():
+def test_get_default_config_matches_constants() -> None:
     config = common.get_default_config()
 
     assert config["cloud_host"] == protocol.DEFAULT_CLOUD_HOST
@@ -17,7 +17,7 @@ def test_get_default_config_matches_constants():
     assert config["serial_response_timeout"] == protocol.DEFAULT_SERIAL_RESPONSE_TIMEOUT
 
 
-def test_get_uci_config_preserves_types():
+def test_get_uci_config_preserves_types() -> None:
     payload = {
         ".name": "general",
         ".type": "mcubridge",
@@ -45,7 +45,7 @@ def test_get_uci_config_preserves_types():
     assert config["cloud_queue_limit"] == 42
 
 
-def test_get_uci_config_falls_back_on_errors():
+def test_get_uci_config_falls_back_on_errors() -> None:
     mock_cursor = MagicMock()
     mock_cursor.__enter__.return_value = mock_cursor
     mock_cursor.get_all.side_effect = OSError("boom")

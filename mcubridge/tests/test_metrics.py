@@ -170,12 +170,11 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, moc
     await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
     assert mock_log.call_count == 1
 
-    # AttributeError in builder is caught and logged as critical
-    mocker.patch(
-        "mcubridge.metrics._build_bridge_snapshot_message",
-        side_effect=AttributeError("Corrupted snapshot"),
-    )
-    await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
+    # AttributeError in snapshot emission is caught and logged as critical
+    async def _attr_error_enqueue(_: pb.CloudQueuedPublish) -> None:
+        raise AttributeError("Corrupted snapshot")
+
+    await emit_fn(runtime_state, _attr_error_enqueue, flavor="summary")
     assert mock_log.call_count == 1
     assert mock_critical.call_count == 1
 

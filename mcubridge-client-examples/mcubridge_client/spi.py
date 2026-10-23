@@ -25,7 +25,7 @@ class SpiDevice:
         frequency: int = 4000000,
         bit_order: SpiBitOrder = SpiBitOrder.SPI_BIT_ORDER_MSB_FIRST,
         mode: SpiDataMode = SpiDataMode.SPI_DATA_MODE_0,
-    ):
+    ) -> None:
         self._stub = stub
         self.frequency = frequency
         self.bit_order = bit_order

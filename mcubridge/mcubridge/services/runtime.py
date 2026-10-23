@@ -81,7 +81,7 @@ from .ubus import UbusService
 __all__ = [
     "BridgeService",
     "LocalBridgeService",
-    "_PendingMcuRead",
+    "PendingMcuRead",
 ]
 
 from ..transport.serial import SerialTransport
@@ -95,7 +95,7 @@ _STATUS_VALUES: Final = {s.value for s in Status}
 
 
 @dataclass
-class _PendingMcuRead:
+class PendingMcuRead:
     future: asyncio.Future[bytes]
     chunks: list[bytes] = field(default_factory=list[bytes])
     fsm: FileTransferMachine = field(default_factory=FileTransferMachine)
@@ -113,7 +113,7 @@ class BridgeService:
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
     _mcu_read_lock: asyncio.Lock
-    pending_mcu_read: _PendingMcuRead | None
+    pending_mcu_read: PendingMcuRead | None
     _process_slots: asyncio.Semaphore
     _cloud_publish_lock: asyncio.Lock
     cloud_spool: LmdbDeque | None
@@ -513,21 +513,24 @@ class BridgeService:
                 self.state.unknown_command_last_id = command_id
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
+    @staticmethod
+    def _coerce_inbound_request(inbound: Any) -> pb.CloudQueuedPublish:
+        if isinstance(inbound, pb.CloudQueuedPublish):
+            return inbound
+        props = getattr(inbound, "properties", None)
+        rt = getattr(inbound, "response_topic", None) or (getattr(props, "ResponseTopic", None) if props else None)
+        cd = getattr(inbound, "correlation_data", None) or (
+            getattr(props, "CorrelationData", None) if props else None
+        )
+        return pb.CloudQueuedPublish(
+            topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
+            payload=bytes(getattr(inbound, "payload", b"")),
+            correlation_data=bytes(cd) if cd else b"",
+            response_topic=str(rt) if rt else "",
+        )
+
     async def handle_request(self, inbound: Any) -> None:
-        if not isinstance(inbound, pb.CloudQueuedPublish):
-            props = getattr(inbound, "properties", None)
-            rt = getattr(inbound, "response_topic", None) or (getattr(props, "ResponseTopic", None) if props else None)
-            cd = getattr(inbound, "correlation_data", None) or (
-                getattr(props, "CorrelationData", None) if props else None
-            )
-            request = pb.CloudQueuedPublish(
-                topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
-                payload=bytes(getattr(inbound, "payload", b"")),
-                correlation_data=bytes(cd) if cd else b"",
-                response_topic=str(rt) if rt else "",
-            )
-        else:
-            request = inbound
+        request = self._coerce_inbound_request(inbound)
 
         topic_val = request.topic_name or getattr(request, "topic", "")
         with structlog.contextvars.bound_contextvars(topic=topic_val):
@@ -999,7 +1002,7 @@ class BridgeService:
         if not serial:
             return b""
         async with self._mcu_read_lock:
-            pending = _PendingMcuRead(asyncio.get_running_loop().create_future())
+            pending = PendingMcuRead(asyncio.get_running_loop().create_future())
             pending.fsm.start_transfer()
             self.pending_mcu_read = pending
             clean_path = target.lstrip("/").removeprefix(MCU_FS_PREFIX)

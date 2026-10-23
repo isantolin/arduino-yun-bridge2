@@ -18,7 +18,7 @@ from dirty_equals import IsInt, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingPinRequest
-from mcubridge.services.runtime import BridgeService, _PendingMcuRead
+from mcubridge.services.runtime import BridgeService, PendingMcuRead
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
@@ -228,7 +228,7 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 
     # Accumulate chunk then EOF
     fut: asyncio.Future[bytes] = asyncio.Future()
-    pending = _PendingMcuRead(future=fut, chunks=[])
+    pending = PendingMcuRead(future=fut, chunks=[])
     service.pending_mcu_read = pending
 
     assert await on_read_resp(1, pb.FileReadResponse(content=b"chunk1")) is True

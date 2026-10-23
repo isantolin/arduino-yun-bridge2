@@ -12,9 +12,7 @@ from mcubridge.protocol import protocol
 from pytest_mock import MockerFixture
 
 
-def test_load_runtime_config_applies_env_and_defaults(
-    mocker: MockerFixture,
-):
+def test_load_runtime_config_applies_env_and_defaults() -> None:
     raw_config = {
         "serial_port": "/dev/custom",
         "serial_baud": 57600,
@@ -47,33 +45,36 @@ def test_load_runtime_config_applies_env_and_defaults(
     }
 
     config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
-
-    assert config.serial_port == "/dev/custom"
-    assert config.serial_baud == 57600
-    assert config.cloud_host == "broker"
-    assert config.cloud_port == 321
-    assert config.cloud_user == "user"
-    assert config.cloud_pass == "pass"
-    assert config.cloud_tls
-    assert config.cloud_cafile == "/etc/cafile"
-    assert config.cloud_certfile == ""
-    assert config.cloud_keyfile == ""
-    assert config.topic_prefix == "custom/topic"
-    assert config.allowed_commands == ["echo", "ls"]
-    assert config.file_system_root == "/data"
-    assert config.process_timeout == 60
-    assert config.cloud_queue_limit == 1
-    assert config.reconnect_delay == 7
-    assert config.status_interval == 5
-    assert config.console_queue_limit_bytes == 4096
-    assert config.mailbox_queue_limit == 3
-    assert config.mailbox_queue_bytes_limit == 512
-    assert config.serial_retry_timeout == 0.5
-    assert config.serial_response_timeout == 1.5
-    assert config.serial_retry_attempts == 1
-    assert config.serial_shared_secret == b"envsecret"
-    assert config.watchdog_enabled
-    assert config.watchdog_interval == 0.5
+    expected = {
+        "serial_port": "/dev/custom",
+        "serial_baud": 57600,
+        "cloud_host": "broker",
+        "cloud_port": 321,
+        "cloud_user": "user",
+        "cloud_pass": "pass",
+        "cloud_tls": True,
+        "cloud_cafile": "/etc/cafile",
+        "cloud_certfile": "",
+        "cloud_keyfile": "",
+        "topic_prefix": "custom/topic",
+        "allowed_commands": ["echo", "ls"],
+        "file_system_root": "/data",
+        "process_timeout": 60,
+        "cloud_queue_limit": 1,
+        "reconnect_delay": 7,
+        "status_interval": 5,
+        "console_queue_limit_bytes": 4096,
+        "mailbox_queue_limit": 3,
+        "mailbox_queue_bytes_limit": 512,
+        "serial_retry_timeout": 0.5,
+        "serial_response_timeout": 1.5,
+        "serial_retry_attempts": 1,
+        "serial_shared_secret": b"envsecret",
+        "watchdog_enabled": True,
+        "watchdog_interval": 0.5,
+    }
+    actual = {attr: getattr(config, attr) for attr in expected}
+    assert actual == expected
 
 
 def test_load_runtime_config_intervals() -> None:
@@ -137,7 +138,7 @@ def test_get_uci_config_handles_value_wrappers() -> None:
     assert config.debug
 
 
-def test_load_runtime_config_parses_watchdog(mocker: MockerFixture):
+def test_load_runtime_config_parses_watchdog() -> None:
     raw_config = common.get_default_config()
     raw_config.update(
         {

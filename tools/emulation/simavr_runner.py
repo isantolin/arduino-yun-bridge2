@@ -634,6 +634,36 @@ app = typer.Typer(
 )
 
 
+def _resolve_board_target(
+    board: str,
+    firmware: Path | None,
+    frequency: int | None,
+    led_builtin_pin: int | None,
+    uart: str | None,
+) -> tuple[Path, str, int, int, str]:
+    if frequency is not None and frequency <= 0:
+        raise typer.BadParameter("frequency must be greater than zero")
+
+    metadata = resolve_core_metadata(board) if ":" in board else None
+    if metadata is None:
+        if frequency is None or led_builtin_pin is None:
+            raise typer.BadParameter("Raw MCU targets require both --frequency and --led-builtin-pin")
+        effective_frequency, effective_led_pin, mcu = frequency, led_builtin_pin, board.lower()
+    else:
+        effective_frequency = frequency if frequency is not None else metadata.frequency_hz
+        effective_led_pin = led_builtin_pin if led_builtin_pin is not None else metadata.led_builtin
+        mcu = metadata.mcu
+
+    effective_firmware = firmware or Path(f"build/simavr/{board.replace(':', '-')}/firmware.elf")
+    if uart:
+        effective_uart = uart
+    else:
+        fw_str = str(effective_firmware).lower()
+        uses_uart1 = mcu == "atmega32u4" or (mcu == "atmega2560" and ("bluetooth" in fw_str or "wifi" in fw_str))
+        effective_uart = "1" if uses_uart1 else "0"
+    return effective_firmware, mcu, effective_frequency, effective_led_pin, effective_uart
+
+
 @app.command()
 def main(
     firmware: Annotated[
@@ -709,30 +739,9 @@ def main(
             sys.exit(fail_count)
         return
 
-    if frequency is not None and frequency <= 0:
-        raise typer.BadParameter("frequency must be greater than zero")
-
-    metadata = resolve_core_metadata(board) if ":" in board else None
-    if metadata is None:
-        if frequency is None or led_builtin_pin is None:
-            raise typer.BadParameter("Raw MCU targets require both --frequency and --led-builtin-pin")
-        effective_frequency = frequency
-        effective_led_pin = led_builtin_pin
-    else:
-        effective_frequency = frequency if frequency is not None else metadata.frequency_hz
-        effective_led_pin = led_builtin_pin if led_builtin_pin is not None else metadata.led_builtin
-
-    effective_firmware = firmware or Path(f"build/simavr/{board.replace(':', '-')}/firmware.elf")
-    mcu = metadata.mcu if metadata is not None else board.lower()
-
-    # Auto-detect UART ID based on firmware name if not explicitly specified
-    effective_uart = uart
-    if not effective_uart:
-        fw_str = str(effective_firmware).lower()
-        if ("bluetooth" in fw_str or "wifi" in fw_str) and mcu == "atmega2560" or mcu == "atmega32u4":
-            effective_uart = "1"
-        else:
-            effective_uart = "0"
+    effective_firmware, mcu, effective_frequency, effective_led_pin, effective_uart = _resolve_board_target(
+        board, firmware, frequency, led_builtin_pin, uart
+    )
 
     test_paths = [Path(s) for s in scripts] if scripts else default_client_test_paths()
 

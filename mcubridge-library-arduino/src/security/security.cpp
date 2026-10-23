@@ -159,18 +159,14 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
   const uint64_t current_nonce = *nonce_counter;
 
-  etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   static_assert(sizeof(uint32_t) + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
                 "[SIL-2] Nonce layout mismatch");
   static_assert(
       rpc::RPC_MCU_AEAD_NONCE_PREFIX != rpc::RPC_MPU_AEAD_NONCE_PREFIX,
       "AEAD nonce prefixes must be direction-specific");
-  etl::byte_stream_writer prefix_writer(out_nonce.subspan(0U, sizeof(uint32_t)),
-                                        etl::endian::big);
-  prefix_writer.write<uint32_t>(nonce_prefix);
-  etl::byte_stream_writer n_writer(out_nonce.subspan(sizeof(uint32_t)),
-                                   etl::endian::big);
-  n_writer.write<uint64_t>(current_nonce);
+  etl::byte_stream_writer nonce_writer(out_nonce, etl::endian::big);
+  nonce_writer.write<uint32_t>(nonce_prefix);
+  nonce_writer.write<uint64_t>(current_nonce);
 
   etl::array<uint8_t, 16> ad;
   const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
@@ -220,18 +216,14 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
 
   // [ANTI-REFLECTION] Validar que los primeros 4 bytes coincidan estrictamente
   // con RPC_MPU_AEAD_NONCE_PREFIX
-  etl::byte_stream_reader prefix_reader(nonce.data(), sizeof(uint32_t),
-                                        etl::endian::big);
-  const auto prefix_val = prefix_reader.read<uint32_t>();
+  etl::byte_stream_reader nonce_reader(nonce, etl::endian::big);
+  const auto prefix_val = nonce_reader.read<uint32_t>();
   if (!prefix_val.has_value() ||
       prefix_val.value() != rpc::RPC_MPU_AEAD_NONCE_PREFIX) {
     return false;
   }
 
-  const auto nonce_sub = nonce.subspan(sizeof(uint32_t));
-  etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
-                                   etl::endian::big);
-  const auto counter_val = n_reader.read<uint64_t>();
+  const auto counter_val = nonce_reader.read<uint64_t>();
   if (!counter_val.has_value()) {
     return false;
   }
@@ -251,21 +243,6 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
 // --- Self-Tests Implementation ---
 
 #if BRIDGE_ENABLE_POST_TESTS
-
-namespace {
-
-int aead_kat_encrypt(etl::span<const uint8_t> key,
-                     etl::span<const uint8_t> nonce,
-                     etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
-                     etl::span<uint8_t> out, etl::span<uint8_t> tag) {
-  return wc_ChaCha20Poly1305_Encrypt(
-      const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
-      const_cast<byte*>(ad.data()), static_cast<word32>(ad.size()),
-      const_cast<byte*>(in.data()), static_cast<word32>(in.size()), out.data(),
-      tag.data());
-}
-
-}  // namespace
 
 static constexpr etl::array<uint8_t, 3> kat_sha256_msg PROGMEM = {
     {'a', 'b', 'c'}};
@@ -340,12 +317,13 @@ bool run_cryptographic_self_tests() {
 
   etl::array<uint8_t, 16> aead_tag_actual;
   etl::array<uint8_t, 4> aead_out;
-  int encrypt_res = aead_kat_encrypt(
-      etl::span<const uint8_t>(kat_aead_key),
-      etl::span<const uint8_t>(kat_aead_nonce),
-      etl::span<const uint8_t>(kat_aead_ad),
-      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("test"), 4),
-      etl::span<uint8_t>(aead_out), etl::span<uint8_t>(aead_tag_actual));
+  const int encrypt_res = wc_ChaCha20Poly1305_Encrypt(
+      const_cast<byte*>(kat_aead_key.data()),
+      const_cast<byte*>(kat_aead_nonce.data()),
+      const_cast<byte*>(kat_aead_ad.data()),
+      static_cast<word32>(kat_aead_ad.size()),
+      const_cast<byte*>(reinterpret_cast<const uint8_t*>("test")), 4U,
+      aead_out.data(), aead_tag_actual.data());
 
   bool aead_res_ok = (encrypt_res == 0);
   bool aead_tag_ok = etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),

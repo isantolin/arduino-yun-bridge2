@@ -42,14 +42,13 @@ class FaultState;
 class EnteringBootloaderState;
 class ChangingBaudrateState;
 
-// --- State Classes ---
+// --- Base CRTP State Template ---
 
-class StartupState
-    : public etl::fsm_state<BridgeFsm, StartupState,
-                            static_cast<etl::fsm_state_id_t>(StateId::STARTUP),
-                            EvReset, EvHandshakeFailed, EvTimeout> {
+template <typename Derived, StateId SId, typename... Events>
+class BaseBridgeState
+    : public etl::fsm_state<BridgeFsm, Derived,
+                            static_cast<etl::fsm_state_id_t>(SId), Events...> {
  public:
-  StartupState() = default;
   etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
@@ -60,80 +59,52 @@ class StartupState
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
   etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
+    return this->get_state_id();
   }
 };
 
+// --- State Classes ---
+
+class StartupState
+    : public BaseBridgeState<StartupState, StateId::STARTUP, EvReset,
+                             EvHandshakeFailed, EvTimeout> {};
+
 class UnsynchronizedState
-    : public etl::fsm_state<
-          BridgeFsm, UnsynchronizedState,
-          static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED),
-          EvHandshakeStart, EvReset, EvHandshakeFailed, EvTimeout> {
+    : public BaseBridgeState<UnsynchronizedState, StateId::UNSYNCHRONIZED,
+                             EvHandshakeStart, EvReset, EvHandshakeFailed,
+                             EvTimeout> {
  public:
-  UnsynchronizedState() = default;
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvHandshakeStart&) {
     return static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE);
-  }
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
-  }
-  etl::fsm_state_id_t on_event(const EvTimeout&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
-  }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
   }
 };
 
 class HandshakeState
-    : public etl::fsm_state<
-          BridgeFsm, HandshakeState,
-          static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE),
-          EvHandshakeComplete, EvHandshakeFailed, EvReset, EvTimeout> {
+    : public BaseBridgeState<HandshakeState, StateId::HANDSHAKE,
+                             EvHandshakeComplete, EvHandshakeFailed, EvReset,
+                             EvTimeout> {
  public:
-  HandshakeState() = default;
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
-  }
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvTimeout&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
   etl::fsm_state_id_t on_event_unknown(const etl::imessage& msg) {
     if (msg.get_message_id() == EvSendCritical::ID) {
       return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
     }
-    return get_state_id();
+    return this->get_state_id();
   }
 };
 
 class SynchronizedState
-    : public etl::fsm_state<BridgeFsm, SynchronizedState,
-                            static_cast<etl::fsm_state_id_t>(
-                                StateId::SYNCHRONIZED),
-                            EvSendCritical, EvReset, EvHandshakeFailed,
-                            EvTimeout, EvEnterBootloader, EvBaudrateChange> {
+    : public BaseBridgeState<SynchronizedState, StateId::SYNCHRONIZED,
+                             EvSendCritical, EvReset, EvHandshakeFailed,
+                             EvTimeout, EvEnterBootloader, EvBaudrateChange> {
  public:
-  SynchronizedState() = default;
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvSendCritical&) {
     return static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
-  }
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
-  }
-  etl::fsm_state_id_t on_event(const EvTimeout&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
   etl::fsm_state_id_t on_event(const EvEnterBootloader&) {
     return static_cast<etl::fsm_state_id_t>(StateId::ENTERING_BOOTLOADER);
@@ -141,96 +112,46 @@ class SynchronizedState
   etl::fsm_state_id_t on_event(const EvBaudrateChange&) {
     return static_cast<etl::fsm_state_id_t>(StateId::CHANGING_BAUDRATE);
   }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
-  }
 };
 
 class AwaitingAckState
-    : public etl::fsm_state<
-          BridgeFsm, AwaitingAckState,
-          static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK),
-          EvAckReceived, EvTimeout, EvReset, EvHandshakeFailed> {
+    : public BaseBridgeState<AwaitingAckState, StateId::AWAITING_ACK,
+                             EvAckReceived, EvTimeout, EvReset,
+                             EvHandshakeFailed> {
  public:
-  AwaitingAckState() = default;
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvAckReceived&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
-  etl::fsm_state_id_t on_event(const EvTimeout&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
-  }
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
-  }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
-  }
 };
 
-class FaultState
-    : public etl::fsm_state<BridgeFsm, FaultState,
-                            static_cast<etl::fsm_state_id_t>(StateId::FAULT),
-                            EvReset> {
+class FaultState : public BaseBridgeState<FaultState, StateId::FAULT, EvReset> {
  public:
-  FaultState() = default;
-  // [SIL-2] Force hardware safe state on every entry to FAULT — regardless of
-  // which event caused the transition (ACK timeout, handshake failure, etc.).
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_enter_state() override {
     bridge::hal::forceSafeState();
-    return No_State_Change;
-  }
-
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
+    return etl::fsm_state_empty::No_State_Change;
   }
 };
 
 class EnteringBootloaderState
-    : public etl::fsm_state<BridgeFsm, EnteringBootloaderState,
-                            static_cast<etl::fsm_state_id_t>(
-                                StateId::ENTERING_BOOTLOADER),
-                            EvReset, EvTimeout> {
+    : public BaseBridgeState<EnteringBootloaderState,
+                             StateId::ENTERING_BOOTLOADER, EvReset, EvTimeout> {
  public:
-  EnteringBootloaderState() = default;
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_enter_state() override {
     bridge::hal::forceSafeState();
-    return No_State_Change;
-  }
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvTimeout&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
-  }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
+    return etl::fsm_state_empty::No_State_Change;
   }
 };
 
 class ChangingBaudrateState
-    : public etl::fsm_state<BridgeFsm, ChangingBaudrateState,
-                            static_cast<etl::fsm_state_id_t>(
-                                StateId::CHANGING_BAUDRATE),
-                            EvBaudrateApplied, EvReset, EvTimeout> {
+    : public BaseBridgeState<ChangingBaudrateState, StateId::CHANGING_BAUDRATE,
+                             EvBaudrateApplied, EvReset, EvTimeout> {
  public:
-  ChangingBaudrateState() = default;
+  using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvBaudrateApplied&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvReset&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
-  }
-  etl::fsm_state_id_t on_event(const EvTimeout&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
-  }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return get_state_id();
   }
 };
 

@@ -35,12 +35,6 @@ inline constexpr bool is_system_command(uint16_t cmd) {
 inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + RPC_CRC_SIZE;
 
-namespace checksum {
-inline uint32_t compute(etl::span<const uint8_t> data) {
-  return etl::crc32_t16(data.begin(), data.end());
-}
-}  // namespace checksum
-
 inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env,
                               etl::span<uint8_t> buffer) {
   if (buffer.size() < RPC_CRC_SIZE) return 0;
@@ -48,7 +42,7 @@ inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env,
       pb_ostream_from_buffer(buffer.data(), buffer.size() - RPC_CRC_SIZE);
   if (!pb_encode(&mem_stream, rpc_pb_RpcEnvelope_fields, &env)) return 0;
   const size_t encoded_size = mem_stream.bytes_written;
-  const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
+  const uint32_t crc = etl::crc32_t16(buffer.begin(), buffer.begin() + encoded_size);
   etl::byte_stream_writer writer(buffer.subspan(encoded_size, RPC_CRC_SIZE),
                                  etl::endian::little);
   writer.write<uint32_t>(crc);

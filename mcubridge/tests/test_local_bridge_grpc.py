@@ -213,11 +213,13 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     await local_svc.FileWrite(stream)
     mock_serial.send.assert_called_with(Command.CMD_FILE_WRITE.value, pb.FileWrite(path="eeprom.bin", data=b"data"))
 
-    mock_serial.send.return_value = pb.FileReadResponse(content=b"mcu_data")
+    mock_read_mcu = AsyncMock(return_value=b"mcu_data")
+    service.read_mcu_file = mock_read_mcu
     stream = _make_mock_stream(pb.FileRead(path="mcu/eeprom.bin"))
     await local_svc.FileRead(stream)
     sent = stream.sent_message
     assert sent.content == b"mcu_data"
+    mock_read_mcu.assert_awaited_once_with("mcu/eeprom.bin")
 
     stream = _make_mock_stream(pb.FileRemove(path="mcu/eeprom.bin"))
     await local_svc.FileRemove(stream)

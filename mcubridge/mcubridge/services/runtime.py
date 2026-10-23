@@ -519,9 +519,7 @@ class BridgeService:
             return inbound
         props = getattr(inbound, "properties", None)
         rt = getattr(inbound, "response_topic", None) or (getattr(props, "ResponseTopic", None) if props else None)
-        cd = getattr(inbound, "correlation_data", None) or (
-            getattr(props, "CorrelationData", None) if props else None
-        )
+        cd = getattr(inbound, "correlation_data", None) or (getattr(props, "CorrelationData", None) if props else None)
         return pb.CloudQueuedPublish(
             topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
             payload=bytes(getattr(inbound, "payload", b"")),

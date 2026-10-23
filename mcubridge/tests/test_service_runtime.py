@@ -1345,7 +1345,7 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
     async def mock_enqueue(topic: str, payload: bytes, *args: Any, **kwargs: Any) -> None:
         enqueued.append((topic, payload))
 
-    setattr(svc, "enqueue_cloud_publish", mock_enqueue)
+    svc.enqueue_cloud_publish = mock_enqueue
 
     await svc.handle_request(pub_req)
     assert len(enqueued) == 1

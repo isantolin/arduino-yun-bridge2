@@ -94,8 +94,7 @@ def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
         ]
     if isinstance(node, ast.match_case):
         return [
-            f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
-            f"Match case with 'pass' is strictly prohibited."
+            f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - Match case with 'pass' is strictly prohibited."
             for stmt in node.body
             if isinstance(stmt, ast.Pass)
         ]
@@ -103,13 +102,11 @@ def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
         isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
     ):
         return [
-            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
-            f"TYPE_CHECKING dual-standard is strictly prohibited."
+            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - TYPE_CHECKING dual-standard is strictly prohibited."
         ]
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         return [
-            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - "
-            f"TYPE_CHECKING dual-standard is strictly prohibited."
+            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - TYPE_CHECKING dual-standard is strictly prohibited."
             for alias in node.names
             if alias.name == "TYPE_CHECKING" or alias.asname == "TYPE_CHECKING"
         ]
@@ -358,7 +355,7 @@ def _collect_identifier_suffixes() -> set[str]:
 
 
 def _collect_extension_message_types(pb: object) -> set[str]:
-    descriptor = getattr(pb, "DESCRIPTOR")
+    descriptor = pb.DESCRIPTOR
     ext_types: set[str] = set()
     for ext in descriptor.extensions_by_name.values():
         if ext.message_type:

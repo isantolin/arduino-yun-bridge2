@@ -873,9 +873,7 @@ async def test_dispatch_command_branches(
             assert expected_payload_substr in resp.payload
 
 
-async def _assert_local_bridge_rpc_matrix(
-    local_svc: GatewayLocalBridgeService, mock_gateway: ProtobufGateway
-) -> None:
+async def _assert_local_bridge_rpc_matrix(local_svc: GatewayLocalBridgeService, mock_gateway: ProtobufGateway) -> None:
     rpc_cases: list[tuple[Any, Any, Any]] = [
         (local_svc.SetPinMode, pb.PinMode(pin=1, mode=pb.PinModeType.PIN_OUTPUT), pb.GenericResponse(status="ok")),
         (local_svc.DigitalRead, pb.PinRead(pin=13), pb.DigitalReadResponse(value=1)),

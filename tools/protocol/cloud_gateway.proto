@@ -75,15 +75,6 @@ message BridgeSnapshot {
   Capabilities capabilities = 6;
 }
 
-message SerialThroughputStats {
-  uint64 bytes_sent = 1;
-  uint64 bytes_received = 2;
-  uint32 frames_sent = 3;
-  uint32 frames_received = 4;
-  float last_tx_unix = 5;
-  float last_rx_unix = 6;
-}
-
 message ProcessStats {
   string name = 1;
   float cpu_percent = 2;

@@ -357,8 +357,8 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
         _ = (host, port, timeout, interval)
         return True
 
-    def mock_setup_uci(slave: str) -> tuple[Path, Path, dict[str, str]]:
-        _ = slave
+    def mock_setup_uci(slave: str, *, device_id: str = "esp32-01") -> tuple[Path, Path, dict[str, str]]:
+        _ = (slave, device_id)
         return (tmp_path / "uci", tmp_path / "db", {"FAKE": "1"})
 
     def mock_path_ready(path: Path, timeout: float = 5.0, interval: float = 0.05) -> bool:

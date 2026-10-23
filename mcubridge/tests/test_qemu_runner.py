@@ -370,8 +370,10 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
         env: dict[str, str],
         timeout: float,
         led_builtin_pin: int = 13,
+        *,
+        device_id: str = "esp32-01",
     ) -> bool:
-        _ = (scripts, env, timeout, led_builtin_pin)
+        _ = (scripts, env, timeout, led_builtin_pin, device_id)
         return True
 
     def mock_audit() -> bool:

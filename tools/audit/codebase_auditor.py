@@ -101,9 +101,7 @@ def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
     if (isinstance(node, ast.Name) and node.id == "TYPE_CHECKING") or (
         isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
     ):
-        return [
-            f"Rule 4 AST Violation: {rel_path}:{node.lineno} - TYPE_CHECKING dual-standard is strictly prohibited."
-        ]
+        return [f"Rule 4 AST Violation: {rel_path}:{node.lineno} - TYPE_CHECKING dual-standard is strictly prohibited."]
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         return [
             f"Rule 4 AST Violation: {rel_path}:{node.lineno} - TYPE_CHECKING dual-standard is strictly prohibited."

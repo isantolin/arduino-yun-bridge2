@@ -341,15 +341,16 @@ void test_console_and_policy_edges() {
   ba.setSynchronized();
   Console.begin();
 
+  Bridge.enterSafeState();
+  TEST_ASSERT_EQUAL(-1, Console.peek());
+  TEST_ASSERT_EQUAL(-1, Console.read());
+
   etl::array<char, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill_chars{};
   etl::fill(fill_chars.begin(), fill_chars.end(), 'x');
   etl::for_each(fill_chars.begin(), fill_chars.end(),
                 [](char c) { Console.write(c); });
 
-  Bridge.enterSafeState();
   TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));
-  TEST_ASSERT_EQUAL(-1, Console.peek());
-  TEST_ASSERT_EQUAL(-1, Console.read());
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto frame = make_payload_frame(

@@ -438,7 +438,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]
-        assert hasattr(BridgeService, root_attr) or root_attr == "handshake"
+        assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
 
     assert len(protocol.REGISTRY.mcu_unsupported_reasons) == 2

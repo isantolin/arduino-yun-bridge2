@@ -89,6 +89,7 @@ ALLOWLIST_PY_HELPERS = {
     "normalize_config_dict",
     "vacuum_lmdb_env",
     "connect_and_run",
+    "supervise",
 }
 
 

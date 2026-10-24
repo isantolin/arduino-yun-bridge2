@@ -447,9 +447,12 @@ async def test_on_mcu_process_kill_and_subscribe_resp(
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    await svc.kill_process(pb.ProcessKill(pid=42))
+    res_kill, err = await svc.kill_process(pb.ProcessKill(pid=42))
+    assert res_kill is False
+    assert err == "PID not found"
 
     await svc.gpio.on_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
+    assert mock_bridge_state.pin_subscriptions[13].active is True
 
 
 async def test_enqueue_cloud_queue_empty_in_finally(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import time
 from unittest.mock import AsyncMock, MagicMock
@@ -63,13 +64,15 @@ async def test_clock_sync_service() -> None:
 
         # Test MCU response handler via dispatch registry
         handler = service.mcu_registry[pb.Command.CMD_CLOCK_SYNC_RESP]
-        await handler(
+        res_sync = handler(
             1,
             pb.ClockSyncResponse(
                 host_time_us=now_us - 2000,
                 mcu_time_us=400000,
             ),
         )
+        if inspect.isawaitable(res_sync):
+            await res_sync
         assert state.clock_sync_count == 2
     finally:
         service.cleanup()

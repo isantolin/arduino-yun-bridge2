@@ -397,3 +397,106 @@ def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, moc
     svc.lifecycle_fsm.stop()
     assert not svc.is_running
     assert not svc.is_draining
+
+
+async def test_reset_link_branches(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    assert await svc.reset_link() is True
+    mock_serial.reset.assert_awaited_once()
+
+    svc.serial = None
+    assert await svc.reset_link() is False
+
+
+async def test_request_mcu_version_branches(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+
+    svc.serial = None
+    assert await svc.request_mcu_version() is False
+
+    svc.serial = mock_serial
+    mock_serial.send.return_value = b"\xff\xff\xff"
+    assert await svc.request_mcu_version() is False
+
+
+async def test_flush_console_queue_without_serial(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.serial = None
+    await svc.flush_console_queue()
+    assert len(mock_bridge_state.console_to_mcu_queue) == 0
+
+
+async def test_write_with_quota_exceeds_max_bytes(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState, tmp_path: Path
+) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    mock_bridge_state.file_write_max_bytes = 10
+    target_file = tmp_path / "quota_exceeded.txt"
+    res = await svc.write_with_quota(target_file, b"0123456789abcdef")
+    assert res is False
+    assert mock_bridge_state.file_write_limit_rejections == 1
+
+
+async def test_on_mcu_process_kill_and_subscribe_resp(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
+) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.kill_process = AsyncMock(return_value=True)
+    await svc.on_mcu_process_kill(1, pb.ProcessKill(pid=42))
+    svc.kill_process.assert_awaited_once_with(42)
+
+    await svc.on_mcu_pin_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
+
+
+async def test_enqueue_cloud_queue_empty_in_finally(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
+) -> None:
+    test_config.cloud_enabled = True
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+
+    async def mock_spool(msg: Any) -> bool:
+        try:
+            mock_bridge_state.cloud_publish_queue.get_nowait()
+        except asyncio.QueueEmpty as exc:
+            logging.debug("Queue already empty during mock spool", exc_info=exc)
+        return True
+
+    svc.spool_cloud_message_locked = mock_spool
+    msg = pb.CloudQueuedPublish(topic_name="mcu/data", payload=b"test")
+    await svc.enqueue_cloud(msg)
+    assert mock_bridge_state.cloud_publish_queue.empty()
+
+
+async def test_handle_request_without_serial(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.serial = None
+    msg = pb.CloudQueuedPublish(topic_name="br/d/13/write", payload=b"1")
+    await svc.handle_request(msg)
+    assert svc.serial is None
+    assert len(mock_bridge_state.running_processes) == 0
+
+
+async def test_on_mcu_console_write_no_queues(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.console_queues.clear()
+    await svc.on_mcu_console_write(1, pb.ConsoleWrite(data=b"hello mcu"))
+    assert len(svc.console_queues) == 0
+    assert len(mock_bridge_state.console_to_mcu_queue) == 0
+
+
+async def test_run_cloud_disabled(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    test_config.cloud_enabled = False
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    await svc.run_cloud()
+    assert mock_bridge_state.cloud_fsm.disabled.is_active
+
+

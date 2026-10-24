@@ -61,8 +61,8 @@ void test_protocol_frame_logic_exhaustive() {
   malformed_proto_buf[1] = 0xFF;
   malformed_proto_buf[2] = 0xFF;
   malformed_proto_buf[3] = 0xFF;
-  const uint32_t calc_crc = etl::crc32_t16(
-      malformed_proto_buf.begin(), malformed_proto_buf.begin() + 4);
+  const uint32_t calc_crc = etl::crc32_t16(malformed_proto_buf.begin(),
+                                           malformed_proto_buf.begin() + 4);
   malformed_proto_buf[4] = calc_crc & 0xFF;
   malformed_proto_buf[5] = (calc_crc >> 8) & 0xFF;
   malformed_proto_buf[6] = (calc_crc >> 16) & 0xFF;

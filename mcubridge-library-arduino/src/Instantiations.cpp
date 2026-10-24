@@ -51,7 +51,8 @@ etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
   }
 
   const size_t crc_offset = buffer.size() - rpc::RPC_CRC_SIZE;
-  const uint32_t crc_calc = etl::crc32_t16(buffer.begin(), buffer.begin() + crc_offset);
+  const uint32_t crc_calc =
+      etl::crc32_t16(buffer.begin(), buffer.begin() + crc_offset);
   const auto crc_tail = buffer.subspan(crc_offset);
 
   // Deserialización segura del CRC de cola mediante etl::byte_stream_reader

@@ -82,8 +82,8 @@ class UnsynchronizedState
 
 class HandshakeState
     : public BaseBridgeState<HandshakeState, StateId::HANDSHAKE,
-                             EvHandshakeComplete, EvSendCritical, EvHandshakeFailed, EvReset,
-                             EvTimeout> {
+                             EvHandshakeComplete, EvSendCritical,
+                             EvHandshakeFailed, EvReset, EvTimeout> {
  public:
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {

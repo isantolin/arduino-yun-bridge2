@@ -230,8 +230,8 @@ void test_bridge_await_synchronization_bounded() {
   // Timeout path: no MPU handshake -> bounded exit into safe state.
   const uint32_t start_ms = bridge::test::fault::clock_ms();
   TEST_ASSERT_FALSE(Bridge.awaitSynchronization(50U, 5U));
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(50U,
-                                      bridge::test::fault::clock_ms() - start_ms);
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
+      50U, bridge::test::fault::clock_ms() - start_ms);
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
   TEST_ASSERT_FALSE(ba.isTxEnabled());
 

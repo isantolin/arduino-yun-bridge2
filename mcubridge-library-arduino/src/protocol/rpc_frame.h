@@ -42,7 +42,8 @@ inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env,
       pb_ostream_from_buffer(buffer.data(), buffer.size() - RPC_CRC_SIZE);
   if (!pb_encode(&mem_stream, rpc_pb_RpcEnvelope_fields, &env)) return 0;
   const size_t encoded_size = mem_stream.bytes_written;
-  const uint32_t crc = etl::crc32_t16(buffer.begin(), buffer.begin() + encoded_size);
+  const uint32_t crc =
+      etl::crc32_t16(buffer.begin(), buffer.begin() + encoded_size);
   etl::byte_stream_writer writer(buffer.subspan(encoded_size, RPC_CRC_SIZE),
                                  etl::endian::little);
   writer.write<uint32_t>(crc);

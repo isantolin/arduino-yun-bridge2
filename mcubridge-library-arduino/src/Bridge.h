@@ -91,10 +91,7 @@ struct CommandContext {
   bool is_duplicate;
   CommandContext(const rpc_pb_RpcEnvelope* f, uint16_t cmd, uint16_t seq,
                  bool dup)
-      : envelope(f),
-        raw_command(cmd),
-        sequence_id(seq),
-        is_duplicate(dup) {}
+      : envelope(f), raw_command(cmd), sequence_id(seq), is_duplicate(dup) {}
 };
 
 }  // namespace router

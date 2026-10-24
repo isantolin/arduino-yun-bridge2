@@ -961,7 +961,7 @@ class BridgeService:
         self, _seq_or_pid: int | pb.ProcessKill, pid: int | pb.ProcessKill | None = None
     ) -> tuple[bool, str | None]:
         target = pid if isinstance(pid, pb.ProcessKill) else _seq_or_pid
-        actual_pid = target.pid if isinstance(target, pb.ProcessKill) else int(target)
+        actual_pid = target.pid if isinstance(target, pb.ProcessKill) else target
         with structlog.contextvars.bound_contextvars(pid=actual_pid):
             async with self.state.process_lock:
                 ctx = self.state.running_processes.get(actual_pid)

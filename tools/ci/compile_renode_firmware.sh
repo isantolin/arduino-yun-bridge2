@@ -1,83 +1,13 @@
 #!/usr/bin/env bash
 #
 # Compile Arduino Bridge firmware for Renode ARM emulation targeting Arduino MKR WiFi 1010.
+# Delegate to unified compile_firmware.sh [Rule 19]
 #
-
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-LIB_DIR="${ROOT_DIR}/mcubridge-library-arduino"
-
-SKETCH_PATH="${1:-${LIB_DIR}/examples/BridgeControl/BridgeControl.ino}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKETCH_PATH="${1:-${SCRIPT_DIR}/../../mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino}"
 FQBN="${2:-arduino:samd:mkrwifi1010}"
-OUTPUT_DIR="${3:-${ROOT_DIR}/build/renode/${FQBN//:/-}}"
+OUTPUT_DIR="${3:-}"
 
-if ! command -v arduino-cli >/dev/null 2>&1; then
-    echo "[compile_renode] arduino-cli not found. Installing into ~/.local/bin..."
-    mkdir -p "${HOME}/.local/bin"
-    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="${HOME}/.local/bin" sh
-    export PATH="${HOME}/.local/bin:${PATH}"
-fi
-
-USER_LIB_DIR="${HOME}/Arduino/libraries"
-mkdir -p "$USER_LIB_DIR"
-
-echo "[renode-build] Installing required library dependencies..."
-"${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
-
-# Generate protocol stubs if missing
-if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
-    echo "[renode-build] Generating protocol bindings..."
-    python3 "${ROOT_DIR}/tools/protocol/generate.py" \
-        --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
-        --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-        --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
-        --cpp-structs "${LIB_DIR}/src/protocol/rpc_structs.h" \
-        --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
-fi
-
-COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
-BUILD_FLAGS=(
-    "--fqbn" "$FQBN"
-    "--library" "$LIB_DIR"
-    "--libraries" "$USER_LIB_DIR"
-    "--warnings" "default"
-    "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
-    "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
-    "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
-    "--build-path" "$OUTPUT_DIR"
-)
-
-mkdir -p "$OUTPUT_DIR"
-OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
-echo "[renode-build] Compiling $SKETCH_PATH for $FQBN..."
-TMP_LOG="$(mktemp /tmp/renode_compile_XXXXXX.log)"
-trap 'rm -f "$TMP_LOG"' EXIT
-
-if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2>&1; then
-    cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
-    python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
-        --fqbn "$FQBN" \
-        --json-output "${OUTPUT_DIR}/arduino_core_metadata.json"
-    SKETCH_NAME="$(basename "$(dirname "$SKETCH_PATH")")"
-    ELF_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.elf"
-
-    if [ -f "$ELF_FILE" ]; then
-        cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
-        echo "[renode-build] Successfully compiled for $FQBN: ${OUTPUT_DIR}/firmware.elf"
-    else
-        ANY_ELF="$(find "$OUTPUT_DIR" -maxdepth 1 -name "*.elf" | head -n 1)"
-        if [ -n "$ANY_ELF" ]; then
-            cp "$ANY_ELF" "${OUTPUT_DIR}/firmware.elf"
-            echo "[renode-build] Output available at: ${OUTPUT_DIR}/firmware.elf"
-        else
-            echo "ERROR: No ELF binary produced in $OUTPUT_DIR" >&2
-            exit 1
-        fi
-    fi
-else
-    cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
-    echo "ERROR: Failed compiling for $FQBN!" >&2
-    cat "$TMP_LOG" >&2
-    exit 1
-fi
+exec "${SCRIPT_DIR}/compile_firmware.sh" "$SKETCH_PATH" "$FQBN" ${OUTPUT_DIR:+"$OUTPUT_DIR"}

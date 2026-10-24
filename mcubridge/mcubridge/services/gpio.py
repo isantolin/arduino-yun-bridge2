@@ -66,6 +66,7 @@ class GpioService:
                     "interval_ms": interval_ms,
                     "hysteresis": hysteresis,
                     "subscribed_at": time.time(),
+                    "active": True,
                 }
             else:
                 state.pin_subscriptions.pop(pin, None)
@@ -75,6 +76,17 @@ class GpioService:
 
     async def on_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
         """Handle MCU pin subscription confirmation frame."""
+        state = self._runtime.state
+        if p.pin in state.pin_subscriptions:
+            state.pin_subscriptions[p.pin]["active"] = p.success
+        elif p.success:
+            state.pin_subscriptions[p.pin] = {
+                "mode": "INPUT",
+                "interval_ms": 50,
+                "hysteresis": 1,
+                "subscribed_at": time.time(),
+                "active": True,
+            }
         logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)
 
     async def handle_pin_update_event(

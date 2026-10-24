@@ -431,10 +431,13 @@ class ProtocolRegistry:
                     cond = cond()
                 if not cond:
                     continue
-            getter = getattr(service, task.handler, None)
-            if getter is None:
+            if not hasattr(service, task.handler):
                 continue
-            worker = getter() if callable(getter) else getter
+            getter: Any = getattr(service, task.handler)
+            if not callable(getter):
+                continue
+            res: Any = getter()
+            worker: Callable[[], Any] = res if callable(res) else getter
             fatals: tuple[type[BaseException], ...] = ()
             if task.fatal_exception and task.fatal_exception in fatals_map:
                 fatals = (fatals_map[task.fatal_exception],)

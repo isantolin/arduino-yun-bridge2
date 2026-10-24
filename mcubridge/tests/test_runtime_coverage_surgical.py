@@ -452,7 +452,7 @@ async def test_on_mcu_process_kill_and_subscribe_resp(
     assert err == "PID not found"
 
     await svc.gpio.on_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
-    assert mock_bridge_state.pin_subscriptions[13].active is True
+    assert mock_bridge_state.pin_subscriptions[13]["active"] is True
 
 
 async def test_enqueue_cloud_queue_empty_in_finally(

@@ -25,10 +25,14 @@ class TypedRuntimeFacade:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
         self.state = state
+        self.serial = MagicMock()
         self.handle_request = AsyncMock()
         self.run_process = AsyncMock(return_value=123)
         self.kill_process = AsyncMock(return_value=(True, None))
         self.reset_link = AsyncMock(return_value=True)
+        self.file_write = AsyncMock(return_value=True)
+        self.datastore_put = AsyncMock(return_value=True)
+        self.mailbox_push = AsyncMock(return_value=True)
         self.clock_sync = MagicMock()
         self.gpio = MagicMock()
         self.local_bridge_service = MagicMock()

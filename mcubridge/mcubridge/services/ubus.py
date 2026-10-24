@@ -51,12 +51,15 @@ class BridgeRuntimeFacade(Protocol):
 
     config: RuntimeConfig
     state: RuntimeState
+    serial: Any
 
     async def handle_request(self, inbound: Any) -> None: ...
 
     async def run_process(self, command: str) -> int: ...
 
-    async def kill_process(self, pid: int) -> tuple[bool, str | None]: ...
+    async def kill_process(
+        self, _seq_or_pid: int | pb.ProcessKill, pid: int | None = None
+    ) -> tuple[bool, str | None]: ...
 
     async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
 

@@ -621,7 +621,10 @@ class BridgeService:
 
     async def datastore_get(self, key: str) -> bytes:
         cache = self.state.datastore_cache
-        return (await cache.get(key, b"")) if cache else b""
+        if not cache:
+            return b""
+        res = await cache.get(key, b"")
+        return res if isinstance(res, bytes) else b""
 
     async def handle_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial

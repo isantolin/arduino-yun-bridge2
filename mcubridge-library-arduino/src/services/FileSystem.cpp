@@ -54,13 +54,17 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0U;
   const uint32_t start_ms = millis();
 
-  uint8_t dummy = 0U;
-  etl::fixed_iterator<uint8_t*> fixed_it(&dummy);
-
-  const bool completed = etl::all_of(
-      fixed_it, fixed_it + bridge::config::FILE_MAX_READ_CHUNKS, [&](uint8_t) {
+  uint16_t chunk_count = 0U;
+  uint8_t cursor = 0U;
+  uint8_t sentinel = 0U;
+  const auto it = etl::find_if(
+      etl::fixed_iterator<uint8_t*>(&cursor),
+      etl::fixed_iterator<uint8_t*>(&sentinel), [&](uint8_t) {
+        if (++chunk_count > bridge::config::FILE_MAX_READ_CHUNKS) {
+          return true;
+        }
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-          return false;
+          return true;
         }
         etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
         auto res = bridge::hal::readFileChunk(
@@ -68,7 +72,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         if (!res) {
           const bool sent = Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           (void)sent;
-          return false;
+          return true;
         }
 
         rpc::payload::FileReadResponse p = {};
@@ -76,7 +80,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
             p.content,
             etl::span<const uint8_t>(buffer.data(), res->bytes_read));
         if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
-          return false;
+          return true;
         }
 
         if (!res->has_more) {
@@ -84,13 +88,13 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
           const bool sent =
               Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
           (void)sent;
-          return false;
+          return true;
         }
 
         offset += res->bytes_read;
-        return true;
+        return false;
       });
-  (void)completed;
+  (void)it;
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {

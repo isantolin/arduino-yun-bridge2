@@ -134,6 +134,34 @@ void test_filesystem_on_read() {
   TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
+void test_filesystem_on_read_multichunk() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  const etl::string_view path = "multi_read.bin";
+  etl::array<uint8_t, 70> data = {};
+  etl::fill(data.begin(), data.end(), 0x55);
+  TEST_ASSERT_TRUE(bridge::hal::writeFile(
+                       path, etl::span<const uint8_t>(data.data(), data.size()))
+                       .has_value());
+
+  rpc::payload::FileRead msg;
+  strncpy(msg.path, path.data(), sizeof(msg.path));
+  FileSystem._onRead(msg);
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
+}
+
+void test_filesystem_on_read_error() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  rpc::payload::FileRead msg;
+  strncpy(msg.path, "non_existent_file.bin", sizeof(msg.path));
+  FileSystem._onRead(msg);
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
+}
+
 void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -177,6 +205,8 @@ int main() {
   RUN_TEST(test_filesystem_api_remove);
   RUN_TEST(test_filesystem_on_write);
   RUN_TEST(test_filesystem_on_read);
+  RUN_TEST(test_filesystem_on_read_multichunk);
+  RUN_TEST(test_filesystem_on_read_error);
   RUN_TEST(test_filesystem_on_remove);
   RUN_TEST(test_filesystem_api_empty_and_error_paths);
   return UNITY_END();

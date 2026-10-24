@@ -58,8 +58,8 @@ class BaseBridgeState
   etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
-    return this->get_state_id();
+  static etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    return static_cast<etl::fsm_state_id_t>(SId);
   }
 };
 

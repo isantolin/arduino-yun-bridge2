@@ -72,27 +72,34 @@ class GpioService:
 
         return {"status": "error", "message": "MCU rejected pin subscription"}
 
-    async def handle_pin_update_event(self, event: pb.PinUpdateEvent) -> None:
+    async def on_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
+        """Handle MCU pin subscription confirmation frame."""
+        logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)
+
+    async def handle_pin_update_event(
+        self, _seq_or_event: int | pb.PinUpdateEvent, event: pb.PinUpdateEvent | None = None
+    ) -> None:
         """Handle streaming pin value change events from the MCU.
 
         [SIL-2] Routes through enqueue_cloud() for proper LMDB spool persistence,
         IPC correlation, console fanout, drop metrics, and topic_authorization.
         """
+        actual_event = _seq_or_event if isinstance(_seq_or_event, pb.PinUpdateEvent) else (event or pb.PinUpdateEvent())
         state = self._runtime.state
         state.pin_events_count += 1
 
         logger.debug(
             "Pin update event received",
-            pin=event.pin,
-            value=event.value,
-            timestamp_micros=event.timestamp_micros,
+            pin=actual_event.pin,
+            value=actual_event.value,
+            timestamp_micros=actual_event.timestamp_micros,
         )
 
         # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                REGISTRY.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(event.pin), "update"),
-                str(event.value).encode("utf-8"),
+                REGISTRY.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(actual_event.pin), "update"),
+                str(actual_event.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )
         )

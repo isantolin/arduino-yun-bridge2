@@ -256,12 +256,10 @@ class UbusService:
         proto = pb.DigitalWrite()
         ParseDict(msg, proto, ignore_unknown_fields=True)
         pin, val = proto.pin, proto.value
-        coro = (
-            self.runtime.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=pin, value=val))
-            if kind == "digital"
-            else self.runtime.local_bridge_service.execute_analog_write(pb.AnalogWrite(pin=pin, value=val))
-        )
-        self.schedule_async(coro)
+        cmd = Command.CMD_DIGITAL_WRITE if kind == "digital" else Command.CMD_ANALOG_WRITE
+        payload = pb.DigitalWrite(pin=pin, value=val) if kind == "digital" else pb.AnalogWrite(pin=pin, value=val)
+        if self.runtime.serial:
+            self.schedule_async(self.runtime.serial.send(cmd.value, payload))
         return {"status": "ok", "pin": pin, "value": val}
 
     def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:

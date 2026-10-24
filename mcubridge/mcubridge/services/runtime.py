@@ -648,19 +648,11 @@ class BridgeService:
     async def on_mcu_mailbox_processed(self, _seq: int, p: pb.MailboxProcessed) -> None:
         await self._publish_mcu_message(p, p.SerializeToString(), content_type=PROTOBUF_CONTENT_TYPE)
 
-    async def _respond_mcu_op(
-        self,
-        op: Callable[[Any], Awaitable[pb.GenericResponse]],
-        p: Any,
-        fail_msg: str,
-    ) -> bool:
+    async def on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
         if not self.serial:
             return False
-        res = await op(p)
-        return await (self.send_mcu_ok() if res.status == "ok" else self.send_mcu_error(fail_msg))
-
-    async def on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
-        return await self._respond_mcu_op(self.local_bridge_service.execute_file_write, p, "Write failed")
+        ok = await self.safe_file_write(p.path, p.data)
+        return await (self.send_mcu_ok() if ok else self.send_mcu_error("Path not allowed or quota exceeded"))
 
     async def on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
         if not self.serial:
@@ -676,7 +668,10 @@ class BridgeService:
                 await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
 
     async def on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
-        return await self._respond_mcu_op(self.local_bridge_service.execute_file_remove, p, "Remove failed")
+        if not self.serial:
+            return False
+        ok = await self.safe_file_remove(p.path)
+        return await (self.send_mcu_ok() if ok else self.send_mcu_error("Path not allowed or not found"))
 
     async def on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self.pending_mcu_read:
@@ -692,22 +687,22 @@ class BridgeService:
     async def on_mcu_process_run_async(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
         if not self.serial:
             return False
-        resp = await self.local_bridge_service.execute_process_run_async(p)
-        if resp.pid:
+        allowed = is_command_allowed(self.state.allowed_policy, p.command)
+        pid = (await self.run_process(p.command)) if (p.command and allowed) else 0
+        if pid:
             res = await self.serial.send(
                 Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                resp,
+                pb.ProcessRunAsyncResponse(pid=pid),
             )
             return bool(res)
         await self.send_mcu_error("Exec failed")
         return False
 
     async def on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return False
-        batch = await self.local_bridge_service.execute_process_poll(p)
-        res = await serial.send(
+        batch = await self.poll_process(p.pid)
+        res = await self.serial.send(
             Command.CMD_PROCESS_POLL_RESP.value,
             batch,
         )
@@ -746,16 +741,6 @@ class BridgeService:
 
     async def on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
         await self.kill_process(p.pid)
-
-    async def on_mcu_clock_sync_resp(self, _seq: int, p: pb.ClockSyncResponse) -> bool:
-        self.clock_sync.record_sync(p)
-        return False
-
-    async def on_mcu_pin_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
-        logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)
-
-    async def on_mcu_pin_update_event(self, _seq: int, p: pb.PinUpdateEvent) -> None:
-        await self.gpio.handle_pin_update_event(p)
 
     async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         self.state.metrics.mcu_status_counts.labels(status=status.name).inc()

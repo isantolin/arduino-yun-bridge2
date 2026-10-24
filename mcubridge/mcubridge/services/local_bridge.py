@@ -140,21 +140,6 @@ class LocalBridgeService:
         res = (await serial.send(cmd.value, payload)) if serial else None
         return parse_serial_response(res, resp_type, resp_type())
 
-    async def execute_set_pin_mode(self, req: pb.PinMode) -> pb.GenericResponse:
-        return await self._send_serial_ack(Command.CMD_SET_PIN_MODE, req)
-
-    async def execute_digital_write(self, req: pb.DigitalWrite) -> pb.GenericResponse:
-        return await self._send_serial_ack(Command.CMD_DIGITAL_WRITE, req)
-
-    async def execute_digital_read(self, req: pb.PinRead) -> pb.DigitalReadResponse:
-        return await self._send_serial_query(Command.CMD_DIGITAL_READ, req, pb.DigitalReadResponse)
-
-    async def execute_analog_write(self, req: pb.AnalogWrite) -> pb.GenericResponse:
-        return await self._send_serial_ack(Command.CMD_ANALOG_WRITE, req)
-
-    async def execute_analog_read(self, req: pb.PinRead) -> pb.AnalogReadResponse:
-        return await self._send_serial_query(Command.CMD_ANALOG_READ, req, pb.AnalogReadResponse)
-
     async def execute_pin_subscribe(self, req: pb.PinSubscribeRequest) -> pb.PinSubscribeResponse:
         try:
             mode_str = pb.PinModeType.Name(req.mode).removeprefix("PIN_")
@@ -255,9 +240,6 @@ class LocalBridgeService:
             else pb.GenericResponse(status="error", message=err or "PID not found")
         )
 
-    async def execute_spi_transfer(self, req: pb.SpiTransfer) -> pb.SpiTransferResponse:
-        return await self._send_serial_query(Command.CMD_SPI_TRANSFER, req, pb.SpiTransferResponse)
-
     async def execute_spi_configure(self, req: pb.SpiConfig) -> pb.GenericResponse:
         serial = self.runtime_service.serial
         ok = bool(
@@ -273,9 +255,6 @@ class LocalBridgeService:
             self.runtime_service.state.mcu_version = (resp.major, resp.minor, resp.patch)
         return resp
 
-    async def execute_get_free_memory(self, _req: pb.SubscribeRequest) -> pb.FreeMemoryResponse:
-        return await self._send_serial_query(Command.CMD_GET_FREE_MEMORY, b"", pb.FreeMemoryResponse)
-
     async def execute_get_status(self, _req: pb.SubscribeRequest) -> pb.BridgeStatus:
         return self.runtime_service.state.build_status_snapshot()
 
@@ -290,9 +269,6 @@ class LocalBridgeService:
             self.runtime_service.state.console_to_mcu_queue.append(pl)
             await self.runtime_service.flush_console_queue()
         return pb.GenericResponse(status="ok")
-
-    async def execute_clock_sync(self, req: pb.ClockSyncRequest) -> pb.ClockSyncResponse:
-        return await self._send_serial_query(Command.CMD_CLOCK_SYNC, req, pb.ClockSyncResponse)
 
     async def execute_publish(self, req: pb.CloudQueuedPublish) -> pb.CloudQueuedPublish:
         has_correlation = req.HasField("correlation_data")
@@ -332,40 +308,68 @@ class LocalBridgeService:
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
         """[SIL-2] Dispatch and execute an RPC by name, returning serialized response."""
         spec = REGISTRY.get(method_name)
-        if not spec or not spec.request_type or not spec.handler_name:
+        if not spec or not spec.request_type:
             raise ValueError(f"Unknown RPC method: {method_name}")
         req = spec.request_type()
         if payload_bytes:
             req.ParseFromString(payload_bytes)
-        handler = getattr(self, spec.handler_name)
-        with structlog.contextvars.bound_contextvars(rpc_method=method_name):
-            resp = await handler(req)
-            return resp.SerializeToString()
 
-    async def _handle_unary[ReqT: ProtobufMessage, RespT: ProtobufMessage](
-        self,
-        stream: Stream[ReqT, RespT],
-        rpc_name: str,
-        handler: Callable[[ReqT], Coroutine[Any, Any, RespT]],
-    ) -> None:
-        """[SIL-2] Generic handler executing unary gRPC call with bound contextvars."""
-        if (req := await stream.recv_message()) is not None:
-            with structlog.contextvars.bound_contextvars(rpc=rpc_name):
-                await stream.send_message(await handler(req))
+        with structlog.contextvars.bound_contextvars(rpc_method=method_name):
+            if spec.handler_name and hasattr(self, spec.handler_name):
+                resp = await getattr(self, spec.handler_name)(req)
+            elif spec.requires_ack and spec.command_id is not None:
+                resp = await self._send_serial_ack(Command(spec.command_id), req)
+            elif spec.response_type is not None and spec.command_id is not None:
+                payload = b"" if isinstance(req, pb.SubscribeRequest) else req
+                resp = await self._send_serial_query(Command(spec.command_id), payload, spec.response_type)
+            else:
+                raise ValueError(f"No execution path for {method_name}")
+            return resp.SerializeToString()
 
     @staticmethod
     def create_unary_handler(spec: OperationSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
         name = spec.rpc_name or spec.name
         handler_name = spec.handler_name
-        if not handler_name:
-            raise ValueError(f"LocalBridge RPC {name} requires handler_name")
+        cmd_id = spec.command_id
+        resp_cls = spec.response_type
 
-        async def unary_handler(self: LocalBridgeService, stream: Stream[Any, Any]) -> None:
-            await self._handle_unary(stream, name, getattr(self, handler_name))
+        if handler_name and hasattr(LocalBridgeService, handler_name):
 
-        unary_handler.__name__ = name
-        unary_handler.__qualname__ = f"LocalBridgeService.{name}"
-        return unary_handler
+            async def custom_unary_handler(self: LocalBridgeService, stream: Stream[Any, Any]) -> None:
+                if (req := await stream.recv_message()) is not None:
+                    with structlog.contextvars.bound_contextvars(rpc=name):
+                        await stream.send_message(await getattr(self, handler_name)(req))
+
+            custom_unary_handler.__name__ = name
+            custom_unary_handler.__qualname__ = f"LocalBridgeService.{name}"
+            return custom_unary_handler
+
+        if spec.requires_ack and cmd_id is not None:
+            cmd = Command(cmd_id)
+
+            async def ack_unary_handler(self: LocalBridgeService, stream: Stream[Any, Any]) -> None:
+                if (req := await stream.recv_message()) is not None:
+                    with structlog.contextvars.bound_contextvars(rpc=name):
+                        await stream.send_message(await self._send_serial_ack(cmd, req))
+
+            ack_unary_handler.__name__ = name
+            ack_unary_handler.__qualname__ = f"LocalBridgeService.{name}"
+            return ack_unary_handler
+
+        if resp_cls is not None and cmd_id is not None:
+            cmd = Command(cmd_id)
+
+            async def query_unary_handler(self: LocalBridgeService, stream: Stream[Any, Any]) -> None:
+                if (req := await stream.recv_message()) is not None:
+                    with structlog.contextvars.bound_contextvars(rpc=name):
+                        payload = b"" if isinstance(req, pb.SubscribeRequest) else req
+                        await stream.send_message(await self._send_serial_query(cmd, payload, resp_cls))
+
+            query_unary_handler.__name__ = name
+            query_unary_handler.__qualname__ = f"LocalBridgeService.{name}"
+            return query_unary_handler
+
+        raise ValueError(f"Cannot create unary handler for {name}")
 
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is not None:

@@ -111,11 +111,16 @@ class ClockSyncService:
             self.fsm.mark_degraded()
         return self.get_status()
 
-    def record_sync(self, resp: pb.ClockSyncResponse) -> dict[str, Any]:
+    def record_sync(
+        self, _seq_or_resp: int | pb.ClockSyncResponse, resp: pb.ClockSyncResponse | None = None
+    ) -> dict[str, Any]:
         """Record clock synchronization telemetry from valid MCU response. [SIL-2]"""
+        actual_resp = (
+            _seq_or_resp if isinstance(_seq_or_resp, pb.ClockSyncResponse) else (resp or pb.ClockSyncResponse())
+        )
         t4_host_us = time.time_ns() // 1000
-        t1_host_us = resp.host_time_us
-        t2_mcu_us = resp.mcu_time_us
+        t1_host_us = actual_resp.host_time_us
+        t2_mcu_us = actual_resp.mcu_time_us
 
         state = self._runtime.state
         if state.clock_last_host_time_us == t1_host_us and state.clock_last_host_time_us != 0:

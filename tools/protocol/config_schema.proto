@@ -1304,13 +1304,13 @@ enum Command {
   CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
     category: "gpio"
     pb_message: "PinSubscribeResponse"
-    mcu_handler: "on_mcu_pin_subscribe_resp"
+    mcu_handler: "gpio.on_subscribe_resp"
   }];
   CMD_PIN_UPDATE_EVENT = 89 [(cmd_opts) = {
     category: "gpio"
     cloud_topic: "gpio/pin_update"
     pb_message: "PinUpdateEvent"
-    mcu_handler: "on_mcu_pin_update_event"
+    mcu_handler: "gpio.handle_pin_update_event"
   }];
   CMD_CONSOLE_WRITE = 96 [(cmd_opts) = {
     category: "console"
@@ -1583,7 +1583,7 @@ enum Command {
   CMD_CLOCK_SYNC_RESP = 193 [(cmd_opts) = {
     category: "clock"
     pb_message: "ClockSyncResponse"
-    mcu_handler: "on_mcu_clock_sync_resp"
+    mcu_handler: "clock_sync.record_sync"
   }];
 }
 

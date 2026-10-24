@@ -633,6 +633,17 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     await svc.handle_mcu_frame(9999, 1, b"")
     assert mock_serial.send.called
 
+    # Test synchronous (non-awaitable) handler path
+    svc.mcu_registry[Command.CMD_CLOCK_SYNC_RESP.value] = lambda _seq, _p: {"status": "ok"}
+    await svc.handle_mcu_frame(Command.CMD_CLOCK_SYNC_RESP.value, 2, b"")
+    mock_serial.acknowledge.assert_called_with(Command.CMD_CLOCK_SYNC_RESP.value, 2)
+
+    # Test handler returning False (no ack)
+    mock_serial.acknowledge.reset_mock()
+    svc.mcu_registry[Command.CMD_PROCESS_KILL.value] = AsyncMock(return_value=False)
+    await svc.handle_mcu_frame(Command.CMD_PROCESS_KILL.value, 3, pb.ProcessKill(pid=123).SerializeToString())
+    assert not mock_serial.acknowledge.called
+
 
 async def test_runtime_handle_request_route_none_and_inbound_props(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock

@@ -701,7 +701,7 @@ class BridgeService:
     async def file_read(self, path: str) -> bytes | None:
         clean = path.lstrip("/")
         if clean.startswith(MCU_FS_PREFIX):
-            return await self.read_mcu_file(clean)
+            return await self._read_mcu_file(clean)
         return await self.safe_file_read(path)
 
     async def file_remove(self, path: str) -> bool:
@@ -1010,7 +1010,7 @@ class BridgeService:
             logger.debug("Safe file remove failed", path=str(path), error=str(exc))
             return False
 
-    async def read_mcu_file(self, target: str) -> bytes:
+    async def _read_mcu_file(self, target: str) -> bytes:
         serial = self.serial
         if not serial:
             return b""

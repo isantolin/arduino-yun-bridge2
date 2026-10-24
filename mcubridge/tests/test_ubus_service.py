@@ -211,6 +211,13 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
     mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=1))
 
 
+def test_ubus_handle_pin_write_serial_none(mock_runtime: MockRuntimeFacade) -> None:
+    mock_runtime.serial = None
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_digital_write(None, {"pin": 13, "value": 1})
+    assert res == {"status": "ok", "pin": 13, "value": 1}
+
+
 async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_analog_write(MagicMock(), {"pin": 9, "value": 128})

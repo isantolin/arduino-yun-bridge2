@@ -119,7 +119,7 @@ async def test_runtime_mcu_file_read_fsm_success(
 
     async with asyncio.TaskGroup() as tg:
         tg.create_task(_simulate_mcu_responses())
-        tg.create_task(service.read_mcu_file("/mcu/test.bin"))
+        tg.create_task(service.file_read("/mcu/test.bin"))
 
     assert service.pending_mcu_read is None
 
@@ -134,7 +134,7 @@ async def test_runtime_mcu_file_read_fsm_dispatch_fail(
     serial_mock.send_raw.return_value = False
     service.serial = serial_mock
 
-    await service.read_mcu_file("/mcu/missing.bin")
+    await service.file_read("/mcu/missing.bin")
 
     assert service.pending_mcu_read is None
 
@@ -150,6 +150,6 @@ async def test_runtime_mcu_file_read_fsm_timeout(
     serial_mock.send_raw.return_value = True
     service.serial = serial_mock
 
-    await service.read_mcu_file("/mcu/unresponsive.bin")
+    await service.file_read("/mcu/unresponsive.bin")
 
     assert service.pending_mcu_read is None

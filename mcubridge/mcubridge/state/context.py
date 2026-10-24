@@ -230,16 +230,21 @@ class CloudLinkMachine(StateMachine):
         connecting.to(connected_http3)
         | reconnecting.to(connected_http3)
         | spooling_degraded.to(connected_http3)
+        | connected_http2.to(connected_http3)
         | connected_http3.to(connected_http3)
+        | disabled.to(connected_http3)
     )
     connect_http2 = (
         connecting.to(connected_http2)
         | reconnecting.to(connected_http2)
         | spooling_degraded.to(connected_http2)
+        | connected_http3.to(connected_http2)
         | connected_http2.to(connected_http2)
+        | disabled.to(connected_http2)
     )
     degrade = (
-        connected_http3.to(spooling_degraded)
+        disabled.to(spooling_degraded)
+        | connected_http3.to(spooling_degraded)
         | connected_http2.to(spooling_degraded)
         | connecting.to(spooling_degraded)
         | reconnecting.to(spooling_degraded)
@@ -482,9 +487,10 @@ class RuntimeState:
             start_value=self.cloud_link_state,
             listeners=[self],
         )
+        self._connected_via_http3: bool = bool(kwargs.get("connected_via_http3", False))
         if kwargs.get("mcu_is_paused", False):
             self.connection_fsm.pause()
-        if kwargs.get("connected_via_http3", False):
+        if self._connected_via_http3:
             self.cloud_fsm.connect_http3()
         if kwargs.get("cloud_spool_degraded", False):
             self.cloud_fsm.degrade()
@@ -533,18 +539,22 @@ class RuntimeState:
     @cloud_spool_degraded.setter
     def cloud_spool_degraded(self, value: bool) -> None:
         if value:
-            if not self.cloud_fsm.spooling_degraded.is_active and not self.cloud_fsm.disabled.is_active:
+            if not self.cloud_fsm.spooling_degraded.is_active:
                 self.cloud_fsm.degrade()
         else:
             if self.cloud_fsm.spooling_degraded.is_active:
-                self.cloud_fsm.connect_http3()
+                if self._connected_via_http3:
+                    self.cloud_fsm.connect_http3()
+                else:
+                    self.cloud_fsm.connect_http2()
 
     @property
     def connected_via_http3(self) -> bool:
-        return self.cloud_fsm.connected_http3.is_active
+        return self._connected_via_http3 or self.cloud_fsm.connected_http3.is_active
 
     @connected_via_http3.setter
     def connected_via_http3(self, value: bool) -> None:
+        self._connected_via_http3 = value
         if value:
             if not self.cloud_fsm.connected_http3.is_active and not self.cloud_fsm.disabled.is_active:
                 self.cloud_fsm.connect_http3()
@@ -590,6 +600,14 @@ class RuntimeState:
         if getattr(self, "serial_tx_allowed", None) is not None:
             self.serial_tx_allowed.clear()
 
+
+    def on_enter_connected_http3(self) -> None:
+        """[SIL-2] Native hook executed on entering connected_http3 state."""
+        self._connected_via_http3 = True
+
+    def on_enter_connected_http2(self) -> None:
+        """[SIL-2] Native hook executed on entering connected_http2 state."""
+        self._connected_via_http3 = False
 
     @property
     def handshake_failures(self) -> int:

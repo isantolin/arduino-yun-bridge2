@@ -13,7 +13,7 @@ import structlog
 import structlog.contextvars
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
-from grpclib.const import Cardinality, Handler
+from grpclib.const import Handler
 from grpclib.server import Stream
 
 from ..config.const import MCU_FS_PREFIX
@@ -34,7 +34,6 @@ __all__ = [
     "ConsoleQueueTarget",
     "LocalBridgeService",
     "MemoryQueueAdapter",
-    "build_local_bridge_mapping",
     "parse_serial_response",
 ]
 
@@ -115,33 +114,6 @@ class LocalBridgeRuntime(Protocol):
     async def handle_request(self, inbound: Any, /) -> None: ...
 
 
-def build_local_bridge_mapping(service: Any) -> dict[str, Handler]:
-    """Build grpclib route mapping for LocalBridge services from protocol SSOT. [SIL-2]"""
-    mapping: dict[str, Handler] = {
-        f"/rpc.pb.LocalBridge/{spec.rpc_name or spec.name}": Handler(
-            getattr(service, spec.rpc_name or spec.name),
-            Cardinality.UNARY_UNARY,
-            spec.request_type,
-            spec.response_type,
-        )
-        for spec in REGISTRY.rpc_specs
-        if spec.request_type is not None and spec.response_type is not None
-    }
-    mapping["/rpc.pb.LocalBridge/Publish"] = Handler(
-        service.Publish,
-        Cardinality.UNARY_UNARY,
-        pb.CloudQueuedPublish,
-        pb.CloudQueuedPublish,
-    )
-    mapping["/rpc.pb.LocalBridge/SubscribeConsole"] = Handler(
-        service.SubscribeConsole,
-        Cardinality.UNARY_STREAM,
-        pb.SubscribeRequest,
-        pb.CloudQueuedPublish,
-    )
-    return mapping
-
-
 class LocalBridgeService:
     """Implementation of the Local gRPC service for local MPU clients and Cloud Gateway forwarding."""
 
@@ -152,7 +124,7 @@ class LocalBridgeService:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __mapping__(self) -> dict[str, Handler]:
-        return build_local_bridge_mapping(self)
+        return REGISTRY.build_local_bridge_mapping(self)
 
     # --- Core Business Logic Execution (Zero-Duplication) ---
 

@@ -45,7 +45,6 @@ from mcubridge.protocol.protocol import (
 from mcubridge.services.local_bridge import (
     ConsoleQueueTarget,
     MemoryQueueAdapter,
-    build_local_bridge_mapping,
 )
 from statemachine import State, StateMachine
 
@@ -657,7 +656,7 @@ class GatewayLocalBridgeService:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __mapping__(self) -> dict[str, Handler]:
-        return build_local_bridge_mapping(self)
+        return REGISTRY.build_local_bridge_mapping(self)
 
     async def _forward_rpc(
         self,

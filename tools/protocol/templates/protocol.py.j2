@@ -8,10 +8,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
+import functools
+import operator
 import posixpath
 from typing import Any, Final
 
 from google.protobuf.message import Message as ProtobufMessage
+from grpclib.const import Cardinality, Handler
 import structlog
 
 from . import mcubridge_pb2 as pb
@@ -139,6 +142,7 @@ class OperationSpec:
     default_factory: Callable[[], ProtobufMessage] | None = None
     handler_name: str | None = None
     metrics_blob_field: str | None = None
+    cardinality: Cardinality = Cardinality.UNARY_UNARY
 
 
 class ProtocolRegistry:
@@ -155,6 +159,7 @@ class ProtocolRegistry:
         "mcu_unsupported_reasons",
         "topic_auth_map",
         "rpc_specs",
+        "ubus_signatures",
     )
 
     def __init__(
@@ -166,12 +171,14 @@ class ProtocolRegistry:
         mcu_dispatch_handlers: dict[int, str],
         mcu_unsupported_reasons: dict[int, str],
         topic_auth_map: dict[tuple[str, str], str] | None = None,
+        ubus_signatures: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (),
     ) -> None:
         self.operations = operations
         self.topic_lookup = topic_lookup
         self.mcu_dispatch_handlers = mcu_dispatch_handlers
         self.mcu_unsupported_reasons = mcu_unsupported_reasons
         self.rpc_specs = tuple(op for op in operations if op.handler_name is not None)
+        self.ubus_signatures = ubus_signatures
 
         self.by_command_id = {op.command_id: op for op in operations if op.command_id is not None}
         self.by_name = {op.name: op for op in operations}
@@ -311,6 +318,80 @@ class ProtocolRegistry:
             method=method,
         )
 
+    def build_local_bridge_mapping(self, service: Any) -> dict[str, Handler]:
+        """Build grpclib route mapping for LocalBridge services from protocol SSOT. [SIL-2]"""
+        mapping: dict[str, Handler] = {
+            f"/rpc.pb.LocalBridge/{spec.rpc_name or spec.name}": Handler(
+                getattr(service, spec.rpc_name or spec.name),
+                spec.cardinality,
+                spec.request_type,
+                spec.response_type,
+            )
+            for spec in self.rpc_specs
+            if spec.request_type is not None and spec.response_type is not None
+        }
+        {%- for s in streaming_rpc_specs %}
+        mapping["/rpc.pb.LocalBridge/{{ s.name }}"] = Handler(
+            service.{{ s.name }},
+            {{ s.cardinality }},
+            pb.{{ s.req_cls }},
+            pb.{{ s.resp_cls }},
+        )
+        {%- endfor %}
+        return mapping
+
+    def build_mcu_dispatch(
+        self,
+        target: Any,
+        *,
+        status_handler: Callable[..., Any] | None = None,
+        unsupported_handler: Callable[..., Any] | None = None,
+    ) -> dict[int, Callable[..., Any]]:
+        """Build O(1) MCU dispatch registry from Protocol SSOT. [SIL-2]"""
+        status_fn = status_handler or getattr(target, "handle_mcu_status", None)
+        unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
+        dispatch: dict[int, Callable[..., Any]] = {}
+        if status_fn is not None:
+            for s in Status:
+                if s.value not in self.mcu_dispatch_handlers:
+                    dispatch[s.value] = functools.partial(status_fn, s)
+        for code, handler_path in self.mcu_dispatch_handlers.items():
+            dispatch[code] = operator.attrgetter(handler_path)(target)
+        if unsupp_fn is not None:
+            for code, reason in self.mcu_unsupported_reasons.items():
+                dispatch[code] = functools.partial(unsupp_fn, msg=reason)
+        return dispatch
+
+    def build_ubus_methods(
+        self,
+        service: Any,
+        ubus_backend: Any,
+        *,
+        handler_factory: Callable[[Callable[..., Any]], Callable[..., Any]] | None = None,
+        get_type_fn: Callable[[str, Any], Any] | None = None,
+        session_type: Any = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Build OpenWrt UBUS method registration dictionary from Protocol SSOT. [SIL-2]"""
+        def _default_get_type(typ: str, backend: Any) -> Any:
+            if backend is None:
+                return 0
+            return getattr(backend, f"BLOBMSG_TYPE_{typ}", getattr(backend, typ, 0))
+
+        type_resolver = get_type_fn or _default_get_type
+        wrap = handler_factory or (lambda fn: fn)
+        resolved_session_type = session_type if session_type is not None else type_resolver("STRING", ubus_backend)
+
+        return {
+            name: {
+                "method": wrap(getattr(service, f"ubus_handle_{name}")),
+                "signature": {
+                    **{arg: type_resolver(typ, ubus_backend) for arg, typ in args},
+                    "ubus_rpc_session": resolved_session_type,
+                },
+            }
+            for name, args in self.ubus_signatures
+        }
+
 
 
 
@@ -370,6 +451,9 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- if op.metrics_blob_field %}
             metrics_blob_field={{ op.metrics_blob_field|tojson }},
             {%- endif %}
+            {%- if op.cardinality %}
+            cardinality={{ op.cardinality }},
+            {%- endif %}
         ),
 {%- endfor %}
     ),
@@ -399,6 +483,18 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
         Command.{{ c.name }}.value: STATUS_REASON_{{ c.mcu_unsupported_reason|upper }},
         {%- endfor %}
     },
+    ubus_signatures=(
+        {%- for m in ubus_methods %}
+        (
+            {{ m.name|tojson }},
+            (
+                {%- for a in m.args %}
+                ({{ a.name|tojson }}, {{ a.type|tojson }}),
+                {%- endfor %}
+            ),
+        ),
+        {%- endfor %}
+    ),
 )
 
 

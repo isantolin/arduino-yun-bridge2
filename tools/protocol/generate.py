@@ -392,6 +392,14 @@ def _extract_payloads_and_actions(
         }
         for t in opts.Extensions[pb_module.topics]
     ]
+    ubus_methods = [
+        {
+            "name": m.name,
+            "description": m.description,
+            "args": [{"name": a.name, "type": a.type} for a in m.args],
+        }
+        for m in (opts.Extensions.get(pb_module.ubus_methods, []))
+    ]
     return {
         "payload_fields": payload_fields,
         "payload_structs": payload_structs,
@@ -399,15 +407,29 @@ def _extract_payloads_and_actions(
         "all_structs": all_structs,
         "grouped_actions": grouped_actions,
         "topics": topics,
+        "ubus_methods": ubus_methods,
     }
 
 
-def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def _extract_rpc_specs(
+    pb_module: Any, svc_desc: Any
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
     rpc_specs: list[dict[str, Any]] = []
+    streaming_rpc_specs: list[dict[str, Any]] = []
     rpc_aliases: dict[str, str] = {}
     for m in svc_desc.methods:
-        if m.client_streaming or m.server_streaming:
-            continue
+        cardinality = "Cardinality.UNARY_UNARY"
+        is_streaming = False
+        if m.client_streaming and m.server_streaming:
+            cardinality = "Cardinality.STREAM_STREAM"
+            is_streaming = True
+        elif m.client_streaming:
+            cardinality = "Cardinality.STREAM_UNARY"
+            is_streaming = True
+        elif m.server_streaming:
+            cardinality = "Cardinality.UNARY_STREAM"
+            is_streaming = True
+
         mo = m.output_type.GetOptions()
         err_init = mo.Extensions[pb_module.msg_error_init] if mo.HasExtension(pb_module.msg_error_init) else ""
         m_opts = m.GetOptions()
@@ -422,18 +444,21 @@ def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, An
             else f"CMD_{JinjaGenerator.snake_case(m.name).upper()}"
         )
         factory = f"lambda: pb.{m.output_type.name}({err_init})" if err_init else f"pb.{m.output_type.name}"
-        rpc_specs.append(
-            {
-                "name": m.name,
-                "req_cls": m.input_type.name,
-                "resp_cls": m.output_type.name,
-                "default_factory": factory,
-                "handler_name": f"execute_{JinjaGenerator.snake_case(m.name)}",
-                "rpc_topic": rt,
-                "rpc_command": rpc_cmd,
-            }
-        )
-    return rpc_specs, rpc_aliases
+        item = {
+            "name": m.name,
+            "req_cls": m.input_type.name,
+            "resp_cls": m.output_type.name,
+            "default_factory": factory,
+            "handler_name": f"execute_{JinjaGenerator.snake_case(m.name)}",
+            "rpc_topic": rt,
+            "rpc_command": rpc_cmd,
+            "cardinality": cardinality,
+        }
+        if is_streaming:
+            streaming_rpc_specs.append(item)
+        else:
+            rpc_specs.append(item)
+    return rpc_specs, streaming_rpc_specs, rpc_aliases
 
 
 def _build_command_operation(
@@ -473,6 +498,7 @@ def _build_command_operation(
                 "response_type": f"pb.{matched_rpc['resp_cls']}",
                 "default_factory": matched_rpc["default_factory"],
                 "handler_name": matched_rpc["handler_name"],
+                "cardinality": matched_rpc["cardinality"],
             }
         )
         if matched_rpc.get("rpc_topic"):
@@ -523,6 +549,7 @@ def _build_operations_catalog(
             "default_factory": rpc["default_factory"],
             "handler_name": rpc["handler_name"],
             "rpc_topic": rpc.get("rpc_topic"),
+            "cardinality": rpc["cardinality"],
         }
         for rpc in rpc_specs
         if rpc["name"] not in matched_rpc_names
@@ -580,7 +607,7 @@ def _extract_operations_context(
     payload_fields = payload_ctx["payload_fields"]
     p_fields_map = {p["name"]: p["field"] for p in payload_fields}
 
-    rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
+    rpc_specs, streaming_rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
     cmd_by_name = {c["name"]: c for c in commands}
     rpc_by_cmd = {r["rpc_command"]: r for r in rpc_specs if r["rpc_command"] in cmd_by_name}
 
@@ -628,6 +655,8 @@ def _extract_operations_context(
         "message_topics": msg_topics,
         "telemetry_topic_field_map": telem_map,
         "telemetry_default_field": default_telem,
+        "ubus_methods": payload_ctx["ubus_methods"],
+        "streaming_rpc_specs": streaming_rpc_specs,
     }
 
 

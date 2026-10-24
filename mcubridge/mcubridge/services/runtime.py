@@ -6,7 +6,6 @@ import asyncio
 import collections
 import functools
 import logging
-import operator
 import shlex
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
@@ -170,7 +169,7 @@ class BridgeService:
                 path=str(Path(self.config.cloud_spool_dir) / "spool_lmdb"), maxlen=self.state.cloud_queue_limit
             )
         # [SIL-2] O(1) MCU Dispatch Registry
-        self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry()
+        self.mcu_registry: dict[int, McuHandler] = protocol.REGISTRY.build_mcu_dispatch(self)
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
@@ -184,24 +183,6 @@ class BridgeService:
         if not self.serial:
             return False
         return await self.serial.send(Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message=msg))
-
-    def _setup_mcu_registry(self) -> dict[int, McuHandler]:
-        """Build O(1) MCU dispatch registry from Protocol SSOT. [SIL-2]"""
-        return (
-            {
-                s.value: functools.partial(self.handle_mcu_status, s)
-                for s in Status
-                if s.value not in protocol.REGISTRY.mcu_dispatch_handlers
-            }
-            | {
-                code: cast(McuHandler, operator.attrgetter(handler_path)(self))
-                for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items()
-            }
-            | {
-                code: functools.partial(self.unsupported_mcu_request, msg=reason)
-                for code, reason in protocol.REGISTRY.mcu_unsupported_reasons.items()
-            }
-        )
 
     # --- External Interface ---
 

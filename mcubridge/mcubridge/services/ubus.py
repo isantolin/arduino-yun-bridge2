@@ -18,6 +18,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
+from ..protocol.protocol import REGISTRY
 from ..state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.service.ubus")
@@ -65,35 +66,6 @@ class BridgeRuntimeFacade(Protocol):
     clock_sync: Any
 
     gpio: Any
-
-
-_UBUS_METHOD_SIGS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
-    ("status", ()),
-    ("digital_write", (("pin", "INT32"), ("value", "INT32"))),
-    ("analog_write", (("pin", "INT32"), ("value", "INT32"))),
-    ("mailbox_push", (("message", "STRING"),)),
-    ("datastore_set", (("key", "STRING"), ("value", "STRING"))),
-    ("datastore_get", (("key", "STRING"),)),
-    ("mailbox_read", ()),
-    ("file_write", (("path", "STRING"), ("data", "STRING"))),
-    ("process_run", (("command", "STRING"),)),
-    ("process_kill", (("pid", "INT32"),)),
-    ("process_poll", (("pid", "INT32"),)),
-    ("link_reset", ()),
-    ("ping", ()),
-    ("clock_status", ()),
-    ("clock_sync", ()),
-    (
-        "pin_subscribe",
-        (
-            ("pin", "INT32"),
-            ("mode", "STRING"),
-            ("interval_ms", "INT32"),
-            ("hysteresis", "INT32"),
-            ("enabled", "INT32"),
-        ),
-    ),
-)
 
 
 class UbusService:
@@ -165,16 +137,14 @@ class UbusService:
 
             return _cb
 
-        methods = {
-            name: {
-                "method": _make_handler(getattr(self, f"ubus_handle_{name}")),
-                "signature": {
-                    **{arg: get_ubus_type(typ, self.ubus_backend) for arg, typ in args},
-                    "ubus_rpc_session": get_ubus_type("STRING", self.ubus_backend),
-                },
-            }
-            for name, args in _UBUS_METHOD_SIGS
-        }
+        session_type = get_ubus_type("STRING", self.ubus_backend)
+        methods = REGISTRY.build_ubus_methods(
+            self,
+            self.ubus_backend,
+            handler_factory=_make_handler,
+            get_type_fn=get_ubus_type,
+            session_type=session_type,
+        )
 
         if hasattr(self.connection, "add") and callable(self.connection.add):
             self.connection.add("mcubridge", methods)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import logging
 import shlex
 import time
@@ -484,7 +485,10 @@ class BridgeService:
                         await serial.send(Status.MALFORMED.value, b"")
                         return
 
-                if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
+                res = handler(sequence_id, p)
+                if inspect.isawaitable(res):
+                    res = await res
+                if res is not False and command_id not in _STATUS_VALUES:
                     await serial.acknowledge(command_id, sequence_id)
             elif spec is None or spec.paired_request_id is None:
                 self.state.unknown_command_count += 1

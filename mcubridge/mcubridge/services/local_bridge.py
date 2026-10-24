@@ -25,6 +25,7 @@ from ..protocol.protocol import (
     Command,
     OperationSpec,
 )
+from ..protocol.structures import BridgeRuntimeProtocol
 
 __all__ = [
     "ConsoleQueueTarget",
@@ -85,63 +86,10 @@ def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], de
     return default
 
 
-class LocalBridgeRuntime(Protocol):
-    """Protocol for runtime link dependency in LocalBridgeService."""
-
-    @property
-    def state(self) -> Any: ...
-    @property
-    def serial(self) -> Any: ...
-    @property
-    def gpio(self) -> Any: ...
-
-    @property
-    def console_queues(self) -> list[ConsoleQueueTarget]: ...
-
-    @property
-    def ipc_requests(self) -> dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]: ...
-
-    async def datastore_put(
-        self, _seq_or_key: int | str | pb.DatastorePut, value: bytes | None = None, *, reply_context: Any | None = None
-    ) -> bool: ...
-
-    async def datastore_get(self, key: str, /) -> bytes: ...
-
-    async def mailbox_push(self, data: bytes, /) -> bool: ...
-
-    async def mailbox_read(self) -> bytes: ...
-
-    async def file_write(self, path: str, data: bytes, /) -> bool: ...
-
-    async def file_read(self, path: str, /) -> bytes | None: ...
-
-    async def file_remove(self, path: str, /) -> bool: ...
-
-    async def safe_file_write(self, p_str: str, data: bytes, /) -> bool: ...
-
-    async def safe_file_read(self, p_str: str, /) -> bytes | None: ...
-
-    async def read_mcu_file(self, target: str, /) -> bytes: ...
-
-    async def safe_file_remove(self, p_str: str, /) -> bool: ...
-
-    async def flush_console_queue(self) -> None: ...
-
-    async def run_process(self, command: str, /) -> int: ...
-
-    async def poll_process(self, pid: int, /) -> pb.ProcessPollResponse: ...
-
-    async def kill_process(
-        self, _seq_or_pid: int | pb.ProcessKill, pid: int | pb.ProcessKill | None = None
-    ) -> tuple[bool, str | None]: ...
-
-    async def handle_request(self, inbound: Any, /) -> None: ...
-
-
 class LocalBridgeService:
     """Implementation of the Local gRPC service for local MPU clients and Cloud Gateway forwarding."""
 
-    def __init__(self, runtime_service: LocalBridgeRuntime) -> None:
+    def __init__(self, runtime_service: BridgeRuntimeProtocol) -> None:
         self.runtime_service = runtime_service
 
     def __getattr__(self, name: str) -> Any:

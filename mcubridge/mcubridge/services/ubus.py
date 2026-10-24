@@ -9,17 +9,16 @@ from __future__ import annotations
 import asyncio
 import importlib
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any, cast
 
 import anyio.from_thread
 import structlog
 import tenacity
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import REGISTRY, Command
-from ..state.context import RuntimeState
+from ..protocol.structures import BridgeRuntimeProtocol
 
 logger = structlog.get_logger("mcubridge.service.ubus")
 
@@ -46,44 +45,12 @@ def get_ubus_type(typ: str, ubus_module: Any = None) -> Any:
     return getattr(target_ubus, f"BLOBMSG_TYPE_{typ}", getattr(target_ubus, typ, 0))
 
 
-class BridgeRuntimeFacade(Protocol):
-    """Facade protocol decoupling UbusService from full BridgeService implementation."""
-
-    config: RuntimeConfig
-    state: RuntimeState
-    serial: Any
-
-    async def handle_request(self, inbound: Any) -> None: ...
-
-    async def run_process(self, command: str) -> int: ...
-
-    async def kill_process(
-        self, _seq_or_pid: int | pb.ProcessKill, pid: int | pb.ProcessKill | None = None
-    ) -> tuple[bool, str | None]: ...
-
-    async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
-
-    async def reset_link(self) -> bool: ...
-
-    async def file_write(self, path: str, data: bytes) -> bool: ...
-
-    async def datastore_put(
-        self, _seq_or_key: int | str | pb.DatastorePut, value: bytes | None = None, *, reply_context: Any | None = None
-    ) -> bool: ...
-
-    async def mailbox_push(self, data: bytes) -> bool: ...
-
-    clock_sync: Any
-
-    gpio: Any
-
-
 class UbusService:
     """Manages the lifecycle of McuBridge UBUS object registration on OpenWrt."""
 
     def __init__(
         self,
-        runtime: BridgeRuntimeFacade,
+        runtime: BridgeRuntimeProtocol,
         ubus_module: Any = None,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
@@ -191,7 +158,7 @@ class UbusService:
         data["capabilities"] = (
             MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
             if isinstance(caps, pb.Capabilities)
-            else {k: bool(v) for k, v in caps.items()} if isinstance(caps, dict) else {}
+            else {k: bool(v) for k, v in cast(dict[str, Any], caps).items()} if isinstance(caps, dict) else {}
         )
         data["clock_status"] = {
             "offset_us": state.clock_offset_us,

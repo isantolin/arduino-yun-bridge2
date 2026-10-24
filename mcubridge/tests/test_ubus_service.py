@@ -29,8 +29,15 @@ class MockRuntimeFacade:
         self.serial = AsyncMock()
         self.serial.send = AsyncMock(return_value=True)
         self.mailbox_push = AsyncMock(return_value=True)
+        self.mailbox_read = AsyncMock(return_value=b"")
         self.datastore_put = AsyncMock(return_value=True)
+        self.datastore_get = AsyncMock(return_value=b"")
         self.file_write = AsyncMock(return_value=True)
+        self.file_read = AsyncMock(return_value=b"")
+        self.file_remove = AsyncMock(return_value=True)
+        self.flush_console_queue = AsyncMock()
+        self.console_queues: list[Any] = []
+        self.ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
         self.clock_sync: MagicMock | None = MagicMock()
         self.gpio: MagicMock | None = MagicMock()
         self.poll_process = AsyncMock(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 import threading
 from pathlib import Path
@@ -31,8 +32,15 @@ class TypedRuntimeFacade:
         self.kill_process = AsyncMock(return_value=(True, None))
         self.reset_link = AsyncMock(return_value=True)
         self.file_write = AsyncMock(return_value=True)
+        self.file_read = AsyncMock(return_value=b"")
+        self.file_remove = AsyncMock(return_value=True)
         self.datastore_put = AsyncMock(return_value=True)
+        self.datastore_get = AsyncMock(return_value=b"")
         self.mailbox_push = AsyncMock(return_value=True)
+        self.mailbox_read = AsyncMock(return_value=b"")
+        self.flush_console_queue = AsyncMock()
+        self.console_queues: list[Any] = []
+        self.ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
         self.clock_sync = MagicMock()
         self.gpio = MagicMock()
         self.local_bridge_service = MagicMock()

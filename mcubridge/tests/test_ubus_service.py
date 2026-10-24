@@ -26,7 +26,7 @@ class MockRuntimeFacade:
         self.run_process = AsyncMock(return_value=123)
         self.kill_process = AsyncMock(return_value=(True, None))
         self.reset_link = AsyncMock(return_value=True)
-        self.serial = AsyncMock()
+        self.serial: AsyncMock | None = AsyncMock()
         self.serial.send = AsyncMock(return_value=True)
         self.mailbox_push = AsyncMock(return_value=True)
         self.mailbox_read = AsyncMock(return_value=b"")
@@ -208,6 +208,7 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
 
     assert res == {"status": "ok", "pin": 13, "value": 1}
     await asyncio.sleep(0.01)
+    assert mock_runtime.serial is not None
     mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=1))
 
 
@@ -224,6 +225,7 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
 
     assert res == {"status": "ok", "pin": 9, "value": 128}
     await asyncio.sleep(0.01)
+    assert mock_runtime.serial is not None
     mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=9, value=128))
 
 

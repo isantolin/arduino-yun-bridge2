@@ -1032,10 +1032,7 @@ class BridgeService:
                 usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
 
-                if (
-                    self.state.file_storage_quota_bytes > 0
-                    and (usage.used + len(data)) > self.state.file_storage_quota_bytes
-                ) or usage.free < len(data):
+                if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False
             except OSError as exc:

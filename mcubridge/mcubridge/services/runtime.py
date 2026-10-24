@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import collections
 import functools
 import logging
 import shlex
@@ -35,7 +34,6 @@ from ..config.const import (
     PROCESS_TERM_GRACE_PERIOD_SECONDS,
     PROP_KEY_BRIDGE_DATASTORE_KEY,
     PROP_KEY_BRIDGE_ERROR,
-    PROP_KEY_BRIDGE_PIN,
     PROP_KEY_BRIDGE_SNAPSHOTS,
     PROP_KEY_BRIDGE_STATUS,
     STREAM_POLL_TIMEOUT_SECONDS,
@@ -587,7 +585,7 @@ class BridgeService:
             reply_context=reply_context,
         )
 
-    async def on_mcu_console_write(self, _seq: int, p: pb.ConsoleWrite) -> None:
+    async def handle_console_write(self, _seq: int, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self._publish_mcu_message(p, p.data, message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE)
 
@@ -598,28 +596,62 @@ class BridgeService:
             await self.state.datastore_cache.set(key, value)
         await self.publish_datastore_value(key, value, reply_context=reply_context)
 
-    async def on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
-        await self.store_and_publish_datastore_value(p.key, p.value)
+    async def datastore_put(
+        self,
+        _seq_or_key: int | str | pb.DatastorePut,
+        value: bytes | None = None,
+        *,
+        reply_context: Any | None = None,
+    ) -> bool:
+        if isinstance(_seq_or_key, pb.DatastorePut):
+            k, v = _seq_or_key.key, _seq_or_key.value
+        elif isinstance(value, bytes):
+            k, v = cast(str, _seq_or_key), value
+        else:
+            return False
+        if (
+            not k
+            or len(k.encode("utf-8")) > protocol.MAX_DATASTORE_KEY_LENGTH
+            or len(v) > protocol.MAX_DATASTORE_VALUE_SIZE
+        ):
+            return False
+        await self.store_and_publish_datastore_value(k, v, reply_context=reply_context)
         return True
 
-    async def on_mcu_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
+    async def datastore_get(self, key: str) -> bytes:
+        cache = self.state.datastore_cache
+        return (await cache.get(key, b"")) if cache else b""
+
+    async def handle_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
             return False
-        cache = cast(Any, self.state.datastore_cache)
-        val = bytes((await cache.get(p.key, b"")) if cache else b"")
+        val = await self.datastore_get(p.key)
         res = await serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             pb.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE]),
         )
         return bool(res)
 
-    async def on_mcu_mailbox_push(self, _seq: int, p: pb.MailboxPush) -> bool:
+    async def mailbox_push(self, data: bytes) -> bool:
+        await self.state.mailbox_queue.append(data)
+        serial = self.serial
+        if serial:
+            await serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=data))
+        return True
+
+    async def mailbox_read(self) -> bytes:
+        try:
+            return await self.state.mailbox_incoming_queue.popleft()
+        except IndexError:
+            return b""
+
+    async def handle_mailbox_push(self, _seq: int, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self._publish_mcu_message(p, p.data)
         return True
 
-    async def on_mcu_mailbox_available(self, _seq: int, p: Any) -> bool:
+    async def handle_mailbox_available(self, _seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -630,7 +662,7 @@ class BridgeService:
         )
         return bool(res)
 
-    async def on_mcu_mailbox_read(self, _seq: int, p: Any) -> bool:
+    async def handle_mailbox_read(self, _seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -645,16 +677,40 @@ class BridgeService:
         )
         return bool(res)
 
-    async def on_mcu_mailbox_processed(self, _seq: int, p: pb.MailboxProcessed) -> None:
+    async def handle_mailbox_processed(self, _seq: int, p: pb.MailboxProcessed) -> None:
         await self._publish_mcu_message(p, p.SerializeToString(), content_type=PROTOBUF_CONTENT_TYPE)
 
-    async def on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
+    async def file_write(self, path: str, data: bytes) -> bool:
+        clean = path.lstrip("/")
+        if clean.startswith(MCU_FS_PREFIX):
+            mcu_path = clean.removeprefix(MCU_FS_PREFIX)
+            serial = self.serial
+            return bool(
+                serial and await serial.send(Command.CMD_FILE_WRITE.value, pb.FileWrite(path=mcu_path, data=data))
+            )
+        return await self.safe_file_write(path, data)
+
+    async def file_read(self, path: str) -> bytes | None:
+        clean = path.lstrip("/")
+        if clean.startswith(MCU_FS_PREFIX):
+            return await self.read_mcu_file(clean)
+        return await self.safe_file_read(path)
+
+    async def file_remove(self, path: str) -> bool:
+        clean = path.lstrip("/")
+        if clean.startswith(MCU_FS_PREFIX):
+            mcu_path = clean.removeprefix(MCU_FS_PREFIX)
+            serial = self.serial
+            return bool(serial and await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=mcu_path)))
+        return await self.safe_file_remove(path)
+
+    async def handle_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
         if not self.serial:
             return False
         ok = await self.safe_file_write(p.path, p.data)
         return await (self.send_mcu_ok() if ok else self.send_mcu_error("Path not allowed or quota exceeded"))
 
-    async def on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
+    async def handle_file_read(self, _seq: int, p: pb.FileRead) -> None:
         if not self.serial:
             return
         data = await self.safe_file_read(p.path)
@@ -667,13 +723,13 @@ class BridgeService:
             for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
                 await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
 
-    async def on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
+    async def handle_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
         if not self.serial:
             return False
         ok = await self.safe_file_remove(p.path)
         return await (self.send_mcu_ok() if ok else self.send_mcu_error("Path not allowed or not found"))
 
-    async def on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
+    async def handle_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self.pending_mcu_read:
             return False
         if p.content:
@@ -684,7 +740,7 @@ class BridgeService:
             self.pending_mcu_read.future.set_result(b"".join(self.pending_mcu_read.chunks))
         return True
 
-    async def on_mcu_process_run_async(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
+    async def handle_process_run_async(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
         if not self.serial:
             return False
         allowed = is_command_allowed(self.state.allowed_policy, p.command)
@@ -698,7 +754,7 @@ class BridgeService:
         await self.send_mcu_error("Exec failed")
         return False
 
-    async def on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
+    async def handle_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
         if not self.serial:
             return False
         batch = await self.poll_process(p.pid)
@@ -708,22 +764,10 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
-        req = q.popleft() if q else None
-        await self.enqueue_cloud_publish(
-            protocol.REGISTRY.topic_path(
-                self.state.cloud_topic_prefix, tp, str(req.pin) if req else "unknown", "value"
-            ),
-            str(p.value).encode(),
-            message_expiry_interval=protocol.CLOUD_EXPIRY_PIN,
-            user_properties=((PROP_KEY_BRIDGE_PIN, str(req.pin) if req else "unknown"),),
-            reply_context=req.reply_context if req else None,
-        )
-
-    async def on_mcu_spi_transfer_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
+    async def handle_spi_transfer_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
         await self._publish_mcu_message(p, p.data)
 
-    async def on_mcu_ack(self, _seq: int, payload: bytes | ProtobufMessage) -> None:
+    async def handle_ack(self, _seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
             if isinstance(payload, ProtobufMessage):
                 p = cast(pb.AckPacket, payload)
@@ -732,15 +776,6 @@ class BridgeService:
             logger.debug("MCU ACK received", command_id=f"0x{p.command_id:02X}")
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=str(e))
-
-    async def on_mcu_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
-        await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
-
-    async def on_mcu_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
-        await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
-
-    async def on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
-        await self.kill_process(p.pid)
 
     async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
@@ -918,20 +953,25 @@ class BridgeService:
         ctx.fsm.finish()
         return ctx.handle.returncode if ctx.handle.returncode is not None else -1
 
-    async def kill_process(self, pid: int) -> tuple[bool, str | None]:
-        with structlog.contextvars.bound_contextvars(pid=pid):
+    async def kill_process(self, _seq_or_pid: int | pb.ProcessKill, pid: int | None = None) -> tuple[bool, str | None]:
+        actual_pid = (
+            _seq_or_pid.pid if isinstance(_seq_or_pid, pb.ProcessKill) else (pid if pid is not None else _seq_or_pid)
+        )
+        with structlog.contextvars.bound_contextvars(pid=actual_pid):
             async with self.state.process_lock:
-                ctx = self.state.running_processes.get(pid)
+                ctx = self.state.running_processes.get(actual_pid)
             if not ctx:
                 return False, "PID not found"
             try:
-                ctx.exit_code = await self.terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
+                ctx.exit_code = await self.terminate_process(
+                    actual_pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
+                )
                 return True, None
             except OSError as exc:
                 logger.error("Process termination failed", error=str(exc))
                 return False, str(exc)
             finally:
-                self.release_process(pid)
+                self.release_process(actual_pid)
 
     def _get_safe_path(self, p_str: str) -> anyio.Path | None:
         root = Path(self.config.file_system_root).resolve()

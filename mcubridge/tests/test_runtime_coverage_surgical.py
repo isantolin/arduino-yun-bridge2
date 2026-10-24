@@ -451,7 +451,7 @@ async def test_on_mcu_process_kill_and_subscribe_resp(
     await svc.on_mcu_process_kill(1, pb.ProcessKill(pid=42))
     svc.kill_process.assert_awaited_once_with(42)
 
-    await svc.on_mcu_pin_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
+    await svc.gpio.on_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
 
 
 async def test_enqueue_cloud_queue_empty_in_finally(

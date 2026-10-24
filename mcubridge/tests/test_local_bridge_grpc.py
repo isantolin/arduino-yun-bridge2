@@ -65,7 +65,7 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         assert op.request_type is not None
         assert op.request_type.DESCRIPTOR.full_name == method.input_type.full_name
         assert op.handler_name is not None
-        assert hasattr(LocalBridgeService, op.handler_name)
+        assert hasattr(LocalBridgeService, op.rpc_name or op.name)
 
 
 async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
@@ -555,9 +555,15 @@ async def test_local_bridge_write_methods_report_failed_serial_send(tmp_path: Pa
     _, local_svc, mock_serial = _make_service(_make_config(tmp_path))
     mock_serial.send.return_value = False
 
-    pin_mode_response = await local_svc.execute_set_pin_mode(pb.PinMode(pin=13, mode=pb.PIN_OUTPUT))
-    digital_write_response = await local_svc.execute_digital_write(pb.DigitalWrite(pin=13, value=1))
-    analog_write_response = await local_svc.execute_analog_write(pb.AnalogWrite(pin=9, value=128))
+    pin_mode_response = pb.GenericResponse.FromString(
+        await local_svc.execute_rpc("SetPinMode", pb.PinMode(pin=13, mode=pb.PIN_OUTPUT).SerializeToString())
+    )
+    digital_write_response = pb.GenericResponse.FromString(
+        await local_svc.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
+    )
+    analog_write_response = pb.GenericResponse.FromString(
+        await local_svc.execute_rpc("AnalogWrite", pb.AnalogWrite(pin=9, value=128).SerializeToString())
+    )
 
     assert pin_mode_response.status == "error"
     assert digital_write_response.status == "error"

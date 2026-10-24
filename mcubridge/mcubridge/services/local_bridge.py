@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 import anyio
@@ -16,19 +16,15 @@ from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Handler
 from grpclib.server import Stream
 
-from ..config.const import MCU_FS_PREFIX
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.mcubridge_grpc import LocalBridgeBase
 from ..protocol.protocol import (
     AEAD_NONCE_SIZE,
     BOOTLOADER_MAGIC,
-    MAX_DATASTORE_KEY_LENGTH,
-    MAX_DATASTORE_VALUE_SIZE,
     REGISTRY,
     Command,
     OperationSpec,
 )
-from ..protocol.structures import is_command_allowed
 
 __all__ = [
     "ConsoleQueueTarget",
@@ -102,7 +98,15 @@ class LocalBridgeRuntime(Protocol):
     def console_queues(self) -> list[ConsoleQueueTarget]: ...
     @property
     def ipc_requests(self) -> dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]: ...
-    async def store_and_publish_datastore_value(self, key: str, value: bytes, /) -> None: ...
+    async def datastore_put(
+        self, _seq_or_key: int | str | pb.DatastorePut, value: bytes | None = None, *, reply_context: Any | None = None
+    ) -> bool: ...
+    async def datastore_get(self, key: str, /) -> bytes: ...
+    async def mailbox_push(self, data: bytes, /) -> bool: ...
+    async def mailbox_read(self) -> bytes: ...
+    async def file_write(self, path: str, data: bytes, /) -> bool: ...
+    async def file_read(self, path: str, /) -> bytes | None: ...
+    async def file_remove(self, path: str, /) -> bool: ...
     async def safe_file_write(self, p_str: str, data: bytes, /) -> bool: ...
     async def safe_file_read(self, p_str: str, /) -> bytes | None: ...
     async def read_mcu_file(self, target: str, /) -> bytes: ...
@@ -110,7 +114,9 @@ class LocalBridgeRuntime(Protocol):
     async def flush_console_queue(self) -> None: ...
     async def run_process(self, command: str, /) -> int: ...
     async def poll_process(self, pid: int, /) -> pb.ProcessPollResponse: ...
-    async def kill_process(self, pid: int, /) -> tuple[bool, str | None]: ...
+    async def kill_process(
+        self, _seq_or_pid: int | pb.ProcessKill, pid: int | None = None
+    ) -> tuple[bool, str | None]: ...
     async def handle_request(self, inbound: Any, /) -> None: ...
 
 
@@ -140,7 +146,7 @@ class LocalBridgeService:
         res = (await serial.send(cmd.value, payload)) if serial else None
         return parse_serial_response(res, resp_type, resp_type())
 
-    async def execute_pin_subscribe(self, req: pb.PinSubscribeRequest) -> pb.PinSubscribeResponse:
+    async def pin_subscribe(self, req: pb.PinSubscribeRequest) -> pb.PinSubscribeResponse:
         try:
             mode_str = pb.PinModeType.Name(req.mode).removeprefix("PIN_")
         except (ValueError, KeyError) as exc:
@@ -151,88 +157,44 @@ class LocalBridgeService:
         )
         return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
 
-    async def execute_datastore_put(self, req: pb.DatastorePut) -> pb.GenericResponse:
-        if (
-            not req.key
-            or len(req.key.encode("utf-8")) > MAX_DATASTORE_KEY_LENGTH
-            or len(req.value) > MAX_DATASTORE_VALUE_SIZE
-        ):
-            return pb.GenericResponse(status="error")
-        await self.runtime_service.store_and_publish_datastore_value(req.key, req.value)
-        return pb.GenericResponse(status="ok")
+    async def datastore_put(self, req: pb.DatastorePut) -> pb.GenericResponse:
+        ok = await self.runtime_service.datastore_put(req)
+        return pb.GenericResponse(status="ok" if ok else "error")
 
-    async def execute_datastore_get(self, req: pb.DatastoreGet) -> pb.DatastoreGetResponse:
-        c = self.runtime_service.state.datastore_cache
-        val = (await c.get(req.key, b"")) if c else b""
+    async def datastore_get(self, req: pb.DatastoreGet) -> pb.DatastoreGetResponse:
+        val = await self.runtime_service.datastore_get(req.key)
         return pb.DatastoreGetResponse(value=val or b"")
 
-    async def execute_mailbox_push(self, req: pb.MailboxPush) -> pb.GenericResponse:
-        await self.runtime_service.state.mailbox_queue.append(req.data)
-        serial = self.runtime_service.serial
-        if serial:
-            await serial.send(Command.CMD_MAILBOX_PUSH.value, req)
+    async def mailbox_push(self, req: pb.MailboxPush) -> pb.GenericResponse:
+        await self.runtime_service.mailbox_push(req.data)
         return pb.GenericResponse(status="ok")
 
-    async def execute_mailbox_read(self, _req: pb.SubscribeRequest) -> pb.MailboxReadResponse:
-        q = self.runtime_service.state.mailbox_incoming_queue
-        val = await q.popleft() if len(q) > 0 else b""
+    async def mailbox_read(self, _req: pb.SubscribeRequest) -> pb.MailboxReadResponse:
+        val = await self.runtime_service.mailbox_read()
         return pb.MailboxReadResponse(content=val or b"")
 
-    async def _execute_file_mutation(
-        self,
-        request: pb.FileWrite | pb.FileRemove,
-        cmd: Command,
-        mcu_msg: ProtobufMessage,
-        local_op: Callable[[], Coroutine[Any, Any, bool]],
-        error_msg: str,
-    ) -> pb.GenericResponse:
-        clean_path = request.path.lstrip("/")
-        if clean_path.startswith(MCU_FS_PREFIX):
-            serial = self.runtime_service.serial
-            ok = bool(await serial.send(cmd.value, mcu_msg)) if serial else False
-            return pb.GenericResponse(status="ok" if ok else "error")
-        if await local_op():
-            return pb.GenericResponse(status="ok")
-        return pb.GenericResponse(status="error", message=error_msg)
-
-    async def execute_file_write(self, req: pb.FileWrite) -> pb.GenericResponse:
-        clean = req.path.lstrip("/")
-        mcu_path = clean.removeprefix(MCU_FS_PREFIX) if clean.startswith(MCU_FS_PREFIX) else req.path
-        return await self._execute_file_mutation(
-            req,
-            Command.CMD_FILE_WRITE,
-            pb.FileWrite(path=mcu_path, data=req.data),
-            lambda: self.runtime_service.safe_file_write(req.path, req.data),
-            "Path not allowed or quota exceeded",
+    async def file_write(self, req: pb.FileWrite) -> pb.GenericResponse:
+        ok = await self.runtime_service.file_write(req.path, req.data)
+        return pb.GenericResponse(
+            status="ok" if ok else "error", message="" if ok else "Path not allowed or quota exceeded"
         )
 
-    async def execute_file_read(self, req: pb.FileRead) -> pb.FileReadResponse:
-        clean = req.path.lstrip("/")
-        if clean.startswith(MCU_FS_PREFIX):
-            return pb.FileReadResponse(content=await self.runtime_service.read_mcu_file(clean))
-        content = await self.runtime_service.safe_file_read(req.path)
+    async def file_read(self, req: pb.FileRead) -> pb.FileReadResponse:
+        content = await self.runtime_service.file_read(req.path)
         return pb.FileReadResponse(content=content or b"")
 
-    async def execute_file_remove(self, req: pb.FileRemove) -> pb.GenericResponse:
-        clean = req.path.lstrip("/")
-        mcu_path = clean.removeprefix(MCU_FS_PREFIX) if clean.startswith(MCU_FS_PREFIX) else req.path
-        return await self._execute_file_mutation(
-            req,
-            Command.CMD_FILE_REMOVE,
-            pb.FileRemove(path=mcu_path),
-            lambda: self.runtime_service.safe_file_remove(req.path),
-            "Path not allowed or not found",
-        )
+    async def file_remove(self, req: pb.FileRemove) -> pb.GenericResponse:
+        ok = await self.runtime_service.file_remove(req.path)
+        return pb.GenericResponse(status="ok" if ok else "error", message="" if ok else "Path not allowed or not found")
 
-    async def execute_process_run_async(self, req: pb.ProcessRunAsync) -> pb.ProcessRunAsyncResponse:
-        allowed = is_command_allowed(self.runtime_service.state.allowed_policy, req.command)
-        pid = (await self.runtime_service.run_process(req.command)) if (req.command and allowed) else 0
+    async def process_run_async(self, req: pb.ProcessRunAsync) -> pb.ProcessRunAsyncResponse:
+        pid = await self.runtime_service.run_process(req.command)
         return pb.ProcessRunAsyncResponse(pid=pid or 0)
 
-    async def execute_process_poll(self, req: pb.ProcessPoll) -> pb.ProcessPollResponse:
+    async def process_poll(self, req: pb.ProcessPoll) -> pb.ProcessPollResponse:
         return await self.runtime_service.poll_process(req.pid)
 
-    async def execute_process_kill(self, req: pb.ProcessKill) -> pb.GenericResponse:
+    async def process_kill(self, req: pb.ProcessKill) -> pb.GenericResponse:
         ok, err = await self.runtime_service.kill_process(req.pid)
         return (
             pb.GenericResponse(status="ok")
@@ -240,7 +202,7 @@ class LocalBridgeService:
             else pb.GenericResponse(status="error", message=err or "PID not found")
         )
 
-    async def execute_spi_configure(self, req: pb.SpiConfig) -> pb.GenericResponse:
+    async def spi_configure(self, req: pb.SpiConfig) -> pb.GenericResponse:
         serial = self.runtime_service.serial
         ok = bool(
             serial
@@ -249,22 +211,22 @@ class LocalBridgeService:
         )
         return pb.GenericResponse(status="ok" if ok else "error")
 
-    async def execute_get_version(self, _req: pb.SubscribeRequest) -> pb.VersionResponse:
+    async def get_version(self, _req: pb.SubscribeRequest) -> pb.VersionResponse:
         resp = await self._send_serial_query(Command.CMD_GET_VERSION, b"", pb.VersionResponse)
         if resp.major or resp.minor or resp.patch:
             self.runtime_service.state.mcu_version = (resp.major, resp.minor, resp.patch)
         return resp
 
-    async def execute_get_status(self, _req: pb.SubscribeRequest) -> pb.BridgeStatus:
+    async def get_status(self, _req: pb.SubscribeRequest) -> pb.BridgeStatus:
         return self.runtime_service.state.build_status_snapshot()
 
-    async def execute_enter_bootloader(self, req: pb.EnterBootloader) -> pb.GenericResponse:
+    async def enter_bootloader(self, req: pb.EnterBootloader) -> pb.GenericResponse:
         serial = self.runtime_service.serial
         magic = req.magic or BOOTLOADER_MAGIC
         ok = bool(serial and await serial.send(Command.CMD_ENTER_BOOTLOADER.value, pb.EnterBootloader(magic=magic)))
         return pb.GenericResponse(status="ok" if ok else "error")
 
-    async def execute_console_write(self, req: pb.ConsoleWrite) -> pb.GenericResponse:
+    async def console_write(self, req: pb.ConsoleWrite) -> pb.GenericResponse:
         if pl := req.data:
             self.runtime_service.state.console_to_mcu_queue.append(pl)
             await self.runtime_service.flush_console_queue()
@@ -402,5 +364,7 @@ for _spec in REGISTRY.rpc_specs:
     _name = _spec.rpc_name or _spec.name
     if _name not in LocalBridgeService.__dict__:
         setattr(LocalBridgeService, _name, LocalBridgeService.create_unary_handler(_spec))
+    if _spec.handler_name and _spec.handler_name not in LocalBridgeService.__dict__:
+        setattr(LocalBridgeService, _spec.handler_name, getattr(LocalBridgeService, _name))
 
 LocalBridgeBase.register(LocalBridgeService)

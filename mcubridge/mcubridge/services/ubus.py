@@ -18,7 +18,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.protocol import REGISTRY
+from ..protocol.protocol import REGISTRY, Command
 from ..state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.service.ubus")
@@ -51,7 +51,6 @@ class BridgeRuntimeFacade(Protocol):
 
     config: RuntimeConfig
     state: RuntimeState
-    local_bridge_service: Any
 
     async def handle_request(self, inbound: Any) -> None: ...
 
@@ -62,6 +61,14 @@ class BridgeRuntimeFacade(Protocol):
     async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
 
     async def reset_link(self) -> bool: ...
+
+    async def file_write(self, path: str, data: bytes) -> bool: ...
+
+    async def datastore_put(
+        self, _seq_or_key: int | str | pb.DatastorePut, value: bytes | None = None, *, reply_context: Any | None = None
+    ) -> bool: ...
+
+    async def mailbox_push(self, data: bytes) -> bool: ...
 
     clock_sync: Any
 
@@ -273,20 +280,14 @@ class UbusService:
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
         message = str(msg.get("message", ""))
-        self.schedule_async(
-            self.runtime.local_bridge_service.execute_mailbox_push(pb.MailboxPush(data=message.encode("utf-8")))
-        )
+        self.schedule_async(self.runtime.mailbox_push(message.encode("utf-8")))
         return {"status": "ok", "message_length": len(message)}
 
     def ubus_handle_datastore_set(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_set'."""
         key = str(msg.get("key", ""))
         value = str(msg.get("value", ""))
-        self.schedule_async(
-            self.runtime.local_bridge_service.execute_datastore_put(
-                pb.DatastorePut(key=key, value=value.encode("utf-8"))
-            )
-        )
+        self.schedule_async(self.runtime.datastore_put(key, value.encode("utf-8")))
         return {"status": "ok", "key": key}
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
@@ -315,11 +316,7 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.file_write'."""
         target_path = str(msg.get("path", ""))
         data_str = str(msg.get("data", ""))
-        self.schedule_async(
-            self.runtime.local_bridge_service.execute_file_write(
-                pb.FileWrite(path=target_path, data=data_str.encode("utf-8"))
-            )
-        )
+        self.schedule_async(self.runtime.file_write(target_path, data_str.encode("utf-8")))
         return {"status": "ok", "path": target_path, "bytes_written": len(data_str)}
 
     def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:

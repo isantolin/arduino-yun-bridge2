@@ -146,7 +146,7 @@ async def test_mcu_pin_update_event_forwarding(
         initial_events = state.pin_events_count
         event = pb.PinUpdateEvent(pin=pin, value=value, timestamp_micros=timestamp)
 
-        on_pin_update: Callable[[int, pb.PinUpdateEvent], Awaitable[None]] = svc.on_mcu_pin_update_event
+        on_pin_update: Callable[[int, pb.PinUpdateEvent], Awaitable[None]] = svc.gpio.handle_pin_update_event
         await on_pin_update(0, event)
 
         assert state.pin_events_count == initial_events + 1

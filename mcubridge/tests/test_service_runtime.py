@@ -1000,12 +1000,16 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
 
     svc.serial = mock_serial
     mock_serial.send.return_value = False
-    res_spi_xfer = await svc.local_bridge_service.execute_spi_transfer(pb.SpiTransfer(data=b"data"))
+    res_spi_xfer = pb.SpiTransferResponse.FromString(
+        await svc.local_bridge_service.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
+    )
     assert mock_serial.send.called
     assert res_spi_xfer.data == b""
 
     mock_serial.send.return_value = pb.SpiTransferResponse(data=b"resp").SerializeToString()
-    res_spi_xfer_ok = await svc.local_bridge_service.execute_spi_transfer(pb.SpiTransfer(data=b"data"))
+    res_spi_xfer_ok = pb.SpiTransferResponse.FromString(
+        await svc.local_bridge_service.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
+    )
     assert res_spi_xfer_ok.data == b"resp"
 
     mock_serial.send.reset_mock()
@@ -1014,12 +1018,16 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
 
     mock_serial.send.reset_mock()
     svc.serial = None
-    res_pin_write = await svc.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=13, value=1))
+    res_pin_write = pb.GenericResponse.FromString(
+        await svc.local_bridge_service.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
+    )
     assert not mock_serial.send.called
     assert res_pin_write.status == "error"
 
     svc.serial = mock_serial
-    res_pin_ok = await svc.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=13, value=1))
+    res_pin_ok = pb.GenericResponse.FromString(
+        await svc.local_bridge_service.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
+    )
     assert mock_serial.send.called
     assert res_pin_ok.status == "ok"
 

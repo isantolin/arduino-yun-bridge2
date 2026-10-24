@@ -449,7 +449,7 @@ def _extract_rpc_specs(
             "req_cls": m.input_type.name,
             "resp_cls": m.output_type.name,
             "default_factory": factory,
-            "handler_name": f"execute_{JinjaGenerator.snake_case(m.name)}",
+            "handler_name": JinjaGenerator.snake_case(m.name),
             "rpc_topic": rt,
             "rpc_command": rpc_cmd,
             "cardinality": cardinality,

@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 import structlog
 
+from ..config.const import PROP_KEY_BRIDGE_PIN
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, REGISTRY, Topic
 from ..protocol.structures import create_queued_publish
@@ -102,4 +103,34 @@ class GpioService:
                 str(actual_event.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )
+        )
+
+    async def handle_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
+        """Handle digital read response frame from MCU."""
+        req = self._runtime.state.pending_digital_reads.popleft() if self._runtime.state.pending_digital_reads else None
+        pin_str = str(req.pin) if req else "unknown"
+        await self._runtime.enqueue_cloud(
+            create_queued_publish(
+                REGISTRY.topic_path(self._runtime.state.cloud_topic_prefix, Topic.DIGITAL, pin_str, "value"),
+                str(p.value).encode("utf-8"),
+                message_expiry_interval=CLOUD_EXPIRY_PIN,
+                user_properties=((PROP_KEY_BRIDGE_PIN, pin_str),),
+                reply_context=req.reply_context if req else None,
+            ),
+            reply_context=req.reply_context if req else None,
+        )
+
+    async def handle_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
+        """Handle analog read response frame from MCU."""
+        req = self._runtime.state.pending_analog_reads.popleft() if self._runtime.state.pending_analog_reads else None
+        pin_str = str(req.pin) if req else "unknown"
+        await self._runtime.enqueue_cloud(
+            create_queued_publish(
+                REGISTRY.topic_path(self._runtime.state.cloud_topic_prefix, Topic.ANALOG, pin_str, "value"),
+                str(p.value).encode("utf-8"),
+                message_expiry_interval=CLOUD_EXPIRY_PIN,
+                user_properties=((PROP_KEY_BRIDGE_PIN, pin_str),),
+                reply_context=req.reply_context if req else None,
+            ),
+            reply_context=req.reply_context if req else None,
         )

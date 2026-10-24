@@ -12,6 +12,7 @@ from hypothesis import strategies as st
 from dirty_equals import Contains, IsInstance, IsPartialDict
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.protocol import Command
 from mcubridge.services.ubus import UbusService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from pytest_mock import MockerFixture
@@ -27,10 +28,9 @@ class MockRuntimeFacade:
         self.reset_link = AsyncMock(return_value=True)
         self.serial = AsyncMock()
         self.serial.send = AsyncMock(return_value=True)
-        self.local_bridge_service = MagicMock()
-        self.local_bridge_service.execute_mailbox_push = AsyncMock(return_value=pb.GenericResponse(status="ok"))
-        self.local_bridge_service.execute_datastore_put = AsyncMock(return_value=pb.GenericResponse(status="ok"))
-        self.local_bridge_service.execute_file_write = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+        self.mailbox_push = AsyncMock(return_value=True)
+        self.datastore_put = AsyncMock(return_value=True)
+        self.file_write = AsyncMock(return_value=True)
         self.clock_sync: MagicMock | None = MagicMock()
         self.gpio: MagicMock | None = MagicMock()
         self.poll_process = AsyncMock(

@@ -202,8 +202,8 @@ async def test_handle_file_mcu_read_success_and_timeout(
     await asyncio.sleep(0.01)
 
     assert svc.pending_mcu_read is not None
-    # Simulate MCU returning chunks via on_mcu_file_read_resp
-    on_read_resp: Callable[..., Awaitable[bool]] = svc.on_mcu_file_read_resp
+    # Simulate MCU returning chunks via handle_file_read_resp
+    on_read_resp: Callable[..., Awaitable[bool]] = svc.handle_file_read_resp
     await on_read_resp(1, pb.FileReadResponse(content=b"hello-"))
     await on_read_resp(2, pb.FileReadResponse(content=b"world"))
     await on_read_resp(3, pb.FileReadResponse(content=b""))  # Completion
@@ -447,9 +447,7 @@ async def test_on_mcu_process_kill_and_subscribe_resp(
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.kill_process = AsyncMock(return_value=True)
-    await svc.on_mcu_process_kill(1, pb.ProcessKill(pid=42))
-    svc.kill_process.assert_awaited_once_with(42)
+    await svc.kill_process(pb.ProcessKill(pid=42))
 
     await svc.gpio.on_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
 
@@ -488,7 +486,7 @@ async def test_on_mcu_console_write_no_queues(test_config: RuntimeConfig, mock_b
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.console_queues.clear()
-    await svc.on_mcu_console_write(1, pb.ConsoleWrite(data=b"hello mcu"))
+    await svc.handle_console_write(1, pb.ConsoleWrite(data=b"hello mcu"))
     assert len(svc.console_queues) == 0
     assert len(mock_bridge_state.console_to_mcu_queue) == 0
 

@@ -217,44 +217,55 @@ service LocalBridge {
   }
   rpc PinSubscribe(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse) {
     option (rpc.pb.rpc_topic) = "gpio.subscribe";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // Datastore Key-Value Operations
   rpc DatastorePut(rpc.pb.DatastorePut) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "datastore.put";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc DatastoreGet(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse) {
     option (rpc.pb.rpc_topic) = "datastore.get";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // Mailbox FIFO Operations
   rpc MailboxPush(rpc.pb.MailboxPush) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "mailbox.push";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc MailboxRead(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse) {
     option (rpc.pb.rpc_topic) = "mailbox.read";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // File System Operations
   rpc FileWrite(rpc.pb.FileWrite) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "file.write";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc FileRead(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse) {
     option (rpc.pb.rpc_topic) = "file.read";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc FileRemove(rpc.pb.FileRemove) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "file.remove";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // Process & Shell Execution
   rpc ProcessRunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse) {
     option (rpc.pb.rpc_topic) = "process.run_async";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc ProcessPoll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse) {
     option (rpc.pb.rpc_topic) = "process.poll";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc ProcessKill(rpc.pb.ProcessKill) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "process.kill";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // SPI Bus Operations
@@ -264,26 +275,31 @@ service LocalBridge {
   rpc SpiConfigure(rpc.pb.SpiConfig) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "spi.configure";
     option (rpc.pb.rpc_command) = "CMD_SPI_SET_CONFIG";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // System Telemetry & Introspection
   rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse) {
     option (rpc.pb.rpc_topic) = "system.version";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse) {
     option (rpc.pb.rpc_topic) = "system.free_memory";
   }
   rpc GetStatus(rpc.pb.SubscribeRequest) returns (rpc.pb.BridgeStatus) {
     option (rpc.pb.rpc_topic) = "system.status";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc EnterBootloader(rpc.pb.EnterBootloader) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "system.bootloader";
+    option (rpc.pb.is_custom_handler) = true;
   }
 
   // Real-Time Console Streaming & Generic Fallback
   rpc ConsoleWrite(rpc.pb.ConsoleWrite) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "console.write";
     option (rpc.pb.rpc_aliases) = "console.in";
+    option (rpc.pb.is_custom_handler) = true;
   }
   rpc ClockSync(rpc.pb.ClockSyncRequest) returns (rpc.pb.ClockSyncResponse) {
     option (rpc.pb.rpc_topic) = "clock.sync";

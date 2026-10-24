@@ -400,6 +400,17 @@ def _extract_payloads_and_actions(
         }
         for m in opts.Extensions[pb_module.ubus_methods]
     ]
+    daemon_tasks = [
+        {
+            "name": t.name,
+            "handler": t.handler,
+            "critical": t.critical,
+            "fatal_exception": t.fatal_exception,
+            "condition_property": t.condition_property,
+            "description": t.description,
+        }
+        for t in opts.Extensions[pb_module.daemon_tasks]
+    ]
     return {
         "payload_fields": payload_fields,
         "payload_structs": payload_structs,
@@ -408,6 +419,7 @@ def _extract_payloads_and_actions(
         "grouped_actions": grouped_actions,
         "topics": topics,
         "ubus_methods": ubus_methods,
+        "daemon_tasks": daemon_tasks,
     }
 
 
@@ -443,6 +455,11 @@ def _extract_rpc_specs(
             if m_opts.HasExtension(pb_module.rpc_command)
             else f"CMD_{JinjaGenerator.snake_case(m.name).upper()}"
         )
+        is_custom = (
+            bool(m_opts.Extensions[pb_module.is_custom_handler])
+            if m_opts.HasExtension(pb_module.is_custom_handler)
+            else False
+        )
         factory = f"lambda: pb.{m.output_type.name}({err_init})" if err_init else f"pb.{m.output_type.name}"
         item = {
             "name": m.name,
@@ -453,6 +470,7 @@ def _extract_rpc_specs(
             "rpc_topic": rt,
             "rpc_command": rpc_cmd,
             "cardinality": cardinality,
+            "is_custom_handler": is_custom,
         }
         if is_streaming:
             streaming_rpc_specs.append(item)
@@ -503,6 +521,8 @@ def _build_command_operation(
         )
         if matched_rpc.get("rpc_topic"):
             op["rpc_topic"] = matched_rpc["rpc_topic"]
+        if matched_rpc.get("is_custom_handler"):
+            op["is_custom_handler"] = True
     return op
 
 
@@ -550,6 +570,7 @@ def _build_operations_catalog(
             "handler_name": rpc["handler_name"],
             "rpc_topic": rpc.get("rpc_topic"),
             "cardinality": rpc["cardinality"],
+            "is_custom_handler": rpc.get("is_custom_handler", False),
         }
         for rpc in rpc_specs
         if rpc["name"] not in matched_rpc_names
@@ -656,6 +677,7 @@ def _extract_operations_context(
         "telemetry_topic_field_map": telem_map,
         "telemetry_default_field": default_telem,
         "ubus_methods": payload_ctx["ubus_methods"],
+        "daemon_tasks": payload_ctx["daemon_tasks"],
         "streaming_rpc_specs": streaming_rpc_specs,
     }
 

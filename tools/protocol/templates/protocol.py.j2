@@ -143,6 +143,19 @@ class OperationSpec:
     handler_name: str | None = None
     metrics_blob_field: str | None = None
     cardinality: Cardinality = Cardinality.UNARY_UNARY
+    is_custom_handler: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class DaemonTaskSpec:
+    """Canonical specification of a supervised daemon background task defined in Protocol SSOT."""
+
+    name: str
+    handler: str
+    critical: bool = False
+    fatal_exception: str = ""
+    condition_property: str = ""
+    description: str = ""
 
 
 class ProtocolRegistry:
@@ -160,6 +173,8 @@ class ProtocolRegistry:
         "topic_auth_map",
         "rpc_specs",
         "ubus_signatures",
+        "daemon_tasks",
+        "custom_handlers",
     )
 
     def __init__(
@@ -172,6 +187,7 @@ class ProtocolRegistry:
         mcu_unsupported_reasons: dict[int, str],
         topic_auth_map: dict[tuple[str, str], str] | None = None,
         ubus_signatures: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (),
+        daemon_tasks: tuple[DaemonTaskSpec, ...] = (),
     ) -> None:
         self.operations = operations
         self.topic_lookup = topic_lookup
@@ -179,6 +195,10 @@ class ProtocolRegistry:
         self.mcu_unsupported_reasons = mcu_unsupported_reasons
         self.rpc_specs = tuple(op for op in operations if op.handler_name is not None)
         self.ubus_signatures = ubus_signatures
+        self.daemon_tasks = daemon_tasks
+        self.custom_handlers: frozenset[str] = frozenset(
+            op.handler_name for op in operations if op.is_custom_handler and op.handler_name
+        )
 
         self.by_command_id = {op.command_id: op for op in operations if op.command_id is not None}
         self.by_name = {op.name: op for op in operations}
@@ -395,6 +415,32 @@ class ProtocolRegistry:
             for name, args in self.ubus_signatures
         }
 
+    def build_supervised_tasks(
+        self,
+        service: Any,
+        *,
+        fatal_exception_map: dict[str, type[BaseException]] | None = None,
+    ) -> list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]]:
+        """Build supervised daemon tasks list from Protocol SSOT. [SIL-2]"""
+        fatals_map = fatal_exception_map or {}
+        tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]] = []
+        for task in self.daemon_tasks:
+            if task.condition_property:
+                cond = getattr(service, task.condition_property, True)
+                if callable(cond):
+                    cond = cond()
+                if not cond:
+                    continue
+            getter = getattr(service, task.handler, None)
+            if getter is None:
+                continue
+            worker = getter() if callable(getter) else getter
+            fatals: tuple[type[BaseException], ...] = ()
+            if task.fatal_exception and task.fatal_exception in fatals_map:
+                fatals = (fatals_map[task.fatal_exception],)
+            tasks.append((task.name, worker, fatals))
+        return tasks
+
 
 
 
@@ -457,6 +503,9 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- if op.cardinality %}
             cardinality={{ op.cardinality }},
             {%- endif %}
+            {%- if op.is_custom_handler %}
+            is_custom_handler=True,
+            {%- endif %}
         ),
 {%- endfor %}
     ),
@@ -495,6 +544,18 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
                 ({{ a.name|tojson }}, {{ a.type|tojson }}),
                 {%- endfor %}
             ),
+        ),
+        {%- endfor %}
+    ),
+    daemon_tasks=(
+        {%- for t in daemon_tasks %}
+        DaemonTaskSpec(
+            name={{ t.name|tojson }},
+            handler={{ t.handler|tojson }},
+            critical={{ t.critical }},
+            fatal_exception={{ t.fatal_exception|tojson }},
+            condition_property={{ t.condition_property|tojson }},
+            description={{ t.description|tojson }},
         ),
         {%- endfor %}
     ),

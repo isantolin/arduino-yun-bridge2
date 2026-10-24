@@ -232,6 +232,51 @@ option (rpc.pb.constants) = {
   sync_timeout_ms: 30000
   max_datastore_value_size: 255
 };
+option (rpc.pb.daemon_tasks) = {
+  name: "serial-link"
+  handler: "task_worker_serial"
+  critical: true
+  fatal_exception: "SerialHandshakeFatal"
+  description: "Serial UART transport link supervisor"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "cloud-link"
+  handler: "task_worker_cloud"
+  description: "Protobuf cloud gateway supervisor"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "ubus-loop"
+  handler: "task_worker_ubus"
+  condition_property: "is_ubus_active"
+  description: "OpenWrt native UBUS event loop"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "clock-sync"
+  handler: "task_worker_clock_sync"
+  description: "Periodic hardware clock synchronization"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "status-writer"
+  handler: "task_worker_status_writer"
+  description: "Periodic status file writer"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "metrics-publisher"
+  handler: "task_worker_metrics_publisher"
+  description: "Periodic cloud metrics publisher"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "bridge-snapshots"
+  handler: "task_worker_bridge_snapshots"
+  condition_property: "is_snapshots_enabled"
+  description: "Periodic bridge summary and handshake snapshots"
+};
+option (rpc.pb.daemon_tasks) = {
+  name: "watchdog"
+  handler: "task_worker_watchdog"
+  condition_property: "is_watchdog_enabled"
+  description: "Hardware watchdog keepalive"
+};
 option (rpc.pb.handshake) = {
   nonce_length: 16
   tag_length: 16
@@ -1025,6 +1070,7 @@ extend google.protobuf.MethodOptions {
   string rpc_topic = 1032;
   repeated string rpc_aliases = 1033;
   string rpc_command = 1034;
+  bool is_custom_handler = 1036;
 }
 
 extend google.protobuf.EnumOptions {
@@ -1034,6 +1080,15 @@ extend google.protobuf.EnumOptions {
 message StatusOptions {
   string description = 1;
   string mcu_handler = 2;
+}
+
+message DaemonTaskConfig {
+  string name = 1;
+  string handler = 2;
+  bool critical = 3;
+  string fatal_exception = 4;
+  string condition_property = 5;
+  string description = 6;
 }
 
 extend google.protobuf.FileOptions {
@@ -1048,6 +1103,7 @@ extend google.protobuf.FileOptions {
   repeated ArchConfig architectures = 1011;
   repeated CapConfig capabilities = 1012;
   repeated UbusMethodConfig ubus_methods = 1035;
+  repeated DaemonTaskConfig daemon_tasks = 1037;
 }
 
 extend google.protobuf.EnumValueOptions {

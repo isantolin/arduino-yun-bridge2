@@ -115,7 +115,6 @@ class GpioService:
                 str(p.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
                 user_properties=((PROP_KEY_BRIDGE_PIN, pin_str),),
-                reply_context=req.reply_context if req else None,
             ),
             reply_context=req.reply_context if req else None,
         )
@@ -130,7 +129,6 @@ class GpioService:
                 str(p.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
                 user_properties=((PROP_KEY_BRIDGE_PIN, pin_str),),
-                reply_context=req.reply_context if req else None,
             ),
             reply_context=req.reply_context if req else None,
         )

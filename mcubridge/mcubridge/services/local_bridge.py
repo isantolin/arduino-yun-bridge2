@@ -232,7 +232,7 @@ class LocalBridgeService:
             await self.runtime_service.flush_console_queue()
         return pb.GenericResponse(status="ok")
 
-    async def execute_publish(self, req: pb.CloudQueuedPublish) -> pb.CloudQueuedPublish:
+    async def handle_publish(self, req: pb.CloudQueuedPublish) -> pb.CloudQueuedPublish:
         has_correlation = req.HasField("correlation_data")
         route = REGISTRY.parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
         is_query = has_correlation or (route is not None and route.direction == "req")
@@ -277,7 +277,7 @@ class LocalBridgeService:
             req.ParseFromString(payload_bytes)
 
         with structlog.contextvars.bound_contextvars(rpc_method=method_name):
-            if spec.handler_name and hasattr(self, spec.handler_name):
+            if spec.handler_name and spec.handler_name in REGISTRY.custom_handlers:
                 resp = await getattr(self, spec.handler_name)(req)
             elif spec.requires_ack and spec.command_id is not None:
                 resp = await self._send_serial_ack(Command(spec.command_id), req)
@@ -295,7 +295,7 @@ class LocalBridgeService:
         cmd_id = spec.command_id
         resp_cls = spec.response_type
 
-        if handler_name and hasattr(LocalBridgeService, handler_name):
+        if handler_name and handler_name in REGISTRY.custom_handlers:
 
             async def custom_unary_handler(self: LocalBridgeService, stream: Stream[Any, Any]) -> None:
                 if (req := await stream.recv_message()) is not None:
@@ -336,7 +336,7 @@ class LocalBridgeService:
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is not None:
             try:
-                await stream.send_message(await self.execute_publish(req))
+                await stream.send_message(await self.handle_publish(req))
             except OSError as exc:
                 logger.debug("IPC connection closed during response write", error=str(exc))
 

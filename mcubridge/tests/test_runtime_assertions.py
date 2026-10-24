@@ -140,7 +140,7 @@ async def test_local_bridge_datastore_put_persists_and_publishes(
     service, state, _serial = service_setup
     request = pb.DatastorePut(key="local_key", value=b"local_value")
 
-    response = await service.local_bridge_service.execute_datastore_put(request)
+    response = await service.local_bridge_service.datastore_put(request)
 
     assert response.status == "ok"
     assert state.datastore_cache is not None

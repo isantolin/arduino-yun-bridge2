@@ -1083,6 +1083,48 @@ class BridgeService:
     def is_draining(self) -> bool:
         return self.lifecycle_fsm.draining.is_active
 
+    @property
+    def is_ubus_active(self) -> bool:
+        return self.ubus_service.is_active
+
+    @property
+    def is_snapshots_enabled(self) -> bool:
+        return self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0
+
+    @property
+    def is_watchdog_enabled(self) -> bool:
+        return self.config.watchdog_enabled
+
+    def task_worker_serial(self) -> Callable[[], Awaitable[None]]:
+        return self.serial.run if self.serial else lambda: asyncio.sleep(0)
+
+    def task_worker_cloud(self) -> Callable[[], Awaitable[None]]:
+        return self.run_cloud
+
+    def task_worker_ubus(self) -> Callable[[], Awaitable[None]]:
+        return self.ubus_service.run
+
+    def task_worker_clock_sync(self) -> Callable[[], Awaitable[None]]:
+        return self.clock_sync.run
+
+    def task_worker_status_writer(self) -> Callable[[], Awaitable[None]]:
+        return lambda: status_writer(self.state, self.config.status_interval)
+
+    def task_worker_metrics_publisher(self) -> Callable[[], Awaitable[None]]:
+        return lambda: publish_metrics(self.state, self.enqueue_cloud, self.config.status_interval)
+
+    def task_worker_bridge_snapshots(self) -> Callable[[], Awaitable[None]]:
+        return lambda: publish_bridge_snapshots(
+            self.state,
+            self.enqueue_cloud,
+            summary_interval=self.config.bridge_summary_interval,
+            handshake_interval=self.config.bridge_handshake_interval,
+        )
+
+    def task_worker_watchdog(self) -> Callable[[], Awaitable[None]]:
+        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
+        return self.watchdog.run
+
     # --- De-layered Orchestration [SIL-2] ---
 
     async def run(self) -> None:
@@ -1092,75 +1134,10 @@ class BridgeService:
             async with asyncio.TaskGroup() as tg:
                 self._tg = tg
                 self.lifecycle_fsm.run()
-                # 1. Serial Link (Critical)
-                tg.create_task(
-                    self.supervise(
-                        "serial-link",
-                        self.serial.run if self.serial else lambda: asyncio.sleep(0),
-                        (SerialHandshakeFatal,),
-                    )
-                )
-
-                # 2. CLOUD Link
-                tg.create_task(
-                    self.supervise(
-                        "cloud-link",
-                        self.run_cloud,
-                    )
-                )
-
-                if self.ubus_service.is_active:
-                    tg.create_task(
-                        self.supervise(
-                            "ubus-loop",
-                            self.ubus_service.run,
-                        )
-                    )
-
-                # Clock synchronization (Periodic background sync)
-                tg.create_task(
-                    self.supervise(
-                        "clock-sync",
-                        self.clock_sync.run,
-                    )
-                )
-
-                # 3. Status & Metrics (Periodic)
-                tg.create_task(
-                    self.supervise(
-                        "status-writer",
-                        lambda: status_writer(self.state, self.config.status_interval),
-                    )
-                )
-                tg.create_task(
-                    self.supervise(
-                        "metrics-publisher",
-                        lambda: publish_metrics(
-                            self.state,
-                            self.enqueue_cloud,
-                            self.config.status_interval,
-                        ),
-                    )
-                )
-
-                # 4. Optional Features
-                if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
-                    tg.create_task(
-                        self.supervise(
-                            PROP_KEY_BRIDGE_SNAPSHOTS,
-                            lambda: publish_bridge_snapshots(
-                                self.state,
-                                self.enqueue_cloud,
-                                summary_interval=self.config.bridge_summary_interval,
-                                handshake_interval=self.config.bridge_handshake_interval,
-                            ),
-                        )
-                    )
-
-                if self.config.watchdog_enabled:
-                    self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
-                    tg.create_task(self.supervise("watchdog", self.watchdog.run))
-
+                for name, fn, fatals in protocol.REGISTRY.build_supervised_tasks(
+                    self, fatal_exception_map={"SerialHandshakeFatal": SerialHandshakeFatal}
+                ):
+                    tg.create_task(self.supervise(name, fn, fatals))
         except BaseExceptionGroup as eg:
             cancelled_group, rest = eg.split(asyncio.CancelledError)
             if cancelled_group is not None:

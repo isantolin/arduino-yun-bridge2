@@ -16,7 +16,7 @@ from hypothesis import given, strategies as st
 import pytest
 from dirty_equals import IsInt, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import REGISTRY, Command, Status
 from mcubridge.protocol.structures import PendingPinRequest
 from mcubridge.services.runtime import BridgeService, PendingMcuRead
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -58,11 +58,9 @@ def svc(mock_config: RuntimeConfig, mock_state: RuntimeState) -> tuple[BridgeSer
 def test_protocol_registry_coverage(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     """Certifies that all known Commands have defined handlers or default fallbacks."""
     service, _state, _serial = svc
+    dispatch = REGISTRY.build_mcu_dispatch(service)
     for cmd in Command:
-        cmd_name = cmd.name.lower().removeprefix("cmd_")
-        handler = getattr(service, f"on_mcu_{cmd_name}", None) or getattr(service, f"_on_mcu_{cmd_name}", None)
-        # Commands are either explicitly handled or caught by unsupported_mcu_request fallback
-        assert handler is not None or callable(service.unsupported_mcu_request)
+        assert cmd.value in dispatch or callable(service.unsupported_mcu_request)
 
 
 # -----------------------------------------------------------------------------
@@ -97,7 +95,7 @@ async def test_unsupported_mcu_request(
 
 async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_avail: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_available
+    on_avail: Callable[..., Awaitable[bool]] = service.handle_mailbox_available
 
     # Without serial
     service.serial = None
@@ -118,7 +116,7 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
 
 async def test_mailbox_read_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_read: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_read
+    on_read: Callable[..., Awaitable[bool]] = service.handle_mailbox_read
 
     # Without serial
     service.serial = None
@@ -146,7 +144,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
         captured.append(msg)
 
     service.cloud_publisher = _cap
-    on_proc: Callable[..., Awaitable[None]] = service.on_mcu_mailbox_processed
+    on_proc: Callable[..., Awaitable[None]] = service.handle_mailbox_processed
     await on_proc(1, pb.MailboxProcessed(message_id=42))
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/mailbox/processed"
@@ -159,7 +157,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 
 async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_write: Callable[..., Awaitable[bool]] = service.on_mcu_file_write
+    on_write: Callable[..., Awaitable[bool]] = service.handle_file_write
 
     # Without serial
     service.serial = None
@@ -180,8 +178,8 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
 
 async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
-    on_read: Callable[..., Awaitable[None]] = service.on_mcu_file_read
-    on_remove: Callable[..., Awaitable[bool]] = service.on_mcu_file_remove
+    on_read: Callable[..., Awaitable[None]] = service.handle_file_read
+    on_remove: Callable[..., Awaitable[bool]] = service.handle_file_remove
 
     # Read without serial
     service.serial = None
@@ -221,7 +219,7 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
 
 async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _serial = svc
-    on_read_resp: Callable[..., Awaitable[bool]] = service.on_mcu_file_read_resp
+    on_read_resp: Callable[..., Awaitable[bool]] = service.handle_file_read_resp
 
     # No pending read
     assert await on_read_resp(1, pb.FileReadResponse(content=b"orphan")) is False
@@ -251,8 +249,8 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 
 async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
-    on_run: Callable[..., Awaitable[bool]] = service.on_mcu_process_run_async
-    on_poll: Callable[..., Awaitable[bool]] = service.on_mcu_process_poll
+    on_run: Callable[..., Awaitable[bool]] = service.handle_process_run_async
+    on_poll: Callable[..., Awaitable[bool]] = service.handle_process_poll
 
     # Without serial
     service.serial = None
@@ -324,7 +322,7 @@ async def test_status_reporting_and_ack(
     mock_error = MagicMock()
     monkeypatch.setattr("mcubridge.services.runtime.logger.debug", mock_debug)
     monkeypatch.setattr("mcubridge.services.runtime.logger.error", mock_error)
-    on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
+    on_ack: Callable[..., Awaitable[None]] = service.handle_ack
 
     await on_ack(1, pb.AckPacket(command_id=0x01))
     mock_debug.assert_called_with("MCU ACK received", command_id="0x01")
@@ -347,27 +345,27 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
 
     # Digital read response
     state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
-    on_digital: Callable[..., Awaitable[None]] = service.on_mcu_digital_read_resp
+    on_digital: Callable[..., Awaitable[None]] = service.gpio.handle_digital_read_resp
     await on_digital(1, pb.DigitalReadResponse(value=1))
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/d/13/value"
     assert captured[-1].payload == b"1"
 
     # Analog read response
     state.pending_analog_reads.append(PendingPinRequest(pin=2, reply_context=None))
-    on_analog: Callable[..., Awaitable[None]] = service.on_mcu_analog_read_resp
+    on_analog: Callable[..., Awaitable[None]] = service.gpio.handle_analog_read_resp
     await on_analog(2, pb.AnalogReadResponse(value=1023))
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/a/2/value"
     assert captured[-1].payload == b"1023"
 
     # SPI transfer response
-    on_spi: Callable[..., Awaitable[None]] = service.on_mcu_spi_transfer_resp
+    on_spi: Callable[..., Awaitable[None]] = service.handle_spi_transfer_resp
     await on_spi(3, pb.SpiTransferResponse(data=b"\xaa\x55"))
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/spi/transfer/resp"
     assert captured[-1].payload == b"\xaa\x55"
 
     # Datastore put with cache None
     state.datastore_cache = None
-    on_ds_put: Callable[..., Awaitable[bool]] = service.on_mcu_datastore_put
+    on_ds_put: Callable[..., Awaitable[bool]] = service.datastore_put
     assert await on_ds_put(1, pb.DatastorePut(key="k", value=b"v")) is True
 
     # Corrupt Protobuf payload

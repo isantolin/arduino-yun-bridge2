@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -460,7 +461,7 @@ async def test_enqueue_cloud_queue_empty_in_finally(
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
 
-    async def mock_spool(msg: Any) -> bool:
+    async def mock_spool(message: pb.CloudQueuedPublish) -> bool:
         try:
             mock_bridge_state.cloud_publish_queue.get_nowait()
         except asyncio.QueueEmpty as exc:

@@ -58,6 +58,18 @@ def test_wait_for_daemon_sync_success(tmp_path: Path) -> None:
     synced = emulation_runner.wait_for_daemon_sync(status_file, timeout=1.0)
     assert synced is True
 
+    status_file.write_text(
+        json.dumps({"bridge": {"serial_link": {"synchronised": True}}}),
+        encoding="utf-8",
+    )
+    assert emulation_runner.wait_for_daemon_sync(status_file, timeout=1.0) is True
+
+    status_file.write_text(
+        json.dumps({"bridge": {"handshake": {"synchronised": True}}}),
+        encoding="utf-8",
+    )
+    assert emulation_runner.wait_for_daemon_sync(status_file, timeout=1.0) is True
+
 
 def test_wait_for_daemon_sync_failure(tmp_path: Path) -> None:
     status_file = tmp_path / "status.json"

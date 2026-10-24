@@ -499,5 +499,3 @@ async def test_run_cloud_disabled(test_config: RuntimeConfig, mock_bridge_state:
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     await svc.run_cloud()
     assert mock_bridge_state.cloud_fsm.disabled.is_active
-
-

@@ -219,9 +219,7 @@ async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None
 
     assert res == {"status": "ok", "message_length": 9}
     await asyncio.sleep(0.01)
-    mock_runtime.local_bridge_service.execute_mailbox_push.assert_awaited_once()
-    req = mock_runtime.local_bridge_service.execute_mailbox_push.call_args[0][0]
-    assert req.data == b"hello_mcu"
+    mock_runtime.mailbox_push.assert_awaited_once_with(b"hello_mcu")
 
 
 async def test_ubus_handle_datastore_set(mock_runtime: MockRuntimeFacade) -> None:
@@ -230,10 +228,7 @@ async def test_ubus_handle_datastore_set(mock_runtime: MockRuntimeFacade) -> Non
 
     assert res == {"status": "ok", "key": "temperature"}
     await asyncio.sleep(0.01)
-    mock_runtime.local_bridge_service.execute_datastore_put.assert_awaited_once()
-    req = mock_runtime.local_bridge_service.execute_datastore_put.call_args[0][0]
-    assert req.key == "temperature"
-    assert req.value == b"24.5"
+    mock_runtime.datastore_put.assert_awaited_once_with("temperature", b"24.5")
 
 
 def test_ubus_handle_process_run_sync(mock_runtime: MockRuntimeFacade) -> None:
@@ -407,10 +402,7 @@ async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
 
     assert res == {"status": "ok", "path": "test.txt", "bytes_written": 12}
     await asyncio.sleep(0.01)
-    mock_runtime.local_bridge_service.execute_file_write.assert_awaited_once()
-    req = mock_runtime.local_bridge_service.execute_file_write.call_args[0][0]
-    assert req.path == "test.txt"
-    assert req.data == b"file content"
+    mock_runtime.file_write.assert_awaited_once_with("test.txt", b"file content")
 
 
 def test_ubus_handle_link_reset(mock_runtime: MockRuntimeFacade) -> None:

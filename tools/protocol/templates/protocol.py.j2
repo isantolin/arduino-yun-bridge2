@@ -377,8 +377,11 @@ class ProtocolRegistry:
                 return 0
             return getattr(backend, f"BLOBMSG_TYPE_{typ}", getattr(backend, typ, 0))
 
+        def _identity_wrapper(fn: Callable[..., Any]) -> Callable[..., Any]:
+            return fn
+
         type_resolver = get_type_fn or _default_get_type
-        wrap = handler_factory or (lambda fn: fn)
+        wrap: Callable[[Callable[..., Any]], Callable[..., Any]] = handler_factory or _identity_wrapper
         resolved_session_type = session_type if session_type is not None else type_resolver("STRING", ubus_backend)
 
         return {

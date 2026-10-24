@@ -398,7 +398,7 @@ def _extract_payloads_and_actions(
             "description": m.description,
             "args": [{"name": a.name, "type": a.type} for a in m.args],
         }
-        for m in (opts.Extensions.get(pb_module.ubus_methods, []))
+        for m in opts.Extensions[pb_module.ubus_methods]
     ]
     return {
         "payload_fields": payload_fields,

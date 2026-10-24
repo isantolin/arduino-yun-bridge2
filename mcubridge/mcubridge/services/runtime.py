@@ -599,12 +599,14 @@ class BridgeService:
     async def datastore_put(
         self,
         _seq_or_key: int | str | pb.DatastorePut,
-        value: bytes | None = None,
+        value: bytes | pb.DatastorePut | None = None,
         *,
         reply_context: Any | None = None,
     ) -> bool:
         if isinstance(_seq_or_key, pb.DatastorePut):
             k, v = _seq_or_key.key, _seq_or_key.value
+        elif isinstance(value, pb.DatastorePut):
+            k, v = value.key, value.value
         elif isinstance(value, bytes):
             k, v = cast(str, _seq_or_key), value
         else:

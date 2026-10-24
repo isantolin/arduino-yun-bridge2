@@ -957,10 +957,11 @@ class BridgeService:
         ctx.fsm.finish()
         return ctx.handle.returncode if ctx.handle.returncode is not None else -1
 
-    async def kill_process(self, _seq_or_pid: int | pb.ProcessKill, pid: int | None = None) -> tuple[bool, str | None]:
-        actual_pid = (
-            _seq_or_pid.pid if isinstance(_seq_or_pid, pb.ProcessKill) else (pid if pid is not None else _seq_or_pid)
-        )
+    async def kill_process(
+        self, _seq_or_pid: int | pb.ProcessKill, pid: int | pb.ProcessKill | None = None
+    ) -> tuple[bool, str | None]:
+        target = pid if isinstance(pid, pb.ProcessKill) else _seq_or_pid
+        actual_pid = target.pid if isinstance(target, pb.ProcessKill) else int(target)
         with structlog.contextvars.bound_contextvars(pid=actual_pid):
             async with self.state.process_lock:
                 ctx = self.state.running_processes.get(actual_pid)

@@ -425,22 +425,14 @@ class ProtocolRegistry:
         fatals_map = fatal_exception_map or {}
         tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]] = []
         for task in self.daemon_tasks:
-            if task.condition_property:
-                cond = getattr(service, task.condition_property, True)
-                if callable(cond):
-                    cond = cond()
-                if not cond:
-                    continue
-            if not hasattr(service, task.handler):
+            if task.condition_property and not getattr(service, task.condition_property):
                 continue
-            getter: Any = getattr(service, task.handler)
-            if not callable(getter):
-                continue
-            res: Any = getter()
-            worker: Callable[[], Any] = res if callable(res) else getter
-            fatals: tuple[type[BaseException], ...] = ()
-            if task.fatal_exception and task.fatal_exception in fatals_map:
-                fatals = (fatals_map[task.fatal_exception],)
+            worker: Callable[[], Any] = getattr(service, task.handler)()
+            fatals: tuple[type[BaseException], ...] = (
+                (fatals_map[task.fatal_exception],)
+                if task.fatal_exception and task.fatal_exception in fatals_map
+                else ()
+            )
             tasks.append((task.name, worker, fatals))
         return tasks
 

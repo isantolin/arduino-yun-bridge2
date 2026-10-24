@@ -178,21 +178,26 @@ def wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
             if not isinstance(raw_obj, dict):
                 return False
             data = cast(dict[str, object], raw_obj)
-            bridge_obj = data.get("bridge")
-            if not isinstance(bridge_obj, dict):
-                return False
-            bridge = cast(dict[str, object], bridge_obj)
-            if bridge.get("is_synchronized") is True or bridge.get("synchronised") is True:
-                return True
-            serial_obj = bridge.get("serial_link")
-            if isinstance(serial_obj, dict):
-                serial_link = cast(dict[str, object], serial_obj)
-                if serial_link.get("synchronised") is True:
+            metrics_obj = data.get("metrics")
+            if isinstance(metrics_obj, dict):
+                metrics = cast(dict[str, object], metrics_obj)
+                if metrics.get("link_state") == "connected" and metrics.get("handshake_state") == "synchronized":
                     return True
-            handshake_obj = bridge.get("handshake")
-            if isinstance(handshake_obj, dict):
-                handshake = cast(dict[str, object], handshake_obj)
-                return handshake.get("synchronised") is True
+            bridge_obj = data.get("bridge")
+            if isinstance(bridge_obj, dict):
+                bridge = cast(dict[str, object], bridge_obj)
+                if bridge.get("is_synchronized") is True or bridge.get("synchronised") is True:
+                    return True
+                serial_obj = bridge.get("serial_link")
+                if isinstance(serial_obj, dict):
+                    serial_link = cast(dict[str, object], serial_obj)
+                    if serial_link.get("synchronised") is True:
+                        return True
+                handshake_obj = bridge.get("handshake")
+                if isinstance(handshake_obj, dict):
+                    handshake = cast(dict[str, object], handshake_obj)
+                    if handshake.get("synchronised") is True:
+                        return True
             return False
         except (json.JSONDecodeError, OSError):
             return False
@@ -294,6 +299,9 @@ def run_emulation(
 
     # 1. Start Unified socat linking PTY to MCU EXEC
     Path(SOCAT_PORT0).unlink(missing_ok=True)
+    status_file = Path("/tmp/mcubridge_status.json")
+    status_file.unlink(missing_ok=True)
+    os.environ["MCUBRIDGE_LOG_STREAM"] = "1"
 
     emulator_fs_root = Path("/tmp/mcubridge-host-fs")
     prepare_emulator_fs(emulator_fs_root)

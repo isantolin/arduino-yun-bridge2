@@ -192,13 +192,13 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     assert serial.send.call_args[0][0] == Status.ERROR.value
 
     # Read existing nonempty file
-    await service.safe_file_write("exists.txt", b"chunk-data")
+    await service.file_write(pb.FileWrite(path="exists.txt", data=b"chunk-data"))
     await on_read(2, pb.FileRead(path="exists.txt"))
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
     assert serial.send.call_args[0][1].content == b"chunk-data"
 
     # Read existing empty file
-    await service.safe_file_write("empty.txt", b"")
+    await service.file_write(pb.FileWrite(path="empty.txt", data=b""))
     await on_read(3, pb.FileRead(path="empty.txt"))
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
     assert serial.send.call_args[0][1].content == b""

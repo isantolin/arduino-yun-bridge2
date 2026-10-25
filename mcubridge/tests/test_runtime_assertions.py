@@ -140,7 +140,7 @@ async def test_local_bridge_datastore_put_persists_and_publishes(
     service, state, _serial = service_setup
     request = pb.DatastorePut(key="local_key", value=b"local_value")
 
-    response = await service.local_bridge_service.datastore_put(request)
+    response = await service.datastore_put(request)
 
     assert response.status == "ok"
     assert state.datastore_cache is not None
@@ -202,7 +202,7 @@ async def test_mcu_process_run_asserts_exec(
     assert isinstance(args[1], pb.ProcessRunAsyncResponse)
     pid = args[1].pid
     assert pid > 0
-    await service.kill_process(pid)
+    await service.process_kill(pid)
 
 
 async def test_cloud_spi_transfer_asserts_serial(
@@ -267,7 +267,8 @@ async def test_cloud_shell_poll_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = service_setup
-    pid = await service.run_process("echo out")
+    res_run = await service.process_run_async("echo out")
+    pid = res_run.pid
     assert pid > 0
     await asyncio.sleep(0.05)
 
@@ -290,7 +291,8 @@ async def test_cloud_shell_kill_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = service_setup
-    pid = await service.run_process("sleep 10")
+    res_run = await service.process_run_async("sleep 10")
+    pid = res_run.pid
     assert pid > 0
     assert pid in state.running_processes
 
@@ -319,4 +321,4 @@ async def test_cloud_shell_run_asserts_exec(
     assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/process.run_async"
     resp = pb.ProcessRunAsyncResponse.FromString(queued_pub.payload)
     assert resp.pid > 0
-    await service.kill_process(resp.pid)
+    await service.process_kill(resp.pid)

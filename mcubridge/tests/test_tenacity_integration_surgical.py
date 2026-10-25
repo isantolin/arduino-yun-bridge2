@@ -28,8 +28,8 @@ class TypedRuntimeFacade:
         self.state = state
         self.serial = MagicMock()
         self.handle_request = AsyncMock()
-        self.run_process = AsyncMock(return_value=123)
-        self.kill_process = AsyncMock(return_value=(True, None))
+        self.process_run_async = AsyncMock(return_value=pb.ProcessRunAsyncResponse(pid=123))
+        self.process_kill = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.reset_link = AsyncMock(return_value=True)
         self.file_write = AsyncMock(return_value=True)
         self.file_read = AsyncMock(return_value=b"")
@@ -43,8 +43,7 @@ class TypedRuntimeFacade:
         self.ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
         self.clock_sync = MagicMock()
         self.gpio = MagicMock()
-        self.local_bridge_service = MagicMock()
-        self.poll_process = AsyncMock(
+        self.process_poll = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,
                 exit_code=0,

@@ -221,7 +221,7 @@ async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -
 
     svc.state.running_processes[8888] = ctx
 
-    res = await svc.poll_process(8888)
+    res = await svc.process_poll(8888)
     assert res.finished is False
     assert res.stdout_truncated is True
 
@@ -726,25 +726,25 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     )
 
     mock_serial.send = AsyncMock(return_value=False)
-    res_mcu_w = await svc.local_bridge_service.file_write(pb.FileWrite(path="/mcu/test.txt", data=b"data"))
+    res_mcu_w = await svc.file_write(pb.FileWrite(path="/mcu/test.txt", data=b"data"))
     assert mock_serial.send.called
     assert res_mcu_w.status == "error"
 
     svc.serial = None
-    res_mcu_rm = await svc.local_bridge_service.file_remove(pb.FileRemove(path="/mcu/test.txt"))
+    res_mcu_rm = await svc.file_remove(pb.FileRemove(path="/mcu/test.txt"))
     assert res_mcu_rm.status == "error"
     svc.serial = mock_serial
 
-    res_loc_w = await svc.local_bridge_service.file_write(pb.FileWrite(path="../outside.txt", data=b"data"))
+    res_loc_w = await svc.file_write(pb.FileWrite(path="../outside.txt", data=b"data"))
     assert res_loc_w.status == "error"
 
-    res_loc_r = await svc.local_bridge_service.file_read(pb.FileRead(path="not_a_file"))
+    res_loc_r = await svc.file_read(pb.FileRead(path="not_a_file"))
     assert res_loc_r.content == b""
 
     real_file = tmp_path / "real.txt"
     real_file.write_text("hello")
     svc.config.file_system_root = str(tmp_path)
-    res_loc_r2 = await svc.local_bridge_service.file_read(pb.FileRead(path="real.txt"))
+    res_loc_r2 = await svc.file_read(pb.FileRead(path="real.txt"))
     assert real_file.exists()
     assert res_loc_r2.content == b"hello"
 
@@ -768,7 +768,7 @@ async def test_runtime_handle_shell_branches(mock_bridge_service: BridgeService,
         )
     )
 
-    await svc.kill_process(99999)
+    await svc.process_kill(99999)
     assert 99999 not in svc.state.running_processes
 
 
@@ -902,7 +902,7 @@ async def test_runtime_poll_process_eof_and_xoff(
 
     ctx = ProcessContext(mock_handle)
     svc.state.running_processes[555] = ctx
-    resp = await svc.poll_process(555)
+    resp = await svc.process_poll(555)
     assert resp.finished is True
     assert 555 not in svc.state.running_processes
 
@@ -949,12 +949,12 @@ async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeS
     svc = mock_bridge_service
 
     svc.serial = None
-    await svc.local_bridge_service.mailbox_push(pb.MailboxPush(data=b"hi"))
+    await svc.mailbox_push(pb.MailboxPush(data=b"hi"))
     assert not mock_serial.send.called
 
     svc.serial = mock_serial
     await svc.state.mailbox_incoming_queue.clear()
-    res = await svc.local_bridge_service.mailbox_read(pb.SubscribeRequest())
+    res = await svc.mailbox_read(pb.SubscribeRequest())
     assert res.content == b""
     assert not mock_serial.send.called
 
@@ -967,35 +967,35 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     svc = mock_bridge_service
 
     svc.serial = None
-    res_f = await svc.local_bridge_service.file_read(pb.FileRead(path="test.txt"))
+    res_f = await svc.file_read(pb.FileRead(path="test.txt"))
     assert not mock_serial.send.called
     assert res_f.content == b""
 
     svc.serial = mock_serial
-    res_unsafe = await svc.local_bridge_service.file_read(pb.FileRead(path="../../../etc/shadow"))
+    res_unsafe = await svc.file_read(pb.FileRead(path="../../../etc/shadow"))
     assert not mock_serial.send.called
     assert res_unsafe.content == b""
 
-    res_empty = await svc.local_bridge_service.process_run_async(pb.ProcessRunAsync(command=""))
+    res_empty = await svc.process_run_async(pb.ProcessRunAsync(command=""))
     assert not mock_serial.send.called
     assert res_empty.pid == 0
 
     svc.state.allowed_policy = pb.AllowedCommandPolicy(entries=["echo"])
-    res_prop = await svc.local_bridge_service.process_run_async(pb.ProcessRunAsync(command="echo prop"))
+    res_prop = await svc.process_run_async(pb.ProcessRunAsync(command="echo prop"))
     assert res_prop.pid > 0
     for _ in range(50):
-        poll_res = await svc.poll_process(res_prop.pid)
+        poll_res = await svc.process_poll(res_prop.pid)
         if poll_res.finished:
             break
         await asyncio.sleep(0.01)
-    await svc.kill_process(res_prop.pid)
+    await svc.process_kill(res_prop.pid)
 
     mock_handle = MagicMock()
     type(mock_handle).pid = PropertyMock(side_effect=ProcessLookupError("No such process"))
     mock_handle.returncode = None
     mock_ctx = ProcessContext(mock_handle)
     svc.state.running_processes[777] = mock_ctx
-    await svc.kill_process(777)
+    await svc.process_kill(777)
     assert 777 not in svc.state.running_processes
 
 
@@ -1005,39 +1005,39 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     svc = mock_bridge_service
 
     svc.serial = None
-    res_spi_cfg = await svc.local_bridge_service.spi_configure(pb.SpiConfig())
+    res_spi_cfg = await svc.spi_configure(pb.SpiConfig())
     assert not mock_serial.send.called
     assert res_spi_cfg.status == "error"
 
     svc.serial = mock_serial
     mock_serial.send.return_value = False
     res_spi_xfer = pb.SpiTransferResponse.FromString(
-        await svc.local_bridge_service.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
+        await svc.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
     )
     assert mock_serial.send.called
     assert res_spi_xfer.data == b""
 
     mock_serial.send.return_value = pb.SpiTransferResponse(data=b"resp").SerializeToString()
     res_spi_xfer_ok = pb.SpiTransferResponse.FromString(
-        await svc.local_bridge_service.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
+        await svc.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
     )
     assert res_spi_xfer_ok.data == b"resp"
 
     mock_serial.send.reset_mock()
-    res_boot = await svc.local_bridge_service.enter_bootloader(pb.EnterBootloader())
+    res_boot = await svc.enter_bootloader(pb.EnterBootloader())
     assert res_boot.status == "ok"
 
     mock_serial.send.reset_mock()
     svc.serial = None
     res_pin_write = pb.GenericResponse.FromString(
-        await svc.local_bridge_service.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
+        await svc.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
     )
     assert not mock_serial.send.called
     assert res_pin_write.status == "error"
 
     svc.serial = mock_serial
     res_pin_ok = pb.GenericResponse.FromString(
-        await svc.local_bridge_service.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
+        await svc.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
     )
     assert mock_serial.send.called
     assert res_pin_ok.status == "ok"
@@ -1309,12 +1309,14 @@ async def test_service_supervisor_circuit_breaker(service_stack: tuple[BridgeSer
 
 
 def test_runtime_action_dispatch_canonical_completeness(mock_bridge_service: BridgeService) -> None:
-    """Verify that RPC registry is fully populated with valid handler callables on LocalBridgeService. [SIL-2]"""
+    """Verify that RPC registry is fully populated with valid handler callables. [SIL-2]"""
     assert len(protocol.REGISTRY.rpc_specs) >= 20
     for spec in protocol.REGISTRY.rpc_specs:
         assert spec.handler_name is not None
-        handler = getattr(mock_bridge_service.local_bridge_service, spec.handler_name, None)
-        assert callable(handler)
+        if spec.is_custom_handler:
+            handler = getattr(mock_bridge_service, spec.handler_name, None)
+            assert callable(handler)
+    assert callable(mock_bridge_service.execute_rpc)
 
 
 async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
@@ -1330,17 +1332,17 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
     assert res_unreg is None
 
     # 3. File read with unsafe path
-    res_file_unsafe = await svc.local_bridge_service.file_read(pb.FileRead(path="../../../etc/passwd"))
+    res_file_unsafe = await svc.file_read(pb.FileRead(path="../../../etc/passwd"))
     assert res_file_unsafe.content == b""
 
     # 4. Process run with empty command
-    res_sh_empty = await svc.local_bridge_service.process_run_async(pb.ProcessRunAsync(command=""))
+    res_sh_empty = await svc.process_run_async(pb.ProcessRunAsync(command=""))
     assert res_sh_empty.pid == 0
 
     # 5. SPI configure when serial is None
     serial_bak = svc.serial
     svc.serial = None
-    res_spi = await svc.local_bridge_service.spi_configure(pb.SpiConfig())
+    res_spi = await svc.spi_configure(pb.SpiConfig())
     assert res_spi.status == "error"
     svc.serial = serial_bak
 
@@ -1385,7 +1387,7 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
 
     # 3. RPC execution exception: replies with error
     enqueued.clear()
-    with patch.object(svc.local_bridge_service, "execute_rpc", side_effect=RuntimeError("hardware failure")):
+    with patch.object(svc, "execute_rpc", side_effect=RuntimeError("hardware failure")):
         await svc.handle_request(pub_req)
     assert len(enqueued) == 1
     assert enqueued[0][0] == f"{prefix}/res/gpio.write"

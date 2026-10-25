@@ -288,7 +288,7 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
 
     # Missing PID poll
-    resp = await svc.poll_process(99999)
+    resp = await svc.process_poll(99999)
     assert resp.status == Status.ERROR.value
     assert resp.finished is True
 
@@ -386,18 +386,18 @@ async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, m
 def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    assert not svc.is_running
-    assert not svc.is_draining
+    assert not svc.lifecycle_fsm.running.is_active
+    assert not svc.lifecycle_fsm.draining.is_active
     svc.lifecycle_fsm.start()
     svc.lifecycle_fsm.run()
-    assert svc.is_running
-    assert not svc.is_draining
+    assert svc.lifecycle_fsm.running.is_active
+    assert not svc.lifecycle_fsm.draining.is_active
     svc.lifecycle_fsm.drain()
-    assert not svc.is_running
-    assert svc.is_draining
+    assert not svc.lifecycle_fsm.running.is_active
+    assert svc.lifecycle_fsm.draining.is_active
     svc.lifecycle_fsm.stop()
-    assert not svc.is_running
-    assert not svc.is_draining
+    assert not svc.lifecycle_fsm.running.is_active
+    assert not svc.lifecycle_fsm.draining.is_active
 
 
 async def test_reset_link_branches(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
@@ -447,9 +447,8 @@ async def test_on_mcu_process_kill_and_subscribe_resp(
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    res_kill, err = await svc.kill_process(pb.ProcessKill(pid=42))
-    assert res_kill is False
-    assert err == "PID not found"
+    res_kill = await svc.process_kill(pb.ProcessKill(pid=42))
+    assert res_kill.status == "error"
 
     await svc.gpio.on_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
     assert mock_bridge_state.pin_subscriptions[13]["active"] is True

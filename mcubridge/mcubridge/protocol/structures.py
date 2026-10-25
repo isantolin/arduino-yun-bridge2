@@ -19,7 +19,10 @@ from typing import (
     Protocol,
 )
 
+import anyio
+from anyio.streams.memory import MemoryObjectSendStream
 import structlog
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
 
 from mcubridge.config.const import (
@@ -259,54 +262,50 @@ class PendingCommand:
         self.completion.set()
 
 
-class BridgeRuntimeProtocol(Protocol):
-    """Canonical Single Source of Truth protocol defining the runtime service contract. [SIL-2]"""
+class ConsoleQueueTarget(Protocol):
+    def put_nowait(self, item: pb.CloudQueuedPublish) -> None: ...
+    async def put(self, item: pb.CloudQueuedPublish) -> None: ...
 
-    @property
-    def config(self) -> Any: ...
-    @property
-    def state(self) -> Any: ...
-    @property
-    def serial(self) -> Any: ...
-    @property
-    def gpio(self) -> Any: ...
-    @property
-    def clock_sync(self) -> Any: ...
-    @property
-    def console_queues(self) -> list[Any]: ...
-    @property
-    def ipc_requests(self) -> dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]: ...
 
-    async def datastore_put(
-        self,
-        _seq_or_key: int | str | pb.DatastorePut,
-        value: bytes | pb.DatastorePut | None = None,
-        *,
-        reply_context: Any | None = None,
-    ) -> bool: ...
+class MemoryQueueAdapter:
+    """Adapts an AnyIO MemoryObjectSendStream to queue-compatible API. [SIL-2]"""
 
-    async def datastore_get(self, key: str, /) -> bytes: ...
+    __slots__ = ("_send_stream",)
+    _send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
 
-    async def mailbox_push(self, data: bytes, /) -> bool: ...
+    def __init__(self, send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]) -> None:
+        self._send_stream = send_stream
 
-    async def mailbox_read(self) -> bytes: ...
+    def put_nowait(self, item: pb.CloudQueuedPublish) -> None:
+        try:
+            self._send_stream.send_nowait(item)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+            logger.debug("Console stream subscriber disconnected during put_nowait", error=str(exc))
+        except anyio.WouldBlock as exc:
+            logger.warning("Console stream subscriber buffer full, dropping message", error=str(exc))
 
-    async def file_write(self, path: str, data: bytes, /) -> bool: ...
+    async def put(self, item: pb.CloudQueuedPublish) -> None:
+        try:
+            await self._send_stream.send(item)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
+            logger.debug("Console stream subscriber disconnected during put", error=str(exc))
 
-    async def file_read(self, path: str, /) -> bytes | None: ...
+    def close(self) -> None:
+        self._send_stream.close()
 
-    async def file_remove(self, path: str, /) -> bool: ...
 
-    async def run_process(self, command: str, /) -> int: ...
-
-    async def poll_process(self, pid: int, /) -> pb.ProcessPollResponse: ...
-
-    async def kill_process(
-        self, _seq_or_pid: int | pb.ProcessKill, pid: int | pb.ProcessKill | None = None
-    ) -> tuple[bool, str | None]: ...
-
-    async def handle_request(self, inbound: Any, /) -> None: ...
-
-    async def flush_console_queue(self) -> None: ...
-
-    async def reset_link(self) -> bool: ...
+def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T) -> T:
+    """Safely decode serial response payload to target Protobuf message type. [SIL-2]"""
+    if isinstance(res, target_type):
+        return res
+    if isinstance(res, (bytes, bytearray)):
+        try:
+            return target_type.FromString(bytes(res))
+        except (ProtobufDecodeError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Failed to decode serial response into protobuf",
+                target=target_type.__name__,
+                error=str(exc),
+            )
+            return default
+    return default

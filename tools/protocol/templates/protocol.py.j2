@@ -19,6 +19,9 @@ import structlog
 
 from . import mcubridge_pb2 as pb
 
+type McuDispatchTable = dict[int, Callable[..., Any]]
+type McuHandler = Callable[..., Any]
+
 logger = structlog.get_logger(__name__)
 
 CLOUD_WILDCARD_SINGLE: Final[str] = "+"
@@ -366,7 +369,7 @@ class ProtocolRegistry:
         *,
         status_handler: Callable[..., Any] | None = None,
         unsupported_handler: Callable[..., Any] | None = None,
-    ) -> dict[int, Callable[..., Any]]:
+    ) -> McuDispatchTable:
         """Build O(1) MCU dispatch registry from Protocol SSOT. [SIL-2]"""
         status_fn = status_handler or getattr(target, "handle_mcu_status", None)
         unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
@@ -425,9 +428,9 @@ class ProtocolRegistry:
         fatals_map = fatal_exception_map or {}
         tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]] = []
         for task in self.daemon_tasks:
-            if task.condition_property and not getattr(service, task.condition_property):
+            if task.condition_property and not operator.attrgetter(task.condition_property)(service):
                 continue
-            worker: Callable[[], Any] = getattr(service, task.handler)()
+            worker: Callable[[], Any] = operator.attrgetter(task.handler)(service)
             fatals: tuple[type[BaseException], ...] = (
                 (fatals_map[task.fatal_exception],)
                 if task.fatal_exception and task.fatal_exception in fatals_map

@@ -101,7 +101,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
 
         transport.serial = mock_serial
 
-        transport.is_negotiating = True
+        transport.state.connection_fsm.start_negotiating()
         fut = asyncio.get_running_loop().create_future()
         transport.negotiation_future = fut
 
@@ -342,7 +342,7 @@ async def test_serial_process_packet_negotiating_non_baud_cmd(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
-    transport.is_negotiating = True
+    transport.state.connection_fsm.start_negotiating()
     fut = asyncio.get_running_loop().create_future()
     transport.negotiation_future = fut
 

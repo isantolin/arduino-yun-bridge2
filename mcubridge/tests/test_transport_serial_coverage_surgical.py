@@ -96,7 +96,7 @@ async def test_process_packet_baudrate_negotiation_response(
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = MagicMock()
     transport.serial = mock_serial
-    transport.is_negotiating = True
+    transport.state.connection_fsm.start_negotiating()
     fut: asyncio.Future[bool] = asyncio.Future()
     transport.negotiation_future = fut
 
@@ -262,10 +262,10 @@ async def test_connect_and_run_negotiation_failure(
         await transport.connect_and_run()
 
 
-def test_serial_transport_is_negotiating_property(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+def test_serial_transport_negotiating_state(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    assert not transport.is_negotiating
-    transport.is_negotiating = True
-    assert transport.is_negotiating
-    transport.is_negotiating = False
-    assert not transport.is_negotiating
+    assert not transport.state.connection_fsm.negotiating_baud.is_active
+    transport.state.connection_fsm.start_negotiating()
+    assert transport.state.connection_fsm.negotiating_baud.is_active
+    transport.state.connection_fsm.disconnect()
+    assert not transport.state.connection_fsm.negotiating_baud.is_active

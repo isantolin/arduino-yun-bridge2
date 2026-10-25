@@ -42,7 +42,7 @@ from mcubridge.protocol.protocol import (
     REGISTRY,
     OperationSpec,
 )
-from mcubridge.services.local_bridge import (
+from mcubridge.protocol.structures import (
     ConsoleQueueTarget,
     MemoryQueueAdapter,
 )

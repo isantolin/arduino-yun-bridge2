@@ -450,7 +450,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     )
 
     assert len(protocol.REGISTRY.rpc_specs) == 25
-    from mcubridge.services.local_bridge import LocalBridgeService
+    from mcubridge.services.runtime import BridgeService
 
     service_desc = next(
         dep.services_by_name["LocalBridge"]
@@ -467,10 +467,11 @@ def test_proto_dispatch_handlers_ssot() -> None:
         assert spec.request_type is getattr(pb, method_desc.input_type.name)
         assert spec.response_type is getattr(pb, method_desc.output_type.name)
         assert spec.handler_name is not None
-        assert hasattr(LocalBridgeService, spec.handler_name)
-        assert callable(getattr(LocalBridgeService, spec.handler_name))
-        assert hasattr(LocalBridgeService, method_name)
-        assert callable(getattr(LocalBridgeService, method_name))
+        if spec.is_custom_handler:
+            assert hasattr(BridgeService, spec.handler_name)
+            assert callable(getattr(BridgeService, spec.handler_name))
+
+    assert callable(BridgeService.execute_rpc)
 
 
 def test_hardware_options_completeness_ssot() -> None:

@@ -273,7 +273,7 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
     # Poll process
     assert await on_poll(3, pb.ProcessPoll(pid=pid)) is True
     assert serial.send.call_args[0][0] == Command.CMD_PROCESS_POLL_RESP.value
-    await service.kill_process(pid)
+    await service.process_kill(pid)
 
     # Disallowed command name fallback
     assert await on_run(4, pb.ProcessRunAsync(command="disallowed_proc_xyz")) is False
@@ -365,8 +365,9 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
 
     # Datastore put with cache None
     state.datastore_cache = None
-    on_ds_put: Callable[..., Awaitable[bool]] = service.datastore_put
-    assert await on_ds_put(1, pb.DatastorePut(key="k", value=b"v")) is True
+    on_ds_put = service.datastore_put
+    resp_ds_put = await on_ds_put(1, pb.DatastorePut(key="k", value=b"v"))
+    assert resp_ds_put.status == "ok"
 
     # Corrupt Protobuf payload
     initial_errors = state.serial_decode_errors

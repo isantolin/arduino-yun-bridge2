@@ -322,7 +322,7 @@ class SerialTransport:
             )
 
         if (
-            self.is_negotiating
+            self.state.connection_fsm.negotiating_baud.is_active
             and self.negotiation_future
             and not self.negotiation_future.done()
             and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
@@ -543,18 +543,6 @@ class SerialTransport:
         except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Serial write failed", error=str(exc))
             return False
-
-    @property
-    def is_negotiating(self) -> bool:
-        return self.state.connection_fsm.negotiating_baud.is_active
-
-    @is_negotiating.setter
-    def is_negotiating(self, value: bool) -> None:
-        if value:
-            self.state.connection_fsm.start_negotiating()
-        else:
-            if self.state.connection_fsm.negotiating_baud.is_active:
-                self.state.connection_fsm.connect()
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)

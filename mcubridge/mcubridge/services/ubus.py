@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-from collections.abc import Callable
 from typing import Any, cast
 
 import anyio.from_thread
@@ -18,7 +17,6 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import REGISTRY, Command
-from ..protocol.structures import BridgeRuntimeProtocol
 
 logger = structlog.get_logger("mcubridge.service.ubus")
 
@@ -50,7 +48,7 @@ class UbusService:
 
     def __init__(
         self,
-        runtime: BridgeRuntimeProtocol,
+        runtime: Any,
         ubus_module: Any = None,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
@@ -170,35 +168,22 @@ class UbusService:
 
         return data
 
-    def _call_subsystem(
-        self,
-        service_attr: str,
-        action: Callable[[Any], dict[str, Any]],
-        error_message: str,
-    ) -> dict[str, Any]:
-        service = getattr(self.runtime, service_attr, None)
-        if service:
-            return action(service)
-        return {"status": "error", "message": error_message}
-
     def ubus_handle_clock_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.clock_status'."""
-        return self._call_subsystem(
-            "clock_sync",
-            lambda s: s.get_status(),
-            "Clock service unavailable",
-        )
+        if not self.runtime.clock_sync:
+            return {"status": "error", "message": "Clock service unavailable"}
+        return self.runtime.clock_sync.get_status()
 
     def ubus_handle_clock_sync(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.clock_sync'."""
-        return self._call_subsystem(
-            "clock_sync",
-            lambda s: self.run_sync(s.sync_now()),
-            "Clock service unavailable",
-        )
+        if not self.runtime.clock_sync:
+            return {"status": "error", "message": "Clock service unavailable"}
+        return self.run_sync(self.runtime.clock_sync.sync_now())
 
     def ubus_handle_pin_subscribe(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.pin_subscribe'."""
+        if not self.runtime.gpio:
+            return {"status": "error", "message": "GPIO service unavailable"}
         norm_msg = dict(msg)
         if "enabled" in norm_msg:
             norm_msg["enabled"] = bool(norm_msg["enabled"])
@@ -209,11 +194,7 @@ class UbusService:
         interval_ms = proto.interval_ms or int(msg.get("interval_ms", 50))
         hysteresis = proto.hysteresis or int(msg.get("hysteresis", 1))
         enabled = proto.enabled if "enabled" in msg else True
-        return self._call_subsystem(
-            "gpio",
-            lambda s: self.run_sync(s.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled)),
-            "GPIO service unavailable",
-        )
+        return self.run_sync(self.runtime.gpio.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled))
 
     def ubus_handle_link_reset(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.link_reset'."""
@@ -293,24 +274,21 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.process_run'."""
         proto = pb.ProcessRunAsync()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        pid = int(self.run_sync(self.runtime.run_process(proto.command)))
-        return {"status": "ok", "pid": pid}
+        resp = self.run_sync(self.runtime.process_run_async(proto))
+        return {"status": "ok", "pid": resp.pid}
 
     def ubus_handle_process_kill(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_kill'."""
         proto = pb.ProcessKill()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        pid = proto.pid
-        res: tuple[bool, str | None] = self.run_sync(self.runtime.kill_process(pid))
-        success, err = res
-        return {"status": "ok" if success else "error", "pid": pid, "error": err or ""}
+        resp = self.run_sync(self.runtime.process_kill(proto))
+        return {"status": resp.status, "pid": proto.pid}
 
     def ubus_handle_process_poll(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_poll'."""
         proto = pb.ProcessPoll()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        pid = proto.pid
-        resp: pb.ProcessPollResponse = self.run_sync(self.runtime.poll_process(pid))
+        resp: pb.ProcessPollResponse = self.run_sync(self.runtime.process_poll(proto))
         data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
         data["status"] = "ok" if resp.status == 0 else "error"
         data["stdout"] = format_ubus_bytes(resp.stdout_data)

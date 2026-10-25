@@ -234,47 +234,48 @@ option (rpc.pb.constants) = {
 };
 option (rpc.pb.daemon_tasks) = {
   name: "serial-link"
-  handler: "task_worker_serial"
+  handler: "serial.run"
+  condition_property: "serial"
   critical: true
   fatal_exception: "SerialHandshakeFatal"
   description: "Serial UART transport link supervisor"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "cloud-link"
-  handler: "task_worker_cloud"
+  handler: "run_cloud"
+  condition_property: "config.cloud_enabled"
   description: "Protobuf cloud gateway supervisor"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "ubus-loop"
-  handler: "task_worker_ubus"
-  condition_property: "is_ubus_active"
+  handler: "ubus_service.run"
+  condition_property: "ubus_service.is_active"
   description: "OpenWrt native UBUS event loop"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "clock-sync"
-  handler: "task_worker_clock_sync"
+  handler: "clock_sync.run"
   description: "Periodic hardware clock synchronization"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "status-writer"
-  handler: "task_worker_status_writer"
+  handler: "status_writer"
   description: "Periodic status file writer"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "metrics-publisher"
-  handler: "task_worker_metrics_publisher"
+  handler: "metrics_publisher"
   description: "Periodic cloud metrics publisher"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "bridge-snapshots"
-  handler: "task_worker_bridge_snapshots"
-  condition_property: "is_snapshots_enabled"
+  handler: "bridge_snapshots"
   description: "Periodic bridge summary and handshake snapshots"
 };
 option (rpc.pb.daemon_tasks) = {
   name: "watchdog"
-  handler: "task_worker_watchdog"
-  condition_property: "is_watchdog_enabled"
+  handler: "watchdog.run"
+  condition_property: "watchdog"
   description: "Hardware watchdog keepalive"
 };
 option (rpc.pb.handshake) = {
@@ -1546,14 +1547,14 @@ enum Command {
     category: "process"
     pb_message: "ProcessKill"
     auth_field: "shell_kill"
-    mcu_handler: "kill_process"
+    mcu_handler: "process_kill"
     action_routes: [
       {
         topic: "SHELL"
         scope: "local"
         action_enum: "ShellAction"
         action: "KILL"
-        handler: "kill_process"
+        handler: "process_kill"
       }
     ]
   }];

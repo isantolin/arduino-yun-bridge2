@@ -18,8 +18,36 @@ from grpclib.server import Stream
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, REGISTRY
-from mcubridge.services.runtime import BridgeService, LocalBridgeService
+from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ProcessContext, create_runtime_state
+from tools.testing.mock_stream import MockGrpcStream
+
+
+class MockLocalBridgeClient:
+    """Test harness simulating client-side gRPC invocation via BridgeService.execute_rpc. [SIL-2]"""
+
+    def __init__(self, service: BridgeService) -> None:
+        self.service = service
+
+    async def _invoke_rpc(self, method_name: str, stream: MockGrpcStream[Any, Any]) -> None:
+        req = await stream.recv_message()
+        payload = req.SerializeToString() if req is not None else b""
+        res_bytes = await self.service.execute_rpc(method_name, payload)
+        spec = REGISTRY.by_name[method_name]
+        resp_cls = spec.response_type or pb.GenericResponse
+        resp = resp_cls()
+        if res_bytes:
+            resp.ParseFromString(res_bytes)
+        await stream.send_message(resp)
+
+    def __getattr__(self, name: str) -> Any:
+        if name in ("Publish", "SubscribeConsole"):
+            return getattr(self.service, name)
+        if name in REGISTRY.by_name:
+            return lambda stream: self._invoke_rpc(name, stream)
+        if hasattr(self.service, name):
+            return getattr(self.service, name)
+        raise AttributeError(f"MockLocalBridgeClient has no attribute '{name}'")
 
 
 def _make_config(tmp_path: Path) -> RuntimeConfig:
@@ -30,16 +58,12 @@ def _make_config(tmp_path: Path) -> RuntimeConfig:
     return cfg
 
 
-def _make_service(config: RuntimeConfig) -> tuple[BridgeService, LocalBridgeService, AsyncMock]:
+def _make_service(config: RuntimeConfig) -> tuple[BridgeService, MockLocalBridgeClient, AsyncMock]:
     state = create_runtime_state(config)
     mock_serial = AsyncMock()
     mock_serial.send = AsyncMock(return_value=True)
     service = BridgeService(config=config, state=state, serial=mock_serial)
-    local_service = LocalBridgeService(service)
-    return service, local_service, mock_serial
-
-
-from tools.testing.mock_stream import MockGrpcStream
+    return service, MockLocalBridgeClient(service), mock_serial
 
 
 def _make_mock_stream(req_msg: object) -> MockGrpcStream[Any, Any]:
@@ -65,7 +89,7 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         assert op.request_type is not None
         assert op.request_type.DESCRIPTOR.full_name == method.input_type.full_name
         assert op.handler_name is not None
-        assert hasattr(LocalBridgeService, op.rpc_name or op.name)
+        assert (op.rpc_name or op.name) in REGISTRY.by_name
 
 
 async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
@@ -213,13 +237,13 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     await local_svc.FileWrite(stream)
     mock_serial.send.assert_called_with(Command.CMD_FILE_WRITE.value, pb.FileWrite(path="eeprom.bin", data=b"data"))
 
-    mock_file_read = AsyncMock(return_value=b"mcu_data")
+    mock_file_read = AsyncMock(return_value=pb.FileReadResponse(content=b"mcu_data"))
     service.file_read = mock_file_read
     stream = _make_mock_stream(pb.FileRead(path="mcu/eeprom.bin"))
     await local_svc.FileRead(stream)
     sent = stream.sent_message
     assert sent.content == b"mcu_data"
-    mock_file_read.assert_awaited_once_with("mcu/eeprom.bin")
+    mock_file_read.assert_awaited_once_with(pb.FileRead(path="mcu/eeprom.bin"))
 
     stream = _make_mock_stream(pb.FileRemove(path="mcu/eeprom.bin"))
     await local_svc.FileRemove(stream)
@@ -645,7 +669,7 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
         del t
         return _orig_fail_after(0.001)
 
-    mocker.patch("mcubridge.services.local_bridge.anyio.fail_after", side_effect=_quick_fail_after)
+    mocker.patch("mcubridge.services.runtime.anyio.fail_after", side_effect=_quick_fail_after)
     await local_svc.Publish(mock_stream.as_stream())
     assert mock_stream.send_message.called
 
@@ -665,7 +689,7 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
 
 
 def test_parse_serial_response_corrupt_bytes() -> None:
-    from mcubridge.services.local_bridge import parse_serial_response
+    from mcubridge.protocol.structures import parse_serial_response
 
     default_resp = pb.GenericResponse(message="fallback")
     parsed = parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
@@ -673,7 +697,7 @@ def test_parse_serial_response_corrupt_bytes() -> None:
     assert parsed.message == "fallback"
 
 
-def _make_property_service() -> tuple[BridgeService, LocalBridgeService, AsyncMock]:
+def _make_property_service() -> tuple[BridgeService, MockLocalBridgeClient, AsyncMock]:
     cfg = RuntimeConfig()
     cfg.allowed_policy.entries.extend(["echo", "sleep", "test_cmd"])
     cfg.allow_non_tmp_paths = True
@@ -681,8 +705,7 @@ def _make_property_service() -> tuple[BridgeService, LocalBridgeService, AsyncMo
     mock_serial = AsyncMock()
     mock_serial.send = AsyncMock(return_value=True)
     service = BridgeService(config=cfg, state=state, serial=mock_serial)
-    local_service = LocalBridgeService(service)
-    return service, local_service, mock_serial
+    return service, MockLocalBridgeClient(service), mock_serial
 
 
 @given(

@@ -23,8 +23,8 @@ class MockRuntimeFacade:
         self.config = config
         self.state = state
         self.handle_request = AsyncMock()
-        self.run_process = AsyncMock(return_value=123)
-        self.kill_process = AsyncMock(return_value=(True, None))
+        self.process_run_async = AsyncMock(return_value=pb.ProcessRunAsyncResponse(pid=123))
+        self.process_kill = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.reset_link = AsyncMock(return_value=True)
         self.serial: AsyncMock | None = AsyncMock()
         self.serial.send = AsyncMock(return_value=True)
@@ -40,7 +40,7 @@ class MockRuntimeFacade:
         self.ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
         self.clock_sync: MagicMock | None = MagicMock()
         self.gpio: MagicMock | None = MagicMock()
-        self.poll_process = AsyncMock(
+        self.process_poll = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,
                 exit_code=0,
@@ -251,21 +251,21 @@ def test_ubus_handle_process_run_sync(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_process_run(MagicMock(), {"command": "ls -l /tmp"})
     assert res == {"status": "ok", "pid": 123}
-    assert mock_runtime.run_process.called
+    assert mock_runtime.process_run_async.called
 
 
 def test_ubus_handle_process_kill_sync(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_process_kill(MagicMock(), {"pid": 123})
-    assert res == {"status": "ok", "pid": 123, "error": ""}
-    assert mock_runtime.kill_process.called
+    assert res == {"status": "ok", "pid": 123}
+    assert mock_runtime.process_kill.called
 
 
 def test_ubus_handle_process_kill_failure(mock_runtime: MockRuntimeFacade) -> None:
-    mock_runtime.kill_process = AsyncMock(return_value=(False, "PID not found"))
+    mock_runtime.process_kill = AsyncMock(return_value=pb.GenericResponse(status="error"))
     service = UbusService(mock_runtime)
     res = service.ubus_handle_process_kill(MagicMock(), {"pid": 999})
-    assert res == {"status": "error", "pid": 999, "error": "PID not found"}
+    assert res == {"status": "error", "pid": 999}
 
 
 def test_ubus_handle_process_poll_sync(mock_runtime: MockRuntimeFacade) -> None:
@@ -279,7 +279,7 @@ def test_ubus_handle_process_poll_sync(mock_runtime: MockRuntimeFacade) -> None:
 
 
 def test_ubus_handle_process_poll_binary_hex_fallback(mock_runtime: MockRuntimeFacade) -> None:
-    mock_runtime.poll_process = AsyncMock(
+    mock_runtime.process_poll = AsyncMock(
         return_value=pb.ProcessPollResponse(
             status=1,
             exit_code=1,

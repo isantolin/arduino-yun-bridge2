@@ -53,7 +53,8 @@ static void onMailboxMessage(etl::span<const uint8_t> payload) {
   etl::string_view msg(reinterpret_cast<const char*>(payload.data()),
                        payload.size());
   Console.print(F("[MAILBOX_IN] "));
-  Console.println(msg.data());
+  Console.write(payload.data(), payload.size());
+  Console.println();
 
   if (msg.starts_with("TARGET:")) {
     etl::string<64> reply = "RESP:";
@@ -61,6 +62,10 @@ static void onMailboxMessage(etl::span<const uint8_t> payload) {
     reply.append(rest.data(), rest.size());
     Mailbox.push(etl::span<const uint8_t>(
         reinterpret_cast<const uint8_t*>(reply.data()), reply.size()));
+  } else if (msg == "PING") {
+    const char pong[] = "PONG";
+    Mailbox.push(etl::span<const uint8_t>(
+        reinterpret_cast<const uint8_t*>(pong), sizeof(pong) - 1));
   }
 }
 
@@ -99,9 +104,15 @@ void setup() {
   if (Bridge.isSynchronized()) {
     digitalWrite(LED_BUILTIN, HIGH);
     Console.begin();
-    Console.println(F("[BOOT] Node synchronized and operational."));
+    Console.println(F("[BOOT] OK"));
   }
 }
+
+enum class InitStep : uint8_t {
+  INIT_DATASTORE = 0,
+  INIT_FILESYSTEM,
+  INIT_DONE
+};
 
 void loop() {
   Bridge.process();
@@ -111,20 +122,31 @@ void loop() {
     return;
   }
 
-  static bool initializedServices = false;
-  if (!initializedServices) {
-    initializedServices = true;
+  static InitStep s_initStep = InitStep::INIT_DATASTORE;
+  static unsigned long s_lastInitMs = 0;
+
+  if (s_initStep == InitStep::INIT_DATASTORE) {
     const char initialVal[] = "ONLINE";
     DataStore.set(
         "node/status",
         etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(initialVal),
                                  sizeof(initialVal) - 1));
-
+    s_initStep = InitStep::INIT_FILESYSTEM;
+    s_lastInitMs = millis();
+  } else if (s_initStep == InitStep::INIT_FILESYSTEM &&
+             (millis() - s_lastInitMs >= 300)) {
     const char tokenData[] = "BOOT_OK";
     FileSystem.write(
         "boot_token.txt",
         etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
                                  sizeof(tokenData) - 1));
+    s_initStep = InitStep::INIT_DONE;
+  }
+
+  static unsigned long lastConsoleProcess = 0;
+  if (millis() - lastConsoleProcess >= 100) {
+    lastConsoleProcess = millis();
+    Console.process();
   }
 
   static unsigned long lastMailboxPoll = 0;

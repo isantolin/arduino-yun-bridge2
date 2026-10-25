@@ -13,6 +13,7 @@ single central ProtobufGateway.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -29,6 +30,7 @@ import structlog
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
+from mcubridge_client.cli import bridge_session
 from tools.arduino_core_metadata import ArduinoCoreMetadata, read_metadata_json, resolve_core_metadata
 from tools.audit.audit_bridge_status import audit_status_dict
 from tools.boards import (
@@ -47,7 +49,6 @@ from tools.emulation.process_utils import (
     write_fake_uci_module,
 )
 from tools.emulation.qemu_runner import find_qemu_binary
-from tools.emulation.renode_runner import run_single_client_script
 from tools.emulation.simavr_runner import (
     SimavrState,
     build_simavr_harness,
@@ -177,6 +178,51 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
     start_daemon_thread(stream_pump, f"daemon-{node.name}", proc.stdout, log_collector.on_line, f"daemon-{node.name}")
     node.procs.append(proc)
     return proc
+
+
+async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
+    """Verify that all nodes are independently reachable, responsive to RPCs, and communicating."""
+    logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
+    for node in nodes:
+        logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
+        async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name) as (_channel, stub):
+            # 1. System Version Introspection
+            ver_resp = await stub.GetVersion(protocol.pb.SubscribeRequest())
+            if ver_resp.major != 2 or ver_resp.minor != 8:
+                logger.error(
+                    "Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor
+                )
+                return False
+            logger.info(
+                "Node GetVersion verified",
+                node=node.name,
+                version=f"{ver_resp.major}.{ver_resp.minor}.{ver_resp.patch}",
+            )
+
+            # 2. Free Memory Introspection
+            mem_resp = await stub.GetFreeMemory(protocol.pb.SubscribeRequest())
+            if mem_resp.value == 0:
+                logger.error("Free memory reported as 0", node=node.name)
+                return False
+            logger.info("Node GetFreeMemory verified", node=node.name, free_bytes=mem_resp.value)
+
+            # 3. Hardware Actuation (LED Builtin Toggle)
+            led_pin = node.metadata.led_builtin
+            write_resp = await stub.DigitalWrite(protocol.pb.DigitalWrite(pin=led_pin, value=1))
+            if write_resp.status != "ok":
+                logger.error("DigitalWrite failed", node=node.name, pin=led_pin)
+                return False
+            await stub.DigitalWrite(protocol.pb.DigitalWrite(pin=led_pin, value=0))
+            logger.info("Node hardware actuation (LED) verified", node=node.name, pin=led_pin)
+
+            # 4. Mailbox Messaging
+            mb_resp = await stub.MailboxPush(protocol.pb.MailboxPush(data=b"PING"))
+            if mb_resp.status != "ok":
+                logger.error("MailboxPush failed", node=node.name)
+                return False
+            logger.info("Node MailboxPush verified", node=node.name)
+
+    return True
 
 
 def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
@@ -394,14 +440,9 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         # -------------------------------------------------------------------------
         # 8. CROSS-NODE DIALOG AND INTEROPERABILITY VERIFICATION
         # -------------------------------------------------------------------------
-        smoke_script = repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py"
-        for node in nodes:
-            logger.info("Verifying RPC & Gateway connectivity for node", node=node.name, board=node.board.label)
-            if not run_single_client_script(
-                smoke_script, device_id=node.name, led_builtin_pin=node.metadata.led_builtin
-            ):
-                logger.error("Client connectivity verification failed", node=node.name, board=node.board.label)
-                return False
+        if not asyncio.run(verify_mesh_interoperability(nodes)):
+            logger.error("Cross-node mesh verification failed")
+            return False
 
         # -------------------------------------------------------------------------
         # 9. POST-EXECUTION STATUS HEALTH AUDIT (Rule 29)

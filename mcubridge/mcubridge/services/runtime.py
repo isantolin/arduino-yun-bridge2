@@ -937,7 +937,7 @@ class BridgeService:
                         ctx.exit_code = await self.terminate_process(
                             pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
                         )
-                    await asyncio.sleep(60.0)
+                    await asyncio.sleep(float(protocol.DEFAULT_PROCESS_RETENTION_SECONDS))
             finally:
                 with anyio.CancelScope(shield=True):
                     self.release_process(pid)
@@ -1400,7 +1400,7 @@ class BridgeService:
 
                 if is_query and response_queue is not None:
                     try:
-                        with anyio.fail_after(15.0):
+                        with anyio.fail_after(float(protocol.DEFAULT_IPC_TIMEOUT_SECONDS)):
                             resp = await response_queue.get()
                     except TimeoutError:
                         logger.warning("IPC request timed out")

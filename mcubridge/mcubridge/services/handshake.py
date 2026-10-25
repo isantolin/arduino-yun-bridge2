@@ -188,7 +188,7 @@ class SerialHandshakeManager:
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
         self._reset_payload = self.timing
-        self.capabilities_delay: float = 2.0
+        self.capabilities_delay: float = float(protocol.CAPABILITIES_DISCOVERY_DELAY_SECONDS)
         self.retry_backoff_base: float = SERIAL_HANDSHAKE_BACKOFF_BASE
         self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
         self.capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None

@@ -9,7 +9,14 @@ import structlog
 
 from ..config.const import PROP_KEY_BRIDGE_PIN
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.protocol import CLOUD_EXPIRY_PIN, Command, REGISTRY, Topic
+from ..protocol.protocol import (
+    CLOUD_EXPIRY_PIN,
+    DEFAULT_PIN_HYSTERESIS,
+    DEFAULT_PIN_INTERVAL_MS,
+    Command,
+    REGISTRY,
+    Topic,
+)
 from ..protocol.structures import create_queued_publish
 
 from mcubridge.state.context import RuntimeState
@@ -39,8 +46,8 @@ class GpioService:
         self,
         pin: int,
         mode: str = "INPUT",
-        interval_ms: int = 50,
-        hysteresis: int = 1,
+        interval_ms: int = DEFAULT_PIN_INTERVAL_MS,
+        hysteresis: int = DEFAULT_PIN_HYSTERESIS,
         enabled: bool = True,
     ) -> dict[str, Any]:
         """Register or update a hardware pin subscription on the MCU."""
@@ -81,8 +88,8 @@ class GpioService:
             p.pin,
             {
                 "mode": "INPUT",
-                "interval_ms": 50,
-                "hysteresis": 1,
+                "interval_ms": DEFAULT_PIN_INTERVAL_MS,
+                "hysteresis": DEFAULT_PIN_HYSTERESIS,
                 "subscribed_at": time.time(),
             },
         )

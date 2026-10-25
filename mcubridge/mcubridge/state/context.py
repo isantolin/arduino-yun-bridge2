@@ -41,7 +41,7 @@ from .storage import LmdbCache, LmdbDeque
 logger = structlog.get_logger("mcubridge.state")
 
 
-def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
+def terminate_pid_tree(pid: int, timeout: float = float(protocol.PROCESS_KILL_TIMEOUT_SECONDS)) -> None:
     """Recursively terminate an arbitrary process tree by root PID. [SIL-2]"""
     if pid <= 0 or not psutil.pid_exists(pid):
         return

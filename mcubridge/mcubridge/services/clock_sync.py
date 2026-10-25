@@ -12,6 +12,7 @@ from statemachine import State, StateMachine
 
 from mcubridge.state.context import RuntimeState
 from ..protocol import mcubridge_pb2 as pb
+from ..protocol import protocol
 from ..protocol.protocol import Command
 
 
@@ -58,7 +59,11 @@ class ClockSyncMachine(StateMachine):
 class ClockSyncService:
     """Computes round-trip time (RTT), clock offset, and jitter between Linux MPU and MCU. [SIL-2]"""
 
-    def __init__(self, runtime: ClockSyncRuntime, sync_interval_seconds: float = 30.0) -> None:
+    def __init__(
+        self,
+        runtime: ClockSyncRuntime,
+        sync_interval_seconds: float = float(protocol.DEFAULT_CLOCK_SYNC_INTERVAL_SECONDS),
+    ) -> None:
         self._runtime: ClockSyncRuntime = runtime
         self._interval: float = sync_interval_seconds
         self.fsm = ClockSyncMachine()
@@ -97,7 +102,8 @@ class ClockSyncService:
         req = pb.ClockSyncRequest(host_time_us=t1_host_us)
 
         # [SIL-2] Bounded response timeout: do not monopolize serial flow lock for 20s.
-        res = await serial.send(Command.CMD_CLOCK_SYNC.value, req, timeout=1.0)
+        timeout_seconds = float(protocol.DEFAULT_CLOCK_SYNC_TIMEOUT_MS) / 1000.0
+        res = await serial.send(Command.CMD_CLOCK_SYNC.value, req, timeout=timeout_seconds)
         if isinstance(res, pb.ClockSyncResponse):
             return self.record_sync(res)
         if isinstance(res, bytes) and res:

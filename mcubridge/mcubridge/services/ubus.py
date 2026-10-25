@@ -16,6 +16,7 @@ import tenacity
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..protocol import mcubridge_pb2 as pb
+from ..protocol import protocol
 from ..protocol.protocol import REGISTRY, Command
 
 logger = structlog.get_logger("mcubridge.service.ubus")
@@ -147,7 +148,7 @@ class UbusService:
         data = MessageToDict(snapshot, preserving_proto_field_name=True)
 
         version_str = ".".join(map(str, state.mcu_version)) if state.mcu_version is not None else "unknown"
-        data["connected"] = state.state in ("connected", "synchronized")
+        data["connected"] = state.is_connected
         data["synchronized"] = state.is_synchronized
         data["version"] = version_str
 
@@ -190,9 +191,9 @@ class UbusService:
         proto = pb.PinSubscribeRequest()
         ParseDict(norm_msg, proto, ignore_unknown_fields=True)
         pin = proto.pin
-        mode = proto.mode or str(msg.get("mode", "INPUT"))
-        interval_ms = proto.interval_ms or int(msg.get("interval_ms", 50))
-        hysteresis = proto.hysteresis or int(msg.get("hysteresis", 1))
+        mode = proto.mode or str(msg.get("mode", pb.PinModeType.Name(pb.PinModeType.PIN_INPUT).removeprefix("PIN_")))
+        interval_ms = proto.interval_ms or int(msg.get("interval_ms", protocol.DEFAULT_PIN_INTERVAL_MS))
+        hysteresis = proto.hysteresis or int(msg.get("hysteresis", protocol.DEFAULT_PIN_HYSTERESIS))
         enabled = proto.enabled if "enabled" in msg else True
         return self.run_sync(self.runtime.gpio.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled))
 
@@ -203,30 +204,30 @@ class UbusService:
 
     def ubus_handle_ping(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.ping'."""
-        is_synced = self.runtime.state.is_synchronized
+        state = self.runtime.state
+        is_synced = state.is_synchronized
         return {
             "status": "ok" if is_synced else "not_synchronized",
-            "connected": self.runtime.state.state in ("connected", "synchronized"),
+            "connected": state.is_connected,
             "synchronized": is_synced,
         }
 
-    def _handle_pin_write(self, kind: str, msg: dict[str, Any]) -> dict[str, Any]:
-        proto = pb.DigitalWrite()
+    def _handle_pin_write(
+        self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], msg: dict[str, Any]
+    ) -> dict[str, Any]:
+        proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        pin, val = proto.pin, proto.value
-        cmd = Command.CMD_DIGITAL_WRITE if kind == "digital" else Command.CMD_ANALOG_WRITE
-        payload = pb.DigitalWrite(pin=pin, value=val) if kind == "digital" else pb.AnalogWrite(pin=pin, value=val)
         if self.runtime.serial:
-            self.schedule_async(self.runtime.serial.send(cmd.value, payload))
-        return {"status": "ok", "pin": pin, "value": val}
+            self.schedule_async(self.runtime.serial.send(cmd.value, proto))
+        return {"status": "ok", "pin": proto.pin, "value": proto.value}
 
     def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.digital_write'."""
-        return self._handle_pin_write("digital", msg)
+        return self._handle_pin_write(Command.CMD_DIGITAL_WRITE, pb.DigitalWrite, msg)
 
     def ubus_handle_analog_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.analog_write'."""
-        return self._handle_pin_write("analog", msg)
+        return self._handle_pin_write(Command.CMD_ANALOG_WRITE, pb.AnalogWrite, msg)
 
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
@@ -299,6 +300,7 @@ class UbusService:
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""
+        timeout = getattr(getattr(self.runtime, "state", None), "serial_response_timeout_ms", 5000) / 1000.0
         target_loop = self.loop
         if target_loop is not None and target_loop.is_running():
             try:
@@ -309,7 +311,7 @@ class UbusService:
 
             if current_loop is not target_loop:
                 fut = asyncio.run_coroutine_threadsafe(coro, target_loop)
-                return fut.result(timeout=5.0)
+                return fut.result(timeout=timeout)
 
         try:
             return anyio.from_thread.run(lambda: coro)
@@ -325,7 +327,7 @@ class UbusService:
                 import concurrent.futures
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    return pool.submit(asyncio.run, coro).result(timeout=5.0)
+                    return pool.submit(asyncio.run, coro).result(timeout=timeout)
             return asyncio.run(coro)
 
     def notify(self, event_type: str, data: dict[str, Any]) -> bool:

@@ -231,6 +231,14 @@ option (rpc.pb.constants) = {
   default_console_queue_limit_bytes: 16384
   sync_timeout_ms: 30000
   max_datastore_value_size: 255
+  default_pin_interval_ms: 50
+  default_pin_hysteresis: 1
+  default_clock_sync_interval_seconds: 30
+  default_clock_sync_timeout_ms: 1000
+  default_ipc_timeout_seconds: 15
+  default_process_retention_seconds: 60
+  process_kill_timeout_seconds: 3
+  capabilities_discovery_delay_seconds: 2
 };
 option (rpc.pb.daemon_tasks) = {
   name: "serial-link"
@@ -784,6 +792,54 @@ message Constants {
     (py_name) = "MAX_DATASTORE_VALUE_SIZE",
     (py_type) = "int",
     (client_constant) = true
+  ];
+  uint32 default_pin_interval_ms = 69 [
+    (cpp_name) = "DEFAULT_PIN_INTERVAL_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "DEFAULT_PIN_INTERVAL_MS",
+    (py_type) = "int"
+  ];
+  uint32 default_pin_hysteresis = 70 [
+    (cpp_name) = "DEFAULT_PIN_HYSTERESIS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "DEFAULT_PIN_HYSTERESIS",
+    (py_type) = "int"
+  ];
+  uint32 default_clock_sync_interval_seconds = 71 [
+    (cpp_name) = "RPC_DEFAULT_CLOCK_SYNC_INTERVAL_SECONDS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "DEFAULT_CLOCK_SYNC_INTERVAL_SECONDS",
+    (py_type) = "int"
+  ];
+  uint32 default_clock_sync_timeout_ms = 72 [
+    (cpp_name) = "RPC_DEFAULT_CLOCK_SYNC_TIMEOUT_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "DEFAULT_CLOCK_SYNC_TIMEOUT_MS",
+    (py_type) = "int"
+  ];
+  uint32 default_ipc_timeout_seconds = 73 [
+    (cpp_name) = "RPC_DEFAULT_IPC_TIMEOUT_SECONDS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "DEFAULT_IPC_TIMEOUT_SECONDS",
+    (py_type) = "int"
+  ];
+  uint32 default_process_retention_seconds = 74 [
+    (cpp_name) = "RPC_DEFAULT_PROCESS_RETENTION_SECONDS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "DEFAULT_PROCESS_RETENTION_SECONDS",
+    (py_type) = "int"
+  ];
+  uint32 process_kill_timeout_seconds = 75 [
+    (cpp_name) = "RPC_PROCESS_KILL_TIMEOUT_SECONDS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "PROCESS_KILL_TIMEOUT_SECONDS",
+    (py_type) = "int"
+  ];
+  uint32 capabilities_discovery_delay_seconds = 76 [
+    (cpp_name) = "RPC_CAPABILITIES_DISCOVERY_DELAY_SECONDS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "CAPABILITIES_DISCOVERY_DELAY_SECONDS",
+    (py_type) = "int"
   ];
 }
 

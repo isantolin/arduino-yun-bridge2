@@ -285,6 +285,9 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
     log_collector = FleetMeshState()
     all_procs: list[subprocess.Popen[str]] = []
+    node_mega: NodeRuntime | None = None
+    node_mkr: NodeRuntime | None = None
+    node_esp32: NodeRuntime | None = None
 
     try:
         # 3. Start central ProtobufGateway
@@ -471,11 +474,11 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
     finally:
         logger.info("Tearing down all emulation subprocesses...")
         daemon_procs: list[subprocess.Popen[str]] = []
-        if "node_mega" in locals():
+        if node_mega is not None:
             daemon_procs.extend(node_mega.procs)
-        if "node_mkr" in locals():
+        if node_mkr is not None:
             daemon_procs.extend(node_mkr.procs)
-        if "node_esp32" in locals():
+        if node_esp32 is not None:
             daemon_procs.extend(node_esp32.procs)
         terminate_process_tree(daemon_procs, timeout=3.0)
         emulation_procs = [p for p in all_procs if p not in daemon_procs]

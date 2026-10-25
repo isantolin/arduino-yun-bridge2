@@ -135,6 +135,12 @@ def resolve_serial_url(port_str: str) -> str:
 class SerialTransport:
     """High-performance asyncio serial/wireless transport with flattened pipeline. [SIL-2]"""
 
+    config: RuntimeConfig
+    state: RuntimeState
+    service: SerialBridgeService | None
+    serial: serialx.AsyncSerial | None
+    stop_event: asyncio.Event
+
     def __init__(
         self,
         config: RuntimeConfig,

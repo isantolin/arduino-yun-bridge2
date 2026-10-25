@@ -44,6 +44,7 @@ class MeshNodeContext:
             file_system_root=str(self.node_dir / "files"),
             cloud_spool_dir=str(self.node_dir / "spool"),
             watchdog_enabled=True,
+            allow_non_tmp_paths=True,
         )
         self.state = create_runtime_state(self.config)
         self.state.connection_fsm.connect()

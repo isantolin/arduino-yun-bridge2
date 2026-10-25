@@ -30,6 +30,7 @@ import structlog
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
+from mcubridge_client import cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session
 from tools.arduino_core_metadata import ArduinoCoreMetadata, read_metadata_json, resolve_core_metadata
 from tools.audit.audit_bridge_status import audit_status_dict
@@ -191,7 +192,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name) as (_channel, stub):
             # 1. System Version Introspection
-            ver_resp = await stub.GetVersion(protocol.pb.SubscribeRequest())
+            ver_resp = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
             if ver_resp.major != 2 or ver_resp.minor != 8:
                 logger.error("Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor)
                 return False
@@ -202,7 +203,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
             )
 
             # 2. Free Memory Introspection
-            mem_resp = await stub.GetFreeMemory(protocol.pb.SubscribeRequest())
+            mem_resp = await stub.GetFreeMemory(cloud_gateway_pb2.SubscribeRequest())
             if mem_resp.value == 0:
                 logger.error("Free memory reported as 0", node=node.name)
                 return False
@@ -210,15 +211,15 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
 
             # 3. Hardware Actuation (LED Builtin Toggle)
             led_pin = node.metadata.led_builtin
-            write_resp = await stub.DigitalWrite(protocol.pb.DigitalWrite(pin=led_pin, value=1))
+            write_resp = await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
             if write_resp.status != "ok":
                 logger.error("DigitalWrite failed", node=node.name, pin=led_pin)
                 return False
-            await stub.DigitalWrite(protocol.pb.DigitalWrite(pin=led_pin, value=0))
+            await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
             logger.info("Node hardware actuation (LED) verified", node=node.name, pin=led_pin)
 
             # 4. Mailbox Messaging
-            mb_resp = await stub.MailboxPush(protocol.pb.MailboxPush(data=b"PING"))
+            mb_resp = await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
             if mb_resp.status != "ok":
                 logger.error("MailboxPush failed", node=node.name)
                 return False

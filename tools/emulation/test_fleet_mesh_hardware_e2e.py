@@ -234,7 +234,28 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
     logger.info("Starting Master Fleet Mesh Hardware Emulation (simavr + Renode + QEMU)")
     logger.info("================================================================================")
 
-    # 1. Locate and verify emulator binaries
+    # 1. Compile universal firmwares (which installs Arduino libraries if missing)
+    sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
+    fw_mega = ensure_firmware_compiled(
+        sketch_path, BOARD_MEGA.fqbn, repo_root / "build" / str(BOARD_MEGA.emulator) / BOARD_MEGA.slug / "firmware.elf"
+    )
+    meta_mega = resolve_node_metadata(BOARD_MEGA, fw_mega.parent)
+
+    fw_mkr = ensure_firmware_compiled(
+        sketch_path,
+        BOARD_MKRWIFI1010.fqbn,
+        repo_root / "build" / str(BOARD_MKRWIFI1010.emulator) / BOARD_MKRWIFI1010.slug / "firmware.elf",
+    )
+    meta_mkr = resolve_node_metadata(BOARD_MKRWIFI1010, fw_mkr.parent)
+
+    fw_esp32 = ensure_firmware_compiled(
+        sketch_path,
+        BOARD_NANO_ESP32.fqbn,
+        repo_root / "build" / str(BOARD_NANO_ESP32.emulator) / BOARD_NANO_ESP32.slug / "firmware_flash.bin",
+    )
+    meta_esp32 = resolve_node_metadata(BOARD_NANO_ESP32, fw_esp32.parent)
+
+    # 2. Locate and verify emulator binaries
     simavr_bin = shutil.which("simavr")
     harness_bin = build_simavr_harness()
     if not simavr_bin or not harness_bin:
@@ -260,27 +281,6 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
     if not socat_bin:
         logger.error("socat binary not found on host system")
         return False
-
-    # 2. Compile universal firmwares
-    sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
-    fw_mega = ensure_firmware_compiled(
-        sketch_path, BOARD_MEGA.fqbn, repo_root / "build" / str(BOARD_MEGA.emulator) / BOARD_MEGA.slug / "firmware.elf"
-    )
-    meta_mega = resolve_node_metadata(BOARD_MEGA, fw_mega.parent)
-
-    fw_mkr = ensure_firmware_compiled(
-        sketch_path,
-        BOARD_MKRWIFI1010.fqbn,
-        repo_root / "build" / str(BOARD_MKRWIFI1010.emulator) / BOARD_MKRWIFI1010.slug / "firmware.elf",
-    )
-    meta_mkr = resolve_node_metadata(BOARD_MKRWIFI1010, fw_mkr.parent)
-
-    fw_esp32 = ensure_firmware_compiled(
-        sketch_path,
-        BOARD_NANO_ESP32.fqbn,
-        repo_root / "build" / str(BOARD_NANO_ESP32.emulator) / BOARD_NANO_ESP32.slug / "firmware_flash.bin",
-    )
-    meta_esp32 = resolve_node_metadata(BOARD_NANO_ESP32, fw_esp32.parent)
 
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
     log_collector = FleetMeshState()

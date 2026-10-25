@@ -274,20 +274,32 @@ def build_simavr_harness() -> Path | None:
 
     harness_bin.parent.mkdir(parents=True, exist_ok=True)
 
-    arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
-    if not (arduino_etl_include / "etl" / "algorithm.h").exists():
-        for candidate in [
-            Path.home() / "Arduino" / "libraries" / "Embedded Template Library ETL" / "include",
-            Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include",
-            Path("/home/runner/Arduino/libraries/Embedded Template Library ETL/include"),
-            Path("/home/runner/Arduino/libraries/Embedded_Template_Library/include"),
-            repo_root / ".dummy_libs" / "Embedded_Template_Library" / "include",
-            Path.home() / ".local" / "include",
-            Path("/usr/local/include"),
-        ]:
-            if (candidate / "etl" / "algorithm.h").exists() or candidate.exists():
-                arduino_etl_include = candidate
+    arduino_etl_include: Path | None = None
+    search_roots = [
+        Path.home() / "Arduino" / "libraries",
+        Path("/home/runner/Arduino/libraries"),
+        repo_root / ".dummy_libs",
+        Path.home() / ".local" / "include",
+        Path("/usr/local/include"),
+        Path("/usr/include"),
+    ]
+
+    for root in search_roots:
+        if not root.is_dir():
+            continue
+        if (root / "etl" / "algorithm.h").is_file():
+            arduino_etl_include = root
+            break
+        for match in root.rglob("etl/algorithm.h"):
+            candidate_dir = match.parent.parent
+            if (candidate_dir / "etl" / "algorithm.h").is_file():
+                arduino_etl_include = candidate_dir
                 break
+        if arduino_etl_include is not None:
+            break
+
+    if arduino_etl_include is None:
+        arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
 
     compile_cmd = [
         "g++",

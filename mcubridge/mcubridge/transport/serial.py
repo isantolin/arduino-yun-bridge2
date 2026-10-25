@@ -346,17 +346,21 @@ class SerialTransport:
             return
 
         # Correlation and Service dispatch
-        self.correlate_frame(cmd_id, payload)
+        self.correlate_frame(cmd_id, payload, seq_id)
         if self.service:
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
 
-    def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
+    def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:
         pending = self.current_command
         logger.debug(
-            "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
+            "_correlate_frame entry",
+            command_id=command_id,
+            seq_id=seq_id,
+            pending_cmd=(pending.command_id if pending else None),
+            pending_seq=(pending.sequence_id if pending else None),
         )
         if pending is None:
             return
@@ -364,6 +368,14 @@ class SerialTransport:
             logger.debug(
                 "Pending command already resolved, ignoring further correlation",
                 pending_cmd=pending.command_id,
+                command_id=command_id,
+            )
+            return
+        if pending.sequence_id is not None and seq_id is not None and pending.sequence_id != seq_id:
+            logger.debug(
+                "ignoring_stale_frame_sequence_mismatch",
+                expected_seq=pending.sequence_id,
+                received_seq=seq_id,
                 command_id=command_id,
             )
             return
@@ -469,7 +481,13 @@ class SerialTransport:
                     pending.ack_received = False
                     pending.success = None
 
-                    if not await self.send_raw(command_id, payload):
+                    attempt_seq = seq_id
+                    if attempt_seq is None:
+                        self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
+                        attempt_seq = self.tx_sequence_id
+                    pending.sequence_id = attempt_seq
+
+                    if not await self.send_raw(command_id, payload, attempt_seq):
                         raise self._FatalSerialError(None)
 
                     try:

@@ -241,6 +241,7 @@ class PendingCommand:
     """Book-keeping for a tracked command in flight. [SIL-2]"""
 
     command_id: int
+    sequence_id: int | None = None
     expected_resp_ids: list[int] = field(default_factory=list[int])
     reply_topic: str | None = None
     correlation_data: bytes | None = None

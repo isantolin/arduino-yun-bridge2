@@ -317,7 +317,7 @@ rationale = "Primary testing framework and test runner"
 
 [[dev_dependency]]
 name = "pytest-asyncio"
-pip = "pytest-asyncio==1.4.0"
+pip = "pytest-asyncio==1.4.1"
 rationale = "Asyncio integration for pytest managing event loop lifecycles"
 
 [[dev_dependency]]

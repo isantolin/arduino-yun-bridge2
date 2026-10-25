@@ -275,13 +275,17 @@ def build_simavr_harness() -> Path | None:
     harness_bin.parent.mkdir(parents=True, exist_ok=True)
 
     arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
-    if not arduino_etl_include.exists():
+    if not (arduino_etl_include / "etl" / "algorithm.h").exists():
         for candidate in [
+            Path.home() / "Arduino" / "libraries" / "Embedded Template Library ETL" / "include",
+            Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include",
+            Path("/home/runner/Arduino/libraries/Embedded Template Library ETL/include"),
+            Path("/home/runner/Arduino/libraries/Embedded_Template_Library/include"),
             repo_root / ".dummy_libs" / "Embedded_Template_Library" / "include",
             Path.home() / ".local" / "include",
             Path("/usr/local/include"),
         ]:
-            if candidate.exists():
+            if (candidate / "etl" / "algorithm.h").exists() or candidate.exists():
                 arduino_etl_include = candidate
                 break
 

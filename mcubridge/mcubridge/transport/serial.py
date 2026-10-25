@@ -504,7 +504,12 @@ class SerialTransport:
                 with anyio.fail_after(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
             except TimeoutError:
-                logger.error("Timed out waiting for serial TX flow control")
+                logger.warning(
+                    "Timed out waiting for serial TX flow control, auto-resuming TX",
+                    timeout=FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
+                )
+                self.state.mcu_is_paused = False
+                self.state.serial_tx_allowed.set()
 
         if seq_id is None:
             self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX

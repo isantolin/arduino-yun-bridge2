@@ -149,13 +149,13 @@ void loop() {
     Console.process();
   }
 
-  static unsigned long lastMailboxPoll = 0;
+  static unsigned long lastMailboxPoll = millis();
   if (millis() - lastMailboxPoll >= 250) {
     lastMailboxPoll = millis();
     Mailbox.requestRead();
   }
 
-  static unsigned long lastHeartbeat = 0;
+  static unsigned long lastHeartbeat = millis();
   if (millis() - lastHeartbeat >= 5000) {
     lastHeartbeat = millis();
     Console.print(F("[HEARTBEAT] FreeMem="));

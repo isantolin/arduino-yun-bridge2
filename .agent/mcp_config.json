@@ -22,6 +22,12 @@
       "args": [
         "serve"
       ]
+    },
+    "grpcurl-mcp": {
+      "command": "/home/ignaciosantolin/.local/bin/grpcurl-mcp",
+      "env": {
+        "ADDRESS": "127.0.0.1:8443"
+      }
     }
   }
 }

@@ -1306,11 +1306,15 @@ enum Command {
     ]
   }];
   CMD_XOFF = 78 [(cmd_opts) = {
+    category: "system"
+    pre_sync_allowed: true
     requires_ack: false
     description: "Pause transmission (Flow Control)"
     mcu_handler: "handle_mcu_xoff"
   }];
   CMD_XON = 79 [(cmd_opts) = {
+    category: "system"
+    pre_sync_allowed: true
     requires_ack: false
     description: "Resume transmission (Flow Control)"
     mcu_handler: "handle_mcu_xon"

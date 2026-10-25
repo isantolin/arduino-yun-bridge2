@@ -69,7 +69,7 @@ PROP_VAL_ENABLED_FALSE: Final[str] = "0"
 # -- Async Control and Process Timeouts (Seconds) --
 STREAM_POLL_TIMEOUT_SECONDS: Final[float] = 0.01
 PROCESS_TERM_GRACE_PERIOD_SECONDS: Final[float] = 0.5
-FLOW_CONTROL_WAIT_TIMEOUT_SECONDS: Final[float] = 30.0
+FLOW_CONTROL_WAIT_TIMEOUT_SECONDS: Final[float] = 3.0
 
 # -- Status Codes (Application Logic) --
 SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(

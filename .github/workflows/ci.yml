@@ -318,7 +318,7 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:samd
-          arduino-cli lib install wolfSSL WiFiNINA
+          arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
       - name: Install Renode
         run: |
           RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.linux-portable.tar.gz"
@@ -425,7 +425,7 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli core install arduino:samd
           arduino-cli core install arduino:esp32
-          arduino-cli lib install wolfSSL WiFiNINA
+          arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
           python -m pip install pyserial esptool
       - name: Install Renode
         run: |

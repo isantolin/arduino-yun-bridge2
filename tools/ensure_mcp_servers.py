@@ -198,6 +198,12 @@ def sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
             "command": str(serial_mcp_path),
             "args": ["serve"],
         },
+        "grpcurl-mcp": {
+            "command": str(HOME / ".local" / "bin" / "grpcurl-mcp"),
+            "env": {
+                "ADDRESS": "127.0.0.1:8443",
+            },
+        },
     }
 
     for cfg in configs:
@@ -213,9 +219,6 @@ def sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
         mcp_servers = data.setdefault("mcpServers", {})
         updated = False
 
-        if "grpcurl-mcp" in mcp_servers:
-            del mcp_servers["grpcurl-mcp"]
-            updated = True
 
         for srv_name, srv_def in server_definitions.items():
             if mcp_servers.get(srv_name) != srv_def:

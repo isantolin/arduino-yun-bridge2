@@ -219,7 +219,6 @@ def sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
         mcp_servers = data.setdefault("mcpServers", {})
         updated = False
 
-
         for srv_name, srv_def in server_definitions.items():
             if mcp_servers.get(srv_name) != srv_def:
                 mcp_servers[srv_name] = srv_def

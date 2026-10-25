@@ -211,6 +211,10 @@ class SimavrHardwareBridge {
 
   simulation_step:
     if (!is_active()) {
+      fprintf(stderr, "[SIMAVR] Terminating: running=%d avr=%p state=%d\n",
+              static_cast<int>(g_running), static_cast<void*>(avr_),
+              avr_ ? avr_->state : -1);
+      fflush(stderr);
       return;
     }
     execute_cycle_batch();

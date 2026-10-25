@@ -302,7 +302,12 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
             status_file=base_temp_dir / f"status_{BOARD_MEGA.slug}.json",
         )
         node_mega.temp_dir.mkdir(parents=True, exist_ok=True)
-        simavr_state = SimavrState()
+        class FleetSimavrState(SimavrState):
+            def on_line(self, line: str, source: str) -> None:
+                super().on_line(line, source)
+                log_collector.on_line(line, source)
+
+        simavr_state = FleetSimavrState()
         simavr_proc, pty_mega, _ = spawn_simavr(
             harness_bin,
             node_mega.firmware_path,

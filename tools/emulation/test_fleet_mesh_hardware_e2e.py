@@ -302,6 +302,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
             status_file=base_temp_dir / f"status_{BOARD_MEGA.slug}.json",
         )
         node_mega.temp_dir.mkdir(parents=True, exist_ok=True)
+
         class FleetSimavrState(SimavrState):
             def on_line(self, line: str, source: str) -> None:
                 super().on_line(line, source)
@@ -319,9 +320,8 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         if not simavr_proc or not pty_mega:
             raise RuntimeError("simavr failed to spawn or emit a valid PTY slave path")
         all_procs.append(simavr_proc)
-        node_mega.procs.append(simavr_proc)
-        spawn_daemon_for_node(node_mega, pty_mega, log_collector)
-        all_procs.extend(node_mega.procs)
+        d_mega = spawn_daemon_for_node(node_mega, pty_mega, log_collector)
+        all_procs.append(d_mega)
 
         # 5. Initialize Node 2: Arduino MKR WiFi 1010 (Renode)
         node_mkr = NodeRuntime(
@@ -357,7 +357,6 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         logger.info("Spawning Renode for Node 2 (MKR WiFi 1010)", port=PORT_RENODE)
         renode_proc = subprocess.Popen(renode_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         all_procs.append(renode_proc)
-        node_mkr.procs.append(renode_proc)
         start_daemon_thread(stream_pump, "renode", renode_proc.stdout, log_collector.on_line, "renode")
 
         if not wait_for_tcp_ready(CLOUD_HOST, PORT_RENODE, timeout=30.0):
@@ -373,13 +372,12 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         ]
         socat_mkr_proc = subprocess.Popen(socat_mkr_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         all_procs.append(socat_mkr_proc)
-        node_mkr.procs.append(socat_mkr_proc)
         start_daemon_thread(stream_pump, "socat-mkr", socat_mkr_proc.stdout, log_collector.on_line, "socat-mkr")
 
         if not wait_for_path_ready(pty_mkr, timeout=15.0):
             raise RuntimeError("Timed out waiting for Renode PTY bridge")
-        spawn_daemon_for_node(node_mkr, str(pty_mkr), log_collector)
-        all_procs.extend(node_mkr.procs)
+        d_mkr = spawn_daemon_for_node(node_mkr, str(pty_mkr), log_collector)
+        all_procs.append(d_mkr)
 
         # 6. Initialize Node 3: Arduino Nano ESP32 (QEMU)
         node_esp32 = NodeRuntime(
@@ -406,7 +404,6 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         logger.info("Spawning QEMU for Node 3 (Nano ESP32)", port=PORT_QEMU)
         qemu_proc = subprocess.Popen(qemu_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         all_procs.append(qemu_proc)
-        node_esp32.procs.append(qemu_proc)
         start_daemon_thread(stream_pump, "qemu", qemu_proc.stdout, log_collector.on_line, "qemu")
 
         if not log_collector.qemu_listening_event.wait(timeout=15.0):
@@ -424,13 +421,12 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
             socat_esp32_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
         all_procs.append(socat_esp32_proc)
-        node_esp32.procs.append(socat_esp32_proc)
         start_daemon_thread(stream_pump, "socat-esp32", socat_esp32_proc.stdout, log_collector.on_line, "socat-esp32")
 
         if not wait_for_path_ready(pty_esp32, timeout=15.0):
             raise RuntimeError("Timed out waiting for QEMU PTY bridge")
-        spawn_daemon_for_node(node_esp32, str(pty_esp32), log_collector)
-        all_procs.extend(node_esp32.procs)
+        d_esp32 = spawn_daemon_for_node(node_esp32, str(pty_esp32), log_collector)
+        all_procs.append(d_esp32)
 
         # -------------------------------------------------------------------------
         # 7. CONCURRENT SYNCHRONIZATION GATE (All 3 nodes syncing in parallel)
@@ -474,7 +470,16 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
 
     finally:
         logger.info("Tearing down all emulation subprocesses...")
-        terminate_process_tree(all_procs, timeout=3.0)
+        daemon_procs: list[subprocess.Popen[str]] = []
+        if "node_mega" in locals():
+            daemon_procs.extend(node_mega.procs)
+        if "node_mkr" in locals():
+            daemon_procs.extend(node_mkr.procs)
+        if "node_esp32" in locals():
+            daemon_procs.extend(node_esp32.procs)
+        terminate_process_tree(daemon_procs, timeout=3.0)
+        emulation_procs = [p for p in all_procs if p not in daemon_procs]
+        terminate_process_tree(emulation_procs, timeout=3.0)
         shutil.rmtree(base_temp_dir, ignore_errors=True)
 
 

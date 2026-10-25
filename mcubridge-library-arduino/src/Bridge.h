@@ -114,6 +114,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       uint32_t timeout_ms = bridge::config::SYNC_TIMEOUT_MS,
       uint32_t poll_delay_ms = 2);
   bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
+  bool hasPendingTx() const { return !_pending_tx_queue.empty(); }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
   void resetWcetStats() { _wcet_max_micros = 0; }
 

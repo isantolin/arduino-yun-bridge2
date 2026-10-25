@@ -64,6 +64,31 @@ async def test_process_packet_crc_mismatch_reports_crc(
         state.cleanup()
 
 
+async def test_process_packet_pre_sync_noise_ignored(
+    mocker: MockerFixture,
+) -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        assert not state.is_synchronized
+        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
+        transport = SerialTransport(config, state, service)
+
+        raw = b"\xff" + b"x" * 20
+
+        def mock_decode(data: Any) -> bytes:
+            return raw
+
+        mocker.patch.object(cobsr, "decode", side_effect=mock_decode)
+
+        await transport.process_packet(b"\x02bootloader_banner_noise")
+
+        # Pre-sync noise must be ignored and not increment serial_decode_errors
+        assert state.serial_decode_errors == 0
+    finally:
+        state.cleanup()
+
+
 async def test_process_packet_success_dispatches() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -407,6 +432,21 @@ async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_
     ]
     with pytest.raises(asyncio.CancelledError):
         await read_loop(mock_serial)
+
+    # Test OSError during active read loop
+    stop_event.clear()
+    mock_serial.readuntil.side_effect = [OSError(5, "Input/output error")]
+    await read_loop(mock_serial)
+
+    # Test OSError when stopped concurrently during shutdown
+    def _readuntil_during_stop(*_args: Any, **_kwargs: Any) -> Any:
+        stop_event.set()
+        raise OSError(5, "device disconnected")
+
+    stop_event.clear()
+    mock_serial.readuntil.side_effect = _readuntil_during_stop
+    await read_loop(mock_serial)
+    assert stop_event.is_set()
 
     assert transport.consecutive_crc_errors == 0
 

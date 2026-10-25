@@ -134,7 +134,7 @@ void loop() {
     s_initStep = InitStep::INIT_FILESYSTEM;
     s_lastInitMs = millis();
   } else if (s_initStep == InitStep::INIT_FILESYSTEM &&
-             (millis() - s_lastInitMs >= 300)) {
+             (millis() - s_lastInitMs >= 1000) && !Bridge.hasPendingTx()) {
     const char tokenData[] = "BOOT_OK";
     FileSystem.write(
         "boot_token.txt",

@@ -425,7 +425,8 @@ class BridgeService:
     def cleanup(self) -> None:
         self.ubus_service.stop()
         self.clock_sync.fsm.disconnect()
-
+        if self.serial is not None:
+            self.serial.stop_event.set()
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.
         # cleanup() only nullifies the reference to prevent double-close.

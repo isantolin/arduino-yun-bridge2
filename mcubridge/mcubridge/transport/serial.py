@@ -294,7 +294,10 @@ class SerialTransport:
                 logger.info("Serial stream closed or EOF reached", error=str(exc))
                 break
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
-                logger.error("Error in serial read loop", error=str(exc))
+                if self.stop_event.is_set():
+                    logger.debug("Serial connection closed during shutdown", error=str(exc))
+                else:
+                    logger.error("Error in serial read loop", error=str(exc))
                 break
 
     async def process_packet(self, encoded_packet: bytes | memoryview) -> None:
@@ -304,6 +307,13 @@ class SerialTransport:
             decoded = cobsr.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
+            if not self.state.is_synchronized:
+                logger.debug(
+                    "pre_sync_serial_noise_discarded",
+                    error=str(exc),
+                    raw_hex=raw_bytes[:32].hex(),
+                )
+                return
             logger.error("Malformed frame received from MCU", error=str(exc), raw_hex=raw_bytes.hex())
             self.state.serial_decode_errors += 1
             await self.check_baudrate_fallback()

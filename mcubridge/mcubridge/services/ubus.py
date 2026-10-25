@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import anyio.from_thread
 import structlog
 import tenacity
 from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.message import Message as ProtobufMessage
 
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol import protocol
@@ -212,6 +214,32 @@ class UbusService:
             "synchronized": is_synced,
         }
 
+    def _run_proto_rpc[TReq: ProtobufMessage, TResp](
+        self,
+        msg_cls: type[TReq],
+        coro_fn: Callable[[TReq], Awaitable[TResp]],
+        msg: dict[str, Any],
+        res_transform: Callable[[TReq, TResp], dict[str, Any]],
+    ) -> dict[str, Any]:
+        proto = msg_cls()
+        ParseDict(msg, proto, ignore_unknown_fields=True)
+        resp = self.run_sync(coro_fn(proto))
+        return res_transform(proto, resp)
+
+    def _schedule_task(self, coro: Awaitable[Any], result: dict[str, Any]) -> dict[str, Any]:
+        self.schedule_async(coro)
+        return result
+
+    @staticmethod
+    def _format_process_poll(_req: pb.ProcessPoll, resp: pb.ProcessPollResponse) -> dict[str, Any]:
+        data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
+        data["status"] = "ok" if resp.status == 0 else "error"
+        data["stdout"] = format_ubus_bytes(resp.stdout_data)
+        data["stderr"] = format_ubus_bytes(resp.stderr_data)
+        data.pop("stdout_data", None)
+        data.pop("stderr_data", None)
+        return data
+
     def _handle_pin_write(
         self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], msg: dict[str, Any]
     ) -> dict[str, Any]:
@@ -232,15 +260,19 @@ class UbusService:
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
         message = str(msg.get("message", ""))
-        self.schedule_async(self.runtime.mailbox_push(message.encode("utf-8")))
-        return {"status": "ok", "message_length": len(message)}
+        return self._schedule_task(
+            self.runtime.mailbox_push(message.encode("utf-8")),
+            {"status": "ok", "message_length": len(message)},
+        )
 
     def ubus_handle_datastore_set(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_set'."""
         key = str(msg.get("key", ""))
         value = str(msg.get("value", ""))
-        self.schedule_async(self.runtime.datastore_put(key, value.encode("utf-8")))
-        return {"status": "ok", "key": key}
+        return self._schedule_task(
+            self.runtime.datastore_put(key, value.encode("utf-8")),
+            {"status": "ok", "key": key},
+        )
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_get'."""
@@ -268,35 +300,37 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.file_write'."""
         target_path = str(msg.get("path", ""))
         data_str = str(msg.get("data", ""))
-        self.schedule_async(self.runtime.file_write(target_path, data_str.encode("utf-8")))
-        return {"status": "ok", "path": target_path, "bytes_written": len(data_str)}
+        return self._schedule_task(
+            self.runtime.file_write(target_path, data_str.encode("utf-8")),
+            {"status": "ok", "path": target_path, "bytes_written": len(data_str)},
+        )
 
     def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_run'."""
-        proto = pb.ProcessRunAsync()
-        ParseDict(msg, proto, ignore_unknown_fields=True)
-        resp = self.run_sync(self.runtime.process_run_async(proto))
-        return {"status": "ok", "pid": resp.pid}
+        return self._run_proto_rpc(
+            pb.ProcessRunAsync,
+            self.runtime.process_run_async,
+            msg,
+            lambda _req, resp: {"status": "ok", "pid": resp.pid},
+        )
 
     def ubus_handle_process_kill(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_kill'."""
-        proto = pb.ProcessKill()
-        ParseDict(msg, proto, ignore_unknown_fields=True)
-        resp = self.run_sync(self.runtime.process_kill(proto))
-        return {"status": resp.status, "pid": proto.pid}
+        return self._run_proto_rpc(
+            pb.ProcessKill,
+            self.runtime.process_kill,
+            msg,
+            lambda req, resp: {"status": resp.status, "pid": req.pid},
+        )
 
     def ubus_handle_process_poll(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_poll'."""
-        proto = pb.ProcessPoll()
-        ParseDict(msg, proto, ignore_unknown_fields=True)
-        resp: pb.ProcessPollResponse = self.run_sync(self.runtime.process_poll(proto))
-        data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
-        data["status"] = "ok" if resp.status == 0 else "error"
-        data["stdout"] = format_ubus_bytes(resp.stdout_data)
-        data["stderr"] = format_ubus_bytes(resp.stderr_data)
-        data.pop("stdout_data", None)
-        data.pop("stderr_data", None)
-        return data
+        return self._run_proto_rpc(
+            pb.ProcessPoll,
+            self.runtime.process_poll,
+            msg,
+            self._format_process_poll,
+        )
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""

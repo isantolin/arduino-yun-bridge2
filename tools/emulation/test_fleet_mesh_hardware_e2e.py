@@ -193,9 +193,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
             # 1. System Version Introspection
             ver_resp = await stub.GetVersion(protocol.pb.SubscribeRequest())
             if ver_resp.major != 2 or ver_resp.minor != 8:
-                logger.error(
-                    "Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor
-                )
+                logger.error("Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor)
                 return False
             logger.info(
                 "Node GetVersion verified",

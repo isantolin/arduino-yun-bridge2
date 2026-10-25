@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import os
 import time
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -441,7 +442,7 @@ async def test_local_bridge_pin_subscribe() -> None:
         # Test unrecognized pin mode enum fallback
         req_invalid = pb.PinSubscribeRequest(
             pin=14,
-            mode=9999,
+            mode=cast(pb.PinModeType.ValueType, 9999),
             interval_ms=100,
             hysteresis=2,
             enabled=True,

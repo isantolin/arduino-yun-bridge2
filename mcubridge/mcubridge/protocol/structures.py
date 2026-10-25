@@ -297,8 +297,12 @@ class MemoryQueueAdapter:
 
 @overload
 def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T) -> T: ...
+
+
 @overload
 def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: None = None) -> T | None: ...
+
+
 def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T | None = None) -> T | None:
     """Safely decode serial response payload to target Protobuf message type. [SIL-2]"""
     if isinstance(res, target_type):

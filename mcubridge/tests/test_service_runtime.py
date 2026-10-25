@@ -634,7 +634,10 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     assert mock_serial.send.called
 
     # Test synchronous (non-awaitable) handler path
-    svc.mcu_registry[Command.CMD_CLOCK_SYNC_RESP.value] = lambda _seq, _p: {"status": "ok"}
+    def _sync_handler(_seq: int, _p: Any) -> dict[str, str]:
+        return {"status": "ok"}
+
+    svc.mcu_registry[Command.CMD_CLOCK_SYNC_RESP.value] = _sync_handler
     await svc.handle_mcu_frame(Command.CMD_CLOCK_SYNC_RESP.value, 2, b"")
     mock_serial.acknowledge.assert_called_with(Command.CMD_CLOCK_SYNC_RESP.value, 2)
 

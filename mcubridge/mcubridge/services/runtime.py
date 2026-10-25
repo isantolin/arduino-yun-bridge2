@@ -645,7 +645,9 @@ class BridgeService:
         return pb.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
 
     async def handle_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
-        return bool(self.serial and await self.serial.send(Command.CMD_DATASTORE_GET_RESP.value, await self.datastore_get(p)))
+        return bool(
+            self.serial and await self.serial.send(Command.CMD_DATASTORE_GET_RESP.value, await self.datastore_get(p))
+        )
 
     async def mailbox_push(self, req_or_data: bytes | pb.MailboxPush) -> pb.GenericResponse:
         data = req_or_data.data if isinstance(req_or_data, pb.MailboxPush) else req_or_data
@@ -769,7 +771,9 @@ class BridgeService:
         if not self.serial:
             return False
         res = await self.file_write(p)
-        return await (self.send_mcu_ok() if res.status == "ok" else self.send_mcu_error("Path not allowed or quota exceeded"))
+        return await (
+            self.send_mcu_ok() if res.status == "ok" else self.send_mcu_error("Path not allowed or quota exceeded")
+        )
 
     async def handle_file_read(self, _seq: int, p: pb.FileRead) -> None:
         if not self.serial:
@@ -788,7 +792,9 @@ class BridgeService:
         if not self.serial:
             return False
         res = await self.file_remove(p)
-        return await (self.send_mcu_ok() if res.status == "ok" else self.send_mcu_error("Path not allowed or not found"))
+        return await (
+            self.send_mcu_ok() if res.status == "ok" else self.send_mcu_error("Path not allowed or not found")
+        )
 
     async def handle_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self.pending_mcu_read:
@@ -811,7 +817,9 @@ class BridgeService:
         return False
 
     async def handle_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
-        return bool(self.serial and await self.serial.send(Command.CMD_PROCESS_POLL_RESP.value, await self.process_poll(p)))
+        return bool(
+            self.serial and await self.serial.send(Command.CMD_PROCESS_POLL_RESP.value, await self.process_poll(p))
+        )
 
     async def handle_spi_transfer_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
         await self._publish_mcu_message(p, p.data)

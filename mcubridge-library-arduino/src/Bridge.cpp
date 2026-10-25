@@ -615,11 +615,17 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
                            return p.first == m.mode;
                          });
   const uint8_t m_val = (it != kPinModeMap.end()) ? it->second : INPUT;
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!digitalPinIsValid(m.pin)) return;
+#endif
   pinMode(m.pin, m_val);
 }
 
 template <typename MsgType, bool IsAnalog>
 void BridgeClass::_handlePinWrite(const MsgType& m) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!digitalPinIsValid(m.pin)) return;
+#endif
   if constexpr (IsAnalog) {
     analogWrite(m.pin,
                 static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));

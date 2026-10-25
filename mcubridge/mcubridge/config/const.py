@@ -11,6 +11,7 @@ supervisor intervals, status codes, and telemetry keys.
 
 from __future__ import annotations
 
+import os
 from ssl import TLSVersion
 from typing import Final
 
@@ -30,7 +31,7 @@ MCU_FS_PREFIX: Final[str] = "mcu/"
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
 
 # -- Telemetry & Status Paths --
-STATUS_FILE_PATH: Final[str] = "/tmp/mcubridge_status.json"
+STATUS_FILE_PATH: Final[str] = os.environ.get("MCUBRIDGE_STATUS_FILE") or "/tmp/mcubridge_status.json"
 BRIDGE_SNAPSHOT_EXPIRY_SECONDS: Final[int] = 30
 
 # -- Security Constraints --

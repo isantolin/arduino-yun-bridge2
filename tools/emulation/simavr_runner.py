@@ -78,7 +78,7 @@ def _read_pty_from_stream(proc_stdout: Any, state: SimavrState) -> str:
         return ""
 
 
-def _spawn_simavr(
+def spawn_simavr(
     harness_bin: Path | None,
     firmware_path: Path,
     mcu: str,
@@ -263,7 +263,7 @@ class SimavrState:
                 self.sync_event.set()
 
 
-def _build_simavr_harness() -> Path | None:
+def build_simavr_harness() -> Path | None:
     harness_src = repo_root / "tools" / "emulation" / "simavr_harness.cpp"
     harness_bin = repo_root / "build" / "simavr" / "simavr_harness"
     if not harness_src.exists():
@@ -324,9 +324,9 @@ def run_simavr_emulation(
         return False
 
     state = SimavrState()
-    harness_bin = _build_simavr_harness()
+    harness_bin = build_simavr_harness()
 
-    simavr_proc, slave_name, master_fd = _spawn_simavr(harness_bin, firmware_path, mcu, frequency, uart_id, state)
+    simavr_proc, slave_name, master_fd = spawn_simavr(harness_bin, firmware_path, mcu, frequency, uart_id, state)
     if not slave_name or not simavr_proc:
         logger.error("Failed to allocate virtual UART PTY device")
         if simavr_proc:

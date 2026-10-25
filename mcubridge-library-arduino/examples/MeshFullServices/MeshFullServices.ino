@@ -35,7 +35,7 @@
 
 #ifndef BRIDGE_SERIAL_SHARED_SECRET
 #define BRIDGE_SERIAL_SHARED_SECRET \
-  "755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
+  "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 #endif
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -45,8 +45,8 @@ inline constexpr uint8_t TEST_IN_PIN = 7;
 inline constexpr uint8_t TEST_PWM_PIN = 5;
 inline constexpr uint8_t TEST_IN_PIN = 4;
 #else
-inline constexpr uint8_t TEST_PWM_PIN = 18;
-inline constexpr uint8_t TEST_IN_PIN = 19;
+inline constexpr uint8_t TEST_PWM_PIN = 8;
+inline constexpr uint8_t TEST_IN_PIN = 7;
 #endif
 
 static void onMailboxMessage(etl::span<const uint8_t> payload) {
@@ -100,18 +100,6 @@ void setup() {
     digitalWrite(LED_BUILTIN, HIGH);
     Console.begin();
     Console.println(F("[BOOT] Node synchronized and operational."));
-
-    const char initialVal[] = "ONLINE";
-    DataStore.set(
-        "node/status",
-        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(initialVal),
-                                 sizeof(initialVal) - 1));
-
-    const char tokenData[] = "BOOT_OK";
-    FileSystem.write(
-        "/tmp/yun_files/boot_token.txt",
-        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
-                                 sizeof(tokenData) - 1));
   }
 }
 
@@ -121,6 +109,22 @@ void loop() {
   if (!Bridge.isSynchronized()) {
     digitalWrite(LED_BUILTIN, LOW);
     return;
+  }
+
+  static bool initializedServices = false;
+  if (!initializedServices) {
+    initializedServices = true;
+    const char initialVal[] = "ONLINE";
+    DataStore.set(
+        "node/status",
+        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(initialVal),
+                                 sizeof(initialVal) - 1));
+
+    const char tokenData[] = "BOOT_OK";
+    FileSystem.write(
+        "boot_token.txt",
+        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
+                                 sizeof(tokenData) - 1));
   }
 
   static unsigned long lastMailboxPoll = 0;

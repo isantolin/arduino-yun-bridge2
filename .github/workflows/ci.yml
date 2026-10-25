@@ -401,13 +401,76 @@ jobs:
           path: qemu-logs
           if-no-files-found: ignore
 
+  fleet-mesh-emulation:
+    name: Master Fleet Mesh Emulation (simavr + Renode + QEMU)
+    runs-on: ubuntu-26.04
+    needs: [tox-checks]
+    timeout-minutes: 20
+    env:
+      CONSOLIDATE_EMULATION_SUMMARY: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-protoc
+      - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: fleet-mesh
+      - name: Setup System Packages & Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: Install Arduino Cores & Libraries
+        run: |
+          arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
+          arduino-cli core install arduino:avr
+          arduino-cli core install arduino:samd
+          arduino-cli core install arduino:esp32
+          arduino-cli lib install wolfSSL WiFiNINA
+          python -m pip install pyserial esptool
+      - name: Install Renode
+        run: |
+          RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.linux-portable.tar.gz"
+          if curl -fsSL -o /tmp/renode.tar.gz "$RENODE_URL"; then
+            sudo mkdir -p /opt/renode
+            sudo tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1
+            echo "/opt/renode" >> "$GITHUB_PATH"
+            rm -f /tmp/renode.tar.gz
+          else
+            echo "::warning::Failed to download Renode package."
+          fi
+      - name: Cache Espressif QEMU
+        id: cache-qemu-esp32
+        uses: actions/cache@v6
+        with:
+          path: /opt/qemu-esp32
+          key: qemu-xtensa-softmmu-9.2.2-20260417-x86_64
+      - name: Install Espressif QEMU
+        if: steps.cache-qemu-esp32.outputs.cache-hit != 'true'
+        run: |
+          QEMU_URL="https://github.com/espressif/qemu/releases/download/esp-develop-9.2.2-20260417/qemu-xtensa-softmmu-esp_develop_9.2.2_20260417-x86_64-linux-gnu.tar.xz"
+          if curl -fsSL -o /tmp/qemu-esp32.tar.xz "$QEMU_URL"; then
+            sudo mkdir -p /opt/qemu-esp32
+            sudo tar -xf /tmp/qemu-esp32.tar.xz -C /opt/qemu-esp32 --strip-components=1
+            rm -f /tmp/qemu-esp32.tar.xz
+          else
+            echo "::warning::Failed to download Espressif QEMU."
+          fi
+      - name: Add QEMU to PATH
+        run: |
+          if [ -d "/opt/qemu-esp32/bin" ]; then
+            echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Run Fleet Mesh Hardware E2E Suite
+        run: |
+          tox -e fleet-mesh-hardware
+
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-26.04
-    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation]
+    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
     if: always()
     timeout-minutes: 3
     steps:

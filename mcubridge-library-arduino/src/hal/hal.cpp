@@ -33,6 +33,11 @@ constexpr uint8_t CURRENT_ARCH =
 namespace {
 template <size_t I>
 void _forceSinglePin() {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!digitalPinIsValid(static_cast<uint8_t>(I))) {
+    return;
+  }
+#endif
   if constexpr (I == PIN_SPI_SS) {
     ::pinMode(static_cast<uint8_t>(I), OUTPUT);
     ::digitalWrite(static_cast<uint8_t>(I), HIGH);
@@ -49,6 +54,11 @@ void _forceSinglePin() {
     return;
   } else {
     if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+#if defined(ARDUINO_ARCH_ESP32)
+      if (!digitalPinCanOutput(static_cast<uint8_t>(I))) {
+        return;
+      }
+#endif
       ::pinMode(static_cast<uint8_t>(I), OUTPUT);
       ::digitalWrite(static_cast<uint8_t>(I), LOW);
     } else {
@@ -181,8 +191,14 @@ __attribute__((weak)) etl::expected<void, HalError> removeFile(
 }
 
 void applySafetyPin(uint8_t pin, SafetyPinState state) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (!digitalPinIsValid(pin)) return;
+#endif
   if (state == SafetyPinState::SAFE_PIN_LOW ||
       state == SafetyPinState::SAFE_PIN_HIGH) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!digitalPinCanOutput(pin)) return;
+#endif
     ::pinMode(pin, OUTPUT);
     ::digitalWrite(pin, state == SafetyPinState::SAFE_PIN_HIGH ? HIGH : LOW);
   } else if (state == SafetyPinState::SAFE_PIN_INPUT_PULLUP) {

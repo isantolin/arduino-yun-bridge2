@@ -164,6 +164,10 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
     daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
     daemon_env["MCUBRIDGE_DEVICE_ID"] = node.name
     daemon_env["MCUBRIDGE_STATUS_FILE"] = str(node.status_file)
+    daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
+    daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
+    daemon_env["MCUBRIDGE_CLOUD_SPOOL_DIR"] = str(spool_path)
+    daemon_env["MCUBRIDGE_FILE_SYSTEM_ROOT"] = str(fs_root)
 
     daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
     logger.info("Spawning mcubridge daemon for node", node=node.name, pty=slave_name)
@@ -409,8 +413,8 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
             socat_bin,
             "-d",
             "-d",
-            f"PTY,link={pty_esp32},raw,echo=0",
-            f"TCP:{CLOUD_HOST}:{PORT_QEMU}",
+            f"pty,link={pty_esp32},raw,echo=0",
+            f"tcp:{CLOUD_HOST}:{PORT_QEMU},retry=30,interval=0.2",
         ]
         socat_esp32_proc = subprocess.Popen(
             socat_esp32_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True

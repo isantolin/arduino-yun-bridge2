@@ -506,7 +506,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
                     os.read(fd, 4096)
             finally:
                 os.close(fd)
-        except (OSError, BlockingIOError) as exc:
+        except OSError as exc:
             logger.debug("Non-fatal PTY pre-drain exception", error=str(exc))
         d_esp32 = spawn_daemon_for_node(node_esp32, str(pty_esp32), log_collector)
         all_procs.append(d_esp32)

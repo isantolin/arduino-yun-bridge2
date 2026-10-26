@@ -119,7 +119,7 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ConfigFieldDef:
     name: str
     field_type: str
@@ -146,6 +146,10 @@ def _snake_case(s: str) -> str:
 def _format_cpp_digit(v: object) -> str:
     """Format integers >= 10'000 with C++14 digit separators. [SIL-2]"""
     return f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)
+
+
+def _is_cmd_flag(cmd: object, flag: str) -> bool:
+    return bool(isinstance(cmd, dict) and cast(dict[str, Any], cmd).get(flag))
 
 
 _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
@@ -816,6 +820,9 @@ class JinjaGenerator:
         )
         cast(dict[str, Any], self.env.filters)["cpp_digits"] = _format_cpp_digit
         cast(dict[str, Any], self.env.filters)["snakecase"] = _snake_case
+        cast(dict[str, Any], self.env.tests)["streaming"] = functools.partial(_is_cmd_flag, flag="is_streaming")
+        cast(dict[str, Any], self.env.tests)["reliable"] = functools.partial(_is_cmd_flag, flag="requires_ack")
+        cast(dict[str, Any], self.env.tests)["pre_sync"] = functools.partial(_is_cmd_flag, flag="pre_sync_allowed")
 
     def render_template(
         self,
@@ -1048,16 +1055,18 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
 def check_incremental_build(args: Any, version: str, *, repo_root: Path = REPO_ROOT) -> tuple[bool, Path, str]:
     proto_path = _resolve_proto_path(args.spec)
     input_paths = _generation_input_paths(args, proto_path, repo_root)
+    repo_resolved = repo_root.resolve()
     h = hashlib.sha256()
     for input_path in input_paths:
-        try:
-            input_name = input_path.relative_to(repo_root.resolve()).as_posix()
-        except ValueError:
-            input_name = input_path.as_posix()
-        input_content = input_path.read_bytes()
+        input_name = (
+            input_path.relative_to(repo_resolved).as_posix()
+            if input_path.is_relative_to(repo_resolved)
+            else input_path.as_posix()
+        )
         h.update(input_name.encode("utf-8"))
-        h.update(len(input_content).to_bytes(8, "big"))
-        h.update(input_content)
+        h.update(input_path.stat().st_size.to_bytes(8, "big"))
+        with input_path.open("rb") as f:
+            h.update(hashlib.file_digest(f, "sha256").digest())
     buf_version = subprocess.run(["buf", "--version"], check=True, capture_output=True, text=True).stdout.strip()
     if not buf_version:
         raise RuntimeError("buf --version returned an empty version")
@@ -1089,7 +1098,7 @@ def _dispatch_generated_file(
     src.unlink(missing_ok=True)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class GenerationArgs:
     spec: Path
     cpp: Path | None

@@ -110,7 +110,8 @@ namespace {
 constexpr size_t RX_BUFFER_CAPACITY = 256;
 constexpr size_t PTY_NAME_CAPACITY = 128;
 constexpr size_t BATCH_INSTRUCTION_CYCLES = 50000;
-constexpr size_t DRAIN_BATCH_CYCLES = 256;
+constexpr size_t DRAIN_BATCH_CYCLES = 64;
+constexpr size_t CYCLES_PER_UART_BYTE = 1500;
 constexpr size_t HOST_FIFO_CAPACITY = 2048;
 
 volatile sig_atomic_t g_running = 1;
@@ -254,6 +255,15 @@ class SimavrHardwareBridge {
         const uint8_t byte = host_to_avr_fifo_.front();
         host_to_avr_fifo_.pop();
         avr_raise_irq(uart_in_irq_, byte);
+
+        uint8_t baud_dummy = 0;
+        etl::fixed_iterator<uint8_t*> baud_it(&baud_dummy);
+        etl::for_each_n(baud_it, CYCLES_PER_UART_BYTE, [this](uint8_t&) {
+          if (avr_ &&
+              (avr_->state == cpu_Running || avr_->state == cpu_Sleeping)) {
+            avr_run(avr_);
+          }
+        });
       }
     });
     is_draining_ = false;

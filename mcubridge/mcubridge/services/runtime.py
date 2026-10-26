@@ -427,7 +427,7 @@ class BridgeService:
         self.clock_sync.fsm.disconnect()
         if self.serial is not None:
             stop_event = getattr(self.serial, "stop_event", None)
-            if stop_event is not None and hasattr(stop_event, "set"):
+            if isinstance(stop_event, asyncio.Event):
                 stop_event.set()
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.

@@ -313,16 +313,10 @@ class SerialTransport:
             decoded = cobsr.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
-            if not self.state.is_synchronized:
-                logger.debug(
-                    "pre_sync_serial_noise_discarded",
-                    error=str(exc),
-                    raw_hex=raw_bytes[:32].hex(),
-                )
-                return
-            logger.error("Malformed frame received from MCU", error=str(exc), raw_hex=raw_bytes.hex())
             self.state.serial_decode_errors += 1
-            await self.check_baudrate_fallback()
+            if isinstance(exc, ValueError) and str(exc) == "CRC mismatch":
+                await self.check_baudrate_fallback()
+            logger.error("Malformed frame received from MCU", error=str(exc), raw_hex=raw_bytes.hex())
             return
 
         envelope = decoded_frame.envelope

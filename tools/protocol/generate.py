@@ -11,6 +11,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 from __future__ import annotations
 
 import ast
+import functools
 import hashlib
 import importlib
 import importlib.util
@@ -22,7 +23,7 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, TypeGuard, cast
+from typing import Annotated, Any, Final, cast
 
 import black
 import httpx
@@ -133,9 +134,13 @@ class ConfigFieldDef:
     client_constant: bool
 
 
-def _dump_proto_message(msg: Any) -> dict[str, Any]:
-    """Convert Protobuf message to dict with canonical preservation flags. [SIL-2]"""
-    return MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+_message_to_dict: Final = functools.partial(
+    MessageToDict, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+)
+
+
+def _snake_case(s: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 
 _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
@@ -272,7 +277,7 @@ def _extract_constants_and_handshake(
         py_consts.append({"name": n, "type": "int", "value": v})
         client_consts.append({"name": n, "type": "int", "value": v})
 
-    cloud_suffixes = _dump_proto_message(opts.Extensions[pb_module.cloud_suffixes])
+    cloud_suffixes = _message_to_dict(opts.Extensions[pb_module.cloud_suffixes])
     for f in pb_module.CloudSuffixes.DESCRIPTOR.fields:
         cloud_suffixes.setdefault(f.name, f.name)
 
@@ -332,7 +337,7 @@ def _extract_commands_and_statuses(
         if v.name == "CMD_UNSPECIFIED":
             continue
         co = v.GetOptions().Extensions[pb_module.cmd_opts]
-        cmd = _dump_proto_message(co)
+        cmd = _message_to_dict(co)
         cmd["name"] = v.name
         cmd["value"] = v.number
         cmd["expects_direct_response"] = bool(co.response_command)
@@ -453,7 +458,7 @@ def _extract_rpc_specs(
         rpc_cmd = (
             m_opts.Extensions[pb_module.rpc_command]
             if m_opts.HasExtension(pb_module.rpc_command)
-            else f"CMD_{JinjaGenerator.snake_case(m.name).upper()}"
+            else f"CMD_{_snake_case(m.name).upper()}"
         )
         is_custom = (
             bool(m_opts.Extensions[pb_module.is_custom_handler])
@@ -466,7 +471,7 @@ def _extract_rpc_specs(
             "req_cls": m.input_type.name,
             "resp_cls": m.output_type.name,
             "default_factory": factory,
-            "handler_name": JinjaGenerator.snake_case(m.name),
+            "handler_name": _snake_case(m.name),
             "rpc_topic": rt,
             "rpc_command": rpc_cmd,
             "cardinality": cardinality,
@@ -723,11 +728,11 @@ def _extract_runtime_config_context(
             if len(parts) == 2:
                 topic_auth_map[(parts[0].upper(), parts[1].upper())] = n
 
-    status_reasons = _dump_proto_message(opts.Extensions[pb_module.status_reasons])
+    status_reasons = _message_to_dict(opts.Extensions[pb_module.status_reasons])
     for f in pb_module.StatusReasons.DESCRIPTOR.fields:
         status_reasons.setdefault(f.name, f.name)
 
-    hw_dict = _dump_proto_message(opts.Extensions[pb_module.hardware])
+    hw_dict = _message_to_dict(opts.Extensions[pb_module.hardware])
 
     return {
         "runtime_config_constants": rt_consts,
@@ -739,7 +744,7 @@ def _extract_runtime_config_context(
         "architecture_display_names": {
             a.name: a.display_name for a in opts.Extensions[pb_module.architectures] if a.display_name
         },
-        "cloud_defaults": _dump_proto_message(opts.Extensions[pb_module.cloud_defaults]),
+        "cloud_defaults": _message_to_dict(opts.Extensions[pb_module.cloud_defaults]),
         "status_reasons": status_reasons,
         "spi_bit_orders": [{"name": v.name, "value": v.number} for v in pb_module.SpiBitOrder.DESCRIPTOR.values],
         "spi_data_modes": [{"name": v.name, "value": v.number} for v in pb_module.SpiDataMode.DESCRIPTOR.values],
@@ -804,20 +809,10 @@ class JinjaGenerator:
             loader=FileSystemLoader(str(TEMPLATE_DIR)),
             keep_trailing_newline=True,
         )
-        cast(dict[str, Any], self.env.filters)["cpp_digits"] = self._cpp_digit_separator
-        cast(dict[str, Any], self.env.filters)["snakecase"] = self.snake_case
-
-    @staticmethod
-    def _cpp_digit_separator(value: object) -> str:
-        """Format integers >= 10'000 with C++14 digit separators. [SIL-2]"""
-        if not isinstance(value, int) or abs(value) < 10_000:
-            return str(value)
-        formatted = f"{abs(value):_}".replace("_", "'")
-        return f"-{formatted}" if value < 0 else formatted
-
-    @staticmethod
-    def snake_case(s: str) -> str:
-        return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
+        cast(dict[str, Any], self.env.filters)["cpp_digits"] = (
+            lambda v: f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)
+        )
+        cast(dict[str, Any], self.env.filters)["snakecase"] = _snake_case
 
     def render_template(
         self,
@@ -909,7 +904,7 @@ def _load_nanopb_core_spec() -> tuple[str, list[str]]:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise RuntimeError(f"Cannot load dependency manifest {manifest_path}: {exc}") from exc
 
-    if not _is_string_keyed_mapping(manifest):
+    if not isinstance(manifest, dict):
         raise RuntimeError(f"Invalid dependency manifest structure: {manifest_path}")
     dependencies = manifest.get("cpp_dependency")
     if not isinstance(dependencies, list):
@@ -918,7 +913,7 @@ def _load_nanopb_core_spec() -> tuple[str, list[str]]:
     matches = [
         candidate
         for candidate in cast(list[object], dependencies)
-        if _is_string_keyed_mapping(candidate) and candidate.get("name") == "nanopb_core"
+        if isinstance(candidate, dict) and candidate.get("name") == "nanopb_core"
     ]
     if len(matches) != 1:
         raise RuntimeError(f"Expected one nanopb_core entry in {manifest_path}, found {len(matches)}")
@@ -938,13 +933,6 @@ def _load_nanopb_core_spec() -> tuple[str, list[str]]:
     if len(set(files)) != len(files):
         raise RuntimeError(f"Duplicate nanopb_core files in {manifest_path}")
     return version, files
-
-
-def _is_string_keyed_mapping(value: object) -> TypeGuard[dict[str, object]]:
-    if not isinstance(value, dict):
-        return False
-    mapping = cast(dict[object, object], value)
-    return all(isinstance(key, str) for key in mapping)
 
 
 def _resolve_proto_path(spec_path: Path) -> Path:

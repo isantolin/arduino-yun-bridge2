@@ -111,8 +111,8 @@ async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_
     svc.cloud_stream = MagicMock()
     svc.cloud_spool = mock_spool
 
-    # First peek returns garbage bytes, causing ProtobufDecodeError/ValueError
-    mock_spool.__len__.side_effect = [2, 1, 0, 0]
+    # Single garbage entry: peek decodes to ProtobufDecodeError, popleft drains it.
+    mock_spool.__len__.side_effect = [1, 0, 0]
     mock_spool.peek = AsyncMock(return_value=b"\xff\xff\xff\xff")
     mock_spool.popleft = AsyncMock(return_value=None)
     mock_spool.vacuum = AsyncMock(return_value=None)
@@ -121,6 +121,7 @@ async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_
     await flush_spool()
 
     assert mock_bridge_state.cloud_spool_corrupt_dropped == 1
+    mock_spool.popleft.assert_awaited_once()
     mock_spool.vacuum.assert_awaited_once()
 
 

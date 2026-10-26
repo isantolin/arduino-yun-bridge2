@@ -454,7 +454,9 @@ async def test_flush_cloud_spool_corrupt_and_index_error(
     mock_spool.peek = AsyncMock(return_value=b"not-a-valid-protobuf")
     mock_spool.popleft = AsyncMock(side_effect=OSError("Disk failure"))
     await flush_spool()
-    assert mock_spool.popleft.called
+    mock_spool.popleft.assert_awaited_once()
+    assert svc.state.cloud_spool_failure_reason == "Disk failure"
+    assert svc.state.cloud_spool_corrupt_dropped == 0
 
     # Case 4: spool.popleft raises IndexError after publish
     valid_msg = pb.CloudQueuedPublish(topic_name="br/t", payload=b"p")

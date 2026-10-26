@@ -143,6 +143,11 @@ def _snake_case(s: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 
+def _format_cpp_digit(v: object) -> str:
+    """Format integers >= 10'000 with C++14 digit separators. [SIL-2]"""
+    return f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)
+
+
 _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
     FieldDescriptor.TYPE_STRING: ("str", lambda v: str(v) if v is not None else ""),
     FieldDescriptor.TYPE_BYTES: ("bytes", lambda v: v.encode("utf-8") if isinstance(v, str) else (v or b"")),
@@ -809,9 +814,7 @@ class JinjaGenerator:
             loader=FileSystemLoader(str(TEMPLATE_DIR)),
             keep_trailing_newline=True,
         )
-        cast(dict[str, Any], self.env.filters)["cpp_digits"] = (
-            lambda v: f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)
-        )
+        cast(dict[str, Any], self.env.filters)["cpp_digits"] = _format_cpp_digit
         cast(dict[str, Any], self.env.filters)["snakecase"] = _snake_case
 
     def render_template(
@@ -900,20 +903,18 @@ def _load_nanopb_core_spec() -> tuple[str, list[str]]:
     manifest_path = REPO_ROOT / "requirements" / "runtime.toml"
     try:
         with manifest_path.open("rb") as manifest_file:
-            manifest: object = tomllib.load(manifest_file)
+            manifest = tomllib.load(manifest_file)
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise RuntimeError(f"Cannot load dependency manifest {manifest_path}: {exc}") from exc
 
-    if not isinstance(manifest, dict):
-        raise RuntimeError(f"Invalid dependency manifest structure: {manifest_path}")
     dependencies = manifest.get("cpp_dependency")
     if not isinstance(dependencies, list):
         raise RuntimeError(f"Dependency manifest has no C++ dependency list: {manifest_path}")
 
-    matches = [
-        candidate
+    matches: list[dict[str, Any]] = [
+        cast(dict[str, Any], candidate)
         for candidate in cast(list[object], dependencies)
-        if isinstance(candidate, dict) and candidate.get("name") == "nanopb_core"
+        if isinstance(candidate, dict) and cast(dict[str, Any], candidate).get("name") == "nanopb_core"
     ]
     if len(matches) != 1:
         raise RuntimeError(f"Expected one nanopb_core entry in {manifest_path}, found {len(matches)}")

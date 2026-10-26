@@ -181,7 +181,7 @@ rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 [[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools==1.84.1"
+pip = "grpcio-tools==1.85.0"
 rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
 
 [[dependency]]
@@ -337,7 +337,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.11"
+pip = "hypothesis==6.170.12"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]

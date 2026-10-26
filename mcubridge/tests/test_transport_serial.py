@@ -64,8 +64,6 @@ async def test_process_packet_crc_mismatch_reports_crc(
         state.cleanup()
 
 
-
-
 async def test_process_packet_success_dispatches() -> None:
     config = _make_config()
     state = create_runtime_state(config)

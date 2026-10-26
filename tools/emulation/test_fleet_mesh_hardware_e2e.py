@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import select
 import shutil
 import subprocess
 import sys
@@ -24,9 +25,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import structlog
+import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
@@ -185,6 +187,47 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
     return proc
 
 
+def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
+    """Wait for node to complete both cryptographic synchronization and capabilities discovery."""
+
+    def _is_ready() -> bool:
+        if not status_file.exists():
+            return False
+        try:
+            raw_obj = json.loads(status_file.read_text(encoding="utf-8"))
+            if not isinstance(raw_obj, dict):
+                return False
+            data = cast(dict[str, object], raw_obj)
+            bridge_obj = data.get("bridge")
+            if isinstance(bridge_obj, dict):
+                bridge = cast(dict[str, object], bridge_obj)
+                is_sync = bridge.get("is_synchronized") is True or bridge.get("synchronised") is True
+                serial_obj = bridge.get("serial_link")
+                if isinstance(serial_obj, dict):
+                    serial_link = cast(dict[str, object], serial_obj)
+                    if serial_link.get("synchronised") is True:
+                        is_sync = True
+                caps_obj = bridge.get("capabilities")
+                if isinstance(caps_obj, dict):
+                    caps = cast(dict[str, object], caps_obj)
+                    if is_sync and bool(caps):
+                        return True
+            return False
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    sync_retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_delay(timeout),
+        wait=tenacity.wait_fixed(0.25),
+        retry=tenacity.retry_if_result(lambda ok: not ok),
+        reraise=False,
+    )
+    try:
+        return sync_retryer(_is_ready)
+    except tenacity.RetryError:
+        return wait_for_daemon_sync(status_file, timeout=5.0)
+
+
 async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     """Verify that all nodes are independently reachable, responsive to RPCs, and communicating."""
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
@@ -192,7 +235,12 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name) as (_channel, stub):
             # 1. System Version Introspection
-            ver_resp = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
+            ver_resp: mcu_wire_pb2.VersionResponse = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
+            for _ in range(5):
+                if ver_resp.major == 2 and ver_resp.minor == 8:
+                    break
+                await asyncio.sleep(0.5)
+                ver_resp = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
             if ver_resp.major != 2 or ver_resp.minor != 8:
                 logger.error("Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor)
                 return False
@@ -228,13 +276,10 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     return True
 
 
-def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
-    """Execute all 3 hardware emulators concurrently and verify cross-node mesh operations."""
-    logger.info("================================================================================")
-    logger.info("Starting Master Fleet Mesh Hardware Emulation (simavr + Renode + QEMU)")
-    logger.info("================================================================================")
-
-    # 1. Compile universal firmwares (which installs Arduino libraries if missing)
+def compile_fleet_firmwares() -> (
+    tuple[tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]]
+):
+    """Compile universal firmwares and extract metadata for all 3 targets."""
     sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
     fw_mega = ensure_firmware_compiled(
         sketch_path, BOARD_MEGA.fqbn, repo_root / "build" / str(BOARD_MEGA.emulator) / BOARD_MEGA.slug / "firmware.elf"
@@ -254,13 +299,16 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         repo_root / "build" / str(BOARD_NANO_ESP32.emulator) / BOARD_NANO_ESP32.slug / "firmware_flash.bin",
     )
     meta_esp32 = resolve_node_metadata(BOARD_NANO_ESP32, fw_esp32.parent)
+    return (fw_mega, meta_mega), (fw_mkr, meta_mkr), (fw_esp32, meta_esp32)
 
-    # 2. Locate and verify emulator binaries
+
+def verify_host_binaries() -> tuple[Path, str, str, str] | None:
+    """Locate and verify all host emulation binaries (simavr, harness, renode, qemu, socat)."""
     simavr_bin = shutil.which("simavr")
     harness_bin = build_simavr_harness()
     if not simavr_bin or not harness_bin:
         logger.error("simavr or simavr_harness not available on host system")
-        return False
+        return None
 
     renode_bin = shutil.which("renode")
     if not renode_bin:
@@ -270,17 +318,35 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
                 break
     if not renode_bin:
         logger.error("Renode binary not available on host system")
-        return False
+        return None
 
     qemu_bin = find_qemu_binary()
     if not qemu_bin:
         logger.error("Espressif QEMU binary (esp32s3) not available on host system")
-        return False
+        return None
 
     socat_bin = shutil.which("socat")
     if not socat_bin:
         logger.error("socat binary not found on host system")
+        return None
+
+    return harness_bin, renode_bin, qemu_bin, socat_bin
+
+
+def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
+    """Execute all 3 hardware emulators concurrently and verify cross-node mesh operations."""
+    logger.info("================================================================================")
+    logger.info("Starting Master Fleet Mesh Hardware Emulation (simavr + Renode + QEMU)")
+    logger.info("================================================================================")
+
+    # 1. Compile universal firmwares
+    (fw_mega, meta_mega), (fw_mkr, meta_mkr), (fw_esp32, meta_esp32) = compile_fleet_firmwares()
+
+    # 2. Locate and verify emulator binaries
+    binaries = verify_host_binaries()
+    if binaries is None:
         return False
+    harness_bin, renode_bin, qemu_bin, socat_bin = binaries
 
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
     log_collector = FleetMeshState()
@@ -428,6 +494,20 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
 
         if not wait_for_path_ready(pty_esp32, timeout=15.0):
             raise RuntimeError("Timed out waiting for QEMU PTY bridge")
+        # Drain ROM bootloader ASCII output before spawning the daemon
+        time.sleep(1.0)
+        try:
+            fd = os.open(str(pty_esp32), os.O_RDONLY | os.O_NONBLOCK)
+            try:
+                while True:
+                    r, _, _ = select.select([fd], [], [], 0.1)
+                    if not r:
+                        break
+                    os.read(fd, 4096)
+            finally:
+                os.close(fd)
+        except (OSError, BlockingIOError) as exc:
+            logger.debug("Non-fatal PTY pre-drain exception", error=str(exc))
         d_esp32 = spawn_daemon_for_node(node_esp32, str(pty_esp32), log_collector)
         all_procs.append(d_esp32)
 
@@ -439,7 +519,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         start_time = time.time()
         for node in nodes:
             remaining = max(1.0, timeout_seconds - (time.time() - start_time))
-            if not wait_for_daemon_sync(node.status_file, timeout=remaining):
+            if not wait_for_node_ready(node.status_file, timeout=remaining):
                 logger.error("Node failed cryptographic synchronization", node=node.name, board=node.board.label)
                 return False
             logger.info("Node synchronized successfully", node=node.name, board=node.board.label)

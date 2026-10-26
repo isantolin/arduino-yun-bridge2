@@ -625,7 +625,7 @@ class BridgeService:
         return pb.GenericResponse(status="ok")
 
     async def datastore_get(self, req_or_key: str | pb.DatastoreGet) -> pb.DatastoreGetResponse:
-        key = req_or_key.key if isinstance(req_or_key, pb.DatastoreGet) else str(req_or_key)
+        key = req_or_key.key if isinstance(req_or_key, pb.DatastoreGet) else req_or_key
         cache = self.state.datastore_cache
         if not cache:
             return pb.DatastoreGetResponse(value=b"")
@@ -690,7 +690,7 @@ class BridgeService:
     # --- Filesystem Subsystem ---
 
     async def file_write(self, path_or_req: str | pb.FileWrite, data: bytes = b"") -> pb.GenericResponse:
-        path = path_or_req.path if isinstance(path_or_req, pb.FileWrite) else str(path_or_req)
+        path = path_or_req.path if isinstance(path_or_req, pb.FileWrite) else path_or_req
         payload_data = path_or_req.data if isinstance(path_or_req, pb.FileWrite) else data
         clean = path.lstrip("/")
         if clean.startswith(MCU_FS_PREFIX):
@@ -712,7 +712,7 @@ class BridgeService:
         return await self._send_mcu_status(res.status == "ok", "Path not allowed or quota exceeded")
 
     async def file_read(self, path_or_req: str | pb.FileRead) -> pb.FileReadResponse:
-        path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else str(path_or_req)
+        path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else path_or_req
         clean = path.lstrip("/")
         if clean.startswith(MCU_FS_PREFIX):
             serial = self.serial
@@ -773,7 +773,7 @@ class BridgeService:
         return True
 
     async def file_remove(self, path_or_req: str | pb.FileRemove) -> pb.GenericResponse:
-        path = path_or_req.path if isinstance(path_or_req, pb.FileRemove) else str(path_or_req)
+        path = path_or_req.path if isinstance(path_or_req, pb.FileRemove) else path_or_req
         clean = path.lstrip("/")
         if clean.startswith(MCU_FS_PREFIX):
             mcu_path = clean.removeprefix(MCU_FS_PREFIX)
@@ -835,7 +835,7 @@ class BridgeService:
     # --- Process Subsystem ---
 
     async def process_run_async(self, req_or_cmd: str | pb.ProcessRunAsync) -> pb.ProcessRunAsyncResponse:
-        command = req_or_cmd.command if isinstance(req_or_cmd, pb.ProcessRunAsync) else str(req_or_cmd)
+        command = req_or_cmd.command if isinstance(req_or_cmd, pb.ProcessRunAsync) else req_or_cmd
         if not command or not is_command_allowed(self.state.allowed_policy, command):
             return pb.ProcessRunAsyncResponse(pid=0)
         with structlog.contextvars.bound_contextvars(command=command):
@@ -867,7 +867,7 @@ class BridgeService:
         return False
 
     async def process_poll(self, req_or_pid: int | pb.ProcessPoll) -> pb.ProcessPollResponse:
-        pid = req_or_pid.pid if isinstance(req_or_pid, pb.ProcessPoll) else int(req_or_pid)
+        pid = req_or_pid.pid if isinstance(req_or_pid, pb.ProcessPoll) else req_or_pid
         async with self.state.process_lock:
             ctx = self.state.running_processes.get(pid)
             if not ctx:
@@ -966,7 +966,7 @@ class BridgeService:
         self, req_or_pid: int | pb.ProcessKill, p: pb.ProcessKill | None = None
     ) -> pb.GenericResponse:
         target = p if p is not None else req_or_pid
-        actual_pid = target.pid if isinstance(target, pb.ProcessKill) else int(target)
+        actual_pid = target.pid if isinstance(target, pb.ProcessKill) else target
         with structlog.contextvars.bound_contextvars(pid=actual_pid):
             async with self.state.process_lock:
                 ctx = self.state.running_processes.get(actual_pid)

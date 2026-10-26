@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import shutil
 import subprocess
 import sys
@@ -200,6 +201,21 @@ def run_qemu_emulation(
         if not wait_for_path_ready(pty_link, timeout=5.0):
             logger.error("PTY bridge device never appeared", path=str(pty_link))
             return False
+
+        # Drain ROM bootloader ASCII output before spawning the daemon
+        time.sleep(1.0)
+        try:
+            fd = os.open(str(pty_link), os.O_RDONLY | os.O_NONBLOCK)
+            try:
+                while True:
+                    r, _, _ = select.select([fd], [], [], 0.1)
+                    if not r:
+                        break
+                    os.read(fd, 4096)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            logger.debug("Non-fatal PTY pre-drain exception", error=str(exc))
 
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
         logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)

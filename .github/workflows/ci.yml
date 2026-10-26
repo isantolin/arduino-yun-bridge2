@@ -547,6 +547,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools
           pip install coverage
+          python tools/protocol/generate.py --spec tools/protocol/cloud_gateway.proto --py mcubridge/mcubridge/protocol/protocol.py --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h --py-client mcubridge-client-examples/mcubridge_client/protocol.py
           echo "## 📊 Test & Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
           if [ -f coverage/python/.coverage ]; then
             echo "### 🐍 Python Coverage (coverage.py native)" >> "$GITHUB_STEP_SUMMARY"

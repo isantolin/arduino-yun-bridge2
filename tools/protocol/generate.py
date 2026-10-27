@@ -360,8 +360,7 @@ def _extract_commands_and_statuses(
         {
             "name": v.name,
             "value": v.number,
-            "description": (so := v.GetOptions().Extensions[pb_module.status_opts]).description,
-            "mcu_handler": so.mcu_handler or None,
+            "description": v.GetOptions().Extensions[pb_module.status_opts].description,
         }
         for v in status_enum.values
         if v.name != "STATUS_UNSPECIFIED"

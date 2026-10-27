@@ -21,7 +21,7 @@ dependencies = [
     "protobuf==7.36.2",
     "psutil==7.2.2",
     "python-statemachine==3.2.2",
-    "serialx==1.15.0",
+    "serialx==1.15.1",
     "shellingham==1.5.4",
     "structlog==26.1.0",
     "tenacity==9.2.1",

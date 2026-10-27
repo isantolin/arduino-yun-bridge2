@@ -49,7 +49,7 @@ rationale = "High-performance native async HTTP client for TSDB metrics ingestio
 [[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
-pip = "serialx==1.15.0"
+pip = "serialx==1.15.1"
 rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]
@@ -262,7 +262,7 @@ rationale = "Strict static type checker enforcing zero-warning type safety acros
 
 [[dev_dependency]]
 name = "ruff"
-pip = "ruff==0.17.2"
+pip = "ruff==0.17.3"
 rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]
@@ -398,5 +398,5 @@ rationale = "Pytest plugin for measuring line and branch code coverage"
 
 [[dev_dependency]]
 name = "gcovr"
-pip = "gcovr==8.7"
+pip = "gcovr==8.8"
 rationale = "C++ code coverage analysis utility parsing gcov instrumentation data"

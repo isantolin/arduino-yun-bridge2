@@ -722,7 +722,8 @@ class BridgeService:
                 elif not self.pending_mcu_read.future.done():
                     self.pending_mcu_read.fsm.complete()
                     self.pending_mcu_read.future.set_result(b"".join(self.pending_mcu_read.chunks))
-            return p
+                return p
+            return pb.FileReadResponse()
         if p is not None:
             data = await self._safe_file_read(p.path)
             if self.serial:

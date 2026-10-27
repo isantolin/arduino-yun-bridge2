@@ -9,14 +9,13 @@ from __future__ import annotations
 import asyncio
 import functools
 import importlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from typing import Any
 
 import anyio.from_thread
 import structlog
 import tenacity
 from google.protobuf.json_format import MessageToDict, ParseDict
-from google.protobuf.message import Message as ProtobufMessage
 
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol import protocol
@@ -210,32 +209,31 @@ class UbusService:
             "synchronized": is_synced,
         }
 
-    def _run_proto_rpc[TReq: ProtobufMessage, TResp](
+    def _run_proto_rpc(
         self,
-        msg_cls: type[TReq],
+        msg_cls: type[pb.ProcessRunAsync | pb.ProcessKill | pb.ProcessPoll],
         coro_attr: str,
-        res_transform: Callable[[TReq, TResp], dict[str, Any]],
         _req: Any,
         msg: dict[str, Any],
     ) -> dict[str, Any]:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        resp = self.run_sync(getattr(self.runtime, coro_attr)(proto))
-        return res_transform(proto, resp)
+        resp: Any = self.run_sync(getattr(self.runtime, coro_attr)(proto))
+        if isinstance(resp, pb.ProcessPollResponse):
+            data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
+            data["status"] = "ok" if resp.status == 0 else "error"
+            data["stdout"] = format_ubus_bytes(resp.stdout_data)
+            data["stderr"] = format_ubus_bytes(resp.stderr_data)
+            data.pop("stdout_data", None)
+            data.pop("stderr_data", None)
+            return data
+        if isinstance(proto, pb.ProcessKill):
+            return {"status": resp.status, "pid": proto.pid}
+        return {"status": "ok", "pid": resp.pid}
 
     def _schedule_task(self, coro: Awaitable[Any], result: dict[str, Any]) -> dict[str, Any]:
         self.schedule_async(coro)
         return result
-
-    @staticmethod
-    def _format_process_poll(_req: pb.ProcessPoll, resp: pb.ProcessPollResponse) -> dict[str, Any]:
-        data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
-        data["status"] = "ok" if resp.status == 0 else "error"
-        data["stdout"] = format_ubus_bytes(resp.stdout_data)
-        data["stderr"] = format_ubus_bytes(resp.stderr_data)
-        data.pop("stdout_data", None)
-        data.pop("stderr_data", None)
-        return data
 
     def _handle_pin_write(
         self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], _req: Any, msg: dict[str, Any]
@@ -297,15 +295,9 @@ class UbusService:
             {"status": "ok", "path": target_path, "bytes_written": len(data_str)},
         )
 
-    ubus_handle_process_run = functools.partialmethod(
-        _run_proto_rpc, pb.ProcessRunAsync, "process_run_async", lambda _req, resp: {"status": "ok", "pid": resp.pid}
-    )
-    ubus_handle_process_kill = functools.partialmethod(
-        _run_proto_rpc, pb.ProcessKill, "process_kill", lambda req, resp: {"status": resp.status, "pid": req.pid}
-    )
-    ubus_handle_process_poll = functools.partialmethod(
-        _run_proto_rpc, pb.ProcessPoll, "process_poll", _format_process_poll
-    )
+    ubus_handle_process_run = functools.partialmethod(_run_proto_rpc, pb.ProcessRunAsync, "process_run_async")
+    ubus_handle_process_kill = functools.partialmethod(_run_proto_rpc, pb.ProcessKill, "process_kill")
+    ubus_handle_process_poll = functools.partialmethod(_run_proto_rpc, pb.ProcessPoll, "process_poll")
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""

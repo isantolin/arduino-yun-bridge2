@@ -436,30 +436,18 @@ async def _handle_event(
     ).inc()
 
 
-async def _handle_command_response(
-    service: CloudBridgeService,
-    device_id: str,
-    _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
-    envelope: pb.CloudEnvelope,
-) -> None:
-    resp_device_id = envelope.device_id or device_id
-    service.gateway.handle_command_response(
-        resp_device_id,
-        envelope.sequence_id,
-        envelope.command_response,
-    )
-
-
 _PayloadHandler = Callable[
     ["CloudBridgeService", str, Stream[pb.CloudEnvelope, pb.CloudEnvelope], pb.CloudEnvelope],
-    Awaitable[None],
+    Awaitable[None] | None,
 ]
 
 _PAYLOAD_HANDLERS: Final[dict[str, _PayloadHandler]] = {
     "ping": _handle_ping,
     "telemetry": handle_telemetry,
     "event": _handle_event,
-    "command_response": _handle_command_response,
+    "command_response": lambda svc, dev_id, _, env: svc.gateway.handle_command_response(
+        env.device_id or dev_id, env.sequence_id, env.command_response
+    ),
 }
 
 
@@ -589,7 +577,9 @@ class CloudBridgeService(CloudBridgeBase):
                     )
 
                     if handler := _PAYLOAD_HANDLERS.get(payload_type or ""):
-                        await handler(self, device_id, stream, envelope)
+                        res = handler(self, device_id, stream, envelope)
+                        if res is not None:
+                            await res
                     else:
                         logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
             except asyncio.CancelledError:

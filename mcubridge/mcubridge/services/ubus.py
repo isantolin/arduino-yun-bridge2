@@ -111,7 +111,11 @@ class UbusService:
                     if req and hasattr(req, "reply") and isinstance(res, dict):
                         req.reply(res)
                 except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-                    logger.error("Exception in UBUS handler", handler=handler.__name__, error=str(exc))
+                    logger.error(
+                        "Exception in UBUS handler",
+                        handler=getattr(handler, "__name__", str(handler)),
+                        error=str(exc),
+                    )
                     raise
 
             return _cb
@@ -167,17 +171,13 @@ class UbusService:
 
         return data
 
-    def ubus_handle_clock_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.clock_status'."""
+    def _handle_clock_op(self, sync: bool, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         if not self.runtime.clock_sync:
             return {"status": "error", "message": "Clock service unavailable"}
-        return self.runtime.clock_sync.get_status()
+        return self.run_sync(self.runtime.clock_sync.sync_now()) if sync else self.runtime.clock_sync.get_status()
 
-    def ubus_handle_clock_sync(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.clock_sync'."""
-        if not self.runtime.clock_sync:
-            return {"status": "error", "message": "Clock service unavailable"}
-        return self.run_sync(self.runtime.clock_sync.sync_now())
+    ubus_handle_clock_status = functools.partialmethod(_handle_clock_op, False)
+    ubus_handle_clock_sync = functools.partialmethod(_handle_clock_op, True)
 
     def ubus_handle_pin_subscribe(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.pin_subscribe'."""
@@ -213,13 +213,14 @@ class UbusService:
     def _run_proto_rpc[TReq: ProtobufMessage, TResp](
         self,
         msg_cls: type[TReq],
-        coro_fn: Callable[[TReq], Awaitable[TResp]],
-        msg: dict[str, Any],
+        coro_attr: str,
         res_transform: Callable[[TReq, TResp], dict[str, Any]],
+        _req: Any,
+        msg: dict[str, Any],
     ) -> dict[str, Any]:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        resp = self.run_sync(coro_fn(proto))
+        resp = self.run_sync(getattr(self.runtime, coro_attr)(proto))
         return res_transform(proto, resp)
 
     def _schedule_task(self, coro: Awaitable[Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -296,32 +297,15 @@ class UbusService:
             {"status": "ok", "path": target_path, "bytes_written": len(data_str)},
         )
 
-    def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.process_run'."""
-        return self._run_proto_rpc(
-            pb.ProcessRunAsync,
-            self.runtime.process_run_async,
-            msg,
-            lambda _req, resp: {"status": "ok", "pid": resp.pid},
-        )
-
-    def ubus_handle_process_kill(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.process_kill'."""
-        return self._run_proto_rpc(
-            pb.ProcessKill,
-            self.runtime.process_kill,
-            msg,
-            lambda req, resp: {"status": resp.status, "pid": req.pid},
-        )
-
-    def ubus_handle_process_poll(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.process_poll'."""
-        return self._run_proto_rpc(
-            pb.ProcessPoll,
-            self.runtime.process_poll,
-            msg,
-            self._format_process_poll,
-        )
+    ubus_handle_process_run = functools.partialmethod(
+        _run_proto_rpc, pb.ProcessRunAsync, "process_run_async", lambda _req, resp: {"status": "ok", "pid": resp.pid}
+    )
+    ubus_handle_process_kill = functools.partialmethod(
+        _run_proto_rpc, pb.ProcessKill, "process_kill", lambda req, resp: {"status": resp.status, "pid": req.pid}
+    )
+    ubus_handle_process_poll = functools.partialmethod(
+        _run_proto_rpc, pb.ProcessPoll, "process_poll", _format_process_poll
+    )
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""

@@ -521,9 +521,6 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
         {%- endfor %}
     },
     mcu_dispatch_handlers={
-        {%- for s in statuses if s.mcu_handler %}
-        Status.{{ s.name }}.value: {{ s.mcu_handler|tojson }},
-        {%- endfor %}
         {%- for c in commands if c.mcu_handler %}
         Command.{{ c.name }}.value: {{ c.mcu_handler|tojson }},
         {%- endfor %}

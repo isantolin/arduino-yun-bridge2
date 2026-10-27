@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import collections
 import time
 from typing import Any, Protocol
 
@@ -18,7 +17,7 @@ from ..protocol.protocol import (
     REGISTRY,
     Topic,
 )
-from ..protocol.structures import PendingPinRequest, create_queued_publish
+from ..protocol.structures import create_queued_publish
 
 from mcubridge.state.context import RuntimeState
 
@@ -125,28 +124,19 @@ class GpioService:
             )
         )
 
-    async def _handle_pin_read_resp(
-        self,
-        queue: collections.deque[PendingPinRequest],
-        topic_kind: Topic,
-        value: int,
-    ) -> None:
+    async def handle_pin_read_resp(self, _seq: int, p: pb.DigitalReadResponse | pb.AnalogReadResponse) -> None:
+        is_digital = isinstance(p, pb.DigitalReadResponse)
+        state = self._runtime.state
+        queue = state.pending_digital_reads if is_digital else state.pending_analog_reads
+        topic_kind = Topic.DIGITAL if is_digital else Topic.ANALOG
         req = queue.popleft() if queue else None
         pin_str = str(req.pin) if req else "unknown"
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                REGISTRY.topic_path(self._runtime.state.cloud_topic_prefix, topic_kind, pin_str, "value"),
-                str(value).encode("utf-8"),
+                REGISTRY.topic_path(state.cloud_topic_prefix, topic_kind, pin_str, "value"),
+                str(p.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
                 user_properties=((PROP_KEY_BRIDGE_PIN, pin_str),),
             ),
             reply_context=req.reply_context if req else None,
         )
-
-    async def handle_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
-        """Handle digital read response frame from MCU."""
-        await self._handle_pin_read_resp(self._runtime.state.pending_digital_reads, Topic.DIGITAL, p.value)
-
-    async def handle_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
-        """Handle analog read response frame from MCU."""
-        await self._handle_pin_read_resp(self._runtime.state.pending_analog_reads, Topic.ANALOG, p.value)

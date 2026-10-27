@@ -376,51 +376,43 @@ option (rpc.pb.topics) = {
   value: "a"
   description: "Analog pin operations"
   aliases: "analog"
-  handler: "handle_pin"
 };
 option (rpc.pb.topics) = {
   name: "CONSOLE"
   value: "console"
   description: "Remote console"
-  handler: "handle_console"
 };
 option (rpc.pb.topics) = {
   name: "DATASTORE"
   value: "datastore"
   description: "Key-value storage"
-  handler: "handle_datastore"
 };
 option (rpc.pb.topics) = {
   name: "DIGITAL"
   value: "d"
   description: "Digital pin operations"
   aliases: "digital"
-  handler: "handle_pin"
 };
 option (rpc.pb.topics) = {
   name: "FILE"
   value: "file"
   description: "File system operations"
-  handler: "handle_file"
 };
 option (rpc.pb.topics) = {
   name: "MAILBOX"
   value: "mailbox"
   description: "Message passing"
-  handler: "handle_mailbox"
 };
 option (rpc.pb.topics) = {
   name: "SHELL"
   value: "sh"
   description: "Shell command execution"
   aliases: "shell"
-  handler: "handle_shell"
 };
 option (rpc.pb.topics) = {
   name: "SPI"
   value: "spi"
   description: "SPI bus operations"
-  handler: "handle_spi"
 };
 option (rpc.pb.topics) = {
   name: "STATUS"
@@ -431,7 +423,6 @@ option (rpc.pb.topics) = {
   name: "SYSTEM"
   value: "system"
   description: "System control and info"
-  handler: "handle_system"
 };
 option (rpc.pb.topics) = {
   name: "CLOCK"
@@ -1058,11 +1049,12 @@ message StatusReasons {
 }
 
 message TopicConfig {
+  reserved 5;
+  reserved "handler";
   string name = 1;
   string value = 2;
   string description = 3;
   repeated string aliases = 4;
-  string handler = 5;
 }
 
 message ActionConfig {
@@ -1093,17 +1085,9 @@ message UbusMethodConfig {
   string description = 3;
 }
 
-message ActionRouteDef {
-  string topic = 1;
-  string scope = 2;
-  string action_enum = 3;
-  string action = 4;
-  string handler = 5;
-}
-
 message CommandOptions {
-  reserved 2, 4, 10, 12;
-  reserved "directions", "expects_direct_response", "request_command", "rpc_method";
+  reserved 2, 4, 10, 12, 13;
+  reserved "directions", "expects_direct_response", "request_command", "rpc_method", "action_routes";
   string category = 1;
   bool requires_ack = 3;
   string description = 5;
@@ -1112,7 +1096,6 @@ message CommandOptions {
   string pb_message = 8;
   string response_command = 9;
   string auth_field = 11;
-  repeated ActionRouteDef action_routes = 13;
   string mcu_handler = 14;
   string mcu_unsupported_reason = 15;
   bool is_query = 16;
@@ -1135,8 +1118,9 @@ extend google.protobuf.EnumOptions {
 }
 
 message StatusOptions {
+  reserved 2;
+  reserved "mcu_handler";
   string description = 1;
-  string mcu_handler = 2;
 }
 
 message DaemonTaskConfig {
@@ -1196,10 +1180,7 @@ enum Status {
   CRC_MISMATCH = 53 [(status_opts) = {description: "CRC check failed."}];
   TIMEOUT = 54 [(status_opts) = {description: "Operation timed out."}];
   NOT_IMPLEMENTED = 55 [(status_opts) = {description: "Command defined but not supported."}];
-  ACK = 56 [(status_opts) = {
-    description: "Generic acknowledgement for fire-and-forget commands."
-    mcu_handler: "handle_ack"
-  }];
+  ACK = 56 [(status_opts) = {description: "Generic acknowledgement for fire-and-forget commands."}];
 }
 
 enum Command {
@@ -1208,15 +1189,6 @@ enum Command {
     category: "system"
     response_command: "CMD_GET_VERSION_RESP"
     auth_field: "system_version"
-    action_routes: [
-      {
-        topic: "SYSTEM"
-        scope: "mcu"
-        action_enum: "SystemAction"
-        action: "VERSION"
-        handler: "handle_system_version"
-      }
-    ]
   }];
   CMD_GET_VERSION_RESP = 65 [(cmd_opts) = {
     category: "system"
@@ -1227,15 +1199,6 @@ enum Command {
     category: "system"
     response_command: "CMD_GET_FREE_MEMORY_RESP"
     auth_field: "system_free_memory"
-    action_routes: [
-      {
-        topic: "SYSTEM"
-        scope: "mcu"
-        action_enum: "SystemAction"
-        action: "FREE_MEMORY"
-        handler: "handle_system_free_memory"
-      }
-    ]
   }];
   CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = {
     category: "system"
@@ -1267,15 +1230,6 @@ enum Command {
   CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {
     category: "system"
     response_command: "CMD_GET_CAPABILITIES_RESP"
-    action_routes: [
-      {
-        topic: "SYSTEM"
-        scope: "mcu"
-        action_enum: "SystemAction"
-        action: "BRIDGE"
-        handler: "handle_system_bridge"
-      }
-    ]
   }];
   CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
     category: "system"
@@ -1295,77 +1249,38 @@ enum Command {
     requires_ack: true
     pb_message: "EnterBootloader"
     auth_field: "system_bootloader"
-    action_routes: [
-      {
-        topic: "SYSTEM"
-        scope: "mcu"
-        action_enum: "SystemAction"
-        action: "BOOTLOADER"
-        handler: "handle_system_bootloader"
-      }
-    ]
   }];
   CMD_XOFF = 78 [(cmd_opts) = {
     category: "system"
     pre_sync_allowed: true
     requires_ack: false
     description: "Pause transmission (Flow Control)"
-    mcu_handler: "handle_mcu_xoff"
+    mcu_handler: "mcu_xoff"
   }];
   CMD_XON = 79 [(cmd_opts) = {
     category: "system"
     pre_sync_allowed: true
     requires_ack: false
     description: "Resume transmission (Flow Control)"
-    mcu_handler: "handle_mcu_xon"
+    mcu_handler: "mcu_xon"
   }];
   CMD_SET_PIN_MODE = 80 [(cmd_opts) = {
     category: "gpio"
     requires_ack: true
     pb_message: "PinMode"
     auth_field: "digital_mode"
-    action_routes: [
-      {
-        topic: "DIGITAL"
-        scope: "mcu"
-        action_enum: "PinAction"
-        action: "MODE"
-        handler: "handle_pin_mode"
-      },
-      {
-        topic: "ANALOG"
-        scope: "mcu"
-        action_enum: "PinAction"
-        action: "MODE"
-        handler: "handle_pin_mode"
-      }
-    ]
   }];
   CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {
     category: "gpio"
     requires_ack: true
     pb_message: "DigitalWrite"
     auth_field: "digital_write"
-    action_routes: [
-      {
-        topic: "DIGITAL"
-        scope: "mcu"
-        handler: "handle_pin_write"
-      }
-    ]
   }];
   CMD_ANALOG_WRITE = 82 [(cmd_opts) = {
     category: "gpio"
     requires_ack: true
     pb_message: "AnalogWrite"
     auth_field: "analog_write"
-    action_routes: [
-      {
-        topic: "ANALOG"
-        scope: "mcu"
-        handler: "handle_pin_write"
-      }
-    ]
   }];
   CMD_DIGITAL_READ = 83 [(cmd_opts) = {
     category: "gpio"
@@ -1374,15 +1289,6 @@ enum Command {
     auth_field: "digital_read"
     mcu_unsupported_reason: "unsupported_digital_read"
     is_query: true
-    action_routes: [
-      {
-        topic: "DIGITAL"
-        scope: "mcu"
-        action_enum: "PinAction"
-        action: "READ"
-        handler: "handle_pin_read"
-      }
-    ]
   }];
   CMD_ANALOG_READ = 84 [(cmd_opts) = {
     category: "gpio"
@@ -1391,25 +1297,16 @@ enum Command {
     auth_field: "analog_read"
     mcu_unsupported_reason: "unsupported_analog_read"
     is_query: true
-    action_routes: [
-      {
-        topic: "ANALOG"
-        scope: "mcu"
-        action_enum: "PinAction"
-        action: "READ"
-        handler: "handle_pin_read"
-      }
-    ]
   }];
   CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = {
     category: "gpio"
     pb_message: "DigitalReadResponse"
-    mcu_handler: "gpio.handle_digital_read_resp"
+    mcu_handler: "gpio.handle_pin_read_resp"
   }];
   CMD_ANALOG_READ_RESP = 86 [(cmd_opts) = {
     category: "gpio"
     pb_message: "AnalogReadResponse"
-    mcu_handler: "gpio.handle_analog_read_resp"
+    mcu_handler: "gpio.handle_pin_read_resp"
   }];
   CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {
     category: "gpio"
@@ -1451,14 +1348,6 @@ enum Command {
     auth_field: "datastore_get"
     mcu_handler: "datastore_get"
     is_query: true
-    action_routes: [
-      {
-        topic: "DATASTORE"
-        scope: "local"
-        action_enum: "DatastoreAction"
-        action: "GET"
-      }
-    ]
   }];
   CMD_DATASTORE_GET_RESP = 114 [(cmd_opts) = {
     category: "datastore"
@@ -1479,7 +1368,7 @@ enum Command {
   CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {
     category: "mailbox"
     response_command: "CMD_MAILBOX_AVAILABLE_RESP"
-    mcu_handler: "handle_mailbox_available"
+    mcu_handler: "mailbox_available"
   }];
   CMD_MAILBOX_PUSH = 131 [(cmd_opts) = {
     category: "mailbox"
@@ -1503,22 +1392,6 @@ enum Command {
     pb_message: "FileWrite"
     auth_field: "file_write"
     mcu_handler: "file_write"
-    action_routes: [
-      {
-        topic: "FILE"
-        scope: "mcu"
-        action_enum: "FileAction"
-        action: "WRITE"
-        handler: "handle_file_mcu_write"
-      },
-      {
-        topic: "FILE"
-        scope: "local"
-        action_enum: "FileAction"
-        action: "WRITE"
-        handler: "handle_file_local_write"
-      }
-    ]
   }];
   CMD_FILE_READ = 145 [(cmd_opts) = {
     category: "filesystem"
@@ -1527,49 +1400,17 @@ enum Command {
     auth_field: "file_read"
     mcu_handler: "file_read"
     is_query: true
-    action_routes: [
-      {
-        topic: "FILE"
-        scope: "mcu"
-        action_enum: "FileAction"
-        action: "READ"
-        handler: "handle_file_mcu_read"
-      },
-      {
-        topic: "FILE"
-        scope: "local"
-        action_enum: "FileAction"
-        action: "READ"
-        handler: "handle_file_local_read"
-      }
-    ]
   }];
   CMD_FILE_REMOVE = 146 [(cmd_opts) = {
     category: "filesystem"
     pb_message: "FileRemove"
     auth_field: "file_remove"
     mcu_handler: "file_remove"
-    action_routes: [
-      {
-        topic: "FILE"
-        scope: "mcu"
-        action_enum: "FileAction"
-        action: "REMOVE"
-        handler: "handle_file_mcu_remove"
-      },
-      {
-        topic: "FILE"
-        scope: "local"
-        action_enum: "FileAction"
-        action: "REMOVE"
-        handler: "file_remove"
-      }
-    ]
   }];
   CMD_FILE_READ_RESP = 147 [(cmd_opts) = {
     category: "filesystem"
     pb_message: "FileReadResponse"
-    mcu_handler: "handle_file_read_resp"
+    mcu_handler: "file_read"
   }];
   CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
     category: "process"
@@ -1577,15 +1418,6 @@ enum Command {
     response_command: "CMD_PROCESS_RUN_ASYNC_RESP"
     auth_field: "shell_run_async"
     mcu_handler: "process_run_async"
-    action_routes: [
-      {
-        topic: "SHELL"
-        scope: "local"
-        action_enum: "ShellAction"
-        action: "RUN_ASYNC"
-        handler: "handle_shell_run_async"
-      }
-    ]
   }];
   CMD_PROCESS_POLL = 162 [(cmd_opts) = {
     category: "process"
@@ -1593,30 +1425,12 @@ enum Command {
     response_command: "CMD_PROCESS_POLL_RESP"
     auth_field: "shell_poll"
     mcu_handler: "process_poll"
-    action_routes: [
-      {
-        topic: "SHELL"
-        scope: "local"
-        action_enum: "ShellAction"
-        action: "POLL"
-        handler: "handle_shell_poll"
-      }
-    ]
   }];
   CMD_PROCESS_KILL = 163 [(cmd_opts) = {
     category: "process"
     pb_message: "ProcessKill"
     auth_field: "shell_kill"
     mcu_handler: "process_kill"
-    action_routes: [
-      {
-        topic: "SHELL"
-        scope: "local"
-        action_enum: "ShellAction"
-        action: "KILL"
-        handler: "process_kill"
-      }
-    ]
   }];
   CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = {
     category: "process"
@@ -1630,15 +1444,6 @@ enum Command {
     category: "spi"
     requires_ack: true
     auth_field: "spi_begin"
-    action_routes: [
-      {
-        topic: "SPI"
-        scope: "mcu"
-        action_enum: "SpiAction"
-        action: "BEGIN"
-        handler: "handle_spi_begin"
-      }
-    ]
   }];
   CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
     category: "spi"
@@ -1646,15 +1451,6 @@ enum Command {
     response_command: "CMD_SPI_TRANSFER_RESP"
     auth_field: "spi_transfer"
     is_query: true
-    action_routes: [
-      {
-        topic: "SPI"
-        scope: "mcu"
-        action_enum: "SpiAction"
-        action: "TRANSFER"
-        handler: "handle_spi_transfer"
-      }
-    ]
   }];
   CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = {
     category: "spi"
@@ -1666,30 +1462,12 @@ enum Command {
     category: "spi"
     requires_ack: true
     auth_field: "spi_end"
-    action_routes: [
-      {
-        topic: "SPI"
-        scope: "mcu"
-        action_enum: "SpiAction"
-        action: "END"
-        handler: "handle_spi_end"
-      }
-    ]
   }];
   CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {
     category: "spi"
     requires_ack: true
     pb_message: "SpiConfig"
     auth_field: "spi_config"
-    action_routes: [
-      {
-        topic: "SPI"
-        scope: "mcu"
-        action_enum: "SpiAction"
-        action: "CONFIG"
-        handler: "handle_spi_config"
-      }
-    ]
   }];
   CMD_CLOCK_SYNC = 192 [(cmd_opts) = {
     category: "clock"

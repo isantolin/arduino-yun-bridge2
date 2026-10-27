@@ -676,7 +676,7 @@ class BridgeService:
             await self.serial.send(Command.CMD_MAILBOX_READ_RESP.value, resp)
         return resp
 
-    async def handle_mailbox_available(self, _seq: int, _p: Any) -> bool:
+    async def mailbox_available(self, _seq: int, _p: Any) -> bool:
         return bool(
             self.serial
             and await self.serial.send(
@@ -710,8 +710,19 @@ class BridgeService:
         return pb.GenericResponse(status="ok" if ok else "error")
 
     async def file_read(
-        self, path_or_req: str | pb.FileRead | int, p: pb.FileRead | None = None
+        self,
+        path_or_req: str | pb.FileRead | int,
+        p: pb.FileRead | pb.FileReadResponse | None = None,
     ) -> pb.FileReadResponse:
+        if isinstance(p, pb.FileReadResponse):
+            if self.pending_mcu_read:
+                if p.content:
+                    self.pending_mcu_read.fsm.receive_chunk()
+                    self.pending_mcu_read.chunks.append(p.content)
+                elif not self.pending_mcu_read.future.done():
+                    self.pending_mcu_read.fsm.complete()
+                    self.pending_mcu_read.future.set_result(b"".join(self.pending_mcu_read.chunks))
+            return p
         if p is not None:
             data = await self._safe_file_read(p.path)
             if self.serial:
@@ -758,17 +769,6 @@ class BridgeService:
             safe_data = await self._safe_file_read(path)
             content = safe_data if safe_data is not None else b""
         return pb.FileReadResponse(content=content)
-
-    async def handle_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
-        if not self.pending_mcu_read:
-            return False
-        if p.content:
-            self.pending_mcu_read.fsm.receive_chunk()
-            self.pending_mcu_read.chunks.append(p.content)
-        elif not self.pending_mcu_read.future.done():
-            self.pending_mcu_read.fsm.complete()
-            self.pending_mcu_read.future.set_result(b"".join(self.pending_mcu_read.chunks))
-        return True
 
     async def file_remove(
         self, path_or_req: str | pb.FileRemove | int, p: pb.FileRemove | None = None
@@ -996,26 +996,29 @@ class BridgeService:
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
-    async def handle_mcu_xon(self, _seq: int, payload: Any) -> None:
-        self.state.mcu_is_paused = False
-        self.state.serial_tx_allowed.set()
-        await self.flush_console_queue()
+    async def set_mcu_paused(self, paused: bool, _seq: int = 0, _payload: Any = None) -> None:
+        self.state.mcu_is_paused = paused
+        if paused:
+            self.state.serial_tx_allowed.clear()
+        else:
+            self.state.serial_tx_allowed.set()
+            await self.flush_console_queue()
 
-    async def handle_mcu_xoff(self, _seq: int, payload: Any) -> None:
-        self.state.mcu_is_paused = True
-        self.state.serial_tx_allowed.clear()
-
-    async def handle_ack(self, _seq: int, payload: bytes | ProtobufMessage) -> None:
-        try:
-            if isinstance(payload, ProtobufMessage):
-                p = cast(pb.AckPacket, payload)
-            else:
-                p = pb.AckPacket.FromString(payload)
-            logger.debug("MCU ACK received", command_id=f"0x{p.command_id:02X}")
-        except (ProtobufDecodeError, TypeError, ValueError) as e:
-            logger.error("Failed to decode MCU ACK packet", error=str(e))
+    mcu_xoff = functools.partialmethod(set_mcu_paused, True)
+    mcu_xon = functools.partialmethod(set_mcu_paused, False)
 
     async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
+        if status is Status.ACK:
+            try:
+                p = (
+                    cast(pb.AckPacket, payload)
+                    if isinstance(payload, ProtobufMessage)
+                    else pb.AckPacket.FromString(payload)
+                )
+                logger.debug("MCU ACK received", command_id=f"0x{p.command_id:02X}")
+            except (ProtobufDecodeError, TypeError, ValueError) as e:
+                logger.error("Failed to decode MCU ACK packet", error=str(e))
+            return
         self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
         text = ""
         if payload:

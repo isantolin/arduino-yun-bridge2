@@ -402,7 +402,6 @@ def _extract_payloads_and_actions(
             "value": t.value,
             "description": t.description,
             "aliases": list(t.aliases),
-            "handler": t.handler,
         }
         for t in opts.Extensions[pb_module.topics]
     ]

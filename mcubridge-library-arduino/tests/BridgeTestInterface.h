@@ -73,7 +73,11 @@ class TestAccessor : public BridgeClass {
 
   void onAckTimeout() { _onAckTimeout(); }
   void onHandshakeTimeout() { _onHandshakeTimeout(); }
-  void handleAck(uint16_t cmd) { _handleAck(cmd); }
+  void handleAck(uint16_t cmd) {
+    rpc_pb_AckPacket m = rpc_pb_AckPacket_init_default;
+    m.command_id = cmd;
+    _handleStatusAck(m);
+  }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _handleReceivedFrame(p);
   }

@@ -83,7 +83,7 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] PROGMEM = {
 const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
 #endif
     {rpc::to_underlying(rpc::StatusCode::STATUS_ACK),
-     &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handleStatusAck, rpc_pb_AckPacket, false, false, false>},
+     &BridgeClass::_dispatchMemberWithMsg<&BridgeClass::_handleStatusAck, rpc_pb_AckPacket, false, false, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),
      &BridgeClass::_dispatchMemberNoPayload<
          &BridgeClass::_handleSimpleQuery<
@@ -483,7 +483,7 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
   etl::span<const uint8_t> final_payload = payload;
   if (do_encrypt) {
-    auto crypto_buf = _crypto_buffer_span();
+    auto crypto_buf = _payload_buffer_span();
     if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload,
                                            _session_key, &_tx_nonce_counter,
                                            crypto_buf, nonce, tag))
@@ -516,13 +516,10 @@ void BridgeClass::_flushPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
     if (_pending_tx_queue.empty() || !_state_flags.test(FLAG_TX_ENABLED))
       return;
-    const auto& f = _pending_tx_queue.front();
-    _last_command_id = f.command_id;
+    _last_command_id = _pending_tx_queue.front().command_id;
     _retry_count = 0;
     _fsm.receive(bridge::fsm::EvSendCritical());
-    _transmit(f.command_id, f.sequence_id,
-              etl::span<const uint8_t>(f.buffer->data.data(), f.length));
-    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT);
+    _retransmitLastFrame();
   }
 }
 
@@ -554,8 +551,8 @@ void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   (void)send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
 }
 
-void BridgeClass::_handleAck(uint16_t cmd) {
-  if (!_fsm.isAwaitingAck() || cmd != _last_command_id) return;
+void BridgeClass::_handleStatusAck(const rpc_pb_AckPacket& m) {
+  if (!_fsm.isAwaitingAck() || m.command_id != _last_command_id) return;
   _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvAckReceived());
@@ -701,14 +698,7 @@ void BridgeClass::_subscriptionTask() {
                     if (diff >= sub.hysteresis || sub.last_report_ms == 0) {
                       sub.last_value = val;
                       sub.last_report_ms = now;
-                      rpc_pb_PinUpdateEvent evt =
-                          rpc_pb_PinUpdateEvent_init_default;
-                      evt.pin = sub.pin;
-                      evt.value = val;
-                      evt.timestamp_micros = ::micros();
-                      (void)send(rpc::CommandId::CMD_PIN_UPDATE_EVENT, 0, evt,
-                                 rpc_pb_ChannelId_CHANNEL_TELEMETRY,
-                                 rpc_pb_QosProfile_QOS_BEST_EFFORT);
+                      (void)sendPinEvent(sub.pin, val);
                     }
                   }
                 });
@@ -728,10 +718,10 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
 #if BRIDGE_ENABLE_SPI
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
                                      const rpc_pb_SpiTransfer& m) {
-  // [SIL-2/H-5] Use the shared _working_buffer instead of _rx_buffer.
+  // [SIL-2/H-5] Use the shared payload buffer instead of _rx_buffer.
   // _rx_buffer is owned by PacketSerial and can be written by a serial ISR
   // (on ESP32/SAMD) while a blocking SPI transfer is in progress.
-  auto work_buf = _working_buffer_span();
+  auto work_buf = _payload_buffer_span();
   size_t len = etl::min(static_cast<size_t>(m.data.size), work_buf.size());
   etl::copy_n(m.data.bytes, len, work_buf.begin());
   size_t tr = SPIService.transfer(etl::span<uint8_t>(work_buf.data(), len));
@@ -815,11 +805,6 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   const bool sent =
       sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
   (void)sent;
-}
-
-void BridgeClass::_handleStatusAck(
-    const bridge::router::CommandContext& /*ctx*/, const rpc_pb_AckPacket& m) {
-  _handleAck(m.command_id);
 }
 
 void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
@@ -916,7 +901,7 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
           return true;
         });
   }
-  auto work_buf = _working_buffer_span();
+  auto work_buf = _payload_buffer_span();
   pb_ostream_t out_stream =
       pb_ostream_from_buffer(work_buf.data(), rpc::MAX_PAYLOAD_SIZE);
   if (!pb_encode(&out_stream, fields, src)) {

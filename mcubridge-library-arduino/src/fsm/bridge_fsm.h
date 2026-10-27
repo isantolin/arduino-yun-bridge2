@@ -44,11 +44,18 @@ class ChangingBaudrateState;
 
 // --- Base CRTP State Template ---
 
-template <typename Derived, StateId SId, typename... Events>
+template <typename Derived, StateId SId, bool ForceSafeOnEnter,
+          typename... Events>
 class BaseBridgeState
     : public etl::fsm_state<BridgeFsm, Derived,
                             static_cast<etl::fsm_state_id_t>(SId), Events...> {
  public:
+  etl::fsm_state_id_t on_enter_state() override {
+    if constexpr (ForceSafeOnEnter) {
+      bridge::hal::forceSafeState();
+    }
+    return etl::ifsm_state::No_State_Change;
+  }
   etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
@@ -66,13 +73,13 @@ class BaseBridgeState
 // --- State Classes ---
 
 class StartupState
-    : public BaseBridgeState<StartupState, StateId::STARTUP, EvReset,
+    : public BaseBridgeState<StartupState, StateId::STARTUP, false, EvReset,
                              EvHandshakeFailed, EvTimeout> {};
 
 class UnsynchronizedState
     : public BaseBridgeState<UnsynchronizedState, StateId::UNSYNCHRONIZED,
-                             EvHandshakeStart, EvReset, EvHandshakeFailed,
-                             EvTimeout> {
+                             false, EvHandshakeStart, EvReset,
+                             EvHandshakeFailed, EvTimeout> {
  public:
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvHandshakeStart&) {
@@ -81,7 +88,7 @@ class UnsynchronizedState
 };
 
 class HandshakeState
-    : public BaseBridgeState<HandshakeState, StateId::HANDSHAKE,
+    : public BaseBridgeState<HandshakeState, StateId::HANDSHAKE, false,
                              EvHandshakeComplete, EvSendCritical,
                              EvHandshakeFailed, EvReset, EvTimeout> {
  public:
@@ -95,7 +102,7 @@ class HandshakeState
 };
 
 class SynchronizedState
-    : public BaseBridgeState<SynchronizedState, StateId::SYNCHRONIZED,
+    : public BaseBridgeState<SynchronizedState, StateId::SYNCHRONIZED, false,
                              EvSendCritical, EvReset, EvHandshakeFailed,
                              EvTimeout, EvEnterBootloader, EvBaudrateChange> {
  public:
@@ -112,7 +119,7 @@ class SynchronizedState
 };
 
 class AwaitingAckState
-    : public BaseBridgeState<AwaitingAckState, StateId::AWAITING_ACK,
+    : public BaseBridgeState<AwaitingAckState, StateId::AWAITING_ACK, false,
                              EvAckReceived, EvTimeout, EvReset,
                              EvHandshakeFailed> {
  public:
@@ -122,29 +129,17 @@ class AwaitingAckState
   }
 };
 
-class FaultState : public BaseBridgeState<FaultState, StateId::FAULT, EvReset> {
- public:
-  using BaseBridgeState::on_event;
-  etl::fsm_state_id_t on_enter_state() override {
-    bridge::hal::forceSafeState();
-    return etl::ifsm_state::No_State_Change;
-  }
-};
+class FaultState
+    : public BaseBridgeState<FaultState, StateId::FAULT, true, EvReset> {};
 
 class EnteringBootloaderState
     : public BaseBridgeState<EnteringBootloaderState,
-                             StateId::ENTERING_BOOTLOADER, EvReset, EvTimeout> {
- public:
-  using BaseBridgeState::on_event;
-  etl::fsm_state_id_t on_enter_state() override {
-    bridge::hal::forceSafeState();
-    return etl::ifsm_state::No_State_Change;
-  }
-};
+                             StateId::ENTERING_BOOTLOADER, true, EvReset,
+                             EvTimeout> {};
 
 class ChangingBaudrateState
     : public BaseBridgeState<ChangingBaudrateState, StateId::CHANGING_BAUDRATE,
-                             EvBaudrateApplied, EvReset, EvTimeout> {
+                             false, EvBaudrateApplied, EvReset, EvTimeout> {
  public:
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvBaudrateApplied&) {

@@ -218,7 +218,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
-      return _sendEncryptedHelper<T>(raw_cmd, seq, packet, channel_id, qos);
+      return _sendEncryptedImpl(raw_cmd, seq, rpc::Payload::get_fields<T>(),
+                                &packet, channel_id, qos);
     }
     return sendSinglePass<T>(raw_cmd, seq, packet, channel_id, qos);
   }
@@ -336,19 +337,13 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   //   2. _crypto_buffer: AEAD ciphertext (dead before _tx_frame_buffer write)
   //   3. _tx_frame_buffer: final framed output (dead after serial send)
   // Unioning saves 128 bytes of SRAM on AVR targets.
-  union SharedBuffer {
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> raw;
-  };
-  SharedBuffer _shared_mem;
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> _shared_mem;
 
-  etl::span<uint8_t> _working_buffer_span() {
-    return {_shared_mem.raw.data(), rpc::MAX_PAYLOAD_SIZE};
-  }
-  etl::span<uint8_t> _crypto_buffer_span() {
-    return {_shared_mem.raw.data(), rpc::MAX_PAYLOAD_SIZE};
+  etl::span<uint8_t> _payload_buffer_span() {
+    return {_shared_mem.data(), rpc::MAX_PAYLOAD_SIZE};
   }
   etl::span<uint8_t> _tx_frame_buffer_span() {
-    return {_shared_mem.raw.data(), rpc::MAX_FRAME_SIZE};
+    return {_shared_mem.data(), rpc::MAX_FRAME_SIZE};
   }
   rpc_pb_RpcEnvelope _tx_envelope = rpc_pb_RpcEnvelope_init_zero;
 
@@ -514,8 +509,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
 
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-  void _handleStatusAck(const bridge::router::CommandContext& ctx,
-                        const rpc_pb_AckPacket& m);
+  void _handleStatusAck(const rpc_pb_AckPacket& m);
   template <typename RespType, rpc::CommandId RespCmd, auto FillFn>
   void _handleSimpleQuery(const bridge::router::CommandContext& ctx) {
     RespType resp = {};
@@ -596,18 +590,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
       rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE);
 
-  template <typename T>
-  bool _sendEncryptedHelper(
-      uint16_t raw_cmd, uint16_t seq, const T& packet,
-      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
-    return _sendEncryptedImpl(raw_cmd, seq, rpc::Payload::get_fields<T>(),
-                              &packet, channel_id, qos);
-  }
-
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();
-  void _handleAck(uint16_t command_id);
 };
 
 #ifndef BRIDGE_NO_GLOBAL_EXTERN

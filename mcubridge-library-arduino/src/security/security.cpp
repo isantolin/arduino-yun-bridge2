@@ -29,6 +29,17 @@ static bool constant_time_equal(const uint8_t* a, const uint8_t* b,
                          }) == 0;
 }
 
+template <size_t N>
+static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
+  etl::array<uint8_t, N> dst;
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+  memcpy_P(dst.data(), src.data(), N);
+#else
+  etl::copy(src.begin(), src.end(), dst.begin());
+#endif
+  return dst;
+}
+
 // --- HKDF & HMAC Implementation ---
 
 bool handshake_authenticate(etl::span<const uint8_t> secret,
@@ -44,17 +55,8 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> hmac_tag = {};
-  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_SALT.size()> salt;
-  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()> info;
-#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-  memcpy_P(salt.data(), rpc::RPC_HANDSHAKE_HKDF_SALT.data(), salt.size());
-  memcpy_P(info.data(), rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.data(), info.size());
-#else
-  etl::copy(rpc::RPC_HANDSHAKE_HKDF_SALT.begin(),
-            rpc::RPC_HANDSHAKE_HKDF_SALT.end(), salt.begin());
-  etl::copy(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.begin(),
-            rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.end(), info.begin());
-#endif
+  const auto salt = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_SALT);
+  const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH);
 
   // [FAIL-CLOSED] Validar retorno de derivación HKDF
   int hkdf_res =
@@ -103,14 +105,7 @@ void derive_session_key(etl::span<const uint8_t> secret,
     return;
   }
 
-  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.size()> info;
-#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-  memcpy_P(info.data(), rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.data(),
-           info.size());
-#else
-  etl::copy(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.begin(),
-            rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.end(), info.begin());
-#endif
+  const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION);
 
   // [FAIL-CLOSED] Limpiar clave en caso de fallo de HKDF
   if (wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
@@ -265,42 +260,35 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
 
 bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
-  etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 
   // 1. SHA256 KAT
-  const size_t msg_len = kat_sha256_msg.size();
-  memcpy_P(buffer.data(), kat_sha256_msg.data(), msg_len);
-  if (wc_Sha256Hash(buffer.data(), static_cast<word32>(msg_len),
+  const auto sha_msg = copy_progmem(kat_sha256_msg);
+  if (wc_Sha256Hash(sha_msg.data(), static_cast<word32>(sha_msg.size()),
                     actual.data()) != 0) {
     return false;
   }
 
-  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
-  memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
-           rpc::RPC_SHA256_DIGEST_SIZE);
-  bool ok = etl::equal(actual.begin(), actual.end(), expected_buf.begin());
+  const auto sha_expected = copy_progmem(kat_sha256_expected);
+  bool ok = etl::equal(actual.begin(), actual.end(), sha_expected.begin());
 
   // 2. HMAC-SHA256 KAT
   Hmac hmac;
-  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> key_buf;
-  const size_t key_len = kat_hmac_key.size();
-  memcpy_P(key_buf.data(), kat_hmac_key.data(), key_len);
-
-  if (wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(),
-                    static_cast<word32>(key_len)) != 0) {
+  const auto hmac_key = copy_progmem(kat_hmac_key);
+  if (wc_HmacSetKey(&hmac, WC_SHA256, hmac_key.data(),
+                    static_cast<word32>(hmac_key.size())) != 0) {
     return false;
   }
 
-  const size_t data_len = kat_hmac_data.size();
-  memcpy_P(buffer.data(), kat_hmac_data.data(), data_len);
-  if (wc_HmacUpdate(&hmac, buffer.data(), static_cast<word32>(data_len)) != 0 ||
+  const auto hmac_data = copy_progmem(kat_hmac_data);
+  if (wc_HmacUpdate(&hmac, hmac_data.data(),
+                    static_cast<word32>(hmac_data.size())) != 0 ||
       wc_HmacFinal(&hmac, actual.data()) != 0) {
     return false;
   }
 
-  memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
-           rpc::RPC_SHA256_DIGEST_SIZE);
-  bool hmac_ok = etl::equal(actual.begin(), actual.end(), expected_buf.begin());
+  const auto hmac_expected = copy_progmem(kat_hmac_expected);
+  bool hmac_ok =
+      etl::equal(actual.begin(), actual.end(), hmac_expected.begin());
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
   static constexpr etl::array<uint8_t, 32> kat_aead_key = {

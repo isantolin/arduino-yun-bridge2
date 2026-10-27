@@ -156,20 +156,21 @@ def setup_fake_uci(
     label: str = "emulation runner",
 ) -> tuple[Path, Path, dict[str, str]]:
     """Canonical fake UCI directory, LMDB storage, and daemon environment builder (Rule 19)."""
+    spool_path: Path | None = None
     if base_dir is not None:
         fake_uci_dir = base_dir / "uci"
         fake_uci_dir.mkdir(parents=True, exist_ok=True)
         storage_path = base_dir / "storage"
         storage_path.mkdir(parents=True, exist_ok=True)
-        spool_path: Path | None = base_dir / "spool"
-        spool_path.mkdir(parents=True, exist_ok=True)
+        spool_dir = base_dir / "spool"
+        spool_dir.mkdir(parents=True, exist_ok=True)
+        spool_path = spool_dir
         if emulator_fs_root is None:
             emulator_fs_root = base_dir / "fs"
             emulator_fs_root.mkdir(parents=True, exist_ok=True)
     else:
         fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_uci_"))
         storage_path = Path(tempfile.mkdtemp(prefix="mcubridge_db_"))
-        spool_path = None
 
     uci_config: dict[str, str] = {
         "serial_port": slave_name,

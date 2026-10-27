@@ -434,7 +434,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.protocol import mcubridge_pb2 as pb
     from mcubridge.services.runtime import BridgeService
 
-    assert len(protocol.REGISTRY.mcu_dispatch_handlers) == 26
+    assert len(protocol.REGISTRY.mcu_dispatch_handlers) == 25
     for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]

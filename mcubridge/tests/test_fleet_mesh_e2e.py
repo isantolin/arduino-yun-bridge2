@@ -116,7 +116,7 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
     # SERVICIO 3: Transmisión y Fanout de Consola (Console Streaming)
     # -------------------------------------------------------------------------
     console_data = b"CONSOLE_PAYLOAD_FROM_MEGA"
-    await mesh_mega.service.handle_console_write(1, pb.ConsoleWrite(data=console_data))
+    await mesh_mega.service.console_write(1, pb.ConsoleWrite(data=console_data))
     assert len(mesh_mega.published_messages) >= 1
     assert console_data in mesh_mega.published_messages[0].payload
 
@@ -208,7 +208,7 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
         )
     )
     assert spi_cfg.status == "ok"
-    await mesh_mkr.service.handle_spi_transfer_resp(1, pb.SpiTransferResponse(data=b"\xaa\x55"))
+    await mesh_mkr.service.publish_mcu_message(1, pb.SpiTransferResponse(data=b"\xaa\x55"))
     assert len(mesh_mkr.published_messages) >= 1
 
     # -------------------------------------------------------------------------

@@ -1435,7 +1435,7 @@ enum Command {
     pb_message: "ConsoleWrite"
     cloud_topic: "console/out"
     auth_field: "console_input"
-    mcu_handler: "handle_console_write"
+    mcu_handler: "console_write"
   }];
   CMD_DATASTORE_PUT = 112 [(cmd_opts) = {
     category: "datastore"
@@ -1449,7 +1449,7 @@ enum Command {
     pb_message: "DatastoreGet"
     response_command: "CMD_DATASTORE_GET_RESP"
     auth_field: "datastore_get"
-    mcu_handler: "handle_datastore_get"
+    mcu_handler: "datastore_get"
     is_query: true
     action_routes: [
       {
@@ -1468,13 +1468,13 @@ enum Command {
     category: "mailbox"
     response_command: "CMD_MAILBOX_READ_RESP"
     auth_field: "mailbox_read"
-    mcu_handler: "handle_mailbox_read"
+    mcu_handler: "mailbox_read"
   }];
   CMD_MAILBOX_PROCESSED = 129 [(cmd_opts) = {
     category: "mailbox"
     cloud_topic: "mailbox/processed"
     pb_message: "MailboxProcessed"
-    mcu_handler: "handle_mailbox_processed"
+    mcu_handler: "publish_mcu_message"
   }];
   CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {
     category: "mailbox"
@@ -1487,7 +1487,7 @@ enum Command {
     cloud_topic: "mailbox/incoming"
     pb_message: "MailboxPush"
     auth_field: "mailbox_write"
-    mcu_handler: "handle_mailbox_push"
+    mcu_handler: "mailbox_push"
   }];
   CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {
     category: "mailbox"
@@ -1502,7 +1502,7 @@ enum Command {
     requires_ack: true
     pb_message: "FileWrite"
     auth_field: "file_write"
-    mcu_handler: "handle_file_write"
+    mcu_handler: "file_write"
     action_routes: [
       {
         topic: "FILE"
@@ -1525,7 +1525,7 @@ enum Command {
     pb_message: "FileRead"
     response_command: "CMD_FILE_READ_RESP"
     auth_field: "file_read"
-    mcu_handler: "handle_file_read"
+    mcu_handler: "file_read"
     is_query: true
     action_routes: [
       {
@@ -1548,7 +1548,7 @@ enum Command {
     category: "filesystem"
     pb_message: "FileRemove"
     auth_field: "file_remove"
-    mcu_handler: "handle_file_remove"
+    mcu_handler: "file_remove"
     action_routes: [
       {
         topic: "FILE"
@@ -1576,7 +1576,7 @@ enum Command {
     pb_message: "ProcessRunAsync"
     response_command: "CMD_PROCESS_RUN_ASYNC_RESP"
     auth_field: "shell_run_async"
-    mcu_handler: "handle_process_run_async"
+    mcu_handler: "process_run_async"
     action_routes: [
       {
         topic: "SHELL"
@@ -1592,7 +1592,7 @@ enum Command {
     pb_message: "ProcessPoll"
     response_command: "CMD_PROCESS_POLL_RESP"
     auth_field: "shell_poll"
-    mcu_handler: "handle_process_poll"
+    mcu_handler: "process_poll"
     action_routes: [
       {
         topic: "SHELL"
@@ -1660,7 +1660,7 @@ enum Command {
     category: "spi"
     cloud_topic: "spi/transfer/resp"
     pb_message: "SpiTransferResponse"
-    mcu_handler: "handle_spi_transfer_resp"
+    mcu_handler: "publish_mcu_message"
   }];
   CMD_SPI_END = 179 [(cmd_opts) = {
     category: "spi"

@@ -916,12 +916,12 @@ async def test_runtime_poll_process_eof_and_xoff(
     assert svc.state.mcu_is_paused is True
     assert not svc.state.serial_tx_allowed.is_set()
 
-    on_console: Callable[..., Awaitable[None]] = svc.handle_console_write
-    await on_console(1, pb.ConsoleWrite(data=b""))
+    on_console: Callable[..., Awaitable[pb.GenericResponse]] = svc.console_write
+    assert (await on_console(1, pb.ConsoleWrite(data=b""))).status == "ok"
 
     svc.serial = None
-    on_ds_get: Callable[..., Awaitable[bool]] = svc.handle_datastore_get
-    assert await on_ds_get(1, pb.DatastoreGet(key="k")) is False
+    on_ds_get: Callable[..., Awaitable[pb.DatastoreGetResponse]] = svc.datastore_get
+    assert (await on_ds_get(1, pb.DatastoreGet(key="k"))).value == b""
 
 
 async def test_runtime_handle_datastore_empty_key_and_request_miss(
@@ -1103,10 +1103,10 @@ async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> 
 
 async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
-    handle_ds_get: Callable[[int, pb.DatastoreGet], Awaitable[bool]] = svc.handle_datastore_get
+    handle_ds_get: Callable[[int, pb.DatastoreGet], Awaitable[pb.DatastoreGetResponse]] = svc.datastore_get
     svc.serial = None
     req = pb.DatastoreGet(key="cfg/mode")
-    assert await handle_ds_get(1, req) is False
+    assert (await handle_ds_get(1, req)).value == b""
 
     mock_serial = AsyncMock()
     mock_serial.send = AsyncMock(return_value=True)
@@ -1115,7 +1115,7 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     svc.state.datastore_cache.get = AsyncMock(return_value=b"active")
 
     res = await handle_ds_get(1, req)
-    assert res is True
+    assert res.value == b"active"
     mock_serial.send.assert_awaited_once()
     sent_cmd = mock_serial.send.call_args[0][0]
     sent_resp = mock_serial.send.call_args[0][1]
@@ -1125,7 +1125,7 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     mock_serial.send.reset_mock()
     svc.state.datastore_cache = None
     res_none = await handle_ds_get(2, req)
-    assert res_none is True
+    assert res_none.value == b""
     assert mock_serial.send.call_args[0][1].value == b""
 
 

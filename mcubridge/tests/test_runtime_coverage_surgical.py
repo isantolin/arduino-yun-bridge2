@@ -489,7 +489,7 @@ async def test_on_mcu_console_write_no_queues(test_config: RuntimeConfig, mock_b
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.console_queues.clear()
-    await svc.handle_console_write(1, pb.ConsoleWrite(data=b"hello mcu"))
+    await svc.console_write(1, pb.ConsoleWrite(data=b"hello mcu"))
     assert len(svc.console_queues) == 0
     assert len(mock_bridge_state.console_to_mcu_queue) == 0
 

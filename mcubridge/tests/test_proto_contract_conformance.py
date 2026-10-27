@@ -116,23 +116,23 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
 
 async def test_mailbox_read_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_read: Callable[..., Awaitable[bool]] = service.handle_mailbox_read
+    on_read: Callable[..., Awaitable[pb.MailboxReadResponse]] = service.mailbox_read
 
     # Without serial
     service.serial = None
-    assert await on_read(1, None) is False
+    assert (await on_read(1, None)).content == b""
 
     # Empty queue
     service.serial = serial
     serial.send.return_value = True
-    assert await on_read(1, None) is True
+    assert (await on_read(1, None)).content == b""
     assert serial.send.call_args[0][0] == Command.CMD_MAILBOX_READ_RESP.value
     assert serial.send.call_args[0][1].content == b""
 
     # With queue items
     await state.mailbox_queue.append(b"msg_a")
     await state.mailbox_queue.append(b"msg_b")
-    assert await on_read(2, None) is True
+    assert (await on_read(2, None)).content == b"msg_a"
     assert serial.send.call_args[0][1].content == b"msg_a"
 
 
@@ -144,7 +144,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
         captured.append(msg)
 
     service.cloud_publisher = _cap
-    on_proc: Callable[..., Awaitable[None]] = service.handle_mailbox_processed
+    on_proc: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_proc(1, pb.MailboxProcessed(message_id=42))
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/mailbox/processed"
@@ -157,63 +157,63 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 
 async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_write: Callable[..., Awaitable[bool]] = service.handle_file_write
+    on_write: Callable[..., Awaitable[pb.GenericResponse]] = service.file_write
 
     # Without serial
     service.serial = None
-    assert await on_write(1, pb.FileWrite(path="test.txt", data=b"data")) is False
+    assert (await on_write(1, pb.FileWrite(path="test.txt", data=b"data"))).status == "ok"
 
     # Path traversal protection
     service.serial = serial
     state.allow_non_tmp_paths = False
     service.config.file_system_root = "/tmp/fs"
     serial.send.return_value = True
-    assert await on_write(1, pb.FileWrite(path="../../../etc/shadow", data=b"evil")) is True
+    assert (await on_write(1, pb.FileWrite(path="../../../etc/shadow", data=b"evil"))).status == "error"
     assert serial.send.call_args[0][0] == Status.ERROR.value
 
     # Successful write
-    assert await on_write(2, pb.FileWrite(path="valid.txt", data=b"content")) is True
+    assert (await on_write(2, pb.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
 async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
-    on_read: Callable[..., Awaitable[None]] = service.handle_file_read
-    on_remove: Callable[..., Awaitable[bool]] = service.handle_file_remove
+    on_read: Callable[..., Awaitable[pb.FileReadResponse]] = service.file_read
+    on_remove: Callable[..., Awaitable[pb.GenericResponse]] = service.file_remove
 
     # Read without serial
     service.serial = None
-    await on_read(1, pb.FileRead(path="a.txt"))
+    assert (await on_read(1, pb.FileRead(path="a.txt"))).content == b""
 
     # Read missing file
     service.serial = serial
     serial.send.return_value = True
-    await on_read(1, pb.FileRead(path="missing.txt"))
+    assert (await on_read(1, pb.FileRead(path="missing.txt"))).content == b""
     assert serial.send.call_args[0][0] == Status.ERROR.value
 
     # Read existing nonempty file
     await service.file_write(pb.FileWrite(path="exists.txt", data=b"chunk-data"))
-    await on_read(2, pb.FileRead(path="exists.txt"))
+    assert (await on_read(2, pb.FileRead(path="exists.txt"))).content == b"chunk-data"
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
     assert serial.send.call_args[0][1].content == b"chunk-data"
 
     # Read existing empty file
     await service.file_write(pb.FileWrite(path="empty.txt", data=b""))
-    await on_read(3, pb.FileRead(path="empty.txt"))
+    assert (await on_read(3, pb.FileRead(path="empty.txt"))).content == b""
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
     assert serial.send.call_args[0][1].content == b""
 
     # Remove without serial
     service.serial = None
-    assert await on_remove(1, pb.FileRemove(path="exists.txt")) is False
+    assert (await on_remove(1, pb.FileRemove(path="missing.txt"))).status == "error"
 
     # Remove nonexistent file
     service.serial = serial
-    assert await on_remove(1, pb.FileRemove(path="missing.txt")) is True
+    assert (await on_remove(1, pb.FileRemove(path="missing.txt"))).status == "error"
     assert serial.send.call_args[0][0] == Status.ERROR.value
 
     # Remove existing file
-    assert await on_remove(2, pb.FileRemove(path="exists.txt")) is True
+    assert (await on_remove(2, pb.FileRemove(path="exists.txt"))).status == "ok"
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
@@ -249,34 +249,34 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 
 async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
-    on_run: Callable[..., Awaitable[bool]] = service.handle_process_run_async
-    on_poll: Callable[..., Awaitable[bool]] = service.handle_process_poll
+    on_run: Callable[..., Awaitable[pb.ProcessRunAsyncResponse]] = service.process_run_async
+    on_poll: Callable[..., Awaitable[pb.ProcessPollResponse]] = service.process_poll
 
     # Without serial
     service.serial = None
-    assert await on_run(1, pb.ProcessRunAsync(command="echo hi")) is False
-    assert await on_poll(1, pb.ProcessPoll(pid=10)) is False
+    assert (await on_run(1, pb.ProcessRunAsync(command="rm -rf /"))).pid == 0
+    assert (await on_poll(1, pb.ProcessPoll(pid=10))).finished is True
 
     # Disallowed command
     service.serial = serial
     serial.send.return_value = True
-    assert await on_run(1, pb.ProcessRunAsync(command="rm -rf /")) is False
+    assert (await on_run(1, pb.ProcessRunAsync(command="rm -rf /"))).pid == 0
     assert serial.send.call_args[0][0] == Status.ERROR.value
 
     # Allowed command
-    assert await on_run(2, pb.ProcessRunAsync(command="echo test_exec")) is True
+    assert (await on_run(2, pb.ProcessRunAsync(command="echo test_exec"))).pid == IsPositiveInt
     args = serial.send.call_args[0]
     assert args[0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
     pid = args[1].pid
     assert pid == IsPositiveInt
 
     # Poll process
-    assert await on_poll(3, pb.ProcessPoll(pid=pid)) is True
+    assert (await on_poll(3, pb.ProcessPoll(pid=pid))).status == Status.OK.value
     assert serial.send.call_args[0][0] == Command.CMD_PROCESS_POLL_RESP.value
     await service.process_kill(pid)
 
     # Disallowed command name fallback
-    assert await on_run(4, pb.ProcessRunAsync(command="disallowed_proc_xyz")) is False
+    assert (await on_run(4, pb.ProcessRunAsync(command="disallowed_proc_xyz"))).pid == 0
 
 
 # -----------------------------------------------------------------------------
@@ -358,7 +358,7 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     assert captured[-1].payload == b"1023"
 
     # SPI transfer response
-    on_spi: Callable[..., Awaitable[None]] = service.handle_spi_transfer_resp
+    on_spi: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_spi(3, pb.SpiTransferResponse(data=b"\xaa\x55"))
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/spi/transfer/resp"
     assert captured[-1].payload == b"\xaa\x55"

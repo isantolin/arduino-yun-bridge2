@@ -628,6 +628,14 @@ void test_bridge_fsm_resets_and_link_reset() {
   envelope.payload_type.encrypted_payload_with_tag.size =
       static_cast<pb_size_t>(hs_os.bytes_written);
   ba.dispatch(envelope);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+
+  // LinkReset with direct unencrypted HandshakeConfig union member
+  ba.setSynchronized();
+  rpc::Payload::set<rpc_pb_HandshakeConfig>(envelope, hs_cfg);
+  envelope.sequence_id = 91;
+  ba.dispatch(envelope);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_bridge_dispatch_extra_branches() {

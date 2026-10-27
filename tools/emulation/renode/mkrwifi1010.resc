@@ -21,9 +21,10 @@ sysbus WriteDoubleWord 0x4000080C 0x0000FFFF
 sysbus WriteDoubleWord 0x00806020 0xFFFFFFFF
 sysbus WriteDoubleWord 0x00806024 0xFFFFFFFF
 
-# Suppress unhandled register access warnings for SAMD21 GPIO multiplexing
-sysbus.gpio_a LogUnhandledAccess false
-sysbus.gpio_b LogUnhandledAccess false
+# Suppress unhandled register access warnings for SAMD21 GPIO and SERCOM5 UART
+logLevel 3 sysbus.gpio_a
+logLevel 3 sysbus.gpio_b
+logLevel 3 sysbus.uart0
 
 start
 

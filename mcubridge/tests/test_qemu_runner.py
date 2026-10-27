@@ -1,4 +1,4 @@
-"""Unit tests for tools/emulation/qemu_runner.py (SIL-2 / Rule 11 / Rule 18 / Rule 37)."""
+"""Unit tests for tools/emulation/qemu_runner.py (SIL-2 / Rule 11 / Rule 18 / Rule 19 / Rule 37)."""
 
 from __future__ import annotations
 
@@ -105,13 +105,11 @@ def test_find_qemu_binary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
 
     assert qemu_runner.find_qemu_binary() == str(fake_qemu)
 
-    # If it does not support esp32s3, fallback to PATH
     monkeypatch.setattr(qemu_runner, "supports_esp32s3", _mock_supports_usr_only)
     monkeypatch.setattr(qemu_runner.shutil, "which", _mock_which_qemu)
 
     assert qemu_runner.find_qemu_binary() == "/usr/bin/qemu-system-xtensa"
 
-    # If neither supports it, return None
     monkeypatch.setattr(qemu_runner, "supports_esp32s3", _mock_supports_false)
     assert qemu_runner.find_qemu_binary() is None
 
@@ -131,50 +129,6 @@ def test_build_qemu_command() -> None:
         "-serial",
         "tcp:127.0.0.1:12346,server,wait",
     ]
-
-
-def test_qemu_state_on_line() -> None:
-    state = qemu_runner.QemuState()
-    assert not state.listening_event.is_set()
-    assert not state.sync_event.is_set()
-
-    state.on_line("QEMU waiting for connection on: 127.0.0.1:12346", "qemu")
-    assert state.listening_event.is_set()
-
-    state.on_line("Handshake synchronization complete", "daemon-stdout")
-    assert state.sync_event.is_set()
-
-    state.on_line("Capabilities discovery complete", "daemon-stdout")
-    assert state.capabilities_event.is_set()
-
-
-def test_audit_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    status_file = tmp_path / "mcubridge_status.json"
-
-    def mock_path(p: str | Path) -> Path:
-        return status_file if str(p) == "/tmp/mcubridge_status.json" else Path(p)
-
-    monkeypatch.setattr(qemu_runner, "Path", mock_path)
-
-    # File missing -> returns True
-    assert qemu_runner.audit_status() is True
-
-    # Valid status with 0 errors
-    status_file.write_text(
-        json.dumps(
-            {
-                "daemon": {"state": "CONNECTED"},
-                "errors": [],
-                "warnings": [],
-            }
-        ),
-        encoding="utf-8",
-    )
-    assert qemu_runner.audit_status() is True
-
-    # Corrupt json -> returns False
-    status_file.write_text("invalid json", encoding="utf-8")
-    assert qemu_runner.audit_status() is False
 
 
 def _mock_qemu_success(
@@ -321,11 +275,9 @@ def test_run_qemu_emulation_missing_tools(tmp_path: Path, monkeypatch: pytest.Mo
     fake_img = tmp_path / "firmware_flash.bin"
     fake_img.write_text("IMG", encoding="utf-8")
 
-    # Missing qemu
     monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu_none)
     assert qemu_runner.run_qemu_emulation(fake_img, []) is False
 
-    # Missing socat
     monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
     monkeypatch.setattr(qemu_runner.shutil, "which", _mock_which_none)
     assert qemu_runner.run_qemu_emulation(fake_img, []) is False
@@ -357,8 +309,8 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
         _ = (host, port, timeout, interval)
         return True
 
-    def mock_setup_uci(slave: str, *, device_id: str = "esp32-01") -> tuple[Path, Path, dict[str, str]]:
-        _ = (slave, device_id)
+    def mock_setup_uci(slave: str, **kwargs: Any) -> tuple[Path, Path, dict[str, str]]:
+        _ = (slave, kwargs)
         return (tmp_path / "uci", tmp_path / "db", {"FAKE": "1"})
 
     def mock_path_ready(path: Path, timeout: float = 5.0, interval: float = 0.05) -> bool:
@@ -369,12 +321,13 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
         scripts: list[Path],
         *,
         device_id: str = "esp32-01",
-        led_builtin_pin: int = 13,
+        led_builtin_pin: int | None = 13,
     ) -> bool:
         _ = (scripts, device_id, led_builtin_pin)
         return True
 
-    def mock_audit() -> bool:
+    def mock_audit(status_file: Path = Path("/tmp/mcubridge_status.json")) -> bool:
+        _ = status_file
         return True
 
     def mock_start_thread(*args: Any, **kwargs: Any) -> None:
@@ -390,7 +343,7 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(qemu_runner, "setup_fake_uci", mock_setup_uci)
     monkeypatch.setattr(qemu_runner, "wait_for_path_ready", mock_path_ready)
     monkeypatch.setattr(qemu_runner, "run_client_scripts", mock_run_scripts)
-    monkeypatch.setattr(qemu_runner, "audit_status", mock_audit)
+    monkeypatch.setattr(qemu_runner, "audit_post_execution_status", mock_audit)
 
     class MockPopen:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -405,17 +358,16 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(qemu_runner, "start_daemon_thread", mock_start_thread)
     monkeypatch.setattr(qemu_runner, "terminate_process_tree", mock_terminate)
 
-    # Mock QemuState to immediately set events
-    original_state_cls = qemu_runner.QemuState
+    original_state_cls = qemu_runner.EmulationState
 
-    def mock_state() -> qemu_runner.QemuState:
+    def mock_state() -> qemu_runner.EmulationState:
         s = original_state_cls()
         s.listening_event.set()
         s.sync_event.set()
         s.capabilities_event.set()
         return s
 
-    monkeypatch.setattr(qemu_runner, "QemuState", mock_state)
+    monkeypatch.setattr(qemu_runner, "EmulationState", mock_state)
 
     passed = qemu_runner.run_qemu_emulation(
         flash_image=fake_img,

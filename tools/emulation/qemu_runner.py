@@ -11,16 +11,12 @@ Runs strictly headless: ``-nographic -monitor none``.
 
 from __future__ import annotations
 
-import json
 import os
-import select
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
@@ -28,29 +24,31 @@ import structlog
 import typer
 from tools.arduino_core_metadata import read_metadata_json
 from tools.boards import QEMU_BOARDS as MATRIX_BOARDS
+from tools.emulation.emulation_runner import (
+    CLOUD_HOST,
+    CLOUD_PORT,
+    EmulationState,
+    audit_post_execution_status,
+    default_client_test_paths,
+    ensure_cloud_gateway,
+    run_client_scripts,
+    setup_fake_uci,
+    write_matrix_summary,
+)
 from tools.emulation.process_utils import (
+    cleanup_paths,
+    drain_pty_nonblocking,
     start_daemon_thread,
     stream_pump,
     terminate_process_tree,
     wait_for_path_ready,
     wait_for_tcp_ready,
 )
-from tools.emulation.renode_runner import (
-    CLOUD_HOST,
-    CLOUD_PORT,
-    RenodeState,
-    default_client_test_paths,
-    ensure_cloud_gateway,
-    run_client_scripts,
-    setup_fake_uci,
-)
 
 repo_root = Path(__file__).resolve().parents[2]
 
-# --- Constants ---
 DEFAULT_QEMU_PORT = 12346
 QEMU_MACHINE = "esp32s3"
-QEMU_LISTEN_MARKER = "QEMU waiting for connection"
 QEMU_SEARCH_DIRS: tuple[Path, ...] = (Path("/tmp/qemu-esp32/bin"), Path("/opt/qemu-esp32/bin"))
 
 logger = structlog.get_logger("qemu_runner")
@@ -73,30 +71,16 @@ def supports_esp32s3(binary_path: str) -> bool:
 
 def find_qemu_binary() -> str | None:
     """Locate the Espressif qemu-system-xtensa binary with esp32s3 support."""
-    # 1. Search known Espressif installation directories first
     for directory in QEMU_SEARCH_DIRS:
         candidate = directory / "qemu-system-xtensa"
         if candidate.is_file() and os.access(candidate, os.X_OK) and supports_esp32s3(str(candidate)):
             return str(candidate)
 
-    # 2. Search PATH, ensuring the binary is the Espressif fork supporting esp32s3
     found = shutil.which("qemu-system-xtensa")
     if found is not None and supports_esp32s3(found):
         return found
 
     return None
-
-
-@dataclass
-class QemuState(RenodeState):
-    """Process output aggregator with an extra event for the QEMU UART listener."""
-
-    listening_event: threading.Event = field(default_factory=threading.Event)
-
-    def on_line(self, line: str, source: str) -> None:
-        if source == "qemu" and QEMU_LISTEN_MARKER in line:
-            self.listening_event.set()
-        super().on_line(line, source)
 
 
 def build_qemu_command(qemu_bin: str, flash_image: Path, port: int) -> list[str]:
@@ -113,24 +97,6 @@ def build_qemu_command(qemu_bin: str, flash_image: Path, port: int) -> list[str]
         "-serial",
         f"tcp:127.0.0.1:{port},server,wait",
     ]
-
-
-def audit_status() -> bool:
-    status_file = Path("/tmp/mcubridge_status.json")
-    if not status_file.exists():
-        return True
-    try:
-        from tools.audit.audit_bridge_status import audit_status_dict
-
-        status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
-    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
-        logger.error("Failed auditing bridge status", error=str(exc))
-        return False
-    if status_errors:
-        logger.error("Post-execution status health check failed", errors=status_errors)
-        return False
-    logger.info("Post-execution status health check passed (100% clean)")
-    return True
 
 
 def run_qemu_emulation(
@@ -152,7 +118,7 @@ def run_qemu_emulation(
         logger.error("socat executable not found in PATH")
         return False
 
-    state = QemuState()
+    state = EmulationState()
     temp_dir = Path(tempfile.mkdtemp(prefix="qemu_run_"))
     pty_link = temp_dir / "ttyQEMU"
 
@@ -169,7 +135,11 @@ def run_qemu_emulation(
             logger.error("Gateway did not start in time")
             return False
 
-        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(str(pty_link), device_id="esp32-01")
+        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(
+            str(pty_link),
+            device_id="esp32-01",
+            label="qemu runner",
+        )
 
         qemu_cmd = build_qemu_command(qemu_bin, flash_image, port)
         logger.info("Spawning QEMU (headless)", cmd=qemu_cmd)
@@ -182,8 +152,6 @@ def run_qemu_emulation(
         )
         start_daemon_thread(stream_pump, "qemu", qemu_proc.stdout, state.on_line, "qemu")
 
-        # [SIL-2] Do not probe the port with a raw TCP connect: with ``server,wait`` the
-        # first accepted connection releases the guest CPU. Wait for QEMU's own marker.
         if not state.listening_event.wait(timeout=15.0):
             logger.error("QEMU UART TCP server failed to become ready", port=port)
             return False
@@ -202,20 +170,8 @@ def run_qemu_emulation(
             logger.error("PTY bridge device never appeared", path=str(pty_link))
             return False
 
-        # Drain ROM bootloader ASCII output before spawning the daemon
         time.sleep(1.0)
-        try:
-            fd = os.open(str(pty_link), os.O_RDONLY | os.O_NONBLOCK)
-            try:
-                while True:
-                    r, _, _ = select.select([fd], [], [], 0.1)
-                    if not r:
-                        break
-                    os.read(fd, 4096)
-            finally:
-                os.close(fd)
-        except OSError as exc:
-            logger.debug("Non-fatal PTY pre-drain exception", error=str(exc))
+        drain_pty_nonblocking(pty_link)
 
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
         logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
@@ -245,12 +201,10 @@ def run_qemu_emulation(
         state.capabilities_event.wait(timeout=30.0)
         time.sleep(1.0)
 
-        all_passed = run_client_scripts(
-            test_scripts,
-            device_id="esp32-01",
-            led_builtin_pin=led_builtin_pin,
+        return (
+            run_client_scripts(test_scripts, device_id="esp32-01", led_builtin_pin=led_builtin_pin)
+            and audit_post_execution_status()
         )
-        return all_passed and audit_status()
 
     finally:
         procs = [p for p in (daemon_proc, gateway_proc, socat_proc, qemu_proc) if p is not None]
@@ -264,11 +218,7 @@ def run_qemu_emulation(
                         f.write(f"[{src}] {line}\n")
             except OSError as exc:
                 logger.warning("Could not write QEMU execution log", error=str(exc))
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        if fake_uci_dir and fake_uci_dir.exists():
-            shutil.rmtree(fake_uci_dir, ignore_errors=True)
-        if storage_path and storage_path.exists():
-            shutil.rmtree(storage_path, ignore_errors=True)
+        cleanup_paths(temp_dir, fake_uci_dir, storage_path)
 
 
 def run_matrix(
@@ -313,9 +263,7 @@ def run_matrix(
                 continue
 
             metadata_path = out_dir / "arduino_core_metadata.json"
-            led_pin = 13
-            if metadata_path.exists():
-                led_pin = read_metadata_json(metadata_path).led_builtin
+            led_pin = read_metadata_json(metadata_path).led_builtin if metadata_path.exists() else 13
 
             success = run_qemu_emulation(
                 flash_image=flash_image,
@@ -339,58 +287,21 @@ def run_matrix(
             emulation_status.append("⏭️ Not run (compilation failed)")
             fail_count += 1
 
-    _write_summary(summary_dir, compilation_status, emulation_status)
+    write_matrix_summary(
+        summary_dir,
+        prefix="qemu",
+        title="QEMU Xtensa Hardware Emulation Matrix (Instruction-Accurate)",
+        engine_label="QEMU Espressif (Instruction-Accurate)",
+        architecture="Xtensa LX7 (ESP32-S3)",
+        boards=MATRIX_BOARDS,
+        compilation_status=compilation_status,
+        emulation_status=emulation_status,
+    )
     return fail_count
 
 
-def _write_summary(summary_dir: Path, compilation_status: list[str], emulation_status: list[str]) -> None:
-    architecture = "Xtensa LX7 (ESP32-S3)"
-    rows: list[str] = [
-        "### 🔬 QEMU Xtensa Hardware Emulation Matrix (Instruction-Accurate)\n",
-        "| Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |",
-        "| :--- | :---: | :---: | :---: | :---: |",
-    ]
-    boards_data: list[dict[str, str]] = []
-    for (board_fqbn, board_name), c_stat, e_stat in zip(
-        MATRIX_BOARDS, compilation_status, emulation_status, strict=True
-    ):
-        if "Passed" in e_stat:
-            overall = "✅ PASS"
-        elif "Skipped" in e_stat:
-            overall = "⏭️ SKIPPED"
-        else:
-            overall = "❌ FAIL"
-        rows.append(f"| **{board_name}**<br>`{board_fqbn}` | {architecture} | {c_stat} | {e_stat} | **{overall}** |")
-        boards_data.append(
-            {
-                "board_fqbn": board_fqbn,
-                "board_name": board_name,
-                "architecture": architecture,
-                "compilation": c_stat,
-                "emulation": e_stat,
-                "result": overall,
-            }
-        )
-
-    summary_content = "\n".join(rows) + "\n"
-    (summary_dir / "qemu_summary.md").write_text(summary_content, encoding="utf-8")
-    (summary_dir / "qemu_summary.json").write_text(
-        json.dumps({"engine": "QEMU Espressif (Instruction-Accurate)", "boards": boards_data}, indent=2),
-        encoding="utf-8",
-    )
-    print(summary_content)
-
-    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if step_summary and not os.environ.get("CONSOLIDATE_EMULATION_SUMMARY") and "PYTEST_CURRENT_TEST" not in os.environ:
-        try:
-            with Path(step_summary).open("a", encoding="utf-8") as f:
-                f.write(summary_content)
-        except OSError as exc:
-            logger.warning("Could not write to GITHUB_STEP_SUMMARY", error=str(exc))
-
-
 app = typer.Typer(
-    help="Instruction-accurate Xtensa ESP32-S3 hardware emulation using Espressif QEMU.",
+    help="Instruction-accurate Xtensa LX7 (ESP32-S3) hardware emulation using QEMU.",
     add_completion=False,
 )
 
@@ -399,7 +310,7 @@ app = typer.Typer(
 def main(
     firmware: Annotated[
         Path | None,
-        typer.Option("--firmware", "-f", help="Path to merged 16MB ESP32-S3 flash image"),
+        typer.Option("--firmware", "-f", help="Path to merged 16 MiB ESP32-S3 flash binary"),
     ] = None,
     board: Annotated[
         str,
@@ -438,12 +349,13 @@ def main(
         sys.exit(1)
 
     test_paths = [Path(s) for s in scripts] if scripts else default_client_test_paths()
-    if not run_qemu_emulation(
+    success = run_qemu_emulation(
         flash_image=effective_firmware,
         test_scripts=test_paths,
         timeout_seconds=timeout,
         port=port,
-    ):
+    )
+    if not success:
         logger.error("QEMU Xtensa emulation suite failed!")
         sys.exit(1)
 

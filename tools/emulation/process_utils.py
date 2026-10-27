@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import select
+import shutil
 import socket
 import subprocess
 import sys
@@ -12,10 +15,15 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+import structlog
 import tenacity
 from mcubridge.state.context import terminate_pid_tree
 
+logger = structlog.get_logger("process_utils")
+
 __all__ = [
+    "cleanup_paths",
+    "drain_pty_nonblocking",
     "start_daemon_thread",
     "stream_pump",
     "terminate_pid_tree",
@@ -97,6 +105,39 @@ def stream_pump(stream: Any, on_line: Callable[[str, str], None], source: str) -
         else:
             line_str = str(raw)
         on_line(line_str, source)
+
+
+def drain_pty_nonblocking(pty_path: Path | str, timeout: float = 0.1) -> None:
+    """Drain pending ROM bootloader ASCII output from a PTY device before spawning the daemon."""
+    try:
+        fd = os.open(str(pty_path), os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            while True:
+                ready, _, _ = select.select([fd], [], [], timeout)
+                if not ready:
+                    break
+                os.read(fd, 4096)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        logger.debug("Non-fatal PTY pre-drain exception", path=str(pty_path), error=str(exc))
+
+
+def cleanup_paths(*paths: Path | str | None) -> None:
+    """Remove temporary directories/files with explicit OSError logging (Rule 4 compliant)."""
+    for raw_path in paths:
+        if raw_path is None:
+            continue
+        target = Path(raw_path)
+        if not target.exists():
+            continue
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            else:
+                target.unlink()
+        except OSError as exc:
+            logger.warning("Failed to remove temporary path", path=str(target), error=str(exc))
 
 
 def write_fake_uci_module(base_dir: Path, config: dict[str, str], label: str = "runner") -> Path:

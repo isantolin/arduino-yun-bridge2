@@ -15,13 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import select
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,29 +28,36 @@ import structlog
 import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
-from mcubridge.protocol import protocol
 from mcubridge_client import cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session
 from tools.arduino_core_metadata import ArduinoCoreMetadata, read_metadata_json, resolve_core_metadata
-from tools.audit.audit_bridge_status import audit_status_dict
 from tools.boards import (
     BOARD_MEGA,
     BOARD_MKRWIFI1010,
     BOARD_NANO_ESP32,
     BoardSpec,
 )
-from tools.emulation.emulation_runner import EmulationState, ensure_cloud_gateway, wait_for_daemon_sync
+from tools.emulation.emulation_runner import (
+    CLOUD_HOST,
+    CLOUD_PORT,
+    DEFAULT_SHARED_SECRET,
+    EmulationState,
+    audit_post_execution_status,
+    ensure_cloud_gateway,
+    setup_fake_uci,
+    wait_for_daemon_sync,
+)
 from tools.emulation.process_utils import (
+    cleanup_paths,
+    drain_pty_nonblocking,
     start_daemon_thread,
     stream_pump,
     terminate_process_tree,
     wait_for_path_ready,
     wait_for_tcp_ready,
-    write_fake_uci_module,
 )
 from tools.emulation.qemu_runner import find_qemu_binary
 from tools.emulation.simavr_runner import (
-    SimavrState,
     build_simavr_harness,
     spawn_simavr,
 )
@@ -63,22 +67,8 @@ repo_root = Path(__file__).resolve().parents[2]
 configure_logging(console=True)
 logger = structlog.get_logger("fleet_mesh_hardware")
 
-# --- Network & IPC Constants ---
-CLOUD_HOST = "127.0.0.1"
-CLOUD_PORT = protocol.DEFAULT_CLOUD_PORT
 PORT_RENODE = 12345
 PORT_QEMU = 12346
-SHARED_SECRET = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
-
-
-@dataclass
-class FleetMeshState(EmulationState):
-    qemu_listening_event: threading.Event = field(default_factory=threading.Event)
-
-    def on_line(self, line: str, source: str) -> None:
-        if source == "qemu" and "QEMU waiting for connection" in line:
-            self.qemu_listening_event.set()
-        super().on_line(line, source)
 
 
 @dataclass
@@ -116,55 +106,14 @@ def ensure_firmware_compiled(sketch_path: Path, fqbn: str, output_path: Path) ->
 
 def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: EmulationState) -> subprocess.Popen[str]:
     """Configure fake UCI and spawn an independent mcubridge daemon for a mesh node."""
-    fake_uci_dir = node.temp_dir / "uci"
-    fake_uci_dir.mkdir(parents=True, exist_ok=True)
-    storage_path = node.temp_dir / "storage"
-    storage_path.mkdir(parents=True, exist_ok=True)
-    spool_path = node.temp_dir / "spool"
-    spool_path.mkdir(parents=True, exist_ok=True)
-    fs_root = node.temp_dir / "fs"
-    fs_root.mkdir(parents=True, exist_ok=True)
-
-    uci_config = {
-        "serial_port": slave_name,
-        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
-        "cloud_enabled": "1",
-        "cloud_host": CLOUD_HOST,
-        "cloud_port": str(CLOUD_PORT),
-        "cloud_tls": "0",
-        "cloud_tls_insecure": "1",
-        "watchdog_enabled": "0",
-        "serial_response_timeout": "30.0",
-        "serial_shared_secret": SHARED_SECRET,
-        "allowed_commands": "*",
-        "storage_path": str(storage_path),
-        "cloud_spool_dir": str(spool_path),
-        "file_system_root": str(fs_root),
-        "debug": "1",
-    }
-    write_fake_uci_module(fake_uci_dir, uci_config, label=node.name)
-
-    daemon_env = dict(os.environ)
-    extra_paths = [
-        str(fake_uci_dir),
-        str(repo_root / "mcubridge"),
-        str(repo_root / "mcubridge-client-examples"),
-        str(repo_root),
-    ]
-    curr_pp = daemon_env.get("PYTHONPATH", "")
-    daemon_env["PYTHONPATH"] = ":".join(extra_paths + ([curr_pp] if curr_pp else []))
-    daemon_env["PYTHONUNBUFFERED"] = "1"
-    daemon_env["MCUBRIDGE_FORCE_UCI"] = "1"
-    daemon_env["MCUBRIDGE_NON_INTERACTIVE"] = "1"
-    daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
-    daemon_env["MCUBRIDGE_DEVICE_ID"] = node.name
-    daemon_env["MCUBRIDGE_STATUS_FILE"] = str(node.status_file)
-    daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
-    daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
-    daemon_env["MCUBRIDGE_CLOUD_SPOOL_DIR"] = str(spool_path)
-    daemon_env["MCUBRIDGE_FILE_SYSTEM_ROOT"] = str(fs_root)
-
+    _, _, daemon_env = setup_fake_uci(
+        slave_name,
+        device_id=node.name,
+        shared_secret=DEFAULT_SHARED_SECRET,
+        base_dir=node.temp_dir,
+        status_file=node.status_file,
+        label=node.name,
+    )
     daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
     logger.info("Spawning mcubridge daemon for node", node=node.name, pty=slave_name)
     proc = subprocess.Popen(
@@ -227,7 +176,6 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name) as (_channel, stub):
-            # 1. System Version Introspection
             ver_resp: mcu_wire_pb2.VersionResponse = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
             for _ in range(5):
                 if ver_resp.major == 2 and ver_resp.minor == 8:
@@ -243,14 +191,12 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                 version=f"{ver_resp.major}.{ver_resp.minor}.{ver_resp.patch}",
             )
 
-            # 2. Free Memory Introspection
             mem_resp = await stub.GetFreeMemory(cloud_gateway_pb2.SubscribeRequest())
             if mem_resp.value == 0:
                 logger.error("Free memory reported as 0", node=node.name)
                 return False
             logger.info("Node GetFreeMemory verified", node=node.name, free_bytes=mem_resp.value)
 
-            # 3. Hardware Actuation (LED Builtin Toggle)
             led_pin = node.metadata.led_builtin
             write_resp = await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
             if write_resp.status != "ok":
@@ -259,7 +205,6 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
             await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
             logger.info("Node hardware actuation (LED) verified", node=node.name, pin=led_pin)
 
-            # 4. Mailbox Messaging
             mb_resp = await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
             if mb_resp.status != "ok":
                 logger.error("MailboxPush failed", node=node.name)
@@ -332,29 +277,26 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
     logger.info("Starting Master Fleet Mesh Hardware Emulation (simavr + Renode + QEMU)")
     logger.info("================================================================================")
 
-    # 1. Compile universal firmwares
     (fw_mega, meta_mega), (fw_mkr, meta_mkr), (fw_esp32, meta_esp32) = compile_fleet_firmwares()
 
-    # 2. Locate and verify emulator binaries
     binaries = verify_host_binaries()
     if binaries is None:
         return False
     harness_bin, renode_bin, qemu_bin, socat_bin = binaries
 
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
-    log_collector = FleetMeshState()
+    log_collector = EmulationState()
     all_procs: list[subprocess.Popen[str]] = []
     node_mega: NodeRuntime | None = None
     node_mkr: NodeRuntime | None = None
     node_esp32: NodeRuntime | None = None
 
     try:
-        # 3. Start central ProtobufGateway
         gw_proc = ensure_cloud_gateway(log_collector)
         if gw_proc:
             all_procs.append(gw_proc)
 
-        # 4. Initialize Node 1: Arduino Mega 2560 (simavr)
+        # Node 1: Arduino Mega 2560 (simavr)
         node_mega = NodeRuntime(
             name="mega-01",
             board=BOARD_MEGA,
@@ -364,28 +306,20 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
             status_file=base_temp_dir / f"status_{BOARD_MEGA.slug}.json",
         )
         node_mega.temp_dir.mkdir(parents=True, exist_ok=True)
-
-        class FleetSimavrState(SimavrState):
-            def on_line(self, line: str, source: str) -> None:
-                super().on_line(line, source)
-                log_collector.on_line(line, source)
-
-        simavr_state = FleetSimavrState()
         simavr_proc, pty_mega, _ = spawn_simavr(
             harness_bin,
             node_mega.firmware_path,
             node_mega.metadata.mcu,
             node_mega.metadata.frequency_hz,
             "0",
-            simavr_state,
+            log_collector,
         )
         if not simavr_proc or not pty_mega:
             raise RuntimeError("simavr failed to spawn or emit a valid PTY slave path")
         all_procs.append(simavr_proc)
-        d_mega = spawn_daemon_for_node(node_mega, pty_mega, log_collector)
-        all_procs.append(d_mega)
+        all_procs.append(spawn_daemon_for_node(node_mega, pty_mega, log_collector))
 
-        # 5. Initialize Node 2: Arduino MKR WiFi 1010 (Renode)
+        # Node 2: Arduino MKR WiFi 1010 (Renode)
         node_mkr = NodeRuntime(
             name="mkr-02",
             board=BOARD_MKRWIFI1010,
@@ -404,7 +338,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
             .replace("$ORIGIN/mkrwifi1010.repl", f"@{repl_template.resolve()}")
         )
         temp_resc = node_mkr.temp_dir / "run.resc"
-        temp_resc.write_text(f"logFile @{(node_mkr.temp_dir / 'renode.log').resolve()} true\n{rendered_resc}\n")
+        temp_resc.write_text(
+            f"logFile @{(node_mkr.temp_dir / 'renode.log').resolve()} true\n{rendered_resc}\n",
+            encoding="utf-8",
+        )
         renode_cmd = [
             renode_bin,
             "--disable-gui",
@@ -438,10 +375,9 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
 
         if not wait_for_path_ready(pty_mkr, timeout=15.0):
             raise RuntimeError("Timed out waiting for Renode PTY bridge")
-        d_mkr = spawn_daemon_for_node(node_mkr, str(pty_mkr), log_collector)
-        all_procs.append(d_mkr)
+        all_procs.append(spawn_daemon_for_node(node_mkr, str(pty_mkr), log_collector))
 
-        # 6. Initialize Node 3: Arduino Nano ESP32 (QEMU)
+        # Node 3: Arduino Nano ESP32 (QEMU)
         node_esp32 = NodeRuntime(
             name="esp32-03",
             board=BOARD_NANO_ESP32,
@@ -468,7 +404,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         all_procs.append(qemu_proc)
         start_daemon_thread(stream_pump, "qemu", qemu_proc.stdout, log_collector.on_line, "qemu")
 
-        if not log_collector.qemu_listening_event.wait(timeout=15.0):
+        if not log_collector.listening_event.wait(timeout=15.0):
             raise RuntimeError("QEMU UART TCP server failed to become ready")
 
         pty_esp32 = node_esp32.temp_dir / "ttyQEMU"
@@ -487,26 +423,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
 
         if not wait_for_path_ready(pty_esp32, timeout=15.0):
             raise RuntimeError("Timed out waiting for QEMU PTY bridge")
-        # Drain ROM bootloader ASCII output before spawning the daemon
         time.sleep(1.0)
-        try:
-            fd = os.open(str(pty_esp32), os.O_RDONLY | os.O_NONBLOCK)
-            try:
-                while True:
-                    r, _, _ = select.select([fd], [], [], 0.1)
-                    if not r:
-                        break
-                    os.read(fd, 4096)
-            finally:
-                os.close(fd)
-        except OSError as exc:
-            logger.debug("Non-fatal PTY pre-drain exception", error=str(exc))
-        d_esp32 = spawn_daemon_for_node(node_esp32, str(pty_esp32), log_collector)
-        all_procs.append(d_esp32)
+        drain_pty_nonblocking(pty_esp32)
+        all_procs.append(spawn_daemon_for_node(node_esp32, str(pty_esp32), log_collector))
 
-        # -------------------------------------------------------------------------
-        # 7. CONCURRENT SYNCHRONIZATION GATE (All 3 nodes syncing in parallel)
-        # -------------------------------------------------------------------------
         logger.info("Waiting for all 3 hardware emulators to complete cryptographic synchronization...")
         nodes = (node_mega, node_mkr, node_esp32)
         start_time = time.time()
@@ -517,25 +437,14 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
                 return False
             logger.info("Node synchronized successfully", node=node.name, board=node.board.label)
 
-        # -------------------------------------------------------------------------
-        # 8. CROSS-NODE DIALOG AND INTEROPERABILITY VERIFICATION
-        # -------------------------------------------------------------------------
         if not asyncio.run(verify_mesh_interoperability(nodes)):
             logger.error("Cross-node mesh verification failed")
             return False
 
-        # -------------------------------------------------------------------------
-        # 9. POST-EXECUTION STATUS HEALTH AUDIT (Rule 29)
-        # -------------------------------------------------------------------------
         logger.info("Performing Rule 29 Post-Execution Status Audit on all 3 nodes...")
         for node in nodes:
-            if not node.status_file.exists():
-                logger.error("Status file does not exist", node=node.name, path=str(node.status_file))
-                return False
-            status_data = json.loads(node.status_file.read_text(encoding="utf-8"))
-            errors = audit_status_dict(status_data)
-            if errors:
-                logger.error("Rule 29 health audit failed for node", node=node.name, errors=errors)
+            if not node.status_file.exists() or not audit_post_execution_status(node.status_file):
+                logger.error("Rule 29 health audit failed for node", node=node.name)
                 return False
             logger.info("Rule 29 status audit passed with 0 errors", node=node.name)
 
@@ -547,19 +456,13 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
     finally:
         logger.info("Tearing down all emulation subprocesses...")
         daemon_procs: list[subprocess.Popen[str]] = []
-        if node_mega is not None:
-            daemon_procs.extend(node_mega.procs)
-        if node_mkr is not None:
-            daemon_procs.extend(node_mkr.procs)
-        if node_esp32 is not None:
-            daemon_procs.extend(node_esp32.procs)
+        for node_ref in (node_mega, node_mkr, node_esp32):
+            if node_ref is not None:
+                daemon_procs.extend(node_ref.procs)
         terminate_process_tree(daemon_procs, timeout=3.0)
         emulation_procs = [p for p in all_procs if p not in daemon_procs]
         terminate_process_tree(emulation_procs, timeout=3.0)
-        try:
-            shutil.rmtree(base_temp_dir)
-        except OSError as exc:
-            logger.warning("Failed to clean up fleet mesh temp dir", path=str(base_temp_dir), error=str(exc))
+        cleanup_paths(base_temp_dir)
 
 
 cli = typer.Typer(

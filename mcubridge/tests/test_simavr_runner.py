@@ -1,4 +1,4 @@
-"""Unit tests for tools/emulation/simavr_runner.py (SIL-2 / Rule 11 / Rule 18 / Rule 37)."""
+"""Unit tests for tools/emulation/simavr_runner.py (SIL-2 / Rule 11 / Rule 18 / Rule 19 / Rule 37)."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import typer
 
-from tools.emulation import simavr_runner
 from tools.arduino_core_metadata import ArduinoCoreMetadata, write_metadata_json
+from tools.emulation import simavr_runner
 
 
 def _write_board_metadata(output_dir: Path, fqbn: str) -> None:
@@ -30,63 +30,6 @@ def _write_board_metadata(output_dir: Path, fqbn: str) -> None:
         ),
         output_dir / "arduino_core_metadata.json",
     )
-
-
-def test_simavr_state_on_line() -> None:
-    state = simavr_runner.SimavrState()
-    assert not state.sync_event.is_set()
-
-    state.on_line("Handshake synchronization complete", "simavr")
-    assert state.sync_event.is_set()
-
-    state.on_line("MCU capabilities received", "simavr")
-    assert state.capabilities_event.is_set()
-
-
-def test_run_single_client_script_with_main(tmp_path: Path) -> None:
-    script = tmp_path / "test_client.py"
-    result_file = tmp_path / "led_pin.txt"
-    script.write_text(
-        "from pathlib import Path\n"
-        "def main(host=None, port=None, device_id=None, led_builtin_pin=None):\n"
-        f"    Path({str(result_file)!r}).write_text(str(led_builtin_pin), encoding='utf-8')\n",
-        encoding="utf-8",
-    )
-    passed = simavr_runner.run_single_client_script(
-        script,
-        device_id="test-mcu-01",
-        led_builtin_pin=9,
-    )
-    assert passed is True
-    assert result_file.read_text(encoding="utf-8") == "9"
-
-
-def test_run_single_client_script_with_exit_code(tmp_path: Path) -> None:
-    script_pass = tmp_path / "pass_exit.py"
-    script_pass.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-    assert simavr_runner.run_single_client_script(script_pass) is True
-
-    script_fail = tmp_path / "fail_exit.py"
-    script_fail.write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
-    assert simavr_runner.run_single_client_script(script_fail) is False
-
-
-def test_run_single_client_script_exception(tmp_path: Path) -> None:
-    script_err = tmp_path / "error_script.py"
-    script_err.write_text(
-        "def main(host=None, port=None, device_id=None):\n    raise RuntimeError('boom')\n",
-        encoding="utf-8",
-    )
-    assert simavr_runner.run_single_client_script(script_err) is False
-
-
-def test_run_client_scripts(tmp_path: Path) -> None:
-    s1 = tmp_path / "s1.py"
-    s1.write_text("def main(host=None, port=None, device_id=None):\n    pass\n", encoding="utf-8")
-    missing = tmp_path / "does_not_exist.py"
-
-    passed = simavr_runner.run_client_scripts([s1, missing], led_builtin_pin=9)
-    assert passed is True
 
 
 def _mock_simavr_success(

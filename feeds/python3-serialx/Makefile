@@ -5,7 +5,7 @@ PKG_VERSION:=1.15.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=serialx
-PKG_HASH:=89ffdae6511492157eb1e957f7f6cb0cacace088692f7477b27c4a6b6dbd4d6d
+PKG_HASH:=689dfbaf55f5f87ea0b6bcdcab135577ce1e70f98d490650b02a8b86eb0b0281
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0

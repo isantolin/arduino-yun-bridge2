@@ -82,9 +82,9 @@ void avr_terminate(avr_t* avr);
 #endif
 }
 
-extern "C" void safe_simavr_logger(struct avr_t* avr, const int level,
+extern "C" void safe_simavr_logger(struct avr_t* /* avr */, const int level,
                                    const char* format, va_list ap) noexcept {
-  if (avr && level > avr->log) {
+  if (level > 3) {
     return;
   }
   char buffer[1024];
@@ -152,6 +152,7 @@ class SimavrHardwareBridge {
     }
 
     avr_load_firmware(avr_, &firmware);
+    avr_->log = 3;
     if (frequency > 0) {
       avr_->frequency = frequency;
     }
@@ -212,9 +213,10 @@ class SimavrHardwareBridge {
 
   simulation_step:
     if (!is_active()) {
-      fprintf(stderr, "[SIMAVR] Terminating: running=%d avr=%p state=%d\n",
+      fprintf(stderr,
+              "[SIMAVR] Terminating: running=%d avr=%p state=%d pc=0x%06x\n",
               static_cast<int>(g_running), static_cast<void*>(avr_),
-              avr_ ? avr_->state : -1);
+              avr_ ? avr_->state : -1, avr_ ? static_cast<unsigned>(avr_->pc) : 0U);
       fflush(stderr);
       return;
     }

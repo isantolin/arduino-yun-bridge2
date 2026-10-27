@@ -350,7 +350,6 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
                          _response_timeout_ms, etl::timer::mode::SINGLE_SHOT);
   _timers.enable(true);
-  _timers.start(bridge::scheduler::TIMER_RX_DEDUPE);
 
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
@@ -797,10 +796,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
-  if (ctx.envelope->which_payload_type ==
-      rpc_pb_RpcEnvelope_handshake_config_tag) {
-    _applyTimingConfig(ctx.envelope->payload_type.handshake_config);
-  } else if (ctx.envelope->which_payload_type != 0) {
+  if (ctx.envelope->which_payload_type != 0) {
     rpc_pb_HandshakeConfig res_msg = rpc_pb_HandshakeConfig_init_default;
     if (_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_HandshakeConfig>(),
                        &res_msg)) {

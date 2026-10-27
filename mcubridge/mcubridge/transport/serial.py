@@ -527,7 +527,7 @@ class SerialTransport:
         if not self.serial:
             return False
 
-        if not self.state.serial_tx_allowed.is_set():
+        if not self.state.serial_tx_allowed.is_set() and command_id != Status.ACK.value:
             try:
                 with anyio.fail_after(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()

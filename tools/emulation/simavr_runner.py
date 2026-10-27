@@ -342,15 +342,14 @@ def run_simavr_emulation(
     state = SimavrState()
     harness_bin = build_simavr_harness()
 
+    gateway_proc = _ensure_cloud_gateway(state)
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+        _teardown_simavr(None, None, gateway_proc, -1, None, None)
+        return False
+
     simavr_proc, slave_name, master_fd = spawn_simavr(harness_bin, firmware_path, mcu, frequency, uart_id, state)
     if not slave_name or not simavr_proc:
         logger.error("Failed to allocate virtual UART PTY device")
-        if simavr_proc:
-            simavr_proc.terminate()
-        return False
-
-    gateway_proc = _ensure_cloud_gateway(state)
-    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
         _teardown_simavr(None, simavr_proc, gateway_proc, master_fd, None, None)
         return False
 

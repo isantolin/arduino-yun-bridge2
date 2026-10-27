@@ -273,12 +273,7 @@ class SimavrHardwareBridge {
                             void* param) noexcept {
     auto* self = static_cast<SimavrHardwareBridge*>(param);
     if (self) {
-      if (value != 0) {
-        self->avr_uart_xon_ = true;
-        self->drain_host_fifo_to_avr();
-      } else {
-        self->avr_uart_xon_ = false;
-      }
+      self->avr_uart_xon_ = (value != 0);
     }
   }
 
@@ -286,12 +281,7 @@ class SimavrHardwareBridge {
                              void* param) noexcept {
     auto* self = static_cast<SimavrHardwareBridge*>(param);
     if (self) {
-      if (value != 0) {
-        self->avr_uart_xon_ = false;
-      } else {
-        self->avr_uart_xon_ = true;
-        self->drain_host_fifo_to_avr();
-      }
+      self->avr_uart_xon_ = (value == 0);
     }
   }
 

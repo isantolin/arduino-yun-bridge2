@@ -104,7 +104,7 @@ async def test_runtime_mcu_file_read_fsm_success(
         assert pending is not None
         assert pending.fsm.transferring.is_active
 
-        on_resp_fn: Any = service.handle_file_read_resp
+        on_resp_fn: Any = service.file_read
         # Send chunk 1
         await on_resp_fn(1, pb.FileReadResponse(content=b"part1 "))
         assert pending.fsm.transferring.is_active

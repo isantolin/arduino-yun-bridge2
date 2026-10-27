@@ -911,7 +911,7 @@ async def test_runtime_poll_process_eof_and_xoff(
     assert resp.finished is True
     assert 555 not in svc.state.running_processes
 
-    handle_xoff: Callable[..., Awaitable[None]] = svc.handle_mcu_xoff
+    handle_xoff: Callable[..., Awaitable[None]] = svc.mcu_xoff
     await handle_xoff(1, None)
     assert svc.state.mcu_is_paused is True
     assert not svc.state.serial_tx_allowed.is_set()

@@ -203,8 +203,8 @@ async def test_handle_file_mcu_read_success_and_timeout(
     await asyncio.sleep(0.01)
 
     assert svc.pending_mcu_read is not None
-    # Simulate MCU returning chunks via handle_file_read_resp
-    on_read_resp: Callable[..., Awaitable[bool]] = svc.handle_file_read_resp
+    # Simulate MCU returning chunks via file_read
+    on_read_resp: Callable[..., Awaitable[pb.FileReadResponse]] = svc.file_read
     await on_read_resp(1, pb.FileReadResponse(content=b"hello-"))
     await on_read_resp(2, pb.FileReadResponse(content=b"world"))
     await on_read_resp(3, pb.FileReadResponse(content=b""))  # Completion

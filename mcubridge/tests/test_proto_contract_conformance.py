@@ -95,7 +95,7 @@ async def test_unsupported_mcu_request(
 
 async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_avail: Callable[..., Awaitable[bool]] = service.handle_mailbox_available
+    on_avail: Callable[..., Awaitable[bool]] = service.mailbox_available
 
     # Without serial
     service.serial = None
@@ -219,26 +219,26 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
 
 async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _serial = svc
-    on_read_resp: Callable[..., Awaitable[bool]] = service.handle_file_read_resp
+    on_read_resp: Callable[..., Awaitable[pb.FileReadResponse]] = service.file_read
 
     # No pending read
-    assert await on_read_resp(1, pb.FileReadResponse(content=b"orphan")) is False
+    assert (await on_read_resp(1, pb.FileReadResponse(content=b"orphan"))).content == b""
 
     # Accumulate chunk then EOF
     fut: asyncio.Future[bytes] = asyncio.Future()
     pending = PendingMcuRead(future=fut, chunks=[])
     service.pending_mcu_read = pending
 
-    assert await on_read_resp(1, pb.FileReadResponse(content=b"chunk1")) is True
+    assert (await on_read_resp(1, pb.FileReadResponse(content=b"chunk1"))).content == b"chunk1"
     assert not fut.done()
     assert pending.chunks == [b"chunk1"]
 
-    assert await on_read_resp(2, pb.FileReadResponse(content=b"")) is True
+    assert (await on_read_resp(2, pb.FileReadResponse(content=b""))).content == b""
     assert fut.done()
     assert fut.result() == b"chunk1"
 
     # Future already completed
-    assert await on_read_resp(3, pb.FileReadResponse(content=b"")) is True
+    assert (await on_read_resp(3, pb.FileReadResponse(content=b""))).content == b""
     assert fut.result() == b"chunk1"
 
 
@@ -322,15 +322,14 @@ async def test_status_reporting_and_ack(
     mock_error = MagicMock()
     monkeypatch.setattr("mcubridge.services.runtime.logger.debug", mock_debug)
     monkeypatch.setattr("mcubridge.services.runtime.logger.error", mock_error)
-    on_ack: Callable[..., Awaitable[None]] = service.handle_ack
 
-    await on_ack(1, pb.AckPacket(command_id=0x01))
+    await handle_status(Status.ACK, 1, pb.AckPacket(command_id=0x01))
     mock_debug.assert_called_with("MCU ACK received", command_id="0x01")
 
-    await on_ack(2, pb.AckPacket(command_id=0x02).SerializeToString())
+    await handle_status(Status.ACK, 2, pb.AckPacket(command_id=0x02).SerializeToString())
     mock_debug.assert_called_with("MCU ACK received", command_id="0x02")
 
-    await on_ack(3, b"\xff\xff\xff")
+    await handle_status(Status.ACK, 3, b"\xff\xff\xff")
     mock_error.assert_called_once()
 
 
@@ -345,15 +344,14 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
 
     # Digital read response
     state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
-    on_digital: Callable[..., Awaitable[None]] = service.gpio.handle_digital_read_resp
-    await on_digital(1, pb.DigitalReadResponse(value=1))
+    on_pin_resp: Callable[..., Awaitable[None]] = service.gpio.handle_pin_read_resp
+    await on_pin_resp(1, pb.DigitalReadResponse(value=1))
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/d/13/value"
     assert captured[-1].payload == b"1"
 
     # Analog read response
     state.pending_analog_reads.append(PendingPinRequest(pin=2, reply_context=None))
-    on_analog: Callable[..., Awaitable[None]] = service.gpio.handle_analog_read_resp
-    await on_analog(2, pb.AnalogReadResponse(value=1023))
+    await on_pin_resp(2, pb.AnalogReadResponse(value=1023))
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/a/2/value"
     assert captured[-1].payload == b"1023"
 

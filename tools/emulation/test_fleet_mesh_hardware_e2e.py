@@ -78,13 +78,6 @@ class FleetMeshState(EmulationState):
     def on_line(self, line: str, source: str) -> None:
         if source == "qemu" and "QEMU waiting for connection" in line:
             self.qemu_listening_event.set()
-        clean_line = line.strip()
-        if not clean_line:
-            return
-        if source == "renode" and (
-            "Unhandled read from offset" in clean_line or "Unhandled write to offset" in clean_line
-        ):
-            return
         super().on_line(line, source)
 
 
@@ -563,7 +556,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         terminate_process_tree(daemon_procs, timeout=3.0)
         emulation_procs = [p for p in all_procs if p not in daemon_procs]
         terminate_process_tree(emulation_procs, timeout=3.0)
-        shutil.rmtree(base_temp_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(base_temp_dir)
+        except OSError as exc:
+            logger.warning("Failed to clean up fleet mesh temp dir", path=str(base_temp_dir), error=str(exc))
 
 
 cli = typer.Typer(

@@ -552,7 +552,7 @@ def _to_apk_version(version: str) -> str:
     return re.sub(r"\.dev(\d+)$", r"_pre\1", converted)
 
 
-def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
+def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False, verify_hashes: bool = False) -> bool:
     if not FEEDS_DIR.exists():
         return False
 
@@ -632,7 +632,9 @@ def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
             )
 
         version_changed = new_content != content
-        if "PKG_HASH:=" in content and (version_changed or bool(re.search(r"PKG_HASH:=\s*$", content, re.MULTILINE))):
+        if "PKG_HASH:=" in content and (
+            verify_hashes or version_changed or bool(re.search(r"PKG_HASH:=\s*$", content, re.MULTILINE))
+        ):
             new_hash = _fetch_pypi_sdist_hash(pip_name, version)
             if new_hash:
                 new_content = re.sub(r"PKG_HASH:=[^\n]+", f"PKG_HASH:={new_hash}", new_content)
@@ -738,7 +740,7 @@ def main(
     updated_requirements = write_requirements(deps, dry_run=no_write)
     updated_makefile = update_makefile(deps, dry_run=no_write)
     updated_pyproject = update_pyproject(deps, dry_run=no_write)
-    updated_feeds = update_feeds(deps, dry_run=no_write)
+    updated_feeds = update_feeds(deps, dry_run=no_write, verify_hashes=check_latest or not no_write)
     updated_gw_req = write_gateway_requirements(deps, dry_run=no_write)
     updated_gw_makefile = update_gateway_makefile(deps, dry_run=no_write)
     updated_cpp = update_cpp_install_script(cpp_deps, dry_run=no_write)

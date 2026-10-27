@@ -25,9 +25,11 @@ cpu: CPU.CortexM @ sysbus
 rtc: Timers.SAMD21_RTC @ sysbus 0x40001400
     IRQ -> nvic@3
 
-gpio_a: GPIOPort.SAMD21_GPIO @ sysbus 0x41004400
+gpio_a: Memory.ArrayMemory @ sysbus 0x41004400
+    size: 0x80
 
-gpio_b: GPIOPort.SAMD21_GPIO @ sysbus 0x41004480
+gpio_b: Memory.ArrayMemory @ sysbus 0x41004480
+    size: 0x80
 
 // Serial Communication Interface (SERCOM5) for Arduino Serial1 (Bridge communication)
 uart0: UART.SAMD5_UART @ sysbus 0x42001C00

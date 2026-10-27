@@ -76,7 +76,7 @@ from ..watchdog import WatchdogKeepalive
 from .clock_sync import ClockSyncService
 from .gpio import GpioService
 from .handshake import SerialHandshakeFatal, SerialHandshakeManager, derive_serial_timing
-from .ubus import UbusService
+from .ubus import UbusService, format_ubus_bytes
 
 __all__ = [
     "BridgeService",
@@ -443,12 +443,7 @@ class BridgeService:
         if self.state.is_synchronized:
             await self.request_mcu_version()
             await self.flush_console_queue()
-            version_str = (
-                f"{self.state.mcu_version[0]}.{self.state.mcu_version[1]}.{self.state.mcu_version[2]}"
-                if self.state.mcu_version is not None
-                else "unknown"
-            )
-            self.ubus_service.notify("sync", {"synchronized": True, "version": version_str})
+            self.ubus_service.notify("sync", {"synchronized": True, "version": self.state.mcu_version_str})
         else:
             raise ConnectionError("MCU serial link handshake synchronization failed")
 
@@ -633,10 +628,29 @@ class BridgeService:
         val = res if isinstance(res, bytes) else b""
         return pb.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
 
-    async def handle_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
-        return bool(
-            self.serial and await self.serial.send(Command.CMD_DATASTORE_GET_RESP.value, await self.datastore_get(p))
-        )
+    async def _reply_mcu_op[TReq](
+        self,
+        cmd: Command,
+        op: Callable[[TReq], Awaitable[ProtobufMessage]],
+        _seq: int,
+        p: TReq,
+    ) -> bool:
+        return bool(self.serial and await self.serial.send(cmd.value, await op(p)))
+
+    async def _reply_mcu_status_op[TReq](
+        self,
+        op: Callable[[TReq], Awaitable[pb.GenericResponse]],
+        err_msg: str,
+        _seq: int,
+        p: TReq,
+    ) -> bool:
+        if not self.serial:
+            return False
+        res = await op(p)
+        return await self._send_mcu_status(res.status == "ok", err_msg)
+
+    async def handle_datastore_get(self, seq: int, p: pb.DatastoreGet) -> bool:
+        return await self._reply_mcu_op(Command.CMD_DATASTORE_GET_RESP, self.datastore_get, seq, p)
 
     # --- Mailbox Subsystem ---
 
@@ -705,11 +719,8 @@ class BridgeService:
             ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
         return pb.GenericResponse(status="ok" if ok else "error")
 
-    async def handle_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
-        if not self.serial:
-            return False
-        res = await self.file_write(p)
-        return await self._send_mcu_status(res.status == "ok", "Path not allowed or quota exceeded")
+    async def handle_file_write(self, seq: int, p: pb.FileWrite) -> bool:
+        return await self._reply_mcu_status_op(self.file_write, "Path not allowed or quota exceeded", seq, p)
 
     async def file_read(self, path_or_req: str | pb.FileRead) -> pb.FileReadResponse:
         path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else path_or_req
@@ -791,11 +802,8 @@ class BridgeService:
                     ok = False
         return pb.GenericResponse(status="ok" if ok else "error")
 
-    async def handle_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
-        if not self.serial:
-            return False
-        res = await self.file_remove(p)
-        return await self._send_mcu_status(res.status == "ok", "Path not allowed or not found")
+    async def handle_file_remove(self, seq: int, p: pb.FileRemove) -> bool:
+        return await self._reply_mcu_status_op(self.file_remove, "Path not allowed or not found", seq, p)
 
     def _get_safe_path(self, p_str: str) -> anyio.Path | None:
         if not p_str or not p_str.strip():
@@ -916,10 +924,8 @@ class BridgeService:
                     stderr_truncated=te,
                 )
 
-    async def handle_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
-        return bool(
-            self.serial and await self.serial.send(Command.CMD_PROCESS_POLL_RESP.value, await self.process_poll(p))
-        )
+    async def handle_process_poll(self, seq: int, p: pb.ProcessPoll) -> bool:
+        return await self._reply_mcu_op(Command.CMD_PROCESS_POLL_RESP, self.process_poll, seq, p)
 
     def release_process(self, pid: int) -> ProcessContext | None:
         ctx = self.state.running_processes.pop(pid, None)
@@ -1033,13 +1039,7 @@ class BridgeService:
                 else:
                     text = pb.GenericResponse.FromString(payload).message
             except (ProtobufDecodeError, TypeError, ValueError):
-                if isinstance(payload, bytes):
-                    try:
-                        text = payload.decode("utf-8")
-                    except UnicodeDecodeError:
-                        text = f"<hex:{payload.hex()}>"
-                else:
-                    text = str(payload)
+                text = format_ubus_bytes(payload) if isinstance(payload, bytes) else str(payload)
         log_func = logger.error if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_cloud_status_report(
@@ -1052,18 +1052,22 @@ class BridgeService:
             user_properties=((PROP_KEY_BRIDGE_STATUS, status.name),),
         )
 
-    async def request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
+    async def _fetch_mcu_version(self) -> pb.VersionResponse | None:
         serial = self.serial
         res = (await serial.send(Command.CMD_GET_VERSION.value, b"")) if serial else None
         if not isinstance(res, (pb.VersionResponse, bytes, bytearray)):
-            return False
+            return None
         resp = structures.parse_serial_response(res, pb.VersionResponse, None)
-        if resp is None:
+        if resp is not None:
+            self.state.mcu_version = (resp.major, resp.minor, resp.patch)
+        return resp
+
+    async def request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
+        if await self._fetch_mcu_version() is None:
             return False
-        self.state.mcu_version = (resp.major, resp.minor, resp.patch)
         await self._publish_mcu_message(
             pb.VersionResponse,
-            f"{resp.major}.{resp.minor}.{resp.patch}".encode(),
+            self.state.mcu_version_str.encode(),
             message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE,
             reply_context=inbound,
         )
@@ -1455,13 +1459,7 @@ class BridgeService:
         return pb.GenericResponse(status="ok" if ok else "error")
 
     async def get_version(self, _req: pb.SubscribeRequest | None = None) -> pb.VersionResponse:
-        serial = self.serial
-        res = (await serial.send(Command.CMD_GET_VERSION.value, b"")) if serial else None
-        resp = structures.parse_serial_response(res, pb.VersionResponse, None)
-        if resp is not None:
-            self.state.mcu_version = (resp.major, resp.minor, resp.patch)
-            return resp
-        return pb.VersionResponse()
+        return (await self._fetch_mcu_version()) or pb.VersionResponse()
 
     async def get_status(self, _req: pb.SubscribeRequest | None = None) -> pb.BridgeStatus:
         return self.state.build_status_snapshot()

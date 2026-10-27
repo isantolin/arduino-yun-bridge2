@@ -66,6 +66,13 @@ def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedP
     return asyncio.Queue[pb.CloudQueuedPublish](maxsize=normalized)
 
 
+def _metric_prop(attr: str) -> Any:
+    return property(
+        lambda self: getattr(self.metrics, attr).value,
+        lambda self, val: setattr(getattr(self.metrics, attr), "value", val),
+    )
+
+
 class ProcessState(StrEnum):
     """[SIL-2] Deterministic lifecycle states for spawned subprocesses."""
 
@@ -328,7 +335,7 @@ class RuntimeState:
     pending_analog_reads: collections.deque[PendingPinRequest]
     mailbox_queue_limit: int
     mcu_version: tuple[int, int, int] | None
-    mcu_capabilities: pb.Capabilities | dict[str, Any] | None
+    _mcu_capabilities: pb.Capabilities | None
     link_handshake_nonce: bytes | None
     link_sync_event: asyncio.Event
     link_expected_tag: bytes | None
@@ -415,7 +422,8 @@ class RuntimeState:
         self.mailbox_queue_limit: int = kwargs.get("mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT)
 
         self.mcu_version: tuple[int, int, int] | None = kwargs.get("mcu_version")
-        self.mcu_capabilities: pb.Capabilities | dict[str, Any] | None = kwargs.get("mcu_capabilities")
+        self._mcu_capabilities: pb.Capabilities | None = None
+        self.mcu_capabilities = kwargs.get("mcu_capabilities")
         self.link_handshake_nonce: bytes | None = kwargs.get("link_handshake_nonce")
         self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
         self.link_expected_tag: bytes | None = kwargs.get("link_expected_tag")
@@ -492,6 +500,32 @@ class RuntimeState:
             self.cloud_fsm.degrade()
 
     @property
+    def mcu_version_str(self) -> str:
+        return ".".join(map(str, self.mcu_version)) if self.mcu_version is not None else "unknown"
+
+    @property
+    def mcu_capabilities(self) -> pb.Capabilities | None:
+        return self._mcu_capabilities
+
+    @mcu_capabilities.setter
+    def mcu_capabilities(self, value: pb.Capabilities | dict[str, Any] | None) -> None:
+        if value is None or isinstance(value, pb.Capabilities):
+            self._mcu_capabilities = value
+        else:
+            caps = pb.Capabilities()
+            ParseDict(value, cast(Any, caps), ignore_unknown_fields=True)
+            self._mcu_capabilities = caps
+
+    @property
+    def clock_status_dict(self) -> dict[str, Any]:
+        return {
+            "offset_us": self.clock_offset_us,
+            "rtt_us": self.clock_rtt_us,
+            "sync_count": self.clock_sync_count,
+            "last_sync_unix": self.clock_last_sync_timestamp,
+        }
+
+    @property
     def mcu_status_counts(self) -> dict[str, int]:
         return dict(self.metrics.mcu_status_counts.items())
 
@@ -555,43 +589,39 @@ class RuntimeState:
         if value and not self.cloud_fsm.connected_http3.is_active and not self.cloud_fsm.disabled.is_active:
             self.cloud_fsm.connect_http3()
 
+    def _set_event(self, attr: str, active: bool) -> None:
+        if (ev := getattr(self, attr, None)) is not None:
+            ev.set() if active else ev.clear()
+
     def on_enter_connected(self) -> None:
         """[SIL-2] Native hook executed on entering connected state."""
         self.metrics.link_state.state("connected")
-        if getattr(self, "serial_tx_allowed", None) is not None:
-            self.serial_tx_allowed.set()
+        self._set_event("serial_tx_allowed", True)
 
     def on_enter_disconnected(self) -> None:
         """[SIL-2] Native hook executed on entering disconnected state."""
         self.metrics.link_state.state("disconnected")
-        if getattr(self, "link_sync_event", None) is not None:
-            self.link_sync_event.clear()
+        self._set_event("link_sync_event", False)
 
     def on_enter_synchronized(self) -> None:
         """[SIL-2] Native hook executed on entering synchronized state."""
         self.metrics.link_state.state("synchronized")
-        if getattr(self, "link_sync_event", None) is not None:
-            self.link_sync_event.set()
-        if getattr(self, "serial_tx_allowed", None) is not None:
-            self.serial_tx_allowed.set()
+        self._set_event("link_sync_event", True)
+        self._set_event("serial_tx_allowed", True)
 
     def on_enter_paused(self) -> None:
         """[SIL-2] Native hook executed on entering paused state."""
-        if getattr(self, "serial_tx_allowed", None) is not None:
-            self.serial_tx_allowed.clear()
+        self._set_event("serial_tx_allowed", False)
 
     def on_enter_fault(self) -> None:
         """[SIL-2] Native hook executed on entering fault state."""
         self.metrics.link_state.state("disconnected")
-        if getattr(self, "link_sync_event", None) is not None:
-            self.link_sync_event.clear()
-        if getattr(self, "serial_tx_allowed", None) is not None:
-            self.serial_tx_allowed.clear()
+        self._set_event("link_sync_event", False)
+        self._set_event("serial_tx_allowed", False)
 
     def on_enter_negotiating_baud(self) -> None:
         """[SIL-2] Native hook executed on entering negotiating_baud state."""
-        if getattr(self, "serial_tx_allowed", None) is not None:
-            self.serial_tx_allowed.clear()
+        self._set_event("serial_tx_allowed", False)
 
     def on_enter_connected_http3(self) -> None:
         """[SIL-2] Native hook executed on entering connected_http3 state."""
@@ -625,45 +655,11 @@ class RuntimeState:
     def fatal_count(self, value: int) -> None:
         self.handshake_fatal_count = value
 
-    @property
-    def unknown_command_count(self) -> int:
-        return self.metrics.unknown_command_count.value
-
-    @unknown_command_count.setter
-    def unknown_command_count(self, value: int) -> None:
-        self.metrics.unknown_command_count.value = value
-
-    @property
-    def serial_decode_errors(self) -> int:
-        return self.metrics.serial_decode_errors.value
-
-    @serial_decode_errors.setter
-    def serial_decode_errors(self, value: int) -> None:
-        self.metrics.serial_decode_errors.value = value
-
-    @property
-    def handshake_attempts(self) -> int:
-        return self.metrics.handshake_attempts.value
-
-    @handshake_attempts.setter
-    def handshake_attempts(self, value: int) -> None:
-        self.metrics.handshake_attempts.value = value
-
-    @property
-    def handshake_successes(self) -> int:
-        return self.metrics.handshake_successes.value
-
-    @handshake_successes.setter
-    def handshake_successes(self, value: int) -> None:
-        self.metrics.handshake_successes.value = value
-
-    @property
-    def watchdog_beats(self) -> int:
-        return self.metrics.watchdog_beats.value
-
-    @watchdog_beats.setter
-    def watchdog_beats(self, value: int) -> None:
-        self.metrics.watchdog_beats.value = value
+    unknown_command_count: int = _metric_prop("unknown_command_count")
+    serial_decode_errors: int = _metric_prop("serial_decode_errors")
+    handshake_attempts: int = _metric_prop("handshake_attempts")
+    handshake_successes: int = _metric_prop("handshake_successes")
+    watchdog_beats: int = _metric_prop("watchdog_beats")
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
@@ -885,14 +881,6 @@ class RuntimeState:
                 patch=self.mcu_version[2],
             )
 
-        capabilitiespb_obj = None
-        if self.mcu_capabilities is not None:
-            if isinstance(self.mcu_capabilities, pb.Capabilities):
-                capabilitiespb_obj = self.mcu_capabilities
-            else:
-                capabilitiespb_obj = pb.Capabilities()
-                ParseDict(self.mcu_capabilities, cast(Any, capabilitiespb_obj))
-
         return pb.BridgeSnapshot(
             serial_link=pb.SerialLinkSnapshot(
                 connected=self.is_connected,
@@ -903,7 +891,7 @@ class RuntimeState:
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats,
             mcu_version=versionpb_obj,
-            capabilities=capabilitiespb_obj,
+            capabilities=self._mcu_capabilities,
         )
 
     def handshake_duration_since_start(self) -> float:

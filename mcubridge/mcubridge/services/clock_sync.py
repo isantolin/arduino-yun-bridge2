@@ -85,14 +85,9 @@ class ClockSyncService:
 
         # [SIL-2] Check MCU capabilities before attempting clock synchronization.
         # Avoid dispatching CMD_CLOCK_SYNC if the MCU firmware explicitly marks it unsupported.
-        caps = state.mcu_capabilities
-        if caps is not None:
-            has_clock_sync = (
-                caps.get("clock_sync", None) if isinstance(caps, dict) else getattr(caps, "clock_sync", None)
-            )
-            if has_clock_sync is False:
-                self.fsm.mark_unsupported()
-                return self.get_status()
+        if (caps := state.mcu_capabilities) is not None and not getattr(caps, "clock_sync", True):
+            self.fsm.mark_unsupported()
+            return self.get_status()
 
         is_initial_probe = self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
         if is_initial_probe:
@@ -159,10 +154,7 @@ class ClockSyncService:
         is_conn = self._runtime.serial is not None and state.is_connected
         return {
             "state": self.fsm.current_state_value,
-            "offset_us": state.clock_offset_us,
-            "rtt_us": state.clock_rtt_us,
-            "sync_count": state.clock_sync_count,
-            "last_sync_unix": state.clock_last_sync_timestamp,
+            **state.clock_status_dict,
             "is_synchronized": is_conn and self.fsm.synchronized.is_active,
         }
 

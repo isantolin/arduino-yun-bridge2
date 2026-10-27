@@ -7,9 +7,10 @@ to query status, execute commands, and control MCU peripherals natively.
 from __future__ import annotations
 
 import asyncio
+import functools
 import importlib
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
 
 import anyio.from_thread
 import structlog
@@ -149,24 +150,19 @@ class UbusService:
         snapshot = state.build_status_snapshot()
         data = MessageToDict(snapshot, preserving_proto_field_name=True)
 
-        version_str = ".".join(map(str, state.mcu_version)) if state.mcu_version is not None else "unknown"
         data["connected"] = state.is_connected
         data["synchronized"] = state.is_synchronized
-        data["version"] = version_str
-
-        # Ensure top-level capabilities dict exists for direct LuCI and tool consumers
-        caps = state.mcu_capabilities
+        data["version"] = state.mcu_version_str
         data["capabilities"] = (
-            MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
-            if isinstance(caps, pb.Capabilities)
-            else {k: bool(v) for k, v in cast(dict[str, Any], caps).items()} if isinstance(caps, dict) else {}
+            MessageToDict(
+                snapshot.bridge.capabilities,
+                always_print_fields_with_no_presence=True,
+                preserving_proto_field_name=True,
+            )
+            if snapshot.bridge.HasField("capabilities")
+            else {}
         )
-        data["clock_status"] = {
-            "offset_us": state.clock_offset_us,
-            "rtt_us": state.clock_rtt_us,
-            "sync_count": state.clock_sync_count,
-            "last_sync_unix": state.clock_last_sync_timestamp,
-        }
+        data["clock_status"] = state.clock_status_dict
         data["pin_subscriptions"] = state.pin_subscriptions
 
         return data
@@ -241,7 +237,7 @@ class UbusService:
         return data
 
     def _handle_pin_write(
-        self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], msg: dict[str, Any]
+        self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], _req: Any, msg: dict[str, Any]
     ) -> dict[str, Any]:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
@@ -249,13 +245,8 @@ class UbusService:
             self.schedule_async(self.runtime.serial.send(cmd.value, proto))
         return {"status": "ok", "pin": proto.pin, "value": proto.value}
 
-    def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.digital_write'."""
-        return self._handle_pin_write(Command.CMD_DIGITAL_WRITE, pb.DigitalWrite, msg)
-
-    def ubus_handle_analog_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.analog_write'."""
-        return self._handle_pin_write(Command.CMD_ANALOG_WRITE, pb.AnalogWrite, msg)
+    ubus_handle_digital_write = functools.partialmethod(_handle_pin_write, Command.CMD_DIGITAL_WRITE, pb.DigitalWrite)
+    ubus_handle_analog_write = functools.partialmethod(_handle_pin_write, Command.CMD_ANALOG_WRITE, pb.AnalogWrite)
 
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""

@@ -160,9 +160,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
 # =============================================================================
 
 
-# --- Binary Protocol Packets ---
-
-
 # --- High-Level Structure ---
 
 

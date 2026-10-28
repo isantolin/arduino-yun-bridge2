@@ -216,7 +216,8 @@ class SimavrHardwareBridge {
       fprintf(stderr,
               "[SIMAVR] Terminating: running=%d avr=%p state=%d pc=0x%06x\n",
               static_cast<int>(g_running), static_cast<void*>(avr_),
-              avr_ ? avr_->state : -1, avr_ ? static_cast<unsigned>(avr_->pc) : 0U);
+              avr_ ? avr_->state : -1,
+              avr_ ? static_cast<unsigned>(avr_->pc) : 0U);
       fflush(stderr);
       return;
     }

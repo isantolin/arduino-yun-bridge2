@@ -1,8 +1,8 @@
+#include <etl/algorithm.h>
+
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
 #include "SPI.h"
-
-#include <etl/algorithm.h>
 
 ArduinoStubPinState g_arduino_stub_pin_states[NUM_DIGITAL_PINS]{};
 

@@ -8,7 +8,8 @@
 
 #include "ArduinoCoreMetadata.h"
 
-// Bring standard C fixed-width types into global namespace for Arduino compatibility
+// Bring standard C fixed-width types into global namespace for Arduino
+// compatibility
 #ifdef __cplusplus
 using ::int16_t;
 using ::int32_t;
@@ -38,10 +39,9 @@ inline void operator delete(void*, void*) noexcept {}
 #define INPUT_PULLUP 2
 
 #if !defined(F_CPU) || !defined(LED_BUILTIN) || !defined(NUM_DIGITAL_PINS) || \
-    !defined(NUM_ANALOG_INPUTS) || !defined(PIN_SPI_SS) ||                 \
-    !defined(PIN_SPI_MOSI) || !defined(PIN_SPI_MISO) ||                    \
-    !defined(PIN_SPI_SCK) || !defined(PIN_WIRE_SDA) ||                     \
-    !defined(PIN_WIRE_SCL)
+    !defined(NUM_ANALOG_INPUTS) || !defined(PIN_SPI_SS) ||                    \
+    !defined(PIN_SPI_MOSI) || !defined(PIN_SPI_MISO) ||                       \
+    !defined(PIN_SPI_SCK) || !defined(PIN_WIRE_SDA) || !defined(PIN_WIRE_SCL)
 #error "Generate ArduinoCoreMetadata.h from the selected Arduino core"
 #endif
 
@@ -251,7 +251,8 @@ class HardwareSerial : public Stream {
     return g_arduino_stream_delegate ? g_arduino_stream_delegate->write(c) : 1;
   }
   int available() override {
-    return g_arduino_stream_delegate ? g_arduino_stream_delegate->available() : 0;
+    return g_arduino_stream_delegate ? g_arduino_stream_delegate->available()
+                                     : 0;
   }
   int read() override {
     return g_arduino_stream_delegate ? g_arduino_stream_delegate->read() : -1;

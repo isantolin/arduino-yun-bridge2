@@ -6,7 +6,9 @@
 			"type": "firstchild"
 		},
 		"depends": {
-			"acl": [ "luci-app-mcubridge" ]
+			"acl": [
+				"luci-app-mcubridge"
+			]
 		}
 	},
 	"admin/services/mcubridge/config": {

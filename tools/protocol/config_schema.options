@@ -16,5 +16,6 @@ rpc.pb.cloud_suffixes          type:FT_IGNORE
 rpc.pb.msg_cloud_topic         type:FT_IGNORE
 rpc.pb.enum_cloud_topic        type:FT_IGNORE
 rpc.pb.msg_error_init          type:FT_IGNORE
+rpc.pb.telemetry_metric        type:FT_IGNORE
 rpc.pb.is_custom_handler       type:FT_IGNORE
 rpc.pb.daemon_tasks            type:FT_IGNORE

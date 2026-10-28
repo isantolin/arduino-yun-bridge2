@@ -294,6 +294,59 @@ def test_command_specs_multidimensional_integrity() -> None:
             )
 
 
+def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
+    fields = pb.DaemonMetrics.DESCRIPTOR.fields_by_name
+    annotated_fields = {
+        field.name
+        for field in fields.values()
+        if field.GetOptions().HasExtension(pb.telemetry_metric)
+        and field.GetOptions().Extensions[pb.telemetry_metric].prometheus_name
+    }
+    specs_by_field = {spec.source_field: spec for spec in protocol.REGISTRY.metrics}
+    line_protocol_specs = protocol.REGISTRY.line_protocol_fields
+    line_protocol_fields = {
+        field.name
+        for field in fields.values()
+        if field.GetOptions().HasExtension(pb.telemetry_metric)
+        and field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_name
+    }
+    ordered_line_fields = sorted(
+        (
+            field
+            for field in fields.values()
+            if field.GetOptions().HasExtension(pb.telemetry_metric)
+            and field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_name
+        ),
+        key=lambda field: field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_order,
+    )
+    line_protocol_kinds = {
+        pb.LINE_PROTOCOL_FIELD_KIND_INTEGER: protocol.LineProtocolFieldKind.INTEGER,
+        pb.LINE_PROTOCOL_FIELD_KIND_FLOAT: protocol.LineProtocolFieldKind.FLOAT,
+        pb.LINE_PROTOCOL_FIELD_KIND_BOOLEAN: protocol.LineProtocolFieldKind.BOOLEAN,
+    }
+
+    assert set(specs_by_field) == annotated_fields
+    assert len(specs_by_field) == len(protocol.REGISTRY.metrics)
+    assert specs_by_field["cloud_dropped_messages"].kind is protocol.MetricKind.COUNTER
+    assert specs_by_field["retries"].value_field == "count"
+    assert specs_by_field["retries"].labels[0].field == "component"
+    assert specs_by_field["serial_latency_ms"].metric_name == specs_by_field["rpc_latency_ms"].metric_name
+    assert specs_by_field["serial_latency_ms"].labels[0].static_value == "serial"
+    assert specs_by_field["rpc_latency_ms"].labels[0].static_value == "rpc"
+    assert {spec.source_field for spec in line_protocol_specs} == line_protocol_fields
+    assert [(spec.source_field, spec.field_name) for spec in line_protocol_specs] == [
+        (
+            field.name,
+            field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_name,
+        )
+        for field in ordered_line_fields
+    ]
+    assert [spec.kind for spec in line_protocol_specs] == [
+        line_protocol_kinds[field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_kind]
+        for field in ordered_line_fields
+    ]
+
+
 def test_runtime_config_defaults_reference_canonical_metadata() -> None:
     fields = pb.RuntimeConfig.DESCRIPTOR.fields_by_name
     expected_references = {

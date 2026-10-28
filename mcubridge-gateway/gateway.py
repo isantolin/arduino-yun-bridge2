@@ -40,6 +40,8 @@ from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import (
     DEFAULT_CLOUD_HOST,
     DEFAULT_CLOUD_PORT,
+    LineProtocolFieldKind,
+    MetricKind,
     PROTOCOL_VERSION,
     REGISTRY,
     OperationSpec,
@@ -122,6 +124,34 @@ class FleetMetrics:
 
     def __init__(self, registry: prometheus_client.CollectorRegistry | None = None) -> None:
         self.registry = registry if registry is not None else prometheus_client.CollectorRegistry(auto_describe=True)
+        self.daemon_metrics: dict[str, prometheus_client.Gauge | prometheus_client.Counter] = {}
+        self._counter_samples: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
+        metric_labels: dict[str, set[str]] = {}
+        for spec in REGISTRY.metrics:
+            metric_labels.setdefault(spec.metric_name, set()).update(label.name for label in spec.labels)
+
+        for spec in REGISTRY.metrics:
+            if spec.metric_name in self.daemon_metrics:
+                continue
+            labelnames = ["device_id", *sorted(metric_labels[spec.metric_name])]
+            if spec.kind is MetricKind.GAUGE:
+                collector = prometheus_client.Gauge(
+                    spec.metric_name,
+                    spec.help,
+                    labelnames=labelnames,
+                    registry=self.registry,
+                )
+            elif spec.kind is MetricKind.COUNTER:
+                collector = prometheus_client.Counter(
+                    spec.metric_name,
+                    spec.help,
+                    labelnames=labelnames,
+                    registry=self.registry,
+                )
+            else:
+                raise ValueError(f"Unsupported metric kind {spec.kind!r} for {spec.metric_name}")
+            self.daemon_metrics[spec.metric_name] = collector
+
         self.devices_connected = prometheus_client.Gauge(
             "mcubridge_gateway_connected_devices",
             "Total number of currently connected edge devices",
@@ -157,114 +187,32 @@ class FleetMetrics:
             labelnames=["device_id", "status_code"],
             registry=self.registry,
         )
-        self.device_link_synchronized = prometheus_client.Gauge(
-            "mcubridge_device_link_synchronized",
-            "Hardware serial link synchronization status (1 = sync, 0 = unsync)",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_cloud_queue_depth = prometheus_client.Gauge(
-            "mcubridge_device_cloud_queue_depth",
-            "Current cloud queue depth on device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_cloud_dropped = prometheus_client.Counter(
-            "mcubridge_device_cloud_dropped_messages_total",
-            "Total dropped cloud messages on device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_spool_pending = prometheus_client.Gauge(
-            "mcubridge_device_spool_pending_messages",
-            "Current pending offline spool messages on device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_watchdog_enabled = prometheus_client.Gauge(
-            "mcubridge_device_watchdog_enabled",
-            "Watchdog supervisor enabled status (1 = enabled, 0 = disabled)",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_serial_bytes_sent = prometheus_client.Gauge(
-            "mcubridge_device_serial_bytes_sent",
-            "Total bytes sent over serial link by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_serial_bytes_received = prometheus_client.Gauge(
-            "mcubridge_device_serial_bytes_received",
-            "Total bytes received over serial link by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_serial_frames_sent = prometheus_client.Gauge(
-            "mcubridge_device_serial_frames_sent",
-            "Total frames sent over serial link by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_serial_frames_received = prometheus_client.Gauge(
-            "mcubridge_device_serial_frames_received",
-            "Total frames received over serial link by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_serial_crc_errors = prometheus_client.Gauge(
-            "mcubridge_device_serial_crc_errors",
-            "Total CRC errors encountered on serial link by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_serial_decode_errors = prometheus_client.Gauge(
-            "mcubridge_device_serial_decode_errors",
-            "Total decode errors encountered on serial link by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_handshake_attempts = prometheus_client.Gauge(
-            "mcubridge_device_handshake_attempts",
-            "Total serial handshake attempts by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_handshake_successes = prometheus_client.Gauge(
-            "mcubridge_device_handshake_successes",
-            "Total serial handshake successes by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_watchdog_beats = prometheus_client.Gauge(
-            "mcubridge_device_watchdog_beats",
-            "Total watchdog pulses emitted by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_uptime_seconds = prometheus_client.Gauge(
-            "mcubridge_device_uptime_seconds",
-            "Current daemon uptime in seconds",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_cloud_messages_published = prometheus_client.Gauge(
-            "mcubridge_device_cloud_messages_published",
-            "Total messages published to cloud by device",
-            labelnames=["device_id"],
-            registry=self.registry,
-        )
-        self.device_retries = prometheus_client.Gauge(
-            "mcubridge_device_retries",
-            "Total retries by device and component",
-            labelnames=["device_id", "component"],
-            registry=self.registry,
-        )
-        self.device_latency_ms = prometheus_client.Gauge(
-            "mcubridge_device_latency_ms",
-            "Round-trip latency in milliseconds",
-            labelnames=["device_id", "type"],
-            registry=self.registry,
-        )
+
+    def update_daemon_metrics(self, device_id: str, metrics: pb.DaemonMetrics) -> None:
+        """Apply a decoded Protobuf snapshot using the generated metric catalog."""
+        for spec in REGISTRY.metrics:
+            source = getattr(metrics, spec.source_field)
+            samples = source if spec.value_field else (metrics,)
+            for sample in samples:
+                value = float(getattr(sample, spec.value_field)) if spec.value_field else float(source)
+                labels = {
+                    "device_id": device_id,
+                    **{
+                        label.name: (
+                            label.static_value if label.static_value is not None else str(getattr(sample, label.field))
+                        )
+                        for label in spec.labels
+                    },
+                }
+                collector = self.daemon_metrics[spec.metric_name]
+                if isinstance(collector, prometheus_client.Counter):
+                    counter_key = (spec.metric_name, tuple(sorted(labels.items())))
+                    previous = self._counter_samples.get(counter_key)
+                    increment = value if previous is None or value < previous else value - previous
+                    collector.labels(**labels).inc(increment)
+                    self._counter_samples[counter_key] = value
+                else:
+                    collector.labels(**labels).set(value)
 
 
 class TSDBSink:
@@ -291,27 +239,16 @@ class TSDBSink:
     ) -> str:
         """Format metrics into standard Influx/VictoriaMetrics Line Protocol."""
         ts = timestamp_ns if timestamp_ns is not None else time.time_ns()
-        sync_val = 1 if metrics.link_synchronised else 0
-        spool_degraded = 1 if metrics.cloud_spool_degraded else 0
-        watchdog_on = 1 if metrics.watchdog_enabled else 0
-        return (
-            f"mcubridge_telemetry,device_id={device_id} "
-            f"queue_depth={metrics.cloud_queue_depth}i,"
-            f"dropped_messages={metrics.cloud_dropped_messages}i,"
-            f"spool_pending={metrics.cloud_spool_pending_messages}i,"
-            f"spool_degraded={spool_degraded}i,"
-            f"link_synchronized={sync_val}i,"
-            f"watchdog_enabled={watchdog_on}i,"
-            f"serial_bytes_sent={metrics.serial_bytes_sent}i,"
-            f"serial_bytes_received={metrics.serial_bytes_received}i,"
-            f"serial_frames_sent={metrics.serial_frames_sent}i,"
-            f"serial_frames_received={metrics.serial_frames_received}i,"
-            f"serial_crc_errors={metrics.serial_crc_errors}i,"
-            f"serial_decode_errors={metrics.serial_decode_errors}i,"
-            f"watchdog_beats={metrics.watchdog_beats}i,"
-            f"published_messages={metrics.cloud_messages_published}i "
-            f"{ts}"
+        value_formatters: dict[LineProtocolFieldKind, Callable[[Any], str]] = {
+            LineProtocolFieldKind.INTEGER: lambda value: f"{int(value)}i",
+            LineProtocolFieldKind.FLOAT: lambda value: str(float(value)),
+            LineProtocolFieldKind.BOOLEAN: lambda value: str(bool(value)).lower(),
+        }
+        fields = ",".join(
+            f"{spec.field_name}={value_formatters[spec.kind](getattr(metrics, spec.source_field))}"
+            for spec in REGISTRY.line_protocol_fields
         )
+        return f"mcubridge_telemetry,device_id={device_id} {fields} {ts}"
 
     async def ingest_telemetry(self, device_id: str, envelope: pb.CloudEnvelope) -> None:
         """Asynchronously post telemetry report to external TSDB endpoint."""
@@ -381,38 +318,7 @@ async def handle_telemetry(
         try:
             metrics = pb.DaemonMetrics()
             metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
-            service.gateway.metrics.device_link_synchronized.labels(device_id=device_id).set(
-                1.0 if metrics.link_synchronised else 0.0
-            )
-            simple_metrics: tuple[tuple[str, float], ...] = (
-                ("device_watchdog_enabled", 1.0 if metrics.watchdog_enabled else 0.0),
-                ("device_cloud_queue_depth", float(metrics.cloud_queue_depth)),
-                ("device_spool_pending", float(metrics.cloud_spool_pending_messages)),
-                ("device_serial_bytes_sent", float(metrics.serial_bytes_sent)),
-                ("device_serial_bytes_received", float(metrics.serial_bytes_received)),
-                ("device_serial_frames_sent", float(metrics.serial_frames_sent)),
-                ("device_serial_frames_received", float(metrics.serial_frames_received)),
-                ("device_serial_crc_errors", float(metrics.serial_crc_errors)),
-                ("device_serial_decode_errors", float(metrics.serial_decode_errors)),
-                ("device_handshake_attempts", float(metrics.handshake_attempts)),
-                ("device_handshake_successes", float(metrics.handshake_successes)),
-                ("device_watchdog_beats", float(metrics.watchdog_beats)),
-                ("device_uptime_seconds", float(metrics.uptime_seconds)),
-                ("device_cloud_messages_published", float(metrics.cloud_messages_published)),
-            )
-            for metric_attr, val in simple_metrics:
-                getattr(service.gateway.metrics, metric_attr).labels(device_id=device_id).set(val)
-
-            service.gateway.metrics.device_latency_ms.labels(device_id=device_id, type="serial").set(
-                float(metrics.serial_latency_ms)
-            )
-            service.gateway.metrics.device_latency_ms.labels(device_id=device_id, type="rpc").set(
-                float(metrics.rpc_latency_ms)
-            )
-            for ret in metrics.retries:
-                service.gateway.metrics.device_retries.labels(device_id=device_id, component=ret.component).set(
-                    float(ret.count)
-                )
+            service.gateway.metrics.update_daemon_metrics(device_id, metrics)
         except (DecodeError, ValueError) as exc:
             logger.warning("Failed to decode daemon metrics blob in telemetry", error=str(exc))
 

@@ -262,42 +262,174 @@ message McuStatusCount {
 }
 
 message DaemonMetrics {
-  uint32 cloud_queue_depth = 1;
-  uint32 cloud_dropped_messages = 2;
+  uint32 cloud_queue_depth = 1 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_cloud_queue_depth"
+    prometheus_help: "Current cloud queue depth on device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "queue_depth"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 0
+  }];
+  uint32 cloud_dropped_messages = 2 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_cloud_dropped_messages"
+    prometheus_help: "Total dropped cloud messages on device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_COUNTER
+    line_protocol_name: "dropped_messages"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 1
+  }];
   repeated CloudDropCount cloud_drop_counts = 3;
   uint32 cloud_spool_corrupt_dropped = 4;
   uint32 cloud_spool_dropped_limit = 5;
   uint32 cloud_spool_trim_events = 6;
   double cloud_spool_last_trim_unix = 7;
-  bool cloud_spool_degraded = 8;
+  bool cloud_spool_degraded = 8 [(telemetry_metric) = {
+    line_protocol_name: "spool_degraded"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 3
+  }];
   string cloud_spool_failure_reason = 9;
-  uint32 cloud_spool_pending_messages = 10;
+  uint32 cloud_spool_pending_messages = 10 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_spool_pending_messages"
+    prometheus_help: "Current pending offline spool messages on device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "spool_pending"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 2
+  }];
   QueueDepths queue_depths = 11;
-  bool link_synchronised = 12;
+  bool link_synchronised = 12 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_link_synchronized"
+    prometheus_help: "Hardware serial link synchronization status (1 = sync, 0 = unsync)"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "link_synchronized"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 4
+  }];
   uint32 unknown_command_count = 13;
   uint32 unknown_command_last_id = 14;
   repeated SupervisorEntry supervisors = 15;
   double heartbeat_unix = 16;
-  bool watchdog_enabled = 17;
+  bool watchdog_enabled = 17 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_watchdog_enabled"
+    prometheus_help: "Watchdog supervisor enabled status (1 = enabled, 0 = disabled)"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "watchdog_enabled"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 5
+  }];
   double watchdog_interval = 18;
-  uint64 serial_bytes_sent = 19;
-  uint64 serial_bytes_received = 20;
-  uint64 serial_frames_sent = 21;
-  uint64 serial_frames_received = 22;
+  uint64 serial_bytes_sent = 19 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_serial_bytes_sent"
+    prometheus_help: "Total bytes sent over serial link by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "serial_bytes_sent"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 6
+  }];
+  uint64 serial_bytes_received = 20 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_serial_bytes_received"
+    prometheus_help: "Total bytes received over serial link by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "serial_bytes_received"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 7
+  }];
+  uint64 serial_frames_sent = 21 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_serial_frames_sent"
+    prometheus_help: "Total frames sent over serial link by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "serial_frames_sent"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 8
+  }];
+  uint64 serial_frames_received = 22 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_serial_frames_received"
+    prometheus_help: "Total frames received over serial link by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "serial_frames_received"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 9
+  }];
   uint32 serial_retries = 23;
   uint32 serial_failures = 24;
-  uint32 serial_crc_errors = 25;
-  uint32 serial_decode_errors = 26;
-  double serial_latency_ms = 27;
-  double rpc_latency_ms = 28;
-  uint32 handshake_attempts = 29;
-  uint32 handshake_successes = 30;
+  uint32 serial_crc_errors = 25 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_serial_crc_errors"
+    prometheus_help: "Total CRC errors encountered on serial link by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "serial_crc_errors"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 10
+  }];
+  uint32 serial_decode_errors = 26 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_serial_decode_errors"
+    prometheus_help: "Total decode errors encountered on serial link by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "serial_decode_errors"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 11
+  }];
+  double serial_latency_ms = 27 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_latency_ms"
+    prometheus_help: "Round-trip latency in milliseconds"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    labels: {
+      name: "type"
+      static_value: "serial"
+    }
+  }];
+  double rpc_latency_ms = 28 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_latency_ms"
+    prometheus_help: "Round-trip latency in milliseconds"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    labels: {
+      name: "type"
+      static_value: "rpc"
+    }
+  }];
+  uint32 handshake_attempts = 29 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_handshake_attempts"
+    prometheus_help: "Total serial handshake attempts by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+  }];
+  uint32 handshake_successes = 30 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_handshake_successes"
+    prometheus_help: "Total serial handshake successes by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+  }];
   string handshake_state = 31;
   string link_state = 32;
-  uint64 watchdog_beats = 33;
-  double uptime_seconds = 34;
-  uint64 cloud_messages_published = 35;
-  repeated ComponentRetry retries = 36;
+  uint64 watchdog_beats = 33 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_watchdog_beats"
+    prometheus_help: "Total watchdog pulses emitted by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "watchdog_beats"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 12
+  }];
+  double uptime_seconds = 34 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_uptime_seconds"
+    prometheus_help: "Current daemon uptime in seconds"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+  }];
+  uint64 cloud_messages_published = 35 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_cloud_messages_published"
+    prometheus_help: "Total messages published to cloud by device"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    line_protocol_name: "published_messages"
+    line_protocol_kind: LINE_PROTOCOL_FIELD_KIND_INTEGER
+    line_protocol_order: 13
+  }];
+  repeated ComponentRetry retries = 36 [(telemetry_metric) = {
+    prometheus_name: "mcubridge_device_retries"
+    prometheus_help: "Total retries by device and component"
+    prometheus_kind: PROMETHEUS_METRIC_KIND_GAUGE
+    value_field: "count"
+    labels: {
+      name: "component"
+      field: "component"
+    }
+  }];
   repeated McuStatusCount mcu_status_counts = 37;
 }
 

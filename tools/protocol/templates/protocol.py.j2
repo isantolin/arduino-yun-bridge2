@@ -123,6 +123,51 @@ class TopicRoute:
         return self.method.split(".", 1)[1] if "." in self.method else self.method or None
 
 
+class MetricKind(StrEnum):
+    """Prometheus collector kind declared by the Protobuf telemetry schema."""
+
+    GAUGE = "gauge"
+    COUNTER = "counter"
+
+
+class LineProtocolFieldKind(StrEnum):
+    """Value encoding declared for a telemetry field written using Line Protocol."""
+
+    INTEGER = "integer"
+    FLOAT = "float"
+    BOOLEAN = "boolean"
+
+
+@dataclass(frozen=True, slots=True)
+class MetricLabelSpec:
+    """Metric label sourced from a repeated Protobuf entry or a static schema value."""
+
+    name: str
+    field: str = ""
+    static_value: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MetricSpec:
+    """Prometheus projection for one DaemonMetrics field."""
+
+    source_field: str
+    metric_name: str
+    help: str
+    kind: MetricKind
+    value_field: str | None = None
+    labels: tuple[MetricLabelSpec, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class LineProtocolFieldSpec:
+    """Line Protocol output field mapped to one scalar DaemonMetrics field."""
+
+    source_field: str
+    field_name: str
+    kind: LineProtocolFieldKind
+
+
 @dataclass(frozen=True, slots=True)
 class OperationSpec:
     """Canonical specification of a protocol operation (Command, RPC, or Telemetry). [SIL-2]"""
@@ -166,6 +211,8 @@ class ProtocolRegistry:
 
     __slots__ = (
         "operations",
+        "metrics",
+        "line_protocol_fields",
         "by_command_id",
         "by_name",
         "by_type",
@@ -184,6 +231,8 @@ class ProtocolRegistry:
         self,
         operations: tuple[OperationSpec, ...],
         *,
+        metrics: tuple[MetricSpec, ...] = (),
+        line_protocol_fields: tuple[LineProtocolFieldSpec, ...] = (),
         rpc_aliases: dict[str, str] | None = None,
         topic_lookup: dict[str, Topic],
         mcu_dispatch_handlers: dict[int, str],
@@ -193,6 +242,8 @@ class ProtocolRegistry:
         daemon_tasks: tuple[DaemonTaskSpec, ...] = (),
     ) -> None:
         self.operations = operations
+        self.metrics = metrics
+        self.line_protocol_fields = line_protocol_fields
         self.topic_lookup = topic_lookup
         self.mcu_dispatch_handlers = mcu_dispatch_handlers
         self.mcu_unsupported_reasons = mcu_unsupported_reasons
@@ -506,6 +557,41 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- endif %}
         ),
 {%- endfor %}
+    ),
+    metrics=(
+        {%- for metric in metrics %}
+        MetricSpec(
+            source_field={{ metric.source_field|tojson }},
+            metric_name={{ metric.metric_name|tojson }},
+            help={{ metric.help|tojson }},
+            kind={{ metric.kind }},
+            {%- if metric.value_field %}
+            value_field={{ metric.value_field|tojson }},
+            {%- endif %}
+            labels=(
+                {%- for label in metric.labels %}
+                MetricLabelSpec(
+                    name={{ label.name|tojson }},
+                    {%- if label.field %}
+                    field={{ label.field|tojson }},
+                    {%- endif %}
+                    {%- if label.static_value is not none %}
+                    static_value={{ label.static_value|tojson }},
+                    {%- endif %}
+                ),
+                {%- endfor %}
+            ),
+        ),
+        {%- endfor %}
+    ),
+    line_protocol_fields=(
+        {%- for field in line_protocol_fields %}
+        LineProtocolFieldSpec(
+            source_field={{ field.source_field|tojson }},
+            field_name={{ field.field_name|tojson }},
+            kind={{ field.kind }},
+        ),
+        {%- endfor %}
     ),
     rpc_aliases={
         {%- for alias, target_name in rpc_aliases.items()|sort %}

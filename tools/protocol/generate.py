@@ -628,6 +628,212 @@ def _build_operations_catalog(
     return operations
 
 
+def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
+    """Build the gateway metric catalog from DaemonMetrics field options."""
+    metrics_desc = next(
+        message
+        for descriptor in all_descs
+        for message in descriptor.message_types_by_name.values()
+        if message.name == "DaemonMetrics"
+    )
+    metric_kinds = {
+        pb_module.PROMETHEUS_METRIC_KIND_GAUGE: "MetricKind.GAUGE",
+        pb_module.PROMETHEUS_METRIC_KIND_COUNTER: "MetricKind.COUNTER",
+    }
+    numeric_types = {
+        FieldDescriptor.TYPE_DOUBLE,
+        FieldDescriptor.TYPE_FLOAT,
+        FieldDescriptor.TYPE_INT64,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_FIXED64,
+        FieldDescriptor.TYPE_FIXED32,
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_SFIXED32,
+        FieldDescriptor.TYPE_SFIXED64,
+        FieldDescriptor.TYPE_SINT32,
+        FieldDescriptor.TYPE_SINT64,
+        FieldDescriptor.TYPE_BOOL,
+    }
+    unsigned_integer_types = {
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_FIXED32,
+        FieldDescriptor.TYPE_FIXED64,
+    }
+    metric_specs: list[dict[str, Any]] = []
+    sources: set[str] = set()
+    families: dict[str, tuple[str, str, tuple[tuple[str, str], ...]]] = {}
+
+    for field in metrics_desc.fields:
+        field_options = field.GetOptions()
+        if not field_options.HasExtension(pb_module.telemetry_metric):
+            continue
+
+        option = field_options.Extensions[pb_module.telemetry_metric]
+        if not option.prometheus_name:
+            continue
+        if re.fullmatch(r"[a-zA-Z_:][a-zA-Z0-9_:]*", option.prometheus_name) is None:
+            raise ValueError(
+                f"Invalid Prometheus metric name on DaemonMetrics.{field.name}: {option.prometheus_name!r}"
+            )
+        if not option.prometheus_help:
+            raise ValueError(f"Prometheus metric {option.prometheus_name!r} has no help text")
+        if option.prometheus_kind not in metric_kinds:
+            raise ValueError(f"Prometheus metric {option.prometheus_name!r} has an unsupported metric kind")
+        if field.name in sources:
+            raise ValueError(f"DaemonMetrics.{field.name} declares more than one Prometheus metric")
+        sources.add(field.name)
+
+        if field.is_repeated:
+            if field.message_type is None or not option.value_field:
+                raise ValueError(f"Repeated Prometheus metric source DaemonMetrics.{field.name} needs value_field")
+            value_field = field.message_type.fields_by_name.get(option.value_field)
+            if value_field is None:
+                raise ValueError(
+                    f"Prometheus metric {option.prometheus_name!r} references unknown value field "
+                    f"{field.message_type.name}.{option.value_field}"
+                )
+        else:
+            if option.value_field:
+                raise ValueError(f"Scalar Prometheus metric source DaemonMetrics.{field.name} cannot set value_field")
+            value_field = field
+
+        if value_field.type not in numeric_types:
+            raise ValueError(f"Prometheus metric {option.prometheus_name!r} must reference a numeric field")
+        if (
+            option.prometheus_kind == pb_module.PROMETHEUS_METRIC_KIND_COUNTER
+            and value_field.type not in unsigned_integer_types
+        ):
+            raise ValueError(f"Prometheus counter {option.prometheus_name!r} must reference an unsigned integer field")
+
+        labels: list[dict[str, str | None]] = []
+        label_signature: list[tuple[str, str]] = []
+        label_names: set[str] = set()
+        for label in option.labels:
+            source_kind = label.WhichOneof("value_source")
+            if not label.name or label.name == "device_id" or label.name in label_names:
+                raise ValueError(f"Prometheus metric {option.prometheus_name!r} has an invalid or duplicate label name")
+            label_names.add(label.name)
+            if source_kind == "field":
+                if not field.is_repeated or field.message_type is None:
+                    raise ValueError(
+                        f"Prometheus metric {option.prometheus_name!r} can use field labels only "
+                        "with repeated message sources"
+                    )
+                label_field = field.message_type.fields_by_name.get(label.field)
+                if label_field is None or label_field.type not in {
+                    FieldDescriptor.TYPE_STRING,
+                    FieldDescriptor.TYPE_BOOL,
+                    FieldDescriptor.TYPE_ENUM,
+                    FieldDescriptor.TYPE_INT32,
+                    FieldDescriptor.TYPE_UINT32,
+                    FieldDescriptor.TYPE_INT64,
+                    FieldDescriptor.TYPE_UINT64,
+                }:
+                    raise ValueError(
+                        f"Prometheus metric {option.prometheus_name!r} has an invalid label field {label.field!r}"
+                    )
+                labels.append({"name": label.name, "field": label.field, "static_value": None})
+                label_signature.append((label.name, "field"))
+            elif source_kind == "static_value":
+                labels.append({"name": label.name, "field": None, "static_value": label.static_value})
+                label_signature.append((label.name, "static_value"))
+            else:
+                raise ValueError(
+                    f"Prometheus metric {option.prometheus_name!r} label {label.name!r} has no value source"
+                )
+
+        kind_name = metric_kinds[option.prometheus_kind].removeprefix("MetricKind.").lower()
+        signature = (kind_name, option.prometheus_help, tuple(label_signature))
+        previous_signature = families.setdefault(option.prometheus_name, signature)
+        if previous_signature != signature:
+            raise ValueError(f"Prometheus metric family {option.prometheus_name!r} has conflicting field metadata")
+
+        metric_specs.append(
+            {
+                "source_field": field.name,
+                "metric_name": option.prometheus_name,
+                "help": option.prometheus_help,
+                "kind": metric_kinds[option.prometheus_kind],
+                "value_field": option.value_field or None,
+                "labels": labels,
+            }
+        )
+
+    return metric_specs
+
+
+def _extract_line_protocol_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
+    """Build ordered Line Protocol field projections from DaemonMetrics options."""
+    metrics_desc = next(
+        message
+        for descriptor in all_descs
+        for message in descriptor.message_types_by_name.values()
+        if message.name == "DaemonMetrics"
+    )
+    field_kinds = {
+        pb_module.LINE_PROTOCOL_FIELD_KIND_INTEGER: "LineProtocolFieldKind.INTEGER",
+        pb_module.LINE_PROTOCOL_FIELD_KIND_FLOAT: "LineProtocolFieldKind.FLOAT",
+        pb_module.LINE_PROTOCOL_FIELD_KIND_BOOLEAN: "LineProtocolFieldKind.BOOLEAN",
+    }
+    integer_types = {
+        FieldDescriptor.TYPE_INT64,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_FIXED64,
+        FieldDescriptor.TYPE_FIXED32,
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_SFIXED32,
+        FieldDescriptor.TYPE_SFIXED64,
+        FieldDescriptor.TYPE_SINT32,
+        FieldDescriptor.TYPE_SINT64,
+        FieldDescriptor.TYPE_BOOL,
+    }
+    numeric_types = integer_types | {FieldDescriptor.TYPE_DOUBLE, FieldDescriptor.TYPE_FLOAT}
+    float_types = {FieldDescriptor.TYPE_DOUBLE, FieldDescriptor.TYPE_FLOAT}
+    line_fields: list[dict[str, Any]] = []
+    line_names: set[str] = set()
+    line_orders: set[int] = set()
+
+    for field in metrics_desc.fields:
+        field_options = field.GetOptions()
+        if not field_options.HasExtension(pb_module.telemetry_metric):
+            continue
+        option = field_options.Extensions[pb_module.telemetry_metric]
+        if not option.line_protocol_name:
+            continue
+        if re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", option.line_protocol_name) is None:
+            raise ValueError(f"Invalid Line Protocol field name: {option.line_protocol_name!r}")
+        if field.is_repeated or field.type not in numeric_types:
+            raise ValueError(f"Line Protocol field {option.line_protocol_name!r} must reference a numeric scalar")
+        if option.line_protocol_kind not in field_kinds:
+            raise ValueError(f"Line Protocol field {option.line_protocol_name!r} has an unsupported value kind")
+        if option.line_protocol_kind == pb_module.LINE_PROTOCOL_FIELD_KIND_INTEGER and field.type not in integer_types:
+            raise ValueError(f"Line Protocol integer field {option.line_protocol_name!r} must be integral")
+        if option.line_protocol_kind == pb_module.LINE_PROTOCOL_FIELD_KIND_FLOAT and field.type not in float_types:
+            raise ValueError(f"Line Protocol float field {option.line_protocol_name!r} must be floating-point")
+        if (
+            option.line_protocol_kind == pb_module.LINE_PROTOCOL_FIELD_KIND_BOOLEAN
+            and field.type != FieldDescriptor.TYPE_BOOL
+        ):
+            raise ValueError(f"Line Protocol boolean field {option.line_protocol_name!r} must reference a bool")
+        if option.line_protocol_name in line_names or option.line_protocol_order in line_orders:
+            raise ValueError("Line Protocol field names and order values must be unique")
+        line_names.add(option.line_protocol_name)
+        line_orders.add(option.line_protocol_order)
+        line_fields.append(
+            {
+                "source_field": field.name,
+                "field_name": option.line_protocol_name,
+                "kind": field_kinds[option.line_protocol_kind],
+                "order": option.line_protocol_order,
+            }
+        )
+
+    return sorted(line_fields, key=lambda item: item["order"])
+
+
 def _extract_operations_context(
     pb_module: Any,
     all_descs: list[Any],
@@ -672,6 +878,8 @@ def _extract_operations_context(
     operations = _build_operations_catalog(
         commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module
     )
+    metric_specs = _extract_metric_specs(pb_module, all_descs)
+    line_protocol_fields = _extract_line_protocol_specs(pb_module, all_descs)
 
     return {
         "grouped_actions": payload_ctx["grouped_actions"],
@@ -680,6 +888,8 @@ def _extract_operations_context(
         "payload_structs": payload_ctx["payload_structs"],
         "payload_names": payload_ctx["payload_names"],
         "operations": operations,
+        "metrics": metric_specs,
+        "line_protocol_fields": line_protocol_fields,
         "rpc_aliases": rpc_aliases,
         "ack_commands": [c for c in commands if c["requires_ack"]],
         "pre_sync_allowed_commands": [c for c in commands if c["pre_sync_allowed"]],

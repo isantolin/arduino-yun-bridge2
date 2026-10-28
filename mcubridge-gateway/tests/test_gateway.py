@@ -472,10 +472,13 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
     )
     line = sink.format_line_protocol("yun-node-1", metrics, timestamp_ns=1700000000000000000)
     assert "mcubridge_telemetry,device_id=yun-node-1" in line
-    assert "queue_depth=5i" in line
-    assert "link_synchronized=1i" in line
-    assert "watchdog_enabled=1i" in line
-    assert line.endswith("1700000000000000000")
+    assert line == (
+        "mcubridge_telemetry,device_id=yun-node-1 "
+        "queue_depth=5i,dropped_messages=1i,spool_pending=3i,spool_degraded=0i,"
+        "link_synchronized=1i,watchdog_enabled=1i,serial_bytes_sent=0i,serial_bytes_received=0i,"
+        "serial_frames_sent=0i,serial_frames_received=0i,serial_crc_errors=0i,serial_decode_errors=0i,"
+        "watchdog_beats=0i,published_messages=0i 1700000000000000000"
+    )
 
 
 async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
@@ -748,6 +751,16 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
     assert reg.get_sample_value("mcubridge_device_latency_ms", {"device_id": "edge-full", "type": "rpc"}) == 25.0
     retries_lbl = {"device_id": "edge-full", "component": "cloud_connect"}
     assert reg.get_sample_value("mcubridge_device_retries", retries_lbl) == 4.0
+    dropped_sample = reg.get_sample_value("mcubridge_device_cloud_dropped_messages_total", lbl)
+    assert dropped_sample == 2.0
+
+    await handle_telemetry(svc, "edge-full", mock_stream, envelope)
+    assert reg.get_sample_value("mcubridge_device_cloud_dropped_messages_total", lbl) == dropped_sample
+
+    metrics.cloud_dropped_messages = 1
+    envelope.telemetry.daemon_metrics_blob = metrics.SerializeToString()
+    await handle_telemetry(svc, "edge-full", mock_stream, envelope)
+    assert reg.get_sample_value("mcubridge_device_cloud_dropped_messages_total", lbl) == 3.0
 
     # Verify line protocol format contains all dimensions
     line = TSDBSink.format_line_protocol("edge-full", metrics, timestamp_ns=1700000000000)

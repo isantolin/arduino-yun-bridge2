@@ -53,6 +53,8 @@ def test_cgi_success(cgi_env: Any, mocker: MockerFixture) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = mocker.MagicMock()
     mock_ubus = mocker.MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "accepted"}]
     mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
 
     res = application(env, start_response)
@@ -61,7 +63,7 @@ def test_cgi_success(cgi_env: Any, mocker: MockerFixture) -> None:
     mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
     data = json.loads(res[0])
-    assert data == IsPartialDict({"status": "ok"})
+    assert data == IsPartialDict({"status": "accepted"})
 
 
 def test_cgi_invalid_path(cgi_env: Any, mocker: MockerFixture) -> None:
@@ -89,6 +91,7 @@ def test_cgi_internal_error(cgi_env: Any, mocker: MockerFixture) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = mocker.MagicMock()
     mock_ubus = mocker.MagicMock()
+    mock_ubus.connect.return_value = True
     mock_ubus.call.side_effect = OSError("fail")
     mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
 
@@ -102,6 +105,7 @@ def test_pin_rest_cgi_set_pin_digital_sync_error(mocker: MockerFixture) -> None:
         pin_rest_cgi.set_pin_digital_sync(13, 1)
 
     mock_ubus = mocker.MagicMock()
+    mock_ubus.connect.return_value = True
     mock_ubus.call.side_effect = OSError("UBUS failure")
     mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
     with pytest.raises(OSError, match="UBUS failure"):
@@ -110,10 +114,19 @@ def test_pin_rest_cgi_set_pin_digital_sync_error(mocker: MockerFixture) -> None:
     mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
     mock_ubus_ok = mocker.MagicMock()
+    mock_ubus_ok.connect.return_value = True
+    mock_ubus_ok.call.return_value = [{"status": "accepted"}]
     mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus_ok)
     pin_rest_cgi.set_pin_digital_sync(13, 1)
     assert mock_ubus_ok.connect.called
     mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+    mock_ubus_rejected = mocker.MagicMock()
+    mock_ubus_rejected.connect.return_value = True
+    mock_ubus_rejected.call.return_value = [{"status": "error", "message": "Serial service unavailable"}]
+    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus_rejected)
+    with pytest.raises(RuntimeError, match="was not accepted"):
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
 
 
 def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:
@@ -127,6 +140,8 @@ def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:
     }
 
     mock_ubus = mocker.MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "accepted"}]
     mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
     res = pin_rest_cgi.application(env, start_response)
     assert res

@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: Set up Renode
+description: Install the checksum-pinned Renode toolchain from requirements/runtime.toml
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Renode
+      shell: bash
+      run: python3 tools/ci/install_renode.py --destination "$RUNNER_TEMP/renode"

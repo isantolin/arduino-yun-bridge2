@@ -25,9 +25,9 @@ return view.extend({
 			statusBox.textContent = _('Sending command: ') + state + '...';
 
 			callDigitalWrite(13, val).then(function (res) {
-				if (res && res.status === 'ok') {
+				if (res && res.status === 'accepted') {
 					statusBox.className = 'alert-message success';
-					statusBox.textContent = 'LED 13 State: ' + state + ' (Success via UBUS)';
+					statusBox.textContent = 'LED 13 State: ' + state + ' (Request accepted via UBUS)';
 				} else {
 					throw new Error((res && res.error) ? res.error : 'UBUS non-ok status');
 				}
@@ -46,9 +46,9 @@ return view.extend({
 						return response.json();
 					})
 					.then(function (data) {
-						if (data.status === 'ok') {
+						if (data.status === 'accepted') {
 							statusBox.className = 'alert-message success';
-							statusBox.textContent = 'LED 13 State: ' + state + ' (Success via CGI)';
+							statusBox.textContent = 'LED 13 State: ' + state + ' (Request accepted via CGI)';
 						} else {
 							statusBox.className = 'alert-message warning';
 							statusBox.textContent = 'Error: ' + (data.message || 'Unknown error');

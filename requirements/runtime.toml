@@ -397,3 +397,8 @@ rationale = "Pytest plugin for measuring line and branch code coverage"
 name = "gcovr"
 pip = "gcovr==8.8"
 rationale = "C++ code coverage analysis utility parsing gcov instrumentation data"
+
+[toolchain.renode]
+version = "1.17.0+20261025git04cafbb29"
+url = "https://builds.renode.io/renode-{version}.linux-portable.tar.gz"
+sha256 = "1f771d2d2351b9476277139c149f7b69fbf458ff4404d8b663ecd0b42102a29d"

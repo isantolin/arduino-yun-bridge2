@@ -121,15 +121,14 @@ def test_wait_for_tcp_ready_timeout() -> None:
 def test_ubus_service_start_retries_and_succeeds(mocker: MockerFixture) -> None:
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
     attempts = 0
 
-    def _mock_connect() -> Any:
+    def _mock_connect() -> bool:
         nonlocal attempts
         attempts += 1
         if attempts < 3:
             raise OSError(f"ubusd busy, attempt={attempts}")
-        return mock_conn
+        return True
 
     mock_ubus.connect.side_effect = _mock_connect
     mock_ubus.INT32 = 1
@@ -140,7 +139,8 @@ def test_ubus_service_start_retries_and_succeeds(mocker: MockerFixture) -> None:
     res = service.start(max_attempts=4, retry_wait=tenacity.wait_none())
     assert res is True
     assert service.is_active is True
-    assert service.connection == mock_conn
+    assert service.connection is True
+    mock_ubus.add.assert_called_once()
     assert attempts == 3
 
 

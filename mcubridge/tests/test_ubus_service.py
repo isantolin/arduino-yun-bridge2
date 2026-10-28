@@ -85,10 +85,9 @@ def test_ubus_service_start_with_mock_ubus_success(mock_runtime: MockRuntimeFaca
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_ubus.connect.return_value = mock_conn
-    mock_ubus.INT32 = 1
-    mock_ubus.STRING = 2
+    mock_ubus.connect.return_value = True
+    mock_ubus.BLOBMSG_TYPE_INT32 = 1
+    mock_ubus.BLOBMSG_TYPE_STRING = 2
 
     mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
@@ -96,9 +95,9 @@ def test_ubus_service_start_with_mock_ubus_success(mock_runtime: MockRuntimeFaca
 
     assert res is True
     assert service.is_active
-    assert service.connection == mock_conn
-    assert mock_conn.add.called
-    call_args = mock_conn.add.call_args[0]
+    assert service.connection is True
+    assert mock_ubus.add.called
+    call_args = mock_ubus.add.call_args[0]
     assert call_args[0] == "mcubridge"
     methods = call_args[1]
     assert methods.keys() == Contains(
@@ -116,10 +115,15 @@ def test_ubus_service_start_with_mock_ubus_success(mock_runtime: MockRuntimeFaca
         "link_reset",
         "ping",
     )
+    assert methods["digital_write"]["signature"] == {
+        "pin": 1,
+        "value": 1,
+        "ubus_rpc_session": 2,
+    }
 
     service.stop()
     assert not service.is_active
-    assert mock_conn.close.called
+    mock_ubus.disconnect.assert_called_once_with()
 
 
 def test_ubus_service_start_with_connection_error(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
@@ -188,9 +192,8 @@ def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, mocker: M
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_ubus.connect.return_value = mock_conn
-    mock_conn.close.side_effect = OSError("Socket already closed")
+    mock_ubus.connect.return_value = True
+    mock_ubus.disconnect.side_effect = OSError("Socket already closed")
 
     mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
@@ -206,7 +209,7 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
     service = UbusService(mock_runtime)
     res = service.ubus_handle_digital_write(MagicMock(), {"pin": 13, "value": 1})
 
-    assert res == {"status": "ok", "pin": 13, "value": 1}
+    assert res == {"status": "accepted", "pin": 13, "value": 1}
     await asyncio.sleep(0.01)
     assert mock_runtime.serial is not None
     mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=1))
@@ -216,14 +219,14 @@ def test_ubus_handle_pin_write_serial_none(mock_runtime: MockRuntimeFacade) -> N
     mock_runtime.serial = None
     service = UbusService(mock_runtime)
     res = service.ubus_handle_digital_write(None, {"pin": 13, "value": 1})
-    assert res == {"status": "ok", "pin": 13, "value": 1}
+    assert res == {"status": "error", "message": "Serial service unavailable"}
 
 
 async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_analog_write(MagicMock(), {"pin": 9, "value": 128})
 
-    assert res == {"status": "ok", "pin": 9, "value": 128}
+    assert res == {"status": "accepted", "pin": 9, "value": 128}
     await asyncio.sleep(0.01)
     assert mock_runtime.serial is not None
     mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=9, value=128))
@@ -231,18 +234,19 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
 
 async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
-    res = service.ubus_handle_mailbox_push(MagicMock(), {"message": "hello_mcu"})
+    message = "hola🌉"
+    res = service.ubus_handle_mailbox_push(MagicMock(), {"message": message})
 
-    assert res == {"status": "ok", "message_length": 9}
+    assert res == {"status": "accepted", "message_length": len(message.encode("utf-8"))}
     await asyncio.sleep(0.01)
-    mock_runtime.mailbox_push.assert_awaited_once_with(b"hello_mcu")
+    mock_runtime.mailbox_push.assert_awaited_once_with(message.encode("utf-8"))
 
 
 async def test_ubus_handle_datastore_set(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_datastore_set(MagicMock(), {"key": "temperature", "value": "24.5"})
 
-    assert res == {"status": "ok", "key": "temperature"}
+    assert res == {"status": "accepted", "key": "temperature"}
     await asyncio.sleep(0.01)
     mock_runtime.datastore_put.assert_awaited_once_with("temperature", b"24.5")
 
@@ -301,8 +305,7 @@ def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, mocker: MockerFi
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
 
     mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
@@ -313,12 +316,13 @@ def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, mocker: MockerFi
     # Active service sends event
     service.start()
     assert service.notify("sync", {"synchronized": True}) is True
-    assert mock_conn.send.called
-    assert mock_conn.send.call_args[0][0] == "mcubridge.sync"
+    assert mock_ubus.send.called
+    assert mock_ubus.send.call_args[0][0] == "mcubridge.sync"
 
     # Error handling
-    mock_conn.send.side_effect = OSError("Send error")
+    mock_ubus.send.side_effect = OSError("Send error")
     assert service.notify("sync", {"synchronized": True}) is False
+    service.stop()
 
 
 def test_ubus_notify_with_boolean_connection(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
@@ -414,11 +418,12 @@ async def test_ubus_run_sync_with_running_loop(mock_runtime: MockRuntimeFacade) 
 
 async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
-    res = service.ubus_handle_file_write(MagicMock(), {"path": "test.txt", "data": "file content"})
+    data = "café"
+    res = service.ubus_handle_file_write(MagicMock(), {"path": "test.txt", "data": data})
 
-    assert res == {"status": "ok", "path": "test.txt", "bytes_written": 12}
+    assert res == {"status": "accepted", "path": "test.txt", "bytes_requested": len(data.encode("utf-8"))}
     await asyncio.sleep(0.01)
-    mock_runtime.file_write.assert_awaited_once_with("test.txt", b"file content")
+    mock_runtime.file_write.assert_awaited_once_with("test.txt", data.encode("utf-8"))
 
 
 def test_ubus_handle_link_reset(mock_runtime: MockRuntimeFacade) -> None:
@@ -456,7 +461,7 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: Mo
     await service.run()
     mock_ubus.loop.assert_not_called()
 
-    service.connection = MagicMock()
+    service.connection = True
     service.is_active = True
 
     async def cancel_soon() -> None:
@@ -470,36 +475,17 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: Mo
     assert mock_ubus.loop.call_count > 0
 
 
-def test_get_ubus_type_resolution(mocker: MockerFixture) -> None:
-    import mcubridge.services.ubus as ubus_mod
-
-    get_ubus_type = ubus_mod.get_ubus_type
-
-    # When ubus is None
-    mocker.patch.object(ubus_mod, "ubus", None)
-    assert get_ubus_type("INT32") == 0
-
-    # When ubus has BLOBMSG_TYPE_*
-    mock_ubus: Any = MagicMock(spec=["BLOBMSG_TYPE_INT32", "STRING"])
-    mock_ubus.BLOBMSG_TYPE_INT32 = 5
-    mock_ubus.STRING = 3
-    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
-    assert get_ubus_type("INT32") == 5
-    assert get_ubus_type("STRING") == 3
-
-
 def test_ubus_service_rpc_callback_execution(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
     mocker.patch.object(ubus_mod, "ubus", mock_ubus)
 
     service = UbusService(mock_runtime)
     assert service.start() is True
 
-    methods = mock_conn.add.call_args[0][1]
+    methods = mock_ubus.add.call_args[0][1]
     assert "ping" in methods
     cb = methods["ping"]["method"]
 
@@ -526,80 +512,80 @@ def test_ubus_service_connect_returns_none(mock_runtime: MockRuntimeFacade, mock
     assert not service.is_active
 
 
-def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
-    service = UbusService(mock_runtime)
+def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade) -> None:
+    mock_backend: Any = MagicMock()
+    service = UbusService(mock_runtime, ubus_module=mock_backend)
     # When inactive
     assert service.notify("test", {"a": 1}) is False
 
-    mock_conn = MagicMock()
-    service.connection = mock_conn
+    service.connection = True
     service.is_active = True
 
     # Successful notification
+    mock_backend.send.return_value = True
     assert service.notify("sync", {"status": "ok"}) is True
-    mock_conn.send.assert_called_once_with("mcubridge.sync", {"status": "ok"})
+    mock_backend.send.assert_called_once_with("mcubridge.sync", {"status": "ok"})
 
     # Error during send
-    mock_conn.send.side_effect = OSError("ubusd buffer full")
+    mock_backend.send.side_effect = OSError("ubusd buffer full")
     assert service.notify("sync", {"status": "ok"}) is False
 
-    # Fallback to ubus.send when _conn has no send
-    mock_ubus = MagicMock(spec=["send"])
-    service_fb = UbusService(mock_runtime, ubus_module=mock_ubus)
-    service_fb.connection = object()
-    service_fb.is_active = True
-    assert service_fb.notify("sync", {"status": "ok"}) is True
-    mock_ubus.send.assert_called_once_with("mcubridge.sync", {"status": "ok"})
+    # The module-level send result is the notification result.
+    mock_backend.send.side_effect = None
+    mock_backend.send.return_value = False
+    assert service.notify("sync", {"status": "ok"}) is False
 
-    # Fallback when neither _conn nor ubus has send method
     service_no_send = UbusService(mock_runtime, ubus_module=MagicMock(spec=[]))
-    service_no_send.connection = object()
+    service_no_send.connection = True
     service_no_send.is_active = True
-    assert service_no_send.notify("sync", {"status": "ok"}) is True
+    assert service_no_send.notify("sync", {"status": "ok"}) is False
 
 
-def test_ubus_service_register_methods_fallback(mock_runtime: MockRuntimeFacade) -> None:
-    mock_ubus = MagicMock(spec=["add"])
+def test_ubus_service_register_methods_requires_module_api(mock_runtime: MockRuntimeFacade) -> None:
+    mock_ubus: Any = MagicMock(spec=[])
     service = UbusService(mock_runtime, ubus_module=mock_ubus)
-    service.connection = object()
-    service.register_methods()
-    assert mock_ubus.add.called
+    service.connection = True
+    with pytest.raises(RuntimeError, match="callable add"):
+        service.register_methods()
 
 
-def test_ubus_service_stop_branches(mock_runtime: MockRuntimeFacade) -> None:
-    service = UbusService(mock_runtime)
+def test_ubus_service_stop_disconnects_module_api(mock_runtime: MockRuntimeFacade) -> None:
+    mock_backend: Any = MagicMock()
+    service = UbusService(mock_runtime, ubus_module=mock_backend)
+    service.connection = True
+    service.is_active = True
+    event_loop = asyncio.new_event_loop()
+    service.loop = event_loop
 
-    # 1. Conn with disconnect only (no close)
-    mock_conn1 = MagicMock(spec=["disconnect"])
-    service.connection = mock_conn1
     service.stop()
+
     assert not service.is_active
     assert service.connection is None
-    assert mock_conn1.disconnect.called
+    assert service.loop is None
+    mock_backend.disconnect.assert_called_once_with()
+    event_loop.close()
 
-    # 2. Conn raising error during disconnect
-    mock_conn2 = MagicMock(spec=["close"])
-    mock_conn2.close.side_effect = RuntimeError("close failed")
-    service.connection = mock_conn2
-    service.stop()
-    assert not service.is_active
+
+def test_ubus_service_start_rejects_non_boolean_connect(mock_runtime: MockRuntimeFacade) -> None:
+    mock_backend: Any = MagicMock()
+    mock_backend.connect.return_value = 1
+    service = UbusService(mock_runtime, ubus_module=mock_backend)
+
+    assert service.start(max_attempts=1) is False
     assert service.connection is None
+    assert not service.is_active
 
-    # 3. Conn without close/disconnect falls back to ubus.disconnect
-    mock_ubus_disc = MagicMock(spec=["disconnect"])
-    service_disc = UbusService(mock_runtime, ubus_module=mock_ubus_disc)
-    service_disc.connection = object()
-    service_disc.stop()
-    assert not service_disc.is_active
-    assert service_disc.connection is None
-    assert mock_ubus_disc.disconnect.called
 
-    # 4. Conn without close/disconnect and ubus without disconnect
-    service_empty = UbusService(mock_runtime, ubus_module=MagicMock(spec=[]))
-    service_empty.connection = object()
-    service_empty.stop()
-    assert not service_empty.is_active
-    assert service_empty.connection is None
+def test_ubus_service_start_disconnects_after_registration_failure(mock_runtime: MockRuntimeFacade) -> None:
+    mock_backend: Any = MagicMock()
+    mock_backend.connect.return_value = True
+    mock_backend.add.side_effect = OSError("registration failed")
+    service = UbusService(mock_runtime, ubus_module=mock_backend)
+
+    assert service.start(max_attempts=1) is False
+    mock_backend.disconnect.assert_called_once_with()
+    assert service.connection is None
+    assert not service.is_active
 
 
 def test_ubus_handle_clock_status_and_sync(mock_runtime: MockRuntimeFacade) -> None:
@@ -717,9 +703,9 @@ async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, moc
 
 def test_ubus_register_methods_no_add(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime, ubus_module=object())
-    service.connection = object()
-    service.register_methods()
-    assert service.connection is not None
+    service.connection = True
+    with pytest.raises(RuntimeError, match="callable add"):
+        service.register_methods()
 
 
 @given(raw=st.binary())
@@ -744,11 +730,21 @@ def test_ubus_handle_pin_write_property(pin: int, val: int) -> None:
     try:
         # Digital write
         resp_d = svc.ubus_handle_digital_write(None, {"pin": pin, "value": val})
-        assert resp_d == {"status": "ok", "pin": pin, "value": val}
+        assert resp_d == {"status": "accepted", "pin": pin, "value": val}
+        assert mock_rt.serial is not None
+        mock_rt.serial.send.assert_awaited_once_with(
+            Command.CMD_DIGITAL_WRITE.value,
+            pb.DigitalWrite(pin=pin, value=val),
+        )
 
         # Analog write
         resp_a = svc.ubus_handle_analog_write(None, {"pin": pin, "value": val})
-        assert resp_a == {"status": "ok", "pin": pin, "value": val}
+        assert resp_a == {"status": "accepted", "pin": pin, "value": val}
+        assert mock_rt.serial is not None
+        mock_rt.serial.send.assert_awaited_with(
+            Command.CMD_ANALOG_WRITE.value,
+            pb.AnalogWrite(pin=pin, value=val),
+        )
     finally:
         state.cleanup()
 
@@ -766,10 +762,12 @@ def test_ubus_handle_datastore_and_mailbox_property(key: str, val: str, msg_text
     try:
         # Datastore set
         resp_ds = svc.ubus_handle_datastore_set(None, {"key": key, "value": val})
-        assert resp_ds == {"status": "ok", "key": key}
+        assert resp_ds == {"status": "accepted", "key": key}
+        mock_rt.datastore_put.assert_awaited_once_with(key, val.encode("utf-8"))
 
         # Mailbox push
         resp_mb = svc.ubus_handle_mailbox_push(None, {"message": msg_text})
-        assert resp_mb == {"status": "ok", "message_length": len(msg_text)}
+        assert resp_mb == {"status": "accepted", "message_length": len(msg_text.encode("utf-8"))}
+        mock_rt.mailbox_push.assert_awaited_once_with(msg_text.encode("utf-8"))
     finally:
         state.cleanup()

@@ -49,8 +49,14 @@ def set_pin_digital_sync(pin: int, value: int) -> None:
         logger.error("Native OpenWrt UBUS module unavailable")
         raise RuntimeError("Native OpenWrt UBUS module unavailable")
     try:
-        ubus.connect()
-        ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+        if ubus.connect() is not True:
+            raise OSError("ubus.connect() did not return True")
+        result = ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+        if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+            raise RuntimeError("UBUS digital_write returned no response")
+        response = cast(dict[str, Any], result[0])
+        if response.get("status") != "accepted":
+            raise RuntimeError(f"UBUS digital_write was not accepted: {response}")
     except (OSError, RuntimeError, AttributeError) as exc:
         logger.error("Failed to write digital pin via UBUS", pin=pin, value=value, error=str(exc))
         raise
@@ -135,7 +141,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             start_response,
             "200 OK",
             pb.PinControlResponse(
-                status="ok",
+                status="accepted",
                 data=pin_data,
             ),
         )
@@ -162,7 +168,7 @@ def control(
         raise ValueError(f"Invalid state: {state}")
     pin_data = pb.PinControlData(pin=pin, state="ON" if normalized_state in ("ON", "HIGH", "1") else "OFF")
     set_pin_digital_sync(pin_data.pin, 1 if pin_data.state == "ON" else 0)
-    print(f"Pin {pin} set to {pin_data.state} via gRPC DigitalWrite")
+    print(f"Pin {pin} request accepted for {pin_data.state} via UBUS")
 
 
 @app.command()

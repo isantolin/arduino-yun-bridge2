@@ -1018,13 +1018,13 @@ El daemon registra el objeto `mcubridge` en el bus de sistema `ubusd` de OpenWrt
 | Método UBUS | Argumentos (blobmsg) | Retorno (JSON) | Descripción |
 | :--- | :--- | :--- | :--- |
 | `status` | `{}` | `{"connected": bool, "synchronized": bool, "version": str, "capabilities": dict}` | Estado en vivo del bridge y mapa booleano de capacidades MCU. |
-| `digital_write` | `{"pin": int32, "value": int32}` | `{"status": "ok", "pin": int, "value": int}` | Escritura digital en pin GPIO del microcontrolador. |
-| `analog_write` | `{"pin": int32, "value": int32}` | `{"status": "ok", "pin": int, "value": int}` | Escritura analógica PWM/DAC en pin del microcontrolador. |
-| `mailbox_push` | `{"message": string}` | `{"status": "ok", "message_length": int}` | Envío de mensaje hacia el buzón del microcontrolador. |
+| `digital_write` | `{"pin": int32, "value": int32}` | `{"status": "accepted", "pin": int, "value": int}` | Solicitud de escritura GPIO aceptada para ejecución asíncrona. |
+| `analog_write` | `{"pin": int32, "value": int32}` | `{"status": "accepted", "pin": int, "value": int}` | Solicitud de escritura PWM/DAC aceptada para ejecución asíncrona. |
+| `mailbox_push` | `{"message": string}` | `{"status": "accepted", "message_length": int}` | Solicitud de envío al buzón aceptada para ejecución asíncrona. |
 | `mailbox_read` | `{}` | `{"status": "ok", "message": string}` o `{"status": "empty"}` | Lectura de mensajes pendientes desde el buzón del MCU. |
-| `datastore_set` | `{"key": string, "value": string}` | `{"status": "ok", "key": string}` | Almacenamiento transaccional clave-valor en LMDB. |
+| `datastore_set` | `{"key": string, "value": string}` | `{"status": "accepted", "key": string}` | Solicitud de actualización del datastore aceptada para ejecución asíncrona. |
 | `datastore_get` | `{"key": string}` | `{"status": "ok", "key": string, "value": string}` | Lectura de clave en el datastore transaccional LMDB. |
-| `file_write` | `{"path": string, "data": string}` | `{"status": "ok", "path": string, "bytes_written": int}` | Escritura de archivo hacia almacenamiento MCU o tmpfs. |
+| `file_write` | `{"path": string, "data": string}` | `{"status": "accepted", "path": string, "bytes_requested": int}` | Solicitud de escritura hacia almacenamiento MCU o tmpfs aceptada para ejecución asíncrona. |
 | `process_run` | `{"command": string}` | `{"status": "ok", "pid": int}` | Ejecución de subproceso gestionado por `psutil`. |
 | `process_kill` | `{"pid": int32}` | `{"status": "ok", "pid": int, "error": string}` | Terminación en cascada de subproceso vía `psutil`. |
 | `process_poll` | `{"pid": int32}` | `{"status": "ok", "exit_code": int, "finished": bool, "stdout": str, "stderr": str}` | Monitoreo del estado y salida de subprocesos. |

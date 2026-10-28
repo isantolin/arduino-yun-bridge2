@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import importlib
-from collections.abc import Awaitable
 from typing import Any
 
 import anyio.from_thread
@@ -38,14 +37,6 @@ def format_ubus_bytes(data: bytes) -> str:
         return f"<hex:{data.hex()}>"
 
 
-def get_ubus_type(typ: str, ubus_module: Any = None) -> Any:
-    """Resolve UBUS blobmsg type identifier safely."""
-    target_ubus = ubus_module if ubus_module is not None else ubus
-    if target_ubus is None:
-        return 0
-    return getattr(target_ubus, f"BLOBMSG_TYPE_{typ}", getattr(target_ubus, typ, 0))
-
-
 class UbusService:
     """Manages the lifecycle of McuBridge UBUS object registration on OpenWrt."""
 
@@ -57,7 +48,7 @@ class UbusService:
     ) -> None:
         self.runtime = runtime
         self.ubus_backend: Any = ubus_module if ubus_module is not None else ubus
-        self.connection: Any = None
+        self.connection: bool | None = None
         self.is_active = False
         self.loop: asyncio.AbstractEventLoop | None = loop
 
@@ -70,11 +61,19 @@ class UbusService:
         if self.ubus_backend is None:
             logger.debug("python-ubus module not available in this environment; skipping UBUS registration")
             return False
+        missing_api = tuple(
+            name
+            for name in ("connect", "add", "send", "loop", "disconnect")
+            if not callable(getattr(self.ubus_backend, name, None))
+        )
+        if missing_api:
+            logger.error("python-ubus backend is missing required API methods", methods=missing_api)
+            return False
 
-        def _connect() -> Any:
-            if (conn := self.ubus_backend.connect()) is None:
-                raise OSError("ubus.connect() returned None")
-            return conn
+        def _connect() -> bool:
+            if self.ubus_backend.connect() is not True:
+                raise OSError("ubus.connect() did not return True")
+            return True
 
         wait_strategy = (
             retry_wait if retry_wait is not None else tenacity.wait_exponential(multiplier=0.05, min=0.05, max=0.5)
@@ -94,14 +93,15 @@ class UbusService:
             return True
         except (OSError, RuntimeError, tenacity.RetryError) as exc:
             logger.warning("Failed to connect to ubusd after retries", error=str(exc))
-            self.connection = None
-            self.is_active = False
+            self.stop()
             return False
 
     def register_methods(self) -> None:
         """Register RPC methods on the active UBUS connection."""
-        if self.connection is None or self.ubus_backend is None:
+        if self.connection is not True:
             return
+        if self.ubus_backend is None or not callable(getattr(self.ubus_backend, "add", None)):
+            raise RuntimeError("python-ubus backend has no callable add() API")
 
         def _make_handler(handler: Any) -> Any:
             def _cb(req: Any, msg: dict[str, Any]) -> None:
@@ -119,28 +119,26 @@ class UbusService:
 
             return _cb
 
-        session_type = get_ubus_type("STRING", self.ubus_backend)
         methods = REGISTRY.build_ubus_methods(
             self,
             self.ubus_backend,
             handler_factory=_make_handler,
-            get_type_fn=get_ubus_type,
-            session_type=session_type,
         )
-
-        if hasattr(self.connection, "add") and callable(self.connection.add):
-            self.connection.add("mcubridge", methods)
-        elif hasattr(self.ubus_backend, "add") and callable(self.ubus_backend.add):
-            self.ubus_backend.add("mcubridge", methods)
+        self.ubus_backend.add("mcubridge", methods)
 
     async def run(self) -> None:
         """Background loop to process incoming OpenWrt UBUS events directly in asyncio."""
-        if self.connection is None or self.ubus_backend is None or not hasattr(self.ubus_backend, "loop"):
+        if self.connection is not True or self.ubus_backend is None:
             return
+        event_loop = asyncio.get_running_loop()
+        self.loop = event_loop
+        loop_ubus = getattr(self.ubus_backend, "loop", None)
+        if not callable(loop_ubus):
+            raise RuntimeError("python-ubus backend has no callable loop() API")
         logger.info("Starting OpenWrt UBUS event loop")
         try:
             while self.is_active:
-                self.ubus_backend.loop(0)
+                loop_ubus(0)
                 await asyncio.sleep(0.05)
         except asyncio.CancelledError:
             logger.info("OpenWrt UBUS event loop cancelled")
@@ -231,18 +229,15 @@ class UbusService:
             return {"status": resp.status, "pid": proto.pid}
         return {"status": "ok", "pid": resp.pid}
 
-    def _schedule_task(self, coro: Awaitable[Any], result: dict[str, Any]) -> dict[str, Any]:
-        self.schedule_async(coro)
-        return result
-
     def _handle_pin_write(
         self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], _req: Any, msg: dict[str, Any]
     ) -> dict[str, Any]:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        if self.runtime.serial:
-            self.schedule_async(self.runtime.serial.send(cmd.value, proto))
-        return {"status": "ok", "pin": proto.pin, "value": proto.value}
+        if not self.runtime.serial:
+            return {"status": "error", "message": "Serial service unavailable"}
+        self.schedule_async(self.runtime.serial.send(cmd.value, proto))
+        return {"status": "accepted", "pin": proto.pin, "value": proto.value}
 
     ubus_handle_digital_write = functools.partialmethod(_handle_pin_write, Command.CMD_DIGITAL_WRITE, pb.DigitalWrite)
     ubus_handle_analog_write = functools.partialmethod(_handle_pin_write, Command.CMD_ANALOG_WRITE, pb.AnalogWrite)
@@ -250,19 +245,16 @@ class UbusService:
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
         message = str(msg.get("message", ""))
-        return self._schedule_task(
-            self.runtime.mailbox_push(message.encode("utf-8")),
-            {"status": "ok", "message_length": len(message)},
-        )
+        payload = message.encode("utf-8")
+        self.schedule_async(self.runtime.mailbox_push(payload))
+        return {"status": "accepted", "message_length": len(payload)}
 
     def ubus_handle_datastore_set(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_set'."""
         key = str(msg.get("key", ""))
         value = str(msg.get("value", ""))
-        return self._schedule_task(
-            self.runtime.datastore_put(key, value.encode("utf-8")),
-            {"status": "ok", "key": key},
-        )
+        self.schedule_async(self.runtime.datastore_put(key, value.encode("utf-8")))
+        return {"status": "accepted", "key": key}
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_get'."""
@@ -290,10 +282,9 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.file_write'."""
         target_path = str(msg.get("path", ""))
         data_str = str(msg.get("data", ""))
-        return self._schedule_task(
-            self.runtime.file_write(target_path, data_str.encode("utf-8")),
-            {"status": "ok", "path": target_path, "bytes_written": len(data_str)},
-        )
+        payload = data_str.encode("utf-8")
+        self.schedule_async(self.runtime.file_write(target_path, payload))
+        return {"status": "accepted", "path": target_path, "bytes_requested": len(payload)}
 
     ubus_handle_process_run = functools.partialmethod(_run_proto_rpc, pb.ProcessRunAsync, "process_run_async")
     ubus_handle_process_kill = functools.partialmethod(_run_proto_rpc, pb.ProcessKill, "process_kill")
@@ -333,18 +324,13 @@ class UbusService:
 
     def notify(self, event_type: str, data: dict[str, Any]) -> bool:
         """Broadcast a native UBUS event notification (e.g. 'mcubridge.sync')."""
-        if self.connection is None or not self.is_active:
+        if self.connection is not True or not self.is_active or self.ubus_backend is None:
+            return False
+        send = getattr(self.ubus_backend, "send", None)
+        if not callable(send):
             return False
         try:
-            if hasattr(self.connection, "send") and callable(self.connection.send):
-                self.connection.send(f"mcubridge.{event_type}", data)
-            elif (
-                self.ubus_backend is not None
-                and hasattr(self.ubus_backend, "send")
-                and callable(self.ubus_backend.send)
-            ):
-                self.ubus_backend.send(f"mcubridge.{event_type}", data)
-            return True
+            return bool(send(f"mcubridge.{event_type}", data))
         except (OSError, RuntimeError) as exc:
             logger.debug("Failed to send UBUS notification", event_name=event_type, error=str(exc))
             return False
@@ -364,19 +350,11 @@ class UbusService:
     def stop(self) -> None:
         """Disconnect from ubusd."""
         self.is_active = False
-        if self.connection is not None:
-            try:
-                if hasattr(self.connection, "close") and callable(self.connection.close):
-                    self.connection.close()
-                elif hasattr(self.connection, "disconnect") and callable(self.connection.disconnect):
-                    self.connection.disconnect()
-                elif (
-                    self.ubus_backend is not None
-                    and hasattr(self.ubus_backend, "disconnect")
-                    and callable(self.ubus_backend.disconnect)
-                ):
-                    self.ubus_backend.disconnect()
-            except (OSError, RuntimeError) as exc:
-                logger.debug("Error during UBUS disconnect", error=str(exc))
-            finally:
-                self.connection = None
+        try:
+            if self.connection is True and self.ubus_backend is not None:
+                self.ubus_backend.disconnect()
+        except (OSError, RuntimeError) as exc:
+            logger.debug("Error during UBUS disconnect", error=str(exc))
+        finally:
+            self.connection = None
+            self.loop = None

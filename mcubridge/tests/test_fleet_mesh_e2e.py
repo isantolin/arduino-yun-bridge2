@@ -11,6 +11,7 @@ Exercises 100% of the 12 core ecosystem services dialoguing through the Protobuf
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -21,6 +22,27 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
+from tools.emulation.test_fleet_mesh_hardware_e2e import wait_for_node_ready
+
+
+@pytest.mark.parametrize(
+    ("bridge_status", "expected"),
+    [
+        ({"is_synchronized": True, "capabilities": {"watchdog": True}}, True),
+        ({"serial_link": {"synchronised": True}, "capabilities": {"watchdog": True}}, True),
+        ({"is_synchronized": True}, False),
+        ({"capabilities": {"watchdog": True}}, False),
+    ],
+)
+def test_wait_for_node_ready_requires_sync_and_capabilities(
+    tmp_path: Path,
+    bridge_status: dict[str, object],
+    expected: bool,
+) -> None:
+    status_file = tmp_path / "node-status.json"
+    status_file.write_text(json.dumps({"bridge": bridge_status}), encoding="utf-8")
+
+    assert wait_for_node_ready(status_file, timeout=0) is expected
 
 
 class MeshNodeContext:

@@ -45,7 +45,6 @@ from tools.emulation.emulation_runner import (
     audit_post_execution_status,
     ensure_cloud_gateway,
     setup_fake_uci,
-    wait_for_daemon_sync,
 )
 from tools.emulation.process_utils import (
     cleanup_paths,
@@ -167,7 +166,7 @@ def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
     try:
         return sync_retryer(_is_ready)
     except tenacity.RetryError:
-        return wait_for_daemon_sync(status_file, timeout=5.0)
+        return False
 
 
 async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
@@ -433,7 +432,11 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         for node in nodes:
             remaining = max(1.0, timeout_seconds - (time.time() - start_time))
             if not wait_for_node_ready(node.status_file, timeout=remaining):
-                logger.error("Node failed cryptographic synchronization", node=node.name, board=node.board.label)
+                logger.error(
+                    "Node failed cryptographic synchronization or capabilities discovery",
+                    node=node.name,
+                    board=node.board.label,
+                )
                 return False
             logger.info("Node synchronized successfully", node=node.name, board=node.board.label)
 

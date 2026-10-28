@@ -320,16 +320,7 @@ jobs:
           arduino-cli core install arduino:samd
           arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
       - name: Install Renode
-        run: |
-          RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.linux-portable.tar.gz"
-          if curl -fsSL -o /tmp/renode.tar.gz "$RENODE_URL"; then
-            sudo mkdir -p /opt/renode
-            sudo tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1
-            echo "/opt/renode" >> "$GITHUB_PATH"
-            rm -f /tmp/renode.tar.gz
-          else
-            echo "::warning::Failed to download Renode package. Fallback to skip mode."
-          fi
+        uses: ./.github/actions/setup-renode
       - name: Run Renode E2E Test Suite
         run: |
           mkdir -p renode-logs
@@ -428,16 +419,7 @@ jobs:
           arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
           python -m pip install pyserial esptool
       - name: Install Renode
-        run: |
-          RENODE_URL="https://dl.antmicro.com/projects/renode/builds/renode-latest.linux-portable.tar.gz"
-          if curl -fsSL -o /tmp/renode.tar.gz "$RENODE_URL"; then
-            sudo mkdir -p /opt/renode
-            sudo tar -xzf /tmp/renode.tar.gz -C /opt/renode --strip-components=1
-            echo "/opt/renode" >> "$GITHUB_PATH"
-            rm -f /tmp/renode.tar.gz
-          else
-            echo "::warning::Failed to download Renode package."
-          fi
+        uses: ./.github/actions/setup-renode
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
         uses: actions/cache@v6

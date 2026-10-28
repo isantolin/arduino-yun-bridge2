@@ -45,7 +45,7 @@ return view.extend({
 				snippetSection.style.display = 'none';
 				snippetPre.textContent = '';
 
-				fs.exec('/usr/bin/mcubridge-rotate-credentials').then(function (res) {
+				fs.exec('/usr/bin/mcubridge-rotate-credentials', ['--force']).then(function (res) {
 					var raw = (res.stdout || '') + (res.stderr || '');
 					rotateOutput.textContent = redactSecretLines(raw) || _('Credentials rotated successfully.');
 

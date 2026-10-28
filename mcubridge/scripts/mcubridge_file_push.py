@@ -21,18 +21,18 @@ def push_file_ubus(target_path: str, data: bytes, *, ubus_module: Any = None) ->
     """Attempt file write via OpenWrt UBUS."""
     try:
         ubus_mod = ubus_module if ubus_module is not None else importlib.import_module("ubus")
-        conn = ubus_mod.connect()
-        if not conn:
+        if ubus_mod.connect() is not True:
             return False
         try:
             data_str = data.decode("utf-8")
         except UnicodeDecodeError as exc:
             logger.debug("Payload is binary; hex encoding for UBUS transmission", error=str(exc))
             data_str = data.hex()
-        res: Any = conn.call("mcubridge", "file_write", {"path": target_path, "data": data_str})
-        if isinstance(res, dict):
-            res_dict = cast(dict[str, Any], res)
-            if res_dict.get("status") == "ok":
+        res: Any = ubus_mod.call("mcubridge", "file_write", {"path": target_path, "data": data_str})
+        first: Any = res[0] if isinstance(res, list) and res else res
+        if isinstance(first, dict):
+            res_dict = cast(dict[str, Any], first)
+            if res_dict.get("status") in ("accepted", "ok"):
                 logger.info("File push successful via UBUS", path=target_path, size=len(data))
                 return True
         return False

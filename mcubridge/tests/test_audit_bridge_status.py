@@ -134,14 +134,15 @@ def test_audit_cli_ubus_success(mocker: MockerFixture) -> None:
     import tools.audit.audit_bridge_status as audit_mod
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_conn.call.return_value = {"connected": True, "synchronized": True, "capabilities": {}}
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"connected": True, "synchronized": True, "capabilities": {}}]
 
     mocker.patch.object(audit_mod, "ubus", mock_ubus)
     result = runner.invoke(cast(Any, app), ["--ubus"])
     assert result.exit_code == 0
     assert "STATUS AUDIT PASS" in result.stdout
+    mock_ubus.connect.assert_called_once_with()
+    mock_ubus.call.assert_called_once_with("mcubridge", "status", {})
 
 
 def test_audit_cli_ubus_module_missing(mocker: MockerFixture) -> None:
@@ -160,9 +161,8 @@ def test_audit_cli_ubus_failure(mocker: MockerFixture) -> None:
     import tools.audit.audit_bridge_status as audit_mod
 
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_conn.call.side_effect = OSError("UBUS failure")
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.side_effect = OSError("UBUS failure")
 
     mocker.patch.object(audit_mod, "ubus", mock_ubus)
     result = runner.invoke(cast(Any, app), ["--ubus"])

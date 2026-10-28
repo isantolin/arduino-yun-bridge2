@@ -26,4 +26,4 @@ esac
 
 ubus call mcubridge digital_write "{\"pin\": $PIN, \"value\": $VAL, \"ubus_rpc_session\": \"\"}" >/dev/null 2>&1
 
-printf '{"status":"ok","data":{"pin":%d,"state":"%s"}}\n' "$PIN" "$NORM"
+printf '{"status":"accepted","data":{"pin":%d,"state":"%s"}}\n' "$PIN" "$NORM"

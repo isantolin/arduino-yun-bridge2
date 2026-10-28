@@ -8,9 +8,6 @@ via native OpenWrt UBUS IPC, matching LuCI ACL /usr/bin/mcubridge-led-control.
 from __future__ import annotations
 
 import importlib
-import json
-import shutil
-import subprocess
 import sys
 from typing import Annotated, Any, cast
 
@@ -27,43 +24,32 @@ except (ImportError, TypeError) as exc:
     ubus = None
 
 
-def set_digital_pin(pin: int, value: int) -> bool:
-    """Set digital pin state via OpenWrt UBUS IPC."""
+def set_digital_pin(pin: int, value: int, *, ubus_module: Any = None) -> bool:
+    """Set digital pin state via OpenWrt UBUS IPC. [SIL-2 / Rule 37]"""
+    ubus_mod = ubus_module if ubus_module is not None else ubus
+    if ubus_mod is None:
+        logger.error("Native OpenWrt UBUS module unavailable")
+        return False
+
     payload: dict[str, Any] = {
         "pin": pin,
         "value": 1 if value else 0,
-        "ubus_rpc_session": "",
     }
 
-    if ubus is not None:
-        try:
-            conn: Any = ubus.connect()
-            if conn is not None:
-                res: Any = conn.call("mcubridge", "digital_write", payload)
-                if isinstance(res, dict):
-                    res_dict: dict[str, Any] = cast(dict[str, Any], res)
-                    if res_dict.get("status") == "ok":
-                        return True
-                logger.warning("UBUS digital_write replied with non-ok status", response=res)
-                return False
-        except (OSError, RuntimeError, AttributeError) as exc:
-            logger.debug("python-ubus digital_write failed, falling back to CLI", error=str(exc))
-
-    ubus_bin = shutil.which("ubus")
-    if ubus_bin:
-        try:
-            args = [ubus_bin, "call", "mcubridge", "digital_write", json.dumps(payload)]
-            proc = subprocess.run(args, check=False, capture_output=True, text=True, timeout=5)
-            if proc.returncode == 0:
-                parsed: Any = json.loads(proc.stdout) if proc.stdout.strip() else {}
-                if isinstance(parsed, dict):
-                    parsed_dict: dict[str, Any] = cast(dict[str, Any], parsed)
-                    if parsed_dict.get("status") == "ok":
-                        return True
-        except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as exc:
-            logger.debug("CLI ubus digital_write failed", error=str(exc))
-
-    return False
+    try:
+        if ubus_mod.connect() is not True:
+            raise OSError("ubus.connect() did not return True")
+        res: Any = ubus_mod.call("mcubridge", "digital_write", payload)
+        first: Any = res[0] if isinstance(res, list) and res else res
+        if isinstance(first, dict):
+            res_dict: dict[str, Any] = cast(dict[str, Any], first)
+            if res_dict.get("status") in ("accepted", "ok"):
+                return True
+        logger.warning("UBUS digital_write replied with non-accepted status", response=res)
+        return False
+    except (OSError, RuntimeError, AttributeError) as exc:
+        logger.error("python-ubus digital_write failed", pin=pin, value=value, error=str(exc))
+        return False
 
 
 @app.command()

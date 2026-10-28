@@ -26,18 +26,27 @@ except (ImportError, TypeError) as exc:
     ubus = None
 
 
-def ubus_call(obj: str, method: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def ubus_call(
+    obj: str,
+    method: str,
+    params: dict[str, Any] | None = None,
+    *,
+    ubus_module: Any = None,
+) -> dict[str, Any] | None:
     """Call a UBUS method directly via the native OpenWrt python-ubus library API. [Rule 37]"""
-    if ubus is None:
+    ubus_mod = ubus_module if ubus_module is not None else ubus
+    if ubus_mod is None:
         logger.error("Native OpenWrt python-ubus library is required for hardware smoke tests")
         return None
     payload = params if params is not None else {}
     try:
-        conn: Any = ubus.connect()
-        if conn is not None:
-            res: Any = conn.call(obj, method, payload)
-            if isinstance(res, dict):
-                return cast(dict[str, Any], res)
+        if ubus_mod.connect() is not True:
+            raise OSError("ubus.connect() did not return True")
+        res: Any = ubus_mod.call(obj, method, payload)
+        first: Any = res[0] if isinstance(res, list) and res else res
+        if isinstance(first, dict):
+            return cast(dict[str, Any], first)
+        if res is not None:
             return {"result": res}
     except (OSError, RuntimeError, AttributeError) as exc:
         logger.error("python-ubus call failed", method=method, error=str(exc))
@@ -63,7 +72,7 @@ def smoke_test(
     ping_res = ubus_call("mcubridge", "ping")
     elapsed_ms = (time.monotonic() - start_time) * 1000.0
 
-    if ping_res is not None and ping_res.get("status") == "ok":
+    if ping_res is not None and ping_res.get("status") == "ok" and elapsed_ms <= (timeout * 1000.0):
         print(f"      PASS: Ping replied in {elapsed_ms:.2f} ms (status: ok)")
         results["ping"] = {"passed": True, "latency_ms": round(elapsed_ms, 2), "response": ping_res}
     else:

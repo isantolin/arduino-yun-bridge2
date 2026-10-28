@@ -628,19 +628,8 @@ def _build_operations_catalog(
     return operations
 
 
-def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
-    """Build the gateway metric catalog from DaemonMetrics field options."""
-    metrics_desc = next(
-        message
-        for descriptor in all_descs
-        for message in descriptor.message_types_by_name.values()
-        if message.name == "DaemonMetrics"
-    )
-    metric_kinds = {
-        pb_module.PROMETHEUS_METRIC_KIND_GAUGE: "MetricKind.GAUGE",
-        pb_module.PROMETHEUS_METRIC_KIND_COUNTER: "MetricKind.COUNTER",
-    }
-    numeric_types = {
+_METRIC_NUMERIC_TYPES: Final[frozenset[int]] = frozenset(
+    {
         FieldDescriptor.TYPE_DOUBLE,
         FieldDescriptor.TYPE_FLOAT,
         FieldDescriptor.TYPE_INT64,
@@ -655,11 +644,94 @@ def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str
         FieldDescriptor.TYPE_SINT64,
         FieldDescriptor.TYPE_BOOL,
     }
-    unsigned_integer_types = {
+)
+_METRIC_UNSIGNED_INT_TYPES: Final[frozenset[int]] = frozenset(
+    {
         FieldDescriptor.TYPE_UINT32,
         FieldDescriptor.TYPE_UINT64,
         FieldDescriptor.TYPE_FIXED32,
         FieldDescriptor.TYPE_FIXED64,
+    }
+)
+_METRIC_LABEL_FIELD_TYPES: Final[frozenset[int]] = frozenset(
+    {
+        FieldDescriptor.TYPE_STRING,
+        FieldDescriptor.TYPE_BOOL,
+        FieldDescriptor.TYPE_ENUM,
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_INT64,
+        FieldDescriptor.TYPE_UINT64,
+    }
+)
+
+
+def _resolve_metric_value_field(field: Any, option: Any, pb_module: Any) -> Any:
+    if field.is_repeated:
+        if field.message_type is None or not option.value_field:
+            raise ValueError(f"Repeated Prometheus metric source DaemonMetrics.{field.name} needs value_field")
+        value_field = field.message_type.fields_by_name.get(option.value_field)
+        if value_field is None:
+            raise ValueError(
+                f"Prometheus metric {option.prometheus_name!r} references unknown value field "
+                f"{field.message_type.name}.{option.value_field}"
+            )
+    else:
+        if option.value_field:
+            raise ValueError(f"Scalar Prometheus metric source DaemonMetrics.{field.name} cannot set value_field")
+        value_field = field
+
+    if value_field.type not in _METRIC_NUMERIC_TYPES:
+        raise ValueError(f"Prometheus metric {option.prometheus_name!r} must reference a numeric field")
+    if (
+        option.prometheus_kind == pb_module.PROMETHEUS_METRIC_KIND_COUNTER
+        and value_field.type not in _METRIC_UNSIGNED_INT_TYPES
+    ):
+        raise ValueError(f"Prometheus counter {option.prometheus_name!r} must reference an unsigned integer field")
+    return value_field
+
+
+def _extract_metric_labels(field: Any, option: Any) -> tuple[list[dict[str, str | None]], tuple[tuple[str, str], ...]]:
+    labels: list[dict[str, str | None]] = []
+    label_signature: list[tuple[str, str]] = []
+    label_names: set[str] = set()
+    for label in option.labels:
+        source_kind = label.WhichOneof("value_source")
+        if not label.name or label.name == "device_id" or label.name in label_names:
+            raise ValueError(f"Prometheus metric {option.prometheus_name!r} has an invalid or duplicate label name")
+        label_names.add(label.name)
+        if source_kind == "field":
+            if not field.is_repeated or field.message_type is None:
+                raise ValueError(
+                    f"Prometheus metric {option.prometheus_name!r} can use field labels only "
+                    "with repeated message sources"
+                )
+            label_field = field.message_type.fields_by_name.get(label.field)
+            if label_field is None or label_field.type not in _METRIC_LABEL_FIELD_TYPES:
+                raise ValueError(
+                    f"Prometheus metric {option.prometheus_name!r} has an invalid label field {label.field!r}"
+                )
+            labels.append({"name": label.name, "field": label.field, "static_value": None})
+            label_signature.append((label.name, "field"))
+        elif source_kind == "static_value":
+            labels.append({"name": label.name, "field": None, "static_value": label.static_value})
+            label_signature.append((label.name, "static_value"))
+        else:
+            raise ValueError(f"Prometheus metric {option.prometheus_name!r} label {label.name!r} has no value source")
+    return labels, tuple(label_signature)
+
+
+def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
+    """Build the gateway metric catalog from DaemonMetrics field options."""
+    metrics_desc = next(
+        message
+        for descriptor in all_descs
+        for message in descriptor.message_types_by_name.values()
+        if message.name == "DaemonMetrics"
+    )
+    metric_kinds = {
+        pb_module.PROMETHEUS_METRIC_KIND_GAUGE: "MetricKind.GAUGE",
+        pb_module.PROMETHEUS_METRIC_KIND_COUNTER: "MetricKind.COUNTER",
     }
     metric_specs: list[dict[str, Any]] = []
     sources: set[str] = set()
@@ -685,67 +757,11 @@ def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str
             raise ValueError(f"DaemonMetrics.{field.name} declares more than one Prometheus metric")
         sources.add(field.name)
 
-        if field.is_repeated:
-            if field.message_type is None or not option.value_field:
-                raise ValueError(f"Repeated Prometheus metric source DaemonMetrics.{field.name} needs value_field")
-            value_field = field.message_type.fields_by_name.get(option.value_field)
-            if value_field is None:
-                raise ValueError(
-                    f"Prometheus metric {option.prometheus_name!r} references unknown value field "
-                    f"{field.message_type.name}.{option.value_field}"
-                )
-        else:
-            if option.value_field:
-                raise ValueError(f"Scalar Prometheus metric source DaemonMetrics.{field.name} cannot set value_field")
-            value_field = field
-
-        if value_field.type not in numeric_types:
-            raise ValueError(f"Prometheus metric {option.prometheus_name!r} must reference a numeric field")
-        if (
-            option.prometheus_kind == pb_module.PROMETHEUS_METRIC_KIND_COUNTER
-            and value_field.type not in unsigned_integer_types
-        ):
-            raise ValueError(f"Prometheus counter {option.prometheus_name!r} must reference an unsigned integer field")
-
-        labels: list[dict[str, str | None]] = []
-        label_signature: list[tuple[str, str]] = []
-        label_names: set[str] = set()
-        for label in option.labels:
-            source_kind = label.WhichOneof("value_source")
-            if not label.name or label.name == "device_id" or label.name in label_names:
-                raise ValueError(f"Prometheus metric {option.prometheus_name!r} has an invalid or duplicate label name")
-            label_names.add(label.name)
-            if source_kind == "field":
-                if not field.is_repeated or field.message_type is None:
-                    raise ValueError(
-                        f"Prometheus metric {option.prometheus_name!r} can use field labels only "
-                        "with repeated message sources"
-                    )
-                label_field = field.message_type.fields_by_name.get(label.field)
-                if label_field is None or label_field.type not in {
-                    FieldDescriptor.TYPE_STRING,
-                    FieldDescriptor.TYPE_BOOL,
-                    FieldDescriptor.TYPE_ENUM,
-                    FieldDescriptor.TYPE_INT32,
-                    FieldDescriptor.TYPE_UINT32,
-                    FieldDescriptor.TYPE_INT64,
-                    FieldDescriptor.TYPE_UINT64,
-                }:
-                    raise ValueError(
-                        f"Prometheus metric {option.prometheus_name!r} has an invalid label field {label.field!r}"
-                    )
-                labels.append({"name": label.name, "field": label.field, "static_value": None})
-                label_signature.append((label.name, "field"))
-            elif source_kind == "static_value":
-                labels.append({"name": label.name, "field": None, "static_value": label.static_value})
-                label_signature.append((label.name, "static_value"))
-            else:
-                raise ValueError(
-                    f"Prometheus metric {option.prometheus_name!r} label {label.name!r} has no value source"
-                )
+        _resolve_metric_value_field(field, option, pb_module)
+        labels, label_signature = _extract_metric_labels(field, option)
 
         kind_name = metric_kinds[option.prometheus_kind].removeprefix("MetricKind.").lower()
-        signature = (kind_name, option.prometheus_help, tuple(label_signature))
+        signature = (kind_name, option.prometheus_help, label_signature)
         previous_signature = families.setdefault(option.prometheus_name, signature)
         if previous_signature != signature:
             raise ValueError(f"Prometheus metric family {option.prometheus_name!r} has conflicting field metadata")

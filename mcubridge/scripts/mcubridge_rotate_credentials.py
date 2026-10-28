@@ -56,10 +56,11 @@ def restart_service() -> None:
         logger.error("Native OpenWrt UBUS module unavailable")
         raise RuntimeError("Native OpenWrt UBUS module unavailable")
     try:
-        conn: Any = ubus.connect()
-        conn.call("service", "restart", {"name": "mcubridge"})
+        if ubus.connect() is not True:
+            raise OSError("ubus.connect() did not return True")
+        ubus.call("service", "restart", {"name": "mcubridge"})
         logger.info("Bridge service restarted successfully via ubus")
-    except (OSError, RuntimeError) as e:
+    except (OSError, RuntimeError, AttributeError) as e:
         logger.error("Failed to restart service via ubus", error=str(e))
         raise
 

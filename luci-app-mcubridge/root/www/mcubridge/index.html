@@ -130,7 +130,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 					return response.json();
 				})
 				.then(data => {
-					if (data.status === 'ok') {
+					if (data.status === 'accepted' || data.status === 'ok') {
 						const resState = (data.data && data.data.state) ? data.data.state : (data.state || state);
 						statusDiv.innerText = `LED 13 State: ${resState} (Success)`;
 					} else {

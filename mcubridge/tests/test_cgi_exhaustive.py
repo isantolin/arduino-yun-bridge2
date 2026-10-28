@@ -1,4 +1,4 @@
-"""Exhaustive tests for pin_rest_cgi script. [SIL-2]"""
+"""Exhaustive tests for pin_rest_cgi, mcubridge_led_control, and mcubridge_hw_smoke scripts. [SIL-2]"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import io
 import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 from dirty_equals import Contains, IsPartialDict
 import pytest
@@ -22,6 +23,21 @@ pin_rest_cgi: Any = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pin_rest_cgi)
 application = pin_rest_cgi.application
 extract_pin_from_path = pin_rest_cgi.extract_pin_from_path
+
+# Dynamically import mcubridge_led_control and mcubridge_hw_smoke
+_led_path = Path(__file__).parent.parent / "scripts" / "mcubridge_led_control.py"
+_led_spec = importlib.util.spec_from_file_location("mcubridge_led_control", str(_led_path))
+if _led_spec is None or _led_spec.loader is None:
+    raise ImportError("Could not load mcubridge_led_control.py")
+led_control: Any = importlib.util.module_from_spec(_led_spec)
+_led_spec.loader.exec_module(led_control)
+
+_smoke_path = Path(__file__).parent.parent / "scripts" / "mcubridge_hw_smoke.py"
+_smoke_spec = importlib.util.spec_from_file_location("mcubridge_hw_smoke", str(_smoke_path))
+if _smoke_spec is None or _smoke_spec.loader is None:
+    raise ImportError("Could not load mcubridge_hw_smoke.py")
+hw_smoke: Any = importlib.util.module_from_spec(_smoke_spec)
+_smoke_spec.loader.exec_module(hw_smoke)
 
 
 @pytest.fixture
@@ -154,3 +170,29 @@ def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:
     assert res_err
     assert start_response_err.call_args[0][0] == "400 Bad Request"
     assert start_response_err.call_args[0][1] == Contains(("Content-Type", "application/json"))
+
+
+def test_mcubridge_led_control_ubus_contract() -> None:
+    """Verify mcubridge_led_control uses direct python-ubus API and accepts 'accepted' status."""
+    mock_ubus = MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "accepted", "pin": 13, "value": 1}]
+
+    assert led_control.set_digital_pin(13, 1, ubus_module=mock_ubus)
+    mock_ubus.connect.assert_called_once_with()
+    mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+    mock_ubus.call.return_value = [{"status": "error"}]
+    assert not led_control.set_digital_pin(13, 0, ubus_module=mock_ubus)
+
+
+def test_mcubridge_hw_smoke_ubus_contract() -> None:
+    """Verify mcubridge_hw_smoke unwraps list[dict] from python-ubus module call()."""
+    mock_ubus = MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "ok", "connected": True, "synchronized": True}]
+
+    res = hw_smoke.ubus_call("mcubridge", "ping", ubus_module=mock_ubus)
+    assert res == {"status": "ok", "connected": True, "synchronized": True}
+    mock_ubus.connect.assert_called_once_with()
+    mock_ubus.call.assert_called_once_with("mcubridge", "ping", {})

@@ -25,14 +25,13 @@ cli_main = cast(Callable[..., None], _file_push.main)
 
 def test_push_file_ubus_success() -> None:
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_conn.call.return_value = {"status": "ok", "path": "test.txt", "bytes_written": 5}
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "accepted", "path": "test.txt", "bytes_requested": 5}]
 
     res = push_file_ubus("test.txt", b"hello", ubus_module=mock_ubus)
     assert res is True
-    assert mock_conn.call.called
-    call_args = mock_conn.call.call_args[0]
+    assert mock_ubus.call.called
+    call_args = mock_ubus.call.call_args[0]
     assert call_args[0] == "mcubridge"
     assert call_args[1] == "file_write"
     assert call_args[2] == {"path": "test.txt", "data": "hello"}
@@ -40,26 +39,24 @@ def test_push_file_ubus_success() -> None:
 
 def test_push_file_ubus_binary_hex_fallback() -> None:
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_conn.call.return_value = {"status": "ok", "path": "bin.dat", "bytes_written": 3}
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "accepted", "path": "bin.dat", "bytes_requested": 3}]
 
     res = push_file_ubus("bin.dat", b"\xff\xfe\x00", ubus_module=mock_ubus)
     assert res is True
-    call_args = mock_conn.call.call_args[0]
+    call_args = mock_ubus.call.call_args[0]
     assert call_args[2]["data"] == "fffe00"
 
 
 def test_push_file_ubus_failure_returns_false() -> None:
     mock_ubus: Any = MagicMock()
-    mock_conn: Any = MagicMock()
-    mock_conn.call.return_value = {"status": "error"}
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"status": "error"}]
 
     assert push_file_ubus("test.txt", b"data", ubus_module=mock_ubus) is False
 
     # Connection failure
-    mock_ubus.connect.return_value = None
+    mock_ubus.connect.return_value = False
     assert push_file_ubus("test.txt", b"data", ubus_module=mock_ubus) is False
 
     # Exception
@@ -70,14 +67,14 @@ def test_push_file_ubus_failure_returns_false() -> None:
 def test_push_file_direct_ubus() -> None:
     # 1. When UBUS succeeds
     mock_ubus_ok = MagicMock()
-    mock_conn = MagicMock()
-    mock_conn.call.return_value = {"status": "ok"}
-    mock_ubus_ok.connect.return_value = mock_conn
+    mock_ubus_ok.connect.return_value = True
+    mock_ubus_ok.call.return_value = [{"status": "accepted"}]
     push_file("test.txt", b"data", ubus_module=mock_ubus_ok)
+    mock_ubus_ok.call.assert_called_once_with("mcubridge", "file_write", {"path": "test.txt", "data": "data"})
 
     # 2. When UBUS fails, exit(1) is called
     mock_ubus_err = MagicMock()
-    mock_ubus_err.connect.return_value = None
+    mock_ubus_err.connect.return_value = False
     with pytest.raises(SystemExit) as exc_info:
         push_file("test.txt", b"data", ubus_module=mock_ubus_err)
     assert exc_info.value.code == 1

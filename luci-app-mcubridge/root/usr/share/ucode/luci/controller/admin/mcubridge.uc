@@ -17,7 +17,7 @@ return {
 
 		http.prepare_content('application/json; charset=UTF-8');
 		http.write_json({
-			status: 'ok',
+			status: 'accepted',
 			state: val,
 			data: {
 				pin: p,

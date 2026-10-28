@@ -90,6 +90,7 @@ ALLOWLIST_PY_HELPERS = {
     "vacuum_lmdb_env",
     "connect_and_run",
     "supervise",
+    "on_subscribe_resp",
 }
 
 

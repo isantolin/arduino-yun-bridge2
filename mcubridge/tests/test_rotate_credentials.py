@@ -61,28 +61,26 @@ def test_rotate_credentials_updates_expected_uci_keys() -> None:
 def test_restart_service_ubus_success() -> None:
     script = load_script("mcubridge-rotate-credentials")
     mock_ubus = MagicMock()
-    mock_conn = MagicMock()
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
     script.ubus = mock_ubus
 
     script.restart_service()
 
     mock_ubus.connect.assert_called_once()
-    mock_conn.call.assert_called_once_with("service", "restart", {"name": "mcubridge"})
+    mock_ubus.call.assert_called_once_with("service", "restart", {"name": "mcubridge"})
 
 
 def test_restart_service_ubus_error_raises() -> None:
     script = load_script("mcubridge-rotate-credentials")
     mock_ubus = MagicMock()
-    mock_conn = MagicMock()
-    mock_conn.call.side_effect = RuntimeError("ubus service call failed")
-    mock_ubus.connect.return_value = mock_conn
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.side_effect = RuntimeError("ubus service call failed")
     script.ubus = mock_ubus
 
     with pytest.raises(RuntimeError, match="ubus service call failed"):
         script.restart_service()
 
-    mock_conn.call.assert_called_once_with("service", "restart", {"name": "mcubridge"})
+    mock_ubus.call.assert_called_once_with("service", "restart", {"name": "mcubridge"})
 
 
 def test_restart_service_ubus_none_raises() -> None:

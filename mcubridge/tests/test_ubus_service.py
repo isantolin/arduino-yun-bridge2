@@ -560,7 +560,7 @@ def test_ubus_service_stop_disconnects_module_api(mock_runtime: MockRuntimeFacad
     service.stop()
 
     assert not service.is_active
-    assert service.connection is None
+    assert vars(service)["connection"] is None
     assert service.loop is None
     mock_backend.disconnect.assert_called_once_with()
     event_loop.close()

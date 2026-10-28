@@ -1333,7 +1333,7 @@ enum Command {
       payload_type: "rpc_pb_SetBaudratePacket"
     }
   }];
-  CMD_SET_BAUDRATE_RESP = 75 [(cmd_opts) = {category: "system"}];
+  CMD_SET_BAUDRATE_RESP = 75;
   CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {
     requires_ack: true
     pb_message: "EnterBootloader"

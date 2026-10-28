@@ -231,7 +231,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     lines: list[str] = []
     for index, token in enumerate(tokens):
         suffix = " \\" if index < len(tokens) - 1 else ""
-        lines.append(f"\t\t{token}{suffix}")
+        lines.append(f"\t\t+{token}{suffix}")
     return lines
 
 

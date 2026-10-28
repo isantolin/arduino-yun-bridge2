@@ -70,7 +70,7 @@ rationale = "Structured logging with JSON output for production syslog"
 
 [[dependency]]
 name = "psutil"
-openwrt = "python3-psutil"
+openwrt = "python-psutil"
 pip = "psutil==7.2.2"
 rationale = "Cross-platform process supervision and resource tracking [SIL-2 compliance]"
 
@@ -96,7 +96,7 @@ rationale = "Declarative topic path parsing and compilation (SIL-2)"
 
 [[dependency]]
 name = "ubus"
-openwrt = "python3-ubus"
+openwrt = "python-ubus"
 pip = ""
 rationale = "Native OpenWrt microbus RPC interface for LuCI and system integration"
 

@@ -8,7 +8,7 @@ PYPI_NAME:=cryptography
 PKG_HASH:=7b46165bb56eb4704e2eaaf86f3c940d19154535d9b0ca7d6d590b04060e00d5
 
 # Se agregaron rust/host y python3-maturin/host
-PKG_BUILD_DEPENDS:=libffi/host python3-cffi/host rust/host python3-maturin/host
+PKG_BUILD_DEPENDS:=libffi/host rust/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
@@ -52,7 +52,7 @@ define Package/python3-cryptography
 	CATEGORY:=Languages
 	SUBMENU:=Python
 	TITLE:=Python cryptography library
-	DEPENDS:=+python3 +libopenssl +python3-cffi
+	DEPENDS:=+python3 +libopenssl +python-cffi
 endef
 
 define Package/python3-cryptography/description

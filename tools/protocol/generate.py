@@ -19,7 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
-undefinedfrom collections.abc import Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Final, cast
@@ -70,8 +70,6 @@ def _resolve_nanopb_protoc_dir() -> Path | None:
         if (candidate / "protoc").exists():
             return candidate
     return None
-
-
 
 
 def run_buf_generate(proto_dir: Path) -> None:
@@ -1184,8 +1182,6 @@ class JinjaGenerator:
             out_path.write_text(rendered, encoding="utf-8")
         if executable:
             out_path.chmod(0o755)
-
-
 
 
 def _resolve_proto_path(spec_path: Path) -> Path:

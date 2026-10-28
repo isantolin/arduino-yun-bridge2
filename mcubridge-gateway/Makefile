@@ -39,16 +39,16 @@ define Package/$(PKG_NAME)
 	PKG_ARCH:=all
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
-		python3 \
-		python3-protobuf \
-		python3-prometheus-client \
-		python3-statemachine \
-		python3-anyio \
-		python3-hpack \
-		python3-hyperframe \
-		python3-h2 \
-		python3-grpclib \
-		python3-typer
+		+python3 \
+		+python3-protobuf \
+		+python3-prometheus-client \
+		+python3-statemachine \
+		+python3-anyio \
+		+python3-hpack \
+		+python3-hyperframe \
+		+python3-h2 \
+		+python3-grpclib \
+		+python3-typer
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

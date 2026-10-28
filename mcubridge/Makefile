@@ -44,27 +44,27 @@ define Package/$(PKG_NAME)
 	PROVIDES:=mcubridge
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
-		python3 \
-		python3-cobs \
-		python3-protobuf \
-		python3-serialx \
-		python3-tenacity \
-		python3-uvloop \
-		python3-cryptography \
-		python3-structlog \
-		python3-psutil \
-		python3-statemachine \
-		python3-anyio \
-		python3-parse \
-		python3-ubus \
-		python3-hpack \
-		python3-hyperframe \
-		python3-h2 \
-		python3-grpclib \
-		python3-annotated-doc \
-		python3-shellingham \
-		python3-typer \
-		python3-lmdb
+		+python3 \
+		+python3-cobs \
+		+python3-protobuf \
+		+python3-serialx \
+		+python3-tenacity \
+		+python3-uvloop \
+		+python3-cryptography \
+		+python3-structlog \
+		+python-psutil \
+		+python3-statemachine \
+		+python3-anyio \
+		+python3-parse \
+		+python-ubus \
+		+python3-hpack \
+		+python3-hyperframe \
+		+python3-h2 \
+		+python3-grpclib \
+		+python3-annotated-doc \
+		+python3-shellingham \
+		+python3-typer \
+		+python3-lmdb
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

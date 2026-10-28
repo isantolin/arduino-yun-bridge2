@@ -39,14 +39,6 @@ edge = false
 rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client on mcubridge-gateway"
 
 [[dependency]]
-name = "httpx"
-openwrt = "python3-httpx"
-pip = "httpx==0.28.1"
-gateway = true
-edge = false
-rationale = "High-performance native async HTTP client for TSDB metrics ingestion and tooling"
-
-[[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
 pip = "serialx==1.15.1"
@@ -312,7 +304,7 @@ rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and det
 
 [[dev_dependency]]
 name = "pytest"
-pip = "pytest==9.1.1"
+pip = "pytest==9.2.0"
 rationale = "Primary testing framework and test runner"
 
 [[dev_dependency]]
@@ -337,8 +329,13 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.12"
+pip = "hypothesis==6.170.13"
 rationale = "Property-based testing and state machine fuzzing engine"
+
+[[dev_dependency]]
+name = "httpx"
+pip = "httpx==0.28.1"
+rationale = "HTTP client used by development tooling and retry integration tests"
 
 [[dev_dependency]]
 name = "asyncssh"

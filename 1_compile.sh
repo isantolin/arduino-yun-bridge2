@@ -685,10 +685,12 @@ sed -i 's/CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/g' .config 2>/dev/nul
 
 make defconfig
 
-# Re-ensure core packages stay enabled in .config after defconfig
+# Fail before the long package build if Kconfig discarded a required package,
+# which means one or more of its declared dependencies are unavailable.
 for pkg in $REQUIRED_PKGS; do
-    if ! grep -q "CONFIG_PACKAGE_${pkg}=y" .config; then
-        echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+    if ! grep -Fxq "CONFIG_PACKAGE_${pkg}=y" .config; then
+        echo "[ERROR] Required package '$pkg' was removed by defconfig; resolve its missing OpenWrt dependencies first." >&2
+        exit 1
     fi
 done
 

@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from email.message import Message
 import logging
 from pathlib import Path
 import re
 from typing import Any, cast
+import urllib.error
+import urllib.request
 from unittest.mock import AsyncMock, MagicMock
 
 from dirty_equals import Contains, HasLen, IsStr
-import httpx
 import pytest
 from gateway import (
     CloudBridgeService,
@@ -477,12 +479,15 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
 
 
 async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_resp = MagicMock(spec=httpx.Response)
-    mock_resp.status_code = 204
-    mock_client.post.return_value = mock_resp
+    request_args: list[tuple[urllib.request.Request, float]] = []
+    response: MagicMock = MagicMock()
 
-    sink = TSDBSink(endpoint_url="http://localhost:8428/write", client=mock_client)
+    def mock_urlopen(request: urllib.request.Request, *, timeout: float) -> MagicMock:
+        request_args.append((request, timeout))
+        return response
+
+    urlopen_mock = mocker.patch("urllib.request.urlopen", side_effect=mock_urlopen)
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     metrics = pb.DaemonMetrics(cloud_queue_depth=1)
     envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
@@ -491,7 +496,15 @@ async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
 
     spy_format = mocker.spy(sink, "format_line_protocol")
     await sink.ingest_telemetry("yun-node-1", envelope)
-    assert mock_client.post.called
+    urlopen_mock.assert_called_once()
+    assert len(request_args) == 1
+    request, timeout = request_args[0]
+    assert request.get_method() == "POST"
+    assert isinstance(request.data, bytes)
+    assert request.data.startswith(b"mcubridge_telemetry,device_id=yun-node-1 ")
+    assert request.get_header("Content-type") == "text/plain; charset=utf-8"
+    assert timeout == 5.0
+    response.close.assert_called_once()
     assert spy_format.call_count == 1
 
 
@@ -553,31 +566,34 @@ async def test_protobuf_gateway_metrics_port_run(mocker: MockerFixture) -> None:
     assert mock_metrics_server.called
 
 
-async def test_tsdb_sink_post_line_edge_paths() -> None:
+async def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
     # 1. Empty endpoint returns early
     sink_empty = TSDBSink(endpoint_url=None)
     assert not sink_empty.enabled
     await sink_empty.post_line("mcu,device=dev1 value=1")
 
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    sink = TSDBSink(endpoint_url="http://localhost:8428/write", client=mock_client)
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled
 
     # 2. Status >= 400
-    mock_resp = MagicMock(spec=httpx.Response)
-    mock_resp.status_code = 500
-    mock_client.post.return_value = mock_resp
+    def mock_http_error(request: urllib.request.Request, *, timeout: float) -> MagicMock:
+        raise urllib.error.HTTPError(request.full_url, 500, "Internal Server Error", Message(), None)
+
+    http_error_mock = mocker.patch("urllib.request.urlopen", side_effect=mock_http_error)
     await sink.post_line("mcu,device=dev1 value=1")
-    assert mock_client.post.call_count == 1
+    http_error_mock.assert_called_once()
 
-    # 3. HTTPError network failure (tenacity retries 2 attempts total)
-    mock_client.post.reset_mock()
-    mock_client.post.side_effect = httpx.ConnectError("Refused")
-    await sink.post_line("mcu,device=dev1 value=1")
-    assert mock_client.post.call_count == 2
+    # 3. URL error retries 2 attempts total and is re-raised after the final attempt.
+    def mock_network_error(request: urllib.request.Request, *, timeout: float) -> MagicMock:
+        raise urllib.error.URLError("Refused")
+
+    network_error_mock = mocker.patch("urllib.request.urlopen", side_effect=mock_network_error)
+    with pytest.raises(urllib.error.URLError, match="Refused"):
+        await sink.post_line("mcu,device=dev1 value=1")
+    assert network_error_mock.call_count == 2
 
 
-async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
+async def test_tsdb_sink_ingest_telemetry_edge_paths(mocker: MockerFixture) -> None:
     # 1. Disabled sink returns early
     sink_disabled = TSDBSink(endpoint_url=None)
     assert not sink_disabled.enabled
@@ -585,12 +601,12 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
     await sink_disabled.ingest_telemetry("dev1", envelope)
 
     # 2. Corrupted metrics blob caught and logged
-    mock_client = AsyncMock(spec=httpx.AsyncClient)
-    sink = TSDBSink(endpoint_url="http://localhost:8428/write", client=mock_client)
+    urlopen_mock = mocker.patch("urllib.request.urlopen")
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled
     envelope_corrupt = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"))
     await sink.ingest_telemetry("dev1", envelope_corrupt)
-    mock_client.post.assert_not_called()
+    urlopen_mock.assert_not_called()
 
 
 async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker: MockerFixture) -> None:
@@ -623,12 +639,13 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
     )
-    mocker.patch.object(mock_gateway.tsdb_sink.client, "post", new_callable=AsyncMock)
+    urlopen_mock = mocker.patch("urllib.request.urlopen")
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
     telemetry_val2 = mock_gateway.metrics.registry.get_sample_value(
         "mcubridge_device_telemetry_total", {"device_id": "edge-1"}
     )
     assert telemetry_val2 == init_val + 2.0
+    urlopen_mock.assert_not_called()
 
 
 async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway) -> None:
@@ -1062,6 +1079,8 @@ def test_tsdb_sink_invalid_scheme() -> None:
         TSDBSink(endpoint_url="file:///etc/passwd")
     with pytest.raises(ValueError, match="Invalid TSDB scheme 'ftp'"):
         TSDBSink(endpoint_url="ftp://evil.com/write")
+    with pytest.raises(ValueError, match="Invalid TSDB URL"):
+        TSDBSink(endpoint_url="http:///write")
 
 
 async def test_protobuf_gateway_reflection_services() -> None:

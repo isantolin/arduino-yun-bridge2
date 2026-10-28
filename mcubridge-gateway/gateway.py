@@ -11,6 +11,9 @@ from __future__ import annotations
 import asyncio
 import ssl
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
@@ -18,7 +21,6 @@ from typing import Annotated, Any, Final, cast
 
 import anyio
 import grpclib.events
-import httpx
 import prometheus_client
 import structlog
 import structlog.contextvars
@@ -271,19 +273,15 @@ class TSDBSink:
     def __init__(
         self,
         endpoint_url: str | None = None,
-        client: httpx.AsyncClient | None = None,
     ) -> None:
         if endpoint_url:
-            parsed = httpx.URL(endpoint_url)
+            parsed = urllib.parse.urlsplit(endpoint_url)
             if parsed.scheme not in ("http", "https"):
                 raise ValueError(f"Invalid TSDB scheme '{parsed.scheme}'; must be 'http' or 'https'")
+            if not parsed.netloc:
+                raise ValueError("Invalid TSDB URL; expected an absolute HTTP or HTTPS URL")
         self.endpoint_url = endpoint_url
         self.enabled = bool(endpoint_url)
-        self.client = client if client is not None else httpx.AsyncClient(timeout=5.0)
-
-    async def aclose(self) -> None:
-        """Close underlying HTTP client."""
-        await self.client.aclose()
 
     @staticmethod
     def format_line_protocol(
@@ -330,24 +328,29 @@ class TSDBSink:
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(2),
         wait=tenacity.wait_none(),
-        retry=tenacity.retry_if_exception_type((httpx.HTTPError, TimeoutError, OSError)),
-        retry_error_callback=lambda _rs: None,
+        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        reraise=True,
     )
     async def post_line(self, line: str) -> None:
-        """Execute asynchronous HTTP POST with tenacity retries."""
+        """Execute an HTTP POST without blocking the gateway event loop."""
         if not self.endpoint_url:
             return
+        request = urllib.request.Request(
+            self.endpoint_url,
+            data=line.encode("utf-8"),
+            headers={"Content-Type": "text/plain; charset=utf-8"},
+            method="POST",
+        )
         try:
-            resp = await self.client.post(
-                self.endpoint_url,
-                content=line.encode("utf-8"),
-                headers={"Content-Type": "text/plain; charset=utf-8"},
-            )
-            if resp.status_code >= 400:
-                logger.warning("TSDB server responded with status error", status=resp.status_code)
-        except (httpx.HTTPError, TimeoutError, OSError) as e:
-            logger.warning("TSDB network write failed", error=str(e))
+            response = await asyncio.to_thread(urllib.request.urlopen, request, timeout=5.0)
+        except urllib.error.HTTPError as exc:
+            logger.warning("TSDB server responded with status error", status=exc.code)
+            exc.close()
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            logger.warning("TSDB network write failed", error=str(exc))
             raise
+        else:
+            response.close()
 
 
 async def _handle_ping(
@@ -937,10 +940,7 @@ class ProtobufGateway:
         logger.info("gRPC Cloud Gateway running", scheme=scheme, host=self.host, port=self.port)
         if self.http3_enabled:
             logger.info("HTTP/3 (QUIC) capability enabled", port=self.http3_port, alt_svc=f'h3=":{self.http3_port}"')
-        try:
-            await self.server.wait_closed()
-        finally:
-            await self.tsdb_sink.aclose()
+        await self.server.wait_closed()
 
 
 app = typer.Typer(help="MCU Bridge Protobuf Gateway", add_completion=False)

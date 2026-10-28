@@ -42,7 +42,6 @@ define Package/$(PKG_NAME)
 		python3 \
 		python3-protobuf \
 		python3-prometheus-client \
-		python3-httpx \
 		python3-statemachine \
 		python3-anyio \
 		python3-hpack \
@@ -72,8 +71,8 @@ define Build/Prepare
 endef
 
 define Build/Compile
-	[ -d $(PKG_BUILD_DIR)/mcubridge ] && python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge || true
-	[ -d $(PKG_BUILD_DIR) ] && find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
+	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
+	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
 endef
 
 PYTHON3_SITE_DIR:=/usr/lib/python$(if $(wildcard $(STAGING_DIR_HOSTPKG)/lib/python3.14*),3.14,3.13)/site-packages
@@ -88,7 +87,7 @@ define Package/$(PKG_NAME)/install
 	# Install Protocol Stubs for self-contained imports
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)$(PYTHON3_SITE_DIR)/mcubridge/
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)$(PYTHON3_SITE_DIR)/mcubridge/protocol/
-	python3 -m compileall -o 2 -q $(1)$(PYTHON3_SITE_DIR)/mcubridge || true
+	python3 -m compileall -o 2 -q $(1)$(PYTHON3_SITE_DIR)/mcubridge
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

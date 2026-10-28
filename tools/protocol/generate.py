@@ -469,16 +469,35 @@ def _format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
     check_dup = "true" if flags["check_dup"] else "false"
 
     if adapter == "member_no_payload":
-        return f"&BridgeClass::_dispatchMemberNoPayload<{handler_ptr}, {needs_ack}, {retransmit}, {check_dup}>"
+        return (
+            f"&BridgeClass::_dispatchMemberNoPayload<"
+            f"{handler_ptr}, {needs_ack}, {retransmit}, {check_dup}>"
+        )
     if adapter == "member_with_msg":
-        return f"&BridgeClass::_dispatchMemberWithMsg<{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        return (
+            f"&BridgeClass::_dispatchMemberWithMsg<"
+            f"{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        )
     if adapter == "member_with_ctx_msg":
-        return f"&BridgeClass::_dispatchMemberWithCtxMsg<{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        return (
+            f"&BridgeClass::_dispatchMemberWithCtxMsg<"
+            f"{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        )
     if adapter == "static_with_msg":
-        return f"&BridgeClass::_dispatchStaticWithMsg<{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        return (
+            f"&BridgeClass::_dispatchStaticWithMsg<"
+            f"{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        )
     if adapter == "target_with_msg":
-        return f"&BridgeClass::_dispatchTargetWithMsg<{target_instance}, {handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
-    return f"&BridgeClass::_dispatchTargetAction<{target_instance}, {handler_ptr}, {needs_ack}, {retransmit}, {check_dup}>"
+        return (
+            f"&BridgeClass::_dispatchTargetWithMsg<"
+            f"{target_instance}, {handler_ptr}, {payload_type}, "
+            f"{needs_ack}, {retransmit}, {check_dup}>"
+        )
+    return (
+        f"&BridgeClass::_dispatchTargetAction<"
+        f"{target_instance}, {handler_ptr}, {needs_ack}, {retransmit}, {check_dup}>"
+    )
 
 
 

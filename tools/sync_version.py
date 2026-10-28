@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 VERSION_PATH = ROOT / "VERSION"
 
 TARGETS: tuple[tuple[str, str, str, int], ...] = (
@@ -41,6 +42,11 @@ def sync_metadata(version: str, repo_root: Path = ROOT) -> list[Path]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Synchronize package version metadata from the repository VERSION file."
+    )
+    parser.parse_args()
+
     if not VERSION_PATH.is_file():
         print(f"Missing version source: {VERSION_PATH}", file=sys.stderr)
         return 1

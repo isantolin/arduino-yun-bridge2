@@ -42,7 +42,7 @@ CPP_BLOCK_END = "# --- [AUTO-GENERATED C++ DEPENDENCIES END] ---"
 SYSTEM_ONLY_PACKAGES = {"uci", "ubus"}
 
 # Dev/CI host build-only packages (excluded from OpenWrt MPU package dependencies).
-BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "grpcio-tools", "xxd", "black"}
+BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "xxd", "black"}
 
 
 class ManifestError(RuntimeError):

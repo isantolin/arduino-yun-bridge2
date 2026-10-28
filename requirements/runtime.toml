@@ -171,12 +171,6 @@ pip = "nanopb==0.4.9.1"
 rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 
 [[dependency]]
-name = "grpcio-tools"
-openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools==1.85.0"
-rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
-
-[[dependency]]
 name = "lmdb"
 openwrt = "python3-lmdb"
 pip = "lmdb==3.0.0"

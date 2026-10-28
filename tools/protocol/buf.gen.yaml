@@ -20,3 +20,8 @@ plugins:
   # 4. Nanopb C headers/sources (mcubridge.pb.h, mcubridge.pb.c) for Zero-Heap MCU
   - local: protoc-gen-nanopb
     out: .
+    # Generate RpcEnvelope and its transitive message dependencies only.
+    types:
+      - "rpc.pb.RpcEnvelope"
+    exclude_types:
+      - "rpc.pb.DaemonMetrics"

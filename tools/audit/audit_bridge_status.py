@@ -136,7 +136,9 @@ def audit(
             if ubus.connect() is not True:
                 raise OSError("ubus.connect() did not return True")
             raw_res: Any = ubus.call("mcubridge", "status", {})
-            first: Any = raw_res[0] if isinstance(raw_res, list) and raw_res else raw_res
+            first: object = (
+                cast(list[object], raw_res)[0] if isinstance(raw_res, list) and raw_res else cast(object, raw_res)
+            )
             if not isinstance(first, dict):
                 raise RuntimeError("UBUS status returned invalid payload")
             data = cast(dict[str, Any], first)

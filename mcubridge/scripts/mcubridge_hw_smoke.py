@@ -43,7 +43,7 @@ def ubus_call(
         if ubus_mod.connect() is not True:
             raise OSError("ubus.connect() did not return True")
         res: Any = ubus_mod.call(obj, method, payload)
-        first: Any = res[0] if isinstance(res, list) and res else res
+        first: object = cast(list[object], res)[0] if isinstance(res, list) and res else cast(object, res)
         if isinstance(first, dict):
             return cast(dict[str, Any], first)
         if res is not None:

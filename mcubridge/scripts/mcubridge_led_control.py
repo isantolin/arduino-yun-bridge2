@@ -40,7 +40,7 @@ def set_digital_pin(pin: int, value: int, *, ubus_module: Any = None) -> bool:
         if ubus_mod.connect() is not True:
             raise OSError("ubus.connect() did not return True")
         res: Any = ubus_mod.call("mcubridge", "digital_write", payload)
-        first: Any = res[0] if isinstance(res, list) and res else res
+        first: object = cast(list[object], res)[0] if isinstance(res, list) and res else cast(object, res)
         if isinstance(first, dict):
             res_dict: dict[str, Any] = cast(dict[str, Any], first)
             if res_dict.get("status") in ("accepted", "ok"):

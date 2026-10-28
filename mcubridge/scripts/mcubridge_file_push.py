@@ -29,7 +29,7 @@ def push_file_ubus(target_path: str, data: bytes, *, ubus_module: Any = None) ->
             logger.debug("Payload is binary; hex encoding for UBUS transmission", error=str(exc))
             data_str = data.hex()
         res: Any = ubus_mod.call("mcubridge", "file_write", {"path": target_path, "data": data_str})
-        first: Any = res[0] if isinstance(res, list) and res else res
+        first: object = cast(list[object], res)[0] if isinstance(res, list) and res else cast(object, res)
         if isinstance(first, dict):
             res_dict = cast(dict[str, Any], first)
             if res_dict.get("status") in ("accepted", "ok"):

@@ -90,7 +90,7 @@ elif [ "$EMULATOR" = "renode" ]; then
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
         "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
         "--build-path" "$OUTPUT_DIR"
     )

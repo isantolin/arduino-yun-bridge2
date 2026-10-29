@@ -1869,7 +1869,7 @@ message RuntimeConfig {
   ];
   float watchdog_interval = 35 [
     (config_default) = "5.0",
-    (config_min) = 0.0,
+    (config_min) = 0.5,
     (config_max) = 300.0,
     (config_desc) = "Watchdog strobe interval in seconds",
     (uci_option) = "watchdog_interval"

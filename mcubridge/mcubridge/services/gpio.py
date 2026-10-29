@@ -7,7 +7,6 @@ from typing import Any, Protocol
 
 import structlog
 
-from ..config.const import PROP_KEY_BRIDGE_PIN
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import (
     CLOUD_EXPIRY_PIN,
@@ -136,7 +135,7 @@ class GpioService:
                 REGISTRY.topic_path(state.cloud_topic_prefix, topic_kind, pin_str, "value"),
                 str(p.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
-                user_properties=((PROP_KEY_BRIDGE_PIN, pin_str),),
+                user_properties=(("bridge-pin", pin_str),),
             ),
             reply_context=req.reply_context if req else None,
         )

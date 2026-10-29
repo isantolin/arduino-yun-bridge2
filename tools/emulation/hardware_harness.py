@@ -4,11 +4,9 @@ import asyncio
 import json
 import os
 import sys
-import tomllib
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 import asyncssh
 import typer
@@ -17,35 +15,7 @@ from tools.audit.audit_bridge_status import audit_status_dict
 from tools.emulation.process_utils import terminate_pid_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
 LED_BUILTIN_TESTS = frozenset({"led13_test.py", "all_features_test.py"})
-
-
-@dataclass
-class Target:
-    name: str
-    host: str | None = None
-    user: str | None = None
-    ssh_args: list[str] = field(default_factory=list[str])
-    tags: set[str] = field(default_factory=set[str])
-    local: bool = False
-
-
-def _coerce_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(i) for i in cast(list[Any], value)]
-
-    return [str(value)]
-
-
-def _coerce_tags(value: Any) -> set[str]:
-    if value is None:
-        return set()
-    if isinstance(value, str):
-        return {value}
-    return {str(item) for item in value}
 
 
 def requires_led_builtin_pin(test_name: str) -> bool:
@@ -58,52 +28,6 @@ def led_pin_arguments(test_name: str, led_builtin_pin: int | None) -> list[str]:
     if led_builtin_pin is None:
         raise typer.BadParameter("--led-builtin-pin is required when running led13_test.py or all_features_test.py")
     return ["--pin", str(led_builtin_pin)]
-
-
-def load_manifest(path: Path) -> list[Target]:
-    if not path.exists():
-        return []
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-        defaults_data = data.get("defaults", {})
-        default_ssh = _coerce_list(defaults_data.get("ssh"))
-        default_tags = _coerce_tags(defaults_data.get("tags"))
-        default_user = defaults_data.get("user")
-
-        targets_data = data.get("targets", [])
-        if not targets_data:
-            return []
-
-        parsed: list[Target] = []
-        seen_names: set[str] = set()
-        for entry in targets_data:
-            name = entry.get("name", "")
-            if not name or name in seen_names:
-                continue
-            local = bool(entry.get("local", False))
-            host = entry.get("host")
-            if not local and not host:
-                continue
-            seen_names.add(name)
-
-            user = entry.get("user") if "user" in entry else default_user
-            ssh_args = _coerce_list(entry.get("ssh")) if "ssh" in entry else list(default_ssh)
-            tags = default_tags | _coerce_tags(entry.get("tags"))
-
-            parsed.append(
-                Target(
-                    name=name,
-                    host=host or None,
-                    user=user or None,
-                    ssh_args=ssh_args,
-                    tags=tags,
-                    local=local,
-                )
-            )
-        return parsed
-    except (OSError, tomllib.TOMLDecodeError, ValueError, TypeError) as e:
-        print(f"Error parsing manifest {path}: {e}")
-        return []
 
 
 async def run_command(
@@ -153,20 +77,6 @@ async def run_ssh_command(
 app = typer.Typer(help="Hardware test target harness runner.", add_completion=False)
 
 
-@app.command()
-def list_targets(
-    manifest_path: Annotated[Path, typer.Option("--manifest", help="Path to targets.toml manifest")] = EXAMPLE_MANIFEST,
-) -> None:
-    """Load and validate hardware harness manifest targets."""
-    targets = load_manifest(manifest_path)
-    if not targets:
-        print(f"No targets found in manifest: {manifest_path}")
-        return
-    print(f"Loaded {len(targets)} hardware target(s) from {manifest_path.name}:")
-    for t in targets:
-        print(f"  - {t.name} (host={t.host}, local={t.local}, tags={t.tags})")
-
-
 def _resolve_tests_to_run(examples_dir: Path, test_name: str | None) -> list[str]:
     available_tests = sorted([p.name for p in examples_dir.glob("*_test.py") if not p.name.startswith((".", "_"))])
     if not test_name:
@@ -176,33 +86,6 @@ def _resolve_tests_to_run(examples_dir: Path, test_name: str | None) -> list[str
         print(f"Error: test '{test_name}' not found. Available tests: {available_tests}")
         sys.exit(2)
     return [clean_name]
-
-
-def _resolve_target_execution(
-    target: str | None,
-    host: str | None,
-    user: str,
-    local: bool,
-    manifest_path: Path,
-) -> tuple[bool, str | None, str, list[str]]:
-    is_local = local or (host is None and target is None)
-    target_host = host
-    target_user = user
-    ssh_args: list[str] = ["-o", "StrictHostKeyChecking=no"]
-
-    if target and not local:
-        manifest_targets = load_manifest(manifest_path)
-        matched = [t for t in manifest_targets if t.name == target]
-        if not matched:
-            print(f"Error: target '{target}' not found in manifest {manifest_path}")
-            sys.exit(2)
-        tgt = matched[0]
-        is_local = tgt.local
-        target_host = tgt.host
-        target_user = tgt.user or user
-        ssh_args = tgt.ssh_args or ssh_args
-
-    return is_local, target_host, target_user, ssh_args
 
 
 def _sync_test_scripts(examples_parent: Path, target_host: str, target_user: str) -> None:
@@ -343,7 +226,6 @@ def _report_results_and_exit(
 
 @app.command()
 def run(
-    target: Annotated[str | None, typer.Option("--target", "-t", help="Target name from manifest")] = None,
     host: Annotated[str | None, typer.Option("--host", "-H", help="Target host IP or hostname")] = None,
     user: Annotated[str, typer.Option("--user", "-u", help="SSH user")] = "root",
     local: Annotated[bool, typer.Option("--local", "-l", help="Run tests locally")] = False,
@@ -357,7 +239,6 @@ def run(
     test_name: Annotated[
         str | None, typer.Option("--test", help="Specific test name to run (e.g. led13_test.py)")
     ] = None,
-    manifest_path: Annotated[Path, typer.Option("--manifest", help="Path to targets.toml manifest")] = EXAMPLE_MANIFEST,
     timeout: Annotated[float, typer.Option("--timeout", help="Timeout per test in seconds")] = 60.0,
 ) -> None:
     """Execute the suite of _test.py client tests locally or on remote physical hardware."""
@@ -366,7 +247,7 @@ def run(
     tests_to_run = _resolve_tests_to_run(examples_dir, test_name)
     pin_arguments = {name: led_pin_arguments(name, led_builtin_pin) for name in tests_to_run}
 
-    is_local, target_host, target_user, _ = _resolve_target_execution(target, host, user, local, manifest_path)
+    is_local, target_host, target_user = local or host is None, host, user
 
     print("========================================================")
     print(" McuBridge Hardware Physical Test Suite Runner")

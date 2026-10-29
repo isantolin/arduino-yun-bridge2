@@ -9,10 +9,9 @@ from typing import Any
 
 import structlog
 
-from .config import const
 from .protocol import mcubridge_pb2 as pb
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
-from .protocol.protocol import REGISTRY, Topic
+from .protocol.protocol import BRIDGE_SNAPSHOT_EXPIRY_SECONDS, REGISTRY, Topic
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
@@ -42,22 +41,22 @@ def _build_metrics_message(
 
     if snapshot.cloud_spool_degraded:
         message.user_properties.add(
-            key=const.PROP_KEY_BRIDGE_SPOOL,
-            value=snapshot.cloud_spool_failure_reason or const.PROP_VAL_UNKNOWN,
+            key="bridge-spool",
+            value=snapshot.cloud_spool_failure_reason or "unknown",
         )
 
     # Extra props for files
     if state.file_storage_limit_rejections > 0:
-        message.user_properties.add(key=const.PROP_KEY_BRIDGE_FILES, value=const.PROP_VAL_QUOTA_BLOCKED)
+        message.user_properties.add(key="bridge-files", value="quota-blocked")
     elif state.file_write_limit_rejections > 0:
-        message.user_properties.add(key=const.PROP_KEY_BRIDGE_FILES, value=const.PROP_VAL_WRITE_LIMIT)
+        message.user_properties.add(key="bridge-files", value="write-limit")
 
     message.user_properties.add(
-        key=const.PROP_KEY_WATCHDOG_ENABLED,
-        value=const.PROP_VAL_ENABLED_TRUE if snapshot.watchdog_enabled else const.PROP_VAL_ENABLED_FALSE,
+        key="bridge-watchdog-enabled",
+        value="1" if snapshot.watchdog_enabled else "0",
     )
     if snapshot.watchdog_enabled:
-        message.user_properties.add(key=const.PROP_KEY_WATCHDOG_INTERVAL, value=str(snapshot.watchdog_interval))
+        message.user_properties.add(key="bridge-watchdog-interval", value=str(snapshot.watchdog_interval))
 
     return message
 
@@ -195,6 +194,6 @@ def _build_bridge_snapshot_message(
         topic_name=topic,
         payload=snapshot.SerializeToString(),
         content_type=PROTOBUF_CONTENT_TYPE,
-        message_expiry_interval=const.BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
-        user_properties=((const.PROP_KEY_BRIDGE_SNAPSHOT, flavor),),
+        message_expiry_interval=BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
+        user_properties=(("bridge-snapshot", flavor),),
     )

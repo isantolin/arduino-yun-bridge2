@@ -11,11 +11,8 @@ from enum import StrEnum
 import structlog
 from statemachine import State, StateMachine
 
-from .config.const import (
-    WATCHDOG_MIN_INTERVAL,
-    WATCHDOG_TRIGGER_TOKEN,
-)
 from .protocol import protocol
+from .protocol.protocol import WATCHDOG_MIN_INTERVAL
 from .state.context import RuntimeState
 
 WatchdogWrite = Callable[[bytes], None]
@@ -70,7 +67,7 @@ class WatchdogKeepalive:
         *,
         interval: float = protocol.DEFAULT_WATCHDOG_INTERVAL,
         state: RuntimeState | None = None,
-        token: bytes = WATCHDOG_TRIGGER_TOKEN,
+        token: bytes = b"WATCHDOG=trigger\n",
         write: WatchdogWrite | None = None,
     ) -> None:
         self._interval = max(WATCHDOG_MIN_INTERVAL, interval)

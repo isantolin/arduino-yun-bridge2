@@ -180,7 +180,7 @@ def sync(
         mode="0755",
     )
     push_file(scripts_dir / "pin_rest_cgi.py", "/usr/bin/pin-rest-cgi", host=target_host, user=user, mode="0755")
-    push_file(scripts_dir / "pin_rest_cgi.sh", "/www/cgi-bin/mcubridge-pin", host=target_host, user=user, mode="0755")
+    push_file(scripts_dir / "pin_rest_cgi.py", "/www/cgi-bin/mcubridge-pin", host=target_host, user=user, mode="0755")
     push_file(scripts_dir / "defaults.sh", "/usr/share/mcubridge/defaults.sh", host=target_host, user=user, mode="0644")
 
     # 5. Sync LuCI files

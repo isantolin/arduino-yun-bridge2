@@ -1780,7 +1780,7 @@ message RuntimeConfig {
   ];
   uint32 process_timeout = 15 [
     (config_default) = "10",
-    (config_min) = 0,
+    (config_min) = 1,
     (config_max) = 3600,
     (config_desc) = "Subprocess execution timeout in seconds",
     (uci_option) = "process_timeout"

@@ -7,6 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config import settings as config_settings
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
+from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import validate_config
 
 
@@ -67,6 +68,29 @@ def test_runtime_config_bounds_are_driven_by_protobuf_metadata() -> None:
     cfg.cloud_http3_port = 65536
     with pytest.raises(ValueError, match=r"cloud_http3_port: must be <= 65535"):
         validate_config(cfg)
+
+
+def test_runtime_config_rejects_unknown_metadata_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        protocol,
+        "RUNTIME_CONFIG_METADATA",
+        {"missing_field": {"min": 1, "max": None}},
+    )
+    with pytest.raises(RuntimeError, match="unknown field: missing_field"):
+        validate_config(_valid_base_config())
+
+
+@pytest.mark.parametrize("field_name", ["serial_port", "allowed_commands"])
+def test_runtime_config_rejects_invalid_numeric_metadata(
+    field_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        protocol,
+        "RUNTIME_CONFIG_METADATA",
+        {field_name: {"min": 1, "max": None}},
+    )
+    with pytest.raises(RuntimeError, match="Numeric bounds declared for non-scalar numeric field"):
+        validate_config(_valid_base_config())
 
 
 @given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: x == x))

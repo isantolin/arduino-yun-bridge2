@@ -78,6 +78,7 @@ def _valid_runtime_config() -> pb.RuntimeConfig:
     cfg.cloud_spool_dir = "/tmp/spool"
     cfg.file_system_root = "/tmp"
     cfg.status_interval = 60
+    cfg.process_timeout = 10
     return cfg
 
 
@@ -282,6 +283,7 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     cfg_http3_zero = pb.RuntimeConfig(
         serial_port="/dev/ttyATH0",
         cloud_port=8443,
+        process_timeout=10,
         topic_prefix="mcu",
         status_interval=1,
         serial_shared_secret=b"dummy_secret_123",
@@ -293,6 +295,7 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     cfg_http3_active = pb.RuntimeConfig(
         serial_port="/dev/ttyATH0",
         cloud_port=8443,
+        process_timeout=10,
         topic_prefix="mcu",
         status_interval=1,
         serial_shared_secret=b"dummy_secret_123",

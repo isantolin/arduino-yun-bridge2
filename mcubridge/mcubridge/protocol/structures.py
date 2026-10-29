@@ -120,6 +120,8 @@ def _validate_metadata_bounds(cfg: pb.RuntimeConfig) -> None:
         # The watchdog lower bound only applies while watchdog monitoring is enabled.
         effective_minimum = None if field_name == "watchdog_interval" and not cfg.watchdog_enabled else minimum
         if effective_minimum is not None and value < effective_minimum:
+            if field_name == "watchdog_interval" and cfg.watchdog_enabled:
+                raise ValueError(f"{field_name} must be >= {effective_minimum}s when enabled")
             raise ValueError(f"{field_name}: must be >= {effective_minimum} (got {value})")
         if maximum is not None and value > maximum:
             raise ValueError(f"{field_name}: must be <= {maximum} (got {value})")
@@ -127,13 +129,14 @@ def _validate_metadata_bounds(cfg: pb.RuntimeConfig) -> None:
 
 def validate_config(cfg: pb.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place natively. [SIL-2]"""
-    _validate_metadata_bounds(cfg)
+    # Validate required identifiers first, preserving actionable error precedence.
     if not cfg.serial_port:
         raise ValueError("serial_port: value length must be at least 1")
     if not cfg.topic_prefix:
         raise ValueError("topic_prefix: value length must be at least 1")
     if not re.search(r"[^/]", cfg.topic_prefix):
         raise ValueError("topic_prefix: does not match regex pattern '[^/]'")
+    _validate_metadata_bounds(cfg)
     if not cfg.allow_non_tmp_paths:
         for field_name, meta in protocol.RUNTIME_CONFIG_METADATA.items():
             if meta.get("volatile"):

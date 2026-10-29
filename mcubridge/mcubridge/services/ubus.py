@@ -11,7 +11,6 @@ import functools
 import importlib
 from typing import Any
 
-import anyio.from_thread
 import structlog
 import tenacity
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -127,23 +126,25 @@ class UbusService:
         self.ubus_backend.add("mcubridge", methods)
 
     async def run(self) -> None:
-        """Background loop to process incoming OpenWrt UBUS events directly in asyncio."""
+        """Pump the blocking UBUS API in a worker thread, leaving asyncio unblocked."""
         if self.connection is not True or self.ubus_backend is None:
             return
-        event_loop = asyncio.get_running_loop()
-        self.loop = event_loop
+        self.loop = asyncio.get_running_loop()
         loop_ubus = getattr(self.ubus_backend, "loop", None)
         if not callable(loop_ubus):
             raise RuntimeError("python-ubus backend has no callable loop() API")
         logger.info("Starting OpenWrt UBUS event loop")
         try:
-            while self.is_active:
-                loop_ubus(0)
-                await asyncio.sleep(0.05)
+            await asyncio.to_thread(self._pump_events, loop_ubus)
         except asyncio.CancelledError:
             logger.info("OpenWrt UBUS event loop cancelled")
             self.stop()
             raise
+
+    def _pump_events(self, loop_ubus: Any) -> None:
+        """Run the native blocking poll off-loop; the timeout bounds shutdown latency."""
+        while self.is_active:
+            loop_ubus(250)
 
     def ubus_handle_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.status' returning holistic SIL-2 snapshot."""
@@ -291,36 +292,24 @@ class UbusService:
     ubus_handle_process_poll = functools.partialmethod(_run_proto_rpc, pb.ProcessPoll, "process_poll")
 
     def run_sync(self, coro: Any) -> Any:
-        """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""
+        """Await an async operation from the synchronous UBUS worker thread."""
         timeout = getattr(getattr(self.runtime, "state", None), "serial_response_timeout_ms", 5000) / 1000.0
         target_loop = self.loop
-        if target_loop is not None and target_loop.is_running():
-            try:
-                current_loop = asyncio.get_running_loop()
-            except RuntimeError as exc:
-                logger.debug("No active running loop in current thread", error=str(exc))
-                current_loop = None
-
-            if current_loop is not target_loop:
-                fut = asyncio.run_coroutine_threadsafe(coro, target_loop)
-                return fut.result(timeout=timeout)
-
         try:
-            return anyio.from_thread.run(lambda: coro)
-        except (anyio.NoEventLoopError, RuntimeError) as exc:
-            logger.debug("anyio from_thread run failed; falling back to thread pool or loop", error=str(exc))
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError as loop_exc:
-                logger.debug("No active running loop in thread fallback", error=str(loop_exc))
-                loop = None
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
 
-            if loop is not None and loop.is_running():
-                import concurrent.futures
+        if target_loop is not None and target_loop.is_running():
+            if current_loop is target_loop:
+                coro.close()
+                raise RuntimeError("run_sync cannot block the asyncio loop; call it from the UBUS worker thread")
+            return asyncio.run_coroutine_threadsafe(coro, target_loop).result(timeout=timeout)
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    return pool.submit(asyncio.run, coro).result(timeout=timeout)
-            return asyncio.run(coro)
+        if current_loop is not None:
+            coro.close()
+            raise RuntimeError("run_sync cannot start a nested event loop; call it from a synchronous thread")
+        return asyncio.run(coro)
 
     def notify(self, event_type: str, data: dict[str, Any]) -> bool:
         """Broadcast a native UBUS event notification (e.g. 'mcubridge.sync')."""

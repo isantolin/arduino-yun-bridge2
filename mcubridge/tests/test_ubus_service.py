@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -186,6 +187,38 @@ def test_ubus_schedule_async_without_running_loop(mock_runtime: MockRuntimeFacad
 
     service.schedule_async(sample_coro())
     assert ran[0] is True
+
+
+async def test_ubus_run_pumps_native_loop_on_worker_thread(
+    mock_runtime: MockRuntimeFacade, mocker: MockerFixture
+) -> None:
+    import mcubridge.services.ubus as ubus_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_ubus.connect.return_value = True
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    assert service.start()
+
+    main_thread_id = threading.get_ident()
+    worker_thread_ids: list[int] = []
+
+    def finish_poll(timeout_ms: int) -> None:
+        assert timeout_ms == 250
+        worker_thread_ids.append(threading.get_ident())
+        service.is_active = False
+
+    mock_ubus.loop.side_effect = finish_poll
+    await service.run()
+
+    assert worker_thread_ids
+    assert worker_thread_ids[0] != main_thread_id
+    service.stop()
+
+
+async def test_run_sync_bridges_worker_thread_to_running_loop(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime, loop=asyncio.get_running_loop())
+    result = await asyncio.to_thread(service.run_sync, asyncio.sleep(0, result="completed"))
+    assert result == "completed"
 
 
 def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:

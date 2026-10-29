@@ -134,10 +134,13 @@ class UbusService:
         if not callable(loop_ubus):
             raise RuntimeError("python-ubus backend has no callable loop() API")
         logger.info("Starting OpenWrt UBUS event loop")
+        pump_task = asyncio.create_task(asyncio.to_thread(self._pump_events, loop_ubus))
         try:
-            await asyncio.to_thread(self._pump_events, loop_ubus)
+            await asyncio.shield(pump_task)
         except asyncio.CancelledError:
             logger.info("OpenWrt UBUS event loop cancelled")
+            self.is_active = False
+            await pump_task
             self.stop()
             raise
 

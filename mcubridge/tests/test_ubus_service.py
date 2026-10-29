@@ -189,9 +189,7 @@ def test_ubus_schedule_async_without_running_loop(mock_runtime: MockRuntimeFacad
     assert ran[0] is True
 
 
-async def test_ubus_run_pumps_native_loop_on_worker_thread(
-    mock_runtime: MockRuntimeFacade, mocker: MockerFixture
-) -> None:
+async def test_ubus_run_pumps_native_loop_on_worker_thread(mock_runtime: MockRuntimeFacade) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()

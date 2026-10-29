@@ -239,6 +239,16 @@ option (rpc.pb.constants) = {
   default_process_retention_seconds: 60
   process_kill_timeout_seconds: 3
   capabilities_discovery_delay_seconds: 2
+  serial_baudrate_negotiation_timeout: 2
+  serial_handshake_backoff_base: 1
+  serial_handshake_backoff_max: 60
+  bridge_snapshot_expiry_seconds: 30
+  watchdog_min_interval: 0.5
+  supervisor_default_min_backoff: 1
+  supervisor_default_max_backoff: 30
+  stream_poll_timeout_seconds: 0.01
+  process_term_grace_period_seconds: 0.5
+  flow_control_wait_timeout_seconds: 3
 };
 option (rpc.pb.daemon_tasks) = {
   name: "serial-link"
@@ -832,6 +842,46 @@ message Constants {
     (py_name) = "CAPABILITIES_DISCOVERY_DELAY_SECONDS",
     (py_type) = "int"
   ];
+  uint32 serial_baudrate_negotiation_timeout = 77 [
+    (py_name) = "SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT",
+    (py_type) = "float"
+  ];
+  uint32 serial_handshake_backoff_base = 78 [
+    (py_name) = "SERIAL_HANDSHAKE_BACKOFF_BASE",
+    (py_type) = "float"
+  ];
+  uint32 serial_handshake_backoff_max = 79 [
+    (py_name) = "SERIAL_HANDSHAKE_BACKOFF_MAX",
+    (py_type) = "float"
+  ];
+  uint32 bridge_snapshot_expiry_seconds = 80 [
+    (py_name) = "BRIDGE_SNAPSHOT_EXPIRY_SECONDS",
+    (py_type) = "int"
+  ];
+  double watchdog_min_interval = 81 [
+    (py_name) = "WATCHDOG_MIN_INTERVAL",
+    (py_type) = "float"
+  ];
+  uint32 supervisor_default_min_backoff = 82 [
+    (py_name) = "SUPERVISOR_DEFAULT_MIN_BACKOFF",
+    (py_type) = "float"
+  ];
+  uint32 supervisor_default_max_backoff = 83 [
+    (py_name) = "SUPERVISOR_DEFAULT_MAX_BACKOFF",
+    (py_type) = "float"
+  ];
+  double stream_poll_timeout_seconds = 84 [
+    (py_name) = "STREAM_POLL_TIMEOUT_SECONDS",
+    (py_type) = "float"
+  ];
+  double process_term_grace_period_seconds = 85 [
+    (py_name) = "PROCESS_TERM_GRACE_PERIOD_SECONDS",
+    (py_type) = "float"
+  ];
+  uint32 flow_control_wait_timeout_seconds = 86 [
+    (py_name) = "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS",
+    (py_type) = "float"
+  ];
 }
 
 message Hardware {
@@ -846,7 +896,7 @@ message Hardware {
   uint32 console_rx_buffer_size_other = 9;
   uint32 console_tx_buffer_size_avr = 10;
   uint32 console_tx_buffer_size_other = 11;
-  uint32 mailbox_rx_buffer_size_avr = 64;
+  uint32 mailbox_rx_buffer_size_avr = 12;
   uint32 mailbox_rx_buffer_size_other = 13;
   uint32 max_pending_datastore = 14;
   uint32 max_pending_process_polls = 15;

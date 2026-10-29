@@ -21,8 +21,8 @@ import tempfile
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Any
-
-import httpx
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 import tenacity
 import typer
@@ -88,12 +88,14 @@ class _ApkLinkParser(HTMLParser):
 
 def _resolve_package_name(base_url: str, pkg_prefix: str) -> str | None:
     try:
-        resp = httpx.get(base_url, timeout=15.0)
+        with urlopen(base_url, timeout=15.0) as resp:
+            raw_bytes: bytes = resp.read()
+        text = raw_bytes.decode("utf-8")
         parser = _ApkLinkParser(pkg_prefix)
-        parser.feed(resp.text)
+        parser.feed(text)
         if parser.matches:
             return max(parser.matches)
-    except (httpx.HTTPError, TimeoutError, OSError) as e:
+    except (URLError, TimeoutError, OSError, UnicodeDecodeError) as e:
         log_error(f"[WARN] Could not list directory {base_url}: {e}")
     return None
 
@@ -107,21 +109,18 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes
 # Download helpers
 # ---------------------------------------------------------------------------
 def _download_file_with_retry(url: str, filename: Path | str, attempts: int = 3) -> None:
-    """Download a file via HTTPX with bounded exponential backoff using tenacity."""
+    """Download a file via urllib.request with bounded exponential backoff using tenacity."""
     target_path = Path(filename)
     retryer = tenacity.Retrying(
         stop=tenacity.stop_after_attempt(attempts),
         wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=10.0),
-        retry=tenacity.retry_if_exception_type((httpx.HTTPError, TimeoutError, OSError)),
+        retry=tenacity.retry_if_exception_type((URLError, TimeoutError, OSError)),
         reraise=True,
     )
 
     def _download() -> None:
-        with httpx.stream("GET", url, timeout=30.0, follow_redirects=True) as resp:
-            resp.raise_for_status()
-            with target_path.open("wb") as f_out:
-                for chunk in resp.iter_bytes():
-                    f_out.write(chunk)
+        with urlopen(url, timeout=30.0) as resp, target_path.open("wb") as f_out:
+            shutil.copyfileobj(resp, f_out)
 
     retryer(_download)
 
@@ -165,8 +164,8 @@ def download_system_apks(dest_dir: Path) -> None:
         log_info(f"[INFO] Downloading {url} -> {file_path}")
         try:
             _download_file_with_retry(url, file_path)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
+        except HTTPError as e:
+            if e.code == 404:
                 log_info(f"[WARN] {filename} returned 404, attempting dynamic resolution from {base_url}...")
                 pkg_prefix = filename.split("-202")[0] if "-202" in filename else filename.split("-")[0]
                 resolved_name = _resolve_package_name(base_url, pkg_prefix)
@@ -178,7 +177,7 @@ def download_system_apks(dest_dir: Path) -> None:
                     continue
             log_error(f"[ERROR] Failed to download {url}: {e}")
             raise
-        except (httpx.HTTPError, OSError, tenacity.RetryError) as e:
+        except (URLError, OSError, tenacity.RetryError) as e:
             log_error(f"[ERROR] Failed to download {url} after retries: {e}")
             raise
 

@@ -45,12 +45,7 @@ BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
 CPP_BLOCK_START = "# --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---"
 CPP_BLOCK_END = "# --- [AUTO-GENERATED C++ DEPENDENCIES END] ---"
 
-# --- [FILTRADO INTELIGENTE DE DEPENDENCIAS] ---
-
-# uci / ubus: Solo en OpenWrt (Makefile), no en pip (runtime.txt) para evitar errores locales.
 SYSTEM_ONLY_PACKAGES = {"uci", "ubus"}
-
-# Dev/CI host build-only packages (excluded from OpenWrt MPU package dependencies).
 BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "xxd", "black"}
 
 
@@ -95,30 +90,27 @@ class ManifestData:
 def load_manifest() -> ManifestData:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
-
     try:
         with MANIFEST_PATH.open("rb") as manifest_file:
             data = tomllib.load(manifest_file)
     except tomllib.TOMLDecodeError as exc:
         raise ManifestError(f"Malformed manifest: {MANIFEST_PATH}: {exc}") from exc
+
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
-    normalized_runtime: list[DepEntry] = []
-    for entry in entries:
-        openwrt = entry.get("openwrt", "").strip()
-        pip_spec = entry.get("pip", "").strip()
-        name = entry.get("name") or openwrt or "(unnamed)"
-        normalized_runtime.append(
-            DepEntry(
-                name=name,
-                openwrt=openwrt,
-                pip=pip_spec,
-                check_latest=bool(entry.get("check_latest", True)),
-                gateway=bool(entry.get("gateway", False)),
-                edge=bool(entry.get("edge", True)),
-            )
+
+    normalized_runtime = [
+        DepEntry(
+            name=entry.get("name") or entry.get("openwrt", "").strip() or "(unnamed)",
+            openwrt=entry.get("openwrt", "").strip(),
+            pip=entry.get("pip", "").strip(),
+            check_latest=bool(entry.get("check_latest", True)),
+            gateway=bool(entry.get("gateway", False)),
+            edge=bool(entry.get("edge", True)),
         )
+        for entry in entries
+    ]
 
     normalized_cpp: list[_CppDepEntry] = []
     for entry in data.get("cpp_dependency", []):
@@ -143,7 +135,7 @@ def load_manifest() -> ManifestData:
             )
         )
 
-    normalized_dev: list[DevDepEntry] = [
+    normalized_dev = [
         DevDepEntry(
             name=entry.get("name", "").strip(),
             pip=entry.get("pip", "").strip(),
@@ -152,24 +144,19 @@ def load_manifest() -> ManifestData:
         )
         for entry in data.get("dev_dependency", [])
     ]
-
     return ManifestData(runtime=normalized_runtime, cpp=normalized_cpp, dev=normalized_dev)
 
 
 def collect_pip_specs(deps: Sequence[DepEntry], *, gateway: bool = False) -> list[str]:
-    # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci), build-only y edge=false
     specs = {
         dep["pip"]
         for dep in deps
         if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES and (gateway or dep.get("edge", True))
     }
-    filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
-    return sorted(filtered)
+    return sorted(s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES))
 
 
 def collect_openwrt_packages(deps: Sequence[DepEntry], *, edge_only: bool = False) -> list[str]:
-    # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
-    # Esto asegura que el APK sea ultra-lean.
     return [
         dep["openwrt"]
         for dep in deps
@@ -212,62 +199,33 @@ def sync_metadata(
 
 
 def write_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
-    pip_specs = collect_pip_specs(deps)
-    content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
-    content.extend(pip_specs)
-    return _write_if_changed(REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
+    lines = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit.", *collect_pip_specs(deps)]
+    return _write_if_changed(REQUIREMENTS_PATH, "\n".join(lines) + "\n", dry_run=dry_run)
 
 
 def write_gateway_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
-    gateway_deps = [dep for dep in deps if dep.get("gateway")]
-    pip_specs = collect_pip_specs(gateway_deps, gateway=True)
-    content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
-    content.extend(pip_specs)
-    return _write_if_changed(GATEWAY_REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
+    gw_deps = [dep for dep in deps if dep.get("gateway")]
+    specs = collect_pip_specs(gw_deps, gateway=True)
+    lines = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit.", *specs]
+    return _write_if_changed(GATEWAY_REQUIREMENTS_PATH, "\n".join(lines) + "\n", dry_run=dry_run)
 
 
 def update_pyproject(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     if not PYPROJECT_PATH.exists():
         return False
-
-    # Collect only runtime dependencies for project.dependencies
-    runtime_pip_specs = collect_pip_specs(deps)
-
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
-
-    # Robust replacement of dependencies block
-    lines = content.splitlines()
-    new_lines: list[str] = []
-    in_dependencies = False
-    replaced = False
-
-    for line in lines:
-        if not replaced and line.strip() == "dependencies = [":
-            in_dependencies = True
-            new_lines.append(line)
-            new_lines.extend(f'    "{spec}",' for spec in runtime_pip_specs)
-            replaced = True
-            continue
-
-        if in_dependencies:
-            if line.strip() == "]":
-                in_dependencies = False
-                new_lines.append(line)
-            continue
-
-        new_lines.append(line)
-
-    new_content = "\n".join(new_lines) + "\n"
-
+    body = "\n".join(f'    "{spec}",' for spec in collect_pip_specs(deps))
+    new_content = re.sub(r"(?ms)^dependencies = \[\n.*?\n\]", f"dependencies = [\n{body}\n]", content, count=1)
     return _write_if_changed(PYPROJECT_PATH, new_content, dry_run=dry_run)
 
 
 def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
-    lines: list[str] = []
-    for index, token in enumerate(tokens):
-        suffix = " \\" if index < len(tokens) - 1 else ""
-        lines.append(f"\t\t+{token}{suffix}")
-    return lines
+    return [f"\t\t+{token}" + (" \\" if i < len(tokens) - 1 else "") for i, token in enumerate(tokens)]
+
+
+def _replace_marked_block(content: str, start_marker: str, end_marker: str, rendered_block: str) -> str:
+    pattern = rf"(?ms)^([ \t]*{re.escape(start_marker)}\n).*?(^[ \t]*{re.escape(end_marker)})"
+    return re.sub(pattern, lambda m: f"{m.group(1)}{rendered_block}\n{m.group(2)}", content, count=1)
 
 
 def _update_makefile(
@@ -282,26 +240,9 @@ def _update_makefile(
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
         raise ManifestError(f"{label} is missing dependency markers; cannot inject dependencies")
     tokens = collect_openwrt_packages(deps, edge_only=edge_only)
-    if tokens:
-        block_lines = ["\tDEPENDS+= \\"]
-        block_lines.extend(format_openwrt_lines(tokens))
-    else:
-        block_lines = ["\tDEPENDS+="]
-    rendered_block = "\n".join(block_lines)
-    new_lines: list[str] = []
-    in_block = False
-    for line in makefile_text.splitlines():
-        if BLOCK_START in line:
-            in_block = True
-            new_lines.extend((line, rendered_block))
-            continue
-        if BLOCK_END in line:
-            in_block = False
-            new_lines.append(line)
-            continue
-        if not in_block:
-            new_lines.append(line)
-    return _write_if_changed(path, "\n".join(new_lines) + "\n", dry_run=dry_run)
+    block_lines = ["\tDEPENDS+= \\", *format_openwrt_lines(tokens)] if tokens else ["\tDEPENDS+="]
+    new_text = _replace_marked_block(makefile_text, BLOCK_START, BLOCK_END, "\n".join(block_lines))
+    return _write_if_changed(path, new_text, dry_run=dry_run)
 
 
 def update_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
@@ -311,12 +252,8 @@ def update_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
 def update_gateway_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     if not GATEWAY_MAKEFILE_PATH.exists():
         return False
-    gateway_deps = [dep for dep in deps if dep.get("gateway")]
     return _update_makefile(
-        GATEWAY_MAKEFILE_PATH,
-        gateway_deps,
-        dry_run=dry_run,
-        label="Gateway Makefile",
+        GATEWAY_MAKEFILE_PATH, [d for d in deps if d.get("gateway")], dry_run=dry_run, label="Gateway Makefile"
     )
 
 
@@ -343,50 +280,28 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
         val = f"{dep['ref_type']}/{dep['version']}" if dep["ref_type"] == "heads" else dep["version"]
         lines.append(f'{var_name}="{val}"')
         if dep["name"] == "nanopb_core":
-            files = dep["files"]
-            if not files:
+            if not dep["files"]:
                 raise ManifestError("nanopb_core must list its runtime files")
-            quoted_files = " ".join(f'"{file_name}"' for file_name in files)
+            quoted_files = " ".join(f'"{file_name}"' for file_name in dep["files"])
             lines.append(f"NANOPB_CORE_FILES=({quoted_files})")
 
-    rendered_block = "\n".join(lines)
-    parts_before = content.split(CPP_BLOCK_START)
-    parts_after = parts_before[1].split(CPP_BLOCK_END)
-    new_content = f"{parts_before[0]}{CPP_BLOCK_START}\n{rendered_block}\n{CPP_BLOCK_END}{parts_after[1]}"
-
-    if new_content == content:
-        return False
-    if not dry_run:
-        ARDUINO_INSTALL_SCRIPT_PATH.write_text(new_content, encoding="utf-8")
-    return True
+    new_content = _replace_marked_block(content, CPP_BLOCK_START, CPP_BLOCK_END, "\n".join(lines))
+    return _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)
 
 
 def update_tox_dev_deps(
-    dev_deps: Sequence[DevDepEntry],
-    runtime_deps: Sequence[DepEntry] = (),
-    *,
-    dry_run: bool = False,
+    dev_deps: Sequence[DevDepEntry], runtime_deps: Sequence[DepEntry] = (), *, dry_run: bool = False
 ) -> bool:
     """Synchronize pinned versions in tox.ini with manifest declarations."""
     if not TOX_PATH.exists():
         return False
     content = TOX_PATH.read_text(encoding="utf-8")
     new_content = content
-    all_specs = [d["pip"] for d in dev_deps if d.get("pip")] + [d["pip"] for d in runtime_deps if d.get("pip")]
-    for spec in all_specs:
+    for spec in [d["pip"] for d in (*dev_deps, *runtime_deps) if d.get("pip")]:
         name, version = _parse_pip_spec(spec)
         if name and version:
-            new_content = re.sub(
-                rf"(?m)^([ \t]*){re.escape(name)}==[^\s\n]+",
-                rf"\g<1>{name}=={version}",
-                new_content,
-            )
-
-    if new_content == content:
-        return False
-    if not dry_run:
-        TOX_PATH.write_text(new_content, encoding="utf-8")
-    return True
+            new_content = re.sub(rf"(?m)^([ \t]*){re.escape(name)}==[^\s\n]+", rf"\g<1>{name}=={version}", new_content)
+    return _write_if_changed(TOX_PATH, new_content, dry_run=dry_run)
 
 
 def _parse_pip_spec(spec: str) -> tuple[str, str]:
@@ -395,26 +310,17 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
         return "", ""
     try:
         req = Requirement(spec)
-        name = req.name
-        pinned = ""
-        for specifier in req.specifier:
-            if specifier.operator in ("==", "==="):
-                pinned = specifier.version
-                break
-        return name, pinned
+        pinned = next((s.version for s in req.specifier if s.operator in ("==", "===")), "")
+        return req.name, pinned
     except (InvalidRequirement, ValueError):
         if "==" not in spec:
             return spec, ""
         name_part, version = spec.split("==", 1)
-        name = name_part.split("[")[0].strip()
-        return name, version.strip()
+        return name_part.split("[")[0].strip(), version.strip()
 
 
 def fetch_url_with_retry(
-    url: str,
-    headers: dict[str, str] | None = None,
-    timeout: float = 10.0,
-    attempts: int = 3,
+    url: str, headers: dict[str, str] | None = None, timeout: float = 10.0, attempts: int = 3
 ) -> httpx.Response:
     """Fetch URL contents with exponential backoff using tenacity and HTTPX."""
     retryer = tenacity.Retrying(
@@ -428,24 +334,20 @@ def fetch_url_with_retry(
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
     """Query PyPI JSON API for the latest release version using packaging.Version."""
-    url = f"https://pypi.org/pypi/{package_name}/json"
     try:
-        resp = fetch_url_with_retry(url, headers={"User-Agent": USER_AGENT}, timeout=10.0)
+        resp = fetch_url_with_retry(f"https://pypi.org/pypi/{package_name}/json", headers={"User-Agent": USER_AGENT})
         data = resp.json()
-        if "releases" in data and data["releases"]:
-            parsed_versions: list[Version] = []
+        if data.get("releases"):
+            parsed: list[Version] = []
             for v_str in data["releases"]:
                 try:
                     v = Version(v_str)
-                    if not include_prerelease and v.is_prerelease:
-                        continue
-                    parsed_versions.append(v)
+                    if include_prerelease or not v.is_prerelease:
+                        parsed.append(v)
                 except (InvalidVersion, ValueError) as exc:
                     sys.stderr.write(f"[DEBUG] Skipping unparseable version string '{v_str}': {exc}\n")
-                    continue
-            if parsed_versions:
-                parsed_versions.sort()
-                return str(parsed_versions[-1])
+            if parsed:
+                return str(max(parsed))
         return str(data["info"]["version"])
     except (httpx.HTTPError, ValueError, KeyError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[WARN] Failed fetching latest version for {package_name}: {exc}\n")
@@ -454,11 +356,11 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
 
 def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
     """Fetch SHA-256 hash of the sdist package from PyPI JSON API."""
-    url = f"https://pypi.org/pypi/{package_name}/{version}/json"
     try:
-        resp = fetch_url_with_retry(url, headers={"User-Agent": USER_AGENT}, timeout=10.0)
-        data = resp.json()
-        for file_info in data.get("urls", []):
+        resp = fetch_url_with_retry(
+            f"https://pypi.org/pypi/{package_name}/{version}/json", headers={"User-Agent": USER_AGENT}
+        )
+        for file_info in resp.json().get("urls", []):
             if file_info.get("packagetype") == "sdist":
                 return str(file_info.get("digests", {}).get("sha256") or "")
         return None
@@ -470,91 +372,29 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
 def _fetch_github_latest_version(repo: str) -> str | None:
     """Query GitHub API for latest release or tag using HTTPX."""
     headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github.v3+json"}
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
     try:
-        resp = fetch_url_with_retry(url, headers=headers, timeout=8.0)
-        data = cast(dict[str, Any], resp.json())
-        tag: Any = data.get("tag_name")
+        latest_url = f"https://api.github.com/repos/{repo}/releases/latest"
+        resp = fetch_url_with_retry(latest_url, headers=headers, timeout=8.0)
+        tag: Any = cast(dict[str, Any], resp.json()).get("tag_name")
         if tag is not None:
             return str(tag)
     except (httpx.HTTPError, ValueError, KeyError, IndexError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[DEBUG] GitHub latest release failed for {repo} ({exc}), falling back to tags...\n")
-        tag_url = f"https://api.github.com/repos/{repo}/tags"
         try:
-            tag_resp = fetch_url_with_retry(tag_url, headers=headers, timeout=8.0)
+            tag_resp = fetch_url_with_retry(f"https://api.github.com/repos/{repo}/tags", headers=headers, timeout=8.0)
             tags_data = cast(list[dict[str, Any]], tag_resp.json())
             if tags_data and "name" in tags_data[0]:
                 return str(tags_data[0]["name"])
         except (httpx.HTTPError, ValueError, KeyError, IndexError, tenacity.RetryError) as tag_exc:
             sys.stderr.write(f"[WARN] GitHub tags query failed for {repo}: {tag_exc}\n")
-            return None
     return None
 
 
-def _check_runtime_outdated(deps: Sequence[DepEntry]) -> list[tuple[str, str, str]]:
-    outdated: list[tuple[str, str, str]] = []
-    pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
-    for spec, should_check_latest in pip_specs:
-        if not should_check_latest:
-            continue
-        name, pinned = _parse_pip_spec(spec)
-        if not pinned:
-            continue
-        try:
-            pinned_ver = Version(pinned)
-            is_prerelease = pinned_ver.is_prerelease
-        except (InvalidVersion, TypeError):
-            is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
-            pinned_ver = None
-
-        latest_str = _fetch_latest_version(name, include_prerelease=is_prerelease)
-        if latest_str:
-            try:
-                latest_ver = Version(latest_str)
-                if pinned_ver and latest_ver > pinned_ver or not pinned_ver and latest_str != pinned:
-                    outdated.append((name, pinned, latest_str))
-            except (InvalidVersion, TypeError):
-                if latest_str != pinned:
-                    outdated.append((name, pinned, latest_str))
-    return outdated
-
-
-def _check_dev_outdated(dev_deps: Sequence[DevDepEntry]) -> list[tuple[str, str, str]]:
-    outdated: list[tuple[str, str, str]] = []
-    for dev_dep in dev_deps:
-        if not dev_dep.get("check_latest", True):
-            continue
-        name, pinned = _parse_pip_spec(dev_dep["pip"])
-        if not pinned:
-            continue
-        latest_str = _fetch_latest_version(name)
-        if latest_str:
-            try:
-                if Version(latest_str) > Version(pinned):
-                    outdated.append((name, pinned, latest_str))
-            except (InvalidVersion, TypeError):
-                if latest_str != pinned:
-                    outdated.append((name, pinned, latest_str))
-    return outdated
-
-
-def _check_cpp_outdated(cpp_deps: Sequence[_CppDepEntry]) -> list[tuple[str, str, str]]:
-    outdated: list[tuple[str, str, str]] = []
-    for cpp_dep in cpp_deps:
-        if cpp_dep["ref_type"] == "heads":
-            continue
-        pinned = cpp_dep["version"]
-        gh_latest = _fetch_github_latest_version(cpp_dep["github"])
-        if gh_latest:
-            clean_pinned = pinned.lstrip("v").removeprefix("nanopb-")
-            clean_latest = gh_latest.lstrip("v").removeprefix("nanopb-")
-            try:
-                if Version(clean_latest) > Version(clean_pinned):
-                    outdated.append((cpp_dep["name"], pinned, gh_latest))
-            except (InvalidVersion, TypeError):
-                if gh_latest != pinned:
-                    outdated.append((cpp_dep["name"], pinned, gh_latest))
-    return outdated
+def _is_version_newer(pinned: str, latest: str) -> bool:
+    try:
+        return Version(latest) > Version(pinned)
+    except (InvalidVersion, TypeError):
+        return latest != pinned
 
 
 def check_latest_versions(
@@ -562,25 +402,41 @@ def check_latest_versions(
     cpp_deps: Sequence[_CppDepEntry] = (),
     dev_deps: Sequence[DevDepEntry] = (),
 ) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages using packaging.Version & GitHub API."""
-    outdated = _check_runtime_outdated(deps)
-    outdated.extend(_check_dev_outdated(dev_deps))
-    outdated.extend(_check_cpp_outdated(cpp_deps))
+    """Return list of (package, pinned, latest) for outdated packages."""
+    outdated: list[tuple[str, str, str]] = []
+    for entry in (*deps, *dev_deps):
+        if not entry.get("check_latest", True) or not entry.get("pip"):
+            continue
+        name, pinned = _parse_pip_spec(entry["pip"])
+        if not pinned:
+            continue
+        try:
+            is_pre = Version(pinned).is_prerelease
+        except (InvalidVersion, TypeError):
+            is_pre = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
+        latest_str = _fetch_latest_version(name, include_prerelease=is_pre)
+        if latest_str and _is_version_newer(pinned, latest_str):
+            outdated.append((name, pinned, latest_str))
+
+    for cpp_dep in cpp_deps:
+        if cpp_dep["ref_type"] == "heads":
+            continue
+        pinned = cpp_dep["version"]
+        gh_latest = _fetch_github_latest_version(cpp_dep["github"])
+        if gh_latest and _is_version_newer(
+            pinned.lstrip("v").removeprefix("nanopb-"), gh_latest.lstrip("v").removeprefix("nanopb-")
+        ):
+            outdated.append((cpp_dep["name"], pinned, gh_latest))
     return outdated
 
 
 def _to_apk_version(version: str) -> str:
     """Convert Python pre-release notation to APK (Alpine) version notation."""
-    is_prerelease = True
     try:
-        is_prerelease = Version(version).is_prerelease
+        if not Version(version).is_prerelease:
+            return version
     except (InvalidVersion, TypeError) as exc:
         sys.stderr.write(f"[DEBUG] Failed to parse version string '{version}': {exc}\n")
-        is_prerelease = True
-
-    if not is_prerelease:
-        return version
-
     converted = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
     converted = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", converted)
     converted = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", converted)
@@ -594,76 +450,28 @@ def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False, verify_hash
     any_updated = False
     for dep in deps:
         openwrt_pkg = dep.get("openwrt", "")
-        if not openwrt_pkg or not openwrt_pkg.startswith("python3-"):
-            continue
-
         pip_name, version = _parse_pip_spec(dep.get("pip", ""))
-        if not version:
-            continue
-
         makefile = FEEDS_DIR / openwrt_pkg / "Makefile"
-        if not makefile.exists():
+        if not openwrt_pkg.startswith("python3-") or not version or not makefile.exists():
             continue
 
         content = makefile.read_text(encoding="utf-8")
-
-        uses_pypi_mk = bool(re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE))
-        is_prerelease = _to_apk_version(version) != version
-
-        if uses_pypi_mk and not is_prerelease:
-            pkg_version = version
-            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
-            new_content = re.sub(r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+\n?", "", new_content)
-            new_content = re.sub(r"PKG_SOURCE:=[^\n]+\n?", "", new_content)
-            new_content = re.sub(r"PKG_BUILD_DIR:=[^\n]+\n?", "", new_content)
-            new_content = re.sub(r"PYPI_SOURCE_NAME:=[^\n]+\n?", "", new_content)
-            new_content = re.sub(r"PYPI_SOURCE_NAME_VERSION:=[^\n]+\n?", "", new_content)
-        elif uses_pypi_mk and is_prerelease:
-            pkg_version = _to_apk_version(version)
-            pypi_source_name = f"{pip_name}-{version}"
-            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
-            new_content = re.sub(r"[ \t]*PYPI_SOURCE_NAME:=[^\n]+\n", "", new_content)
-            if "PKG_SOURCE:=" in new_content:
-                new_content = re.sub(
-                    r"PKG_SOURCE:=[^\n]+",
-                    f"PKG_SOURCE:={pypi_source_name}.tar.gz",
-                    new_content,
-                )
-            else:
-                new_content = re.sub(
-                    r"(PYPI_NAME:=[^\n]+\n)",
-                    f"\\1PKG_SOURCE:={pypi_source_name}.tar.gz\n",
-                    new_content,
-                )
-            if "PYTHON3_PKG_WHEEL_VERSION:=" in new_content:
-                new_content = re.sub(
-                    r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
-                    f"PYTHON3_PKG_WHEEL_VERSION:={version}",
-                    new_content,
-                )
-            else:
-                new_content = re.sub(
-                    r"(PKG_SOURCE:=[^\n]+\n)",
-                    f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
-                    new_content,
-                )
-            build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pypi_source_name}\n"
-            pypi_mk_include = re.compile(r"(^\s*include\b.*\bpypi\.mk\b[^\n]*\n)", re.MULTILINE)
-            if "PKG_BUILD_DIR:=" in new_content:
-                new_content = re.sub(r"[ \t]*PKG_BUILD_DIR:=[^\n]+\n", "", new_content)
-            new_content = pypi_mk_include.sub(lambda m, b=build_dir_line: m.group(1) + b, new_content, count=1)
+        pkg_version = _to_apk_version(version)
+        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
+        if re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE):
+            for obsolete in (
+                "PYTHON3_PKG_WHEEL_VERSION",
+                "PKG_SOURCE",
+                "PKG_BUILD_DIR",
+                "PYPI_SOURCE_NAME",
+                "PYPI_SOURCE_NAME_VERSION",
+            ):
+                new_content = re.sub(rf"{obsolete}:=[^\n]+\n?", "", new_content)
         else:
-            pkg_version = _to_apk_version(version)
-            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
+            pkg_src = f"PKG_SOURCE:={pip_name}-{version}.tar.gz"
+            new_content = re.sub(r"PKG_SOURCE:=[^\n]+\.tar\.gz", pkg_src, new_content)
             new_content = re.sub(
-                r"PKG_SOURCE:=[^\n]+\.tar\.gz",
-                f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
-                new_content,
-            )
-            new_content = re.sub(
-                r"PKG_BUILD_DIR:=[^\n]+",
-                f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
-                new_content,
+                r"PKG_BUILD_DIR:=[^\n]+", f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}", new_content
             )
 
         version_changed = new_content != content
@@ -674,12 +482,10 @@ def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False, verify_hash
             if new_hash:
                 new_content = re.sub(r"PKG_HASH:=[^\n]+", f"PKG_HASH:={new_hash}", new_content)
 
-        if new_content != content:
+        if _write_if_changed(makefile, new_content, dry_run=dry_run):
             any_updated = True
             if not dry_run:
-                makefile.write_text(new_content, encoding="utf-8")
                 sys.stderr.write(f"Updated {makefile} to version {version}\n")
-
     return any_updated
 
 
@@ -689,47 +495,27 @@ def update_workflows(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool
     if not workflows_dir.exists():
         return False
 
-    protoc_version = ""
-    protobuf_pip_version = ""
-    for dep in deps:
-        if dep.get("name") == "protobuf":
-            _, p_ver = _parse_pip_spec(dep.get("pip", ""))
-            if p_ver:
-                protobuf_pip_version = p_ver
-                parts = p_ver.split(".")
-                if len(parts) >= 3 and parts[0] in {"7", "6", "5", "4"}:
-                    protoc_version = f"{parts[1]}.{parts[2]}"
-                else:
-                    protoc_version = p_ver
-                break
-
-    if not protoc_version:
+    pb_dep = next((d for d in deps if d.get("name") == "protobuf"), None)
+    _, protobuf_pip_version = _parse_pip_spec(pb_dep.get("pip", "") if pb_dep else "")
+    if not protobuf_pip_version:
         return False
+    parts = protobuf_pip_version.split(".")
+    is_modern_pb = len(parts) >= 3 and parts[0] in {"7", "6", "5", "4"}
+    protoc_version = f"{parts[1]}.{parts[2]}" if is_modern_pb else protobuf_pip_version
 
-    target_files: list[Path] = sorted(workflows_dir.glob("*.yml"))
+    target_files = sorted(workflows_dir.glob("*.yml"))
     if actions_dir.exists():
         target_files.extend(sorted(actions_dir.glob("**/*.yml")))
 
     any_updated = False
     for wf in target_files:
         content = wf.read_text(encoding="utf-8")
-        new_content = re.sub(
-            r"PROTOC_VERSION=(?![\"']?\$\{\{)[^\n]+",
-            f"PROTOC_VERSION={protoc_version}",
-            content,
-        )
-        if protobuf_pip_version:
-            new_content = re.sub(
-                r"protobuf==\d+\.\d+(\.\d+)?",
-                f"protobuf=={protobuf_pip_version}",
-                new_content,
-            )
-        if new_content != content:
+        new_content = re.sub(r"""PROTOC_VERSION=(?!["']?\$\{\{)[^\n]+""", f"PROTOC_VERSION={protoc_version}", content)
+        new_content = re.sub(r"protobuf==\d+\.\d+(\.\d+)?", f"protobuf=={protobuf_pip_version}", new_content)
+        if _write_if_changed(wf, new_content, dry_run=dry_run):
             any_updated = True
             if not dry_run:
-                wf.write_text(new_content, encoding="utf-8")
                 sys.stderr.write(f"Updated {wf.name} (protoc={protoc_version}, protobuf={protobuf_pip_version})\n")
-
     return any_updated
 
 
@@ -738,31 +524,14 @@ cli = typer.Typer(help="Generate derived dependency files from the runtime manif
 
 @cli.command()
 def main(
-    check: Annotated[
-        bool,
-        typer.Option("--check", help="Exit with status 1 if running would change any files"),
-    ] = False,
-    dry_run: Annotated[
-        bool,
-        typer.Option("--dry-run", help="Show whether files would change without writing them"),
-    ] = False,
-    check_latest: Annotated[
-        bool,
-        typer.Option("--check-latest", help="Query PyPI and GitHub to check for outdated pinned versions"),
-    ] = False,
-    print_openwrt: Annotated[
-        bool,
-        typer.Option("--print-openwrt", help="Print OpenWrt package names and exit"),
-    ] = False,
-    print_pip: Annotated[
-        bool,
-        typer.Option("--print-pip", help="Print pip requirement specifiers and exit"),
-    ] = False,
+    check: Annotated[bool, typer.Option("--check", help="Exit with status 1 if files would change")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show whether files would change without writing")] = False,
+    check_latest: Annotated[bool, typer.Option("--check-latest", help="Check PyPI/GitHub for outdated pins")] = False,
+    print_openwrt: Annotated[bool, typer.Option("--print-openwrt", help="Print OpenWrt package names")] = False,
+    print_pip: Annotated[bool, typer.Option("--print-pip", help="Print pip requirement specifiers")] = False,
 ) -> None:
     manifest = load_manifest()
-    deps = manifest.runtime
-    cpp_deps = manifest.cpp
-    dev_deps = manifest.dev
+    deps, cpp_deps, dev_deps = manifest.runtime, manifest.cpp, manifest.dev
 
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
@@ -773,37 +542,24 @@ def main(
 
     no_write = check or dry_run
     version_str = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.is_file() else ECOSYSTEM_VERSION
-    changed_version_files = sync_metadata(version_str, ROOT, dry_run=no_write)
-    updated_requirements = write_requirements(deps, dry_run=no_write)
-    updated_makefile = update_makefile(deps, dry_run=no_write)
-    updated_pyproject = update_pyproject(deps, dry_run=no_write)
-    updated_feeds = update_feeds(deps, dry_run=no_write, verify_hashes=check_latest or not no_write)
-    updated_gw_req = write_gateway_requirements(deps, dry_run=no_write)
-    updated_gw_makefile = update_gateway_makefile(deps, dry_run=no_write)
-    updated_cpp = update_cpp_install_script(cpp_deps, dry_run=no_write)
-    updated_tox = update_tox_dev_deps(dev_deps, deps, dry_run=no_write)
-    updated_workflows = update_workflows(deps, dry_run=no_write)
-
-    changed_paths: list[str] = [str(path.relative_to(ROOT)) for path in changed_version_files]
-    for updated, path in (
-        (updated_requirements, REQUIREMENTS_PATH),
-        (updated_makefile, MAKEFILE_PATH),
-        (updated_pyproject, PYPROJECT_PATH),
-        (updated_feeds, FEEDS_DIR),
-        (updated_gw_req, GATEWAY_REQUIREMENTS_PATH),
-        (updated_gw_makefile, GATEWAY_MAKEFILE_PATH),
-        (updated_cpp, ARDUINO_INSTALL_SCRIPT_PATH),
-        (updated_tox, TOX_PATH),
-        (updated_workflows, ROOT / ".github" / "workflows"),
-    ):
+    changed_paths = [str(p.relative_to(ROOT)) for p in sync_metadata(version_str, ROOT, dry_run=no_write)]
+    updates = (
+        (write_requirements(deps, dry_run=no_write), REQUIREMENTS_PATH),
+        (update_makefile(deps, dry_run=no_write), MAKEFILE_PATH),
+        (update_pyproject(deps, dry_run=no_write), PYPROJECT_PATH),
+        (update_feeds(deps, dry_run=no_write, verify_hashes=check_latest or not no_write), FEEDS_DIR),
+        (write_gateway_requirements(deps, dry_run=no_write), GATEWAY_REQUIREMENTS_PATH),
+        (update_gateway_makefile(deps, dry_run=no_write), GATEWAY_MAKEFILE_PATH),
+        (update_cpp_install_script(cpp_deps, dry_run=no_write), ARDUINO_INSTALL_SCRIPT_PATH),
+        (update_tox_dev_deps(dev_deps, deps, dry_run=no_write), TOX_PATH),
+        (update_workflows(deps, dry_run=no_write), ROOT / ".github" / "workflows"),
+    )
+    for updated, path in updates:
         rel_str = str(path.relative_to(ROOT))
         if updated and rel_str not in changed_paths:
             changed_paths.append(rel_str)
 
-    fail = False
-    if check and changed_paths:
-        fail = True
-
+    fail = bool(check and changed_paths)
     if dry_run:
         if changed_paths:
             print("[dry-run] The following files/manifests would be modified:")

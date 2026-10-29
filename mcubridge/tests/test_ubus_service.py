@@ -715,21 +715,14 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
         coro.close()
 
 
-async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
-    service = UbusService(mock_runtime)
-    current_loop = asyncio.get_running_loop()
-    service.loop = current_loop
-    mocker.patch("anyio.from_thread.run", return_value={"status": "same_loop"})
+async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime, loop=asyncio.get_running_loop())
 
     async def _sample() -> dict[str, str]:
         return {"status": "same_loop"}
 
-    coro = _sample()
-    try:
-        res = service.run_sync(coro)
-        assert res == {"status": "same_loop"}
-    finally:
-        coro.close()
+    with pytest.raises(RuntimeError, match="cannot block the asyncio loop"):
+        service.run_sync(_sample())
 
 
 def test_ubus_register_methods_no_add(mock_runtime: MockRuntimeFacade) -> None:

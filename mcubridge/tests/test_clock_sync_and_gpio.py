@@ -196,11 +196,14 @@ async def test_ubus_clock_and_gpio_handlers() -> None:
 
     try:
         ubus = service.ubus_service
+        ubus.loop = asyncio.get_running_loop()
         state.connection_fsm.connect()
 
         mock_serial.send.return_value = pb.PinSubscribeResponse(pin=7, success=True)
 
-        sub_reply = ubus.ubus_handle_pin_subscribe(
+        # Native UBUS invokes synchronous handlers from its polling worker thread.
+        sub_reply = await asyncio.to_thread(
+            ubus.ubus_handle_pin_subscribe,
             None,
             {"pin": 7, "mode": "INPUT", "interval_ms": 50, "hysteresis": 1, "enabled": 1},
         )

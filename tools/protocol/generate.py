@@ -15,6 +15,7 @@ import functools
 import hashlib
 import importlib
 import importlib.util
+import os
 import re
 import shutil
 import subprocess
@@ -31,35 +32,20 @@ from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
 
-# ═════════════════════════════════════════════════════════════════════════════
-# DEPENDENCY VALIDATION (CRITICAL)
-# ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb", "mypy_protobuf", "grpclib", "black", "typer", "packaging"]
-
 MISSING_DEPS: list[str] = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep.split(".")[0]) is None]
-
 HAS_BUF: bool = shutil.which("buf") is not None
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+VERSION_PATH = REPO_ROOT / "VERSION"
 
 if MISSING_DEPS or not HAS_BUF:
-    sys.stderr.write("\n" + "!" * 80 + "\n")
-    sys.stderr.write("ERROR: Missing dependencies required for protocol generation:\n")
+    sys.stderr.write("ERROR: Missing dependencies required for protocol generation.\n")
     for dep in MISSING_DEPS:
         sys.stderr.write(f"  - {dep} (Python)\n")
     if not HAS_BUF:
         sys.stderr.write("  - buf (Buf CLI not found in PATH)\n")
-    sys.stderr.write("\nTo fix this, run:\n")
-    if MISSING_DEPS:
-        sys.stderr.write(f"  pip install {' '.join(MISSING_DEPS)}\n")
-    if not HAS_BUF:
-        sys.stderr.write("  npm install -g @bufbuild/buf\n")
-    sys.stderr.write("!" * 80 + "\n\n")
     sys.exit(1)
-# ═════════════════════════════════════════════════════════════════════════════
-
-
-# Mappings and helper functions for reflective protocol constant generation.
 
 
 def _resolve_nanopb_protoc_dir() -> Path | None:
@@ -73,30 +59,15 @@ def _resolve_nanopb_protoc_dir() -> Path | None:
 
 
 def run_buf_generate(proto_dir: Path) -> None:
-    """Run ``buf generate`` declaratively (replaces manual protoc/nanopb subprocess calls).
-
-    Buf orchestrates all protoc plugins defined in ``buf.gen.yaml``:
-    python pb2, mypy stubs, grpclib, and nanopb C.
-    """
-    import os
-
+    """Run ``buf generate`` declaratively."""
     env = os.environ.copy()
     py_bin_dir = str(Path(sys.executable).parent)
     env["PATH"] = f"{py_bin_dir}:{env.get('PATH', '')}"
-    # Ensure nanopb's bundled protoc is reachable for buf's protoc_builtin plugins
     nanopb_dir = _resolve_nanopb_protoc_dir()
     if nanopb_dir:
         env["PATH"] = f"{nanopb_dir}:{env['PATH']}"
-
     try:
-        subprocess.run(
-            ["buf", "generate"],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=str(proto_dir),
-            env=env,
-        )
+        subprocess.run(["buf", "generate"], check=True, capture_output=True, text=True, cwd=str(proto_dir), env=env)
     except subprocess.CalledProcessError as e:
         sys.stderr.write(f"Error: buf generate failed:\n{e.stderr}\n")
         sys.exit(1)
@@ -147,19 +118,17 @@ _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
 def _resolve_field_default(
     field_desc: Any, opts: Any, pb_module: Any, default_sources: dict[str, Any]
 ) -> tuple[Any, str | None]:
-    has_literal_default = opts.HasExtension(pb_module.config_default)
-    has_default_ref = opts.HasExtension(pb_module.config_default_ref)
-    if has_literal_default and has_default_ref:
+    has_literal = opts.HasExtension(pb_module.config_default)
+    has_ref = opts.HasExtension(pb_module.config_default_ref)
+    if has_literal and has_ref:
         raise ValueError(f"RuntimeConfig field '{field_desc.name}' has both default value and default reference")
-    if not has_default_ref:
-        return (opts.Extensions[pb_module.config_default] if has_literal_default else None), None
+    if not has_ref:
+        return (opts.Extensions[pb_module.config_default] if has_literal else None), None
     reference = opts.Extensions[pb_module.config_default_ref]
     source_name, separator, field_name = reference.partition(".")
     source = default_sources.get(source_name)
-    if not separator or not field_name or source is None:
+    if not separator or not field_name or source is None or field_name not in source.DESCRIPTOR.fields_by_name:
         raise ValueError(f"Invalid RuntimeConfig default reference '{reference}'")
-    if field_name not in source.DESCRIPTOR.fields_by_name:
-        raise ValueError(f"Unknown RuntimeConfig default reference '{reference}'")
     return getattr(source, field_name), reference
 
 
@@ -170,11 +139,7 @@ def _opt_ext(opts: Any, ext: Any, default: Any = None) -> Any:
 def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFieldDef]:
     all_descs = [file_desc, *file_desc.dependencies]
     runtime_config_desc = next(
-        (
-            dep.message_types_by_name["RuntimeConfig"]
-            for dep in all_descs
-            if "RuntimeConfig" in dep.message_types_by_name
-        ),
+        (d.message_types_by_name["RuntimeConfig"] for d in all_descs if "RuntimeConfig" in d.message_types_by_name),
         None,
     )
     if not runtime_config_desc:
@@ -188,7 +153,7 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
         if opts.HasExtension(pb_module.cloud_defaults):
             default_sources["cloud_defaults"] = opts.Extensions[pb_module.cloud_defaults]
 
-    runtime_config_fields: list[ConfigFieldDef] = []
+    fields: list[ConfigFieldDef] = []
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
         cfg_default, config_default_ref = _resolve_field_default(field_desc, opts, pb_module, default_sources)
@@ -199,8 +164,7 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
             typed_val = converter(cfg_default)
         else:
             py_type, typed_val = "message", None
-
-        runtime_config_fields.append(
+        fields.append(
             ConfigFieldDef(
                 name=field_desc.name,
                 field_type=py_type,
@@ -215,52 +179,53 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
                 client_constant=_opt_ext(opts, pb_module.client_constant, False),
             )
         )
-    return runtime_config_fields
+    return fields
 
 
-TEMPLATE_DIR = Path(__file__).parent / "templates"
-VERSION_PATH = REPO_ROOT / "VERSION"
+def _format_py_const_val(py_name: str, py_type: str, val: Any) -> Any:
+    if py_name == "FRAME_DELIMITER":
+        return f"bytes([ {val} ])"
+    return f'b"{val}"' if py_type == "bytes" else f'"{val}"' if py_type == "str" else val
+
+
+def _extract_pb_obj_consts(
+    pb_obj: Any, pb_module: Any, *, collect_client: bool = False
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    cpp_out: list[dict[str, Any]] = []
+    py_out: list[dict[str, Any]] = []
+    client_out: list[dict[str, Any]] = []
+    for f in pb_obj.DESCRIPTOR.fields:
+        fo = f.GetOptions()
+        val = getattr(pb_obj, f.name)
+        cpp_n, cpp_t = fo.Extensions[pb_module.cpp_name], fo.Extensions[pb_module.cpp_type]
+        if cpp_n:
+            cpp_out.append({"name": cpp_n, "type": cpp_t, "value": val})
+        py_n, py_t = fo.Extensions[pb_module.py_name], fo.Extensions[pb_module.py_type]
+        if py_n:
+            c_def = {"name": py_n, "type": py_t, "value": _format_py_const_val(py_n, py_t, val)}
+            py_out.append(c_def)
+            if collect_client and fo.Extensions[pb_module.client_constant]:
+                client_out.append(c_def)
+    return cpp_out, py_out, client_out
 
 
 def _extract_constants_and_handshake(
-    pb_module: Any,
-    opts: Any,
-    v_major: int,
-    v_minor: int,
-    v_patch: int,
+    pb_module: Any, opts: Any, v_major: int, v_minor: int, v_patch: int
 ) -> dict[str, Any]:
     c_opt = opts.Extensions[pb_module.constants]
     hw_opt = opts.Extensions[pb_module.hardware]
     hs_opt = opts.Extensions[pb_module.handshake]
 
-    cpp_consts: list[dict[str, Any]] = []
-    py_consts: list[dict[str, Any]] = []
-    client_consts: list[dict[str, Any]] = []
+    cpp_consts, py_consts, client_consts = _extract_pb_obj_consts(c_opt, pb_module, collect_client=True)
+    hw_cpp, hw_py, _ = _extract_pb_obj_consts(hw_opt, pb_module)
+    cpp_consts.extend(hw_cpp)
+    py_consts.extend(hw_py)
 
-    for pb_obj in (c_opt, hw_opt):
-        for f in pb_obj.DESCRIPTOR.fields:
-            fo = f.GetOptions()
-            val = getattr(pb_obj, f.name)
-            cpp_n, cpp_t = fo.Extensions[pb_module.cpp_name], fo.Extensions[pb_module.cpp_type]
-            if cpp_n:
-                cpp_consts.append({"name": cpp_n, "type": cpp_t, "value": val})
-            py_n, py_t = fo.Extensions[pb_module.py_name], fo.Extensions[pb_module.py_type]
-            if py_n:
-                fmt_val = (
-                    f"bytes([ {val} ])"
-                    if py_n == "FRAME_DELIMITER"
-                    else f'b"{val}"' if py_t == "bytes" else f'"{val}"' if py_t == "str" else val
-                )
-                c_def = {"name": py_n, "type": py_t, "value": fmt_val}
-                py_consts.append(c_def)
-                if pb_obj is c_opt and fo.Extensions[pb_module.client_constant]:
-                    client_consts.append(c_def)
-
-    for n, v in [
+    for n, v in (
         ("FIRMWARE_VERSION_MAJOR", v_major),
         ("FIRMWARE_VERSION_MINOR", v_minor),
         ("FIRMWARE_VERSION_PATCH", v_patch),
-    ]:
+    ):
         cpp_consts.append({"name": n, "type": "uint8_t", "value": v})
         py_consts.append({"name": n, "type": "int", "value": v})
         client_consts.append({"name": n, "type": "int", "value": v})
@@ -268,40 +233,17 @@ def _extract_constants_and_handshake(
     cloud_suffixes = _message_to_dict(opts.Extensions[pb_module.cloud_suffixes])
     for f in pb_module.CloudSuffixes.DESCRIPTOR.fields:
         cloud_suffixes.setdefault(f.name, f.name)
-
     for n, v in cloud_suffixes.items():
         cpp_consts.append({"name": f"RPC_CLOUD_SUFFIX_{n.upper()}", "type": "const char*", "value": f'"{v}"'})
         py_consts.append({"name": f"CLOUD_SUFFIX_{n.upper()}", "type": "str", "value": f'"{v}"'})
 
-    hs_cpp: list[dict[str, Any]] = []
-    hs_py: list[dict[str, Any]] = []
-    for f in hs_opt.DESCRIPTOR.fields:
-        fo = f.GetOptions()
-        val = getattr(hs_opt, f.name)
-        cn, ct = fo.Extensions[pb_module.cpp_name], fo.Extensions[pb_module.cpp_type]
-        if cn:
-            hs_cpp.append({"name": cn, "type": ct, "value": val})
-        pn, pt = fo.Extensions[pb_module.py_name], fo.Extensions[pb_module.py_type]
-        if pn:
-            fmt_v = (
-                f"bytes([ {val} ])"
-                if pn == "FRAME_DELIMITER"
-                else f'b"{val}"' if pt == "bytes" else f'"{val}"' if pt == "str" else val
-            )
-            hs_py.append({"name": pn, "type": pt, "value": fmt_v})
-
-    salt, info_a, info_s = hs_opt.hkdf_salt, hs_opt.hkdf_info_auth, hs_opt.hkdf_info_session
-    handshake_dict = {
-        "hkdf_salt": salt,
-        "hkdf_salt_bytes": ", ".join(f"0x{ord(c):02X}" for c in salt),
-        "hkdf_salt_len": len(salt),
-        "hkdf_info_auth": info_a,
-        "hkdf_info_auth_bytes": ", ".join(f"0x{ord(c):02X}" for c in info_a),
-        "hkdf_info_auth_len": len(info_a),
-        "hkdf_info_session": info_s,
-        "hkdf_info_session_bytes": ", ".join(f"0x{ord(c):02X}" for c in info_s),
-        "hkdf_info_session_len": len(info_s),
-    }
+    hs_cpp, hs_py, _ = _extract_pb_obj_consts(hs_opt, pb_module)
+    handshake_dict: dict[str, Any] = {}
+    for key in ("hkdf_salt", "hkdf_info_auth", "hkdf_info_session"):
+        raw_str: str = getattr(hs_opt, key)
+        handshake_dict[key] = raw_str
+        handshake_dict[f"{key}_bytes"] = ", ".join(f"0x{ord(c):02X}" for c in raw_str)
+        handshake_dict[f"{key}_len"] = len(raw_str)
 
     return {
         "constants": cpp_consts,
@@ -334,7 +276,7 @@ def _extract_commands_and_statuses(
         commands.append(command)
 
     request_by_response = {
-        command["response_command"]: command["name"] for command in commands if command.get("response_command")
+        cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")
     }
     for command in commands:
         if not command.get("request_command") and command["name"] in request_by_response:
@@ -345,7 +287,7 @@ def _extract_commands_and_statuses(
         if value.name == "STATUS_UNSPECIFIED":
             continue
         status_options = value.GetOptions().Extensions[pb_module.status_opts]
-        status = {
+        status: dict[str, Any] = {
             "name": value.name,
             "value": value.number,
             "description": status_options.description,
@@ -354,48 +296,6 @@ def _extract_commands_and_statuses(
             status["mcu_dispatch"] = _message_to_dict(status_options.mcu_dispatch)
         statuses.append(status)
     return commands, statuses
-
-
-def _build_mcu_dispatch_entries(commands: list[dict[str, Any]], statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build the static C++ dispatch table from Protobuf command/status options."""
-    entries: list[dict[str, Any]] = []
-    adapter_prefix = "MCU_DISPATCH_ADAPTER_"
-
-    for kind, items in (("command", commands), ("status", statuses)):
-        for item in items:
-            raw_dispatch = item.get("mcu_dispatch")
-            if not raw_dispatch:
-                continue
-            if not isinstance(raw_dispatch, dict):
-                raise ValueError(f"Invalid MCU dispatch metadata for {item['name']}")
-            dispatch: dict[str, Any] = dict(cast(dict[str, Any], raw_dispatch))
-            adapter = dispatch.get("adapter", "")
-            if not isinstance(adapter, str) or not adapter.startswith(adapter_prefix):
-                raise ValueError(f"Missing or invalid MCU dispatch adapter for {item['name']}")
-            dispatch["adapter"] = adapter.removeprefix(adapter_prefix).lower()
-
-            expression = format_mcu_dispatch_expression(dispatch, item["name"])
-            feature_macro = dispatch.get("feature_macro") or ""
-            if feature_macro and (
-                not isinstance(feature_macro, str) or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
-            ):
-                raise ValueError(f"Invalid MCU dispatch feature macro for {item['name']}")
-            key = f"rpc::StatusCode::STATUS_{item['name']}" if kind == "status" else f"rpc::CommandId::{item['name']}"
-            entries.append(
-                {
-                    "name": item["name"],
-                    "value": item["value"],
-                    "key": key,
-                    "expression": expression,
-                    "feature_macro": feature_macro,
-                }
-            )
-
-    entries.sort(key=lambda entry: entry["value"])
-    numeric_ids = [entry["value"] for entry in entries]
-    if len(numeric_ids) != len(set(numeric_ids)):
-        raise ValueError("MCU dispatch table contains duplicate command/status IDs")
-    return entries
 
 
 _MCU_DISPATCH_TEMPLATES: Final[dict[str, str]] = {
@@ -408,6 +308,17 @@ _MCU_DISPATCH_TEMPLATES: Final[dict[str, str]] = {
     ),
     "target_action": "&BridgeClass::_dispatchTargetAction<{target_instance}, {handler_ptr}, {flags}>",
 }
+_FEATURE_PREFIX_MACROS: Final[dict[str, str]] = {
+    "CMD_CONSOLE_": "BRIDGE_ENABLE_CONSOLE",
+    "CMD_DATASTORE_": "BRIDGE_ENABLE_DATASTORE",
+    "CMD_MAILBOX_": "BRIDGE_ENABLE_MAILBOX",
+    "CMD_FILE_": "BRIDGE_ENABLE_FILESYSTEM",
+    "CMD_PROCESS_": "BRIDGE_ENABLE_PROCESS",
+    "CMD_SPI_": "BRIDGE_ENABLE_SPI",
+}
+_QUERY_HANDLERS: Final[frozenset[str]] = frozenset(
+    {"_handleSimpleQuery", "_handlePinRead", "_handleSpiTransfer"}
+)
 _IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -424,13 +335,10 @@ def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
     if template is None:
         raise ValueError(f"Unknown MCU dispatch adapter {adapter!r} for {name}")
 
-    handler = _require_identifier(
-        dispatch.get("handler", ""),
-        f"Invalid MCU dispatch handler for {name}: {dispatch.get('handler', '')!r}",
-    )
+    handler = _require_identifier(dispatch.get("handler", ""), f"Invalid MCU dispatch handler for {name}")
+    default_cls = f"{dispatch['target_instance']}Class" if dispatch.get("target_instance") else "BridgeClass"
     handler_class = _require_identifier(
-        dispatch.get("handler_class") or "BridgeClass",
-        f"Invalid MCU dispatch handler class for {name}: {dispatch.get('handler_class')!r}",
+        dispatch.get("handler_class") or default_cls, f"Invalid MCU dispatch handler class for {name}"
     )
     handler_args = dispatch.get("handler_template_args", "")
     if not isinstance(handler_args, str):
@@ -438,52 +346,86 @@ def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
     handler_ptr = f"&{handler_class}::{handler}<{handler_args}>" if handler_args else f"&{handler_class}::{handler}"
 
     payload_type = (
-        _require_identifier(
-            dispatch.get("payload_type", ""),
-            f"Missing or invalid MCU dispatch payload type for {name}",
-        )
+        _require_identifier(dispatch.get("payload_type", ""), f"Missing or invalid payload type for {name}")
         if "{payload_type}" in template
         else ""
     )
     target_instance = (
-        _require_identifier(
-            dispatch.get("target_instance", ""),
-            f"Missing or invalid MCU dispatch target instance for {name}",
-        )
+        _require_identifier(dispatch.get("target_instance", ""), f"Missing or invalid target instance for {name}")
         if "{target_instance}" in template
         else ""
     )
-
+    is_query = handler in _QUERY_HANDLERS
     flag_vals = (
-        dispatch.get("needs_ack", True),
-        dispatch.get("retransmit_on_dup", False),
+        dispatch.get("needs_ack", not is_query),
+        dispatch.get("retransmit_on_dup", is_query),
         dispatch.get("check_dup", True),
     )
     if not all(isinstance(v, bool) for v in flag_vals):
         raise ValueError(f"Invalid MCU dispatch boolean metadata for {name}")
     flags_str = ", ".join("true" if v else "false" for v in flag_vals)
     return template.format(
-        handler_ptr=handler_ptr,
-        payload_type=payload_type,
-        target_instance=target_instance,
-        flags=flags_str,
+        handler_ptr=handler_ptr, payload_type=payload_type, target_instance=target_instance, flags=flags_str
     )
 
 
+def _build_mcu_dispatch_entries(
+    commands: list[dict[str, Any]], statuses: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Build the static C++ dispatch table from Protobuf command/status options."""
+    entries: list[dict[str, Any]] = []
+    adapter_prefix = "MCU_DISPATCH_ADAPTER_"
+
+    for kind, items in (("command", commands), ("status", statuses)):
+        for item in items:
+            raw_dispatch = item.get("mcu_dispatch")
+            if not raw_dispatch:
+                continue
+            if not isinstance(raw_dispatch, dict):
+                raise ValueError(f"Invalid MCU dispatch metadata for {item['name']}")
+            dispatch: dict[str, Any] = dict(cast(dict[str, Any], raw_dispatch))
+            adapter = dispatch.get("adapter", "")
+            if not isinstance(adapter, str) or not adapter.startswith(adapter_prefix):
+                raise ValueError(f"Missing or invalid MCU dispatch adapter for {item['name']}")
+            dispatch["adapter"] = adapter.removeprefix(adapter_prefix).lower()
+            if item.get("pb_message") and not dispatch.get("payload_type"):
+                dispatch["payload_type"] = f"rpc_pb_{item['pb_message']}"
+
+            expression = format_mcu_dispatch_expression(dispatch, item["name"])
+            inferred_macro = next(
+                (m for pfx, m in _FEATURE_PREFIX_MACROS.items() if str(item["name"]).startswith(pfx)), ""
+            )
+            feature_macro = dispatch.get("feature_macro") or inferred_macro
+            if feature_macro and (
+                not isinstance(feature_macro, str) or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
+            ):
+                raise ValueError(f"Invalid MCU dispatch feature macro for {item['name']}")
+            key = f"rpc::StatusCode::STATUS_{item['name']}" if kind == "status" else f"rpc::CommandId::{item['name']}"
+            entries.append(
+                {
+                    "name": item["name"],
+                    "value": item["value"],
+                    "key": key,
+                    "expression": expression,
+                    "feature_macro": feature_macro,
+                }
+            )
+
+    entries.sort(key=lambda entry: entry["value"])
+    if len(entries) != len({entry["value"] for entry in entries}):
+        raise ValueError("MCU dispatch table contains duplicate command/status IDs")
+    return entries
+
+
 def _extract_payloads_and_actions(
-    pb_module: Any,
-    all_descs: list[Any],
-    opts: Any,
-    env_desc: Any,
+    pb_module: Any, all_descs: list[Any], opts: Any, env_desc: Any
 ) -> dict[str, Any]:
-    payload_fields: list[dict[str, str]] = []
-    payload_structs: list[dict[str, str]] = []
-    for f in env_desc.oneofs_by_name["payload_type"].fields:
-        if f.message_type:
-            item = {"name": f.message_type.name, "field": f.name}
-            payload_fields.append(item)
-            if f.message_type.name != "DaemonMetrics":
-                payload_structs.append(item)
+    payload_fields = [
+        {"name": f.message_type.name, "field": f.name}
+        for f in env_desc.oneofs_by_name["payload_type"].fields
+        if f.message_type
+    ]
+    payload_structs = [item for item in payload_fields if item["name"] != "DaemonMetrics"]
     payload_names = [p["name"] for p in payload_structs]
     mcu_names = set(payload_names) | {"RpcEnvelope"}
     all_structs = [{"name": n} for d in all_descs for n in d.message_types_by_name if n in mcu_names]
@@ -498,12 +440,7 @@ def _extract_payloads_and_actions(
         for p, items in action_items.items()
     ]
     topics = [
-        {
-            "name": t.name,
-            "value": t.value,
-            "description": t.description,
-            "aliases": list(t.aliases),
-        }
+        {"name": t.name, "value": t.value, "description": t.description, "aliases": list(t.aliases)}
         for t in opts.Extensions[pb_module.topics]
     ]
     ubus_methods = [
@@ -544,36 +481,25 @@ def _extract_rpc_specs(
     streaming_rpc_specs: list[dict[str, Any]] = []
     rpc_aliases: dict[str, str] = {}
     for m in svc_desc.methods:
-        cardinality = "Cardinality.UNARY_UNARY"
-        is_streaming = False
         if m.client_streaming and m.server_streaming:
-            cardinality = "Cardinality.STREAM_STREAM"
-            is_streaming = True
+            cardinality, is_streaming = "Cardinality.STREAM_STREAM", True
         elif m.client_streaming:
-            cardinality = "Cardinality.STREAM_UNARY"
-            is_streaming = True
+            cardinality, is_streaming = "Cardinality.STREAM_UNARY", True
         elif m.server_streaming:
-            cardinality = "Cardinality.UNARY_STREAM"
-            is_streaming = True
+            cardinality, is_streaming = "Cardinality.UNARY_STREAM", True
+        else:
+            cardinality, is_streaming = "Cardinality.UNARY_UNARY", False
 
         mo = m.output_type.GetOptions()
-        err_init = mo.Extensions[pb_module.msg_error_init] if mo.HasExtension(pb_module.msg_error_init) else ""
+        err_init = _opt_ext(mo, pb_module.msg_error_init, "")
         m_opts = m.GetOptions()
-        rt = m_opts.Extensions[pb_module.rpc_topic] if m_opts.HasExtension(pb_module.rpc_topic) else ""
+        rt = _opt_ext(m_opts, pb_module.rpc_topic, "")
         if rt:
             rpc_aliases[rt] = m.name
         for a in m_opts.Extensions[pb_module.rpc_aliases]:
             rpc_aliases[a] = m.name
-        rpc_cmd = (
-            m_opts.Extensions[pb_module.rpc_command]
-            if m_opts.HasExtension(pb_module.rpc_command)
-            else f"CMD_{_snake_case(m.name).upper()}"
-        )
-        is_custom = (
-            bool(m_opts.Extensions[pb_module.is_custom_handler])
-            if m_opts.HasExtension(pb_module.is_custom_handler)
-            else False
-        )
+        rpc_cmd = _opt_ext(m_opts, pb_module.rpc_command, f"CMD_{_snake_case(m.name).upper()}")
+        is_custom = bool(_opt_ext(m_opts, pb_module.is_custom_handler, False))
         factory = f"lambda: pb.{m.output_type.name}({err_init})" if err_init else f"pb.{m.output_type.name}"
         item = {
             "name": m.name,
@@ -586,42 +512,31 @@ def _extract_rpc_specs(
             "cardinality": cardinality,
             "is_custom_handler": is_custom,
         }
-        if is_streaming:
-            streaming_rpc_specs.append(item)
-        else:
-            rpc_specs.append(item)
+        (streaming_rpc_specs if is_streaming else rpc_specs).append(item)
     return rpc_specs, streaming_rpc_specs, rpc_aliases
 
 
 def _build_command_operation(
-    cmd: dict[str, Any],
-    pb_module: Any,
-    rpc_by_cmd: dict[str, Any],
-    p_fields_map: dict[str, str],
+    cmd: dict[str, Any], pb_module: Any, rpc_by_cmd: dict[str, Any], p_fields_map: dict[str, str]
 ) -> dict[str, Any]:
     c_name = cmd["name"]
     pb_msg = cmd.get("pb_message")
-    pb_cls = pb_msg if (pb_msg and hasattr(pb_module, pb_msg)) else None
     matched_rpc = rpc_by_cmd.get(c_name)
     op: dict[str, Any] = {"name": c_name, "command_id": f"Command.{c_name}.value"}
-    if pb_cls:
-        op["pb_class"] = f"pb.{pb_cls}"
+    if pb_msg and hasattr(pb_module, pb_msg):
+        op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
         op["payload_field"] = p_fields_map[pb_msg]
-    if cmd.get("cloud_topic"):
-        op["cloud_topic"] = cmd["cloud_topic"]
+    for str_key in ("cloud_topic", "auth_field"):
+        if cmd.get(str_key):
+            op[str_key] = cmd[str_key]
     if cmd.get("response_command"):
         op["expected_responses"] = [f"Command.{cmd['response_command']}.value"]
     if cmd.get("request_command"):
         op["paired_request_id"] = f"Command.{cmd['request_command']}.value"
-    if cmd.get("auth_field"):
-        op["auth_field"] = cmd["auth_field"]
-    if cmd.get("requires_ack"):
-        op["requires_ack"] = True
-    if cmd.get("expects_direct_response"):
-        op["expects_direct_response"] = True
-    if cmd.get("pre_sync_allowed"):
-        op["pre_sync_allowed"] = True
+    for bool_key in ("requires_ack", "expects_direct_response", "pre_sync_allowed"):
+        if cmd.get(bool_key):
+            op[bool_key] = True
     if matched_rpc:
         op.update(
             {
@@ -672,7 +587,6 @@ def _build_operations_catalog(
     operations: list[dict[str, Any]] = [
         _build_command_operation(cmd, pb_module, rpc_by_cmd, p_fields_map) for cmd in commands
     ]
-
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
     operations.extend(
         {
@@ -703,11 +617,7 @@ def _build_operations_catalog(
         )
         operations.append(
             _build_topic_or_payload_op(
-                act_name,
-                pb_module,
-                cloud_topic=topic,
-                payload_field=p_fields_map.get(act_name),
-                blob_field=blob_field,
+                act_name, pb_module, cloud_topic=topic, payload_field=p_fields_map.get(act_name), blob_field=blob_field
             )
         )
         seen_names.add(act_name)
@@ -718,11 +628,7 @@ def _build_operations_catalog(
         blob_field = next((bf for tm, bf in telem_map.items() if tm in msg_name.lower()), None)
         operations.append(
             _build_topic_or_payload_op(
-                msg_name,
-                pb_module,
-                cloud_topic=msg_topics.get(msg_name),
-                payload_field=f_name,
-                blob_field=blob_field,
+                msg_name, pb_module, cloud_topic=msg_topics.get(msg_name), payload_field=f_name, blob_field=blob_field
             )
         )
         seen_names.add(msg_name)
@@ -730,144 +636,34 @@ def _build_operations_catalog(
     return operations
 
 
-_METRIC_NUMERIC_TYPES: Final[frozenset[int]] = frozenset(
-    {
-        FieldDescriptor.TYPE_DOUBLE,
-        FieldDescriptor.TYPE_FLOAT,
-        FieldDescriptor.TYPE_INT64,
-        FieldDescriptor.TYPE_UINT64,
-        FieldDescriptor.TYPE_INT32,
-        FieldDescriptor.TYPE_FIXED64,
-        FieldDescriptor.TYPE_FIXED32,
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_SFIXED32,
-        FieldDescriptor.TYPE_SFIXED64,
-        FieldDescriptor.TYPE_SINT32,
-        FieldDescriptor.TYPE_SINT64,
-        FieldDescriptor.TYPE_BOOL,
-    }
-)
-_METRIC_UNSIGNED_INT_TYPES: Final[frozenset[int]] = frozenset(
-    {
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_UINT64,
-        FieldDescriptor.TYPE_FIXED32,
-        FieldDescriptor.TYPE_FIXED64,
-    }
-)
-_METRIC_LABEL_FIELD_TYPES: Final[frozenset[int]] = frozenset(
-    {
-        FieldDescriptor.TYPE_STRING,
-        FieldDescriptor.TYPE_BOOL,
-        FieldDescriptor.TYPE_ENUM,
-        FieldDescriptor.TYPE_INT32,
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_INT64,
-        FieldDescriptor.TYPE_UINT64,
-    }
-)
-
-
-def _resolve_metric_value_field(field: Any, option: Any, pb_module: Any) -> Any:
-    if field.is_repeated:
-        if field.message_type is None or not option.value_field:
-            raise ValueError(f"Repeated Prometheus metric source DaemonMetrics.{field.name} needs value_field")
-        value_field = field.message_type.fields_by_name.get(option.value_field)
-        if value_field is None:
-            raise ValueError(
-                f"Prometheus metric {option.prometheus_name!r} references unknown value field "
-                f"{field.message_type.name}.{option.value_field}"
-            )
-    else:
-        if option.value_field:
-            raise ValueError(f"Scalar Prometheus metric source DaemonMetrics.{field.name} cannot set value_field")
-        value_field = field
-
-    if value_field.type not in _METRIC_NUMERIC_TYPES:
-        raise ValueError(f"Prometheus metric {option.prometheus_name!r} must reference a numeric field")
-    if (
-        option.prometheus_kind == pb_module.PROMETHEUS_METRIC_KIND_COUNTER
-        and value_field.type not in _METRIC_UNSIGNED_INT_TYPES
-    ):
-        raise ValueError(f"Prometheus counter {option.prometheus_name!r} must reference an unsigned integer field")
-    return value_field
-
-
-def _extract_metric_labels(field: Any, option: Any) -> tuple[list[dict[str, str | None]], tuple[tuple[str, str], ...]]:
-    labels: list[dict[str, str | None]] = []
-    label_signature: list[tuple[str, str]] = []
-    label_names: set[str] = set()
-    for label in option.labels:
-        source_kind = label.WhichOneof("value_source")
-        if not label.name or label.name == "device_id" or label.name in label_names:
-            raise ValueError(f"Prometheus metric {option.prometheus_name!r} has an invalid or duplicate label name")
-        label_names.add(label.name)
-        if source_kind == "field":
-            if not field.is_repeated or field.message_type is None:
-                raise ValueError(
-                    f"Prometheus metric {option.prometheus_name!r} can use field labels only "
-                    "with repeated message sources"
-                )
-            label_field = field.message_type.fields_by_name.get(label.field)
-            if label_field is None or label_field.type not in _METRIC_LABEL_FIELD_TYPES:
-                raise ValueError(
-                    f"Prometheus metric {option.prometheus_name!r} has an invalid label field {label.field!r}"
-                )
-            labels.append({"name": label.name, "field": label.field, "static_value": None})
-            label_signature.append((label.name, "field"))
-        elif source_kind == "static_value":
-            labels.append({"name": label.name, "field": None, "static_value": label.static_value})
-            label_signature.append((label.name, "static_value"))
-        else:
-            raise ValueError(f"Prometheus metric {option.prometheus_name!r} label {label.name!r} has no value source")
-    return labels, tuple(label_signature)
+def _find_daemon_metrics_desc(all_descs: list[Any]) -> Any:
+    return next(
+        msg for desc in all_descs for msg in desc.message_types_by_name.values() if msg.name == "DaemonMetrics"
+    )
 
 
 def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
     """Build the gateway metric catalog from DaemonMetrics field options."""
-    metrics_desc = next(
-        message
-        for descriptor in all_descs
-        for message in descriptor.message_types_by_name.values()
-        if message.name == "DaemonMetrics"
-    )
     metric_kinds = {
         pb_module.PROMETHEUS_METRIC_KIND_GAUGE: "MetricKind.GAUGE",
         pb_module.PROMETHEUS_METRIC_KIND_COUNTER: "MetricKind.COUNTER",
     }
     metric_specs: list[dict[str, Any]] = []
-    sources: set[str] = set()
-    families: dict[str, tuple[str, str, tuple[tuple[str, str], ...]]] = {}
-
-    for field in metrics_desc.fields:
+    for field in _find_daemon_metrics_desc(all_descs).fields:
         field_options = field.GetOptions()
         if not field_options.HasExtension(pb_module.telemetry_metric):
             continue
-
         option = field_options.Extensions[pb_module.telemetry_metric]
         if not option.prometheus_name:
             continue
-        if re.fullmatch(r"[a-zA-Z_:][a-zA-Z0-9_:]*", option.prometheus_name) is None:
-            raise ValueError(
-                f"Invalid Prometheus metric name on DaemonMetrics.{field.name}: {option.prometheus_name!r}"
-            )
-        if not option.prometheus_help:
-            raise ValueError(f"Prometheus metric {option.prometheus_name!r} has no help text")
-        if option.prometheus_kind not in metric_kinds:
-            raise ValueError(f"Prometheus metric {option.prometheus_name!r} has an unsupported metric kind")
-        if field.name in sources:
-            raise ValueError(f"DaemonMetrics.{field.name} declares more than one Prometheus metric")
-        sources.add(field.name)
-
-        _resolve_metric_value_field(field, option, pb_module)
-        labels, label_signature = _extract_metric_labels(field, option)
-
-        kind_name = metric_kinds[option.prometheus_kind].removeprefix("MetricKind.").lower()
-        signature = (kind_name, option.prometheus_help, label_signature)
-        previous_signature = families.setdefault(option.prometheus_name, signature)
-        if previous_signature != signature:
-            raise ValueError(f"Prometheus metric family {option.prometheus_name!r} has conflicting field metadata")
-
+        labels = [
+            {
+                "name": lbl.name,
+                "field": lbl.field if lbl.WhichOneof("value_source") == "field" else None,
+                "static_value": lbl.static_value if lbl.WhichOneof("value_source") == "static_value" else None,
+            }
+            for lbl in option.labels
+        ]
         metric_specs.append(
             {
                 "source_field": field.name,
@@ -878,77 +674,27 @@ def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str
                 "labels": labels,
             }
         )
-
     return metric_specs
 
 
 def _extract_line_protocol_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
     """Build ordered Line Protocol field projections from DaemonMetrics options."""
-    metrics_desc = next(
-        message
-        for descriptor in all_descs
-        for message in descriptor.message_types_by_name.values()
-        if message.name == "DaemonMetrics"
-    )
     field_kinds = {
         pb_module.LINE_PROTOCOL_FIELD_KIND_INTEGER: "LineProtocolFieldKind.INTEGER",
         pb_module.LINE_PROTOCOL_FIELD_KIND_FLOAT: "LineProtocolFieldKind.FLOAT",
         pb_module.LINE_PROTOCOL_FIELD_KIND_BOOLEAN: "LineProtocolFieldKind.BOOLEAN",
     }
-    integer_types = {
-        FieldDescriptor.TYPE_INT64,
-        FieldDescriptor.TYPE_UINT64,
-        FieldDescriptor.TYPE_INT32,
-        FieldDescriptor.TYPE_FIXED64,
-        FieldDescriptor.TYPE_FIXED32,
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_SFIXED32,
-        FieldDescriptor.TYPE_SFIXED64,
-        FieldDescriptor.TYPE_SINT32,
-        FieldDescriptor.TYPE_SINT64,
-        FieldDescriptor.TYPE_BOOL,
-    }
-    numeric_types = integer_types | {FieldDescriptor.TYPE_DOUBLE, FieldDescriptor.TYPE_FLOAT}
-    float_types = {FieldDescriptor.TYPE_DOUBLE, FieldDescriptor.TYPE_FLOAT}
-    line_fields: list[dict[str, Any]] = []
-    line_names: set[str] = set()
-    line_orders: set[int] = set()
-
-    for field in metrics_desc.fields:
-        field_options = field.GetOptions()
-        if not field_options.HasExtension(pb_module.telemetry_metric):
-            continue
-        option = field_options.Extensions[pb_module.telemetry_metric]
-        if not option.line_protocol_name:
-            continue
-        if re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", option.line_protocol_name) is None:
-            raise ValueError(f"Invalid Line Protocol field name: {option.line_protocol_name!r}")
-        if field.is_repeated or field.type not in numeric_types:
-            raise ValueError(f"Line Protocol field {option.line_protocol_name!r} must reference a numeric scalar")
-        if option.line_protocol_kind not in field_kinds:
-            raise ValueError(f"Line Protocol field {option.line_protocol_name!r} has an unsupported value kind")
-        if option.line_protocol_kind == pb_module.LINE_PROTOCOL_FIELD_KIND_INTEGER and field.type not in integer_types:
-            raise ValueError(f"Line Protocol integer field {option.line_protocol_name!r} must be integral")
-        if option.line_protocol_kind == pb_module.LINE_PROTOCOL_FIELD_KIND_FLOAT and field.type not in float_types:
-            raise ValueError(f"Line Protocol float field {option.line_protocol_name!r} must be floating-point")
-        if (
-            option.line_protocol_kind == pb_module.LINE_PROTOCOL_FIELD_KIND_BOOLEAN
-            and field.type != FieldDescriptor.TYPE_BOOL
-        ):
-            raise ValueError(f"Line Protocol boolean field {option.line_protocol_name!r} must reference a bool")
-        if option.line_protocol_name in line_names or option.line_protocol_order in line_orders:
-            raise ValueError("Line Protocol field names and order values must be unique")
-        line_names.add(option.line_protocol_name)
-        line_orders.add(option.line_protocol_order)
-        line_fields.append(
-            {
-                "source_field": field.name,
-                "field_name": option.line_protocol_name,
-                "kind": field_kinds[option.line_protocol_kind],
-                "order": option.line_protocol_order,
-            }
-        )
-
+    line_fields = [
+        {
+            "source_field": field.name,
+            "field_name": opt.line_protocol_name,
+            "kind": field_kinds[opt.line_protocol_kind],
+            "order": opt.line_protocol_order,
+        }
+        for field in _find_daemon_metrics_desc(all_descs).fields
+        if field.GetOptions().HasExtension(pb_module.telemetry_metric)
+        and (opt := field.GetOptions().Extensions[pb_module.telemetry_metric]).line_protocol_name
+    ]
     return sorted(line_fields, key=lambda item: item["order"])
 
 
@@ -968,10 +714,9 @@ def _extract_operations_context(
     cmd_by_name = {c["name"]: c for c in commands}
     rpc_by_cmd = {r["rpc_command"]: r for r in rpc_specs if r["rpc_command"] in cmd_by_name}
 
-    telem_fields = pb_module.TelemetryReport.DESCRIPTOR.fields
     telem_map: dict[str, str] = {}
     default_telem: str | None = None
-    for f in telem_fields:
+    for f in pb_module.TelemetryReport.DESCRIPTOR.fields:
         fo = f.GetOptions()
         if fo.HasExtension(pb_module.telemetry_topic_match):
             telem_map[fo.Extensions[pb_module.telemetry_topic_match]] = f.name
@@ -979,14 +724,14 @@ def _extract_operations_context(
             default_telem = f.name
 
     msg_topics = {
-        m_name: (m_desc.GetOptions().Extensions[pb_module.msg_cloud_topic])
+        m_name: m_desc.GetOptions().Extensions[pb_module.msg_cloud_topic]
         for d in all_descs
         for m_name, m_desc in d.message_types_by_name.items()
         if m_desc.GetOptions().HasExtension(pb_module.msg_cloud_topic)
     }
     msg_topics.update(
         {
-            f"{e_name}_ENUM": (e_desc.GetOptions().Extensions[pb_module.enum_cloud_topic])
+            f"{e_name}_ENUM": e_desc.GetOptions().Extensions[pb_module.enum_cloud_topic]
             for d in all_descs
             for e_name, e_desc in d.enum_types_by_name.items()
             if e_desc.GetOptions().HasExtension(pb_module.enum_cloud_topic)
@@ -996,9 +741,6 @@ def _extract_operations_context(
     operations = _build_operations_catalog(
         commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module
     )
-    metric_specs = _extract_metric_specs(pb_module, all_descs)
-    line_protocol_fields = _extract_line_protocol_specs(pb_module, all_descs)
-
     return {
         "grouped_actions": payload_ctx["grouped_actions"],
         "all_structs": payload_ctx["all_structs"],
@@ -1006,8 +748,8 @@ def _extract_operations_context(
         "payload_structs": payload_ctx["payload_structs"],
         "payload_names": payload_ctx["payload_names"],
         "operations": operations,
-        "metrics": metric_specs,
-        "line_protocol_fields": line_protocol_fields,
+        "metrics": _extract_metric_specs(pb_module, all_descs),
+        "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
         "rpc_aliases": rpc_aliases,
         "ack_commands": [c for c in commands if c["requires_ack"]],
         "pre_sync_allowed_commands": [c for c in commands if c["pre_sync_allowed"]],
@@ -1023,9 +765,7 @@ def _extract_operations_context(
 
 
 def _extract_runtime_config_context(
-    pb_module: Any,
-    opts: Any,
-    py_consts: list[dict[str, Any]],
+    pb_module: Any, opts: Any, py_consts: list[dict[str, Any]]
 ) -> dict[str, Any]:
     cfg_fields = _load_runtime_config_fields(pb_module.DESCRIPTOR, pb_module)
     cfg_names = {c["name"] for c in py_consts}
@@ -1033,10 +773,8 @@ def _extract_runtime_config_context(
         {
             "name": f"DEFAULT_{f.name.upper()}",
             "type": f.field_type,
-            "value": (
-                f'b"{f.raw_default}"'
-                if f.field_type == "bytes"
-                else f'"{f.default_value}"' if f.field_type == "str" else str(f.default_value)
+            "value": _format_py_const_val(
+                f.name, f.field_type, f.raw_default if f.field_type == "bytes" else f.default_value
             ),
         }
         for f in cfg_fields
@@ -1052,14 +790,8 @@ def _extract_runtime_config_context(
     ]
 
     topic_auth_map: dict[tuple[str, str], str] = {}
-    auth_fields = [f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields]
-    for n in auth_fields:
-        for prefix in (
-            "bridge_",
-            "gpio_",
-            "system_",
-            "shell_",
-        ):
+    for n in (f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields):
+        for prefix in ("bridge_", "gpio_", "system_", "shell_"):
             if n.startswith(prefix):
                 topic_auth_map[(prefix.removesuffix("_").upper(), n.removeprefix(prefix).upper())] = n
                 break
@@ -1071,8 +803,6 @@ def _extract_runtime_config_context(
     status_reasons = _message_to_dict(opts.Extensions[pb_module.status_reasons])
     for f in pb_module.StatusReasons.DESCRIPTOR.fields:
         status_reasons.setdefault(f.name, f.name)
-
-    hw_dict = _message_to_dict(opts.Extensions[pb_module.hardware])
 
     return {
         "runtime_config_constants": rt_consts,
@@ -1088,42 +818,34 @@ def _extract_runtime_config_context(
         "status_reasons": status_reasons,
         "spi_bit_orders": [{"name": v.name, "value": v.number} for v in pb_module.SpiBitOrder.DESCRIPTOR.values],
         "spi_data_modes": [{"name": v.name, "value": v.number} for v in pb_module.SpiDataMode.DESCRIPTOR.values],
-        "hardware": hw_dict,
+        "hardware": _message_to_dict(opts.Extensions[pb_module.hardware]),
     }
 
 
 def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     parsed = Version(version)
     target: object = spec_or_pb
-    if isinstance(target, dict):
-        pb_module: Any = cast(dict[str, Any], target).get("pb_module", target)
-    else:
-        pb_module: Any = target
+    pb_module: Any = cast(dict[str, Any], target).get("pb_module", target) if isinstance(target, dict) else target
 
     all_descs: list[Any] = [pb_module.DESCRIPTOR, *pb_module.DESCRIPTOR.dependencies]
     opts: Any = next(d.GetOptions() for d in all_descs if d.GetOptions().HasExtension(pb_module.constants))
     cmd_enum: Any = next(d.enum_types_by_name["Command"] for d in all_descs if "Command" in d.enum_types_by_name)
     status_enum: Any = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
-    env_name = "RpcEnvelope"
-    env_desc: Any = next(d.message_types_by_name[env_name] for d in all_descs if env_name in d.message_types_by_name)
+    env_desc: Any = next(
+        d.message_types_by_name["RpcEnvelope"] for d in all_descs if "RpcEnvelope" in d.message_types_by_name
+    )
     svc_desc: Any = next(d.services_by_name["LocalBridge"] for d in all_descs if "LocalBridge" in d.services_by_name)
 
     consts_ctx = _extract_constants_and_handshake(pb_module, opts, parsed.major, parsed.minor, parsed.micro)
     commands, statuses = _extract_commands_and_statuses(pb_module, cmd_enum, status_enum)
     ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, env_desc, svc_desc)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
-    mcu_dispatch_entries = _build_mcu_dispatch_entries(commands, statuses)
 
-    return (
-        consts_ctx
-        | ops_ctx
-        | cfg_ctx
-        | {
-            "commands": commands,
-            "statuses": statuses,
-            "mcu_dispatch_entries": mcu_dispatch_entries,
-        }
-    )
+    return consts_ctx | ops_ctx | cfg_ctx | {
+        "commands": commands,
+        "statuses": statuses,
+        "mcu_dispatch_entries": _build_mcu_dispatch_entries(commands, statuses),
+    }
 
 
 def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:
@@ -1155,10 +877,7 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, A
 
 class JinjaGenerator:
     def __init__(self) -> None:
-        self.env = Environment(
-            loader=FileSystemLoader(str(TEMPLATE_DIR)),
-            keep_trailing_newline=True,
-        )
+        self.env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), keep_trailing_newline=True)
         cast(dict[str, Any], self.env.filters)["cpp_digits"] = _format_cpp_digit
 
     def render_template(
@@ -1195,44 +914,21 @@ def _resolve_proto_path(spec_path: Path) -> Path:
 
 
 def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, Path | None, bool, bool]]:
+    cpp_dir = args.cpp.parent if args.cpp else None
+    luci_root = repo_root / "luci-app-mcubridge"
     return [
         ("rpc_protocol.h.j2", "common", args.cpp, False, False),
-        (
-            "rpc_hw_config.h.j2",
-            "common",
-            args.cpp.parent / "rpc_hw_config.h" if args.cpp else None,
-            False,
-            False,
-        ),
+        ("rpc_hw_config.h.j2", "common", cpp_dir / "rpc_hw_config.h" if cpp_dir else None, False, False),
         ("rpc_structs.h.j2", "common", args.cpp_structs, False, False),
-        (
-            "rpc_dispatch_table.inc.j2",
-            "common",
-            args.cpp.parent / "rpc_dispatch_table.inc" if args.cpp else None,
-            False,
-            False,
-        ),
+        ("rpc_dispatch_table.inc.j2", "common", cpp_dir / "rpc_dispatch_table.inc" if cpp_dir else None, False, False),
         ("protocol.py.j2", "python", args.py, False, True),
         ("protocol_client.py.j2", "client", args.py_client, False, True),
-        (
-            "mcubridge_uci.j2",
-            "common",
-            repo_root / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
-            False,
-            False,
-        ),
-        ("defaults_sh.j2", "common", repo_root / "mcubridge" / "scripts" / "defaults.sh", True, False),
+        ("mcubridge_uci.j2", "common", luci_root / "root/etc/config/mcubridge", False, False),
+        ("defaults_sh.j2", "common", repo_root / "mcubridge/scripts/defaults.sh", True, False),
         (
             "config_schema_json.j2",
             "common",
-            repo_root
-            / "luci-app-mcubridge"
-            / "htdocs"
-            / "luci-static"
-            / "resources"
-            / "view"
-            / "mcubridge"
-            / "config_schema.json",
+            luci_root / "htdocs/luci-static/resources/view/mcubridge/config_schema.json",
             False,
             False,
         ),
@@ -1246,16 +942,11 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
         for stem in ("config_schema", "mcu_wire"):
             outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
 
-    python_output_dirs = {path.parent for path in (args.py, args.py_client) if path}
-    for output_dir in python_output_dirs:
+    for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
         for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
             outputs.extend((output_dir / f"{stem}_pb2.py", output_dir / f"{stem}_pb2.pyi"))
         outputs.extend(
-            (
-                output_dir / "mcubridge_pb2.py",
-                output_dir / "mcubridge_pb2.pyi",
-                output_dir / "mcubridge_grpc.py",
-            )
+            (output_dir / "mcubridge_pb2.py", output_dir / "mcubridge_pb2.pyi", output_dir / "mcubridge_grpc.py")
         )
 
     explicit_output_dirs = {path.parent for path in explicit_outputs}
@@ -1273,16 +964,14 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
     if not template_paths:
         raise FileNotFoundError(f"No protocol templates found in {templates_dir}")
 
-    proto_files = sorted(proto_path.parent.glob("*.proto"))
-    options_files = sorted(proto_path.parent.glob("*.options"))
     input_paths = [
         proto_path.resolve(),
         Path(__file__).resolve(),
-        *proto_files,
-        *options_files,
+        *sorted(proto_path.parent.glob("*.proto")),
+        *sorted(proto_path.parent.glob("*.options")),
         proto_path.parent / "buf.yaml",
         proto_path.parent / "buf.gen.yaml",
-        repo_root / ".github" / "actions" / "setup-protoc" / "action.yml",
+        repo_root / ".github/actions/setup-protoc/action.yml",
         *template_paths,
     ]
     version_path = repo_root / "VERSION"
@@ -1292,8 +981,7 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
     unique_paths = list(dict.fromkeys(path.resolve() for path in input_paths))
     missing = [path for path in unique_paths if not path.is_file()]
     if missing:
-        missing_list = ", ".join(str(path) for path in missing)
-        raise FileNotFoundError(f"Protocol generation inputs are missing: {missing_list}")
+        raise FileNotFoundError(f"Protocol generation inputs are missing: {', '.join(str(p) for p in missing)}")
     return unique_paths
 
 
@@ -1372,8 +1060,7 @@ def _generate_unified_pyi(py_dir: Path) -> str:
         stub_path = py_dir / f"{stem}.pyi"
         if not stub_path.is_file():
             continue
-        tree = ast.parse(stub_path.read_text(encoding="utf-8"))
-        names = _extract_pyi_symbol_names(tree)
+        names = _extract_pyi_symbol_names(ast.parse(stub_path.read_text(encoding="utf-8")))
         if names:
             reexports = ", ".join(f"{n} as {n}" for n in sorted(set(names)))
             lines.append(f"from .{stem} import ({reexports})\n")
@@ -1392,7 +1079,6 @@ def main(
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
     args = GenerationArgs(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
-
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":
@@ -1410,11 +1096,8 @@ def main(
     sys.stderr.write(f"Generating protocol bindings from {proto_path} via buf...\n")
     run_buf_generate(proto_path.parent)
 
-    # Now load the compiled descriptor
     proto_spec = load_spec_from_proto(proto_path)
     context = build_protocol_context(proto_spec, version)
-
-    # Dispatch compiled protobuf and stub artifacts
     py_targets = [args.py.parent if args.py else None, args.py_client.parent if args.py_client else None]
     cpp_targets = [args.cpp.parent if args.cpp else None]
 
@@ -1426,10 +1109,7 @@ def main(
             flags=re.MULTILINE,
         )
         return re.sub(
-            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b",
-            r"from .\1",
-            text,
-            flags=re.MULTILINE,
+            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b", r"from .\1", text, flags=re.MULTILINE
         )
 
     for stem in ("config_schema", "mcu_wire"):
@@ -1458,31 +1138,26 @@ def main(
         (py_dir / "mcubridge_pb2.py").write_text(unified_py, encoding="utf-8")
         (py_dir / "mcubridge_pb2.pyi").write_text(_generate_unified_pyi(py_dir), encoding="utf-8")
 
-    def _sanitize_grpc_bindings(text: str) -> str:
-        text = re.sub(
-            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b",
-            r"from . import \1",
-            text,
-            flags=re.MULTILINE,
-        )
-        return text.replace("if typing.TYPE_CHECKING:\n    import grpclib.server", "import grpclib.server")
-
     _dispatch_generated_file(
         proto_path.parent / "cloud_gateway_grpc.py",
         py_targets,
-        _sanitize_grpc_bindings,
+        lambda t: _sanitize_pb2(t).replace(
+            "if typing.TYPE_CHECKING:\n    import grpclib.server", "import grpclib.server"
+        ),
         dest_name="mcubridge_grpc.py",
     )
     for grpc_file in proto_path.parent.glob("*_grpc.py"):
         grpc_file.unlink(missing_ok=True)
 
-    # Render Jinja2 artifacts declaratively
     py_context = context | {
         "constants": context["python_constants"],
         "handshake_constants": context["python_handshake_constants"],
     }
-    py_client_context = context | {"constants": context["client_constants"]}
-    template_contexts = {"common": context, "python": py_context, "client": py_client_context}
+    template_contexts = {
+        "common": context,
+        "python": py_context,
+        "client": context | {"constants": context["client_constants"]},
+    }
     explicit_outputs = (args.cpp, args.cpp_structs, args.py, args.py_client)
     for template_name, context_name, target_path, executable, is_py in _template_target_specs(args, REPO_ROOT):
         if target_path and (
@@ -1502,10 +1177,9 @@ def main(
 
     missing_outputs = [output for output in expected_generation_outputs(args) if not output.is_file()]
     if missing_outputs:
-        missing_list = ", ".join(str(output) for output in missing_outputs)
-        raise RuntimeError(f"Protocol generation did not create expected artifacts: {missing_list}")
+        missing_str = ", ".join(map(str, missing_outputs))
+        raise RuntimeError(f"Protocol generation did not create expected artifacts: {missing_str}")
 
-    # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")
 
 

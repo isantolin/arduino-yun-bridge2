@@ -19,15 +19,12 @@ import re
 import shutil
 import subprocess
 import sys
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Final, cast
 
 import black
-import httpx
-import tenacity
 import typer
 from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
@@ -37,7 +34,7 @@ from packaging.version import Version
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb", "mypy_protobuf", "grpclib", "black"]
+REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb", "mypy_protobuf", "grpclib", "black", "typer", "packaging"]
 
 MISSING_DEPS: list[str] = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep.split(".")[0]) is None]
 
@@ -73,20 +70,6 @@ def _resolve_nanopb_protoc_dir() -> Path | None:
         if (candidate / "protoc").exists():
             return candidate
     return None
-
-
-def run_buf_format(proto_dir: Path) -> None:
-    """Run ``buf format -w`` declaratively on proto specs."""
-    try:
-        subprocess.run(
-            ["buf", "format", "-w"],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=str(proto_dir),
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"buf format failed:\n{e.stderr}") from e
 
 
 def run_buf_generate(proto_dir: Path) -> None:
@@ -146,10 +129,6 @@ def _snake_case(s: str) -> str:
 def _format_cpp_digit(v: object) -> str:
     """Format integers >= 10'000 with C++14 digit separators. [SIL-2]"""
     return f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)
-
-
-def _is_cmd_flag(cmd: object, flag: str) -> bool:
-    return bool(isinstance(cmd, dict) and cast(dict[str, Any], cmd).get(flag))
 
 
 _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
@@ -342,30 +321,162 @@ def _extract_commands_and_statuses(
     pb_module: Any, cmd_enum: Any, status_enum: Any
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     commands: list[dict[str, Any]] = []
-    for v in cmd_enum.values:
-        if v.name == "CMD_UNSPECIFIED":
+    for value in cmd_enum.values:
+        if value.name == "CMD_UNSPECIFIED":
             continue
-        co = v.GetOptions().Extensions[pb_module.cmd_opts]
-        cmd = _message_to_dict(co)
-        cmd["name"] = v.name
-        cmd["value"] = v.number
-        cmd["expects_direct_response"] = bool(co.response_command)
-        commands.append(cmd)
-    req_map = {c["response_command"]: c["name"] for c in commands if c.get("response_command")}
-    for c in commands:
-        if not c.get("request_command") and c["name"] in req_map:
-            c["request_command"] = req_map[c["name"]]
+        command_options = value.GetOptions().Extensions[pb_module.cmd_opts]
+        command = _message_to_dict(command_options)
+        command["name"] = value.name
+        command["value"] = value.number
+        command["expects_direct_response"] = bool(command_options.response_command)
+        if command_options.HasField("mcu_dispatch"):
+            command["mcu_dispatch"] = _message_to_dict(command_options.mcu_dispatch)
+        commands.append(command)
 
-    statuses = [
-        {
-            "name": v.name,
-            "value": v.number,
-            "description": v.GetOptions().Extensions[pb_module.status_opts].description,
+    request_by_response = {
+        command["response_command"]: command["name"]
+        for command in commands
+        if command.get("response_command")
+    }
+    for command in commands:
+        if not command.get("request_command") and command["name"] in request_by_response:
+            command["request_command"] = request_by_response[command["name"]]
+
+    statuses: list[dict[str, Any]] = []
+    for value in status_enum.values:
+        if value.name == "STATUS_UNSPECIFIED":
+            continue
+        status_options = value.GetOptions().Extensions[pb_module.status_opts]
+        status = {
+            "name": value.name,
+            "value": value.number,
+            "description": status_options.description,
         }
-        for v in status_enum.values
-        if v.name != "STATUS_UNSPECIFIED"
-    ]
+        if status_options.HasField("mcu_dispatch"):
+            status["mcu_dispatch"] = _message_to_dict(status_options.mcu_dispatch)
+        statuses.append(status)
     return commands, statuses
+
+
+def _build_mcu_dispatch_entries(
+    commands: list[dict[str, Any]], statuses: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Build the static C++ dispatch table from Protobuf command/status options."""
+    entries: list[dict[str, Any]] = []
+    adapter_prefix = "MCU_DISPATCH_ADAPTER_"
+
+    for kind, items in (("command", commands), ("status", statuses)):
+        for item in items:
+            raw_dispatch = item.get("mcu_dispatch")
+            if not raw_dispatch:
+                continue
+            if not isinstance(raw_dispatch, dict):
+                raise ValueError(f"Invalid MCU dispatch metadata for {item['name']}")
+            dispatch: dict[str, Any] = dict(cast(dict[str, Any], raw_dispatch))
+            adapter = dispatch.get("adapter", "")
+            if not isinstance(adapter, str) or not adapter.startswith(adapter_prefix):
+                raise ValueError(f"Missing or invalid MCU dispatch adapter for {item['name']}")
+            dispatch["adapter"] = adapter.removeprefix(adapter_prefix).lower()
+
+            expression = format_mcu_dispatch_expression(dispatch, item["name"])
+            feature_macro = dispatch.get("feature_macro") or ""
+            if feature_macro and (
+                not isinstance(feature_macro, str)
+                or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
+            ):
+                raise ValueError(f"Invalid MCU dispatch feature macro for {item['name']}")
+            key = (
+                f"rpc::StatusCode::STATUS_{item['name']}"
+                if kind == "status"
+                else f"rpc::CommandId::{item['name']}"
+            )
+            entries.append(
+                {
+                    "name": item["name"],
+                    "value": item["value"],
+                    "key": key,
+                    "expression": expression,
+                    "feature_macro": feature_macro,
+                }
+            )
+
+    entries.sort(key=lambda entry: entry["value"])
+    numeric_ids = [entry["value"] for entry in entries]
+    if len(numeric_ids) != len(set(numeric_ids)):
+        raise ValueError("MCU dispatch table contains duplicate command/status IDs")
+    return entries
+
+
+_MCU_DISPATCH_TEMPLATES: Final[dict[str, str]] = {
+    "member_no_payload": "&BridgeClass::_dispatchMemberNoPayload<{handler_ptr}, {flags}>",
+    "member_with_msg": "&BridgeClass::_dispatchMemberWithMsg<{handler_ptr}, {payload_type}, {flags}>",
+    "member_with_ctx_msg": "&BridgeClass::_dispatchMemberWithCtxMsg<{handler_ptr}, {payload_type}, {flags}>",
+    "static_with_msg": "&BridgeClass::_dispatchStaticWithMsg<{handler_ptr}, {payload_type}, {flags}>",
+    "target_with_msg": (
+        "&BridgeClass::_dispatchTargetWithMsg<{target_instance}, {handler_ptr}, {payload_type}, {flags}>"
+    ),
+    "target_action": "&BridgeClass::_dispatchTargetAction<{target_instance}, {handler_ptr}, {flags}>",
+}
+_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _require_identifier(value: object, error_msg: str) -> str:
+    if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
+        raise ValueError(error_msg)
+    return value
+
+
+def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
+    """Render a fixed-allocation MCU dispatch adapter instantiation."""
+    adapter = str(dispatch.get("adapter", ""))
+    template = _MCU_DISPATCH_TEMPLATES.get(adapter)
+    if template is None:
+        raise ValueError(f"Unknown MCU dispatch adapter {adapter!r} for {name}")
+
+    handler = _require_identifier(
+        dispatch.get("handler", ""),
+        f"Invalid MCU dispatch handler for {name}: {dispatch.get('handler', '')!r}",
+    )
+    handler_class = _require_identifier(
+        dispatch.get("handler_class") or "BridgeClass",
+        f"Invalid MCU dispatch handler class for {name}: {dispatch.get('handler_class')!r}",
+    )
+    handler_args = dispatch.get("handler_template_args", "")
+    if not isinstance(handler_args, str):
+        raise ValueError(f"Invalid handler template arguments for {name}")
+    handler_ptr = f"&{handler_class}::{handler}<{handler_args}>" if handler_args else f"&{handler_class}::{handler}"
+
+    payload_type = (
+        _require_identifier(
+            dispatch.get("payload_type", ""),
+            f"Missing or invalid MCU dispatch payload type for {name}",
+        )
+        if "{payload_type}" in template
+        else ""
+    )
+    target_instance = (
+        _require_identifier(
+            dispatch.get("target_instance", ""),
+            f"Missing or invalid MCU dispatch target instance for {name}",
+        )
+        if "{target_instance}" in template
+        else ""
+    )
+
+    flag_vals = (
+        dispatch.get("needs_ack", True),
+        dispatch.get("retransmit_on_dup", False),
+        dispatch.get("check_dup", True),
+    )
+    if not all(isinstance(v, bool) for v in flag_vals):
+        raise ValueError(f"Invalid MCU dispatch boolean metadata for {name}")
+    flags_str = ", ".join("true" if v else "false" for v in flag_vals)
+    return template.format(
+        handler_ptr=handler_ptr,
+        payload_type=payload_type,
+        target_instance=target_instance,
+        flags=flags_str,
+    )
 
 
 def _extract_payloads_and_actions(
@@ -952,7 +1063,7 @@ def _extract_runtime_config_context(
     topic_auth_map: dict[tuple[str, str], str] = {}
     auth_fields = [f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields]
     for n in auth_fields:
-        for prefix in ("bridge_", "gpio_", "system_", "shell_"):
+        for prefix in ("bridge_", "gpio_", "system_", "shell_",):
             if n.startswith(prefix):
                 topic_auth_map[(prefix.removesuffix("_").upper(), n.removeprefix(prefix).upper())] = n
                 break
@@ -1005,8 +1116,13 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     commands, statuses = _extract_commands_and_statuses(pb_module, cmd_enum, status_enum)
     ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, env_desc, svc_desc)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
+    mcu_dispatch_entries = _build_mcu_dispatch_entries(commands, statuses)
 
-    return consts_ctx | ops_ctx | cfg_ctx | {"commands": commands, "statuses": statuses}
+    return consts_ctx | ops_ctx | cfg_ctx | {
+        "commands": commands,
+        "statuses": statuses,
+        "mcu_dispatch_entries": mcu_dispatch_entries,
+    }
 
 
 def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:
@@ -1043,10 +1159,6 @@ class JinjaGenerator:
             keep_trailing_newline=True,
         )
         cast(dict[str, Any], self.env.filters)["cpp_digits"] = _format_cpp_digit
-        cast(dict[str, Any], self.env.filters)["snakecase"] = _snake_case
-        cast(dict[str, Any], self.env.tests)["streaming"] = functools.partial(_is_cmd_flag, flag="is_streaming")
-        cast(dict[str, Any], self.env.tests)["reliable"] = functools.partial(_is_cmd_flag, flag="requires_ack")
-        cast(dict[str, Any], self.env.tests)["pre_sync"] = functools.partial(_is_cmd_flag, flag="pre_sync_allowed")
 
     def render_template(
         self,
@@ -1067,104 +1179,6 @@ class JinjaGenerator:
             out_path.write_text(rendered, encoding="utf-8")
         if executable:
             out_path.chmod(0o755)
-
-
-def update_metadata(version: str) -> None:
-    targets = [
-        (REPO_ROOT / "pyproject.toml", r'version\s*=\s*"[^"]+"', f'version = "{version}"', 1),
-        (
-            REPO_ROOT / "mcubridge" / "mcubridge" / "__init__.py",
-            r'__version__\s*=\s*"[^"]+"',
-            f'__version__ = "{version}"',
-            1,
-        ),
-        (REPO_ROOT / "mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
-        (REPO_ROOT / "mcubridge-gateway" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
-        (REPO_ROOT / "luci-app-mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
-        (REPO_ROOT / "mcubridge-library-arduino" / "library.properties", r"version=[^\n]+", f"version={version}", 0),
-    ]
-    for target_path, pattern, repl, count in targets:
-        if target_path.exists():
-            original = target_path.read_text(encoding="utf-8")
-            updated = re.sub(pattern, repl, original, count=count)
-            if updated != original:
-                target_path.write_text(updated, encoding="utf-8")
-                sys.stderr.write(f"Updated {target_path} to version {version}\n")
-
-
-def ensure_nanopb_core_files() -> None:
-    """Ensure the core Nanopb C files exist in mcubridge-library-arduino/src/."""
-
-    src_dir = REPO_ROOT / "mcubridge-library-arduino" / "src"
-    version, files = _load_nanopb_core_spec()
-    base_url = f"https://raw.githubusercontent.com/nanopb/nanopb/nanopb-{version}/"
-
-    src_dir.mkdir(parents=True, exist_ok=True)
-    for file_name in files:
-        target = src_dir / file_name
-        if not target.exists():
-            url = base_url + file_name
-            sys.stderr.write(f"Downloading core Nanopb file: {file_name} from {url}...\n")
-            retryer = tenacity.Retrying(
-                stop=tenacity.stop_after_attempt(3),
-                wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=5.0),
-                retry=tenacity.retry_if_exception_type((httpx.HTTPError, OSError, TimeoutError)),
-                reraise=True,
-            )
-
-            def _fetch_nanopb_file(target_url: str = url) -> bytes:
-                resp = httpx.get(target_url, timeout=20.0, follow_redirects=True)
-                resp.raise_for_status()
-                return resp.content
-
-            try:
-                content = retryer(_fetch_nanopb_file)
-                target.write_bytes(content)
-            except (
-                httpx.HTTPError,
-                OSError,
-                ValueError,
-                tenacity.RetryError,
-            ) as e:
-                sys.stderr.write(f"Error downloading {file_name} after retries: {e}\n")
-                sys.exit(1)
-
-
-def _load_nanopb_core_spec() -> tuple[str, list[str]]:
-    manifest_path = REPO_ROOT / "requirements" / "runtime.toml"
-    try:
-        with manifest_path.open("rb") as manifest_file:
-            manifest = tomllib.load(manifest_file)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise RuntimeError(f"Cannot load dependency manifest {manifest_path}: {exc}") from exc
-
-    dependencies = manifest.get("cpp_dependency")
-    if not isinstance(dependencies, list):
-        raise RuntimeError(f"Dependency manifest has no C++ dependency list: {manifest_path}")
-
-    matches: list[dict[str, Any]] = [
-        cast(dict[str, Any], candidate)
-        for candidate in cast(list[object], dependencies)
-        if isinstance(candidate, dict) and cast(dict[str, Any], candidate).get("name") == "nanopb_core"
-    ]
-    if len(matches) != 1:
-        raise RuntimeError(f"Expected one nanopb_core entry in {manifest_path}, found {len(matches)}")
-
-    dependency = matches[0]
-    version = dependency.get("version")
-    raw_files = dependency.get("files")
-    if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", version):
-        raise RuntimeError(f"Invalid nanopb_core version in {manifest_path}")
-    if not isinstance(raw_files, list) or not raw_files:
-        raise RuntimeError(f"Invalid nanopb_core file list in {manifest_path}")
-    files: list[str] = []
-    for file_name in cast(list[object], raw_files):
-        if not isinstance(file_name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", file_name):
-            raise RuntimeError(f"Invalid nanopb_core file list in {manifest_path}")
-        files.append(file_name)
-    if len(set(files)) != len(files):
-        raise RuntimeError(f"Duplicate nanopb_core files in {manifest_path}")
-    return version, files
 
 
 def _resolve_proto_path(spec_path: Path) -> Path:
@@ -1190,6 +1204,13 @@ def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, P
             False,
         ),
         ("rpc_structs.h.j2", "common", args.cpp_structs, False, False),
+        (
+            "rpc_dispatch_table.inc.j2",
+            "common",
+            args.cpp.parent / "rpc_dispatch_table.inc" if args.cpp else None,
+            False,
+            False,
+        ),
         ("protocol.py.j2", "python", args.py, False, True),
         ("protocol_client.py.j2", "client", args.py_client, False, True),
         (
@@ -1260,7 +1281,6 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
         *options_files,
         proto_path.parent / "buf.yaml",
         proto_path.parent / "buf.gen.yaml",
-        repo_root / "requirements" / "runtime.toml",
         repo_root / ".github" / "actions" / "setup-protoc" / "action.yml",
         *template_paths,
     ]
@@ -1370,8 +1390,6 @@ def main(
     py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
-    ensure_nanopb_core_files()
-
     args = GenerationArgs(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
 
     gen = JinjaGenerator()
@@ -1379,7 +1397,6 @@ def main(
     if version == "0.0.0":
         sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
 
-    update_metadata(version)
     proto_path = _resolve_proto_path(args.spec)
     if not proto_path.is_file():
         raise FileNotFoundError(f"Protocol specification not found: {proto_path}")
@@ -1389,9 +1406,7 @@ def main(
         sys.stderr.write("Protocol bindings up-to-date, skipping generation.\n")
         return
 
-    sys.stderr.write(f"Formatting and compiling {proto_path} via buf...\n")
-    run_buf_format(proto_path.parent)
-    _, hash_file, current_hash = check_incremental_build(args, version)
+    sys.stderr.write(f"Generating protocol bindings from {proto_path} via buf...\n")
     run_buf_generate(proto_path.parent)
 
     # Now load the compiled descriptor
@@ -1423,9 +1438,6 @@ def main(
             lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
         )
         _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
-
-    for leftover in (proto_path.parent / "cloud_gateway.pb.h", proto_path.parent / "cloud_gateway.pb.c"):
-        leftover.unlink(missing_ok=True)
 
     for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.py", py_targets, _sanitize_pb2)

@@ -31,7 +31,6 @@ inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits
 {% for const in handshake_constants -%}
 inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }}{{ 'UL' if const.type == 'unsigned long' else 'U' if const.type.startswith('uint') or const.type.startswith('unsigned') else '' }};
 {% endfor %}
-inline constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7U;
 
 {% if handshake.hkdf_salt -%}
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_salt_len }}U> RPC_HANDSHAKE_HKDF_SALT RPC_PROGMEM = { {{ handshake.hkdf_salt_bytes }} };

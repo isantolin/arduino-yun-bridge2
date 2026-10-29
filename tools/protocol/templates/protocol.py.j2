@@ -20,13 +20,11 @@ import structlog
 from . import mcubridge_pb2 as pb
 
 type McuDispatchTable = dict[int, Callable[..., Any]]
-type McuHandler = Callable[..., Any]
 
 logger = structlog.get_logger(__name__)
 
 CLOUD_WILDCARD_SINGLE: Final[str] = "+"
 CLOUD_WILDCARD_MULTI: Final[str] = "#"
-_FLAVOR_SEGMENTS: Final[frozenset[str]] = frozenset({"response", "value"})
 
 {% for const in constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
@@ -35,7 +33,6 @@ _FLAVOR_SEGMENTS: Final[frozenset[str]] = frozenset({"response", "value"})
 {% for const in handshake_constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
-HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 ZERO_NONCE: Final[bytes] = b"\x00" * AEAD_NONCE_SIZE
 
 

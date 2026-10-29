@@ -6,7 +6,7 @@ The files in this directory describe the RPC protocol shared between the MCU
 - `mcu_wire.proto`: physical wire frames, RPC envelopes, and bounded static payloads.
 - `cloud_gateway.proto`: telemetry reports, cloud envelopes, and gRPC services.
 
-Running the generator updates all derived artifacts to stay in sync.
+Running the generator updates all derived artifacts. MCU dispatch handlers live next to their command/status declarations in `config_schema.proto`; no parallel handler table is maintained.
 
 ```bash
 python3 tools/protocol/generate.py \
@@ -20,7 +20,7 @@ python3 tools/protocol/generate.py \
 The command refreshes:
 
 - `mcubridge/mcubridge/protocol/protocol.py` — Python enums and constants from the schema.
-- `mcubridge-library-arduino/src/protocol/rpc_protocol.h`, `rpc_hw_config.h`, and `rpc_structs.h` — C++ protocol declarations and Nanopb helpers.
+- `mcubridge-library-arduino/src/protocol/rpc_protocol.h`, `rpc_hw_config.h`, `rpc_structs.h`, and `rpc_dispatch_table.inc` — C++ protocol declarations, Nanopb helpers, and the generated static dispatch table.
 - `mcubridge/mcubridge/protocol/mcubridge_pb2.py` + `.pyi` — Python protobuf bindings.
 - `mcubridge/mcubridge/protocol/mcubridge_grpc.py` — Python gRPC bindings.
 - `mcubridge-library-arduino/src/protocol/mcu_wire.pb.h` + `config_schema.pb.h` — C Nanopb structs for MCU.
@@ -29,4 +29,4 @@ The command refreshes:
 
 The Python module is consumed by the MCU bridge daemon, while the Arduino headers are used by the firmware. The firmware bindings are generated for statically bounded Nanopb structures; generation alone does not establish zero-heap behavior on every target or SIL-2 certification.
 
-Nanopb's core version and source-file list are defined in `requirements/runtime.toml`; the dependency synchronizer projects that list into the Arduino installer. Incremental generation fingerprints the schema, Buf configuration and options, generator and templates, dependency manifest, toolchain pin, and installed Buf version. It skips generation only when the fingerprint matches and every expected artifact exists; formatting or generation failures leave the cache uncommitted.
+Nanopb's runtime core version and source-file list are defined in `requirements/runtime.toml`; `tools/audit/sync_runtime_deps.py` projects that list into `mcubridge-library-arduino/tools/install.sh`, which downloads the core files. Protocol generation no longer downloads runtime C files or rewrites source formatting. Run `buf format -w tools/protocol` explicitly when formatting is needed; CI checks formatting separately. Package version synchronization is separate: run `python3 tools/sync_version.py` after changing `VERSION`. Incremental generation fingerprints the schema, Buf configuration and options, generator and templates, toolchain pin, and installed Buf version. It skips generation only when the fingerprint matches and every expected artifact exists; generation failures leave the cache uncommitted.

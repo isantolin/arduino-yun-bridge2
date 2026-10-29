@@ -12,7 +12,6 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
         proto_dir / "buf.yaml": "version: v2\n",
         proto_dir / "buf.gen.yaml": "version: v2\n",
         proto_dir / "mcubridge.options": "mcubridge.Message max_size:64\n",
-        tmp_path / "requirements" / "runtime.toml": '[[dependency]]\nname = "generator"\n',
         tmp_path / ".github" / "actions" / "setup-protoc" / "action.yml": "name: setup-protoc\n",
         template_dir / "protocol.py.j2": "{{ protocol_version }}\n",
         tmp_path / "VERSION": "2.1.0\n",
@@ -48,7 +47,6 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
     for changed_input in (
         proto_dir / "mcubridge.options",
         proto_dir / "buf.gen.yaml",
-        tmp_path / "requirements" / "runtime.toml",
         template_dir / "protocol.py.j2",
     ):
         original_content = changed_input.read_text(encoding="utf-8")

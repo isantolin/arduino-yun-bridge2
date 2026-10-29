@@ -1917,7 +1917,7 @@ message RuntimeConfig {
   ];
   uint32 cloud_http3_port = 49 [
     (config_default_ref) = "constants.default_cloud_port",
-    (config_min) = 1,
+    (config_min) = 0,
     (config_max) = 65535,
     (config_desc) = "HTTP/3 UDP port",
     (uci_option) = "cloud_http3_port"

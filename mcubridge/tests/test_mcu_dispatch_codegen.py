@@ -1,13 +1,16 @@
 """Tests for Protobuf-driven MCU dispatch table generation."""
 
+from __future__ import annotations
+
+from typing import Any, Final
+
 import pytest
 from google.protobuf import descriptor_pb2
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 from tools.protocol import generate
 
-
-EXPECTED_DISPATCH_NAMES = {
+EXPECTED_DISPATCH_NAMES: Final[set[str]] = {
     "ACK",
     "CMD_GET_VERSION",
     "CMD_GET_FREE_MEMORY",
@@ -46,15 +49,15 @@ EXPECTED_DISPATCH_NAMES = {
 
 def test_dispatch_table_is_derived_from_protobuf_and_sorted() -> None:
     context = generate.build_protocol_context(pb, "2.8.8")
-    entries = context["mcu_dispatch_entries"]
+    entries: list[dict[str, Any]] = context["mcu_dispatch_entries"]
 
-    assert {entry["name"] for entry in entries} == EXPECTED_DISPATCH_NAMES
+    assert {str(entry["name"]) for entry in entries} == EXPECTED_DISPATCH_NAMES
     assert len(entries) == 33
-    values = [entry["value"] for entry in entries]
+    values: list[int] = [int(entry["value"]) for entry in entries]
     assert values == sorted(values)
     assert len(values) == len(set(values))
 
-    by_name = {entry["name"]: entry for entry in entries}
+    by_name: dict[str, dict[str, Any]] = {str(entry["name"]): entry for entry in entries}
     assert by_name["ACK"]["key"] == "rpc::StatusCode::STATUS_ACK"
     assert by_name["CMD_GET_VERSION"]["key"] == "rpc::CommandId::CMD_GET_VERSION"
     assert by_name["CMD_GET_VERSION"]["expression"] == (
@@ -64,20 +67,18 @@ def test_dispatch_table_is_derived_from_protobuf_and_sorted() -> None:
         "false, true, true>"
     )
     assert by_name["CMD_MAILBOX_READ_RESP"]["feature_macro"] == "BRIDGE_ENABLE_MAILBOX"
-    assert by_name["CMD_SPI_TRANSFER"]["expression"].endswith(
-        "rpc_pb_SpiTransfer, false, true, true>"
-    )
+    assert str(by_name["CMD_SPI_TRANSFER"]["expression"]).endswith("rpc_pb_SpiTransfer, false, true, true>")
 
 
 def test_dispatch_expression_rejects_unknown_adapters_and_missing_payloads() -> None:
     with pytest.raises(ValueError, match="Unknown MCU dispatch adapter"):
-        generate._format_mcu_dispatch_expression(
+        generate.format_mcu_dispatch_expression(
             {"adapter": "unknown", "handler": "_handleSomething"},
             "CMD_INVALID",
         )
 
     with pytest.raises(ValueError, match="payload type"):
-        generate._format_mcu_dispatch_expression(
+        generate.format_mcu_dispatch_expression(
             {"adapter": "member_with_msg", "handler": "_handleSomething"},
             "CMD_INVALID",
         )

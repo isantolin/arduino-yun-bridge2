@@ -131,8 +131,6 @@ def _format_cpp_digit(v: object) -> str:
     return f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)
 
 
-
-
 _FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
     FieldDescriptor.TYPE_STRING: ("str", lambda v: str(v) if v is not None else ""),
     FieldDescriptor.TYPE_BYTES: ("bytes", lambda v: v.encode("utf-8") if isinstance(v, str) else (v or b"")),
@@ -374,13 +372,13 @@ def _build_mcu_dispatch_entries(
                 continue
             if not isinstance(raw_dispatch, dict):
                 raise ValueError(f"Invalid MCU dispatch metadata for {item['name']}")
-            dispatch = dict(raw_dispatch)
+            dispatch: dict[str, Any] = dict(cast(dict[str, Any], raw_dispatch))
             adapter = dispatch.get("adapter", "")
             if not isinstance(adapter, str) or not adapter.startswith(adapter_prefix):
                 raise ValueError(f"Missing or invalid MCU dispatch adapter for {item['name']}")
             dispatch["adapter"] = adapter.removeprefix(adapter_prefix).lower()
 
-            expression = _format_mcu_dispatch_expression(dispatch, item["name"])
+            expression = format_mcu_dispatch_expression(dispatch, item["name"])
             feature_macro = dispatch.get("feature_macro") or ""
             if feature_macro and (
                 not isinstance(feature_macro, str)
@@ -409,96 +407,76 @@ def _build_mcu_dispatch_entries(
     return entries
 
 
-def _format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
+_MCU_DISPATCH_TEMPLATES: Final[dict[str, str]] = {
+    "member_no_payload": "&BridgeClass::_dispatchMemberNoPayload<{handler_ptr}, {flags}>",
+    "member_with_msg": "&BridgeClass::_dispatchMemberWithMsg<{handler_ptr}, {payload_type}, {flags}>",
+    "member_with_ctx_msg": "&BridgeClass::_dispatchMemberWithCtxMsg<{handler_ptr}, {payload_type}, {flags}>",
+    "static_with_msg": "&BridgeClass::_dispatchStaticWithMsg<{handler_ptr}, {payload_type}, {flags}>",
+    "target_with_msg": (
+        "&BridgeClass::_dispatchTargetWithMsg<{target_instance}, {handler_ptr}, {payload_type}, {flags}>"
+    ),
+    "target_action": "&BridgeClass::_dispatchTargetAction<{target_instance}, {handler_ptr}, {flags}>",
+}
+_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _require_identifier(value: object, error_msg: str) -> str:
+    if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
+        raise ValueError(error_msg)
+    return value
+
+
+def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
     """Render a fixed-allocation MCU dispatch adapter instantiation."""
-    adapters = {
-        "member_no_payload",
-        "member_with_msg",
-        "member_with_ctx_msg",
-        "static_with_msg",
-        "target_with_msg",
-        "target_action",
-    }
-    adapter = dispatch.get("adapter", "")
-    if adapter not in adapters:
+    adapter = str(dispatch.get("adapter", ""))
+    template = _MCU_DISPATCH_TEMPLATES.get(adapter)
+    if template is None:
         raise ValueError(f"Unknown MCU dispatch adapter {adapter!r} for {name}")
 
-    handler = dispatch.get("handler", "")
-    handler_class = dispatch.get("handler_class") or "BridgeClass"
-    if not isinstance(handler, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", handler) is None:
-        raise ValueError(f"Invalid MCU dispatch handler for {name}: {handler!r}")
-    if not isinstance(handler_class, str) or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", handler_class) is None:
-        raise ValueError(f"Invalid MCU dispatch handler class for {name}: {handler_class!r}")
-
+    handler = _require_identifier(
+        dispatch.get("handler", ""),
+        f"Invalid MCU dispatch handler for {name}: {dispatch.get('handler', '')!r}",
+    )
+    handler_class = _require_identifier(
+        dispatch.get("handler_class") or "BridgeClass",
+        f"Invalid MCU dispatch handler class for {name}: {dispatch.get('handler_class')!r}",
+    )
     handler_args = dispatch.get("handler_template_args", "")
-    handler_ptr = f"&{handler_class}::{handler}"
-    if handler_args:
-        if not isinstance(handler_args, str):
-            raise ValueError(f"Invalid handler template arguments for {name}")
-        handler_ptr += f"<{handler_args}>"
+    if not isinstance(handler_args, str):
+        raise ValueError(f"Invalid handler template arguments for {name}")
+    handler_ptr = f"&{handler_class}::{handler}<{handler_args}>" if handler_args else f"&{handler_class}::{handler}"
 
-    payload_type = dispatch.get("payload_type", "")
-    needs_payload = adapter in {
-        "member_with_msg",
-        "member_with_ctx_msg",
-        "static_with_msg",
-        "target_with_msg",
-    }
-    if needs_payload and (
-        not isinstance(payload_type, str)
-        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", payload_type) is None
-    ):
-        raise ValueError(f"Missing or invalid MCU dispatch payload type for {name}")
-
-    target_instance = dispatch.get("target_instance", "")
-    if adapter in {"target_with_msg", "target_action"} and (
-        not isinstance(target_instance, str)
-        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target_instance) is None
-    ):
-        raise ValueError(f"Missing or invalid MCU dispatch target instance for {name}")
-
-    flags = {
-        "needs_ack": dispatch.get("needs_ack", True),
-        "retransmit_on_dup": dispatch.get("retransmit_on_dup", False),
-        "check_dup": dispatch.get("check_dup", True),
-    }
-    if not all(isinstance(value, bool) for value in flags.values()):
-        raise ValueError(f"Invalid MCU dispatch boolean metadata for {name}")
-    needs_ack = "true" if flags["needs_ack"] else "false"
-    retransmit = "true" if flags["retransmit_on_dup"] else "false"
-    check_dup = "true" if flags["check_dup"] else "false"
-
-    if adapter == "member_no_payload":
-        return (
-            f"&BridgeClass::_dispatchMemberNoPayload<"
-            f"{handler_ptr}, {needs_ack}, {retransmit}, {check_dup}>"
+    payload_type = (
+        _require_identifier(
+            dispatch.get("payload_type", ""),
+            f"Missing or invalid MCU dispatch payload type for {name}",
         )
-    if adapter == "member_with_msg":
-        return (
-            f"&BridgeClass::_dispatchMemberWithMsg<"
-            f"{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
+        if "{payload_type}" in template
+        else ""
+    )
+    target_instance = (
+        _require_identifier(
+            dispatch.get("target_instance", ""),
+            f"Missing or invalid MCU dispatch target instance for {name}",
         )
-    if adapter == "member_with_ctx_msg":
-        return (
-            f"&BridgeClass::_dispatchMemberWithCtxMsg<"
-            f"{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
-        )
-    if adapter == "static_with_msg":
-        return (
-            f"&BridgeClass::_dispatchStaticWithMsg<"
-            f"{handler_ptr}, {payload_type}, {needs_ack}, {retransmit}, {check_dup}>"
-        )
-    if adapter == "target_with_msg":
-        return (
-            f"&BridgeClass::_dispatchTargetWithMsg<"
-            f"{target_instance}, {handler_ptr}, {payload_type}, "
-            f"{needs_ack}, {retransmit}, {check_dup}>"
-        )
-    return (
-        f"&BridgeClass::_dispatchTargetAction<"
-        f"{target_instance}, {handler_ptr}, {needs_ack}, {retransmit}, {check_dup}>"
+        if "{target_instance}" in template
+        else ""
     )
 
+    flag_vals = (
+        dispatch.get("needs_ack", True),
+        dispatch.get("retransmit_on_dup", False),
+        dispatch.get("check_dup", True),
+    )
+    if not all(isinstance(v, bool) for v in flag_vals):
+        raise ValueError(f"Invalid MCU dispatch boolean metadata for {name}")
+    flags_str = ", ".join("true" if v else "false" for v in flag_vals)
+    return template.format(
+        handler_ptr=handler_ptr,
+        payload_type=payload_type,
+        target_instance=target_instance,
+        flags=flags_str,
+    )
 
 
 def _extract_payloads_and_actions(
@@ -1085,7 +1063,7 @@ def _extract_runtime_config_context(
     topic_auth_map: dict[tuple[str, str], str] = {}
     auth_fields = [f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields]
     for n in auth_fields:
-        for prefix in ("bridge_", "gpio_", "system_", "shell_"):
+        for prefix in ("bridge_", "gpio_", "system_", "shell_",):
             if n.startswith(prefix):
                 topic_auth_map[(prefix.removesuffix("_").upper(), n.removeprefix(prefix).upper())] = n
                 break

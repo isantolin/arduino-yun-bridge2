@@ -227,7 +227,7 @@ ensure_secure_serial_secret() {
 
     # Try helper if exists
     if command -v mcubridge-rotate-credentials >/dev/null 2>&1; then
-        if OUTPUT=$(mcubridge-rotate-credentials 2>&1); then
+        if OUTPUT=$(mcubridge-rotate-credentials --force --no-restart 2>&1); then
             rotation_ok=1
             final_secret=$(printf '%s\n' "$OUTPUT" | sed -n 's/^SERIAL_SECRET=//p' | tail -n 1)
         fi

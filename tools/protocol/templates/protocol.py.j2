@@ -70,6 +70,12 @@ _STATUS_DESCRIPTIONS: Final[dict[Status, str]] = {
     {%- endfor %}
 }
 
+SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(
+    s.value for s in Status if s not in (Status.OK, Status.ACK)
+)
+SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({Status.OK.value})
+VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
+
 class Command(IntEnum):
     {%- for cmd in commands %}
     {{ cmd.name }} = {{ cmd.value }}
@@ -675,5 +681,3 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- for const in runtime_config_constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
-
-

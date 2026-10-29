@@ -35,14 +35,15 @@ from google.protobuf.message import (
     Message as ProtobufMessage,
 )
 
-from ..config.const import (
-    PROP_KEY_BRIDGE_EVENT,
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
-)
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol
-from ..protocol.protocol import Command, REGISTRY, Status
+from ..protocol.protocol import (
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    Command,
+    REGISTRY,
+    Status,
+)
 from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from ..state.context import RuntimeState
 
@@ -588,7 +589,7 @@ class SerialHandshakeManager:
             topic_name=self.topic_resolver(self._state.cloud_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
-            user_properties=((PROP_KEY_BRIDGE_EVENT, "handshake"),),
+            user_properties=(("bridge-event", "handshake"),),
         )
         if not message.topic_name:
             self._logger.warning(

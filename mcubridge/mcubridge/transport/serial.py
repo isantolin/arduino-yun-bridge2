@@ -30,20 +30,17 @@ from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
 from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 
-from mcubridge.config.const import (
-    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
-    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
-    SERIAL_FAILURE_STATUS_CODES,
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
-    SERIAL_MIN_ACK_TIMEOUT,
-    SERIAL_SUCCESS_STATUS_CODES,
-)
 from mcubridge.protocol import is_system_command, protocol
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import (
+    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
     REGISTRY,
+    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+    SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_SUCCESS_STATUS_CODES,
     Status,
 )
 from mcubridge.protocol.structures import (
@@ -160,7 +157,7 @@ class SerialTransport:
         self.current_command: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
 
-        self._ack_timeout = max(self.config.serial_retry_timeout or 0, SERIAL_MIN_ACK_TIMEOUT)
+        self._ack_timeout = max(self.config.serial_retry_timeout or 0, float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0)
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
         self.max_attempts = max(1, self.config.serial_retry_attempts or 1)
 

@@ -57,6 +57,18 @@ def test_runtime_config_rejects_non_positive_status_interval() -> None:
         validate_config(cfg)
 
 
+def test_runtime_config_bounds_are_driven_by_protobuf_metadata() -> None:
+    cfg = _valid_base_config()
+    cfg.cloud_port = 0
+    with pytest.raises(ValueError, match=r"cloud_port: must be >= 1"):
+        validate_config(cfg)
+
+    cfg = _valid_base_config()
+    cfg.cloud_http3_port = 65536
+    with pytest.raises(ValueError, match=r"cloud_http3_port: must be <= 65535"):
+        validate_config(cfg)
+
+
 @given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: x == x))
 def test_runtime_config_requires_watchdog_interval_when_enabled(interval: float) -> None:
     cfg = _valid_base_config()

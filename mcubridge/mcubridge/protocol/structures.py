@@ -23,6 +23,7 @@ from typing import (
 import anyio
 from anyio.streams.memory import MemoryObjectSendStream
 import structlog
+from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
 
@@ -84,24 +85,55 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
 RuntimeConfig = pb.RuntimeConfig
 
 
-def _validate_port_range(name: str, port: int) -> None:
-    if not (1 <= port <= protocol.UINT16_MAX):
-        raise ValueError(f"{name}: must be between 1 and {protocol.UINT16_MAX} (got {port})")
+_NUMERIC_FIELD_TYPES: Final[frozenset[int]] = frozenset(
+    {
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_INT64,
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_SINT32,
+        FieldDescriptor.TYPE_SINT64,
+        FieldDescriptor.TYPE_FIXED32,
+        FieldDescriptor.TYPE_FIXED64,
+        FieldDescriptor.TYPE_SFIXED32,
+        FieldDescriptor.TYPE_SFIXED64,
+        FieldDescriptor.TYPE_FLOAT,
+        FieldDescriptor.TYPE_DOUBLE,
+    }
+)
+
+
+def _validate_metadata_bounds(cfg: pb.RuntimeConfig) -> None:
+    """Enforce scalar bounds declared in Protobuf field metadata (single source of truth)."""
+    fields = cfg.DESCRIPTOR.fields_by_name
+    for field_name, metadata in protocol.RUNTIME_CONFIG_METADATA.items():
+        field = fields.get(field_name)
+        if field is None:
+            raise RuntimeError(f"RuntimeConfig metadata references unknown field: {field_name}")
+        minimum, maximum = metadata.get("min"), metadata.get("max")
+        if minimum is None and maximum is None:
+            continue
+        if field.is_repeated or field.type not in _NUMERIC_FIELD_TYPES:
+            raise RuntimeError(f"Numeric bounds declared for non-scalar numeric field: {field_name}")
+
+        value = getattr(cfg, field_name)
+        # The watchdog lower bound only applies while watchdog monitoring is enabled.
+        effective_minimum = None if field_name == "watchdog_interval" and not cfg.watchdog_enabled else minimum
+        if effective_minimum is not None and value < effective_minimum:
+            raise ValueError(f"{field_name}: must be >= {effective_minimum} (got {value})")
+        if maximum is not None and value > maximum:
+            raise ValueError(f"{field_name}: must be <= {maximum} (got {value})")
 
 
 def validate_config(cfg: pb.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place natively. [SIL-2]"""
+    _validate_metadata_bounds(cfg)
     if not cfg.serial_port:
         raise ValueError("serial_port: value length must be at least 1")
-    _validate_port_range("cloud_port", cfg.cloud_port)
     if not cfg.topic_prefix:
         raise ValueError("topic_prefix: value length must be at least 1")
     if not re.search(r"[^/]", cfg.topic_prefix):
         raise ValueError("topic_prefix: does not match regex pattern '[^/]'")
-    if cfg.status_interval <= 0:
-        raise ValueError("status_interval: value must be greater than 0")
-    if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
-        raise ValueError("watchdog_interval: watchdog_interval must be >= 0.5s when enabled")
     if not cfg.allow_non_tmp_paths:
         for field_name, meta in protocol.RUNTIME_CONFIG_METADATA.items():
             if meta.get("volatile"):
@@ -115,8 +147,6 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
     if not cfg.serial_shared_secret:
         raise ValueError("serial_shared_secret: value length must be at least 1")
-    if cfg.cloud_http3_port:
-        _validate_port_range("cloud_http3_port", cfg.cloud_http3_port)
 
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]

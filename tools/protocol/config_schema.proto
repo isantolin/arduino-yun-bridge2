@@ -846,7 +846,7 @@ message Hardware {
   uint32 console_rx_buffer_size_other = 9;
   uint32 console_tx_buffer_size_avr = 10;
   uint32 console_tx_buffer_size_other = 11;
-  uint32 mailbox_rx_buffer_size_avr = 12;
+  uint32 mailbox_rx_buffer_size_avr = 64;
   uint32 mailbox_rx_buffer_size_other = 13;
   uint32 max_pending_datastore = 14;
   uint32 max_pending_process_polls = 15;
@@ -1258,8 +1258,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
       handler: "_handleSimpleQuery"
       handler_template_args: "rpc_pb_VersionResponse, rpc::CommandId::CMD_GET_VERSION_RESP, BridgeClass::_fillVersion"
-      needs_ack: false
-      retransmit_on_dup: true
     }
   }];
   CMD_GET_VERSION_RESP = 65 [(cmd_opts) = {
@@ -1273,8 +1271,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
       handler: "_handleSimpleQuery"
       handler_template_args: "rpc_pb_FreeMemoryResponse, rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, BridgeClass::_fillFreeMemory"
-      needs_ack: false
-      retransmit_on_dup: true
     }
   }];
   CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = {
@@ -1288,7 +1284,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
       handler: "_handleLinkSync"
-      payload_type: "rpc_pb_LinkSync"
     }
   }];
   CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = {
@@ -1314,8 +1309,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
       handler: "_handleSimpleQuery"
       handler_template_args: "rpc_pb_Capabilities, rpc::CommandId::CMD_GET_CAPABILITIES_RESP, bridge::hal::fillCapabilities"
-      needs_ack: false
-      retransmit_on_dup: true
     }
   }];
   CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
@@ -1330,7 +1323,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_MSG
       handler: "_handleSetBaudrate"
-      payload_type: "rpc_pb_SetBaudratePacket"
     }
   }];
   CMD_SET_BAUDRATE_RESP = 75;
@@ -1341,7 +1333,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_MSG
       handler: "_handleEnterBootloader"
-      payload_type: "rpc_pb_EnterBootloader"
     }
   }];
   CMD_XOFF = 78 [(cmd_opts) = {
@@ -1373,7 +1364,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_handleSetPinMode"
-      payload_type: "rpc_pb_PinMode"
     }
   }];
   CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {
@@ -1384,7 +1374,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_handlePinWrite"
       handler_template_args: "rpc_pb_DigitalWrite, false"
-      payload_type: "rpc_pb_DigitalWrite"
     }
   }];
   CMD_ANALOG_WRITE = 82 [(cmd_opts) = {
@@ -1395,7 +1384,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_handlePinWrite"
       handler_template_args: "rpc_pb_AnalogWrite, true"
-      payload_type: "rpc_pb_AnalogWrite"
     }
   }];
   CMD_DIGITAL_READ = 83 [(cmd_opts) = {
@@ -1407,9 +1395,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
       handler: "_handlePinRead"
       handler_template_args: "rpc_pb_DigitalReadResponse, rpc::CommandId::CMD_DIGITAL_READ_RESP, NUM_DIGITAL_PINS, ::digitalRead"
-      payload_type: "rpc_pb_PinRead"
-      needs_ack: false
-      retransmit_on_dup: true
     }
   }];
   CMD_ANALOG_READ = 84 [(cmd_opts) = {
@@ -1421,9 +1406,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
       handler: "_handlePinRead"
       handler_template_args: "rpc_pb_AnalogReadResponse, rpc::CommandId::CMD_ANALOG_READ_RESP, NUM_ANALOG_INPUTS, ::analogRead"
-      payload_type: "rpc_pb_PinRead"
-      needs_ack: false
-      retransmit_on_dup: true
     }
   }];
   CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = {
@@ -1442,7 +1424,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
       handler: "_handlePinSubscribe"
-      payload_type: "rpc_pb_PinSubscribeRequest"
     }
   }];
   CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
@@ -1463,10 +1444,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
       handler: "_push"
-      handler_class: "ConsoleClass"
-      payload_type: "rpc_pb_ConsoleWrite"
       target_instance: "Console"
-      feature_macro: "BRIDGE_ENABLE_CONSOLE"
     }
   }];
   CMD_DATASTORE_PUT = 112 [(cmd_opts) = {
@@ -1486,10 +1464,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
       handler: "_onResponse"
-      handler_class: "DataStoreClass"
-      payload_type: "rpc_pb_DatastoreGetResponse"
       target_instance: "DataStore"
-      feature_macro: "BRIDGE_ENABLE_DATASTORE"
     }
   }];
   CMD_MAILBOX_READ = 128 [(cmd_opts) = {
@@ -1517,8 +1492,6 @@ enum Command {
       handler: "_onEnqueuePayload"
       handler_class: "MailboxClass"
       handler_template_args: "rpc_pb_MailboxPush, &rpc_pb_MailboxPush::data"
-      payload_type: "rpc_pb_MailboxPush"
-      feature_macro: "BRIDGE_ENABLE_MAILBOX"
     }
   }];
   CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {
@@ -1528,10 +1501,8 @@ enum Command {
       handler: "_onEnqueuePayload"
       handler_class: "MailboxClass"
       handler_template_args: "rpc_pb_MailboxReadResponse, &rpc_pb_MailboxReadResponse::content"
-      payload_type: "rpc_pb_MailboxReadResponse"
       needs_ack: false
       check_dup: false
-      feature_macro: "BRIDGE_ENABLE_MAILBOX"
     }
   }];
   CMD_MAILBOX_AVAILABLE_RESP = 133 [(cmd_opts) = {
@@ -1540,10 +1511,8 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_onAvailableResponse"
       handler_class: "MailboxClass"
-      payload_type: "rpc_pb_MailboxAvailableResponse"
       needs_ack: false
       check_dup: false
-      feature_macro: "BRIDGE_ENABLE_MAILBOX"
     }
   }];
   CMD_FILE_WRITE = 144 [(cmd_opts) = {
@@ -1555,8 +1524,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_onWrite"
       handler_class: "FileSystemClass"
-      payload_type: "rpc_pb_FileWrite"
-      feature_macro: "BRIDGE_ENABLE_FILESYSTEM"
     }
   }];
   CMD_FILE_READ = 145 [(cmd_opts) = {
@@ -1568,8 +1535,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_onRead"
       handler_class: "FileSystemClass"
-      payload_type: "rpc_pb_FileRead"
-      feature_macro: "BRIDGE_ENABLE_FILESYSTEM"
     }
   }];
   CMD_FILE_REMOVE = 146 [(cmd_opts) = {
@@ -1580,8 +1545,6 @@ enum Command {
       adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
       handler: "_onRemove"
       handler_class: "FileSystemClass"
-      payload_type: "rpc_pb_FileRemove"
-      feature_macro: "BRIDGE_ENABLE_FILESYSTEM"
     }
   }];
   CMD_FILE_READ_RESP = 147 [(cmd_opts) = {
@@ -1590,10 +1553,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
       handler: "_onResponse"
-      handler_class: "FileSystemClass"
-      payload_type: "rpc_pb_FileReadResponse"
       target_instance: "FileSystem"
-      feature_macro: "BRIDGE_ENABLE_FILESYSTEM"
     }
   }];
   CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
@@ -1615,9 +1575,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_ACTION
       handler: "reset"
-      handler_class: "ProcessClass"
       target_instance: "Process"
-      feature_macro: "BRIDGE_ENABLE_PROCESS"
     }
   }];
   CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = {
@@ -1625,10 +1583,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
       handler: "_onRunAsyncResponse"
-      handler_class: "ProcessClass"
-      payload_type: "rpc_pb_ProcessRunAsyncResponse"
       target_instance: "Process"
-      feature_macro: "BRIDGE_ENABLE_PROCESS"
     }
   }];
   CMD_PROCESS_POLL_RESP = 166 [(cmd_opts) = {
@@ -1636,10 +1591,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
       handler: "_onPollResponse"
-      handler_class: "ProcessClass"
-      payload_type: "rpc_pb_ProcessPollResponse"
       target_instance: "Process"
-      feature_macro: "BRIDGE_ENABLE_PROCESS"
     }
   }];
   CMD_SPI_BEGIN = 176 [(cmd_opts) = {
@@ -1648,9 +1600,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_ACTION
       handler: "begin"
-      handler_class: "SPIServiceClass"
       target_instance: "SPIService"
-      feature_macro: "BRIDGE_ENABLE_SPI"
     }
   }];
   CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
@@ -1660,10 +1610,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
       handler: "_handleSpiTransfer"
-      payload_type: "rpc_pb_SpiTransfer"
-      needs_ack: false
-      retransmit_on_dup: true
-      feature_macro: "BRIDGE_ENABLE_SPI"
     }
   }];
   CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = {
@@ -1677,9 +1623,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_ACTION
       handler: "end"
-      handler_class: "SPIServiceClass"
       target_instance: "SPIService"
-      feature_macro: "BRIDGE_ENABLE_SPI"
     }
   }];
   CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {
@@ -1689,10 +1633,7 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
       handler: "setConfig"
-      handler_class: "SPIServiceClass"
-      payload_type: "rpc_pb_SpiConfig"
       target_instance: "SPIService"
-      feature_macro: "BRIDGE_ENABLE_SPI"
     }
   }];
   CMD_CLOCK_SYNC = 192 [(cmd_opts) = {
@@ -1702,7 +1643,6 @@ enum Command {
     mcu_dispatch: {
       adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
       handler: "_handleClockSync"
-      payload_type: "rpc_pb_ClockSyncRequest"
     }
   }];
   CMD_CLOCK_SYNC_RESP = 193 [(cmd_opts) = {

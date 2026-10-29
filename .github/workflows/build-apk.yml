@@ -79,9 +79,6 @@ jobs:
           sudo npm install -g @bufbuild/buf
           python3 -m pip install jinja2 pdm-backend hatchling "protobuf==7.36.2" nanopb maturin setuptools-rust grpclib black packaging typer tenacity "wheel>=0.46.3" "setuptools>=84.0.0" build installer patch-ng mypy-protobuf httpx
 
-      - name: Synchronize package versions from VERSION
-        run: python3 tools/sync_version.py
-
       - name: Generate runtime dependency lockfiles
         run: |
           python3 tools/audit/sync_runtime_deps.py

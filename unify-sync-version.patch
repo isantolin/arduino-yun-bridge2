@@ -1,0 +1,254 @@
+diff --git a/.github/workflows/build-apk.yml b/.github/workflows/build-apk.yml
+index 781bac1..5f91746 100644
+--- a/.github/workflows/build-apk.yml
++++ b/.github/workflows/build-apk.yml
+@@ -79,9 +79,6 @@ jobs:
+           sudo npm install -g @bufbuild/buf
+           python3 -m pip install jinja2 pdm-backend hatchling "protobuf==7.36.2" nanopb maturin setuptools-rust grpclib black packaging typer tenacity "wheel>=0.46.3" "setuptools>=84.0.0" build installer patch-ng mypy-protobuf httpx
+ 
+-      - name: Synchronize package versions from VERSION
+-        run: python3 tools/sync_version.py
+-
+       - name: Generate runtime dependency lockfiles
+         run: |
+           python3 tools/audit/sync_runtime_deps.py
+diff --git a/mcubridge/tests/test_runtime_dependency_sync.py b/mcubridge/tests/test_runtime_dependency_sync.py
+index f4ec86b..09f42ef 100644
+--- a/mcubridge/tests/test_runtime_dependency_sync.py
++++ b/mcubridge/tests/test_runtime_dependency_sync.py
+@@ -136,3 +136,34 @@ def test_sync_runtime_deps_user_agent_reflects_ecosystem_version() -> None:
+     expected_version = sync_runtime_deps.VERSION_PATH.read_text(encoding="utf-8").strip()
+     assert expected_version == sync_runtime_deps.ECOSYSTEM_VERSION
+     assert f"McuBridge-DepsSync/{expected_version}" == sync_runtime_deps.USER_AGENT
++
++
++def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
++    files = {
++        "pyproject.toml": '[project]\nversion = "1.0.0"\ndescription = "keep"\n',
++        "mcubridge/mcubridge/__init__.py": '__version__ = "1.0.0"\nOTHER = "1.0.0"\n',
++        "mcubridge/Makefile": "PKG_VERSION:=1.0.0\nOTHER:=keep\n",
++        "mcubridge-gateway/Makefile": "PKG_VERSION:=1.0.0\n",
++        "luci-app-mcubridge/Makefile": "PKG_VERSION:=1.0.0\n",
++        "mcubridge-library-arduino/library.properties": "version=1.0.0\nname=Bridge\n",
++    }
++    for relative_path, content in files.items():
++        path = tmp_path / relative_path
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_text(content, encoding="utf-8")
++
++    changed_dry = sync_runtime_deps.sync_metadata("2.3.4", tmp_path, dry_run=True)
++    assert {path.relative_to(tmp_path).as_posix() for path in changed_dry} == set(files)
++    assert 'version = "1.0.0"' in (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
++
++    changed = sync_runtime_deps.sync_metadata("2.3.4", tmp_path)
++    assert {path.relative_to(tmp_path).as_posix() for path in changed} == set(files)
++    assert (tmp_path / "pyproject.toml").read_text(encoding="utf-8") == (
++        '[project]\nversion = "2.3.4"\ndescription = "keep"\n'
++    )
++    assert (tmp_path / "mcubridge/mcubridge/__init__.py").read_text(encoding="utf-8") == (
++        '__version__ = "2.3.4"\nOTHER = "1.0.0"\n'
++    )
++
++    with pytest.raises(ValueError, match="Invalid ecosystem version"):
++        sync_runtime_deps.sync_metadata("not_a_pep440_version!", tmp_path)
+diff --git a/mcubridge/tests/test_sync_version.py b/mcubridge/tests/test_sync_version.py
+deleted file mode 100644
+index ef9fb58..0000000
+--- a/mcubridge/tests/test_sync_version.py
++++ /dev/null
+@@ -1,30 +0,0 @@
+-"""Tests for explicit package-version synchronization."""
+-
+-from pathlib import Path
+-
+-from tools import sync_version
+-
+-
+-def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
+-    files = {
+-        "pyproject.toml": '[project]\nversion = "1.0.0"\ndescription = "keep"\n',
+-        "mcubridge/mcubridge/__init__.py": '__version__ = "1.0.0"\nOTHER = "1.0.0"\n',
+-        "mcubridge/Makefile": "PKG_VERSION:=1.0.0\nOTHER:=keep\n",
+-        "mcubridge-gateway/Makefile": "PKG_VERSION:=1.0.0\n",
+-        "luci-app-mcubridge/Makefile": "PKG_VERSION:=1.0.0\n",
+-        "mcubridge-library-arduino/library.properties": "version=1.0.0\nname=Bridge\n",
+-    }
+-    for relative_path, content in files.items():
+-        path = tmp_path / relative_path
+-        path.parent.mkdir(parents=True, exist_ok=True)
+-        path.write_text(content, encoding="utf-8")
+-
+-    changed = sync_version.sync_metadata("2.3.4", tmp_path)
+-
+-    assert {path.relative_to(tmp_path).as_posix() for path in changed} == set(files)
+-    assert (tmp_path / "pyproject.toml").read_text(encoding="utf-8") == (
+-        '[project]\nversion = "2.3.4"\ndescription = "keep"\n'
+-    )
+-    assert (tmp_path / "mcubridge/mcubridge/__init__.py").read_text(encoding="utf-8") == (
+-        '__version__ = "2.3.4"\nOTHER = "1.0.0"\n'
+-    )
+diff --git a/tools/audit/sync_runtime_deps.py b/tools/audit/sync_runtime_deps.py
+index bc8998c..a8f44d7 100644
+--- a/tools/audit/sync_runtime_deps.py
++++ b/tools/audit/sync_runtime_deps.py
+@@ -31,6 +31,15 @@ FEEDS_DIR = ROOT / "feeds"
+ TOX_PATH = ROOT / "tox.ini"
+ ARDUINO_INSTALL_SCRIPT_PATH = ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
+ 
++VERSION_TARGETS: tuple[tuple[str, str, str, int], ...] = (
++    ("pyproject.toml", r'version\s*=\s*"[^"]+"', 'version = "{version}"', 1),
++    ("mcubridge/mcubridge/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{version}"', 1),
++    ("mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
++    ("mcubridge-gateway/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
++    ("luci-app-mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
++    ("mcubridge-library-arduino/library.properties", r"version=[^\n]+", "version={version}", 0),
++)
++
+ BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
+ BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
+ CPP_BLOCK_START = "# --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---"
+@@ -176,6 +185,32 @@ def _write_if_changed(path: Path, content: str, *, dry_run: bool = False) -> boo
+     return True
+ 
+ 
++def sync_metadata(
++    version: str = ECOSYSTEM_VERSION,
++    repo_root: Path = ROOT,
++    *,
++    dry_run: bool = False,
++) -> list[Path]:
++    """Synchronize package metadata versions from VERSION using packaging.version.Version."""
++    try:
++        Version(version)
++    except InvalidVersion as exc:
++        raise ValueError(f"Invalid ecosystem version: {version!r}") from exc
++
++    changed: list[Path] = []
++    for relative_path, pattern, replacement, count in VERSION_TARGETS:
++        target = repo_root / relative_path
++        if not target.is_file():
++            continue
++        original = target.read_text(encoding="utf-8")
++        updated, matches = re.subn(pattern, replacement.format(version=version), original, count=count)
++        if matches == 0:
++            raise RuntimeError(f"Could not find version metadata to update in {target}")
++        if _write_if_changed(target, updated, dry_run=dry_run):
++            changed.append(target)
++    return changed
++
++
+ def write_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
+     pip_specs = collect_pip_specs(deps)
+     content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
+@@ -737,6 +772,8 @@ def main(
+         raise SystemExit(0)
+ 
+     no_write = check or dry_run
++    version_str = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.is_file() else ECOSYSTEM_VERSION
++    changed_version_files = sync_metadata(version_str, ROOT, dry_run=no_write)
+     updated_requirements = write_requirements(deps, dry_run=no_write)
+     updated_makefile = update_makefile(deps, dry_run=no_write)
+     updated_pyproject = update_pyproject(deps, dry_run=no_write)
+@@ -747,7 +784,7 @@ def main(
+     updated_tox = update_tox_dev_deps(dev_deps, deps, dry_run=no_write)
+     updated_workflows = update_workflows(deps, dry_run=no_write)
+ 
+-    changed_paths: list[str] = []
++    changed_paths: list[str] = [str(path.relative_to(ROOT)) for path in changed_version_files]
+     for updated, path in (
+         (updated_requirements, REQUIREMENTS_PATH),
+         (updated_makefile, MAKEFILE_PATH),
+@@ -759,8 +796,9 @@ def main(
+         (updated_tox, TOX_PATH),
+         (updated_workflows, ROOT / ".github" / "workflows"),
+     ):
+-        if updated:
+-            changed_paths.append(str(path.relative_to(ROOT)))
++        rel_str = str(path.relative_to(ROOT))
++        if updated and rel_str not in changed_paths:
++            changed_paths.append(rel_str)
+ 
+     fail = False
+     if check and changed_paths:
+diff --git a/tools/protocol/README.md b/tools/protocol/README.md
+index c7c8465..adc3a3a 100644
+--- a/tools/protocol/README.md
++++ b/tools/protocol/README.md
+@@ -29,4 +29,4 @@ The command refreshes:
+ 
+ The Python module is consumed by the MCU bridge daemon, while the Arduino headers are used by the firmware. The firmware bindings are generated for statically bounded Nanopb structures; generation alone does not establish zero-heap behavior on every target or SIL-2 certification.
+ 
+-Nanopb's runtime core version and source-file list are defined in `requirements/runtime.toml`; `tools/audit/sync_runtime_deps.py` projects that list into `mcubridge-library-arduino/tools/install.sh`, which downloads the core files. Protocol generation no longer downloads runtime C files or rewrites source formatting. Run `buf format -w tools/protocol` explicitly when formatting is needed; CI checks formatting separately. Package version synchronization is separate: run `python3 tools/sync_version.py` after changing `VERSION`. Incremental generation fingerprints the schema, Buf configuration and options, generator and templates, toolchain pin, and installed Buf version. It skips generation only when the fingerprint matches and every expected artifact exists; generation failures leave the cache uncommitted.
++Nanopb's runtime core version and source-file list are defined in `requirements/runtime.toml`; `tools/audit/sync_runtime_deps.py` projects that list into `mcubridge-library-arduino/tools/install.sh`, which downloads the core files. Protocol generation no longer downloads runtime C files or rewrites source formatting. Run `buf format -w tools/protocol` explicitly when formatting is needed; CI checks formatting separately. Package version synchronization is integrated into `python3 tools/audit/sync_runtime_deps.py`. Incremental generation fingerprints the schema, Buf configuration and options, generator and templates, toolchain pin, and installed Buf version. It skips generation only when the fingerprint matches and every expected artifact exists; generation failures leave the cache uncommitted.
+diff --git a/tools/sync_version.py b/tools/sync_version.py
+deleted file mode 100644
+index 8683e8b..0000000
+--- a/tools/sync_version.py
++++ /dev/null
+@@ -1,66 +0,0 @@
+-#!/usr/bin/env python3
+-"""Synchronize package metadata versions from the repository VERSION file."""
+-
+-from __future__ import annotations
+-
+-import argparse
+-import re
+-import sys
+-from pathlib import Path
+-
+-ROOT = Path(__file__).resolve().parent.parent
+-VERSION_PATH = ROOT / "VERSION"
+-
+-TARGETS: tuple[tuple[str, str, str, int], ...] = (
+-    ("pyproject.toml", r'version\s*=\s*"[^"]+"', 'version = "{version}"', 1),
+-    ("mcubridge/mcubridge/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{version}"', 1),
+-    ("mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
+-    ("mcubridge-gateway/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
+-    ("luci-app-mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
+-    ("mcubridge-library-arduino/library.properties", r"version=[^\n]+", "version={version}", 0),
+-)
+-
+-
+-def sync_metadata(version: str, repo_root: Path = ROOT) -> list[Path]:
+-    """Update package metadata without coupling side effects to code generation."""
+-    if not version or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+-]*", version) is None:
+-        raise ValueError(f"Invalid ecosystem version: {version!r}")
+-
+-    changed: list[Path] = []
+-    for relative_path, pattern, replacement, count in TARGETS:
+-        target = repo_root / relative_path
+-        if not target.is_file():
+-            continue
+-        original = target.read_text(encoding="utf-8")
+-        updated, matches = re.subn(pattern, replacement.format(version=version), original, count=count)
+-        if matches == 0:
+-            raise RuntimeError(f"Could not find version metadata to update in {target}")
+-        if updated != original:
+-            target.write_text(updated, encoding="utf-8")
+-            changed.append(target)
+-    return changed
+-
+-
+-def main() -> int:
+-    parser = argparse.ArgumentParser(
+-        description="Synchronize package version metadata from the repository VERSION file."
+-    )
+-    parser.parse_args()
+-
+-    if not VERSION_PATH.is_file():
+-        print(f"Missing version source: {VERSION_PATH}", file=sys.stderr)
+-        return 1
+-    try:
+-        changed = sync_metadata(VERSION_PATH.read_text(encoding="utf-8").strip())
+-    except (OSError, ValueError, RuntimeError) as exc:
+-        print(f"Version synchronization failed: {exc}", file=sys.stderr)
+-        return 1
+-    for path in changed:
+-        print(f"Updated {path.relative_to(ROOT)}")
+-    if not changed:
+-        print("Package metadata already matches VERSION.")
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())

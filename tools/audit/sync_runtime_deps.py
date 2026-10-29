@@ -31,6 +31,15 @@ FEEDS_DIR = ROOT / "feeds"
 TOX_PATH = ROOT / "tox.ini"
 ARDUINO_INSTALL_SCRIPT_PATH = ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
 
+VERSION_TARGETS: tuple[tuple[str, str, str, int], ...] = (
+    ("pyproject.toml", r'version\s*=\s*"[^"]+"', 'version = "{version}"', 1),
+    ("mcubridge/mcubridge/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{version}"', 1),
+    ("mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
+    ("mcubridge-gateway/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
+    ("luci-app-mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
+    ("mcubridge-library-arduino/library.properties", r"version=[^\n]+", "version={version}", 0),
+)
+
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
 CPP_BLOCK_START = "# --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---"
@@ -174,6 +183,32 @@ def _write_if_changed(path: Path, content: str, *, dry_run: bool = False) -> boo
     if not dry_run:
         path.write_text(content, encoding="utf-8")
     return True
+
+
+def sync_metadata(
+    version: str = ECOSYSTEM_VERSION,
+    repo_root: Path = ROOT,
+    *,
+    dry_run: bool = False,
+) -> list[Path]:
+    """Synchronize package metadata versions from VERSION using packaging.version.Version."""
+    try:
+        Version(version)
+    except InvalidVersion as exc:
+        raise ValueError(f"Invalid ecosystem version: {version!r}") from exc
+
+    changed: list[Path] = []
+    for relative_path, pattern, replacement, count in VERSION_TARGETS:
+        target = repo_root / relative_path
+        if not target.is_file():
+            continue
+        original = target.read_text(encoding="utf-8")
+        updated, matches = re.subn(pattern, replacement.format(version=version), original, count=count)
+        if matches == 0:
+            raise RuntimeError(f"Could not find version metadata to update in {target}")
+        if _write_if_changed(target, updated, dry_run=dry_run):
+            changed.append(target)
+    return changed
 
 
 def write_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
@@ -737,6 +772,8 @@ def main(
         raise SystemExit(0)
 
     no_write = check or dry_run
+    version_str = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.is_file() else ECOSYSTEM_VERSION
+    changed_version_files = sync_metadata(version_str, ROOT, dry_run=no_write)
     updated_requirements = write_requirements(deps, dry_run=no_write)
     updated_makefile = update_makefile(deps, dry_run=no_write)
     updated_pyproject = update_pyproject(deps, dry_run=no_write)
@@ -747,7 +784,7 @@ def main(
     updated_tox = update_tox_dev_deps(dev_deps, deps, dry_run=no_write)
     updated_workflows = update_workflows(deps, dry_run=no_write)
 
-    changed_paths: list[str] = []
+    changed_paths: list[str] = [str(path.relative_to(ROOT)) for path in changed_version_files]
     for updated, path in (
         (updated_requirements, REQUIREMENTS_PATH),
         (updated_makefile, MAKEFILE_PATH),
@@ -759,8 +796,9 @@ def main(
         (updated_tox, TOX_PATH),
         (updated_workflows, ROOT / ".github" / "workflows"),
     ):
-        if updated:
-            changed_paths.append(str(path.relative_to(ROOT)))
+        rel_str = str(path.relative_to(ROOT))
+        if updated and rel_str not in changed_paths:
+            changed_paths.append(rel_str)
 
     fail = False
     if check and changed_paths:

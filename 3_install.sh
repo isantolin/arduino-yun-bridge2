@@ -343,17 +343,12 @@ python3-typer \
 openssl-util \
 coreutils-stty \
 xxd \
-luci-base \
-luci \
+luci-light \
 avrdude"
 
 for pkg in $ESSENTIAL_PACKAGES; do
     install_dependency "$pkg"
 done
-
-# Ensure we have a Lua runtime
-if apk info -e lua >/dev/null 2>&1; then install_dependency "lua";
-elif apk info -e lua5.1 >/dev/null 2>&1; then install_dependency "lua5.1"; fi
 
 # --- Install Prebuilt Packages ---
 echo "[STEP 5/6] Installing project .apk packages..."

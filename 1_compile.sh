@@ -657,7 +657,7 @@ fi
 # Enable Packages
 REQUIRED_PKGS="mcubridge luci-app-mcubridge mcubridge-gateway"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
-REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio luaposix"
+REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio"
 
 # [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
 # heredados de escaneos previos del SDK.

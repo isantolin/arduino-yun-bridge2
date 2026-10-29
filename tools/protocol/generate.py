@@ -275,9 +275,7 @@ def _extract_commands_and_statuses(
             command["mcu_dispatch"] = _message_to_dict(command_options.mcu_dispatch)
         commands.append(command)
 
-    request_by_response = {
-        cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")
-    }
+    request_by_response = {cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")}
     for command in commands:
         if not command.get("request_command") and command["name"] in request_by_response:
             command["request_command"] = request_by_response[command["name"]]
@@ -316,9 +314,7 @@ _FEATURE_PREFIX_MACROS: Final[dict[str, str]] = {
     "CMD_PROCESS_": "BRIDGE_ENABLE_PROCESS",
     "CMD_SPI_": "BRIDGE_ENABLE_SPI",
 }
-_QUERY_HANDLERS: Final[frozenset[str]] = frozenset(
-    {"_handleSimpleQuery", "_handlePinRead", "_handleSpiTransfer"}
-)
+_QUERY_HANDLERS: Final[frozenset[str]] = frozenset({"_handleSimpleQuery", "_handlePinRead", "_handleSpiTransfer"})
 _IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -369,9 +365,7 @@ def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
     )
 
 
-def _build_mcu_dispatch_entries(
-    commands: list[dict[str, Any]], statuses: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _build_mcu_dispatch_entries(commands: list[dict[str, Any]], statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build the static C++ dispatch table from Protobuf command/status options."""
     entries: list[dict[str, Any]] = []
     adapter_prefix = "MCU_DISPATCH_ADAPTER_"
@@ -417,9 +411,7 @@ def _build_mcu_dispatch_entries(
     return entries
 
 
-def _extract_payloads_and_actions(
-    pb_module: Any, all_descs: list[Any], opts: Any, env_desc: Any
-) -> dict[str, Any]:
+def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any, env_desc: Any) -> dict[str, Any]:
     payload_fields = [
         {"name": f.message_type.name, "field": f.name}
         for f in env_desc.oneofs_by_name["payload_type"].fields
@@ -637,9 +629,7 @@ def _build_operations_catalog(
 
 
 def _find_daemon_metrics_desc(all_descs: list[Any]) -> Any:
-    return next(
-        msg for desc in all_descs for msg in desc.message_types_by_name.values() if msg.name == "DaemonMetrics"
-    )
+    return next(msg for desc in all_descs for msg in desc.message_types_by_name.values() if msg.name == "DaemonMetrics")
 
 
 def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
@@ -764,9 +754,7 @@ def _extract_operations_context(
     }
 
 
-def _extract_runtime_config_context(
-    pb_module: Any, opts: Any, py_consts: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[dict[str, Any]]) -> dict[str, Any]:
     cfg_fields = _load_runtime_config_fields(pb_module.DESCRIPTOR, pb_module)
     cfg_names = {c["name"] for c in py_consts}
     rt_consts = [
@@ -841,11 +829,16 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, env_desc, svc_desc)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
 
-    return consts_ctx | ops_ctx | cfg_ctx | {
-        "commands": commands,
-        "statuses": statuses,
-        "mcu_dispatch_entries": _build_mcu_dispatch_entries(commands, statuses),
-    }
+    return (
+        consts_ctx
+        | ops_ctx
+        | cfg_ctx
+        | {
+            "commands": commands,
+            "statuses": statuses,
+            "mcu_dispatch_entries": _build_mcu_dispatch_entries(commands, statuses),
+        }
+    )
 
 
 def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:

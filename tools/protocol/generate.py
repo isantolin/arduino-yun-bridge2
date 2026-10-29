@@ -334,9 +334,7 @@ def _extract_commands_and_statuses(
         commands.append(command)
 
     request_by_response = {
-        command["response_command"]: command["name"]
-        for command in commands
-        if command.get("response_command")
+        command["response_command"]: command["name"] for command in commands if command.get("response_command")
     }
     for command in commands:
         if not command.get("request_command") and command["name"] in request_by_response:
@@ -358,9 +356,7 @@ def _extract_commands_and_statuses(
     return commands, statuses
 
 
-def _build_mcu_dispatch_entries(
-    commands: list[dict[str, Any]], statuses: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _build_mcu_dispatch_entries(commands: list[dict[str, Any]], statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build the static C++ dispatch table from Protobuf command/status options."""
     entries: list[dict[str, Any]] = []
     adapter_prefix = "MCU_DISPATCH_ADAPTER_"
@@ -381,15 +377,10 @@ def _build_mcu_dispatch_entries(
             expression = format_mcu_dispatch_expression(dispatch, item["name"])
             feature_macro = dispatch.get("feature_macro") or ""
             if feature_macro and (
-                not isinstance(feature_macro, str)
-                or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
+                not isinstance(feature_macro, str) or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
             ):
                 raise ValueError(f"Invalid MCU dispatch feature macro for {item['name']}")
-            key = (
-                f"rpc::StatusCode::STATUS_{item['name']}"
-                if kind == "status"
-                else f"rpc::CommandId::{item['name']}"
-            )
+            key = f"rpc::StatusCode::STATUS_{item['name']}" if kind == "status" else f"rpc::CommandId::{item['name']}"
             entries.append(
                 {
                     "name": item["name"],
@@ -1063,7 +1054,12 @@ def _extract_runtime_config_context(
     topic_auth_map: dict[tuple[str, str], str] = {}
     auth_fields = [f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields]
     for n in auth_fields:
-        for prefix in ("bridge_", "gpio_", "system_", "shell_",):
+        for prefix in (
+            "bridge_",
+            "gpio_",
+            "system_",
+            "shell_",
+        ):
             if n.startswith(prefix):
                 topic_auth_map[(prefix.removesuffix("_").upper(), n.removeprefix(prefix).upper())] = n
                 break
@@ -1118,11 +1114,16 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
     mcu_dispatch_entries = _build_mcu_dispatch_entries(commands, statuses)
 
-    return consts_ctx | ops_ctx | cfg_ctx | {
-        "commands": commands,
-        "statuses": statuses,
-        "mcu_dispatch_entries": mcu_dispatch_entries,
-    }
+    return (
+        consts_ctx
+        | ops_ctx
+        | cfg_ctx
+        | {
+            "commands": commands,
+            "statuses": statuses,
+            "mcu_dispatch_entries": mcu_dispatch_entries,
+        }
+    )
 
 
 def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:

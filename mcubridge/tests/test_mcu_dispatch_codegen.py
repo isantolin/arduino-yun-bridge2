@@ -91,9 +91,7 @@ def test_removed_command_metadata_is_absent_not_reserved() -> None:
 
     assert "category" not in {field.name for field in command_options.field}
     assert "is_query" not in {field.name for field in command_options.field}
-    reserved_numbers = {
-        number for item in command_options.reserved_range for number in range(item.start, item.end)
-    }
+    reserved_numbers = {number for item in command_options.reserved_range for number in range(item.start, item.end)}
     assert 1 not in reserved_numbers
     assert 16 not in reserved_numbers
     assert "category" not in command_options.reserved_name

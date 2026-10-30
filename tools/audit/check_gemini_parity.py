@@ -8,6 +8,7 @@ Tool-specific agent profiles and GitHub command TOML files are generated artifac
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path

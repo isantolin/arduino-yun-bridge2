@@ -686,7 +686,7 @@ class RuntimeState:
         # Inspect the resource type rather than the instance: mocks may
         # synthesize attributes such as close_sync, and tests may patch the
         # module-level LMDB classes with factories.
-        resource_type: type[Any] = type(resource)
+        resource_type = cast(type[Any], type(resource))
         close_sync = getattr(resource_type, "close_sync", None)
         if callable(close_sync):
             resource.close_sync()

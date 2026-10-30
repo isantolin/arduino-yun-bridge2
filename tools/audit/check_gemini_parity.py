@@ -127,8 +127,13 @@ def check_chatgpt_plugin_parity() -> list[str]:
     if not isinstance(plugins, list):
         errors.append(f"{CHATGPT_PLUGIN_MARKETPLACE}: plugins must be a list")
     else:
-        entries = [entry for entry in plugins if isinstance(entry, dict)]
-        selected = next(
+        plugin_values = cast(list[object], plugins)
+        entries: list[dict[str, object]] = [
+            cast(dict[str, object], entry)
+            for entry in plugin_values
+            if isinstance(entry, dict)
+        ]
+        selected: dict[str, object] | None = next(
             (entry for entry in entries if entry.get("name") == CHATGPT_PLUGIN_NAME),
             None,
         )
@@ -136,14 +141,19 @@ def check_chatgpt_plugin_parity() -> list[str]:
             errors.append(f"{CHATGPT_PLUGIN_MARKETPLACE}: missing plugin {CHATGPT_PLUGIN_NAME}")
         else:
             source = selected.get("source")
-            if (
-                not isinstance(source, dict)
-                or source.get("source") != "local"
-                or source.get("path") != f"./{CHATGPT_PLUGIN_NAME}"
-            ):
+            if not isinstance(source, dict):
                 errors.append(
-                    f"{CHATGPT_PLUGIN_MARKETPLACE}: plugin source must be local ./{CHATGPT_PLUGIN_NAME}"
+                    f"{CHATGPT_PLUGIN_MARKETPLACE}: plugin source must be a local path"
                 )
+            else:
+                source_data = cast(dict[str, object], source)
+                if (
+                    source_data.get("source") != "local"
+                    or source_data.get("path") != f"./{CHATGPT_PLUGIN_NAME}"
+                ):
+                    errors.append(
+                        f"{CHATGPT_PLUGIN_MARKETPLACE}: plugin source must be local ./{CHATGPT_PLUGIN_NAME}"
+                    )
 
     manifest_path = plugin_root / "plugin.json"
     try:

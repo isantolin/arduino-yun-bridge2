@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import runpy
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -147,3 +149,17 @@ def test_daemon_exception_group_partially_unhandled_raises(mocker: MockerFixture
 
     with pytest.raises(ExceptionGroup):
         run_daemon()
+
+def test_daemon_script_entrypoint_fails_closed_when_config_unavailable(mocker: MockerFixture) -> None:
+    """Execute the module guard and verify startup fails closed on config I/O errors."""
+    load_config = mocker.patch(
+        "mcubridge.config.settings.load_runtime_config",
+        side_effect=OSError("configuration unavailable"),
+    )
+    script = Path(__file__).resolve().parents[1] / "mcubridge" / "daemon.py"
+
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_path(str(script), run_name="__main__")
+
+    assert exc.value.code == 1
+    load_config.assert_called_once_with()

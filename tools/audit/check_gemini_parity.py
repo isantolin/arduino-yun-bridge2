@@ -8,7 +8,7 @@ import re
 import shutil
 import sys
 import tomllib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Annotated, cast
 
 import typer
@@ -146,7 +146,7 @@ def check_mcp_config_portability() -> list[str]:
             errors.append(f"{config_path.relative_to(ROOT)}: {server_name} must be an object")
             continue
         command = server_config.get("command")
-        if isinstance(command, str) and Path(command).is_absolute():
+        if isinstance(command, str) and (Path(command).is_absolute() or PureWindowsPath(command).is_absolute()):
             errors.append(
                 f"{config_path.relative_to(ROOT)}: {server_name} command must resolve through PATH, "
                 "not use a host-specific absolute path"
@@ -395,6 +395,8 @@ def check_rules_parity() -> list[str]:
     except OSError as exc:
         return [f"Cannot read canonical rules file {canonical_path}: {exc}"]
     errors: list[str] = []
+    if canonical.startswith("---\n"):
+        errors.append("GEMINI.md must be plain Markdown without platform-specific YAML frontmatter")
     agent_discovery_link = ROOT / ".agents"
     if not agent_discovery_link.is_symlink():
         errors.append(".agents must remain a Git symlink to .agent")

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Validate and synchronize the repository's Gemini agent configuration.
-
-GEMINI.md is the canonical source for repository-wide architectural instructions.
-Tool-specific agent profiles and GitHub command TOML files are generated artifacts.
-"""
+"""Validate and synchronize cross-platform agent configuration and Gemini workflows."""
 
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import sys
 import tomllib
 from pathlib import Path
@@ -24,15 +22,41 @@ SYMLINKS = {
 }
 GENERATED_AGENT_PROFILES = (
     Path(".agent/agents/openwrt-architect-arduino/agent.md"),
-    Path(".github/agents/openwrt-architect-arduino.agent.md"),
 )
+COPILOT_AGENT_PROFILE = Path(".github/agents/openwrt-architect-arduino.agent.md")
+COPILOT_AGENT_TOOLS = ("read", "edit", "search", "execute")
 AGENT_JSON = Path(".agent/agents/openwrt-architect-arduino/agent.json")
 MODEL_FILE = Path("tools/gemini_model")
+CHATGPT_SKILL_EXPORT_SCRIPT = Path("tools/export_chatgpt_skills.py")
+CANONICAL_SKILLS_DIR = Path(".agents/skills")
+COPILOT_SKILLS_DIR = Path(".github/skills")
+REQUIRED_SHARED_SKILLS = (
+    "ci-failure-diagnosis",
+    "protobuf-protocol-change",
+    "embedded-resource-audit",
+    "openwrt-runtime-debugging",
+    "code-change-verification",
+    "security-crypto-review",
+    "code-review",
+)
+GEMINI_WORKFLOW_ONLY_SKILLS = (
+    "gemini-invoke",
+    "gemini-plan-execute",
+    "gemini-review",
+    "gemini-scheduled-triage",
+    "gemini-triage",
+)
+COPILOT_SCOPED_INSTRUCTIONS = (
+    Path(".github/instructions/python.instructions.md"),
+    Path(".github/instructions/firmware.instructions.md"),
+    Path(".github/instructions/protocol.instructions.md"),
+    Path(".github/instructions/openwrt.instructions.md"),
+)
 OBSOLETE_COPILOT_FILE = Path(".github/copilot-instructions")
 
 
-def _parse_md(path: Path) -> tuple[str, str]:
-    """Return frontmatter description and prompt body from a workflow Markdown file."""
+def _parse_frontmatter(path: Path) -> tuple[dict[str, object], str]:
+    """Return YAML frontmatter and the remaining Markdown body."""
     content = path.read_text(encoding="utf-8")
     if not content.startswith("---\n"):
         raise ValueError(f"{path}: missing YAML frontmatter")
@@ -42,11 +66,16 @@ def _parse_md(path: Path) -> tuple[str, str]:
     raw_frontmatter: object = yaml.safe_load(parts[1])
     if not isinstance(raw_frontmatter, dict):
         raise ValueError(f"{path}: YAML frontmatter must be a mapping")
-    frontmatter = cast(dict[str, object], raw_frontmatter)
+    return cast(dict[str, object], raw_frontmatter), parts[2].lstrip("\r\n").strip()
+
+
+def _parse_md(path: Path) -> tuple[str, str]:
+    """Return frontmatter description and prompt body from a workflow Markdown file."""
+    frontmatter, body = _parse_frontmatter(path)
     description = frontmatter.get("description")
     if not isinstance(description, str) or not description.strip():
         raise ValueError(f"{path}: frontmatter description must be a non-empty string")
-    return description.strip(), parts[2].lstrip("\r\n").strip()
+    return description.strip(), body
 
 
 def _workflow_names() -> set[str]:
@@ -60,6 +89,19 @@ def _render_command_toml(description: str, prompt: str) -> str:
         f"description = {json.dumps(description, ensure_ascii=False)}\n"
         f"prompt = {json.dumps(prompt, ensure_ascii=False)}\n"
     )
+
+
+def check_chatgpt_skill_export() -> list[str]:
+    """Ensure the ChatGPT upload packager covers every canonical shared Skill."""
+    exporter = ROOT / CHATGPT_SKILL_EXPORT_SCRIPT
+    try:
+        content = exporter.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"Cannot read ChatGPT Skill exporter {CHATGPT_SKILL_EXPORT_SCRIPT}: {exc}"]
+    missing = [name for name in REQUIRED_SHARED_SKILLS if f'"{name}"' not in content]
+    if missing:
+        return [f"{CHATGPT_SKILL_EXPORT_SCRIPT} does not package shared Skills: {', '.join(missing)}"]
+    return []
 
 
 def check_model_parity() -> list[str]:
@@ -115,6 +157,7 @@ def check_github_action_model_wiring() -> list[str]:
             errors.append(f"{workflow_path.relative_to(ROOT)} must load tools/gemini_model before invoking Gemini CLI")
     return errors
 
+
 def check_prompt_parity() -> list[str]:
     errors: list[str] = []
     workflow_dir = ROOT / ".agent" / "workflows"
@@ -158,6 +201,142 @@ def check_prompt_parity() -> list[str]:
     return errors
 
 
+def check_shared_skill_parity() -> list[str]:
+    """Validate canonical Skills and their generated Copilot mirrors."""
+    errors: list[str] = []
+    source_root = ROOT / CANONICAL_SKILLS_DIR
+    mirror_root = ROOT / COPILOT_SKILLS_DIR
+    if not source_root.is_dir():
+        return [f"Canonical shared Skills directory missing: {CANONICAL_SKILLS_DIR}"]
+
+    source_names = {
+        name for name in REQUIRED_SHARED_SKILLS if (source_root / name).is_dir()
+    }
+    errors.extend(
+        f"Required shared Skill missing: {CANONICAL_SKILLS_DIR / required_name / 'SKILL.md'}"
+        for required_name in REQUIRED_SHARED_SKILLS
+        if required_name not in source_names
+    )
+
+    mirror_entries: list[Path] = list(mirror_root.iterdir()) if mirror_root.is_dir() else []
+    mirror_names: set[str] = {
+        mirror_entry.name for mirror_entry in mirror_entries if mirror_entry.is_dir()
+    }
+    errors.extend(
+        f"Orphan generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / orphan}"
+        for orphan in sorted(mirror_names - source_names)
+    )
+    errors.extend(
+        f"Missing generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / missing}"
+        for missing in sorted(source_names - mirror_names)
+    )
+
+    for name in sorted(source_names):
+        source_dir = source_root / name
+        skill_file = source_dir / "SKILL.md"
+        if not skill_file.is_file():
+            errors.append(f"Skill directory has no SKILL.md: {skill_file.relative_to(ROOT)}")
+            continue
+        try:
+            metadata, _body = _parse_frontmatter(skill_file)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            errors.append(f"Invalid Skill {skill_file.relative_to(ROOT)}: {exc}")
+            continue
+        skill_name = metadata.get("name")
+        description = metadata.get("description")
+        if not isinstance(skill_name, str) or skill_name != name:
+            errors.append(f"{skill_file.relative_to(ROOT)}: frontmatter name must match directory {name!r}")
+        elif re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", skill_name) is None:
+            errors.append(f"{skill_file.relative_to(ROOT)}: name must be lowercase kebab-case")
+        if not isinstance(description, str) or not description.strip():
+            errors.append(f"{skill_file.relative_to(ROOT)}: description must be non-empty")
+
+        mirror_dir = mirror_root / name
+        if not mirror_dir.is_dir():
+            continue
+        source_files = {
+            path.relative_to(source_dir).as_posix(): path.read_bytes()
+            for path in source_dir.rglob("*")
+            if path.is_file()
+        }
+        mirror_files = {
+            path.relative_to(mirror_dir).as_posix(): path.read_bytes()
+            for path in mirror_dir.rglob("*")
+            if path.is_file()
+        }
+        if source_files != mirror_files:
+            errors.append(f"Generated Copilot Skill mirror is stale: {mirror_dir.relative_to(ROOT)}")
+    return errors
+
+
+def check_gemini_workflow_skill_scoping() -> list[str]:
+    """Ensure legacy Gemini workflow prompts cannot be mistaken for shared Skills."""
+    errors: list[str] = []
+    for name in GEMINI_WORKFLOW_ONLY_SKILLS:
+        skill_file = ROOT / CANONICAL_SKILLS_DIR / name / "SKILL.md"
+        try:
+            metadata, body = _parse_frontmatter(skill_file)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            errors.append(f"Invalid Gemini workflow-only Skill {skill_file}: {exc}")
+            continue
+        description = metadata.get("description")
+        if not isinstance(description, str) or "Workflow-only prompt" not in description:
+            errors.append(f"{skill_file.relative_to(ROOT)} must be identified as a workflow-only prompt")
+        if "## Workflow-only scope" not in body or "Do not activate it for normal interactive" not in body:
+            errors.append(f"{skill_file.relative_to(ROOT)} must explicitly prohibit general interactive activation")
+    return errors
+
+
+def check_copilot_agent_profile() -> list[str]:
+    """Validate the Copilot-native agent adapter against canonical instructions."""
+    errors: list[str] = []
+    profile = ROOT / COPILOT_AGENT_PROFILE
+    canonical = ROOT / "GEMINI.md"
+    try:
+        _canonical_metadata, canonical_body = _parse_frontmatter(canonical)
+        metadata, profile_body = _parse_frontmatter(profile)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return [f"Invalid Copilot agent profile {COPILOT_AGENT_PROFILE}: {exc}"]
+
+    if metadata.get("name") != "openwrt-architect-arduino":
+        errors.append(f"{COPILOT_AGENT_PROFILE}: invalid or missing agent name")
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        errors.append(f"{COPILOT_AGENT_PROFILE}: description must be non-empty")
+    if metadata.get("tools") != list(COPILOT_AGENT_TOOLS):
+        errors.append(f"{COPILOT_AGENT_PROFILE}: tools must be {list(COPILOT_AGENT_TOOLS)!r}")
+    if profile_body != canonical_body:
+        errors.append(f"{COPILOT_AGENT_PROFILE}: prompt body is stale relative to GEMINI.md")
+    return errors
+
+
+def check_copilot_instruction_parity() -> list[str]:
+    errors: list[str] = []
+    copilot_instructions = ROOT / ".github" / "copilot-instructions.md"
+    if not copilot_instructions.is_file():
+        errors.append("Missing .github/copilot-instructions.md")
+    else:
+        try:
+            content = copilot_instructions.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"Cannot read {copilot_instructions.relative_to(ROOT)}: {exc}")
+        else:
+            if ".agents/skills/" not in content or ".github/skills/" not in content:
+                errors.append(".github/copilot-instructions.md must identify canonical and mirrored Skill locations")
+
+    for relative_path in COPILOT_SCOPED_INSTRUCTIONS:
+        instruction_path = ROOT / relative_path
+        try:
+            metadata, _body = _parse_frontmatter(instruction_path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            errors.append(f"Invalid Copilot scoped instructions {relative_path}: {exc}")
+            continue
+        apply_to = metadata.get("applyTo")
+        if not isinstance(apply_to, str) or not apply_to.strip():
+            errors.append(f"{relative_path}: applyTo must be a non-empty string")
+    return errors
+
+
 def check_rules_parity() -> list[str]:
     canonical_path = ROOT / "GEMINI.md"
     if not canonical_path.is_file():
@@ -167,6 +346,19 @@ def check_rules_parity() -> list[str]:
     except OSError as exc:
         return [f"Cannot read canonical rules file {canonical_path}: {exc}"]
     errors: list[str] = []
+    agent_discovery_link = ROOT / ".agents"
+    if not agent_discovery_link.is_symlink():
+        errors.append(".agents must remain a Git symlink to .agent")
+    else:
+        try:
+            actual_target = agent_discovery_link.readlink().as_posix()
+            if actual_target != ".agent":
+                errors.append(f".agents points to {actual_target!r}, expected '.agent'")
+            elif not (agent_discovery_link / "skills").is_dir():
+                errors.append(".agents/skills must resolve through the .agents -> .agent symlink")
+        except OSError as exc:
+            errors.append(f"Cannot inspect .agents discovery symlink: {exc}")
+
     for relative_path, expected_target in SYMLINKS.items():
         target = ROOT / relative_path
         if not target.is_symlink():
@@ -206,6 +398,10 @@ def check_rules_parity() -> list[str]:
     obsolete = ROOT / OBSOLETE_COPILOT_FILE
     if obsolete.exists() or obsolete.is_symlink():
         errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; remove the duplicate file")
+    errors.extend(check_shared_skill_parity())
+    errors.extend(check_gemini_workflow_skill_scoping())
+    errors.extend(check_copilot_agent_profile())
+    errors.extend(check_copilot_instruction_parity())
     return errors
 
 
@@ -229,16 +425,70 @@ def sync_rules_to_agent_json() -> bool:
 
 
 def sync_generated_agent_profiles() -> bool:
-    """Generate tool-specific agent discovery files from GEMINI.md."""
+    """Generate the Gemini profile and a Copilot-native adapter from GEMINI.md."""
     try:
-        canonical = (ROOT / "GEMINI.md").read_text(encoding="utf-8")
+        canonical_path = ROOT / "GEMINI.md"
+        canonical = canonical_path.read_text(encoding="utf-8")
+        _metadata, body = _parse_frontmatter(canonical_path)
         for relative_path in GENERATED_AGENT_PROFILES:
             profile = ROOT / relative_path
             profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(canonical, encoding="utf-8")
             print(f" Generated {relative_path}")
-    except OSError as exc:
+
+        copilot_profile = ROOT / COPILOT_AGENT_PROFILE
+        copilot_profile.parent.mkdir(parents=True, exist_ok=True)
+        frontmatter = "\n".join(
+            (
+                "---",
+                "name: openwrt-architect-arduino",
+                'description: "Principal architect for Arduino MCU Bridge 2."',
+                "tools: [read, edit, search, execute]",
+                "---",
+                "",
+            )
+        )
+        copilot_profile.write_text(frontmatter + body.rstrip() + "\n", encoding="utf-8")
+        print(f" Generated {COPILOT_AGENT_PROFILE}")
+    except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"Failed to generate agent profiles: {exc}", file=sys.stderr)
+        return False
+    return True
+
+
+def sync_generated_skill_mirror() -> bool:
+    """Generate Copilot's Skill discovery mirror from canonical shared Skills."""
+    source_root = ROOT / CANONICAL_SKILLS_DIR
+    mirror_root = ROOT / COPILOT_SKILLS_DIR
+    if not source_root.is_dir():
+        print(f"Cannot find canonical Skills directory {CANONICAL_SKILLS_DIR}", file=sys.stderr)
+        return False
+    try:
+        mirror_root.mkdir(parents=True, exist_ok=True)
+        source_names = set(REQUIRED_SHARED_SKILLS)
+        missing_skills = [
+            name for name in sorted(source_names)
+            if not (source_root / name / "SKILL.md").is_file()
+        ]
+        if missing_skills:
+            raise FileNotFoundError(
+                "Missing canonical shared Skill manifests: " + ", ".join(missing_skills)
+            )
+        for name in sorted(source_names):
+            source_dir = source_root / name
+            mirror_dir = mirror_root / name
+            if mirror_dir.is_symlink():
+                mirror_dir.unlink()
+            elif mirror_dir.exists():
+                shutil.rmtree(mirror_dir)
+            shutil.copytree(source_dir, mirror_dir)
+            print(f" Mirrored {source_dir.relative_to(ROOT)} -> {mirror_dir.relative_to(ROOT)}")
+        for mirror_dir in mirror_root.iterdir():
+            if mirror_dir.is_dir() and mirror_dir.name not in source_names:
+                shutil.rmtree(mirror_dir)
+                print(f" Removed stale generated Skill mirror {mirror_dir.relative_to(ROOT)}")
+    except OSError as exc:
+        print(f"Failed to synchronize Copilot Skill mirrors: {exc}", file=sys.stderr)
         return False
     return True
 
@@ -272,13 +522,18 @@ def sync_generated_files() -> list[str]:
         errors.append("Failed to generate agent discovery profiles")
     if not sync_rules_to_agent_json():
         errors.append("Failed to synchronize agent.json")
+    if not sync_generated_skill_mirror():
+        errors.append("Failed to generate Copilot Skill mirrors")
     if not sync_workflow_commands():
         errors.append("Failed to generate GitHub command TOML files")
     return errors
 
 
 app = typer.Typer(
-    help="Validate and synchronize Gemini agent profiles, workflow commands, and model configuration.",
+    help=(
+        "Validate and synchronize cross-platform agent profiles, shared Skills, "
+        "Gemini workflow commands, and model configuration."
+    ),
     add_completion=False,
 )
 
@@ -287,10 +542,18 @@ app = typer.Typer(
 def main(
     fix: Annotated[
         bool,
-        typer.Option("--fix", "-f", help="Regenerate agent profiles, agent.json instructions, and command TOML files"),
+        typer.Option(
+            "--fix",
+            "-f",
+            help=(
+                "Regenerate agent profiles, agent.json instructions, Copilot Skill mirrors, "
+                "and command TOML files"
+            ),
+        ),
     ] = False,
 ) -> None:
     errors = sync_generated_files() if fix else []
+    errors.extend(check_chatgpt_skill_export())
     errors.extend(check_model_parity())
     errors.extend(check_prompt_parity())
     errors.extend(check_github_action_model_wiring())
@@ -300,7 +563,11 @@ def main(
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         raise typer.Exit(code=1)
-    print("All agent parity checks passed (rules, profiles, model, and workflow-command pairs).")
+    print(
+        "All cross-platform agent parity checks passed "
+        "(instructions, Skills, profiles, Gemini model, and workflow-command pairs)."
+    )
+
 
 if __name__ == "__main__":
     app()

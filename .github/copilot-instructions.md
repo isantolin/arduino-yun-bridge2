@@ -1,28 +1,34 @@
-# Copilot instructions
+# Repository instructions for GitHub Copilot
 
-Use these guidelines when working in this repository. Follow the user's request and the active environment's tool and safety requirements; do not assume Gemini-specific workflows or unavailable tools.
+Treat the root GEMINI.md / AGENTS.md as the permanent engineering guide. This file adds Copilot-specific discovery and operating guidance.
 
-## Understand the change
+## Skill discovery
 
-- Inspect the relevant implementation, tests, and configuration before editing. Treat repository documentation as context, and verify details against the current source and configuration when they disagree.
-- Keep changes focused. Preserve existing public APIs and wire-protocol compatibility unless the request explicitly calls for a change.
-- Do not broaden a task into unrelated refactoring or enforce repository-wide audits for a narrowly scoped change.
+- Shared Skills are authored canonically in .agents/skills/ and mirrored into .github/skills/ by tools/audit/check_gemini_parity.py.
+- Select only the Skills relevant to the user's task. Skill discovery does not mean every Skill must be activated.
+- For tasks involving multiple system boundaries, use each relevant Skill and reconcile their findings.
+- Skills provide procedures; the root engineering guide and the user's current instructions govern priorities and permissions.
 
-## Repository conventions
+## Repository facts
 
-- Python runtime and tooling requirements are defined in `pyproject.toml` and `tox.ini`. Follow the configured formatting, lint, and strict type-checking rules.
-- The Python daemon, gateway, client examples, Arduino library, LuCI application, and shared tools live in `mcubridge/`, `mcubridge-gateway/`, `mcubridge-client-examples/`, `mcubridge-library-arduino/`, `luci-app-mcubridge/`, and `tools/`.
-- When changing data shared across the MCU/MPU protocol, update the canonical schema in `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto`) and its generated outputs using the repository's documented generator. Add or update relevant tests.
-- Follow the allocation, timing, and toolchain constraints of the specific Arduino target when changing firmware. Check the applicable build configuration rather than assuming one constraint applies to every target.
+- Python daemon: mcubridge/
+- Cloud gateway: mcubridge-gateway/
+- Client examples: mcubridge-client-examples/
+- Arduino library and firmware: mcubridge-library-arduino/
+- LuCI application: luci-app-mcubridge/
+- Canonical protocol schemas: tools/protocol/config_schema.proto, tools/protocol/mcu_wire.proto, and tools/protocol/cloud_gateway.proto.
+- Inspect pyproject.toml, requirements/, tox.ini, generator scripts, and the relevant CI workflow instead of assuming versions or commands.
 
-## Validation
+## Change discipline
 
-- Add or update tests for behavior changes. Do not weaken or remove tests to make a change pass.
-- Run the existing, relevant tests and checks defined by `tox.ini` or the affected component's documentation. Run broader checks when the change affects shared behavior.
-- If a check requires unavailable hardware, services, or tooling, say so clearly and report what was validated instead.
+- Inspect relevant source, callers, tests, generated outputs, and configuration before editing.
+- Preserve public APIs and wire contracts unless the user explicitly requests a change; for protocol changes, trace both MCU and MPU sides and all generated/client consumers.
+- Prefer direct invocation of suitable existing library APIs over hand-written equivalents or forwarding wrappers. Recommend useful libraries proactively, but do not add a new external dependency without explicit user approval.
+- Be proactive about nearby inconsistencies, security problems, duplicate logic, unused code, and improvement opportunities. Report out-of-scope findings separately rather than silently broadening the patch.
+- Localized, low-risk fixes may be implemented directly. Ask for approval before high-impact redesigns, breaking changes, destructive migrations, or broad refactors.
+- Add meaningful regression tests. Run focused checks first and complete CI before treating a PR as validated.
+- Report what was actually tested, including unavailable hardware and unexecuted checks.
 
-## Safety and security
+## GitHub permissions
 
-- Preserve protocol validation, authentication, cryptographic, and error-handling behavior unless explicitly changing it.
-- Do not add secrets, suppress diagnostics, or silently ignore errors.
-- Treat external input as untrusted and validate it at the relevant boundary.
+Work on a dedicated branch; do not commit or push directly to main. Create commits and PRs as appropriate. Never merge into main without the user's explicit authorization.

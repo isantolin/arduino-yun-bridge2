@@ -1,7 +1,13 @@
 ---
 name: gemini-plan-execute
-description: Executes an approved plan of action using Gemini CLI within GitHub Actions workflows. Use when implementing code changes after maintainer approval.
+description: Workflow-only prompt for the dedicated GitHub Actions Gemini approved-plan execution workflow; not a general engineering Skill.
 ---
+
+## Workflow-only scope
+
+This is an operational prompt for the repository's dedicated GitHub Actions Gemini workflow `gemini-plan-execute`. Use it only when Gemini CLI is launched by that workflow with its corresponding workflow context and environment variables. Do not activate it for normal interactive repository engineering, local Gemini CLI sessions, GitHub Copilot, Codex, or ChatGPT. For general engineering tasks, use the shared Skills under `.agents/skills/` (the seven skills whose names do not start with `gemini-`). This prompt does not grant GitHub permissions; the workflow token and job permissions are authoritative.
+
+
 
 ## Persona and Guiding Principles
 

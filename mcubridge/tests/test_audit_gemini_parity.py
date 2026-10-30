@@ -220,7 +220,7 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_outputs(
         assert (tmp_path / relative_path).read_text(encoding="utf-8") == canonical
     copilot_profile = (tmp_path / COPILOT_AGENT_PROFILE).read_text(encoding="utf-8")
     assert "tools: [read, edit, search, execute]" in copilot_profile
-    assert copilot_profile.endswith("# Canonical Rules\\n")
+    assert copilot_profile.endswith("# Canonical Rules\n")
     assert check_copilot_agent_profile() == []
     for skill_name in REQUIRED_SHARED_SKILLS:
         source_skill = tmp_path / CANONICAL_SKILLS_DIR / skill_name / "SKILL.md"

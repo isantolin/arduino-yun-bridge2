@@ -66,19 +66,16 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
           return true;
         }
-        etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
-        auto res = bridge::hal::readFileChunk(
-            path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+        rpc::payload::FileReadResponse p = {};
+        const etl::span<uint8_t> chunk_buf(p.content.bytes);
+        auto res = bridge::hal::readFileChunk(path, offset, chunk_buf);
         if (!res) {
           const bool sent = Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           (void)sent;
           return true;
         }
 
-        rpc::payload::FileReadResponse p = {};
-        rpc::Payload::copy_to_pb_bytes(
-            p.content,
-            etl::span<const uint8_t>(buffer.data(), res->bytes_read));
+        p.content.size = static_cast<pb_size_t>(res->bytes_read);
         if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
           return true;
         }

@@ -31,6 +31,8 @@ logger = structlog.get_logger("mcubridge.clock_sync")
 class ClockSyncMachine(StateMachine):
     """[SIL-2] Deterministic state machine for clock synchronization subsystem."""
 
+    allow_event_without_transition = True
+
     idle = State(value="idle", initial=True)
     unsupported = State(value="unsupported")
     probing = State(value="probing")
@@ -52,7 +54,13 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(synchronized)
         | unsupported.to(synchronized)
     )
-    mark_degraded = probing.to(degraded) | synchronized.to(degraded) | degraded.to(degraded)
+    mark_degraded = (
+        idle.to(unsupported)
+        | probing.to(unsupported)
+        | unsupported.to(unsupported)
+        | synchronized.to(degraded)
+        | degraded.to(degraded)
+    )
     disconnect = probing.to(idle) | synchronized.to(idle) | degraded.to(idle) | unsupported.to(idle) | idle.to(idle)
 
 
@@ -89,28 +97,24 @@ class ClockSyncService:
             self.fsm.mark_unsupported()
             return self.get_status()
 
-        is_initial_probe = self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
-        if is_initial_probe:
-            self.fsm.start_probe()
+        self.fsm.start_probe()
 
         t1_host_us = time.time_ns() // 1000
         req = pb.ClockSyncRequest(host_time_us=t1_host_us)
 
         # [SIL-2] Bounded response timeout: do not monopolize serial flow lock for 20s.
         timeout_seconds = float(protocol.DEFAULT_CLOCK_SYNC_TIMEOUT_MS) / 1000.0
-        res = await serial.send(Command.CMD_CLOCK_SYNC.value, req, timeout=timeout_seconds)
-        if isinstance(res, pb.ClockSyncResponse):
-            return self.record_sync(res)
-        if isinstance(res, bytes) and res:
-            resp = pb.ClockSyncResponse()
-            resp.ParseFromString(res)
-            return self.record_sync(resp)
+        with structlog.contextvars.bound_contextvars(clock_state=self.fsm.current_state_value):
+            res = await serial.send(Command.CMD_CLOCK_SYNC.value, req, timeout=timeout_seconds)
+            if isinstance(res, pb.ClockSyncResponse):
+                return self.record_sync(res)
+            if isinstance(res, bytes) and res:
+                resp = pb.ClockSyncResponse()
+                resp.ParseFromString(res)
+                return self.record_sync(resp)
 
-        if is_initial_probe:
-            self.fsm.mark_unsupported()
-        else:
             self.fsm.mark_degraded()
-        return self.get_status()
+            return self.get_status()
 
     def record_sync(
         self, _seq_or_resp: int | pb.ClockSyncResponse, resp: pb.ClockSyncResponse | None = None
@@ -172,8 +176,5 @@ class ClockSyncService:
                 break
             except (OSError, ProtobufDecodeError) as e:
                 logger.warning("Periodic clock sync failed", error=str(e))
-                if self.fsm.idle.is_active or self.fsm.probing.is_active:
-                    self.fsm.mark_unsupported()
-                else:
-                    self.fsm.mark_degraded()
+                self.fsm.mark_degraded()
             await asyncio.sleep(self._interval)

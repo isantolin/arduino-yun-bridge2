@@ -204,7 +204,7 @@ def sync(
     print("\n[7/7] Syncing pure Python runtime dependencies...")
     import importlib.util
 
-    for mod_name in ["statemachine", "anyio", "sniffio", "idna"]:
+    for mod_name in ["statemachine", "anyio", "sniffio", "idna", "parse"]:
         try:
             spec = importlib.util.find_spec(mod_name)
             if spec and spec.origin:

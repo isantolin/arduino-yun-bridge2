@@ -16,11 +16,16 @@ import tenacity
 logger = structlog.get_logger(__name__)
 
 T = TypeVar("T")
-_U64 = struct.Struct(">Q")
+_U64 = struct.Struct("=Q")
 
 
 def _open_lmdb_env(
-    path: str, db_name: bytes, default_file: str, map_size: int = 10485760
+    path: str,
+    db_name: bytes,
+    default_file: str,
+    map_size: int = 10485760,
+    *,
+    integerkey: bool = False,
 ) -> tuple[lmdb.Environment | None, Any]:
     """Canonical resilient LMDB environment opener with automatic corruption recovery. [SIL-2]"""
     p = Path(path)
@@ -56,7 +61,7 @@ def _open_lmdb_env(
                     map_async=True,
                     subdir=False,
                 )
-                db = env.open_db(db_name)
+                db = env.open_db(db_name, integerkey=integerkey)
                 return env, db
     except tenacity.RetryError as exc:
         logger.error("Failed to reinitialize LMDB environment", path=env_path, error=str(exc))
@@ -100,7 +105,7 @@ class LmdbDeque:
             self._open_env()
 
     def _open_env(self) -> None:
-        self.env, self.db = _open_lmdb_env(self.path, b"deque", "deque.db")
+        self.env, self.db = _open_lmdb_env(self.path, b"deque", "deque.db", integerkey=True)
         self._length = 0
         if self.env is not None:
             with self.env.begin(db=self.db) as txn:

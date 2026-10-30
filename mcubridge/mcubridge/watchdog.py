@@ -41,15 +41,10 @@ class WatchdogSupervisorMachine(StateMachine):
     critical_inhibit = State(value="critical_inhibit")
     shutdown = State(value="shutdown")
 
-    start_healthy = initializing.to(healthy) | degraded.to(healthy) | healthy.to(healthy)
-    degrade = healthy.to(degraded) | initializing.to(degraded) | degraded.to(degraded)
-    recover = degraded.to(healthy) | healthy.to(healthy)
-    trip_inhibit = (
-        healthy.to(critical_inhibit)
-        | degraded.to(critical_inhibit)
-        | initializing.to(critical_inhibit)
-        | critical_inhibit.to(critical_inhibit)
-    )
+    start_healthy = initializing.to(healthy)
+    degrade = healthy.to(degraded) | initializing.to(degraded)
+    recover = degraded.to(healthy)
+    trip_inhibit = healthy.to(critical_inhibit) | degraded.to(critical_inhibit) | initializing.to(critical_inhibit)
     stop = (
         healthy.to(shutdown)
         | degraded.to(shutdown)
@@ -74,7 +69,12 @@ class WatchdogKeepalive:
         self._state = state
         self._token = token
         self.status = WatchdogSupervisorState.INITIALIZING.value
-        self.fsm = WatchdogSupervisorMachine(model=self, state_field="status", start_value=self.status)
+        self.fsm = WatchdogSupervisorMachine(
+            model=self,
+            state_field="status",
+            start_value=self.status,
+            listeners=[self],
+        )
 
         def default_write(b: bytes) -> None:
             os.write(1, b)
@@ -89,6 +89,18 @@ class WatchdogKeepalive:
     def interval(self, value: float) -> None:
         self._interval = max(WATCHDOG_MIN_INTERVAL, value)
 
+    def on_enter_critical_inhibit(self, reason: str = "") -> None:
+        """[SIL-2] Native python-statemachine hook executed on entering critical_inhibit."""
+        logger.critical("Watchdog pulse inhibited by supervisor", reason=reason, state=self.status)
+
+    def on_enter_degraded(self, reason: str = "") -> None:
+        """[SIL-2] Native python-statemachine hook executed on entering degraded."""
+        logger.warning("Watchdog supervisor degraded", reason=reason)
+
+    def after_recover(self) -> None:
+        """[SIL-2] Native python-statemachine hook executed on recovery to healthy."""
+        logger.info("Watchdog supervisor recovered to healthy state")
+
     def is_healthy(self) -> bool:
         """Check if supervisor state allows watchdog keepalive pulse emission."""
         if self.fsm.critical_inhibit.is_active or self.fsm.shutdown.is_active:
@@ -101,43 +113,36 @@ class WatchdogKeepalive:
 
     def trip_inhibit(self, reason: str = "") -> None:
         """Deterministically inhibit watchdog pulses to trigger supervisor recovery."""
-        if not self.fsm.critical_inhibit.is_active:
-            self.fsm.trip_inhibit()
-            logger.critical("Watchdog pulse inhibited by supervisor", reason=reason, state=self.status)
+        self.fsm.trip_inhibit(reason=reason)
 
     def degrade(self, reason: str = "") -> None:
         """Transition supervisor to degraded state while still maintaining keepalive."""
-        if self.fsm.healthy.is_active or self.fsm.initializing.is_active:
-            self.fsm.degrade()
-            logger.warning("Watchdog supervisor degraded", reason=reason)
+        self.fsm.degrade(reason=reason)
 
     def recover(self) -> None:
         """Transition supervisor back to healthy state."""
-        if self.fsm.degraded.is_active:
-            self.fsm.recover()
-            logger.info("Watchdog supervisor recovered to healthy state")
+        self.fsm.recover()
 
     def kick(self) -> None:
         """Send a single watchdog pulse immediately if supervisor state is healthy/degraded."""
-        if not self.is_healthy():
-            logger.warning("Watchdog kick inhibited due to supervisor state", state=self.status)
-            return
+        with structlog.contextvars.bound_contextvars(watchdog_state=self.status):
+            if not self.is_healthy():
+                logger.warning("Watchdog kick inhibited due to supervisor state", state=self.status)
+                return
 
-        if self.fsm.initializing.is_active:
             self.fsm.start_healthy()
 
-        try:
-            self._write(self._token)
-        except OSError as exc:
-            logger.warning("Failed to emit watchdog trigger", error=str(exc))
-            self.degrade(str(exc))
-        else:
-            if self.fsm.degraded.is_active:
+            try:
+                self._write(self._token)
+            except OSError as exc:
+                logger.warning("Failed to emit watchdog trigger", error=str(exc))
+                self.degrade(str(exc))
+            else:
                 self.recover()
-            if self._state is not None:
-                # [SIL-2] Direct metrics recording
-                self._state.watchdog_beats += 1
-                self._state.last_watchdog_beat = time.time()
+                if self._state is not None:
+                    # [SIL-2] Direct metrics recording
+                    self._state.watchdog_beats += 1
+                    self._state.last_watchdog_beat = time.time()
 
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""

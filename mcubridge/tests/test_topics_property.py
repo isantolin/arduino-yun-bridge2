@@ -127,6 +127,8 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
 def test_topics_edge_cases() -> None:
     """Validate topic parsing and formatting edge cases."""
     assert REGISTRY.parse_topic("br", "br/invalid_topic/foo") is None
+    assert REGISTRY.parse_topic("br", "br/only_one_segment") is None
+    assert REGISTRY.parse_topic("br", "devices/arduino-01/invalid_dir/gpio.write") is None
     assert REGISTRY.parse_topic("", "foo") is None
     assert REGISTRY.parse_topic("br", "") is None
     assert REGISTRY.topic_path("", Topic.SYSTEM) == "system"

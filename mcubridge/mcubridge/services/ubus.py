@@ -103,18 +103,21 @@ class UbusService:
             raise RuntimeError("python-ubus backend has no callable add() API")
 
         def _make_handler(handler: Any) -> Any:
+            handler_name = getattr(handler, "__name__", str(handler))
+
             def _cb(req: Any, msg: dict[str, Any]) -> None:
-                try:
-                    res = handler(req, msg)
-                    if req and hasattr(req, "reply") and isinstance(res, dict):
-                        req.reply(res)
-                except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
-                    logger.error(
-                        "Exception in UBUS handler",
-                        handler=getattr(handler, "__name__", str(handler)),
-                        error=str(exc),
-                    )
-                    raise
+                with structlog.contextvars.bound_contextvars(ubus_handler=handler_name):
+                    try:
+                        res = handler(req, msg)
+                        if req and hasattr(req, "reply") and isinstance(res, dict):
+                            req.reply(res)
+                    except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
+                        logger.error(
+                            "Exception in UBUS handler",
+                            handler=handler_name,
+                            error=str(exc),
+                        )
+                        raise
 
             return _cb
 

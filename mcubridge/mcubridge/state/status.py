@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import anyio.to_thread
 import structlog
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message as ProtobufMessage
@@ -25,7 +26,7 @@ async def status_writer(state: RuntimeState, interval: int, status_file: Path | 
             try:
                 # [SIL-2] Use BridgeStatus Protobuf for holistic snapshot
                 status = state.build_status_snapshot()
-                await asyncio.to_thread(write_status_file, status, target_file)
+                await anyio.to_thread.run_sync(write_status_file, status, target_file)
             except (OSError, RuntimeError, ValueError) as exc:
                 logger.error("Periodic status write failed", error=str(exc))
             await asyncio.sleep(interval)

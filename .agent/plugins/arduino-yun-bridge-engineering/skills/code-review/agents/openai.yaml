@@ -1,0 +1,6 @@
+interface:
+  display_name: "Code Review"
+  short_description: "Review diffs for correctness, security, compatibility, and regressions"
+  default_prompt: "Review this diff and report actionable findings with evidence."
+policy:
+  allow_implicit_invocation: true

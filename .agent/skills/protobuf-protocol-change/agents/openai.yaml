@@ -1,0 +1,6 @@
+interface:
+  display_name: "Protobuf Protocol Change"
+  short_description: "Safely evolve schemas and MCU/MPU protocol consumers"
+  default_prompt: "Analyze the protocol impact of this requested change before editing."
+policy:
+  allow_implicit_invocation: true

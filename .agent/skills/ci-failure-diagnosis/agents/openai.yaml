@@ -1,0 +1,6 @@
+interface:
+  display_name: "CI Failure Diagnosis"
+  short_description: "Find root causes and repair failing GitHub Actions runs"
+  default_prompt: "Diagnose this failing GitHub Actions run and report the root cause with evidence."
+policy:
+  allow_implicit_invocation: true

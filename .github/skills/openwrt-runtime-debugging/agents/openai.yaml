@@ -1,0 +1,6 @@
+interface:
+  display_name: "OpenWrt Runtime Debugging"
+  short_description: "Diagnose daemon, UBUS, LuCI, IPC, and service failures"
+  default_prompt: "Diagnose this OpenWrt runtime issue and identify its cause."
+policy:
+  allow_implicit_invocation: true

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tomllib
 from pathlib import Path
 from typing import Any, cast
@@ -16,6 +17,9 @@ from tools.audit.check_gemini_parity import (
     COPILOT_SCOPED_INSTRUCTIONS,
     COPILOT_SKILLS_DIR,
     CHATGPT_SKILL_EXPORT_SCRIPT,
+    CHATGPT_PLUGIN_MARKETPLACE,
+    CHATGPT_PLUGIN_NAME,
+    CHATGPT_PLUGIN_ROOT,
     GENERATED_AGENT_PROFILES,
     GEMINI_WORKFLOW_ONLY_SKILLS,
     COPILOT_AGENT_PROFILE,
@@ -24,6 +28,7 @@ from tools.audit.check_gemini_parity import (
     SYMLINKS,
     app,
     check_chatgpt_skill_export,
+    check_chatgpt_plugin_parity,
     check_copilot_agent_profile,
     check_github_action_model_wiring,
     check_model_parity,
@@ -32,6 +37,7 @@ from tools.audit.check_gemini_parity import (
     check_shared_skill_parity,
     check_gemini_workflow_skill_scoping,
     sync_generated_files,
+    sync_chatgpt_plugin,
 )
 
 runner = CliRunner()
@@ -109,9 +115,57 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         content = f"---\nname: {skill_name}\ndescription: A test skill for validation.\n---\n\n# Test skill\n"
         skill.write_text(content, encoding="utf-8")
         mirror.write_text(content, encoding="utf-8")
+        source_metadata = skill.parent / "agents" / "openai.yaml"
+        mirror_metadata = mirror.parent / "agents" / "openai.yaml"
+        source_metadata.parent.mkdir(parents=True, exist_ok=True)
+        mirror_metadata.parent.mkdir(parents=True, exist_ok=True)
+        source_metadata.write_text("interface:\n  display_name: Test\n", encoding="utf-8")
+        mirror_metadata.write_text("interface:\n  display_name: Test\n", encoding="utf-8")
     exporter = root / CHATGPT_SKILL_EXPORT_SCRIPT
     exporter.parent.mkdir(parents=True, exist_ok=True)
-    exporter.write_text("\n".join(f'"{name}"' for name in REQUIRED_SHARED_SKILLS), encoding="utf-8")
+    exporter.write_text(
+        "\n".join(
+            [*(f'"{name}"' for name in REQUIRED_SHARED_SKILLS), "def package_plugin(", "arduino-yun-bridge-engineering"]
+        ),
+        encoding="utf-8",
+    )
+    plugin_root = root / CHATGPT_PLUGIN_ROOT
+    plugin_root.mkdir(parents=True, exist_ok=True)
+    (plugin_root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": CHATGPT_PLUGIN_NAME,
+                "version": "1.0.0",
+                "description": "Test plugin bundle",
+            }
+        ),
+        encoding="utf-8",
+    )
+    for skill_name in REQUIRED_SHARED_SKILLS:
+        shutil.copytree(
+            source_skill_root / skill_name,
+            plugin_root / "skills" / skill_name,
+        )
+    marketplace_path = root / CHATGPT_PLUGIN_MARKETPLACE
+    marketplace_path.parent.mkdir(parents=True, exist_ok=True)
+    marketplace_path.write_text(
+        json.dumps(
+            {
+                "name": "test-marketplace",
+                "plugins": [
+                    {
+                        "name": CHATGPT_PLUGIN_NAME,
+                        "source": {
+                            "source": "local",
+                            "path": f"./{CHATGPT_PLUGIN_NAME}",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     for relative_path in COPILOT_SCOPED_INSTRUCTIONS:
         instruction = root / relative_path
         instruction.parent.mkdir(parents=True, exist_ok=True)
@@ -321,3 +375,35 @@ def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
     assert "All cross-platform agent parity checks passed" in second.stdout
+
+
+def test_chatgpt_plugin_parity_detects_stale_plugin_skill(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    assert check_chatgpt_plugin_parity() == []
+    plugin_skill = (
+        tmp_path / CHATGPT_PLUGIN_ROOT / "skills" / REQUIRED_SHARED_SKILLS[0] / "SKILL.md"
+    )
+    plugin_skill.write_text("stale plugin Skill\n", encoding="utf-8")
+    errors = check_chatgpt_plugin_parity()
+    assert any("Generated ChatGPT plugin Skill is stale" in error for error in errors)
+
+
+def test_sync_chatgpt_plugin_generates_marketplace_and_all_skills(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    plugin_skill = (
+        tmp_path / CHATGPT_PLUGIN_ROOT / "skills" / REQUIRED_SHARED_SKILLS[0] / "SKILL.md"
+    )
+    plugin_skill.write_text("old content\n", encoding="utf-8")
+    assert sync_chatgpt_plugin()
+    assert check_chatgpt_plugin_parity() == []
+    marketplace = json.loads(
+        (tmp_path / CHATGPT_PLUGIN_MARKETPLACE).read_text(encoding="utf-8")
+    )
+    assert marketplace["plugins"][0]["name"] == CHATGPT_PLUGIN_NAME
+

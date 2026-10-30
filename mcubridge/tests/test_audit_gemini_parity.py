@@ -93,12 +93,12 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         workflow_skill = source_skill_root / workflow_skill_name / "SKILL.md"
         workflow_skill.parent.mkdir(parents=True, exist_ok=True)
         workflow_skill.write_text(
-            "---\\n"
-            f"name: {workflow_skill_name}\\n"
-            "description: Workflow-only prompt for Gemini GitHub Actions.\\n"
-            "---\\n\\n"
-            "## Workflow-only scope\\n"
-            "Do not activate it for normal interactive repository engineering.\\n",
+            "---\n"
+            f"name: {workflow_skill_name}\n"
+            "description: Workflow-only prompt for Gemini GitHub Actions.\n"
+            "---\n\n"
+            "## Workflow-only scope\n"
+            "Do not activate it for normal interactive repository engineering.\n",
             encoding="utf-8",
         )
     for skill_name in REQUIRED_SHARED_SKILLS:
@@ -109,12 +109,6 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         content = f"---\nname: {skill_name}\ndescription: A test skill for validation.\n---\n\n# Test skill\n"
         skill.write_text(content, encoding="utf-8")
         mirror.write_text(content, encoding="utf-8")
-    gemini_only_skill = root / ".agent" / "skills" / "gemini-invoke" / "SKILL.md"
-    gemini_only_skill.parent.mkdir(parents=True, exist_ok=True)
-    gemini_only_skill.write_text(
-        "---\\nname: gemini-invoke\\ndescription: Workflow-only skill\\n---\\n",
-        encoding="utf-8",
-    )
     exporter = root / CHATGPT_SKILL_EXPORT_SCRIPT
     exporter.parent.mkdir(parents=True, exist_ok=True)
     exporter.write_text("\n".join(f'"{name}"' for name in REQUIRED_SHARED_SKILLS), encoding="utf-8")
@@ -187,7 +181,11 @@ def test_gemini_workflow_skills_are_explicitly_scoped(
     assert check_gemini_workflow_skill_scoping() == []
     skill_file = tmp_path / CANONICAL_SKILLS_DIR / GEMINI_WORKFLOW_ONLY_SKILLS[0] / "SKILL.md"
     skill_file.write_text(
-        "---\\nname: gemini-invoke\\ndescription: General repository Skill.\\n---\\n\\n# Generic\\n",
+        "---\n"
+        "name: gemini-invoke\n"
+        "description: General repository Skill.\n"
+        "---\n\n"
+        "# Generic\n",
         encoding="utf-8",
     )
     errors = check_gemini_workflow_skill_scoping()

@@ -1436,5 +1436,6 @@ async def test_runtime_streams_local_file_responses_to_mcu(
     empty = tmp_path / "empty.bin"
     empty.write_bytes(b"")
     await svc.file_read(1, pb.FileRead(path="empty.bin"))
-    mock_serial.send.assert_awaited_once()
-    assert mock_serial.send.await_args.args[1].content == b""
+    empty_file_calls = mock_serial.send.await_args_list
+    assert len(empty_file_calls) == 1
+    assert empty_file_calls[0].args[1].content == b""

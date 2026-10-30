@@ -250,15 +250,10 @@ def main(
     serial_mcp_path = _check_serial_mcp()
     sync_mcp_configs(semgrep_path, serial_mcp_path)
 
-    # Gemini parity audit
-    try:
-        from tools.audit.check_gemini_parity import main as audit_parity_main
+    # Fail closed if the repository's agent configuration is inconsistent.
+    from tools.audit.check_gemini_parity import main as audit_parity_main
 
-        audit_parity_main(fix=True)
-    except SystemExit as exc:
-        print(f"  ℹ️ Gemini parity check finished with code: {exc.code}", file=sys.stderr)
-    except (OSError, RuntimeError, ValueError) as exc:
-        print(f"  ⚠️ Gemini parity check error: {exc}", file=sys.stderr)
+    audit_parity_main(fix=True)
 
     if start_gateway:
         _start_gateway_if_needed()

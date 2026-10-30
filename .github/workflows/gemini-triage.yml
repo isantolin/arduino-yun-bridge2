@@ -29,6 +29,20 @@ jobs:
       issues: 'write'
       pull-requests: 'write'
     steps:
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@v7'
+
+      - name: 'Read canonical Gemini model'
+        id: 'gemini_model'
+        run: |-
+          model=''
+          IFS= read -r model < tools/gemini_model || true
+          if [ -z "$model" ]; then
+            echo "::error::tools/gemini_model is empty or unreadable."
+            exit 1
+          fi
+          printf 'model=%s\n' "$model" >> "$GITHUB_OUTPUT"
+
       - name: 'Mint identity token'
         id: 'mint_identity_token'
         if: |-
@@ -82,7 +96,7 @@ jobs:
           gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
           gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
           gemini_debug: '${{ fromJSON(vars.GEMINI_DEBUG || vars.ACTIONS_STEP_DEBUG || false) }}'
-          gemini_model: '${{ vars.GEMINI_MODEL }}'
+          gemini_model: '${{ steps.gemini_model.outputs.model }}'
           google_api_key: '${{ secrets.GOOGLE_API_KEY }}'
           use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
           use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'

@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, codebase-auditor, py, arduino]
+        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, gemini-parity, codebase-auditor, py, arduino]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-protoc

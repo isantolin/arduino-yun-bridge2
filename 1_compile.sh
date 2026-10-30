@@ -505,6 +505,7 @@ echo "[INFO] Re-installing essential feeds..."
 echo "[FIX] Removing duplicate upstream packages (etc)..."
 rm -rf feeds/packages/lang/python/python-cryptography
 
+./scripts/feeds install python-psutil python-ubus python-cffi python-uci luci-base luci-light
 ./scripts/feeds install -p mcubridge -a
 
 
@@ -657,7 +658,7 @@ fi
 # Enable Packages
 REQUIRED_PKGS="mcubridge luci-app-mcubridge mcubridge-gateway"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
-REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio"
+REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio python3-psutil python3-ubus python3-cffi"
 
 # [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
 # heredados de escaneos previos del SDK.
@@ -729,7 +730,7 @@ else
 fi
 
 # [FIX] Orden de compilación: Primero librerías críticas (extraídas dinámicamente)
-LIBS=$(python3 "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | xargs)
+LIBS=$(python3 "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|python3-psutil|python3-ubus|mosquitto-client|xxd)$" | xargs)
 echo "[BUILD] Building libraries: $LIBS..."
 
 # Build all libraries in parallel with as many jobs as cores.

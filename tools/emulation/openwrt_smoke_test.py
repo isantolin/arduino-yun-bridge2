@@ -82,8 +82,14 @@ class _ApkLinkParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() == "a":
             for name, val in attrs:
-                if name.lower() == "href" and val and val.startswith(self.prefix) and val.endswith(".apk"):
-                    self.matches.append(val)
+                if name.lower() == "href" and val and val.endswith(".apk"):
+                    fname = val.rsplit("/", 1)[-1]
+                    if (
+                        fname.startswith(f"{self.prefix}-")
+                        and len(fname) > len(self.prefix) + 1
+                        and fname[len(self.prefix) + 1].isdigit()
+                    ):
+                        self.matches.append(fname)
 
 
 def _resolve_package_name(base_url: str, pkg_prefix: str) -> str | None:
@@ -108,13 +114,19 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes
 # ---------------------------------------------------------------------------
 # Download helpers
 # ---------------------------------------------------------------------------
+def _is_retryable_download_error(exc: BaseException) -> bool:
+    if isinstance(exc, HTTPError) and exc.code == 404:
+        return False
+    return isinstance(exc, (URLError, TimeoutError, OSError))
+
+
 def _download_file_with_retry(url: str, filename: Path | str, attempts: int = 3) -> None:
     """Download a file via urllib.request with bounded exponential backoff using tenacity."""
     target_path = Path(filename)
     retryer = tenacity.Retrying(
         stop=tenacity.stop_after_attempt(attempts),
         wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=10.0),
-        retry=tenacity.retry_if_exception_type((URLError, TimeoutError, OSError)),
+        retry=tenacity.retry_if_exception(_is_retryable_download_error),
         reraise=True,
     )
 
@@ -135,15 +147,22 @@ def download_images() -> None:
         log_info(f"[INFO] Downloading kernel {KERNEL_FILE}...")
         _download_file_with_retry(f"{BASE_URL}/{KERNEL_FILE}", kernel_path)
 
-    rootfs_img = Path(ROOTFS_IMG)
-    if not rootfs_img.exists():
-        rootfs_gz = Path(ROOTFS_GZ)
+    rootfs_gz = Path(ROOTFS_GZ)
+    if not rootfs_gz.exists():
         log_info(f"[INFO] Downloading rootfs {ROOTFS_GZ}...")
         _download_file_with_retry(f"{BASE_URL}/{ROOTFS_GZ}", rootfs_gz)
-        log_info(f"[INFO] Decompressing {ROOTFS_GZ} -> {ROOTFS_IMG}...")
-        with gzip.open(rootfs_gz, "rb") as f_in, rootfs_img.open("wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        rootfs_gz.unlink(missing_ok=True)
+
+    rootfs_img = Path(ROOTFS_IMG)
+    log_info(f"[INFO] Decompressing pristine {ROOTFS_GZ} -> {ROOTFS_IMG}...")
+    with gzip.open(rootfs_gz, "rb") as f_in, rootfs_img.open("wb") as f_out:
+        shutil.copyfileobj(f_in, f_out)
+
+    # Expand rootfs image to 512MB so / has ample space for Python 3 + project APKs
+    with rootfs_img.open("r+b") as f_rw:
+        f_rw.truncate(512 * 1024 * 1024)
+    if shutil.which("e2fsck") and shutil.which("resize2fs"):
+        run(["e2fsck", "-fy", str(rootfs_img)], check=False)
+        run(["resize2fs", str(rootfs_img)], check=False)
 
 
 # ---------------------------------------------------------------------------
@@ -155,25 +174,32 @@ def download_system_apks(dest_dir: Path) -> None:
     dest_dir.mkdir(exist_ok=True, parents=True)
 
     for filename, base_url in SYS_APKS:
-        file_path = dest_dir / filename
-        if file_path.exists():
-            log_info(f"[INFO] {filename} already exists, skipping download.")
+        pkg_prefix = filename.split("-202")[0] if "-202" in filename else filename.split("-")[0]
+        existing = list(dest_dir.glob(f"{pkg_prefix}-[0-9]*.apk"))
+        if existing:
+            log_info(f"[INFO] {existing[0].name} already exists, skipping download.")
             continue
 
+        file_path = dest_dir / filename
         url = f"{base_url}/{filename}"
         log_info(f"[INFO] Downloading {url} -> {file_path}")
         try:
             _download_file_with_retry(url, file_path)
         except HTTPError as e:
             if e.code == 404:
-                log_info(f"[WARN] {filename} returned 404, attempting dynamic resolution from {base_url}...")
-                pkg_prefix = filename.split("-202")[0] if "-202" in filename else filename.split("-")[0]
-                resolved_name = _resolve_package_name(base_url, pkg_prefix)
-                if resolved_name:
-                    resolved_url = f"{base_url}/{resolved_name}"
-                    resolved_file_path = dest_dir / resolved_name
-                    log_info(f"[INFO] Resolved to {resolved_url} -> {resolved_file_path}")
-                    _download_file_with_retry(resolved_url, resolved_file_path)
+                log_info(f"[WARN] {filename} returned 404, attempting dynamic resolution...")
+                alt_url = SYS_APKS_TARGET_URL if base_url == SYS_APKS_BASE_URL else SYS_APKS_BASE_URL
+                resolved_ok = False
+                for candidate_base in (base_url, alt_url):
+                    resolved_name = _resolve_package_name(candidate_base, pkg_prefix)
+                    if resolved_name:
+                        resolved_url = f"{candidate_base}/{resolved_name}"
+                        resolved_file_path = dest_dir / resolved_name
+                        log_info(f"[INFO] Resolved to {resolved_url} -> {resolved_file_path}")
+                        _download_file_with_retry(resolved_url, resolved_file_path)
+                        resolved_ok = True
+                        break
+                if resolved_ok:
                     continue
             log_error(f"[ERROR] Failed to download {url}: {e}")
             raise
@@ -203,10 +229,13 @@ def create_apk_disk(apk_dir: Path, sys_apk_dir: Path, repo_root: Path) -> str:
             shutil.copy2(apk, bin_dir / apk.name)
         log_info(f"[INFO] Copied {len(apk_files)} project APKs to disk bin/.")
 
+        sys_bin_dir = stage_dir / "sys-bin"
+        sys_bin_dir.mkdir(parents=True, exist_ok=True)
         sys_apk_files = list(sys_apk_dir.glob("*.apk"))
         for apk in sys_apk_files:
             shutil.copy2(apk, bin_dir / apk.name)
-        log_info(f"[INFO] Copied {len(sys_apk_files)} system APKs to disk bin/.")
+            shutil.copy2(apk, sys_bin_dir / apk.name)
+        log_info(f"[INFO] Copied {len(sys_apk_files)} system APKs to disk bin/ and sys-bin/.")
 
         # Copy deploy scripts
         for script in DEPLOY_SCRIPTS:

@@ -66,6 +66,8 @@ get_device_uuid() {
 }
 
 # [SIL-2] Robust package installation with local cache support
+APK_UPDATED=0
+
 install_pkg() {
     local pkg="$1"
     
@@ -74,21 +76,32 @@ install_pkg() {
     fi
 
     # Check for local bundled APK in common mount points/dirs
-    # 1. /mnt/bin (where Smoke Test mounts APK disk)
-    # 2. ./bin (relative to script)
-    # 3. /root/deploy/bin (where 3_install.sh works)
-    for dir in "/mnt/bin" "./bin" "/root/deploy/bin" "/tmp/bin"; do
+    # 1. /mnt/sys-bin (isolated system APKs in Smoke Test)
+    # 2. /mnt/bin (where Smoke Test mounts APK disk)
+    # 3. ./bin (relative to script)
+    # 4. /root/deploy/bin (where 3_install.sh works)
+    for dir in "/mnt/sys-bin" "/mnt/bin" "./bin" "/root/deploy/bin" "/tmp/bin"; do
         for candidate in "${dir}/${pkg}"[_-]*.apk; do
             if [ -f "$candidate" ]; then
                 log_info "Installing $pkg from local bundle: $candidate"
-                if apk add --no-network --allow-untrusted --force-overwrite "$candidate" "${dir}"/*.apk; then
+                local sys_companions=""
+                for sys_pat in fdisk libfdisk libsmartcols libblkid libuuid libncurses e2fsprogs libext2fs libcomerr libss block-mount blockd; do
+                    for comp in "${dir}/${sys_pat}"[_-]*.apk; do
+                        [ -f "$comp" ] && sys_companions="$sys_companions $comp"
+                    done
+                done
+                if apk add --no-network --allow-untrusted --force-overwrite "$candidate" $sys_companions; then
                     return 0
                 fi
             fi
         done
     done
 
-    # Fallback to online feeds
+    # Fallback to online feeds (ensure package index is updated at least once)
+    if [ "$APK_UPDATED" -eq 0 ]; then
+        apk update || log_warn "Failed to update package database before installing $pkg."
+        APK_UPDATED=1
+    fi
     log_info "Attempting to install $pkg from feeds..."
     if apk add "$pkg"; then
         return 0
@@ -242,6 +255,9 @@ if [ "$SKIP_EXTROOT" -eq 0 ]; then
         log_err "Failed to get UUID for $DEVICE"
         exit 1
     fi
+
+    # Ensure /overlay mount point exists on direct ext4 rootfs images
+    mkdir -p /overlay
 
     # Configure fstab via UCI
     uci -q delete fstab.overlay

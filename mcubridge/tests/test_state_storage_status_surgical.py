@@ -103,6 +103,20 @@ async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     await deque.close()
 
 
+async def test_lmdb_deque_concurrent_worker_mutations_preserve_length(tmp_path: Path) -> None:
+    deque = LmdbDeque(str(tmp_path / "concurrent_deque.db"))
+    expected = [f"entry-{index}".encode("ascii") for index in range(24)]
+
+    append_results = await asyncio.gather(*(deque.append(item) for item in expected))
+    assert append_results == [0] * len(expected)
+    assert len(deque) == len(expected)
+
+    popped = await asyncio.gather(*(deque.popleft() for _ in expected))
+    assert sorted(popped) == sorted(expected)
+    assert len(deque) == 0
+    await deque.close()
+
+
 async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/empty_deque.db"
     deque = LmdbDeque(db_path)

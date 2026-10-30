@@ -224,17 +224,12 @@ class SerialTransport:
                     await self.toggle_dtr()
 
                 try:
-                    async with anyio.create_task_group() as tg:
-
-                        async def _supervised_read_loop() -> None:
-                            try:
-                                if self.serial:
-                                    await self.read_loop(self.serial)
-                            finally:
-                                if not self.stop_event.is_set():
-                                    tg.cancel_scope.cancel()
-
-                        tg.start_soon(_supervised_read_loop)
+                    async with asyncio.TaskGroup() as tg:
+                        serial = self.serial
+                        if serial is None:
+                            raise RuntimeError("Serial transport was not initialized")
+                        read_task = tg.create_task(self.read_loop(serial), name="mcubridge-serial-read")
+                        stop_task = tg.create_task(self.stop_event.wait(), name="mcubridge-serial-stop")
 
                         if (
                             not is_network
@@ -246,8 +241,12 @@ class SerialTransport:
                         if self.service:
                             await self.service.on_serial_connected()
 
-                        await self.stop_event.wait()
-                        tg.cancel_scope.cancel()
+                        await asyncio.wait(
+                            (read_task, stop_task),
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                        read_task.cancel()
+                        stop_task.cancel()
 
                     if not self.stop_event.is_set():
                         if is_network:
@@ -362,29 +361,32 @@ class SerialTransport:
 
     def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:
         pending = self.current_command
-        logger.debug(
-            "_correlate_frame entry",
-            command_id=command_id,
-            seq_id=seq_id,
-            pending_cmd=(pending.command_id if pending else None),
-            pending_seq=(pending.sequence_id if pending else None),
-        )
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "_correlate_frame entry",
+                command_id=command_id,
+                seq_id=seq_id,
+                pending_cmd=(pending.command_id if pending else None),
+                pending_seq=(pending.sequence_id if pending else None),
+            )
         if pending is None:
             return
         if pending.success is not None:
-            logger.debug(
-                "Pending command already resolved, ignoring further correlation",
-                pending_cmd=pending.command_id,
-                command_id=command_id,
-            )
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "Pending command already resolved, ignoring further correlation",
+                    pending_cmd=pending.command_id,
+                    command_id=command_id,
+                )
             return
         if pending.sequence_id is not None and seq_id is not None and pending.sequence_id != seq_id:
-            logger.debug(
-                "ignoring_stale_frame_sequence_mismatch",
-                expected_seq=pending.sequence_id,
-                received_seq=seq_id,
-                command_id=command_id,
-            )
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "ignoring_stale_frame_sequence_mismatch",
+                    expected_seq=pending.sequence_id,
+                    received_seq=seq_id,
+                    command_id=command_id,
+                )
             return
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
@@ -401,27 +403,27 @@ class SerialTransport:
                     )
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
                     logger.error("Failed to decode MCU ACK payload", error=str(e))
-            logger.debug(
-                "Correlation ACK match",
-                ack_target=ack_target,
-                pending_cmd=pending.command_id,
-                expected_resp_ids=pending.expected_resp_ids,
-            )
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "Correlation ACK match",
+                    ack_target=ack_target,
+                    pending_cmd=pending.command_id,
+                    expected_resp_ids=pending.expected_resp_ids,
+                )
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
-                    logger.debug("Marking pending command success on ACK")
                     pending.mark_success(payload)
             return
         spec = REGISTRY.get(command_id)
         paired_req_id = spec.paired_request_id if spec else None
-        logger.debug(
-            "Correlation check paired_request_id",
-            resp_req=paired_req_id,
-            pending_cmd=pending.command_id,
-        )
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "Correlation check paired_request_id",
+                resp_req=paired_req_id,
+                pending_cmd=pending.command_id,
+            )
         if paired_req_id == pending.command_id:
-            logger.debug("Marking pending command success on response")
             resp_payload = payload
             if isinstance(payload, bytes) and spec is not None and spec.pb_class is not None:
                 try:
@@ -433,10 +435,8 @@ class SerialTransport:
             pending.mark_success(resp_payload)
             return
         if command_id in SERIAL_FAILURE_STATUS_CODES:
-            logger.debug("Marking pending command failure")
             pending.mark_failure(command_id)
         elif command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
-            logger.debug("Marking pending command success on success status")
             pending.mark_success(payload)
 
     async def check_baudrate_fallback(self) -> None:
@@ -498,7 +498,7 @@ class SerialTransport:
                         raise self._FatalSerialError(None)
 
                     try:
-                        with anyio.fail_after(effective_timeout):
+                        async with asyncio.timeout(effective_timeout):
                             await pending.completion.wait()
                             if pending.success:
                                 return pending.response_payload if pending.response_payload is not None else True
@@ -526,7 +526,7 @@ class SerialTransport:
 
         if not self.state.serial_tx_allowed.is_set() and command_id != Status.ACK.value:
             try:
-                with anyio.fail_after(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
+                async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
             except TimeoutError:
                 logger.warning(
@@ -581,7 +581,7 @@ class SerialTransport:
             self.negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
-            with anyio.fail_after(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
+            async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
                 await self.negotiation_future
             return True
         except (TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:

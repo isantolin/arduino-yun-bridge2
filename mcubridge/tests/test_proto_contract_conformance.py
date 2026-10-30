@@ -226,16 +226,17 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 
     # Accumulate chunk then EOF
     fut: asyncio.Future[bytes] = asyncio.Future()
-    pending = PendingMcuRead(future=fut, chunks=[])
+    pending = PendingMcuRead(future=fut, buffer=bytearray())
     service.pending_mcu_read = pending
 
     assert (await on_read_resp(1, pb.FileReadResponse(content=b"chunk1"))).content == b"chunk1"
     assert not fut.done()
-    assert pending.chunks == [b"chunk1"]
+    assert pending.buffer == b"chunk1"
 
     assert (await on_read_resp(2, pb.FileReadResponse(content=b""))).content == b""
     assert fut.done()
     assert fut.result() == b"chunk1"
+    assert pending.buffer == b""
 
     # Future already completed
     assert (await on_read_resp(3, pb.FileReadResponse(content=b""))).content == b""

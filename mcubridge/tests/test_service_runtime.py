@@ -229,6 +229,7 @@ async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -
 async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     svc = mock_bridge_service
     svc.config.cloud_http3_enabled = True
+    connect_http2 = mocker.spy(svc.state.cloud_fsm, "connect_http2")
 
     envelope_pong = MagicMock()
     envelope_pong.WhichOneof.return_value = "pong"
@@ -249,7 +250,8 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
     mock_stub_cls.return_value = mock_stub
 
     await svc.connect_cloud_session(None)
-    assert svc.state.connected_via_http3 is True
+    assert svc.state.connected_via_http3 is False
+    connect_http2.assert_called_once()
     assert mock_stream.send_message.await_count == 2
     assert mock_stream.sent_messages[0].event.event_type == "status_online"
     resp = mock_stream.sent_messages[1]
@@ -1405,3 +1407,34 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
     await svc.handle_request(pub_req)
     # Rejected -> nothing enqueued on res topic
     assert not any(topic.endswith("/res/gpio.write") for topic, _ in enqueued)
+
+
+async def test_runtime_streams_local_file_responses_to_mcu(
+    mock_bridge_service: BridgeService,
+    mock_serial: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.serial = mock_serial
+    mock_serial.send = AsyncMock(return_value=True)
+
+    payload = bytes(range(256)) * ((protocol.MAX_PAYLOAD_SIZE * 3 // 256) + 1)
+    source = tmp_path / "large.bin"
+    source.write_bytes(payload)
+
+    response = await svc.file_read(1, pb.FileRead(path="large.bin"))
+    assert response.content == b""
+    calls = mock_serial.send.await_args_list
+    assert len(calls) > 1
+    assert all(call.args[0] == Command.CMD_FILE_READ_RESP.value for call in calls)
+    assert calls[-1].args[1].content == b""
+    assert b"".join(call.args[1].content for call in calls[:-1]) == payload
+    assert all(len(call.args[1].content) <= protocol.MAX_PAYLOAD_SIZE - 3 for call in calls)
+
+    mock_serial.send.reset_mock()
+    empty = tmp_path / "empty.bin"
+    empty.write_bytes(b"")
+    await svc.file_read(1, pb.FileRead(path="empty.bin"))
+    mock_serial.send.assert_awaited_once()
+    assert mock_serial.send.await_args.args[1].content == b""

@@ -2,8 +2,9 @@
 """Protobuf Cloud Gateway for MCU Bridge v2.
 
 High-performance industrial IoT server acting as the central cloud hub for N MPU Daemons.
-Provides bidirectional gRPC streaming (HTTP/2 and HTTP/3 QUIC), fleet-wide Prometheus
-observability, TSDB time-series ingestion, and northbound command orchestration.
+Provides bidirectional gRPC streaming over HTTP/2, fleet-wide Prometheus observability,
+TSDB time-series ingestion, and northbound command orchestration. The HTTP/3 flag is
+retained for configuration compatibility but does not enable a QUIC listener.
 """
 
 from __future__ import annotations
@@ -845,7 +846,10 @@ class ProtobufGateway:
         scheme = "tcps" if ssl_context else "tcp"
         logger.info("gRPC Cloud Gateway running", scheme=scheme, host=self.host, port=self.port)
         if self.http3_enabled:
-            logger.info("HTTP/3 (QUIC) capability enabled", port=self.http3_port, alt_svc=f'h3=":{self.http3_port}"')
+            logger.warning(
+                "HTTP/3 was requested but grpclib.Server only serves HTTP/2; no QUIC listener was started",
+                requested_udp_port=self.http3_port,
+            )
         await self.server.wait_closed()
 
 
@@ -861,7 +865,10 @@ def main(
     key: Annotated[Path | None, typer.Option(help="Path to server SSL private key file")] = None,
     ca: Annotated[Path | None, typer.Option(help="Path to CA file for client certificate verification")] = None,
     http3: Annotated[bool, typer.Option("--http3", help="Enable HTTP/3 (QUIC) capability")] = False,
-    http3_port: Annotated[int, typer.Option(help="UDP Port for HTTP/3 QUIC listener")] = DEFAULT_CLOUD_PORT,
+    http3_port: Annotated[
+        int,
+        typer.Option(help="Reserved UDP port for HTTP/3; current grpclib transport falls back to HTTP/2"),
+    ] = DEFAULT_CLOUD_PORT,
     metrics_port: Annotated[int | None, typer.Option(help="Port for fleet Prometheus /metrics endpoint")] = None,
     tsdb_url: Annotated[str | None, typer.Option(help="HTTP endpoint URL for TSDB Line Protocol ingestion")] = None,
 ) -> None:

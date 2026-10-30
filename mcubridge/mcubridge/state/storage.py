@@ -205,7 +205,11 @@ class LmdbDeque:
 
     async def close(self) -> None:
         if self.env is not None:
-            await anyio.to_thread.run_sync(self._close_sync)
+            await anyio.to_thread.run_sync(self.close_sync)
+
+    def close_sync(self) -> None:
+        """Close the LMDB environment synchronously for non-async lifecycle hooks."""
+        self._close_sync()
 
     def _close_sync(self) -> None:
         with self._mutation_lock:
@@ -287,7 +291,11 @@ class LmdbCache:
 
     async def close(self) -> None:
         if self.env is not None:
-            await anyio.to_thread.run_sync(self._close_sync)
+            await anyio.to_thread.run_sync(self.close_sync)
+
+    def close_sync(self) -> None:
+        """Close the LMDB environment synchronously for non-async lifecycle hooks."""
+        self._close_sync()
 
     def _close_sync(self) -> None:
         if self.env is not None:

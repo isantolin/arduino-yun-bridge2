@@ -1,4 +1,4 @@
-"""Tests for the Gemini agent configuration auditor and generator."""
+"""Tests for cross-platform agent configuration auditing and generation."""
 
 from __future__ import annotations
 
@@ -12,14 +12,19 @@ from typer.testing import CliRunner
 
 from tools.audit.check_gemini_parity import (
     AGENT_JSON,
+    CANONICAL_SKILLS_DIR,
+    COPILOT_SCOPED_INSTRUCTIONS,
+    COPILOT_SKILLS_DIR,
     GENERATED_AGENT_PROFILES,
     MODEL_FILE,
+    REQUIRED_SHARED_SKILLS,
     SYMLINKS,
     app,
     check_github_action_model_wiring,
     check_model_parity,
     check_prompt_parity,
     check_rules_parity,
+    check_shared_skill_parity,
     sync_generated_files,
 )
 
@@ -57,7 +62,27 @@ def _write_minimal_agent_fixture(root: Path) -> str:
     )
     copilot_instructions = root / ".github" / "copilot-instructions.md"
     copilot_instructions.parent.mkdir(parents=True, exist_ok=True)
-    copilot_instructions.write_text("# Copilot-only guidance\n", encoding="utf-8")
+    copilot_instructions.write_text(
+        "Canonical Skills: .agents/skills/ and .github/skills/ mirror\n",
+        encoding="utf-8",
+    )
+    source_skill_root = root / CANONICAL_SKILLS_DIR
+    mirror_skill_root = root / COPILOT_SKILLS_DIR
+    for skill_name in REQUIRED_SHARED_SKILLS:
+        skill = source_skill_root / skill_name / "SKILL.md"
+        mirror = mirror_skill_root / skill_name / "SKILL.md"
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        mirror.parent.mkdir(parents=True, exist_ok=True)
+        content = (
+            f"---\nname: {skill_name}\ndescription: A test skill for validation.\n"
+            "---\n\n# Test skill\n"
+        )
+        skill.write_text(content, encoding="utf-8")
+        mirror.write_text(content, encoding="utf-8")
+    for relative_path in COPILOT_SCOPED_INSTRUCTIONS:
+        instruction = root / relative_path
+        instruction.parent.mkdir(parents=True, exist_ok=True)
+        instruction.write_text("---\napplyTo: \"**/*.py\"\n---\n\nTest scope.\n", encoding="utf-8")
     return canonical
 
 
@@ -123,7 +148,28 @@ def test_check_rules_parity_rejects_obsolete_copilot_duplicate(
     assert any("Obsolete duplicate exists" in error for error in check_rules_parity())
 
 
-def test_sync_generated_files_preserves_agent_metadata_and_generates_toml(
+def test_check_shared_skill_parity_rejects_stale_mirror(mocker: MockerFixture, tmp_path: Path) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    mirror_skill = tmp_path / COPILOT_SKILLS_DIR / REQUIRED_SHARED_SKILLS[0] / "SKILL.md"
+    mirror_skill.write_text("stale skill\n", encoding="utf-8")
+    errors = check_shared_skill_parity()
+    assert any("mirror is stale" in error for error in errors)
+
+
+def test_check_shared_skill_parity_requires_valid_skill_metadata(mocker: MockerFixture, tmp_path: Path) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    source_skill = tmp_path / CANONICAL_SKILLS_DIR / REQUIRED_SHARED_SKILLS[0] / "SKILL.md"
+    source_skill.write_text(
+        "---\nname: wrong-name\ndescription: Valid description\n---\n\nBody\n",
+        encoding="utf-8",
+    )
+    errors = check_shared_skill_parity()
+    assert any("frontmatter name must match" in error for error in errors)
+
+
+def test_sync_generated_files_preserves_agent_metadata_and_generates_outputs(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
     canonical = _write_minimal_agent_fixture(tmp_path)
@@ -137,6 +183,10 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_toml(
     assert sync_generated_files() == []
     for relative_path in GENERATED_AGENT_PROFILES:
         assert (tmp_path / relative_path).read_text(encoding="utf-8") == canonical
+    for skill_name in REQUIRED_SHARED_SKILLS:
+        source_skill = tmp_path / CANONICAL_SKILLS_DIR / skill_name / "SKILL.md"
+        mirror_skill = tmp_path / COPILOT_SKILLS_DIR / skill_name / "SKILL.md"
+        assert source_skill.read_text(encoding="utf-8") == mirror_skill.read_text(encoding="utf-8")
     agent = json.loads((tmp_path / AGENT_JSON).read_text(encoding="utf-8"))
     assert agent["name"] == "test-agent"
     assert agent["model"] == "test-model"
@@ -147,6 +197,7 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_toml(
     assert command == {"description": "Example command", "prompt": "Prompt body"}
     assert check_model_parity() == []
     assert check_prompt_parity() == []
+    assert check_shared_skill_parity() == []
 
 
 def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
@@ -183,4 +234,4 @@ def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
     second = runner.invoke(cast(Any, app), [])
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
-    assert "All agent parity checks passed" in second.stdout
+    assert "All cross-platform agent parity checks passed" in second.stdout

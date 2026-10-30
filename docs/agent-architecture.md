@@ -47,7 +47,7 @@ Run the read-only consistency audit:
 
 ```bash
 python tools/audit/check_gemini_parity.py
-tox -e gemini-parity
+tox -e agent-parity
 ```
 
 Each Gemini GitHub Actions workflow checks out the repository, reads `tools/gemini_model`, and passes that value to the Gemini CLI action. This keeps workflow execution aligned with the canonical model file and removes a separately maintained repository variable.

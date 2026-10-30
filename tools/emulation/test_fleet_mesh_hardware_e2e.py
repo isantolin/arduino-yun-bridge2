@@ -405,11 +405,35 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         if not log_collector.listening_event.wait(timeout=15.0):
             raise RuntimeError("QEMU UART TCP server failed to become ready")
 
-        # Connect the daemon directly to QEMU's TCP-backed UART. The serial
-        # transport recognizes socket:// URLs and does not attempt DTR/RTS
-        # toggles, which are unsupported by the emulator's TCP chardev.
-        qemu_serial_url = f"socket://{CLOUD_HOST}:{PORT_QEMU}"
-        all_procs.append(spawn_daemon_for_node(node_esp32, qemu_serial_url, log_collector))
+        # Match the standalone QEMU runner: expose the TCP UART through a
+        # PTY so McuBridge uses its normal serial-device transport. This also
+        # keeps QEMU's TCP client lifecycle outside the daemon's serial backend.
+        pty_qemu = node_esp32.temp_dir / "ttyQEMU"
+        socat_qemu_cmd = [
+            socat_bin,
+            "-d",
+            "-d",
+            f"pty,link={pty_qemu},raw,echo=0",
+            f"tcp:{CLOUD_HOST}:{PORT_QEMU},retry=30,interval=0.2",
+        ]
+        logger.info("Bridging QEMU UART socket to PTY", pty=str(pty_qemu), port=PORT_QEMU)
+        socat_qemu_proc = subprocess.Popen(
+            socat_qemu_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        all_procs.append(socat_qemu_proc)
+        start_daemon_thread(
+            stream_pump,
+            "socat-qemu",
+            socat_qemu_proc.stdout,
+            log_collector.on_line,
+            "socat-qemu",
+        )
+        if not wait_for_path_ready(pty_qemu, timeout=15.0):
+            raise RuntimeError("Timed out waiting for QEMU PTY bridge")
+        all_procs.append(spawn_daemon_for_node(node_esp32, str(pty_qemu), log_collector))
 
         logger.info("Waiting for all 3 hardware emulators to complete cryptographic synchronization...")
         nodes = (node_mega, node_mkr, node_esp32)

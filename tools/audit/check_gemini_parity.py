@@ -439,7 +439,7 @@ def sync_generated_agent_profiles() -> bool:
             (
                 "---",
                 "name: openwrt-architect-arduino",
-                'description: "Principal architect for Arduino MCU Bridge 2.",'
+                'description: "Principal architect for Arduino MCU Bridge 2.",',
                 "tools: [read, edit, search, execute]",
                 "---",
                 "",

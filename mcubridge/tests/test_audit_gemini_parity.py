@@ -106,10 +106,7 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         mirror = mirror_skill_root / skill_name / "SKILL.md"
         skill.parent.mkdir(parents=True, exist_ok=True)
         mirror.parent.mkdir(parents=True, exist_ok=True)
-        content = (
-            f"---\nname: {skill_name}\ndescription: A test skill for validation.\n"
-            "---\n\n# Test skill\n"
-        )
+        content = f"---\nname: {skill_name}\ndescription: A test skill for validation.\n---\n\n# Test skill\n"
         skill.write_text(content, encoding="utf-8")
         mirror.write_text(content, encoding="utf-8")
     gemini_only_skill = root / ".agent" / "skills" / "gemini-invoke" / "SKILL.md"

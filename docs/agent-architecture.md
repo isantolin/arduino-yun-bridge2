@@ -50,4 +50,4 @@ python tools/audit/check_gemini_parity.py
 tox -e gemini-parity
 ```
 
-GitHub Actions additionally checks that the repository variable `vars.GEMINI_MODEL` matches `tools/gemini_model`. Configure both to the same model identifier. This environment check is a CI-only requirement; a local parity check does not require access to repository variables.
+Each Gemini GitHub Actions workflow checks out the repository, reads `tools/gemini_model`, and passes that value to the Gemini CLI action. This keeps workflow execution aligned with the canonical model file and removes a separately maintained repository variable.

@@ -1,34 +1,28 @@
 ---
 name: protobuf-protocol-change
-description: Change or audit Protobuf schemas, generated bindings, RPC messages, framing, or MCU/MPU protocol contracts. Use when protocol definitions or consumers change.
+description: Change or audit Protobuf schemas, generated bindings, RPC messages, dispatch, or MCU-to-MPU protocol behavior. Use whenever protocol structure or wire communication changes.
 ---
 
 # Protobuf Protocol Change
 
-## Canonical sources
+Canonical schemas:
+- tools/protocol/config_schema.proto
+- tools/protocol/mcu_wire.proto
+- tools/protocol/cloud_gateway.proto
 
-The canonical schema files are under tools/protocol/: config_schema.proto, mcu_wire.proto, and cloud_gateway.proto. Verify the current tree and actual generated-output locations. Follow the repository's generator; never hand-edit generated bindings when a canonical schema exists.
+Inspect imports, options, custom descriptors, generators, and consumers before editing. Do not invent a monolithic mcubridge.proto path or edit generated bindings as the source of truth.
 
-## Impact analysis
+## Required impact trace
 
-1. Identify changed messages, enums, services, fields, options, and constants.
-2. Trace producers and consumers: firmware/library, Python daemon, gateway, clients, RPC dispatch, LuCI where applicable, tests, generated bindings, packaging, and CI.
-3. Determine effects on wire encoding, semantics, validation, frame limits, authentication, retries, errors, and deployment compatibility.
-4. Check duplicate/stale schemas, generated-code drift, unused definitions, and constants duplicated outside their source of truth.
+1. Identify affected message, enum, field, option, command, and direction.
+2. Trace schema -> generated Python/C++ bindings -> firmware encoder/decoder -> MPU daemon -> gateway -> clients/examples -> tests.
+3. Identify producers/consumers, command IDs, dispatch tables, validation, payload bounds, error responses, and capability/version checks.
+4. Determine wire compatibility and mixed-version/partial-upgrade behavior. Never claim compatibility without checking wire semantics and consumers.
+5. Check whether removed/changed fields are used by generated code, persisted data, clients, or integrations.
+6. Update canonical schemas and regenerate outputs. Inspect tools/protocol/generate.py and tox.ini before running the generator.
+7. Update functional, malformed-input, boundary, symmetry, and regression tests. Verify both encoding and decoding.
+8. Run protocol generation/checks and relevant Python, C++, emulator, and CI validation.
 
-## Change rules
+Use Protobuf/Nanopb generated APIs directly where appropriate. Do not duplicate generated parsing, serialization, descriptors, metadata, or dispatch. Keep one canonical definition per contract. Do not reserve removed field numbers/names unless an external contract or user requires it. Validate payload size, enum domains, and malformed/truncated frames at the correct boundary.
 
-- Use native Protobuf/Nanopb APIs and generated types. Do not manually recreate serialization, parsing, copying, or dispatch behavior already provided by the libraries.
-- Preserve wire contracts unless the user explicitly approves a protocol change.
-- Do not add reserved fields/numbers merely as cleanup. Follow repository migration policy and the user's explicit direction.
-- Verify field types, defaults, validation, message bounds, Nanopb static sizes, enum behavior, and version/handshake negotiation.
-- For MCU changes, account for RAM/Flash, stack, CPU, ISR constraints, and supported boards.
-- For gateway changes, verify generated service interfaces and both server/client paths.
-
-## Validation
-
-Run the canonical schema generator/linter, protocol integrity audits, focused tests for affected producers/consumers and malformed inputs, and relevant firmware/Python/gateway checks. Inspect generated diffs; unexpected large changes require explanation.
-
-## Completion report
-
-Summarize schema changes, regenerated artifacts, affected consumers, compatibility consequences, tests, builds/emulation, and deployment coordination.
+Report schemas, generated outputs, consumers covered, compatibility decision, tests, and deployment risks.

@@ -1,31 +1,17 @@
 ---
 name: code-change-verification
-description: Verify changes with appropriate tests, type checks, linters, audits, integration tests, emulation, and complete CI evidence.
+description: Validate code modifications, refactors, tests, generated files, type checks, lint, packaging, emulation, or Pull Request readiness.
 ---
 
 # Code Change Verification
 
-1. Inspect the diff and determine affected languages, components, interfaces, generated artifacts, and deployment targets.
-2. Read tox.ini, pyproject.toml, build manifests, and component docs. Use configured commands and pinned versions as the source of truth.
-3. Establish a focused baseline and run narrow relevant checks first. Do not run every expensive audit for trivial localized/documentation changes.
-4. Select tests based on impact: Python, C++, protocol integrity, LuCI, static analysis, typing, package builds, emulation, security scans, or runtime health audits.
-5. Distinguish regressions from pre-existing failures and infrastructure issues using baseline, logs, and commit SHA.
+1. Read acceptance criteria; identify changed files, public contracts, generated outputs, affected components, and risk.
+2. Select the narrowest tests that genuinely validate behavior. Add regression tests for new defects.
+3. Run focused tests and static checks first. Use tox.ini, pyproject.toml, generator scripts, and CI workflows as source of truth.
+4. Expand by impact: Python, C++, protocol, LuCI, packaging, security, emulation, or hardware checks.
+5. Before treating a PR as ready, obtain successful full CI for the exact PR head SHA and inspect individual jobs. Re-run after code changes that invalidate evidence.
+6. Verify generated artifacts against canonical sources. Do not edit generated staging output instead of its generator.
+7. Distinguish passed, failed, skipped, xfailed, unavailable, and unexecuted checks.
+8. Do not weaken assertions, lower coverage thresholds, suppress diagnostics, or mock primary behavior to pass.
 
-## Test integrity
-
-- Assert observable behavior: return values, state changes, emitted frames, persisted data, errors, logs, or external effects.
-- Reject tautologies, line-hitting tests, discarded results, self-mutation assertions, and tests that bypass the system under test.
-- Use test doubles at justified boundaries; do not mock the primary unit under test.
-- Do not weaken tests, thresholds, or diagnostics to make checks pass. Add regression tests for missed defects.
-
-## CI readiness
-
-- Before marking a PR ready, inspect the full applicable CI suite and latest workflow attempt.
-- Verify required jobs and confirm the run's head SHA matches the latest PR head SHA.
-- Record skipped, cancelled, missing, or permission-blocked jobs.
-- An older green run does not validate a newer commit.
-- Passing CI is evidence for readiness, not authorization to merge.
-
-## Evidence report
-
-For every check record whether it was not run, blocked, failed, or passed. Name emulators/targets. Confirm physical hardware use before claiming hardware validation. Exact WCET, SRAM, Flash, coverage, and performance claims require actual measured output.
+Report each relevant check and exact SHA. For embedded work identify board/target and emulator or physical hardware. For protocol work confirm both directions and generated outputs. For runtime work distinguish unit tests from integration/live-device checks. A queued workflow or prior green SHA does not validate the current PR.

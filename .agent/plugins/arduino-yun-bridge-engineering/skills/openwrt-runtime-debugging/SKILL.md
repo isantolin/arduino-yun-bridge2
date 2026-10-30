@@ -1,21 +1,22 @@
 ---
 name: openwrt-runtime-debugging
-description: Diagnose OpenWrt runtime problems involving services, procd, UBUS, UCI, LuCI, daemon lifecycle, IPC, networking, or package deployment.
+description: Diagnose OpenWrt runtime, procd services, UBUS/UCI IPC, LuCI, networking, package deployment, or MPU daemon behavior.
 ---
 
 # OpenWrt Runtime Debugging
 
-1. Identify OpenWrt release, target architecture, package format, installed package versions, init scripts, service names, and active configuration. Verify on target or from authoritative manifests.
-2. Distinguish build-time configuration from effective UCI values and running process state.
-3. Inspect relevant procd status, service logs, daemon health snapshots, sockets, permissions, filesystem paths, and process ownership.
-4. For host/MPU/MCU or VM boundaries, trace listen addresses, routes, firewall zones, ports, DNS, serial mapping, and runtime configuration. Never assume localhost crosses a VM or host boundary.
-5. For UBUS/LuCI, inspect method signatures, policies, session injection, JSON-RPC response shapes, and frontend error handling. Use snapshot fallback only when part of the actual contract.
-6. Avoid reading /proc/<pid>/fd/* contents; character devices, sockets, and pipes can block. Inspect descriptor symlink metadata or use lsof/fuser when available.
-7. Prefer OpenWrt-native APIs, ubus/UCI interfaces, and existing language libraries over hand-written protocol or shell plumbing when suitable. Do not wrap a native API unless the wrapper adds validation, lifecycle, security, or domain behavior.
-8. Verify installed package/Python API versions; do not assume upstream features exist in an APK or on the target ABI.
-9. Reproduce using the narrowest safe method. Run relevant package build, LuCI, daemon, integration, and emulation tests.
-10. Distinguish host tests, emulation, and physical device tests. Do not modify a live device or perform a destructive install/upgrade without explicit authorization.
+Establish actual OpenWrt release/build, target architecture, package format, installed package versions, init/service definition, runtime configuration, process topology, and whether the target is physical hardware, QEMU/libvirt, or another emulator.
 
-## Completion report
+## Diagnostic sequence
 
-Report release/target, runtime facts, relevant logs/status, root cause, changes, validation, and device-only steps not executed.
+1. Inspect source, package manifests, init scripts, UCI defaults, LuCI RPC calls, and deployment workflow.
+2. Check service state, procd/logread output, process lifecycle, paths, permissions, sockets, interfaces, routes, and firewall boundaries.
+3. Trace the request across LuCI/HTTP, UBUS, daemon asyncio loop, serial transport, MCU, and gateway as applicable.
+4. Compare configured values with effective runtime values. Do not assume localhost, interface binding, device path, or UCI defaults.
+5. Verify UBUS signatures, argument policies, session injection, return types, and frontend error handling at the actual boundary.
+6. Inspect daemon status snapshots and health counters for integration/live-runtime work.
+7. Separate build, installation, boot, service, configuration, IPC, network, and hardware failures.
+
+Prefer native UBUS/UCI/procd/LuCI and existing library APIs. Do not add wrappers around direct API calls without a real domain/security/lifecycle/compatibility reason. Treat RPC arguments, paths, process requests, and remote commands as untrusted. Preserve least privilege, explicit errors, atomic persistence, and safe defaults. Avoid intrusive/destructive commands without authorization.
+
+Use actual tox, package build, emulation, and deployment scripts. State whether validation occurred in a VM, emulator, or physical device. Include logs, status evidence, network path, package version, and limitations.

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Security and Crypto Review"
+  short_description: "Review security boundaries, crypto use, and untrusted inputs"
+  default_prompt: "Review this change for security and cryptographic risks."
+policy:
+  allow_implicit_invocation: true

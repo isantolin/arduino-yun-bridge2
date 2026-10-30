@@ -1,0 +1,6 @@
+interface:
+  display_name: "Code Change Verification"
+  short_description: "Run proportionate tests and verify exact CI evidence"
+  default_prompt: "Determine and execute the appropriate verification for this change."
+policy:
+  allow_implicit_invocation: true

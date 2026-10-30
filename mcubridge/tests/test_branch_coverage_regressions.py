@@ -9,25 +9,22 @@ import pytest
 
 import mcubridge.state.storage as storage_mod
 from mcubridge.state.context import RuntimeState
+from mcubridge.state.storage import LmdbCache
 
 
-def test_open_lmdb_env_returns_none_after_retry_exhaustion(
+def test_lmdb_cache_survives_persistent_open_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A persistent LMDB open failure must be reported, not hidden as a usable DB."""
+    """A persistent LMDB open failure must leave the public cache safely unavailable."""
     open_mock = Mock(side_effect=OSError("storage unavailable"))
     monkeypatch.setattr(storage_mod.lmdb, "open", open_mock)
 
-    env, db = storage_mod._open_lmdb_env(
-        str(tmp_path / "unavailable.db"),
-        b"test",
-        "data.mdb",
-    )
+    cache = LmdbCache(str(tmp_path / "unavailable.db"))
 
     assert open_mock.call_count == 2
-    assert env is None
-    assert db is None
+    assert cache.env is None
+    assert cache.db is None
 
 
 def test_runtime_state_restores_explicit_metric_counters() -> None:

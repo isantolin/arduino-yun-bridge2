@@ -323,3 +323,49 @@ async def test_lmdb_cache_unavailable_environment_fallback() -> None:
     assert "key" not in cache
     await cache.close()
     cache._close_sync()
+
+
+async def test_lmdb_worker_callbacks_handle_environment_closing_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise defensive worker-side None checks through public async operations."""
+    deque = LmdbDeque(str(tmp_path / "deque_race.db"))
+    cache = LmdbCache(str(tmp_path / "cache_race.db"))
+
+    async def run_with_missing_environment(
+        target: LmdbDeque | LmdbCache, func: object, *args: object, **kwargs: object
+    ) -> object:
+        original_env = target.env
+        target.env = None
+        try:
+            return func(*args, **kwargs)  # type: ignore[operator]
+        finally:
+            target.env = original_env
+
+    try:
+        original_run_sync = anyio.to_thread.run_sync
+
+        async def deque_worker(func: object, *args: object, **kwargs: object) -> object:
+            return await run_with_missing_environment(deque, func, *args, **kwargs)
+
+        monkeypatch.setattr(anyio.to_thread, "run_sync", deque_worker)
+        assert await deque.append(b"raced") == 0
+        await deque.clear()
+        await deque.vacuum()
+        await deque.close()
+        monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
+        await deque.close()
+
+        async def cache_worker(func: object, *args: object, **kwargs: object) -> object:
+            return await run_with_missing_environment(cache, func, *args, **kwargs)
+
+        monkeypatch.setattr(anyio.to_thread, "run_sync", cache_worker)
+        await cache.set("raced", b"value")
+        assert await cache.get("raced", b"fallback") == b"fallback"
+        await cache.close()
+        monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
+        await cache.close()
+    finally:
+        monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
+        await deque.close()
+        await cache.close()

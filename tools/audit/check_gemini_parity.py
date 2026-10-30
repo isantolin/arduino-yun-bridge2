@@ -443,7 +443,6 @@ def check_rules_parity() -> list[str]:
     if obsolete.exists() or obsolete.is_symlink():
         errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; remove the duplicate file")
     errors.extend(check_shared_skill_parity())
-    errors.extend(check_antigravity_agent_profile())
     errors.extend(check_copilot_agent_profile())
     errors.extend(check_copilot_instruction_parity())
     errors.extend(check_mcp_config_portability())

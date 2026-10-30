@@ -137,14 +137,17 @@ def check_mcp_config_portability() -> list[str]:
         return [f"Cannot read MCP configuration {config_path.relative_to(ROOT)}: {exc}"]
     if not isinstance(config, dict):
         return [f"{config_path.relative_to(ROOT)} must contain a JSON object"]
-    servers = config.get("mcpServers")
-    if not isinstance(servers, dict):
+    config_data = cast(dict[str, object], config)
+    servers_value = config_data.get("mcpServers")
+    if not isinstance(servers_value, dict):
         return [f"{config_path.relative_to(ROOT)} must define an mcpServers object"]
+    servers = cast(dict[str, object], servers_value)
     errors: list[str] = []
-    for server_name, server_config in servers.items():
-        if not isinstance(server_config, dict):
+    for server_name, server_config_value in servers.items():
+        if not isinstance(server_config_value, dict):
             errors.append(f"{config_path.relative_to(ROOT)}: {server_name} must be an object")
             continue
+        server_config = cast(dict[str, object], server_config_value)
         command = server_config.get("command")
         if isinstance(command, str) and (Path(command).is_absolute() or PureWindowsPath(command).is_absolute()):
             errors.append(

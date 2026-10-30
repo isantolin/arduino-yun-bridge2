@@ -8,7 +8,6 @@ Tool-specific agent profiles and GitHub command TOML files are generated artifac
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tomllib
 from pathlib import Path
@@ -124,10 +123,14 @@ def check_prompt_parity() -> list[str]:
     command_names = {path.stem for path in command_dir.glob("gemini-*.toml") if path.is_file()}
     if not workflow_names:
         errors.append(f"No Gemini workflow Markdown files found in {workflow_dir}")
-    for name in sorted(workflow_names - command_names):
-        errors.append(f"Missing command TOML for workflow: {name}")
-    for name in sorted(command_names - workflow_names):
-        errors.append(f"Orphan command TOML without workflow Markdown: {name}")
+    errors.extend(
+        f"Missing command TOML for workflow: {name}"
+        for name in sorted(workflow_names - command_names)
+    )
+    errors.extend(
+        f"Orphan command TOML without workflow Markdown: {name}"
+        for name in sorted(command_names - workflow_names)
+    )
     for name in sorted(workflow_names & command_names):
         md_path = workflow_dir / f"{name}.md"
         toml_path = command_dir / f"{name}.toml"
@@ -174,7 +177,7 @@ def check_rules_parity() -> list[str]:
             errors.append(f"{relative_path} must be a symlink to {expected_target}")
             continue
         try:
-            actual_target = os.readlink(target)
+            actual_target = target.readlink().as_posix()
             if actual_target != expected_target:
                 errors.append(f"{relative_path} points to {actual_target!r}, expected {expected_target!r}")
                 continue

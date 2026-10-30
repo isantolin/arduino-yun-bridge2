@@ -261,3 +261,71 @@ async def test_lmdb_deque_no_env_safety() -> None:
         await deque.peek()
     await deque.vacuum()
     await deque.close()
+
+
+
+async def test_lmdb_closed_resource_operations_are_safe(tmp_path: Path) -> None:
+    """Exercise idempotent lifecycle and closed-resource fallbacks."""
+    deque = LmdbDeque(str(tmp_path / "closed_deque.db"))
+    await deque.append(b"entry")
+    await deque.close()
+    await deque.close()
+    assert len(deque) == 0
+
+    # A closed deque must tolerate cleanup/vacuum calls without reopening LMDB.
+    await deque.clear()
+    await deque.vacuum()
+    deque._clear_sync()
+    deque._vacuum_sync()
+    deque._close_sync()
+    assert len(deque) == 0
+
+    cache = LmdbCache(str(tmp_path / "closed_cache.db"))
+    await cache.set("before-close", b"value")
+    await cache.close()
+    await cache.close()
+    await cache.set("after-close", b"ignored")
+    assert await cache.get("after-close", b"default") == b"default"
+    assert cache._get_sync("after-close", b"default") == b"default"
+    cache._set_sync("after-close", b"ignored")
+    cache._close_sync()
+    assert len(cache) == 0
+    assert "before-close" not in cache
+
+
+async def test_lmdb_deque_missing_database_handles_all_operations() -> None:
+    """The unavailable-environment state is a safe no-op for mutations."""
+    deque = LmdbDeque(":memory:")
+    deque.is_mem = False
+    deque.env = None
+    deque.db = None
+
+    assert await deque.append(b"discarded") == 0
+    await deque.clear()
+    deque._clear_sync()
+    await deque.vacuum()
+    deque._vacuum_sync()
+    await deque.close()
+    deque._close_sync()
+    assert len(deque) == 0
+    with pytest.raises(IndexError, match="popleft from empty deque"):
+        await deque.popleft()
+    with pytest.raises(IndexError, match="peek from empty deque"):
+        await deque.peek()
+
+
+async def test_lmdb_cache_unavailable_environment_fallback() -> None:
+    """Cache read/write and synchronous inspection tolerate a missing environment."""
+    cache = LmdbCache(":memory:")
+    cache.is_mem = False
+    cache.env = None
+    cache.db = None
+
+    await cache.set("key", b"value")
+    assert await cache.get("key", b"fallback") == b"fallback"
+    assert cache._get_sync("key", b"fallback") == b"fallback"
+    cache._set_sync("key", b"value")
+    assert len(cache) == 0
+    assert "key" not in cache
+    await cache.close()
+    cache._close_sync()

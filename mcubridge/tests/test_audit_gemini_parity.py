@@ -16,7 +16,6 @@ from tools.audit.check_gemini_parity import (
     MODEL_FILE,
     SYMLINKS,
     app,
-    check_environment_model_parity,
     check_github_action_model_wiring,
     check_model_parity,
     check_prompt_parity,
@@ -28,12 +27,16 @@ runner = CliRunner()
 
 
 def _write_minimal_agent_fixture(root: Path) -> str:
-    canonical = (
-        "---\n"
-        "name: test-agent\n"
-        'description: "Test agent profile"\n'
-        "---\n\n"
-        "# Canonical Rules\n"
+    canonical = "\n".join(
+        [
+            "---",
+            "name: test-agent",
+            'description: "Test agent profile"',
+            "---",
+            "",
+            "# Canonical Rules",
+            "",
+        ]
     )
     (root / "GEMINI.md").write_text(canonical, encoding="utf-8")
     for relative_path, target in SYMLINKS.items():
@@ -62,32 +65,6 @@ def test_check_model_parity_success() -> None:
     assert check_model_parity() == []
 
 
-def test_check_environment_model_parity_matches(mocker: MockerFixture, tmp_path: Path) -> None:
-    (tmp_path / MODEL_FILE).parent.mkdir(parents=True)
-    (tmp_path / MODEL_FILE).write_text("test-model\n", encoding="utf-8")
-    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
-    mocker.patch.dict("os.environ", {"GEMINI_MODEL": "test-model"})
-    assert check_environment_model_parity() == []
-
-
-def test_check_environment_model_parity_requires_configured_model(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
-    (tmp_path / MODEL_FILE).parent.mkdir(parents=True)
-    (tmp_path / MODEL_FILE).write_text("test-model\n", encoding="utf-8")
-    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
-    mocker.patch.dict("os.environ", {}, clear=True)
-    assert "GEMINI_MODEL is unset" in check_environment_model_parity()[0]
-
-
-def test_check_environment_model_parity_detects_drift(mocker: MockerFixture, tmp_path: Path) -> None:
-    (tmp_path / MODEL_FILE).parent.mkdir(parents=True)
-    (tmp_path / MODEL_FILE).write_text("canonical-model\n", encoding="utf-8")
-    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
-    mocker.patch.dict("os.environ", {"GEMINI_MODEL": "different-model"})
-    assert "!= canonical model" in check_environment_model_parity()[0]
-
-
 def test_check_prompt_parity_detects_mismatched_command(mocker: MockerFixture, tmp_path: Path) -> None:
     workflow_dir = tmp_path / ".agent" / "workflows"
     command_dir = tmp_path / ".github" / "commands"
@@ -107,26 +84,22 @@ def test_check_prompt_parity_detects_mismatched_command(mocker: MockerFixture, t
     assert "prompt mismatch" in errors[0]
 
 
-def test_check_github_action_model_wiring_requires_canonical_variable(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
-    workflow_dir = tmp_path / ".agent" / "workflows"
-    workflow_dir.mkdir(parents=True)
-    (workflow_dir / "gemini-example.md").write_text(
+def test_check_github_action_model_wiring_requires_canonical_file(mocker: MockerFixture, tmp_path: Path) -> None:
+    (tmp_path / ".agent" / "workflows").mkdir(parents=True)
+    (tmp_path / ".agent" / "workflows" / "gemini-example.md").write_text(
         "---\ndescription: Example\n---\n\nPrompt\n",
         encoding="utf-8",
     )
-    action_dir = tmp_path / ".github" / "workflows"
-    action_dir.mkdir(parents=True)
-    (action_dir / "gemini-example.yml").write_text(
-        "with:\n  gemini_model: gemini-4-argon\n",
+    workflow_dir = tmp_path / ".github" / "workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "gemini-example.yml").write_text(
+        "gemini_model: gemini-4-argon\n",
         encoding="utf-8",
     )
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     errors = check_github_action_model_wiring()
     assert len(errors) == 1
-    assert "vars.GEMINI_MODEL" in errors[0]
-
+    assert "tools/gemini_model" in errors[0]
 
 def test_check_rules_parity_requires_symlinks_and_generated_profiles(
     mocker: MockerFixture, tmp_path: Path
@@ -188,7 +161,17 @@ def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
     action_dir = tmp_path / ".github" / "workflows"
     action_dir.mkdir(parents=True)
     (action_dir / "gemini-example.yml").write_text(
-        "with:\n  gemini_model: vars.GEMINI_MODEL\n",
+        "\n".join(
+            [
+                "      - name: 'Checkout repository'",
+                "        uses: 'actions/checkout@v7'",
+                "      - name: 'Read canonical Gemini model'",
+                "        id: 'gemini_model'",
+                "        run: |-\\n          model=''\\n          IFS= read -r model < tools/gemini_model || true",
+                "      - uses: 'google-github-actions/run-gemini-cli@v0'",
+                "        with:\\n          gemini_model: '${{ steps.gemini_model.outputs.model }}'",
+            ]
+        ),
         encoding="utf-8",
     )
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)

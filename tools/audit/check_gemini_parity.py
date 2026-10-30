@@ -137,14 +137,10 @@ def check_prompt_parity() -> list[str]:
         try:
             md_description, md_prompt = _parse_md(md_path)
             with toml_path.open("rb") as file_handle:
-                toml_data: object = tomllib.load(file_handle)
+                command: dict[str, object] = tomllib.load(file_handle)
         except (OSError, tomllib.TOMLDecodeError, yaml.YAMLError, ValueError) as exc:
             errors.append(f"{name}: cannot parse workflow pair: {exc}")
             continue
-        if not isinstance(toml_data, dict):
-            errors.append(f"{toml_path}: TOML root must be a table")
-            continue
-        command = cast(dict[str, object], toml_data)
         toml_description = command.get("description")
         toml_prompt = command.get("prompt")
         if not isinstance(toml_description, str):

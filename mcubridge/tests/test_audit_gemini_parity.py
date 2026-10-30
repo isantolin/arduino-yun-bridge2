@@ -302,6 +302,10 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_outputs(
     assert "commandExecutionPolicy: sandbox" in antigravity_profile
     assert "  - view_file" in antigravity_profile
     assert "  - run_command" in antigravity_profile
+    assert "  - invoke_subagent" in antigravity_profile
+    assert "  - manage_task" in antigravity_profile
+    assert "  - manage_subagents" in antigravity_profile
+    assert "  - send_message" in antigravity_profile
     assert "  - skills/ci-failure-diagnosis" in antigravity_profile
     assert antigravity_profile.endswith(canonical)
     assert check_antigravity_agent_profile() == []

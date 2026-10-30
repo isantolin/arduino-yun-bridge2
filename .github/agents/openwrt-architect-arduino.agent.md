@@ -1,6 +1,6 @@
 ---
 name: openwrt-architect-arduino
-description: "Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf, daemon, gateway, security, and CI."
+description: "Principal architect for Arduino MCU Bridge 2."
 tools: [read, edit, search, execute]
 ---
 

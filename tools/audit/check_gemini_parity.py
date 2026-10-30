@@ -203,15 +203,21 @@ def check_shared_skill_parity() -> list[str]:
         return [f"Canonical shared Skills directory missing: {CANONICAL_SKILLS_DIR}"]
 
     source_names = {path.name for path in source_root.iterdir() if path.is_dir()}
-    for required_name in REQUIRED_SHARED_SKILLS:
-        if required_name not in source_names:
-            errors.append(f"Required shared Skill missing: {CANONICAL_SKILLS_DIR / required_name / 'SKILL.md'}")
+    errors.extend(
+        f"Required shared Skill missing: {CANONICAL_SKILLS_DIR / required_name / 'SKILL.md'}"
+        for required_name in REQUIRED_SHARED_SKILLS
+        if required_name not in source_names
+    )
 
     mirror_names = {path.name for path in mirror_root.iterdir() if path.is_dir()} if mirror_root.is_dir() else set()
-    for orphan in sorted(mirror_names - source_names):
-        errors.append(f"Orphan generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / orphan}")
-    for missing in sorted(source_names - mirror_names):
-        errors.append(f"Missing generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / missing}")
+    errors.extend(
+        f"Orphan generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / orphan}"
+        for orphan in sorted(mirror_names - source_names)
+    )
+    errors.extend(
+        f"Missing generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / missing}"
+        for missing in sorted(source_names - mirror_names)
+    )
 
     for name in sorted(source_names):
         source_dir = source_root / name
@@ -392,7 +398,7 @@ def sync_generated_agent_profiles() -> bool:
             (
                 "---",
                 "name: openwrt-architect-arduino",
-                'description: "Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf, daemon, gateway, security, and CI."',
+                'description: "Principal architect for Arduino MCU Bridge 2.",'
                 "tools: [read, edit, search, execute]",
                 "---",
                 "",
@@ -472,7 +478,10 @@ def sync_generated_files() -> list[str]:
 
 
 app = typer.Typer(
-    help="Validate and synchronize cross-platform agent profiles, shared Skills, Gemini workflow commands, and model configuration.",
+    help=(
+        "Validate and synchronize cross-platform agent profiles, shared Skills, "
+        "Gemini workflow commands, and model configuration."
+    ),
     add_completion=False,
 )
 
@@ -481,7 +490,14 @@ app = typer.Typer(
 def main(
     fix: Annotated[
         bool,
-        typer.Option("--fix", "-f", help="Regenerate agent profiles, agent.json instructions, Copilot Skill mirrors, and command TOML files"),
+        typer.Option(
+            "--fix",
+            "-f",
+            help=(
+                "Regenerate agent profiles, agent.json instructions, Copilot Skill mirrors, "
+                "and command TOML files"
+            ),
+        ),
     ] = False,
 ) -> None:
     errors = sync_generated_files() if fix else []
@@ -495,7 +511,10 @@ def main(
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         raise typer.Exit(code=1)
-    print("All cross-platform agent parity checks passed (instructions, Skills, profiles, Gemini model, and workflow-command pairs).")
+    print(
+        "All cross-platform agent parity checks passed "
+        "(instructions, Skills, profiles, Gemini model, and workflow-command pairs)."
+    )
 
 
 if __name__ == "__main__":

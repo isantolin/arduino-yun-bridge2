@@ -26,12 +26,15 @@ def package_skill(skill_dir: Path, output_dir: Path) -> Path:
     if not skill_file.is_file():
         raise FileNotFoundError(f"Missing required Skill manifest: {skill_file}")
 
+    paths = sorted(skill_dir.rglob("*"))
+    symlinks = [path for path in paths if path.is_symlink()]
+    if symlinks:
+        raise ValueError(f"Skill packages must not contain symbolic links: {symlinks[0]}")
+
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / f"{skill_dir.name}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(skill_dir.rglob("*")):
-            if path.is_symlink():
-                raise ValueError(f"Skill packages must not contain symbolic links: {path}")
+        for path in paths:
             if not path.is_file():
                 continue
             relative_path = path.relative_to(skill_dir).as_posix()

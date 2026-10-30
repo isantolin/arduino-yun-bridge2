@@ -58,11 +58,16 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         profile.write_text(canonical, encoding="utf-8")
     copilot_profile = root / COPILOT_AGENT_PROFILE
     copilot_profile.parent.mkdir(parents=True, exist_ok=True)
-    copilot_body = canonical.split("---", 2)[2].lstrip("\\r\\n").strip()
+    copilot_body = canonical.split("---", 2)[2].lstrip("\r\n").strip()
+    copilot_frontmatter = (
+        "---\n"
+        "name: openwrt-architect-arduino\n"
+        "description: Test architect\n"
+        "tools: [read, edit, search, execute]\n"
+        "---\n\n"
+    )
     copilot_profile.write_text(
-        "---\\nname: openwrt-architect-arduino\\ndescription: Test architect\\ntools: [read, edit, search, execute]\\n---\\n\\n"
-        + copilot_body
-        + "\\n",
+        copilot_frontmatter + copilot_body + "\n",
         encoding="utf-8",
     )
     agent_path = root / AGENT_JSON

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "arduino-yun-bridge-engineering",
+  "version": "1.0.0",
+  "description": "Seven engineering skills for Arduino MCU Bridge 2: CI, Protobuf, embedded resources, OpenWrt, verification, security, and code review."
+}

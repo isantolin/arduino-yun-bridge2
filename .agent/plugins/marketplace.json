@@ -1,0 +1,16 @@
+{
+  "name": "arduino-yun-bridge-marketplace",
+  "interface": {
+    "displayName": "Arduino MCU Bridge 2",
+    "shortDescription": "Cross-platform engineering Skills for Arduino MCU Bridge 2"
+  },
+  "plugins": [
+    {
+      "name": "arduino-yun-bridge-engineering",
+      "source": {
+        "source": "local",
+        "path": "./arduino-yun-bridge-engineering"
+      }
+    }
+  ]
+}

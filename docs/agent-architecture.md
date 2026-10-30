@@ -42,19 +42,19 @@ The .agent/workflows/*.md files and .github/commands/*.toml files remain Gemini/
 
 Files under .github/instructions/ contain short, path-scoped guidance for Python, firmware, Protobuf, and OpenWrt code. They supplement, rather than duplicate, the repository-wide guide.
 
-## ChatGPT Skill export
+## ChatGPT Skills and Plugin distribution
 
-Generate one ZIP archive per Skill for manual upload through the ChatGPT Skills interface on eligible accounts/workspaces. Each ZIP contains exactly one top-level folder with SKILL.md and any supporting files, as required by OpenAI's Skill bundle format:
+Generate one ZIP archive per Skill for standalone Skill import on supported ChatGPT desktop surfaces, plus one combined Agent Plugin ZIP containing all seven Skills for ChatGPT/Codex plugin installation:
 
     python tools/export_chatgpt_skills.py
 
-The default output is dist/chatgpt-skills/. To choose another directory:
+The default output is dist/chatgpt-skills/. The output includes seven individual Skill archives and arduino-yun-bridge-engineering.zip. To choose another directory:
 
     python tools/export_chatgpt_skills.py --output /tmp/chatgpt-skills
 
 In an eligible ChatGPT workspace, open Plugins > Skills, choose Create > Upload from your computer, and upload the ZIP for each Skill you want to install. Feature availability and upload permissions depend on the account, product surface, and workspace administrator settings. Review the contents before installing. These ZIP files are build artifacts and are not committed to the repository.
 
-For broader ChatGPT/Codex distribution through the Plugin Directory, package the Skills in a Plugin when that distribution is required. Plugin review, installation, and authorization are separate steps and are not implied by this repository's Skill files.
+For workspace distribution through GitHub, an Agent Plugins marketplace is maintained at .agents/plugins/marketplace.json. A workspace administrator can import the repository in Admin > Plugins > Add > Import marketplace, using the repository URL and Path .agents/plugins, then configure the plugin installation policy. For local or personal development, the combined Plugin ZIP can be installed through a supported local marketplace flow. Plugin availability, installation permissions, and workspace authorization are separate steps and are not implied by the repository files.
 
 ## Architecture decisions
 
@@ -62,7 +62,7 @@ Significant long-lived design choices are recorded as ADRs in docs/architecture/
 
 ## Synchronization and validation
 
-Generate the Copilot-native agent adapter, Gemini agent profile, agent.json instructions, Copilot Skill mirror, and Gemini command TOML files:
+Generate the Copilot-native agent adapter, Gemini agent profile, agent.json instructions, Copilot Skill mirrors, ChatGPT plugin marketplace and plugin Skill copies, and Gemini command TOML files:
 
     python tools/audit/check_gemini_parity.py --fix
 

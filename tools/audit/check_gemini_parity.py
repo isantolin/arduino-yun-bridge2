@@ -28,6 +28,10 @@ COPILOT_AGENT_TOOLS = ("read", "edit", "search", "execute")
 AGENT_JSON = Path(".agent/agents/openwrt-architect-arduino/agent.json")
 MODEL_FILE = Path("tools/gemini_model")
 CHATGPT_SKILL_EXPORT_SCRIPT = Path("tools/export_chatgpt_skills.py")
+CHATGPT_PLUGIN_ROOT = Path(".agents/plugins/arduino-yun-bridge-engineering")
+CHATGPT_PLUGIN_MARKETPLACE = Path(".agents/plugins/marketplace.json")
+CHATGPT_PLUGIN_NAME = "arduino-yun-bridge-engineering"
+CHATGPT_PLUGIN_VERSION = "1.0.0"
 CANONICAL_SKILLS_DIR = Path(".agents/skills")
 COPILOT_SKILLS_DIR = Path(".github/skills")
 REQUIRED_SHARED_SKILLS = (
@@ -101,7 +105,154 @@ def check_chatgpt_skill_export() -> list[str]:
     missing = [name for name in REQUIRED_SHARED_SKILLS if f'"{name}"' not in content]
     if missing:
         return [f"{CHATGPT_SKILL_EXPORT_SCRIPT} does not package shared Skills: {', '.join(missing)}"]
+    if "def package_plugin(" not in content or CHATGPT_PLUGIN_NAME not in content:
+        return [f"{CHATGPT_SKILL_EXPORT_SCRIPT} does not export the shared ChatGPT/Codex Plugin"]
     return []
+
+
+
+def check_chatgpt_plugin_parity() -> list[str]:
+    """Validate the ChatGPT/Codex plugin marketplace and generated Skill bundle."""
+    errors: list[str] = []
+    marketplace_path = ROOT / CHATGPT_PLUGIN_MARKETPLACE
+    plugin_root = ROOT / CHATGPT_PLUGIN_ROOT
+    try:
+        marketplace: object = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"Cannot read ChatGPT plugin marketplace {CHATGPT_PLUGIN_MARKETPLACE}: {exc}"]
+    if not isinstance(marketplace, dict):
+        return [f"{CHATGPT_PLUGIN_MARKETPLACE} must contain a JSON object"]
+    marketplace_data = cast(dict[str, object], marketplace)
+    plugins = marketplace_data.get("plugins")
+    if not isinstance(plugins, list):
+        errors.append(f"{CHATGPT_PLUGIN_MARKETPLACE}: plugins must be a list")
+    else:
+        entries = [entry for entry in plugins if isinstance(entry, dict)]
+        selected = next(
+            (entry for entry in entries if entry.get("name") == CHATGPT_PLUGIN_NAME),
+            None,
+        )
+        if selected is None:
+            errors.append(f"{CHATGPT_PLUGIN_MARKETPLACE}: missing plugin {CHATGPT_PLUGIN_NAME}")
+        else:
+            source = selected.get("source")
+            if (
+                not isinstance(source, dict)
+                or source.get("source") != "local"
+                or source.get("path") != f"./{CHATGPT_PLUGIN_NAME}"
+            ):
+                errors.append(
+                    f"{CHATGPT_PLUGIN_MARKETPLACE}: plugin source must be local ./{CHATGPT_PLUGIN_NAME}"
+                )
+
+    manifest_path = plugin_root / "plugin.json"
+    try:
+        manifest: object = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return errors + [f"Cannot read ChatGPT plugin manifest {manifest_path}: {exc}"]
+    if not isinstance(manifest, dict):
+        return errors + [f"{manifest_path} must contain a JSON object"]
+    manifest_data = cast(dict[str, object], manifest)
+    if manifest_data.get("name") != CHATGPT_PLUGIN_NAME:
+        errors.append(f"{manifest_path}: name must be {CHATGPT_PLUGIN_NAME!r}")
+    if manifest_data.get("version") != CHATGPT_PLUGIN_VERSION:
+        errors.append(f"{manifest_path}: version must be {CHATGPT_PLUGIN_VERSION!r}")
+    description = manifest_data.get("description")
+    if not isinstance(description, str) or not description.strip():
+        errors.append(f"{manifest_path}: description must be a non-empty string")
+
+    for name in REQUIRED_SHARED_SKILLS:
+        canonical_dir = ROOT / CANONICAL_SKILLS_DIR / name
+        plugin_skill_dir = plugin_root / "skills" / name
+        if not canonical_dir.is_dir():
+            errors.append(f"Canonical Skill missing for plugin {name}: {canonical_dir}")
+            continue
+        if not plugin_skill_dir.is_dir():
+            errors.append(f"Plugin is missing Skill {name}: {plugin_skill_dir}")
+            continue
+        plugin_paths = list(plugin_skill_dir.rglob("*"))
+        if any(path.is_symlink() for path in plugin_paths):
+            errors.append(f"Plugin Skill must not contain symlinks: {plugin_skill_dir}")
+            continue
+        canonical_files = {
+            path.relative_to(canonical_dir).as_posix(): path.read_bytes()
+            for path in canonical_dir.rglob("*")
+            if path.is_file()
+        }
+        plugin_files = {
+            path.relative_to(plugin_skill_dir).as_posix(): path.read_bytes()
+            for path in plugin_paths
+            if path.is_file()
+        }
+        if canonical_files != plugin_files:
+            errors.append(f"Generated ChatGPT plugin Skill is stale: {plugin_skill_dir}")
+    return errors
+
+
+def sync_chatgpt_plugin() -> bool:
+    """Generate a GitHub-importable Agent Plugins marketplace and its Skill bundle."""
+    plugin_root = ROOT / CHATGPT_PLUGIN_ROOT
+    marketplace_path = ROOT / CHATGPT_PLUGIN_MARKETPLACE
+    plugin_manifest = {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+        "name": CHATGPT_PLUGIN_NAME,
+        "version": CHATGPT_PLUGIN_VERSION,
+        "description": (
+            "Seven engineering skills for Arduino MCU Bridge 2: CI, Protobuf, embedded "
+            "resources, OpenWrt, verification, security, and code review."
+        ),
+    }
+    marketplace = {
+        "name": "arduino-yun-bridge-marketplace",
+        "interface": {
+            "displayName": "Arduino MCU Bridge 2",
+            "shortDescription": "Cross-platform engineering Skills for Arduino MCU Bridge 2",
+        },
+        "plugins": [
+            {
+                "name": CHATGPT_PLUGIN_NAME,
+                "source": {
+                    "source": "local",
+                    "path": f"./{CHATGPT_PLUGIN_NAME}",
+                },
+            }
+        ],
+    }
+    try:
+        source_root = ROOT / CANONICAL_SKILLS_DIR
+        missing = [
+            name for name in REQUIRED_SHARED_SKILLS
+            if not (source_root / name / "SKILL.md").is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "Missing canonical Skills for ChatGPT plugin: " + ", ".join(missing)
+            )
+        if plugin_root.is_symlink():
+            plugin_root.unlink()
+        elif plugin_root.exists():
+            shutil.rmtree(plugin_root)
+        plugin_root.mkdir(parents=True, exist_ok=True)
+        (plugin_root / "plugin.json").write_text(
+            json.dumps(plugin_manifest, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        for name in REQUIRED_SHARED_SKILLS:
+            shutil.copytree(
+                source_root / name,
+                plugin_root / "skills" / name,
+            )
+        marketplace_path.parent.mkdir(parents=True, exist_ok=True)
+        marketplace_path.write_text(
+            json.dumps(marketplace, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"Failed to synchronize ChatGPT plugin: {exc}", file=sys.stderr)
+        return False
+    print(f" Generated {CHATGPT_PLUGIN_MARKETPLACE}")
+    print(f" Generated {CHATGPT_PLUGIN_ROOT}")
+    return True
 
 
 def check_model_parity() -> list[str]:
@@ -524,6 +675,8 @@ def sync_generated_files() -> list[str]:
         errors.append("Failed to synchronize agent.json")
     if not sync_generated_skill_mirror():
         errors.append("Failed to generate Copilot Skill mirrors")
+    if not sync_chatgpt_plugin():
+        errors.append("Failed to generate ChatGPT Plugin marketplace and Skill bundle")
     if not sync_workflow_commands():
         errors.append("Failed to generate GitHub command TOML files")
     return errors
@@ -554,6 +707,7 @@ def main(
 ) -> None:
     errors = sync_generated_files() if fix else []
     errors.extend(check_chatgpt_skill_export())
+    errors.extend(check_chatgpt_plugin_parity())
     errors.extend(check_model_parity())
     errors.extend(check_prompt_parity())
     errors.extend(check_github_action_model_wiring())

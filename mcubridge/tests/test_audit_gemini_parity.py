@@ -12,25 +12,27 @@ from typer.testing import CliRunner
 
 from tools.audit.check_gemini_parity import (
     AGENT_JSON,
+    ANTIGRAVITY_AGENT_PROFILE,
+    ANTIGRAVITY_AGENT_SKILLS,
+    ANTIGRAVITY_AGENT_TOOLS,
     CANONICAL_SKILLS_DIR,
     COPILOT_SCOPED_INSTRUCTIONS,
     COPILOT_SKILLS_DIR,
     CHATGPT_SKILL_EXPORT_SCRIPT,
-    GENERATED_AGENT_PROFILES,
-    GEMINI_WORKFLOW_ONLY_SKILLS,
     COPILOT_AGENT_PROFILE,
     MODEL_FILE,
     REQUIRED_SHARED_SKILLS,
     SYMLINKS,
     app,
     check_chatgpt_skill_export,
+    check_antigravity_agent_profile,
     check_copilot_agent_profile,
     check_github_action_model_wiring,
     check_model_parity,
     check_prompt_parity,
     check_rules_parity,
     check_shared_skill_parity,
-    check_gemini_workflow_skill_scoping,
+    check_mcp_config_portability,
     sync_generated_files,
 )
 
@@ -38,30 +40,38 @@ runner = CliRunner()
 
 
 def _write_minimal_agent_fixture(root: Path) -> str:
-    canonical = "\n".join(
-        [
-            "---",
-            "name: test-agent",
-            'description: "Test agent profile"',
-            "---",
-            "",
-            "# Canonical Rules",
-            "",
-        ]
-    )
+    canonical = "# Canonical Rules\n"
     (root / "GEMINI.md").write_text(canonical, encoding="utf-8")
     for relative_path, target in SYMLINKS.items():
         link = root / relative_path
         link.parent.mkdir(parents=True, exist_ok=True)
         link.symlink_to(target)
     (root / ".agents").symlink_to(".agent")
-    for relative_path in GENERATED_AGENT_PROFILES:
-        profile = root / relative_path
-        profile.parent.mkdir(parents=True, exist_ok=True)
-        profile.write_text(canonical, encoding="utf-8")
+
+    antigravity_profile = root / ANTIGRAVITY_AGENT_PROFILE
+    antigravity_profile.parent.mkdir(parents=True, exist_ok=True)
+    antigravity_frontmatter = [
+        "---",
+        "name: openwrt-architect-arduino",
+        "description: Test architect",
+        "mainAgent: true",
+        "subagent: true",
+        "model: inherit",
+        "commandExecutionPolicy: sandbox",
+        "tools:",
+        *[f"  - {tool}" for tool in ANTIGRAVITY_AGENT_TOOLS],
+        "skills:",
+        *[f"  - {skill}" for skill in ANTIGRAVITY_AGENT_SKILLS],
+        "---",
+        "",
+    ]
+    antigravity_profile.write_text(
+        "\n".join(antigravity_frontmatter) + canonical,
+        encoding="utf-8",
+    )
+
     copilot_profile = root / COPILOT_AGENT_PROFILE
     copilot_profile.parent.mkdir(parents=True, exist_ok=True)
-    copilot_body = canonical.split("---", 2)[2].lstrip("\r\n").strip()
     copilot_frontmatter = (
         "---\n"
         "name: openwrt-architect-arduino\n"
@@ -69,14 +79,17 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         "tools: [read, edit, search, execute]\n"
         "---\n\n"
     )
-    copilot_profile.write_text(
-        copilot_frontmatter + copilot_body + "\n",
-        encoding="utf-8",
-    )
+    copilot_profile.write_text(copilot_frontmatter + canonical, encoding="utf-8")
     agent_path = root / AGENT_JSON
     agent_path.parent.mkdir(parents=True, exist_ok=True)
     (root / MODEL_FILE).parent.mkdir(parents=True, exist_ok=True)
     (root / MODEL_FILE).write_text("test-model\n", encoding="utf-8")
+    mcp_config = root / ".agent" / "mcp_config.json"
+    mcp_config.parent.mkdir(parents=True, exist_ok=True)
+    mcp_config.write_text(
+        json.dumps({"mcpServers": {"github": {"command": "podman", "args": ["run"]}}}),
+        encoding="utf-8",
+    )
     agent_path.write_text(
         json.dumps({"name": "test-agent", "model": "test-model", "instructions": canonical}),
         encoding="utf-8",
@@ -89,18 +102,6 @@ def _write_minimal_agent_fixture(root: Path) -> str:
     )
     source_skill_root = root / CANONICAL_SKILLS_DIR
     mirror_skill_root = root / COPILOT_SKILLS_DIR
-    for workflow_skill_name in GEMINI_WORKFLOW_ONLY_SKILLS:
-        workflow_skill = source_skill_root / workflow_skill_name / "SKILL.md"
-        workflow_skill.parent.mkdir(parents=True, exist_ok=True)
-        workflow_skill.write_text(
-            "---\n"
-            f"name: {workflow_skill_name}\n"
-            "description: Workflow-only prompt for Gemini GitHub Actions.\n"
-            "---\n\n"
-            "## Workflow-only scope\n"
-            "Do not activate it for normal interactive repository engineering.\n",
-            encoding="utf-8",
-        )
     for skill_name in REQUIRED_SHARED_SKILLS:
         skill = source_skill_root / skill_name / "SKILL.md"
         mirror = mirror_skill_root / skill_name / "SKILL.md"
@@ -173,24 +174,45 @@ def test_check_github_action_model_wiring_requires_canonical_file(mocker: Mocker
     assert "tools/gemini_model" in errors[0]
 
 
-def test_gemini_workflow_skills_are_explicitly_scoped(
+def test_shared_skill_parity_rejects_github_workflow_prompts_as_skills(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
     _write_minimal_agent_fixture(tmp_path)
-    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
-    assert check_gemini_workflow_skill_scoping() == []
-    skill_file = tmp_path / CANONICAL_SKILLS_DIR / GEMINI_WORKFLOW_ONLY_SKILLS[0] / "SKILL.md"
-    skill_file.write_text(
-        "---\n"
-        "name: gemini-invoke\n"
-        "description: General repository Skill.\n"
-        "---\n\n"
-        "# Generic\n",
+    workflow_skill = tmp_path / CANONICAL_SKILLS_DIR / "gemini-invoke" / "SKILL.md"
+    workflow_skill.parent.mkdir(parents=True)
+    workflow_skill.write_text(
+        "---\nname: gemini-invoke\ndescription: GitHub Actions prompt\n---\n\nPrompt\n",
         encoding="utf-8",
     )
-    errors = check_gemini_workflow_skill_scoping()
-    assert any("workflow-only prompt" in error for error in errors)
-    assert any("prohibit general interactive activation" in error for error in errors)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    errors = check_shared_skill_parity()
+    assert any("Unexpected non-shared Skill directory" in error for error in errors)
+
+
+def test_antigravity_profile_rejects_copilot_tool_aliases(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    profile = tmp_path / ANTIGRAVITY_AGENT_PROFILE
+    content = profile.read_text(encoding="utf-8").replace("  - view_file", "  - read")
+    profile.write_text(content, encoding="utf-8")
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    errors = check_antigravity_agent_profile()
+    assert any("tools must be" in error for error in errors)
+
+
+def test_mcp_config_portability_rejects_absolute_executable_paths(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    config = tmp_path / ".agent" / "mcp_config.json"
+    config.write_text(
+        json.dumps({"mcpServers": {"semgrep": {"command": "/home/user/.local/bin/semgrep"}}}),
+        encoding="utf-8",
+    )
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    errors = check_mcp_config_portability()
+    assert any("host-specific absolute path" in error for error in errors)
 
 
 def test_check_rules_parity_requires_symlinks_and_generated_profiles(
@@ -199,6 +221,7 @@ def test_check_rules_parity_requires_symlinks_and_generated_profiles(
     _write_minimal_agent_fixture(tmp_path)
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     assert check_rules_parity() == []
+    assert check_antigravity_agent_profile() == []
     assert check_copilot_agent_profile() == []
     (tmp_path / "AGENTS.md").unlink()
     (tmp_path / "AGENTS.md").write_text("copied rules\n", encoding="utf-8")
@@ -260,18 +283,24 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_outputs(
     )
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     assert sync_generated_files() == []
-    for relative_path in GENERATED_AGENT_PROFILES:
-        assert (tmp_path / relative_path).read_text(encoding="utf-8") == canonical
+    antigravity_profile = (tmp_path / ANTIGRAVITY_AGENT_PROFILE).read_text(encoding="utf-8")
+    assert "mainAgent: true" in antigravity_profile
+    assert "subagent: true" in antigravity_profile
+    assert "commandExecutionPolicy: sandbox" in antigravity_profile
+    assert "  - view_file" in antigravity_profile
+    assert "  - run_command" in antigravity_profile
+    assert "  - skills/ci-failure-diagnosis" in antigravity_profile
+    assert antigravity_profile.endswith(canonical)
+    assert check_antigravity_agent_profile() == []
     copilot_profile = (tmp_path / COPILOT_AGENT_PROFILE).read_text(encoding="utf-8")
     assert "tools: [read, edit, search, execute]" in copilot_profile
-    assert copilot_profile.endswith("# Canonical Rules\n")
+    assert copilot_profile.endswith(canonical)
     assert check_copilot_agent_profile() == []
     for skill_name in REQUIRED_SHARED_SKILLS:
         source_skill = tmp_path / CANONICAL_SKILLS_DIR / skill_name / "SKILL.md"
         mirror_skill = tmp_path / COPILOT_SKILLS_DIR / skill_name / "SKILL.md"
         assert source_skill.read_text(encoding="utf-8") == mirror_skill.read_text(encoding="utf-8")
-    gemini_only_skill = tmp_path / ".agent" / "skills" / "gemini-invoke" / "SKILL.md"
-    assert gemini_only_skill.is_file()
+    assert not (tmp_path / ".agent" / "skills" / "gemini-invoke").exists()
     assert not (tmp_path / COPILOT_SKILLS_DIR / "gemini-invoke").exists()
     agent = json.loads((tmp_path / AGENT_JSON).read_text(encoding="utf-8"))
     assert agent["name"] == "test-agent"

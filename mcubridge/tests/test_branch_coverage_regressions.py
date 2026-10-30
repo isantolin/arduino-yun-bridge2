@@ -45,6 +45,25 @@ def test_runtime_state_restores_explicit_metric_counters() -> None:
     assert state.watchdog_beats == 19
 
 
+def test_runtime_state_initializes_degraded_cloud_link() -> None:
+    """A persisted degraded-spool flag must restore the cloud FSM state."""
+    state = RuntimeState(
+        cloud_link_state="connected_http2",
+        cloud_spool_degraded=True,
+    )
+
+    assert state.cloud_fsm.spooling_degraded.is_active
+
+
+def test_runtime_state_enables_http3_from_connecting_state() -> None:
+    """The HTTP/3 setter must transition a non-disabled connecting cloud link."""
+    state = RuntimeState(cloud_link_state="connecting")
+
+    state.connected_via_http3 = True
+
+    assert state.connected_via_http3 is True
+    assert state.cloud_fsm.connected_http3.is_active
+
 
 async def test_runtime_state_reconfigure_closes_and_reopens_lmdb_handles(tmp_path: Path) -> None:
     """Reconfiguration must close old LMDB handles before opening the same paths again."""

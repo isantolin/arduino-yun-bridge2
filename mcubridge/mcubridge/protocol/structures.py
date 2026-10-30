@@ -59,9 +59,7 @@ def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
     pieces = command.split()
     if not pieces:
         return False
-    return "*" in policy.entries or any(
-        fnmatch.fnmatch(pieces[0].lower(), p) for p in policy.entries
-    )
+    return "*" in policy.entries or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in policy.entries)
 
 
 def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:

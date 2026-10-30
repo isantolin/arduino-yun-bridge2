@@ -81,9 +81,7 @@ def test_runtime_config_rejects_unknown_metadata_field(monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize("field_name", ["serial_port", "allowed_commands"])
-def test_runtime_config_rejects_invalid_numeric_metadata(
-    field_name: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_runtime_config_rejects_invalid_numeric_metadata(field_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         protocol,
         "RUNTIME_CONFIG_METADATA",

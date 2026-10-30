@@ -18,7 +18,6 @@ from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Protocol, cast
 
-import anyio
 import structlog
 import tenacity
 from statemachine import State, StateMachine

@@ -263,7 +263,6 @@ async def test_lmdb_deque_no_env_safety() -> None:
     await deque.close()
 
 
-
 async def test_lmdb_closed_resource_operations_are_safe(tmp_path: Path) -> None:
     """Exercise idempotent lifecycle and closed-resource fallbacks."""
     deque = LmdbDeque(str(tmp_path / "closed_deque.db"))
@@ -341,6 +340,7 @@ async def test_lmdb_worker_callbacks_handle_environment_closing_race(
 
     original_run_sync = anyio.to_thread.run_sync
     try:
+
         async def deque_worker(func: Callable[..., object], *args: object, **kwargs: object) -> object:
             return await run_with_missing_environment(deque, func, *args, **kwargs)
 

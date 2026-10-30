@@ -12,7 +12,7 @@ The repository had a large, globally applied agent prompt containing architectur
 
 1. Keep one concise repository-wide architecture guide in GEMINI.md, exposed through the existing AGENTS.md and compatibility symlinks.
 2. Use a central architect agent to understand impact, select only relevant Skills, coordinate specialists when helpful, and preserve user approval boundaries. Generate platform-specific agent frontmatter while keeping the shared prompt body canonical.
-3. Store seven shared task Skills canonically under .agents/skills/: CI diagnosis, Protobuf protocol changes, embedded resource audits, OpenWrt runtime debugging, code-change verification, security/cryptography review, and code review.
+3. Store seven shared task Skills under .agents/skills/ (resolved through the existing .agents -> .agent Git symlink and tracked under .agent/skills/): CI diagnosis, Protobuf protocol changes, embedded resource audits, OpenWrt runtime debugging, code-change verification, security/cryptography review, and code review. Preserve the existing symlink.
 4. Generate a byte-for-byte mirror of those Skills in .github/skills/ for supported Copilot discovery surfaces, and generate ZIP packages for manual ChatGPT desktop Skill upload.
 5. Keep existing Gemini/Antigravity GitHub Actions workflows and their operational Skill assets separate from the shared engineering Skills.
 6. Use Copilot path-scoped instructions for Python, firmware, Protobuf, and OpenWrt code.

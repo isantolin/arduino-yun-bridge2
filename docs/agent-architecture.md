@@ -6,7 +6,7 @@ GEMINI.md is the canonical repository-wide engineering guide. AGENTS.md, .copilo
 
 ## Shared Skills and platform adapters
 
-The canonical shared Skills live in .agents/skills/. Each Skill is a self-contained directory with SKILL.md and optional references, assets, or scripts. These Skills follow the open Agent Skills format and use concise frontmatter descriptions for automatic matching.
+The canonical shared Skills are discovered through .agents/skills/. In this repository .agents is a Git symlink to .agent, so the actual tracked files live under .agent/skills/ while tools resolve them through the shared .agents/skills/ path. Preserve this symlink; never replace it with a directory. Each Skill is a self-contained directory with SKILL.md and optional references, assets, or scripts. These Skills follow the open Agent Skills format and use concise frontmatter descriptions for automatic matching.
 
 GitHub Copilot's project Skill discovery is supported through .github/skills/. The contents of that directory are generated mirrors of .agents/skills/ and must never be edited independently. The parity auditor checks the contents and metadata of both locations.
 

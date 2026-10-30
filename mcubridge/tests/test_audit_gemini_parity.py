@@ -52,6 +52,7 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         link = root / relative_path
         link.parent.mkdir(parents=True, exist_ok=True)
         link.symlink_to(target)
+    (root / ".agents").symlink_to(".agent")
     for relative_path in GENERATED_AGENT_PROFILES:
         profile = root / relative_path
         profile.parent.mkdir(parents=True, exist_ok=True)
@@ -172,6 +173,18 @@ def test_check_rules_parity_requires_symlinks_and_generated_profiles(
     (tmp_path / "AGENTS.md").write_text("copied rules\n", encoding="utf-8")
     errors = check_rules_parity()
     assert any("AGENTS.md must be a symlink" in error for error in errors)
+
+
+def test_check_rules_parity_requires_agents_directory_symlink(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    agent_link = tmp_path / ".agents"
+    agent_link.unlink()
+    agent_link.mkdir()
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    errors = check_rules_parity()
+    assert any(".agents must remain a Git symlink to .agent" in error for error in errors)
 
 
 def test_check_rules_parity_rejects_obsolete_copilot_duplicate(

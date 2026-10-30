@@ -316,6 +316,19 @@ def check_rules_parity() -> list[str]:
     except OSError as exc:
         return [f"Cannot read canonical rules file {canonical_path}: {exc}"]
     errors: list[str] = []
+    agent_discovery_link = ROOT / ".agents"
+    if not agent_discovery_link.is_symlink():
+        errors.append(".agents must remain a Git symlink to .agent")
+    else:
+        try:
+            actual_target = agent_discovery_link.readlink().as_posix()
+            if actual_target != ".agent":
+                errors.append(f".agents points to {actual_target!r}, expected '.agent'")
+            elif not (agent_discovery_link / "skills").is_dir():
+                errors.append(".agents/skills must resolve through the .agents -> .agent symlink")
+        except OSError as exc:
+            errors.append(f"Cannot inspect .agents discovery symlink: {exc}")
+
     for relative_path, expected_target in SYMLINKS.items():
         target = ROOT / relative_path
         if not target.is_symlink():

@@ -1,68 +1,84 @@
 # Cross-platform agent architecture
 
-## Canonical guidance
+## Canonical project guidance
 
-GEMINI.md is the canonical repository-wide engineering guide. AGENTS.md, .copilot-instructions, and .agent/rules/openwrt-architect-arduino.agent.md remain Git symlinks to GEMINI.md for tool discovery. The generated Gemini agent profile at .agent/agents/openwrt-architect-arduino/agent.md mirrors that canonical content. The Copilot profile at .github/agents/openwrt-architect-arduino.agent.md is a platform-native adapter: its prompt body is derived from GEMINI.md, but its frontmatter uses Copilot-compatible fields. The instructions field in agent.json is synchronized from GEMINI.md; the Gemini model remains sourced from tools/gemini_model.
+`GEMINI.md` is the canonical repository-wide engineering guide and is plain Markdown without YAML frontmatter. Antigravity treats root `GEMINI.md` and `AGENTS.md` files as always-on directory guidance; Codex also discovers `AGENTS.md`. The root `AGENTS.md` and compatibility file `.copilot-instructions` remain Git symlinks to `GEMINI.md`.
 
-## Shared Skills and platform adapters
+Do not put platform-specific agent metadata in the canonical guide. Each platform adapter owns its own frontmatter and tool identifiers.
 
-The canonical shared Skills are discovered through .agents/skills/. In this repository .agents is a Git symlink to .agent, so the actual tracked files live under .agent/skills/ while tools resolve them through the shared .agents/skills/ path. Preserve this symlink; never replace it with a directory. Each Skill is a self-contained directory with SKILL.md and optional references, assets, or scripts. These Skills follow the open Agent Skills format and use concise frontmatter descriptions for automatic matching.
+## Platform-specific architect agents
 
-GitHub Copilot's project Skill discovery is supported through .github/skills/. The contents of that directory are generated mirrors of .agents/skills/ and must never be edited independently. The parity auditor checks the contents and metadata of both locations.
+### Antigravity
 
-| Platform | Persistent guidance | Shared Skills / adaptation |
-|---|---|---|
-| GitHub Copilot | .github/copilot-instructions.md, root AGENTS.md/GEMINI.md, .github/instructions/*.instructions.md, and .github/agents/*.agent.md | Discovers project Skills in .github/skills/ in supported Copilot surfaces. |
-| Gemini CLI | GEMINI.md and hierarchical context files | Discovers workspace Skills in .agents/skills/ or .gemini/skills/. This repository uses .agents/skills/. |
-| OpenAI Codex | AGENTS.md and applicable nested AGENTS.md files | Discovers repository Skills in .agents/skills/. |
-| ChatGPT desktop | Product guidance and installed Skills | Import individual ZIP archives generated from the canonical Skill directories. Repository presence alone does not install a Skill. |
-| ChatGPT Chat/Work | Product/workspace instructions and installed Plugins | Broader web/desktop/mobile distribution can require packaging Skills in a Plugin. Do not claim repository files are automatically discovered in every ChatGPT surface. |
+The Antigravity custom agent is `.agents/agents/openwrt-architect-arduino/agent.md`, tracked through this repository's `.agents -> .agent` Git symlink.
 
-Platform behavior can evolve. Verify current documentation when changing discovery, packaging, or installation instructions.
+Its generated frontmatter uses Antigravity-native fields:
 
-## Shared Skills
+- `mainAgent: true` and `subagent: true` permit direct selection and delegation.
+- `model: inherit` follows the selected model.
+- `commandExecutionPolicy: sandbox` keeps command execution within the sandbox policy.
+- `tools` contains registered Antigravity tool identifiers such as `view_file`, `grep_search`, `run_command`, and `replace_file_content`.
+- `skills` points to the seven shared Skill folders relative to the `.agents` customization root.
 
-The initial seven cross-platform Skills are:
+The Antigravity adapter is generated from the plain Markdown body of `GEMINI.md`; never copy Copilot or Gemini CLI tool identifiers into this profile.
 
-- ci-failure-diagnosis: investigate and fix failing CI runs and jobs.
-- protobuf-protocol-change: modify schemas, generated bindings, RPC, and MCU/MPU protocol contracts.
-- embedded-resource-audit: evaluate board-specific firmware, memory, Flash, timing, and emulation.
-- openwrt-runtime-debugging: diagnose daemon, procd, UBUS, UCI, LuCI, packages, and networking.
-- code-change-verification: select and evaluate tests, static checks, emulation, and full CI evidence.
-- security-crypto-review: assess security boundaries, cryptography, secrets, parsing, and attack surfaces.
-- code-review: independently review diffs and Pull Requests.
+### GitHub Copilot
 
-The architect activates only Skills relevant to the requested task. A Skill's presence does not grant tools or permissions. Host permissions, tool availability, and approval boundaries remain authoritative.
+The Copilot-native adapter is `.github/agents/openwrt-architect-arduino.agent.md`. Its frontmatter uses GitHub Copilot's tool aliases (`read`, `edit`, `search`, and `execute`) while its instruction body is generated from `GEMINI.md`.
 
-## Platform-specific operational workflows
+The adapter is platform-specific and must not be reused as an Antigravity profile.
 
-The .agent/workflows/*.md files and .github/commands/*.toml files remain Gemini/GitHub Actions operational prompts. The matching TOML files are generated from canonical workflow Markdown. Existing .agent/skills/gemini-* files remain workflow-specific assets; they are distinct from the new cross-platform engineering Skills.
+### Gemini CLI configuration
 
-## Copilot path-specific instructions
+The root `GEMINI.md` remains the Gemini CLI project instruction file. The canonical Gemini model is stored in `tools/gemini_model`; `.agent/agents/openwrt-architect-arduino/agent.json` keeps a synchronized copy of the instruction text and model metadata for the repository's existing Gemini integration.
 
-Files under .github/instructions/ contain short, path-scoped guidance for Python, firmware, Protobuf, and OpenWrt code. They supplement, rather than duplicate, the repository-wide guide.
+## Shared engineering Skills
+
+The seven shared Skills are canonical under `.agents/skills/` (resolved through `.agents -> .agent` and tracked under `.agent/skills/`):
+
+- `ci-failure-diagnosis`: diagnose failing CI runs and jobs.
+- `protobuf-protocol-change`: modify schemas, generated bindings, RPC, and MCU/MPU protocol contracts.
+- `embedded-resource-audit`: assess board-specific firmware, memory, Flash, timing, and emulation.
+- `openwrt-runtime-debugging`: diagnose daemon, procd, UBUS, UCI, LuCI, packages, and networking.
+- `code-change-verification`: select and evaluate tests, static checks, emulation, and CI evidence.
+- `security-crypto-review`: assess security boundaries, cryptography, secrets, parsing, and attack surfaces.
+- `code-review`: independently review diffs and Pull Requests.
+
+Antigravity discovers these through `.agents/skills/`. The agent profile explicitly references these Skill folders, and the Skills remain available for other supported Agent Skills consumers.
+
+GitHub Actions operational prompts are not engineering Skills. Do not place them under `.agents/skills/`, because Antigravity automatically discovers every Skill in that directory. Keep the GitHub Actions prompt sources under `.agent/workflows/*.md` and their generated GitHub command TOML files under `.github/commands/*.toml`.
+
+GitHub Copilot's project Skill discovery is supported through `.github/skills/`. Those files are generated byte-for-byte mirrors of the seven canonical Skills and must never be edited independently.
+
+## Platform-specific instructions and workflows
+
+Files under `.github/instructions/` contain short path-scoped instructions for Python, firmware, Protobuf, and OpenWrt. They supplement, rather than duplicate, the repository-wide guide.
+
+The `.agent/workflows/*.md` files are prompt sources for the repository's dedicated GitHub Actions Gemini workflows. The matching `.github/commands/*.toml` files are generated from those Markdown sources. These are GitHub Actions integration assets, not Antigravity IDE workflow definitions or auto-discovered Skills.
+
+Each Gemini GitHub Actions workflow reads `tools/gemini_model` and passes it to the Gemini CLI action. Workflow prompts and command TOML files must remain synchronized by the parity generator.
+
+## MCP configuration
+
+The workspace MCP configuration is stored at `.agent/mcp_config.json`, which is also reachable through `.agents/mcp_config.json` because `.agents` is a Git symlink to `.agent`.
+
+Use executable names resolved through `PATH` (for example, `semgrep`, `serial-mcp-server`, and `grpcurl-mcp`) rather than absolute paths tied to one developer's home directory. Required MCP server binaries and Podman must be installed and available in the active environment. Keep machine-specific credentials out of the repository.
 
 ## ChatGPT Skill export
 
-Generate one ZIP archive per Skill for manual upload through the ChatGPT Skills interface on eligible accounts/workspaces. Each ZIP contains exactly one top-level folder with SKILL.md and any supporting files, as required by OpenAI's Skill bundle format:
+Generate one ZIP archive per shared Skill for manual upload through the ChatGPT Skills interface on eligible accounts/workspaces:
 
     python tools/export_chatgpt_skills.py
 
-The default output is dist/chatgpt-skills/. To choose another directory:
+The default output is `dist/chatgpt-skills/`. To choose another directory:
 
     python tools/export_chatgpt_skills.py --output /tmp/chatgpt-skills
 
-In an eligible ChatGPT workspace, open Plugins > Skills, choose Create > Upload from your computer, and upload the ZIP for each Skill you want to install. Feature availability and upload permissions depend on the account, product surface, and workspace administrator settings. Review the contents before installing. These ZIP files are build artifacts and are not committed to the repository.
-
-For broader ChatGPT/Codex distribution through the Plugin Directory, package the Skills in a Plugin when that distribution is required. Plugin review, installation, and authorization are separate steps and are not implied by this repository's Skill files.
-
-## Architecture decisions
-
-Significant long-lived design choices are recorded as ADRs in docs/architecture/decisions/. Each ADR captures context, decision, considered alternatives, consequences, affected contracts, and migration implications. Routine coding decisions do not require ADRs.
+Each ZIP contains one top-level Skill folder with `SKILL.md` and any supporting files. In an eligible ChatGPT workspace, use Plugins > Skills > Create > Upload from your computer. Availability and upload permissions depend on the account, product surface, and workspace administrator settings. Repository presence alone does not install a Skill in ChatGPT.
 
 ## Synchronization and validation
 
-Generate the Copilot-native agent adapter, Gemini agent profile, agent.json instructions, Copilot Skill mirror, and Gemini command TOML files:
+Generate platform-native agent adapters, synchronize `agent.json`, mirror shared Skills for Copilot, and generate GitHub Actions command TOML files:
 
     python tools/audit/check_gemini_parity.py --fix
 
@@ -71,6 +87,14 @@ Run the read-only consistency audit:
     python tools/audit/check_gemini_parity.py
     tox -e agent-parity
 
-The audit validates canonical instructions, generated profiles, shared Skill metadata and mirrors, Copilot agent adaptation, path-specific Copilot instruction discovery, ChatGPT export prerequisites, Gemini model configuration, and Gemini workflow-command pairs.
+The audit validates:
 
-Each Gemini GitHub Actions workflow reads tools/gemini_model and passes it to the Gemini CLI action.
+- Plain canonical instructions and required root symlinks.
+- Antigravity-native tool names, Skill paths, execution policy, and prompt body.
+- Copilot-native tool aliases, scoped instruction discovery, and prompt body.
+- Exact shared Skill set, metadata, and generated Copilot mirrors.
+- Portable MCP executable configuration.
+- ChatGPT export prerequisites.
+- Gemini model configuration and GitHub Actions workflow-command pairs.
+
+The parity check is a configuration and generation test. It cannot prove that the installed Antigravity application can start an agent or connect to locally installed MCP servers; perform one smoke test in Antigravity after syncing.

@@ -683,9 +683,12 @@ class RuntimeState:
         """Close a storage resource synchronously before replacing its LMDB handle."""
         if resource is None:
             return
-        close_sync = getattr(resource, "close_sync", None)
-        if callable(close_sync):
-            close_sync()
+        # Only concrete LMDB resources own the synchronous close contract.
+        # Mocks and adapters may synthesize arbitrary attributes (including
+        # close_sync), so feature-detecting on the instance can invoke an
+        # un-awaited AsyncMock instead of their configured close() method.
+        if isinstance(resource, (LmdbCache, LmdbDeque)):
+            resource.close_sync()
             return
         close = getattr(resource, "close", None)
         if callable(close):

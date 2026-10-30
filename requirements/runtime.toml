@@ -329,7 +329,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.13"
+pip = "hypothesis==6.170.14"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -369,7 +369,7 @@ rationale = "Formal YAML parser for workflow frontmatter and configuration audit
 
 [[dev_dependency]]
 name = "types-pyyaml"
-pip = "types-PyYAML==6.0.12.20260906"
+pip = "types-PyYAML==6.0.12.20261030"
 rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
 
 [[dev_dependency]]

@@ -13,7 +13,7 @@ The repository had a large, globally applied agent prompt containing architectur
 1. Keep one concise repository-wide architecture guide in GEMINI.md, exposed through the existing AGENTS.md and compatibility symlinks.
 2. Use a central architect agent to understand impact, select only relevant Skills, coordinate specialists when helpful, and preserve user approval boundaries. Generate platform-specific agent frontmatter while keeping the shared prompt body canonical.
 3. Store seven shared task Skills canonically under .agents/skills/: CI diagnosis, Protobuf protocol changes, embedded resource audits, OpenWrt runtime debugging, code-change verification, security/cryptography review, and code review.
-4. Generate a byte-for-byte mirror of those Skills in .github/skills/ for supported Copilot discovery surfaces.
+4. Generate a byte-for-byte mirror of those Skills in .github/skills/ for supported Copilot discovery surfaces, and generate ZIP packages for manual ChatGPT desktop Skill upload.
 5. Keep existing Gemini/Antigravity GitHub Actions workflows and their operational Skill assets separate from the shared engineering Skills.
 6. Use Copilot path-scoped instructions for Python, firmware, Protobuf, and OpenWrt code.
 7. Make Library-First and direct library invocation permanent principles. Compare overlapping libraries based on total system complexity, correctness, security, resource cost, compatibility, and maintenance.
@@ -36,6 +36,7 @@ The repository had a large, globally applied agent prompt containing architectur
 - The permanent prompt is shorter and contains stable project-wide rules.
 - Detailed procedures are loaded on demand and can include references, scripts, and examples.
 - Copilot-specific Skill mirrors, scoped instructions, and the Copilot-native agent adapter must be regenerated and checked whenever canonical Skills or agent guidance change.
+- ChatGPT desktop Skill archives are generated locally with tools/export_chatgpt_skills.py; they are not committed. ChatGPT Chat/Work distribution through web/mobile may require a separately installed Plugin.
 - ChatGPT web/Work availability may require packaging the standalone Skills in a Plugin; repository presence alone does not guarantee automatic discovery in every ChatGPT surface.
 - Existing Gemini Actions workflows remain independent operational workflows and continue to use their existing model configuration.
 - The parity audit becomes a cross-platform agent configuration gate.

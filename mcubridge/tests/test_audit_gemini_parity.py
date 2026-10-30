@@ -15,12 +15,14 @@ from tools.audit.check_gemini_parity import (
     CANONICAL_SKILLS_DIR,
     COPILOT_SCOPED_INSTRUCTIONS,
     COPILOT_SKILLS_DIR,
+    CHATGPT_SKILL_EXPORT_SCRIPT,
     GENERATED_AGENT_PROFILES,
     COPILOT_AGENT_PROFILE,
     MODEL_FILE,
     REQUIRED_SHARED_SKILLS,
     SYMLINKS,
     app,
+    check_chatgpt_skill_export,
     check_copilot_agent_profile,
     check_github_action_model_wiring,
     check_model_parity,
@@ -90,6 +92,9 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         )
         skill.write_text(content, encoding="utf-8")
         mirror.write_text(content, encoding="utf-8")
+    exporter = root / CHATGPT_SKILL_EXPORT_SCRIPT
+    exporter.parent.mkdir(parents=True, exist_ok=True)
+    exporter.write_text("\n".join(f'"{name}"' for name in REQUIRED_SHARED_SKILLS), encoding="utf-8")
     for relative_path in COPILOT_SCOPED_INSTRUCTIONS:
         instruction = root / relative_path
         instruction.parent.mkdir(parents=True, exist_ok=True)
@@ -99,6 +104,19 @@ def _write_minimal_agent_fixture(root: Path) -> str:
 
 def test_check_model_parity_success() -> None:
     assert check_model_parity() == []
+
+
+
+def test_check_chatgpt_skill_export_requires_every_shared_skill(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    assert check_chatgpt_skill_export() == []
+    exporter = tmp_path / CHATGPT_SKILL_EXPORT_SCRIPT
+    exporter.write_text('"ci-failure-diagnosis"\n', encoding="utf-8")
+    errors = check_chatgpt_skill_export()
+    assert any("does not package shared Skills" in error for error in errors)
 
 
 def test_check_prompt_parity_detects_mismatched_command(mocker: MockerFixture, tmp_path: Path) -> None:

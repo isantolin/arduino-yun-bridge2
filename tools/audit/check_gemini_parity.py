@@ -27,6 +27,7 @@ COPILOT_AGENT_PROFILE = Path(".github/agents/openwrt-architect-arduino.agent.md"
 COPILOT_AGENT_TOOLS = ("read", "edit", "search", "execute")
 AGENT_JSON = Path(".agent/agents/openwrt-architect-arduino/agent.json")
 MODEL_FILE = Path("tools/gemini_model")
+CHATGPT_SKILL_EXPORT_SCRIPT = Path("tools/export_chatgpt_skills.py")
 CANONICAL_SKILLS_DIR = Path(".agents/skills")
 COPILOT_SKILLS_DIR = Path(".github/skills")
 REQUIRED_SHARED_SKILLS = (
@@ -81,6 +82,19 @@ def _render_command_toml(description: str, prompt: str) -> str:
         f"description = {json.dumps(description, ensure_ascii=False)}\n"
         f"prompt = {json.dumps(prompt, ensure_ascii=False)}\n"
     )
+
+
+def check_chatgpt_skill_export() -> list[str]:
+    """Ensure the ChatGPT upload packager covers every canonical shared Skill."""
+    exporter = ROOT / CHATGPT_SKILL_EXPORT_SCRIPT
+    try:
+        content = exporter.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"Cannot read ChatGPT Skill exporter {CHATGPT_SKILL_EXPORT_SCRIPT}: {exc}"]
+    missing = [name for name in REQUIRED_SHARED_SKILLS if f'"{name}"' not in content]
+    if missing:
+        return [f"{CHATGPT_SKILL_EXPORT_SCRIPT} does not package shared Skills: {', '.join(missing)}"]
+    return []
 
 
 def check_model_parity() -> list[str]:
@@ -471,6 +485,7 @@ def main(
     ] = False,
 ) -> None:
     errors = sync_generated_files() if fix else []
+    errors.extend(check_chatgpt_skill_export())
     errors.extend(check_model_parity())
     errors.extend(check_prompt_parity())
     errors.extend(check_github_action_model_wiring())

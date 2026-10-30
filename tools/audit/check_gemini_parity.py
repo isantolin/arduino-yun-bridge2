@@ -47,6 +47,10 @@ ANTIGRAVITY_AGENT_TOOLS = (
     "write_to_file",
     "replace_file_content",
     "multi_replace_file_content",
+    "invoke_subagent",
+    "manage_task",
+    "manage_subagents",
+    "send_message",
 )
 ANTIGRAVITY_AGENT_SKILLS = tuple(f"skills/{name}" for name in REQUIRED_SHARED_SKILLS)
 COPILOT_SCOPED_INSTRUCTIONS = (

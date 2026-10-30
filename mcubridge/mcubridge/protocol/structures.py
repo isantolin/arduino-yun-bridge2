@@ -27,12 +27,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
 
-from mcubridge.config.const import (
-    ALLOWED_COMMAND_WILDCARD,
-    CLOUD_TLS_MIN_VERSION,
-    PROP_KEY_BRIDGE_REQUEST_TOPIC,
-    VOLATILE_STORAGE_PATHS,
-)
+from ssl import TLSVersion
 
 from . import mcubridge_pb2 as pb
 from . import protocol
@@ -64,7 +59,7 @@ def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
     pieces = command.split()
     if not pieces:
         return False
-    return ALLOWED_COMMAND_WILDCARD in policy.entries or any(
+    return "*" in policy.entries or any(
         fnmatch.fnmatch(pieces[0].lower(), p) for p in policy.entries
     )
 
@@ -141,7 +136,7 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         for field_name, meta in protocol.RUNTIME_CONFIG_METADATA.items():
             if meta.get("volatile"):
                 val = getattr(cfg, field_name, "")
-                if val and not str(val).startswith(tuple(VOLATILE_STORAGE_PATHS)):
+                if val and not str(val).startswith(tuple(protocol.VOLATILE_STORAGE_PATHS)):
                     raise ValueError(
                         f"{field_name}: {field_name} must be in volatile storage "
                         "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
@@ -174,7 +169,7 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
         else:
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
-        context.minimum_version = CLOUD_TLS_MIN_VERSION
+        context.minimum_version = TLSVersion.TLSv1_2
 
         if cfg.cloud_tls_insecure:
             context.check_hostname = False
@@ -237,7 +232,7 @@ def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -
         newpb_obj.correlation_data = bytes(cd)
 
     if req_topic := getattr(context, "topic", None):
-        newpb_obj.user_properties.add(key=PROP_KEY_BRIDGE_REQUEST_TOPIC, value=str(req_topic))
+        newpb_obj.user_properties.add(key="bridge-request-topic", value=str(req_topic))
 
     return newpb_obj
 

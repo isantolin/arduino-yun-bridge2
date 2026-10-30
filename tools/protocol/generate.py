@@ -185,6 +185,8 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
 def _format_py_const_val(py_name: str, py_type: str, val: Any) -> Any:
     if py_name == "FRAME_DELIMITER":
         return f"bytes([ {val} ])"
+    if py_type == "float":
+        return float(val)
     return f'b"{val}"' if py_type == "bytes" else f'"{val}"' if py_type == "str" else val
 
 

@@ -87,12 +87,7 @@ define Build/Prepare
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
 	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
-	$(CP) ./mcubridge.files $(PKG_BUILD_DIR)/
-	$(CP) ./uci-defaults/95-mcubridge-silence-kernel-console $(PKG_BUILD_DIR)/
-	$(CP) ./uci-defaults/96-mcubridge-flash-protection-paths $(PKG_BUILD_DIR)/
-	$(CP) ./uci-defaults/97-mcubridge-default-secret $(PKG_BUILD_DIR)/
-	$(CP) ./uci-defaults/98-mcubridge-default-serial $(PKG_BUILD_DIR)/
-	$(CP) ./uci-defaults/99-mcubridge-disable-askconsole $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/99-mcubridge-defaults $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/ || true
 endef
 
@@ -110,16 +105,11 @@ define Package/$(PKG_NAME)/install
 	$(PYTHON3) -m compileall -o 2 -q $(1)/usr/libexec/mcubridge || true
 	
 	# Core config files
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/mcubridge.files $(1)/etc/mcubridge/
 	$(INSTALL_DIR) $(1)/usr/share/mcubridge
 	[ -f $(PKG_BUILD_DIR)/scripts/defaults.sh ] && $(INSTALL_DATA) $(PKG_BUILD_DIR)/scripts/defaults.sh $(1)/usr/share/mcubridge/defaults.sh || true
 	
 	# UCI defaults
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/95-mcubridge-silence-kernel-console $(1)/etc/uci-defaults/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/96-mcubridge-flash-protection-paths $(1)/etc/uci-defaults/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/97-mcubridge-default-secret $(1)/etc/uci-defaults/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-mcubridge-default-serial $(1)/etc/uci-defaults/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-disable-askconsole $(1)/etc/uci-defaults/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-defaults $(1)/etc/uci-defaults/
 	
 	# Global environment profile
 	$(INSTALL_DIR) $(1)/etc/profile.d
@@ -132,7 +122,7 @@ define Package/$(PKG_NAME)/install
 			cmd=$$(basename $$f .py | tr '_' '-'); \
 			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd"; \
 		done || true
-	[ -f $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.sh ] && $(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.sh $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge || true
+	ln -sf /usr/bin/pin-rest-cgi $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge
 endef
 
 define Package/$(PKG_NAME)/postinst
@@ -141,7 +131,7 @@ define Package/$(PKG_NAME)/postinst
 	mkdir -p /etc/profile.d
 	echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > /etc/profile.d/99-mcubridge-crypto.sh
 	chmod 0755 /etc/profile.d/99-mcubridge-crypto.sh
-	[ -x /etc/uci-defaults/99-mcubridge-disable-askconsole ] && /etc/uci-defaults/99-mcubridge-disable-askconsole
+	[ -x /etc/uci-defaults/99-mcubridge-defaults ] && /etc/uci-defaults/99-mcubridge-defaults
 }
 exit 0
 endef

@@ -32,17 +32,6 @@ from grpclib.server import Stream
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
 
-from ..config.const import (
-    MCU_FS_PREFIX,
-    PROCESS_TERM_GRACE_PERIOD_SECONDS,
-    PROP_KEY_BRIDGE_DATASTORE_KEY,
-    PROP_KEY_BRIDGE_ERROR,
-    PROP_KEY_BRIDGE_STATUS,
-    STREAM_POLL_TIMEOUT_SECONDS,
-    SUPERVISOR_DEFAULT_MAX_BACKOFF,
-    SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    TOPIC_FORBIDDEN_REASON,
-)
 from ..config.settings import RuntimeConfig
 from ..metrics import (
     publish_bridge_snapshots,
@@ -50,6 +39,10 @@ from ..metrics import (
 )
 from ..protocol import protocol, structures
 from ..protocol.protocol import (
+    PROCESS_TERM_GRACE_PERIOD_SECONDS,
+    STREAM_POLL_TIMEOUT_SECONDS,
+    SUPERVISOR_DEFAULT_MAX_BACKOFF,
+    SUPERVISOR_DEFAULT_MIN_BACKOFF,
     Command,
     Status,
     Topic,
@@ -629,7 +622,7 @@ class BridgeService:
             tp,
             v,
             message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE,
-            user_properties=((PROP_KEY_BRIDGE_DATASTORE_KEY, k),),
+            user_properties=(("bridge-datastore-key", k),),
             reply_context=reply_context,
         )
         return pb.GenericResponse(status="ok")
@@ -695,8 +688,8 @@ class BridgeService:
         path = src.path if isinstance(src, pb.FileWrite) else str(path_or_req)
         payload_data = src.data if isinstance(src, pb.FileWrite) else cast(bytes, data)
         clean = path.lstrip("/")
-        if clean.startswith(MCU_FS_PREFIX):
-            mcu_path = clean.removeprefix(MCU_FS_PREFIX)
+        if clean.startswith("mcu/"):
+            mcu_path = clean.removeprefix("mcu/")
             serial = self.serial
             ok = bool(
                 serial
@@ -737,7 +730,7 @@ class BridgeService:
             return pb.FileReadResponse(content=data or b"")
         path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
-        if clean.startswith(MCU_FS_PREFIX):
+        if clean.startswith("mcu/"):
             serial = self.serial
             if not serial:
                 content = b""
@@ -746,7 +739,7 @@ class BridgeService:
                     pending = PendingMcuRead(asyncio.get_running_loop().create_future())
                     pending.fsm.start_transfer()
                     self.pending_mcu_read = pending
-                    clean_path = clean.removeprefix(MCU_FS_PREFIX)
+                    clean_path = clean.removeprefix("mcu/")
                     if not await serial.send_raw(
                         Command.CMD_FILE_READ.value,
                         pb.FileRead(path=clean_path),
@@ -777,8 +770,8 @@ class BridgeService:
         src = p if p is not None else path_or_req
         path = src.path if isinstance(src, pb.FileRemove) else str(path_or_req)
         clean = path.lstrip("/")
-        if clean.startswith(MCU_FS_PREFIX):
-            mcu_path = clean.removeprefix(MCU_FS_PREFIX)
+        if clean.startswith("mcu/"):
+            mcu_path = clean.removeprefix("mcu/")
             serial = self.serial
             ok = bool(serial and await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=mcu_path)))
         else:
@@ -1039,7 +1032,7 @@ class BridgeService:
                 description=status.description,
                 message=text,
             ),
-            user_properties=((PROP_KEY_BRIDGE_STATUS, status.name),),
+            user_properties=(("bridge-status", status.name),),
         )
 
     async def _fetch_mcu_version(self) -> pb.VersionResponse | None:
@@ -1067,7 +1060,7 @@ class BridgeService:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_cloud_status_report(
             pb.StatusReport(status=403, topic=val, action=act, reason="forbidden"),
-            user_properties=((PROP_KEY_BRIDGE_ERROR, TOPIC_FORBIDDEN_REASON),),
+            user_properties=(("bridge-error", "topic-action-forbidden"),),
             reply_context=ctx,
         )
 

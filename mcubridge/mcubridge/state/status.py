@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -11,11 +12,10 @@ import structlog
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message as ProtobufMessage
 
-from ..config.const import STATUS_FILE_PATH
 from .context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.status")
-STATUS_FILE = Path(STATUS_FILE_PATH)
+STATUS_FILE = Path(os.environ.get("MCUBRIDGE_STATUS_FILE") or "/tmp/mcubridge_status.json")
 
 
 async def status_writer(state: RuntimeState, interval: int, status_file: Path | None = None) -> None:

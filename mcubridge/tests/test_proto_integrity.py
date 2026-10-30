@@ -555,10 +555,7 @@ def test_default_configuration_centralization_ssot() -> None:
     shell_consumers = [
         repo_root / "3_install.sh",
         repo_root / "mcubridge/mcubridge.init",
-        repo_root / "mcubridge/uci-defaults/96-mcubridge-flash-protection-paths",
-        repo_root / "mcubridge/uci-defaults/97-mcubridge-default-secret",
-        repo_root / "mcubridge/uci-defaults/98-mcubridge-default-serial",
-        repo_root / "mcubridge/uci-defaults/99-mcubridge-disable-askconsole",
+        repo_root / "mcubridge/uci-defaults/99-mcubridge-defaults",
     ]
     for script_path in shell_consumers:
         content = script_path.read_text(encoding="utf-8")

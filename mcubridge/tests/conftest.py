@@ -14,7 +14,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.config.common
-import mcubridge.config.const
+import mcubridge.protocol.protocol
 import mcubridge.config.settings
 import mcubridge.protocol.structures
 import pytest
@@ -187,8 +187,8 @@ TMP_TESTS_DIR = str(PROJECT_ROOT / ".tmp_tests")
 Path(TMP_TESTS_DIR).mkdir(exist_ok=True, parents=True)
 
 # [TEST FIX] Global injection is needed before any tests run to ensure Settings validation passes.
-mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
-    list(mcubridge.config.const.VOLATILE_STORAGE_PATHS) + [TMP_TESTS_DIR, "/var/tmp", "/tmp"]
+mcubridge.protocol.protocol.VOLATILE_STORAGE_PATHS = frozenset(
+    list(mcubridge.protocol.protocol.VOLATILE_STORAGE_PATHS) + [TMP_TESTS_DIR, "/var/tmp", "/tmp"]
 )
 
 

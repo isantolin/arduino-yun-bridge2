@@ -1,0 +1,76 @@
+#!/bin/sh
+# Consolidated OpenWrt uci-defaults provisioning for McuBridge (SIL-2).
+# Runs once on first boot / package installation.
+
+[ -f /usr/share/mcubridge/defaults.sh ] && . /usr/share/mcubridge/defaults.sh
+
+# 1. Silence kernel printk on serial console to prevent COBS frame corruption
+SYSCTL_CONF="/etc/sysctl.d/99-mcubridge-no-console.conf"
+if [ ! -f "$SYSCTL_CONF" ]; then
+    mkdir -p /etc/sysctl.d
+    printf "# McuBridge: Silence kernel console\nkernel.printk = 0 0 0 0\n" > "$SYSCTL_CONF"
+fi
+command -v sysctl >/dev/null 2>&1 && sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || true
+
+# 2. Configure OpenSSL environment profile
+mkdir -p /etc/profile.d
+echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > /etc/profile.d/99-mcubridge-crypto.sh
+chmod 0755 /etc/profile.d/99-mcubridge-crypto.sh
+
+if command -v uci >/dev/null 2>&1; then
+    uci -q set mcubridge.general=general
+
+    # 3. Enforce RAM-backed volatile paths by default (flash wear protection)
+    DEFAULT_FILE_ROOT="${MCUBRIDGE_DEFAULT_FILE_SYSTEM_ROOT:-/tmp/yun_files}"
+    DEFAULT_SPOOL_DIR="${MCUBRIDGE_DEFAULT_CLOUD_SPOOL_DIR:-/tmp/mcubridge/spool}"
+    allow_non_tmp="$(uci -q get mcubridge.general.allow_non_tmp_paths 2>/dev/null || echo "0")"
+    cur_file_root="$(uci -q get mcubridge.general.file_system_root 2>/dev/null || true)"
+    cur_spool_dir="$(uci -q get mcubridge.general.cloud_spool_dir 2>/dev/null || true)"
+
+    case "$allow_non_tmp" in
+        1|true|yes|on|enable|enabled) ;;
+        *)
+            case "$cur_file_root" in
+                /tmp|/tmp/*) ;;
+                *) uci -q set mcubridge.general.file_system_root="$DEFAULT_FILE_ROOT" ;;
+            esac
+            ;;
+    esac
+    case "$cur_spool_dir" in
+        /tmp|/tmp/*) ;;
+        *) uci -q set mcubridge.general.cloud_spool_dir="$DEFAULT_SPOOL_DIR" ;;
+    esac
+
+    # 4. Seed default serial port if unset
+    DEFAULT_SERIAL_PORT="${MCUBRIDGE_DEFAULT_SERIAL_PORT:-/dev/ttyATH0}"
+    cur_serial="$(uci -q get mcubridge.general.serial_port 2>/dev/null || true)"
+    [ -z "$cur_serial" ] && uci -q set mcubridge.general.serial_port="$DEFAULT_SERIAL_PORT"
+
+    # 5. Seed CSPRNG serial shared secret if unset or placeholder
+    PLACEHOLDER="$(echo "6368616e67656d65313233" | xxd -r -p 2>/dev/null || echo "changeme123")"
+    FAILSAFE_SECRET="${MCUBRIDGE_DEFAULT_SERIAL_SHARED_SECRET:-failsafe_secret_mode}"
+    cur_secret="$(uci -q get mcubridge.general.serial_shared_secret 2>/dev/null || true)"
+    if [ -z "$cur_secret" ] || [ "$cur_secret" = "$PLACEHOLDER" ] || [ "$cur_secret" = "$FAILSAFE_SECRET" ]; then
+        secret=""
+        command -v openssl >/dev/null 2>&1 && secret="$(openssl rand -hex 32 2>/dev/null | tr -d '\n' | tr 'A-F' 'a-f')"
+        [ -z "$secret" ] && [ -r /dev/urandom ] && secret="$(head -c 32 /dev/urandom | hexdump -v -e '/1 "%02x"' 2>/dev/null)"
+        [ -n "$secret" ] && uci -q set mcubridge.general.serial_shared_secret="$secret"
+    fi
+
+    uci -q commit mcubridge
+fi
+
+# 6. Disable askconsole / askfirst on the target serial port
+SERIAL_DEV="$(uci -q get mcubridge.general.serial_port 2>/dev/null || echo "${MCUBRIDGE_DEFAULT_SERIAL_PORT:-/dev/ttyATH0}")"
+SERIAL_BASE="$(basename "$SERIAL_DEV")"
+[ -f /etc/inittab ] && sed -i -e '/::askconsole:/d' -e "/^${SERIAL_BASE}:/d" /etc/inittab 2>/dev/null || true
+if [ -n "$SERIAL_BASE" ]; then
+    for pid in $(ls -l /proc/[0-9]*/fd/* 2>/dev/null | grep "${SERIAL_BASE}" | awk -F'/' '{print $3}' | sort -u); do
+        cmdline="$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')"
+        case "$cmdline" in
+            *askfirst*|*login*|*getty*) kill -9 "$pid" 2>/dev/null || true ;;
+        esac
+    done
+fi
+
+exit 0

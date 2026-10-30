@@ -108,7 +108,9 @@ class LmdbDeque:
 
     def __len__(self) -> int:
         # Queue-depth metrics must not open a synchronous LMDB transaction.
-        return len(self._mem) if self.is_mem else self._length
+        if self.is_mem:
+            return len(self._mem)
+        return self._length if self.env is not None else 0
 
     async def append(self, item: bytes) -> int:
         if self.is_mem:
@@ -210,6 +212,7 @@ class LmdbDeque:
             if self.env is not None:
                 self.env.close()
                 self.env = None
+                self._length = 0
 
 
 class LmdbCache:

@@ -115,6 +115,7 @@ async def test_lmdb_deque_concurrent_worker_mutations_preserve_length(tmp_path: 
     assert sorted(popped) == sorted(expected)
     assert len(deque) == 0
     await deque.close()
+    assert len(deque) == 0
 
 
 async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:

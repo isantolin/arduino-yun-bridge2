@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from binascii import crc32
 from functools import lru_cache
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -128,7 +128,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
 
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(body)
+        envelope.ParseFromString(cast(bytes, body))
     except DecodeError as e:
         raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 

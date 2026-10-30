@@ -226,8 +226,6 @@ class SerialTransport:
                 try:
                     async with asyncio.TaskGroup() as tg:
                         serial = self.serial
-                        if serial is None:
-                            raise RuntimeError("Serial transport was not initialized")
                         read_task = tg.create_task(self.read_loop(serial), name="mcubridge-serial-read")
                         stop_task = tg.create_task(self.stop_event.wait(), name="mcubridge-serial-stop")
 

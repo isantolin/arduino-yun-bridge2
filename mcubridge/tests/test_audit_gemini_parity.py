@@ -188,7 +188,7 @@ def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
     action_dir = tmp_path / ".github" / "workflows"
     action_dir.mkdir(parents=True)
     (action_dir / "gemini-example.yml").write_text(
-        "with:\\n  gemini_model: vars.GEMINI_MODEL\\n",
+        "with:\n  gemini_model: vars.GEMINI_MODEL\n",
         encoding="utf-8",
     )
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)

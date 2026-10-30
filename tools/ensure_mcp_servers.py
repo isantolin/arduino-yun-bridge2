@@ -185,11 +185,28 @@ def _check_serial_mcp() -> Path:
 def sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
     print("[4/4] Verifying MCP configurations in workspace and user environments...")
     configs = [
-        REPO_ROOT / ".agent" / "mcp_config.json",
-        HOME / ".gemini" / "config" / "mcp_config.json",
+        (REPO_ROOT / ".agent" / "mcp_config.json", True),
+        (HOME / ".gemini" / "config" / "mcp_config.json", False),
     ]
 
-    server_definitions = {
+    workspace_server_definitions = {
+        "semgrep": {
+            "command": "semgrep",
+            "args": ["mcp"],
+        },
+        "serial-mcp-server": {
+            "command": "serial-mcp-server",
+            "args": ["serve"],
+        },
+        "grpcurl-mcp": {
+            "command": "grpcurl-mcp",
+            "env": {
+                "ADDRESS": "127.0.0.1:8443",
+            },
+        },
+    }
+
+    user_server_definitions = {
         "semgrep": {
             "command": str(semgrep_path),
             "args": ["mcp"],
@@ -206,7 +223,8 @@ def sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
         },
     }
 
-    for cfg in configs:
+    for cfg, is_workspace in configs:
+        server_definitions = workspace_server_definitions if is_workspace else user_server_definitions
         data: dict[str, dict[str, object]] = {"mcpServers": {}}
         if cfg.exists():
             try:

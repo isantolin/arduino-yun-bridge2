@@ -191,17 +191,25 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     assert (await on_read(1, pb.FileRead(path="missing.txt"))).content == b""
     assert serial.send.call_args[0][0] == Status.ERROR.value
 
-    # Read existing nonempty file
+    # Read existing nonempty file as bounded data frames plus an explicit EOF frame.
     await service.file_write(pb.FileWrite(path="exists.txt", data=b"chunk-data"))
-    assert (await on_read(2, pb.FileRead(path="exists.txt"))).content == b"chunk-data"
-    assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
-    assert serial.send.call_args[0][1].content == b"chunk-data"
+    serial.send.reset_mock()
+    assert (await on_read(2, pb.FileRead(path="exists.txt"))).content == b""
+    sent = serial.send.await_args_list
+    assert [call.args[0] for call in sent] == [
+        Command.CMD_FILE_READ_RESP.value,
+        Command.CMD_FILE_READ_RESP.value,
+    ]
+    assert sent[0].args[1].content == b"chunk-data"
+    assert sent[1].args[1].content == b""
 
-    # Read existing empty file
+    # Read existing empty file; it still emits exactly one EOF frame.
     await service.file_write(pb.FileWrite(path="empty.txt", data=b""))
+    serial.send.reset_mock()
     assert (await on_read(3, pb.FileRead(path="empty.txt"))).content == b""
-    assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
-    assert serial.send.call_args[0][1].content == b""
+    serial.send.assert_awaited_once()
+    assert serial.send.await_args.args[0] == Command.CMD_FILE_READ_RESP.value
+    assert serial.send.await_args.args[1].content == b""
 
     # Remove without serial
     service.serial = None
@@ -226,17 +234,16 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 
     # Accumulate chunk then EOF
     fut: asyncio.Future[bytes] = asyncio.Future()
-    pending = PendingMcuRead(future=fut, buffer=bytearray())
+    pending = PendingMcuRead(future=fut, chunks=[])
     service.pending_mcu_read = pending
 
     assert (await on_read_resp(1, pb.FileReadResponse(content=b"chunk1"))).content == b"chunk1"
     assert not fut.done()
-    assert pending.buffer == b"chunk1"
+    assert pending.chunks == [b"chunk1"]
 
     assert (await on_read_resp(2, pb.FileReadResponse(content=b""))).content == b""
     assert fut.done()
     assert fut.result() == b"chunk1"
-    assert pending.buffer == b""
 
     # Future already completed
     assert (await on_read_resp(3, pb.FileReadResponse(content=b""))).content == b""

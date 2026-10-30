@@ -77,10 +77,15 @@ async def test_mcu_file_read_handler_asserts_state(
 
     await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 1, payload)
     mock_serial.send.assert_awaited()
-    args = mock_serial.send.call_args[0]
-    assert args[0] == Command.CMD_FILE_READ_RESP.value
-    assert isinstance(args[1], pb.FileReadResponse)
-    assert args[1].content == b"file_data"
+    responses = [
+        call.args[1]
+        for call in mock_serial.send.await_args_list
+        if call.args[0] == Command.CMD_FILE_READ_RESP.value
+    ]
+    assert len(responses) == 2
+    assert all(isinstance(response, pb.FileReadResponse) for response in responses)
+    assert responses[0].content == b"file_data"
+    assert responses[1].content == b""
 
 
 async def test_cloud_file_write_asserts_serial(

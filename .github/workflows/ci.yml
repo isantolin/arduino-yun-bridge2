@@ -84,7 +84,19 @@ jobs:
           fi
           echo "✅ No hardcoded secrets"
       - name: Run Tox Environment
-        run: tox -e ${{ matrix.env }}
+        run: |
+          set +e
+          echo '=== auditor source before tox ==='
+          git rev-parse HEAD
+          git hash-object tools/audit/check_gemini_parity.py
+          sed -n '119,132p' tools/audit/check_gemini_parity.py
+          tox -e ${{ matrix.env }}
+          tox_status=$?
+          echo '=== auditor source after tox ==='
+          git hash-object tools/audit/check_gemini_parity.py
+          sed -n '119,132p' tools/audit/check_gemini_parity.py
+          git diff -- tools/audit/check_gemini_parity.py
+          exit "$tox_status"
 
   arduino-examples:
     name: Arduino Examples Compilation

@@ -255,6 +255,15 @@ def test_protocol_frame_validation_error_paths() -> None:
     with pytest.raises(ValueError, match="Unsupported protocol version"):
         frame.parse_frame(bad_ver_frame)
 
+    # Protobuf parsing and CRC verification accept a buffer view without a bytes copy.
+    session_key = b"k" * protocol.AEAD_KEY_SIZE
+    nonce = b"n" * protocol.AEAD_NONCE_SIZE
+    encoded = frame.build_frame(0x1234, 0x1234, b"payload", nonce=nonce, session_key=session_key)
+    decoded = frame.parse_frame(memoryview(encoded), session_key)
+    assert decoded.envelope.command_id == 0x1234
+    assert decoded.envelope.sequence_id == 0x1234
+    assert decoded.payload == b"payload"
+
 
 def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     from mcubridge.protocol import frame, protocol

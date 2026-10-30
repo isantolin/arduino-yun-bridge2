@@ -678,13 +678,29 @@ class RuntimeState:
                 logger.warning("Storage directory creation failed", subdir=subdir, error=str(exc))
         return None
 
+    @staticmethod
+    def _close_storage_resource(resource: Any) -> None:
+        """Close a storage resource synchronously before replacing its LMDB handle."""
+        if resource is None:
+            return
+        # Inspect the resource type rather than the instance: mocks may
+        # synthesize attributes such as close_sync, and tests may patch the
+        # module-level LMDB classes with factories.
+        resource_type = cast(type[Any], type(resource))
+        close_sync = getattr(resource_type, "close_sync", None)
+        if callable(close_sync):
+            resource.close_sync()
+            return
+        close = getattr(resource, "close", None)
+        if callable(close):
+            result = close()
+            if asyncio.iscoroutine(result):
+                result.close()
+
     def configure(self) -> None:
         def _safe_close(resource: Any) -> None:
             try:
-                if hasattr(resource, "close"):
-                    res = resource.close()
-                    if asyncio.iscoroutine(res):
-                        res.close()
+                self._close_storage_resource(resource)
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource closure notice during reconfiguration", error=e)
 
@@ -903,6 +919,12 @@ class RuntimeState:
         self.cleanup()
 
     def cleanup(self) -> None:
+        for resource in (self.mailbox_queue, self.mailbox_incoming_queue, self.datastore_cache):
+            try:
+                self._close_storage_resource(resource)
+            except (OSError, RuntimeError, AttributeError) as exc:
+                logger.debug("Storage resource closure notice during cleanup", error=str(exc))
+
         self.mailbox_queue = LmdbDeque(path=":memory:")
         self.mailbox_incoming_queue = LmdbDeque(path=":memory:")
         self.console_to_mcu_queue = collections.deque()

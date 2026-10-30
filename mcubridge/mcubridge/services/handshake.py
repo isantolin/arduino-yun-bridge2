@@ -473,7 +473,7 @@ class SerialHandshakeManager:
 
             try:
                 timeout = (self.timing.response_timeout_ms / 1000.0) if self.timing.response_timeout_ms > 0 else 5.0
-                with anyio.fail_after(timeout):
+                async with asyncio.timeout(timeout):
                     payload = await self.capabilities_future
                 self._parse_capabilities(payload)
                 return True
@@ -551,7 +551,7 @@ class SerialHandshakeManager:
     async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = (self.timing.response_timeout_ms / 1000.0) * 2 if self.timing.response_timeout_ms > 0 else 5.0
         try:
-            with anyio.fail_after(timeout):
+            async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
                 return self._state.is_synchronized

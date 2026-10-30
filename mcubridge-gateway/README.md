@@ -12,7 +12,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 - **Fleet-Wide Prometheus Observability**: Exposes a centralized `/metrics` HTTP endpoint (default port `9100`) aggregating connection states, queue depths, link synchronization, and drop counts across all active devices (`FleetMetrics`).
 - **TSDB Time-Series Ingestion**: Native adapter supporting InfluxDB / VictoriaMetrics Line Protocol for zero-overhead streaming of telemetry to industrial databases.
 - **mTLS Mutual Authentication**: Cryptographically verified device identification using X.509 client certificate Common Name extraction (`extract_peer_identity`), with fallback to `x-device-id` metadata in insecure/development mode (`--no-tls`).
-- **HTTP/3 (QUIC) with HTTP/2 Fallback**: Modern transport supporting 0-RTT connection re-establishment over UDP/QUIC.
+- **gRPC over HTTP/2**: The current grpclib server exposes its TCP/TLS listener over HTTP/2. The legacy HTTP/3 option is retained for configuration compatibility and emits a warning; it does not start a QUIC listener.
 
 ---
 

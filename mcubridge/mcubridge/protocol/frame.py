@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from binascii import crc32
 from functools import lru_cache
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -34,9 +34,8 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
     return ChaCha20Poly1305(session_key)
 
 
-@lru_cache(maxsize=4096)
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
-    """Build AEAD AAD via native Protobuf serialization with LRU caching. [SIL-2]"""
+    """Build AEAD AAD with Protobuf; sequence IDs make a large LRU cache ineffective."""
     return pb.RpcEnvelope(
         version=version,
         command_id=command_id,
@@ -119,8 +118,9 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         raise ValueError("Incomplete frame: too short")
 
     crc_size = protocol.CRC_SIZE
-    body = raw_frame_buffer[:-crc_size]
-    crc_bytes = raw_frame_buffer[-crc_size:]
+    frame_view = memoryview(raw_frame_buffer)
+    body = frame_view[:-crc_size]
+    crc_bytes = frame_view[-crc_size:]
     expected_crc = int.from_bytes(crc_bytes, "little")
     actual_crc = crc32(body) & protocol.CRC32_MASK
     if actual_crc != expected_crc:
@@ -128,7 +128,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
 
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(body if isinstance(body, bytes) else bytes(body))
+        envelope.ParseFromString(cast(bytes, body))
     except DecodeError as e:
         raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 

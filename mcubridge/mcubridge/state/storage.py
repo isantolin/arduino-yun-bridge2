@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import struct
 from pathlib import Path
+from threading import Lock
 from typing import Any, TypeVar
 
 import anyio.to_thread
@@ -92,86 +93,130 @@ class LmdbDeque:
         self._mem: collections.deque[bytes] = collections.deque(maxlen=maxlen)
         self.env: lmdb.Environment | None = None
         self.db: Any = None
+        self._length = 0
+        self._mutation_lock = Lock()
 
         if not self.is_mem:
             self._open_env()
 
     def _open_env(self) -> None:
         self.env, self.db = _open_lmdb_env(self.path, b"deque", "deque.db")
+        self._length = 0
+        if self.env is not None:
+            with self.env.begin(db=self.db) as txn:
+                self._length = txn.stat(self.db)["entries"]
 
     def __len__(self) -> int:
+        # Queue-depth metrics must not open a synchronous LMDB transaction.
         if self.is_mem:
             return len(self._mem)
-        if not self.env:
-            return 0
-        with self.env.begin(db=self.db) as txn:
-            return txn.stat(self.db)["entries"]
+        return self._length if self.env is not None else 0
 
     async def append(self, item: bytes) -> int:
         if self.is_mem:
             trimmed = 1 if (self.maxlen is not None and len(self._mem) >= self.maxlen) else 0
             self._mem.append(item)
             return trimmed
-        if not self.env:
+        if self.env is None:
             return 0
-        with self.env.begin(write=True, db=self.db) as txn:
-            cur = txn.cursor(self.db)
-            next_idx = (_U64.unpack(cur.key())[0] + 1) if cur.last() else 0
-            txn.put(_U64.pack(next_idx), item, db=self.db)
-            trimmed = 0
-            if self.maxlen is not None:
-                total_entries = txn.stat(self.db)["entries"]
-                if total_entries > self.maxlen and cur.first():
-                    trimmed = total_entries - self.maxlen
-                    for _ in range(trimmed):
-                        cur.delete()
-            return trimmed
+        return await anyio.to_thread.run_sync(self._append_sync, item)
+
+    def _append_sync(self, item: bytes) -> int:
+        with self._mutation_lock:
+            if self.env is None:
+                return 0
+            with self.env.begin(write=True, db=self.db) as txn:
+                cur = txn.cursor(self.db)
+                next_idx = (_U64.unpack(cur.key())[0] + 1) if cur.last() else 0
+                txn.put(_U64.pack(next_idx), item, db=self.db)
+                trimmed = 0
+                if self.maxlen is not None:
+                    total_entries = txn.stat(self.db)["entries"]
+                    if total_entries > self.maxlen and cur.first():
+                        trimmed = total_entries - self.maxlen
+                        for _ in range(trimmed):
+                            cur.delete()
+                new_length = txn.stat(self.db)["entries"]
+            self._length = new_length
+        return trimmed
 
     async def popleft(self) -> bytes:
         if self.is_mem:
             if not self._mem:
                 raise IndexError("popleft from empty deque")
             return self._mem.popleft()
-        if not self.env:
-            raise IndexError("popleft from empty deque")
-        with self.env.begin(write=True, db=self.db, buffers=True) as txn:
-            cur = txn.cursor(self.db)
-            if not cur.first():
+        return await anyio.to_thread.run_sync(self._popleft_sync)
+
+    def _popleft_sync(self) -> bytes:
+        with self._mutation_lock:
+            if self.env is None:
                 raise IndexError("popleft from empty deque")
-            val = cur.pop(cur.key())
-            if val is None:
-                raise IndexError("popleft from empty deque")
-            return bytes(val)
+            with self.env.begin(write=True, db=self.db, buffers=True) as txn:
+                cur = txn.cursor(self.db)
+                if not cur.first():
+                    raise IndexError("popleft from empty deque")
+                val = cur.pop(cur.key())
+                if val is None:
+                    raise IndexError("popleft from empty deque")
+                result = bytes(val)
+                new_length = txn.stat(self.db)["entries"]
+            self._length = new_length
+        return result
 
     async def peek(self) -> bytes:
         if self.is_mem:
             if not self._mem:
                 raise IndexError("peek from empty deque")
             return self._mem[0]
-        if not self.env:
-            raise IndexError("peek from empty deque")
-        with self.env.begin(db=self.db, buffers=True) as txn:
-            cur = txn.cursor(self.db)
-            if not cur.first():
+        return await anyio.to_thread.run_sync(self._peek_sync)
+
+    def _peek_sync(self) -> bytes:
+        with self._mutation_lock:
+            if self.env is None:
                 raise IndexError("peek from empty deque")
-            return bytes(cur.value())
+            with self.env.begin(db=self.db, buffers=True) as txn:
+                cur = txn.cursor(self.db)
+                if not cur.first():
+                    raise IndexError("peek from empty deque")
+                return bytes(cur.value())
 
     async def clear(self) -> None:
         if self.is_mem:
             self._mem.clear()
-        elif self.env and self.db:
-            with self.env.begin(write=True, db=self.db) as txn:
-                txn.drop(self.db, delete=False)
+        elif self.env is not None and self.db is not None:
+            await anyio.to_thread.run_sync(self._clear_sync)
+
+    def _clear_sync(self) -> None:
+        with self._mutation_lock:
+            if self.env is not None and self.db is not None:
+                with self.env.begin(write=True, db=self.db) as txn:
+                    txn.drop(self.db, delete=False)
+                self._length = 0
 
     async def vacuum(self) -> None:
         """[SIL-2] Compact LMDB storage to reclaim disk space after spool flush."""
         if not self.is_mem and self.env:
-            await anyio.to_thread.run_sync(vacuum_lmdb_env, self.path, "deque.db", self.env, self._open_env)
+            await anyio.to_thread.run_sync(self._vacuum_sync)
+
+    def _vacuum_sync(self) -> None:
+        with self._mutation_lock:
+            if self.env is not None:
+                vacuum_lmdb_env(self.path, "deque.db", self.env, self._open_env)
 
     async def close(self) -> None:
-        if self.env:
-            self.env.close()
-            self.env = None
+        if self.env is not None:
+            await anyio.to_thread.run_sync(self.close_sync)
+
+    def close_sync(self) -> None:
+        """Close the LMDB environment synchronously for non-async lifecycle hooks."""
+        self._close_sync()
+
+    def _close_sync(self) -> None:
+        with self._mutation_lock:
+            if self.env is not None:
+                self.env.close()
+                self.env = None
+                self._length = 0
 
 
 class LmdbCache:
@@ -194,25 +239,31 @@ class LmdbCache:
         if self.is_mem:
             self._mem[key] = value
             return
-        if not self.env:
-            return
-        with self.env.begin(write=True, db=self.db) as txn:
-            txn.put(key.encode("utf-8"), value, db=self.db)
+        if self.env is not None:
+            await anyio.to_thread.run_sync(self._set_sync, key, value)
+
+    def _set_sync(self, key: str, value: bytes) -> None:
+        if self.env is not None:
+            with self.env.begin(write=True, db=self.db) as txn:
+                txn.put(key.encode("utf-8"), value, db=self.db)
 
     async def get(self, key: str, default: T | None = None) -> bytes | T | None:
         if self.is_mem:
             return self._mem.get(key, default)
-        if not self.env:
+        if self.env is None:
             return default
         try:
-            with self.env.begin(db=self.db, buffers=True) as txn:
-                val = txn.get(key.encode("utf-8"), db=self.db)
-                if val is not None:
-                    return bytes(val)
-                return default
+            return await anyio.to_thread.run_sync(self._get_sync, key, default)
         except (lmdb.Error, OSError) as exc:
             logger.error("LmdbCache get failed", path=self.path, key=key, error=exc)
             return default
+
+    def _get_sync(self, key: str, default: T | None = None) -> bytes | T | None:
+        if self.env is None:
+            return default
+        with self.env.begin(db=self.db, buffers=True) as txn:
+            val = txn.get(key.encode("utf-8"), db=self.db)
+            return bytes(val) if val is not None else default
 
     def __len__(self) -> int:
         if self.is_mem:
@@ -239,6 +290,14 @@ class LmdbCache:
             return False
 
     async def close(self) -> None:
-        if self.env:
+        if self.env is not None:
+            await anyio.to_thread.run_sync(self.close_sync)
+
+    def close_sync(self) -> None:
+        """Close the LMDB environment synchronously for non-async lifecycle hooks."""
+        self._close_sync()
+
+    def _close_sync(self) -> None:
+        if self.env is not None:
             self.env.close()
             self.env = None

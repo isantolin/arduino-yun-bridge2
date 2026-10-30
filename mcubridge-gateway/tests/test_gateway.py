@@ -218,14 +218,19 @@ def test_cli_main_keyboard_interrupt(mocker: MockerFixture, caplog: pytest.LogCa
     assert "Gateway terminated by user." in caplog.text
 
 
-async def test_protobuf_gateway_http3_run(mocker: MockerFixture) -> None:
+async def test_protobuf_gateway_http3_flag_falls_back_to_http2(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False, http3_enabled=True, http3_port=9999)
     mock_server_cls = mocker.patch("gateway.Server")
     mock_server = AsyncMock()
     mock_server.__dispatch__ = MagicMock()
     mock_server_cls.return_value = mock_server
+    warning = mocker.patch("gateway.logger.warning")
+
     await gw.run()
+
     assert mock_server.start.called
+    warning.assert_called_once()
+    assert "only serves HTTP/2" in warning.call_args.args[0]
 
 
 async def test_cloud_bridge_service_cert_parse_error() -> None:

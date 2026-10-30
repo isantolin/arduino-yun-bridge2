@@ -663,13 +663,12 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
     )
     mock_stream = MockGrpcStream(request=req_msg)
 
-    _orig_fail_after = anyio.fail_after
+    _orig_timeout = asyncio.timeout
 
-    def _quick_fail_after(t: float) -> anyio.CancelScope:
-        del t
-        return _orig_fail_after(0.001)
+    def _quick_timeout(_seconds: float) -> Any:
+        return _orig_timeout(0.001)
 
-    mocker.patch("mcubridge.services.runtime.anyio.fail_after", side_effect=_quick_fail_after)
+    mocker.patch("mcubridge.services.runtime.asyncio.timeout", side_effect=_quick_timeout)
     await local_svc.Publish(mock_stream.as_stream())
     assert mock_stream.send_message.called
 

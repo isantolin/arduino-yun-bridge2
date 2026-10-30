@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -101,6 +101,21 @@ async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     await deque.clear()
     await deque.vacuum()
     await deque.close()
+
+
+async def test_lmdb_deque_concurrent_worker_mutations_preserve_length(tmp_path: Path) -> None:
+    deque = LmdbDeque(str(tmp_path / "concurrent_deque.db"))
+    expected = [f"entry-{index}".encode("ascii") for index in range(24)]
+
+    append_results = await asyncio.gather(*(deque.append(item) for item in expected))
+    assert append_results == [0] * len(expected)
+    assert len(deque) == len(expected)
+
+    popped = await asyncio.gather(*(deque.popleft() for _ in expected))
+    assert sorted(popped) == sorted(expected)
+    assert len(deque) == 0
+    await deque.close()
+    assert len(deque) == 0
 
 
 async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
@@ -246,3 +261,107 @@ async def test_lmdb_deque_no_env_safety() -> None:
         await deque.peek()
     await deque.vacuum()
     await deque.close()
+
+
+
+async def test_lmdb_closed_resource_operations_are_safe(tmp_path: Path) -> None:
+    """Exercise idempotent lifecycle and closed-resource fallbacks."""
+    deque = LmdbDeque(str(tmp_path / "closed_deque.db"))
+    await deque.append(b"entry")
+    await deque.close()
+    await deque.close()
+    assert len(deque) == 0
+
+    # A closed deque must tolerate cleanup/vacuum calls without reopening LMDB.
+    await deque.clear()
+    await deque.vacuum()
+    assert len(deque) == 0
+
+    cache = LmdbCache(str(tmp_path / "closed_cache.db"))
+    await cache.set("before-close", b"value")
+    await cache.close()
+    await cache.close()
+    await cache.set("after-close", b"ignored")
+    assert await cache.get("after-close", b"default") == b"default"
+    assert len(cache) == 0
+    assert "before-close" not in cache
+
+
+async def test_lmdb_deque_missing_database_handles_all_operations() -> None:
+    """The unavailable-environment state is a safe no-op for mutations."""
+    deque = LmdbDeque(":memory:")
+    deque.is_mem = False
+    deque.env = None
+    deque.db = None
+
+    assert await deque.append(b"discarded") == 0
+    await deque.clear()
+    await deque.vacuum()
+    await deque.close()
+    assert len(deque) == 0
+    with pytest.raises(IndexError, match="popleft from empty deque"):
+        await deque.popleft()
+    with pytest.raises(IndexError, match="peek from empty deque"):
+        await deque.peek()
+
+
+async def test_lmdb_cache_unavailable_environment_fallback() -> None:
+    """Cache read/write and synchronous inspection tolerate a missing environment."""
+    cache = LmdbCache(":memory:")
+    cache.is_mem = False
+    cache.env = None
+    cache.db = None
+
+    await cache.set("key", b"value")
+    assert await cache.get("key", b"fallback") == b"fallback"
+    assert len(cache) == 0
+    assert "key" not in cache
+    await cache.close()
+
+
+async def test_lmdb_worker_callbacks_handle_environment_closing_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise defensive worker-side None checks through public async operations."""
+    deque = LmdbDeque(str(tmp_path / "deque_race.db"))
+    cache = LmdbCache(str(tmp_path / "cache_race.db"))
+
+    async def run_with_missing_environment(
+        target: LmdbDeque | LmdbCache,
+        func: Callable[..., object],
+        *args: object,
+        **kwargs: object,
+    ) -> object:
+        original_env = target.env
+        target.env = None
+        try:
+            return func(*args, **kwargs)
+        finally:
+            target.env = original_env
+
+    original_run_sync = anyio.to_thread.run_sync
+    try:
+        async def deque_worker(func: Callable[..., object], *args: object, **kwargs: object) -> object:
+            return await run_with_missing_environment(deque, func, *args, **kwargs)
+
+        monkeypatch.setattr(anyio.to_thread, "run_sync", deque_worker)
+        assert await deque.append(b"raced") == 0
+        await deque.clear()
+        await deque.vacuum()
+        await deque.close()
+        monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
+        await deque.close()
+
+        async def cache_worker(func: Callable[..., object], *args: object, **kwargs: object) -> object:
+            return await run_with_missing_environment(cache, func, *args, **kwargs)
+
+        monkeypatch.setattr(anyio.to_thread, "run_sync", cache_worker)
+        await cache.set("raced", b"value")
+        assert await cache.get("raced", b"fallback") == b"fallback"
+        await cache.close()
+        monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
+        await cache.close()
+    finally:
+        monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
+        await deque.close()
+        await cache.close()

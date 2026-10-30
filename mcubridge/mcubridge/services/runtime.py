@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 import anyio
-import anyio.to_thread
 import lmdb
 import psutil
 import structlog
@@ -86,7 +85,7 @@ _STATUS_VALUES: Final = {s.value for s in Status}
 @dataclass
 class PendingMcuRead:
     future: asyncio.Future[bytes]
-    chunks: list[bytes] = field(default_factory=list[bytes])
+    buffer: bytearray = field(default_factory=bytearray)
     fsm: FileTransferMachine = field(default_factory=FileTransferMachine)
 
 
@@ -540,7 +539,7 @@ class BridgeService:
 
             if not spec.pre_sync_allowed and route.method.startswith(("gpio.", "console.", "spi.")):
                 try:
-                    with anyio.fail_after(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
+                    async with asyncio.timeout(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
                         await self.state.link_sync_event.wait()
                 except TimeoutError:
                     logger.error("Timed out waiting for MCU link synchronization")
@@ -711,23 +710,47 @@ class BridgeService:
             if self.pending_mcu_read:
                 if p.content:
                     self.pending_mcu_read.fsm.receive_chunk()
-                    self.pending_mcu_read.chunks.append(p.content)
+                    self.pending_mcu_read.buffer.extend(p.content)
                 elif not self.pending_mcu_read.future.done():
                     self.pending_mcu_read.fsm.complete()
-                    self.pending_mcu_read.future.set_result(b"".join(self.pending_mcu_read.chunks))
+                    completed_content = bytes(self.pending_mcu_read.buffer)
+                    self.pending_mcu_read.buffer.clear()
+                    self.pending_mcu_read.future.set_result(completed_content)
                 return p
             return pb.FileReadResponse()
         if p is not None:
-            data = await self._safe_file_read(p.path)
-            if self.serial:
-                if data is None:
+            serial = self.serial
+            safe_path = self._get_safe_path(p.path)
+            if safe_path is None:
+                if serial is not None:
                     await self.send_mcu_error("Read failed")
-                elif not data:
-                    await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
-                else:
-                    for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                        await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
-            return pb.FileReadResponse(content=data or b"")
+                return pb.FileReadResponse()
+            if serial is None:
+                data = await self._safe_file_read(p.path)
+                return pb.FileReadResponse(content=data or b"")
+
+            source: Any | None = None
+            try:
+                source = await asyncio.to_thread(safe_path.open, "rb")
+                chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
+                while chunk := await asyncio.to_thread(source.read, chunk_size):
+                    response = pb.FileReadResponse(content=chunk)
+                    if not await serial.send(Command.CMD_FILE_READ_RESP.value, response):
+                        logger.error("MCU file read response send failed", path=p.path)
+                        return pb.FileReadResponse()
+                # Empty content is the protocol's explicit end-of-file marker.
+                if not await serial.send(
+                    Command.CMD_FILE_READ_RESP.value,
+                    pb.FileReadResponse(content=b""),
+                ):
+                    logger.error("MCU file read end marker send failed", path=p.path)
+            except OSError as exc:
+                logger.warning("Safe file streaming failed", path=p.path, error=str(exc))
+                await self.send_mcu_error("Read failed")
+            finally:
+                if source is not None:
+                    await asyncio.to_thread(source.close)
+            return pb.FileReadResponse()
         path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
@@ -751,7 +774,7 @@ class BridgeService:
                     else:
                         try:
                             timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
-                            with anyio.fail_after(timeout_seconds):
+                            async with asyncio.timeout(timeout_seconds):
                                 content = await pending.future
                         except TimeoutError:
                             pending.fsm.timeout()
@@ -779,7 +802,7 @@ class BridgeService:
                 ok = False
             else:
                 try:
-                    await safe_path.unlink()
+                    await asyncio.to_thread(safe_path.unlink)
                     ok = True
                 except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
                     logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
@@ -788,29 +811,29 @@ class BridgeService:
             await self._send_mcu_status(ok, "Path not allowed or not found")
         return pb.GenericResponse(status="ok" if ok else "error")
 
-    def _get_safe_path(self, p_str: str) -> anyio.Path | None:
+    def _get_safe_path(self, p_str: str) -> Path | None:
         if not p_str or not p_str.strip():
             return None
         root = Path(self.config.file_system_root).resolve()
-        p = root.joinpath(p_str.lstrip("/")).resolve()
-        return anyio.Path(p) if (p != root and p.is_relative_to(root)) else None
+        path = root.joinpath(p_str.lstrip("/")).resolve()
+        return path if path != root and path.is_relative_to(root) else None
 
     async def _safe_file_read(self, p_str: str) -> bytes | None:
         if not (path := self._get_safe_path(p_str)):
             return None
         try:
-            return await path.read_bytes()
+            return await asyncio.to_thread(path.read_bytes)
         except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
             logger.debug("Safe file read failed", path=str(path), error=str(exc))
             return None
 
-    async def write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:
+    async def write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
             if self.state.file_write_max_bytes > 0 and len(data) > self.state.file_write_max_bytes:
                 self.state.file_write_limit_rejections += 1
                 return False
             try:
-                usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
+                usage = await asyncio.to_thread(psutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
 
                 if usage.free < len(data):
@@ -818,9 +841,9 @@ class BridgeService:
                     return False
             except OSError as exc:
                 logger.error("Disk usage check failed", error=str(exc))
-            p = anyio.Path(path)
-            await p.parent.mkdir(parents=True, exist_ok=True)
-            await p.write_bytes(data)
+            p = Path(path)
+            await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
+            await asyncio.to_thread(p.write_bytes, data)
             return True
 
     # --- Process Subsystem ---
@@ -881,11 +904,9 @@ class BridgeService:
                         if not s or s.at_eof():
                             return b"", False
                         try:
-                            with anyio.move_on_after(STREAM_POLL_TIMEOUT_SECONDS):
+                            async with asyncio.timeout(STREAM_POLL_TIMEOUT_SECONDS):
                                 data = await s.read(protocol.MAX_PAYLOAD_SIZE - 32)
                                 return data, not s.at_eof()
-                            logger.debug("Stream poll read timed out; process stream still pending")
-                            return b"", True
                         except TimeoutError as exc:
                             logger.debug("Stream poll read timed out; process stream still pending", error=str(exc))
                             return b"", True
@@ -928,7 +949,7 @@ class BridgeService:
                     ctx = self.state.running_processes.get(pid)
                 if ctx:
                     try:
-                        with anyio.fail_after(float(self.state.process_timeout)):
+                        async with asyncio.timeout(float(self.state.process_timeout)):
                             ctx.exit_code = await ctx.handle.wait()
                     except TimeoutError:
                         ctx.exit_code = await self.terminate_process(
@@ -947,10 +968,7 @@ class BridgeService:
         if not ctx.fsm.terminating.is_active:
             ctx.fsm.terminate()
 
-        await anyio.to_thread.run_sync(
-            lambda: terminate_pid_tree(ctx.handle.pid, timeout=grace_period),
-            abandon_on_cancel=True,
-        )
+        await asyncio.to_thread(terminate_pid_tree, ctx.handle.pid, timeout=grace_period)
 
         ctx.fsm.finish()
         return ctx.handle.returncode if ctx.handle.returncode is not None else -1
@@ -1166,16 +1184,13 @@ class BridgeService:
         try:
             async with stub.Session.open(metadata={"x-device-id": self.state.device_id}) as stream:
                 if self.config.cloud_http3_enabled:
-                    logger.info(
-                        "Attempting primary connection via gRPC over HTTP/3 (QUIC)",
-                        port=self.config.cloud_http3_port,
+                    logger.warning(
+                        "HTTP/3 was requested but the grpclib client uses HTTP/2; continuing over HTTP/2",
+                        requested_udp_port=self.config.cloud_http3_port,
                     )
-                    self.state.cloud_fsm.connect_http3()
-                    logger.info("Connected to Cloud Gateway via gRPC over HTTP/3 (QUIC).")
-                else:
-                    self.state.cloud_fsm.connect_http2()
+                self.state.cloud_fsm.connect_http2()
                 self.cloud_stream = stream
-                logger.info("Connected to Cloud Gateway via gRPC.")
+                logger.info("Connected to Cloud Gateway via gRPC over HTTP/2.")
 
                 # Emit status online event
                 await self.send_cloud_event("status_online", "info", "Device online")
@@ -1388,7 +1403,7 @@ class BridgeService:
 
                 if is_query and response_queue is not None:
                     try:
-                        with anyio.fail_after(float(protocol.DEFAULT_IPC_TIMEOUT_SECONDS)):
+                        async with asyncio.timeout(float(protocol.DEFAULT_IPC_TIMEOUT_SECONDS)):
                             resp = await response_queue.get()
                     except TimeoutError:
                         logger.warning("IPC request timed out")

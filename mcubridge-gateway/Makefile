@@ -22,7 +22,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mcubridge-gateway
-PKG_VERSION:=2.8.8
+PKG_VERSION:=2.8.9
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
@@ -42,12 +42,18 @@ define Package/$(PKG_NAME)
 		+python3 \
 		+python3-protobuf \
 		+python3-prometheus-client \
+		+python3-tenacity \
+		+python3-uvloop \
+		+python3-structlog \
 		+python3-statemachine \
 		+python3-anyio \
+		+python3-parse \
 		+python3-hpack \
 		+python3-hyperframe \
 		+python3-h2 \
 		+python3-grpclib \
+		+python3-annotated-doc \
+		+python3-shellingham \
 		+python3-typer
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
@@ -58,16 +64,14 @@ endef
 
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
-	mkdir -p $(PKG_BUILD_DIR)/mcubridge/protocol
+	mkdir -p $(PKG_BUILD_DIR)/mcubridge/protocol $(PKG_BUILD_DIR)/mcubridge/config
 	# Copy gateway source
 	$(CP) ./gateway.py $(PKG_BUILD_DIR)/mcubridge-gateway
-	# Copy protocol stubs from mcubridge MPU package
-	$(CP) ../mcubridge/mcubridge/protocol/mcubridge_pb2.py $(PKG_BUILD_DIR)/mcubridge/protocol/
-	$(CP) ../mcubridge/mcubridge/protocol/mcubridge_pb2.pyi $(PKG_BUILD_DIR)/mcubridge/protocol/
-	$(CP) ../mcubridge/mcubridge/protocol/mcubridge_grpc.py $(PKG_BUILD_DIR)/mcubridge/protocol/
-	# Create __init__.py files
-	touch $(PKG_BUILD_DIR)/mcubridge/__init__.py
-	touch $(PKG_BUILD_DIR)/mcubridge/protocol/__init__.py
+	# Copy protocol and logging modules from mcubridge MPU package
+	$(CP) ../mcubridge/mcubridge/__init__.py $(PKG_BUILD_DIR)/mcubridge/
+	$(CP) ../mcubridge/mcubridge/protocol/*.py $(PKG_BUILD_DIR)/mcubridge/protocol/
+	$(CP) ../mcubridge/mcubridge/protocol/*.pyi $(PKG_BUILD_DIR)/mcubridge/protocol/ 2>/dev/null || true
+	$(CP) ../mcubridge/mcubridge/config/*.py $(PKG_BUILD_DIR)/mcubridge/config/
 endef
 
 define Build/Compile
@@ -80,13 +84,15 @@ PYTHON3_SITE_DIR:=/usr/lib/python$(if $(wildcard $(STAGING_DIR_HOSTPKG)/lib/pyth
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)$(PYTHON3_SITE_DIR)/mcubridge/protocol
+	$(INSTALL_DIR) $(1)$(PYTHON3_SITE_DIR)/mcubridge/config
 
 	# Install Gateway Executable
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge-gateway $(1)/usr/bin/mcubridge-gateway
 
-	# Install Protocol Stubs for self-contained imports
+	# Install Protocol and Config Modules for self-contained imports
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)$(PYTHON3_SITE_DIR)/mcubridge/
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)$(PYTHON3_SITE_DIR)/mcubridge/protocol/
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/config/* $(1)$(PYTHON3_SITE_DIR)/mcubridge/config/
 	python3 -m compileall -o 2 -q $(1)$(PYTHON3_SITE_DIR)/mcubridge
 endef
 

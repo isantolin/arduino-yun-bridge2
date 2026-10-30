@@ -33,10 +33,17 @@ Source0:        mcubridge-gateway-{version}.tar.gz
 BuildArch:      noarch
 BuildRequires:  python3-devel
 Requires:       python3
-Requires:       python3-protobuf
+Requires:       python3-anyio
 Requires:       python3-cryptography
 Requires:       python3-grpclib
+Requires:       python3-parse
 Requires:       python3-prometheus-client
+Requires:       python3-protobuf
+Requires:       python3-statemachine
+Requires:       python3-structlog
+Requires:       python3-tenacity
+Requires:       python3-typer
+Requires:       python3-uvloop
 
 %description
 Protobuf Cloud Gateway service (gRPC over HTTP/2) for MCU Bridge v2.
@@ -52,6 +59,7 @@ Protobuf Cloud Gateway service (gRPC over HTTP/2) for MCU Bridge v2.
 mkdir -p %{{buildroot}}%{{_bindir}}
 mkdir -p %{{buildroot}}%{{_unitdir}}
 mkdir -p %{{buildroot}}%{{python3_sitelib}}/mcubridge/protocol
+mkdir -p %{{buildroot}}%{{python3_sitelib}}/mcubridge/config
 
 # Install executable & service
 install -p -m 755 gateway.py %{{buildroot}}%{{_bindir}}/mcubridge-gateway
@@ -60,6 +68,7 @@ install -p -m 644 mcubridge-gateway.service %{{buildroot}}%{{_unitdir}}/mcubridg
 # Install python modules
 cp -p mcubridge/__init__.py %{{buildroot}}%{{python3_sitelib}}/mcubridge/
 cp -rp mcubridge/protocol/* %{{buildroot}}%{{python3_sitelib}}/mcubridge/protocol/
+cp -rp mcubridge/config/* %{{buildroot}}%{{python3_sitelib}}/mcubridge/config/
 
 %files
 %{{_bindir}}/mcubridge-gateway
@@ -76,19 +85,35 @@ cp -rp mcubridge/protocol/* %{{buildroot}}%{{python3_sitelib}}/mcubridge/protoco
 def create_source_tarball(version: str, sources_dir: Path) -> Path:
     temp_src = sources_dir / f"mcubridge-gateway-{version}"
     proto_dest = temp_src / "mcubridge" / "protocol"
+    config_dest = temp_src / "mcubridge" / "config"
     proto_dest.mkdir(parents=True, exist_ok=True)
+    config_dest.mkdir(parents=True, exist_ok=True)
 
     shutil.copy2(GATEWAY_DIR / "gateway.py", temp_src / "gateway.py")
     shutil.copy2(GATEWAY_DIR / "mcubridge-gateway.service", temp_src / "mcubridge-gateway.service")
 
-    proto_src = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol"
-    for fname in ("mcubridge_pb2.py", "mcubridge_pb2.pyi", "mcubridge_grpc.py"):
+    pkg_root = REPO_ROOT / "mcubridge" / "mcubridge"
+    shutil.copy2(pkg_root / "__init__.py", temp_src / "mcubridge" / "__init__.py")
+
+    proto_src = pkg_root / "protocol"
+    for fname in (
+        "__init__.py",
+        "frame.py",
+        "protocol.py",
+        "structures.py",
+        "mcubridge_pb2.py",
+        "mcubridge_pb2.pyi",
+        "mcubridge_grpc.py",
+    ):
         src_f = proto_src / fname
         if src_f.exists():
             shutil.copy2(src_f, proto_dest / fname)
 
-    (temp_src / "mcubridge" / "__init__.py").touch()
-    (proto_dest / "__init__.py").touch()
+    config_src = pkg_root / "config"
+    for fname in ("__init__.py", "common.py", "logging.py", "settings.py"):
+        src_f = config_src / fname
+        if src_f.exists():
+            shutil.copy2(src_f, config_dest / fname)
 
     tarball_path = sources_dir / f"mcubridge-gateway-{version}.tar.gz"
     with tarfile.open(tarball_path, "w:gz") as tar:

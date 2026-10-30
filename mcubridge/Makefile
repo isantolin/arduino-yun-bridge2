@@ -24,7 +24,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mcubridge
-PKG_VERSION:=2.8.8
+PKG_VERSION:=2.8.9
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
@@ -52,11 +52,11 @@ define Package/$(PKG_NAME)
 		+python3-uvloop \
 		+python3-cryptography \
 		+python3-structlog \
-		+python-psutil \
+		+python3-psutil \
 		+python3-statemachine \
 		+python3-anyio \
 		+python3-parse \
-		+python-ubus \
+		+python3-ubus \
 		+python3-hpack \
 		+python3-hyperframe \
 		+python3-h2 \

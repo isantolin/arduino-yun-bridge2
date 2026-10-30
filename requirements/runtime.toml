@@ -48,12 +48,14 @@ rationale = "Native sync/async serial stack with modem-pin controls and typed tr
 name = "tenacity"
 openwrt = "python3-tenacity"
 pip = "tenacity==9.2.1"
+gateway = true
 rationale = "Declarative retrying library for robust task supervision and handshake"
 
 [[dependency]]
 name = "uvloop"
 openwrt = "python3-uvloop"
 pip = "uvloop==0.23.0"
+gateway = true
 rationale = "Ultra-fast asyncio event loop implementation (libuv)"
 
 [[dependency]]
@@ -66,11 +68,12 @@ rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 name = "structlog"
 openwrt = "python3-structlog"
 pip = "structlog==26.1.0"
+gateway = true
 rationale = "Structured logging with JSON output for production syslog"
 
 [[dependency]]
 name = "psutil"
-openwrt = "python-psutil"
+openwrt = "python3-psutil"
 pip = "psutil==7.2.2"
 rationale = "Cross-platform process supervision and resource tracking [SIL-2 compliance]"
 
@@ -92,11 +95,12 @@ rationale = "Asynchronous file I/O (anyio.Path), structured concurrency, and typ
 name = "parse"
 openwrt = "python3-parse"
 pip = "parse==1.22.4"
+gateway = true
 rationale = "Declarative topic path parsing and compilation (SIL-2)"
 
 [[dependency]]
 name = "ubus"
-openwrt = "python-ubus"
+openwrt = "python3-ubus"
 pip = ""
 rationale = "Native OpenWrt microbus RPC interface for LuCI and system integration"
 
@@ -143,12 +147,14 @@ rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 name = "annotated-doc"
 openwrt = "python3-annotated-doc"
 pip = "annotated-doc==0.0.5"
+gateway = true
 rationale = "Doc docstrings extraction runtime required by Typer"
 
 [[dependency]]
 name = "shellingham"
 openwrt = "python3-shellingham"
 pip = "shellingham==1.5.4"
+gateway = true
 rationale = "Shell environment detection runtime required by Typer"
 
 [[dependency]]

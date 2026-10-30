@@ -52,7 +52,7 @@ define Package/python3-cryptography
 	CATEGORY:=Languages
 	SUBMENU:=Python
 	TITLE:=Python cryptography library
-	DEPENDS:=+python3 +libopenssl +python-cffi
+	DEPENDS:=+python3 +libopenssl +python3-cffi
 endef
 
 define Package/python3-cryptography/description

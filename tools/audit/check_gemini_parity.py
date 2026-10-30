@@ -164,7 +164,7 @@ def check_rules_parity() -> list[str]:
     if not canonical_path.is_file():
         return [f"Canonical rules file missing: {canonical_path}"]
     try:
-        canonical = canonical_path.read_text(encoding="utf-8")
+        canonical = canonical_path.read_text(encoding="utf-8").strip()
     except OSError as exc:
         return [f"Cannot read canonical rules file {canonical_path}: {exc}"]
     errors: list[str] = []
@@ -215,7 +215,7 @@ def sync_rules_to_agent_json() -> bool:
     canonical_path = ROOT / "GEMINI.md"
     agent_path = ROOT / AGENT_JSON
     try:
-        canonical = canonical_path.read_text(encoding="utf-8").strip()
+        canonical = canonical_path.read_text(encoding="utf-8")
         agent_data: object = json.loads(agent_path.read_text(encoding="utf-8"))
         if not isinstance(agent_data, dict):
             raise ValueError(f"{AGENT_JSON} must contain a JSON object")

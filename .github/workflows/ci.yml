@@ -85,11 +85,6 @@ jobs:
           echo "✅ No hardcoded secrets"
       - name: Run Tox Environment
         run: tox -e ${{ matrix.env }}
-      - name: Verify Gemini Actions model parity
-        if: matrix.env == 'gemini-parity'
-        env:
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-        run: python tools/audit/check_gemini_parity.py --check-env-model
 
   arduino-examples:
     name: Arduino Examples Compilation

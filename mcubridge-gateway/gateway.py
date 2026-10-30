@@ -102,12 +102,10 @@ class GatewayDeviceSession:
         self.metrics = metrics
         self.gateway = gateway
         self.console_queues = []
-        self.fsm = GatewaySessionMachine()
+        self.fsm = GatewaySessionMachine(listeners=[self])
 
-    def close(self) -> None:
-        if self.fsm.closed.is_active:
-            return
-        self.fsm.close()
+    def on_enter_closed(self) -> None:
+        """[SIL-2] Native python-statemachine hook executed on session closure."""
         self.console_queues.clear()
 
         if self.gateway is not None and hasattr(self.gateway, "pending_commands"):
@@ -118,6 +116,9 @@ class GatewayDeviceSession:
         if self.metrics is not None and self.device_id:
             self.metrics.devices_connected.dec()
             self.metrics.device_connection_state.labels(device_id=self.device_id).set(0.0)
+
+    def close(self) -> None:
+        self.fsm.close()
 
 
 class FleetMetrics:

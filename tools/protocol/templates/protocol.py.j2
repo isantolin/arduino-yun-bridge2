@@ -15,6 +15,7 @@ from typing import Any, Final
 
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
+import parse
 import structlog
 
 from . import mcubridge_pb2 as pb
@@ -25,6 +26,8 @@ logger = structlog.get_logger(__name__)
 
 CLOUD_WILDCARD_SINGLE: Final[str] = "+"
 CLOUD_WILDCARD_MULTI: Final[str] = "#"
+_FLEET_TOPIC_PARSER: Final = parse.compile("devices/{device_id}/{direction}/{method}")
+_DIRECTION_TOPIC_PARSER: Final = parse.compile("{direction}/{method}")
 
 {% for const in constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
@@ -347,53 +350,42 @@ class ProtocolRegistry:
         return None
 
     def parse_topic(self, prefix: str, topic_name: str) -> TopicRoute | None:
-        """Parse incoming CLOUD topic into TopicRoute natively. [SIL-2]"""
-        if not topic_name:
-            return None
-
-        raw_parts = [p for p in topic_name.split("/") if p]
-        if not raw_parts:
+        """Parse incoming CLOUD topic into TopicRoute via compiled parse templates. [SIL-2]"""
+        topic_norm = "/".join(p for p in topic_name.split("/") if p)
+        if not topic_norm:
             return None
 
         # 1. Canonical Fleet Topic: devices/{device_id}/{direction}/{method}
-        if len(raw_parts) >= 4 and raw_parts[0] == "devices":
-            dev_id = raw_parts[1]
-            direction = raw_parts[2].lower()
-            if direction not in ("req", "res", "evt"):
-                return None
-            method = "/".join(raw_parts[3:])
-            return TopicRoute(
-                raw=topic_name,
-                prefix=f"devices/{dev_id}",
-                device_id=dev_id,
-                direction=direction,
-                method=method,
-            )
-
-        if not prefix:
+        if (fleet := _FLEET_TOPIC_PARSER.parse(topic_norm)) is not None:
+            dev_id = str(fleet["device_id"])
+            direction = str(fleet["direction"]).lower()
+            if "/" not in dev_id and direction in ("req", "res", "evt"):
+                return TopicRoute(
+                    raw=topic_name,
+                    prefix=f"devices/{dev_id}",
+                    device_id=dev_id,
+                    direction=direction,
+                    method=str(fleet["method"]),
+                )
             return None
 
-        prefix_segs = [p for p in prefix.split("/") if p]
-        prefix_len = len(prefix_segs)
-        if not prefix_segs or len(raw_parts) <= prefix_len + 1 or raw_parts[:prefix_len] != prefix_segs:
+        prefix_norm = "/".join(p for p in prefix.split("/") if p)
+        if not prefix_norm or not topic_norm.startswith(f"{prefix_norm}/"):
             return None
-
-        prefix_canonical = "/".join(prefix_segs)
-        rem_segs = raw_parts[prefix_len:]
-        direction = rem_segs[0].lower()
 
         # 2. Canonical Direction Topic: {prefix}/{req|res|evt}/{method...}
-        if direction not in ("req", "res", "evt"):
-            return None
-
-        method = "/".join(rem_segs[1:])
-        return TopicRoute(
-            raw=topic_name,
-            prefix=prefix_canonical,
-            device_id="",
-            direction=direction,
-            method=method,
-        )
+        rel_topic = topic_norm.removeprefix(f"{prefix_norm}/")
+        if (routed := _DIRECTION_TOPIC_PARSER.parse(rel_topic)) is not None:
+            direction = str(routed["direction"]).lower()
+            if direction in ("req", "res", "evt"):
+                return TopicRoute(
+                    raw=topic_name,
+                    prefix=prefix_norm,
+                    device_id="",
+                    direction=direction,
+                    method=str(routed["method"]),
+                )
+        return None
 
     def build_local_bridge_mapping(self, service: Any) -> dict[str, Handler]:
         """Build grpclib route mapping for LocalBridge services from protocol SSOT. [SIL-2]"""

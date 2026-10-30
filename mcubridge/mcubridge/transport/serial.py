@@ -492,7 +492,8 @@ class SerialTransport:
                         raise self._FatalSerialError(pending.failure_status)
                     raise self._RetryableSerialError()
 
-                return await retryer(_send_attempt)
+                with structlog.contextvars.bound_contextvars(command_id=command_id):
+                    return await retryer(_send_attempt)
             except self._FatalSerialError as exc:
                 pending.mark_failure(exc.status)
                 return False

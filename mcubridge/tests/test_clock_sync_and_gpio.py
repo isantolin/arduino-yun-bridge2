@@ -9,6 +9,7 @@ import time
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
+from dirty_equals import IsPartialDict
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -245,9 +246,11 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
             mcu_time_us=123456,
         )
         res = await clock.sync_now()
-        assert res["sync_count"] == 1
-        assert res["state"] == "synchronized"
-        assert res["is_synchronized"] is True
+        assert res == IsPartialDict(
+            sync_count=1,
+            state="synchronized",
+            is_synchronized=True,
+        )
         assert mock_serial.send.call_count == 1
         call_kwargs = mock_serial.send.call_args.kwargs
         assert call_kwargs.get("timeout") == 1.0

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 import anyio
+import anyio.to_thread
 import lmdb
 import psutil
 import structlog
@@ -729,15 +730,14 @@ class BridgeService:
                 data = await self._safe_file_read(p.path)
                 return pb.FileReadResponse(content=data or b"")
 
-            source: Any | None = None
             try:
-                source = await asyncio.to_thread(safe_path.open, "rb")
                 chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
-                while chunk := await asyncio.to_thread(source.read, chunk_size):
-                    response = pb.FileReadResponse(content=chunk)
-                    if not await serial.send(Command.CMD_FILE_READ_RESP.value, response):
-                        logger.error("MCU file read response send failed", path=p.path)
-                        return pb.FileReadResponse()
+                async with await anyio.Path(safe_path).open("rb") as source:
+                    while chunk := await source.read(chunk_size):
+                        response = pb.FileReadResponse(content=chunk)
+                        if not await serial.send(Command.CMD_FILE_READ_RESP.value, response):
+                            logger.error("MCU file read response send failed", path=p.path)
+                            return pb.FileReadResponse()
                 # Empty content is the protocol's explicit end-of-file marker.
                 if not await serial.send(
                     Command.CMD_FILE_READ_RESP.value,
@@ -747,9 +747,6 @@ class BridgeService:
             except OSError as exc:
                 logger.warning("Safe file streaming failed", path=p.path, error=str(exc))
                 await self.send_mcu_error("Read failed")
-            finally:
-                if source is not None:
-                    await asyncio.to_thread(source.close)
             return pb.FileReadResponse()
         path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
@@ -802,7 +799,7 @@ class BridgeService:
                 ok = False
             else:
                 try:
-                    await asyncio.to_thread(safe_path.unlink)
+                    await anyio.Path(safe_path).unlink()
                     ok = True
                 except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
                     logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
@@ -822,7 +819,7 @@ class BridgeService:
         if not (path := self._get_safe_path(p_str)):
             return None
         try:
-            return await asyncio.to_thread(path.read_bytes)
+            return await anyio.Path(path).read_bytes()
         except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
             logger.debug("Safe file read failed", path=str(path), error=str(exc))
             return None
@@ -833,7 +830,7 @@ class BridgeService:
                 self.state.file_write_limit_rejections += 1
                 return False
             try:
-                usage = await asyncio.to_thread(psutil.disk_usage, self.config.file_system_root)
+                usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
 
                 if usage.free < len(data):
@@ -841,9 +838,9 @@ class BridgeService:
                     return False
             except OSError as exc:
                 logger.error("Disk usage check failed", error=str(exc))
-            p = Path(path)
-            await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
-            await asyncio.to_thread(p.write_bytes, data)
+            ap = anyio.Path(path)
+            await ap.parent.mkdir(parents=True, exist_ok=True)
+            await ap.write_bytes(data)
             return True
 
     # --- Process Subsystem ---

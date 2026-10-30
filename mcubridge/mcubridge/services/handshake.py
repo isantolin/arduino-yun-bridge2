@@ -262,8 +262,9 @@ class SerialHandshakeManager:
             self._state.last_handshake_unix = time.time()
             self._state.handshake_last_started = time.monotonic()
             self._state.handshake_attempts += 1
-            self.transition(HandshakeEvent.RESET)  # Ensure clean slate
-            return await self.synchronize_attempt()
+            with structlog.contextvars.bound_contextvars(handshake_attempt=self._state.handshake_attempts):
+                self.transition(HandshakeEvent.RESET)  # Ensure clean slate
+                return await self.synchronize_attempt()
 
         try:
             ok: bool = await retryer(_attempt)

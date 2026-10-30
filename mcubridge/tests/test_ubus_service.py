@@ -803,5 +803,5 @@ async def test_ubus_service_run_rejects_non_callable_loop(mock_runtime: MockRunt
     service = UbusService(mock_runtime, ubus_module=mock_ubus)
     service.connection = True
 
-    with pytest.raises(RuntimeError, match=r"no callable loop\\(\\) API"):
+    with pytest.raises(RuntimeError, match=r"no callable loop\(\) API"):
         await service.run()

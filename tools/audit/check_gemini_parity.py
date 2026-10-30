@@ -202,7 +202,9 @@ def check_shared_skill_parity() -> list[str]:
     if not source_root.is_dir():
         return [f"Canonical shared Skills directory missing: {CANONICAL_SKILLS_DIR}"]
 
-    source_names = {path.name for path in source_root.iterdir() if path.is_dir()}
+    source_names = {
+        name for name in REQUIRED_SHARED_SKILLS if (source_root / name).is_dir()
+    }
     errors.extend(
         f"Required shared Skill missing: {CANONICAL_SKILLS_DIR / required_name / 'SKILL.md'}"
         for required_name in REQUIRED_SHARED_SKILLS
@@ -434,7 +436,15 @@ def sync_generated_skill_mirror() -> bool:
         return False
     try:
         mirror_root.mkdir(parents=True, exist_ok=True)
-        source_names = {path.name for path in source_root.iterdir() if path.is_dir()}
+        source_names = set(REQUIRED_SHARED_SKILLS)
+        missing_skills = [
+            name for name in sorted(source_names)
+            if not (source_root / name / "SKILL.md").is_file()
+        ]
+        if missing_skills:
+            raise FileNotFoundError(
+                "Missing canonical shared Skill manifests: " + ", ".join(missing_skills)
+            )
         for name in sorted(source_names):
             source_dir = source_root / name
             mirror_dir = mirror_root / name

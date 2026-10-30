@@ -233,7 +233,10 @@ def test_check_rules_parity_rejects_platform_frontmatter_in_canonical_guide(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
     _write_minimal_agent_fixture(tmp_path)
-    (tmp_path / "GEMINI.md").write_text("---\\nname: not-a-rule\\n---\\n\\n# Rules\\n", encoding="utf-8")
+    (tmp_path / "GEMINI.md").write_text(
+        "---\nname: not-a-rule\n---\n\n# Rules\n",
+        encoding="utf-8",
+    )
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     errors = check_rules_parity()
     assert any("plain Markdown without platform-specific YAML frontmatter" in error for error in errors)

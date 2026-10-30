@@ -101,6 +101,7 @@ def test_check_github_action_model_wiring_requires_canonical_file(mocker: Mocker
     assert len(errors) == 1
     assert "tools/gemini_model" in errors[0]
 
+
 def test_check_rules_parity_requires_symlinks_and_generated_profiles(
     mocker: MockerFixture, tmp_path: Path
 ) -> None:
@@ -167,9 +168,12 @@ def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
                 "        uses: 'actions/checkout@v7'",
                 "      - name: 'Read canonical Gemini model'",
                 "        id: 'gemini_model'",
-                "        run: |-\\n          model=''\\n          IFS= read -r model < tools/gemini_model || true",
+                "        run: |-",
+                "          model=''",
+                "          IFS= read -r model < tools/gemini_model || true",
                 "      - uses: 'google-github-actions/run-gemini-cli@v0'",
-                "        with:\\n          gemini_model: '${{ steps.gemini_model.outputs.model }}'",
+                "        with:",
+                "          gemini_model: '${{ steps.gemini_model.outputs.model }}'",
             ]
         ),
         encoding="utf-8",

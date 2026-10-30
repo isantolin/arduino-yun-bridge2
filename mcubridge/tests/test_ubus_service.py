@@ -795,3 +795,13 @@ def test_ubus_handle_datastore_and_mailbox_property(key: str, val: str, msg_text
         mock_rt.mailbox_push.assert_awaited_once_with(msg_text.encode("utf-8"))
     finally:
         state.cleanup()
+
+
+async def test_ubus_service_run_rejects_non_callable_loop(mock_runtime: MockRuntimeFacade) -> None:
+    """Reject a connected backend that does not expose an invokable event loop."""
+    mock_ubus: Any = MagicMock(spec=[])
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service.connection = True
+
+    with pytest.raises(RuntimeError, match=r"no callable loop\\(\\) API"):
+        await service.run()

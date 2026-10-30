@@ -44,7 +44,7 @@ Files under .github/instructions/ contain short, path-scoped guidance for Python
 
 ## ChatGPT Skill export
 
-Generate one ZIP archive per Skill for manual installation in supported ChatGPT desktop surfaces:
+Generate one ZIP archive per Skill for manual upload through the ChatGPT Skills interface on eligible accounts/workspaces. Each ZIP contains exactly one top-level folder with SKILL.md and any supporting files, as required by OpenAI's Skill bundle format:
 
     python tools/export_chatgpt_skills.py
 
@@ -52,9 +52,9 @@ The default output is dist/chatgpt-skills/. To choose another directory:
 
     python tools/export_chatgpt_skills.py --output /tmp/chatgpt-skills
 
-In ChatGPT desktop, open Skills, choose Create, then Upload from computer, and upload the ZIP for each Skill you want to install. Review the contents before installing. These ZIP files are build artifacts and are not committed to the repository.
+In an eligible ChatGPT workspace, open Plugins > Skills, choose Create > Upload from your computer, and upload the ZIP for each Skill you want to install. Feature availability and upload permissions depend on the account, product surface, and workspace administrator settings. Review the contents before installing. These ZIP files are build artifacts and are not committed to the repository.
 
-For ChatGPT Chat/Work distribution through the web and mobile apps, package the Skills as a Plugin when that distribution is required. Plugin installation/authorization is a separate step and is not implied by this repository's Skill files.
+For broader ChatGPT/Codex distribution through the Plugin Directory, package the Skills in a Plugin when that distribution is required. Plugin review, installation, and authorization are separate steps and are not implied by this repository's Skill files.
 
 ## Architecture decisions
 

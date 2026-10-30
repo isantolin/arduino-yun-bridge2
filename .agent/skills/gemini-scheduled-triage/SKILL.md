@@ -1,7 +1,13 @@
 ---
 name: gemini-scheduled-triage
-description: Analyzes and triages GitHub issues on a schedule with Gemini CLI, producing structured label decisions. Use when conducting batch triage of repository issues.
+description: Workflow-only prompt for scheduled GitHub Actions Gemini batch issue triage; not a general repository Skill.
 ---
+
+## Workflow-only scope
+
+This is an operational prompt for the repository's dedicated GitHub Actions Gemini workflow `gemini-scheduled-triage`. Use it only when Gemini CLI is launched by that workflow with its corresponding workflow context and environment variables. Do not activate it for normal interactive repository engineering, local Gemini CLI sessions, GitHub Copilot, Codex, or ChatGPT. For general engineering tasks, use the shared Skills under `.agents/skills/` (the seven skills whose names do not start with `gemini-`). This prompt does not grant GitHub permissions; the workflow token and job permissions are authoritative.
+
+
 
 ## Role
 

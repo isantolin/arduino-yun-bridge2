@@ -17,6 +17,7 @@ from tools.audit.check_gemini_parity import (
     COPILOT_SKILLS_DIR,
     CHATGPT_SKILL_EXPORT_SCRIPT,
     GENERATED_AGENT_PROFILES,
+    GEMINI_WORKFLOW_ONLY_SKILLS,
     COPILOT_AGENT_PROFILE,
     MODEL_FILE,
     REQUIRED_SHARED_SKILLS,
@@ -29,6 +30,7 @@ from tools.audit.check_gemini_parity import (
     check_prompt_parity,
     check_rules_parity,
     check_shared_skill_parity,
+    check_gemini_workflow_skill_scoping,
     sync_generated_files,
 )
 
@@ -87,6 +89,18 @@ def _write_minimal_agent_fixture(root: Path) -> str:
     )
     source_skill_root = root / CANONICAL_SKILLS_DIR
     mirror_skill_root = root / COPILOT_SKILLS_DIR
+    for workflow_skill_name in GEMINI_WORKFLOW_ONLY_SKILLS:
+        workflow_skill = source_skill_root / workflow_skill_name / "SKILL.md"
+        workflow_skill.parent.mkdir(parents=True, exist_ok=True)
+        workflow_skill.write_text(
+            "---\\n"
+            f"name: {workflow_skill_name}\\n"
+            "description: Workflow-only prompt for Gemini GitHub Actions.\\n"
+            "---\\n\\n"
+            "## Workflow-only scope\\n"
+            "Do not activate it for normal interactive repository engineering.\\n",
+            encoding="utf-8",
+        )
     for skill_name in REQUIRED_SHARED_SKILLS:
         skill = source_skill_root / skill_name / "SKILL.md"
         mirror = mirror_skill_root / skill_name / "SKILL.md"
@@ -166,6 +180,22 @@ def test_check_github_action_model_wiring_requires_canonical_file(mocker: Mocker
     errors = check_github_action_model_wiring()
     assert len(errors) == 1
     assert "tools/gemini_model" in errors[0]
+
+
+def test_gemini_workflow_skills_are_explicitly_scoped(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    _write_minimal_agent_fixture(tmp_path)
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    assert check_gemini_workflow_skill_scoping() == []
+    skill_file = tmp_path / CANONICAL_SKILLS_DIR / GEMINI_WORKFLOW_ONLY_SKILLS[0] / "SKILL.md"
+    skill_file.write_text(
+        "---\\nname: gemini-invoke\\ndescription: General repository Skill.\\n---\\n\\n# Generic\\n",
+        encoding="utf-8",
+    )
+    errors = check_gemini_workflow_skill_scoping()
+    assert any("workflow-only prompt" in error for error in errors)
+    assert any("prohibit general interactive activation" in error for error in errors)
 
 
 def test_check_rules_parity_requires_symlinks_and_generated_profiles(

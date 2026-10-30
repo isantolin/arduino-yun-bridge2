@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export repository Agent Skills as individual ChatGPT-uploadable ZIP archives."""
+"""Export repository Agent Skills as individual ZIP bundles for ChatGPT Skill upload."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def export_skills(skills_root: Path, output_dir: Path) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Export shared Agent Skills as individual ZIP files for ChatGPT desktop upload."
+        description="Export shared Agent Skills as individual ZIP bundles for the ChatGPT Skills upload interface."
     )
     parser.add_argument(
         "--output",

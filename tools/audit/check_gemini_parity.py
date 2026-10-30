@@ -39,6 +39,13 @@ REQUIRED_SHARED_SKILLS = (
     "security-crypto-review",
     "code-review",
 )
+GEMINI_WORKFLOW_ONLY_SKILLS = (
+    "gemini-invoke",
+    "gemini-plan-execute",
+    "gemini-review",
+    "gemini-scheduled-triage",
+    "gemini-triage",
+)
 COPILOT_SCOPED_INSTRUCTIONS = (
     Path(".github/instructions/python.instructions.md"),
     Path(".github/instructions/firmware.instructions.md"),
@@ -259,6 +266,24 @@ def check_shared_skill_parity() -> list[str]:
     return errors
 
 
+def check_gemini_workflow_skill_scoping() -> list[str]:
+    """Ensure legacy Gemini workflow prompts cannot be mistaken for shared Skills."""
+    errors: list[str] = []
+    for name in GEMINI_WORKFLOW_ONLY_SKILLS:
+        skill_file = ROOT / CANONICAL_SKILLS_DIR / name / "SKILL.md"
+        try:
+            metadata, body = _parse_frontmatter(skill_file)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            errors.append(f"Invalid Gemini workflow-only Skill {skill_file}: {exc}")
+            continue
+        description = metadata.get("description")
+        if not isinstance(description, str) or "Workflow-only prompt" not in description:
+            errors.append(f"{skill_file.relative_to(ROOT)} must be identified as a workflow-only prompt")
+        if "## Workflow-only scope" not in body or "Do not activate it for normal interactive" not in body:
+            errors.append(f"{skill_file.relative_to(ROOT)} must explicitly prohibit general interactive activation")
+    return errors
+
+
 def check_copilot_agent_profile() -> list[str]:
     """Validate the Copilot-native agent adapter against canonical instructions."""
     errors: list[str] = []
@@ -371,6 +396,7 @@ def check_rules_parity() -> list[str]:
     if obsolete.exists() or obsolete.is_symlink():
         errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; remove the duplicate file")
     errors.extend(check_shared_skill_parity())
+    errors.extend(check_gemini_workflow_skill_scoping())
     errors.extend(check_copilot_agent_profile())
     errors.extend(check_copilot_instruction_parity())
     return errors

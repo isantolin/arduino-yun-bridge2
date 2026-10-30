@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -283,8 +283,6 @@ async def test_lmdb_closed_resource_operations_are_safe(tmp_path: Path) -> None:
     await cache.close()
     await cache.set("after-close", b"ignored")
     assert await cache.get("after-close", b"default") == b"default"
-    assert cache._get_sync("after-close", b"default") == b"default"
-    cache._set_sync("after-close", b"ignored")
     assert len(cache) == 0
     assert "before-close" not in cache
 
@@ -300,7 +298,6 @@ async def test_lmdb_deque_missing_database_handles_all_operations() -> None:
     await deque.clear()
     await deque.vacuum()
     await deque.close()
-    deque._close_sync()
     assert len(deque) == 0
     with pytest.raises(IndexError, match="popleft from empty deque"):
         await deque.popleft()
@@ -317,12 +314,9 @@ async def test_lmdb_cache_unavailable_environment_fallback() -> None:
 
     await cache.set("key", b"value")
     assert await cache.get("key", b"fallback") == b"fallback"
-    assert cache._get_sync("key", b"fallback") == b"fallback"
-    cache._set_sync("key", b"value")
     assert len(cache) == 0
     assert "key" not in cache
     await cache.close()
-    cache._close_sync()
 
 
 async def test_lmdb_worker_callbacks_handle_environment_closing_race(
@@ -333,19 +327,21 @@ async def test_lmdb_worker_callbacks_handle_environment_closing_race(
     cache = LmdbCache(str(tmp_path / "cache_race.db"))
 
     async def run_with_missing_environment(
-        target: LmdbDeque | LmdbCache, func: object, *args: object, **kwargs: object
+        target: LmdbDeque | LmdbCache,
+        func: Callable[..., object],
+        *args: object,
+        **kwargs: object,
     ) -> object:
         original_env = target.env
         target.env = None
         try:
-            return func(*args, **kwargs)  # type: ignore[operator]
+            return func(*args, **kwargs)
         finally:
             target.env = original_env
 
+    original_run_sync = anyio.to_thread.run_sync
     try:
-        original_run_sync = anyio.to_thread.run_sync
-
-        async def deque_worker(func: object, *args: object, **kwargs: object) -> object:
+        async def deque_worker(func: Callable[..., object], *args: object, **kwargs: object) -> object:
             return await run_with_missing_environment(deque, func, *args, **kwargs)
 
         monkeypatch.setattr(anyio.to_thread, "run_sync", deque_worker)
@@ -356,7 +352,7 @@ async def test_lmdb_worker_callbacks_handle_environment_closing_race(
         monkeypatch.setattr(anyio.to_thread, "run_sync", original_run_sync)
         await deque.close()
 
-        async def cache_worker(func: object, *args: object, **kwargs: object) -> object:
+        async def cache_worker(func: Callable[..., object], *args: object, **kwargs: object) -> object:
             return await run_with_missing_environment(cache, func, *args, **kwargs)
 
         monkeypatch.setattr(anyio.to_thread, "run_sync", cache_worker)

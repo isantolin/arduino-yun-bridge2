@@ -480,7 +480,8 @@ def sync_generated_agent_profiles() -> bool:
         antigravity_frontmatter = [
             "---",
             "name: openwrt-architect-arduino",
-            'description: "Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf, security, and CI."',
+            "description: >-",
+            "  Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf, security, and CI.",
             "mainAgent: true",
             "subagent: true",
             "model: inherit",

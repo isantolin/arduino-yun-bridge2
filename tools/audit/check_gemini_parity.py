@@ -8,7 +8,6 @@ Tool-specific agent profiles and GitHub command TOML files are generated artifac
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tomllib
 from pathlib import Path
@@ -84,23 +83,16 @@ def check_model_parity() -> list[str]:
     return errors
 
 
-def check_environment_model_parity() -> list[str]:
-    """Check the GitHub Actions model variable against the canonical model."""
-    configured = os.environ.get("GEMINI_MODEL", "").strip()
-    if not configured:
-        return ["GEMINI_MODEL is unset; configure the GitHub Actions repository variable"]
-    try:
-        canonical = (ROOT / MODEL_FILE).read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        return [f"Cannot read canonical model file {MODEL_FILE}: {exc}"]
-    if configured != canonical:
-        return [f"GitHub Actions GEMINI_MODEL {configured!r} != canonical model {canonical!r}"]
-    return []
-
-
 def check_github_action_model_wiring() -> list[str]:
-    """Ensure every executable Gemini workflow uses the canonical Actions variable."""
+    """Ensure Gemini workflows load their model from tools/gemini_model."""
     workflow_dir = ROOT / ".github" / "workflows"
+    required = (
+        "uses: 'actions/checkout@v7'",
+        "id: 'gemini_model'",
+        "IFS= read -r model < tools/gemini_model",
+        "uses: 'google-github-actions/run-gemini-cli@v0'",
+        "gemini_model: '${{ steps.gemini_model.outputs.model }}'",
+    )
     errors: list[str] = []
     for name in sorted(_workflow_names()):
         workflow_path = workflow_dir / f"{name}.yml"
@@ -109,12 +101,19 @@ def check_github_action_model_wiring() -> list[str]:
         except OSError as exc:
             errors.append(f"Missing or unreadable GitHub Actions workflow {workflow_path}: {exc}")
             continue
-        if not any("gemini_model:" in line and "vars.GEMINI_MODEL" in line for line in content.splitlines()):
+        missing = [item for item in required if item not in content]
+        if missing:
             errors.append(
-                f"{workflow_path.relative_to(ROOT)} must pass vars.GEMINI_MODEL to google-github-actions/run-gemini-cli"
+                f"{workflow_path.relative_to(ROOT)} is missing canonical model wiring: {', '.join(missing)}"
             )
+            continue
+        if not (
+            content.index("actions/checkout@v7")
+            < content.index("id: 'gemini_model'")
+            < content.index("run-gemini-cli@v0")
+        ):
+            errors.append(f"{workflow_path.relative_to(ROOT)} must load tools/gemini_model before invoking Gemini CLI")
     return errors
-
 
 def check_prompt_parity() -> list[str]:
     errors: list[str] = []
@@ -164,7 +163,7 @@ def check_rules_parity() -> list[str]:
     if not canonical_path.is_file():
         return [f"Canonical rules file missing: {canonical_path}"]
     try:
-        canonical = canonical_path.read_text(encoding="utf-8").strip()
+        canonical = canonical_path.read_text(encoding="utf-8")
     except OSError as exc:
         return [f"Cannot read canonical rules file {canonical_path}: {exc}"]
     errors: list[str] = []
@@ -290,25 +289,18 @@ def main(
         bool,
         typer.Option("--fix", "-f", help="Regenerate agent profiles, agent.json instructions, and command TOML files"),
     ] = False,
-    check_env_model: Annotated[
-        bool,
-        typer.Option("--check-env-model", help="Require GEMINI_MODEL to match tools/gemini_model"),
-    ] = False,
 ) -> None:
     errors = sync_generated_files() if fix else []
     errors.extend(check_model_parity())
     errors.extend(check_prompt_parity())
     errors.extend(check_github_action_model_wiring())
     errors.extend(check_rules_parity())
-    if check_env_model:
-        errors.extend(check_environment_model_parity())
     if errors:
         print("PARITY FAILURES:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         raise typer.Exit(code=1)
     print("All agent parity checks passed (rules, profiles, model, and workflow-command pairs).")
-
 
 if __name__ == "__main__":
     app()

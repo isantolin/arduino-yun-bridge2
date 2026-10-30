@@ -18,6 +18,10 @@ tools:
   - write_to_file
   - replace_file_content
   - multi_replace_file_content
+  - invoke_subagent
+  - manage_task
+  - manage_subagents
+  - send_message
 skills:
   - skills/ci-failure-diagnosis
   - skills/protobuf-protocol-change

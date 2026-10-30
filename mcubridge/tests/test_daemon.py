@@ -150,6 +150,7 @@ def test_daemon_exception_group_partially_unhandled_raises(mocker: MockerFixture
     with pytest.raises(ExceptionGroup):
         run_daemon()
 
+
 def test_daemon_script_entrypoint_fails_closed_when_config_unavailable(mocker: MockerFixture) -> None:
     """Execute the module guard and verify startup fails closed on config I/O errors."""
     load_config = mocker.patch(

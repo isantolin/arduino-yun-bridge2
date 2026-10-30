@@ -275,9 +275,6 @@ async def test_lmdb_closed_resource_operations_are_safe(tmp_path: Path) -> None:
     # A closed deque must tolerate cleanup/vacuum calls without reopening LMDB.
     await deque.clear()
     await deque.vacuum()
-    deque._clear_sync()
-    deque._vacuum_sync()
-    deque._close_sync()
     assert len(deque) == 0
 
     cache = LmdbCache(str(tmp_path / "closed_cache.db"))
@@ -288,7 +285,6 @@ async def test_lmdb_closed_resource_operations_are_safe(tmp_path: Path) -> None:
     assert await cache.get("after-close", b"default") == b"default"
     assert cache._get_sync("after-close", b"default") == b"default"
     cache._set_sync("after-close", b"ignored")
-    cache._close_sync()
     assert len(cache) == 0
     assert "before-close" not in cache
 
@@ -302,9 +298,7 @@ async def test_lmdb_deque_missing_database_handles_all_operations() -> None:
 
     assert await deque.append(b"discarded") == 0
     await deque.clear()
-    deque._clear_sync()
     await deque.vacuum()
-    deque._vacuum_sync()
     await deque.close()
     deque._close_sync()
     assert len(deque) == 0

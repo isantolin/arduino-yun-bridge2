@@ -205,7 +205,7 @@ def check_rules_parity() -> list[str]:
                 errors.append(f"Rules mismatch: {AGENT_JSON} instructions do not match GEMINI.md")
     obsolete = ROOT / OBSOLETE_COPILOT_FILE
     if obsolete.exists() or obsolete.is_symlink():
-        errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; retain only .github/copilot-instructions.md")
+        errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; remove the duplicate file")
     return errors
 
 

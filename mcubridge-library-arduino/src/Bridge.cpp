@@ -548,8 +548,8 @@ void BridgeClass::_handlePinSubscribe(const bridge::router::CommandContext& ctx,
   rpc_pb_PinSubscribeResponse resp = rpc_pb_PinSubscribeResponse_init_default;
   resp.pin = m.pin;
   resp.success = ok;
-  (void)send(rpc::CommandId::CMD_PIN_SUBSCRIBE_RESP, ctx.sequence_id, resp,
-             rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
+  sendOrEmitStatus(rpc::CommandId::CMD_PIN_SUBSCRIBE_RESP, ctx.sequence_id,
+                   resp);
 }
 
 void BridgeClass::_handleClockSync(const bridge::router::CommandContext& ctx,
@@ -557,8 +557,7 @@ void BridgeClass::_handleClockSync(const bridge::router::CommandContext& ctx,
   rpc_pb_ClockSyncResponse resp = rpc_pb_ClockSyncResponse_init_default;
   resp.host_time_us = m.host_time_us;
   resp.mcu_time_us = ::micros();
-  (void)send(rpc::CommandId::CMD_CLOCK_SYNC_RESP, ctx.sequence_id, resp,
-             rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
+  sendOrEmitStatus(rpc::CommandId::CMD_CLOCK_SYNC_RESP, ctx.sequence_id, resp);
 }
 
 void BridgeClass::_subscriptionTask() {

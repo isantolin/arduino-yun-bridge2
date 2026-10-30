@@ -26,7 +26,6 @@ import serialx
 import structlog
 import tenacity
 from cobs import cobsr
-from google.protobuf.message import DecodeError as ProtobufDecodeError
 from google.protobuf.message import Message as ProtobufMessage
 from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 
@@ -45,6 +44,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.protocol.structures import (
     PendingCommand,
+    parse_serial_response,
 )
 from mcubridge.security.security import (
     generate_nonce_with_counter,
@@ -387,20 +387,8 @@ class SerialTransport:
                 )
             return
         if command_id == Status.ACK.value:
-            ack_target = pending.command_id
-            if payload:
-                try:
-                    ack_target = (
-                        payload.command_id
-                        if isinstance(payload, pb.AckPacket)
-                        else (
-                            getattr(payload, "command_id", ack_target)
-                            if isinstance(payload, ProtobufMessage)
-                            else pb.AckPacket.FromString(payload).command_id
-                        )
-                    )
-                except (ProtobufDecodeError, TypeError, ValueError) as e:
-                    logger.error("Failed to decode MCU ACK payload", error=str(e))
+            ack_pkt = parse_serial_response(payload, pb.AckPacket) if payload else None
+            ack_target = ack_pkt.command_id if ack_pkt is not None else pending.command_id
             if logger.is_enabled_for(logging.DEBUG):
                 logger.debug(
                     "Correlation ACK match",
@@ -422,15 +410,12 @@ class SerialTransport:
                 pending_cmd=pending.command_id,
             )
         if paired_req_id == pending.command_id:
-            resp_payload = payload
-            if isinstance(payload, bytes) and spec is not None and spec.pb_class is not None:
-                try:
-                    msg = spec.pb_class()
-                    msg.ParseFromString(payload)
-                    resp_payload = msg
-                except ProtobufDecodeError as e:
-                    logger.debug("Response payload is not valid protobuf; retaining raw bytes", error=str(e))
-            pending.mark_success(resp_payload)
+            decoded: ProtobufMessage | None = (
+                parse_serial_response(payload, spec.pb_class)
+                if isinstance(payload, bytes) and spec is not None and spec.pb_class is not None
+                else None
+            )
+            pending.mark_success(decoded if decoded is not None else payload)
             return
         if command_id in SERIAL_FAILURE_STATUS_CODES:
             pending.mark_failure(command_id)

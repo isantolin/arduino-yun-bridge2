@@ -209,9 +209,6 @@ class LmdbDeque:
 
     def close_sync(self) -> None:
         """Close the LMDB environment synchronously for non-async lifecycle hooks."""
-        self._close_sync()
-
-    def _close_sync(self) -> None:
         with self._mutation_lock:
             if self.env is not None:
                 self.env.close()
@@ -228,6 +225,7 @@ class LmdbCache:
         self._mem: dict[str, bytes] = {}
         self.env: lmdb.Environment | None = None
         self.db: Any = None
+        self._mutation_lock = Lock()
 
         if not self.is_mem:
             self._open_env()
@@ -243,9 +241,10 @@ class LmdbCache:
             await anyio.to_thread.run_sync(self._set_sync, key, value)
 
     def _set_sync(self, key: str, value: bytes) -> None:
-        if self.env is not None:
-            with self.env.begin(write=True, db=self.db) as txn:
-                txn.put(key.encode("utf-8"), value, db=self.db)
+        with self._mutation_lock:
+            if self.env is not None:
+                with self.env.begin(write=True, db=self.db) as txn:
+                    txn.put(key.encode("utf-8"), value, db=self.db)
 
     async def get(self, key: str, default: T | None = None) -> bytes | T | None:
         if self.is_mem:
@@ -259,35 +258,38 @@ class LmdbCache:
             return default
 
     def _get_sync(self, key: str, default: T | None = None) -> bytes | T | None:
-        if self.env is None:
-            return default
-        with self.env.begin(db=self.db, buffers=True) as txn:
-            val = txn.get(key.encode("utf-8"), db=self.db)
-            return bytes(val) if val is not None else default
+        with self._mutation_lock:
+            if self.env is None:
+                return default
+            with self.env.begin(db=self.db, buffers=True) as txn:
+                val = txn.get(key.encode("utf-8"), db=self.db)
+                return bytes(val) if val is not None else default
 
     def __len__(self) -> int:
         if self.is_mem:
             return len(self._mem)
-        if not self.env:
-            return 0
-        try:
-            with self.env.begin(db=self.db) as txn:
-                return txn.stat(self.db)["entries"]
-        except (lmdb.Error, OSError) as exc:
-            logger.error("LmdbCache len failed", path=self.path, error=exc)
-            return 0
+        with self._mutation_lock:
+            if not self.env:
+                return 0
+            try:
+                with self.env.begin(db=self.db) as txn:
+                    return txn.stat(self.db)["entries"]
+            except (lmdb.Error, OSError) as exc:
+                logger.error("LmdbCache len failed", path=self.path, error=exc)
+                return 0
 
     def __contains__(self, key: str) -> bool:
         if self.is_mem:
             return key in self._mem
-        if not self.env:
-            return False
-        try:
-            with self.env.begin(db=self.db, buffers=True) as txn:
-                return txn.get(key.encode("utf-8"), db=self.db) is not None
-        except (lmdb.Error, OSError) as exc:
-            logger.error("LmdbCache __contains__ failed", path=self.path, key=key, error=exc)
-            return False
+        with self._mutation_lock:
+            if not self.env:
+                return False
+            try:
+                with self.env.begin(db=self.db, buffers=True) as txn:
+                    return txn.get(key.encode("utf-8"), db=self.db) is not None
+            except (lmdb.Error, OSError) as exc:
+                logger.error("LmdbCache __contains__ failed", path=self.path, key=key, error=exc)
+                return False
 
     async def close(self) -> None:
         if self.env is not None:
@@ -295,9 +297,7 @@ class LmdbCache:
 
     def close_sync(self) -> None:
         """Close the LMDB environment synchronously for non-async lifecycle hooks."""
-        self._close_sync()
-
-    def _close_sync(self) -> None:
-        if self.env is not None:
-            self.env.close()
-            self.env = None
+        with self._mutation_lock:
+            if self.env is not None:
+                self.env.close()
+                self.env = None

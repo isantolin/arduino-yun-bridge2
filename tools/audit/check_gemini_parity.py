@@ -218,7 +218,10 @@ def check_shared_skill_parity() -> list[str]:
         if required_name not in source_names
     )
 
-    mirror_names = {path.name for path in mirror_root.iterdir() if path.is_dir()} if mirror_root.is_dir() else set()
+    mirror_entries: list[Path] = list(mirror_root.iterdir()) if mirror_root.is_dir() else []
+    mirror_names: set[str] = {
+        mirror_entry.name for mirror_entry in mirror_entries if mirror_entry.is_dir()
+    }
     errors.extend(
         f"Orphan generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / orphan}"
         for orphan in sorted(mirror_names - source_names)

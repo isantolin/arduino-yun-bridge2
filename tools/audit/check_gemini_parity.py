@@ -22,8 +22,9 @@ SYMLINKS = {
 }
 GENERATED_AGENT_PROFILES = (
     Path(".agent/agents/openwrt-architect-arduino/agent.md"),
-    Path(".github/agents/openwrt-architect-arduino.agent.md"),
 )
+COPILOT_AGENT_PROFILE = Path(".github/agents/openwrt-architect-arduino.agent.md")
+COPILOT_AGENT_TOOLS = ("read", "edit", "search", "execute")
 AGENT_JSON = Path(".agent/agents/openwrt-architect-arduino/agent.json")
 MODEL_FILE = Path("tools/gemini_model")
 CANONICAL_SKILLS_DIR = Path(".agents/skills")
@@ -236,6 +237,29 @@ def check_shared_skill_parity() -> list[str]:
     return errors
 
 
+def check_copilot_agent_profile() -> list[str]:
+    """Validate the Copilot-native agent adapter against canonical instructions."""
+    errors: list[str] = []
+    profile = ROOT / COPILOT_AGENT_PROFILE
+    canonical = ROOT / "GEMINI.md"
+    try:
+        _canonical_metadata, canonical_body = _parse_frontmatter(canonical)
+        metadata, profile_body = _parse_frontmatter(profile)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return [f"Invalid Copilot agent profile {COPILOT_AGENT_PROFILE}: {exc}"]
+
+    if metadata.get("name") != "openwrt-architect-arduino":
+        errors.append(f"{COPILOT_AGENT_PROFILE}: invalid or missing agent name")
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        errors.append(f"{COPILOT_AGENT_PROFILE}: description must be non-empty")
+    if metadata.get("tools") != list(COPILOT_AGENT_TOOLS):
+        errors.append(f"{COPILOT_AGENT_PROFILE}: tools must be {list(COPILOT_AGENT_TOOLS)!r}")
+    if profile_body != canonical_body:
+        errors.append(f"{COPILOT_AGENT_PROFILE}: prompt body is stale relative to GEMINI.md")
+    return errors
+
+
 def check_copilot_instruction_parity() -> list[str]:
     errors: list[str] = []
     copilot_instructions = ROOT / ".github" / "copilot-instructions.md"
@@ -312,6 +336,7 @@ def check_rules_parity() -> list[str]:
     if obsolete.exists() or obsolete.is_symlink():
         errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; remove the duplicate file")
     errors.extend(check_shared_skill_parity())
+    errors.extend(check_copilot_agent_profile())
     errors.extend(check_copilot_instruction_parity())
     return errors
 
@@ -336,15 +361,32 @@ def sync_rules_to_agent_json() -> bool:
 
 
 def sync_generated_agent_profiles() -> bool:
-    """Generate platform agent discovery files from GEMINI.md."""
+    """Generate the Gemini profile and a Copilot-native adapter from GEMINI.md."""
     try:
-        canonical = (ROOT / "GEMINI.md").read_text(encoding="utf-8")
+        canonical_path = ROOT / "GEMINI.md"
+        canonical = canonical_path.read_text(encoding="utf-8")
+        _metadata, body = _parse_frontmatter(canonical_path)
         for relative_path in GENERATED_AGENT_PROFILES:
             profile = ROOT / relative_path
             profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(canonical, encoding="utf-8")
             print(f" Generated {relative_path}")
-    except OSError as exc:
+
+        copilot_profile = ROOT / COPILOT_AGENT_PROFILE
+        copilot_profile.parent.mkdir(parents=True, exist_ok=True)
+        frontmatter = "\n".join(
+            (
+                "---",
+                "name: openwrt-architect-arduino",
+                'description: "Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf, daemon, gateway, security, and CI."',
+                "tools: [read, edit, search, execute]",
+                "---",
+                "",
+            )
+        )
+        copilot_profile.write_text(frontmatter + body.rstrip() + "\n", encoding="utf-8")
+        print(f" Generated {COPILOT_AGENT_PROFILE}")
+    except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"Failed to generate agent profiles: {exc}", file=sys.stderr)
         return False
     return True

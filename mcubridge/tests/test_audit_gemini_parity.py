@@ -16,10 +16,12 @@ from tools.audit.check_gemini_parity import (
     COPILOT_SCOPED_INSTRUCTIONS,
     COPILOT_SKILLS_DIR,
     GENERATED_AGENT_PROFILES,
+    COPILOT_AGENT_PROFILE,
     MODEL_FILE,
     REQUIRED_SHARED_SKILLS,
     SYMLINKS,
     app,
+    check_copilot_agent_profile,
     check_github_action_model_wiring,
     check_model_parity,
     check_prompt_parity,
@@ -52,6 +54,15 @@ def _write_minimal_agent_fixture(root: Path) -> str:
         profile = root / relative_path
         profile.parent.mkdir(parents=True, exist_ok=True)
         profile.write_text(canonical, encoding="utf-8")
+    copilot_profile = root / COPILOT_AGENT_PROFILE
+    copilot_profile.parent.mkdir(parents=True, exist_ok=True)
+    copilot_body = canonical.split("---", 2)[2].lstrip("\\r\\n").strip()
+    copilot_profile.write_text(
+        "---\\nname: openwrt-architect-arduino\\ndescription: Test architect\\ntools: [read, edit, search, execute]\\n---\\n\\n"
+        + copilot_body
+        + "\\n",
+        encoding="utf-8",
+    )
     agent_path = root / AGENT_JSON
     agent_path.parent.mkdir(parents=True, exist_ok=True)
     (root / MODEL_FILE).parent.mkdir(parents=True, exist_ok=True)
@@ -133,6 +144,7 @@ def test_check_rules_parity_requires_symlinks_and_generated_profiles(
     _write_minimal_agent_fixture(tmp_path)
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     assert check_rules_parity() == []
+    assert check_copilot_agent_profile() == []
     (tmp_path / "AGENTS.md").unlink()
     (tmp_path / "AGENTS.md").write_text("copied rules\n", encoding="utf-8")
     errors = check_rules_parity()
@@ -183,6 +195,10 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_outputs(
     assert sync_generated_files() == []
     for relative_path in GENERATED_AGENT_PROFILES:
         assert (tmp_path / relative_path).read_text(encoding="utf-8") == canonical
+    copilot_profile = (tmp_path / COPILOT_AGENT_PROFILE).read_text(encoding="utf-8")
+    assert "tools: [read, edit, search, execute]" in copilot_profile
+    assert copilot_profile.endswith("# Canonical Rules\\n")
+    assert check_copilot_agent_profile() == []
     for skill_name in REQUIRED_SHARED_SKILLS:
         source_skill = tmp_path / CANONICAL_SKILLS_DIR / skill_name / "SKILL.md"
         mirror_skill = tmp_path / COPILOT_SKILLS_DIR / skill_name / "SKILL.md"

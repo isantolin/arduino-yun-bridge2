@@ -12,10 +12,10 @@ The following compatibility paths are Git symlinks to the canonical file:
 | `.copilot-instructions` | `GEMINI.md` |
 | `.agent/rules/openwrt-architect-arduino.agent.md` | `../../GEMINI.md` |
 
-Tool-specific discovery files remain regular files because Gemini/Antigravity and GitHub Copilot discover agents through different paths. They are generated from `GEMINI.md`:
+Tool-specific discovery files remain regular files because Gemini and GitHub Copilot use different agent frontmatter and discovery conventions:
 
-- `.agent/agents/openwrt-architect-arduino/agent.md`
-- `.github/agents/openwrt-architect-arduino.agent.md`
+- `.agent/agents/openwrt-architect-arduino/agent.md` is generated as the Gemini agent profile and mirrors the canonical guide.
+- `.github/agents/openwrt-architect-arduino.agent.md` is generated as a Copilot-native adapter. Its prompt body is derived from `GEMINI.md`, while its frontmatter uses Copilot-compatible `name`, `description`, and `tools` fields.
 
 `agent.json` retains the agent name, description, model and other metadata. Its `instructions` field is synchronized from `GEMINI.md`.
 
@@ -37,7 +37,7 @@ The workflow Markdown files in `.agent/workflows/` are canonical for command pro
 
 ## Synchronization and validation
 
-Regenerate agent discovery profiles, `agent.json` instructions and command TOML files:
+Regenerate the Copilot-native agent adapter, Gemini agent profile, `agent.json` instructions, Copilot Skill mirror, and command TOML files:
 
 ```bash
 python tools/audit/check_gemini_parity.py --fix

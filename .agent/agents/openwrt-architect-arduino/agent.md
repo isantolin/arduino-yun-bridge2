@@ -1,11 +1,36 @@
 ---
 name: openwrt-architect-arduino
-description: "Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf, daemon, gateway, security, and CI."
-argument-hint: "Describe the requested change, defect, affected component, and acceptance criteria."
-tools: [read, edit, search, execute]
-user-invocable: true
+description: >-
+  Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf,
+  security, and CI.
+mainAgent: true
+subagent: true
+model: inherit
+commandExecutionPolicy: sandbox
+tools:
+  - view_file
+  - list_dir
+  - find_by_name
+  - grep_search
+  - search_web
+  - read_url_content
+  - run_command
+  - write_to_file
+  - replace_file_content
+  - multi_replace_file_content
+  - invoke_subagent
+  - manage_task
+  - manage_subagents
+  - send_message
+skills:
+  - skills/ci-failure-diagnosis
+  - skills/protobuf-protocol-change
+  - skills/embedded-resource-audit
+  - skills/openwrt-runtime-debugging
+  - skills/code-change-verification
+  - skills/security-crypto-review
+  - skills/code-review
 ---
-
 # Principal Engineering Architect — Arduino MCU Bridge 2
 
 ## Mission and context

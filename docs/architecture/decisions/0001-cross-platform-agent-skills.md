@@ -10,11 +10,11 @@ The repository had a large, globally applied agent prompt containing architectur
 
 ## Decision
 
-1. Keep one concise repository-wide architecture guide in GEMINI.md, exposed through the existing AGENTS.md and compatibility symlinks.
-2. Use a central architect agent to understand impact, select only relevant Skills, coordinate specialists when helpful, and preserve user approval boundaries. Generate platform-specific agent frontmatter while keeping the shared prompt body canonical.
-3. Store seven shared task Skills under .agents/skills/ (resolved through the existing .agents -> .agent Git symlink and tracked under .agent/skills/): CI diagnosis, Protobuf protocol changes, embedded resource audits, OpenWrt runtime debugging, code-change verification, security/cryptography review, and code review. Preserve the existing symlink.
+1. Keep one concise repository-wide architecture guide in GEMINI.md as plain Markdown without platform-specific frontmatter. Expose it through the existing AGENTS.md and compatibility symlinks.
+2. Use a central architect agent to understand impact, select only relevant Skills, coordinate specialists when helpful, and preserve user approval boundaries. Generate separate Antigravity- and Copilot-native agent profiles from the canonical Markdown body; do not share tool identifiers or frontmatter across platforms.
+3. Store exactly seven shared engineering Skills under .agents/skills/ (resolved through the existing .agents -> .agent Git symlink and tracked under .agent/skills/): CI diagnosis, Protobuf protocol changes, embedded resource audits, OpenWrt runtime debugging, code-change verification, security/cryptography review, and code review.
 4. Generate a byte-for-byte mirror of those Skills in .github/skills/ for supported Copilot discovery surfaces, and generate ZIP packages for manual ChatGPT desktop Skill upload.
-5. Keep existing Gemini/Antigravity GitHub Actions workflows and their operational Skill assets separate from the shared engineering Skills.
+5. Keep GitHub Actions operational prompt sources under .agent/workflows/ and generated command TOML files under .github/commands/. Do not place workflow-only prompts in .agents/skills/, because Antigravity automatically discovers Skills from that directory.
 6. Use Copilot path-scoped instructions for Python, firmware, Protobuf, and OpenWrt code.
 7. Make Library-First and direct library invocation permanent principles. Compare overlapping libraries based on total system complexity, correctness, security, resource cost, compatibility, and maintenance.
 8. Require explicit user approval before adding, installing, vendoring, or wiring a new external dependency into the project or CI.
@@ -33,17 +33,18 @@ The repository had a large, globally applied agent prompt containing architectur
 
 ## Consequences
 
-- The permanent prompt is shorter and contains stable project-wide rules.
+- The permanent prompt is plain Markdown, with no platform-specific metadata that could be misinterpreted as instructions.
 - Detailed procedures are loaded on demand and can include references, scripts, and examples.
 - Copilot-specific Skill mirrors, scoped instructions, and the Copilot-native agent adapter must be regenerated and checked whenever canonical Skills or agent guidance change.
 - ChatGPT desktop Skill archives are generated locally with tools/export_chatgpt_skills.py; they are not committed. ChatGPT Chat/Work distribution through web/mobile may require a separately installed Plugin.
 - ChatGPT web/Work availability may require packaging the standalone Skills in a Plugin; repository presence alone does not guarantee automatic discovery in every ChatGPT surface.
-- Existing Gemini Actions workflows remain independent operational workflows and continue to use their existing model configuration.
+- Existing Gemini GitHub Actions workflows remain independent operational integrations and continue to use their existing model configuration. Their prompts are not Antigravity workflows or shared Skills.
 - The parity audit becomes a cross-platform agent configuration gate.
 
 ## Migration and rollback
 
-- Existing root instruction symlinks are preserved.
-- Previous Gemini-specific operational Skills and workflows remain in place.
-- New shared Skills and Copilot mirror are additive.
+- Existing root instruction symlinks and the .agents -> .agent discovery symlink are preserved.
+- The redundant .agent/rules symlink is removed; the root GEMINI.md/AGENTS.md guide already provides always-on project guidance.
+- GitHub Actions prompt sources remain under .agent/workflows/; their old copies under .agent/skills/gemini-* are removed from Antigravity Skill discovery.
+- The Antigravity profile and Copilot mirror are generated independently from the same plain Markdown body.
 - Reverting this ADR's implementation restores the previous generated agent profile and checker state without changing application runtime or protocol behavior.

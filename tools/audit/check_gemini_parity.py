@@ -8,7 +8,7 @@ import re
 import shutil
 import sys
 import tomllib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Annotated, cast
 
 import typer
@@ -18,11 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SYMLINKS = {
     "AGENTS.md": "GEMINI.md",
     ".copilot-instructions": "GEMINI.md",
-    ".agent/rules/openwrt-architect-arduino.agent.md": "../../GEMINI.md",
 }
-GENERATED_AGENT_PROFILES = (
-    Path(".agent/agents/openwrt-architect-arduino/agent.md"),
-)
+ANTIGRAVITY_AGENT_PROFILE = Path(".agent/agents/openwrt-architect-arduino/agent.md")
 COPILOT_AGENT_PROFILE = Path(".github/agents/openwrt-architect-arduino.agent.md")
 COPILOT_AGENT_TOOLS = ("read", "edit", "search", "execute")
 AGENT_JSON = Path(".agent/agents/openwrt-architect-arduino/agent.json")
@@ -39,13 +36,23 @@ REQUIRED_SHARED_SKILLS = (
     "security-crypto-review",
     "code-review",
 )
-GEMINI_WORKFLOW_ONLY_SKILLS = (
-    "gemini-invoke",
-    "gemini-plan-execute",
-    "gemini-review",
-    "gemini-scheduled-triage",
-    "gemini-triage",
+ANTIGRAVITY_AGENT_TOOLS = (
+    "view_file",
+    "list_dir",
+    "find_by_name",
+    "grep_search",
+    "search_web",
+    "read_url_content",
+    "run_command",
+    "write_to_file",
+    "replace_file_content",
+    "multi_replace_file_content",
+    "invoke_subagent",
+    "manage_task",
+    "manage_subagents",
+    "send_message",
 )
+ANTIGRAVITY_AGENT_SKILLS = tuple(f"skills/{name}" for name in REQUIRED_SHARED_SKILLS)
 COPILOT_SCOPED_INSTRUCTIONS = (
     Path(".github/instructions/python.instructions.md"),
     Path(".github/instructions/firmware.instructions.md"),
@@ -122,6 +129,35 @@ def check_model_parity() -> list[str]:
     actual = agent.get("model")
     if actual != canonical:
         errors.append(f"agent.json model {actual!r} != canonical model {canonical!r} (source: {MODEL_FILE})")
+    return errors
+
+
+def check_mcp_config_portability() -> list[str]:
+    """Reject host-specific absolute executable paths in the workspace MCP config."""
+    config_path = ROOT / ".agent" / "mcp_config.json"
+    try:
+        config: object = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"Cannot read MCP configuration {config_path.relative_to(ROOT)}: {exc}"]
+    if not isinstance(config, dict):
+        return [f"{config_path.relative_to(ROOT)} must contain a JSON object"]
+    config_data = cast(dict[str, object], config)
+    servers_value = config_data.get("mcpServers")
+    if not isinstance(servers_value, dict):
+        return [f"{config_path.relative_to(ROOT)} must define an mcpServers object"]
+    servers = cast(dict[str, object], servers_value)
+    errors: list[str] = []
+    for server_name, server_config_value in servers.items():
+        if not isinstance(server_config_value, dict):
+            errors.append(f"{config_path.relative_to(ROOT)}: {server_name} must be an object")
+            continue
+        server_config = cast(dict[str, object], server_config_value)
+        command = server_config.get("command")
+        if isinstance(command, str) and (Path(command).is_absolute() or PureWindowsPath(command).is_absolute()):
+            errors.append(
+                f"{config_path.relative_to(ROOT)}: {server_name} command must resolve through PATH, "
+                "not use a host-specific absolute path"
+            )
     return errors
 
 
@@ -210,12 +246,16 @@ def check_shared_skill_parity() -> list[str]:
         return [f"Canonical shared Skills directory missing: {CANONICAL_SKILLS_DIR}"]
 
     source_names = {
-        name for name in REQUIRED_SHARED_SKILLS if (source_root / name).is_dir()
+        entry.name for entry in source_root.iterdir() if entry.is_dir()
     }
+    required_names = set(REQUIRED_SHARED_SKILLS)
     errors.extend(
         f"Required shared Skill missing: {CANONICAL_SKILLS_DIR / required_name / 'SKILL.md'}"
-        for required_name in REQUIRED_SHARED_SKILLS
-        if required_name not in source_names
+        for required_name in sorted(required_names - source_names)
+    )
+    errors.extend(
+        f"Unexpected non-shared Skill directory: {CANONICAL_SKILLS_DIR / unexpected_name}"
+        for unexpected_name in sorted(source_names - required_names)
     )
 
     mirror_entries: list[Path] = list(mirror_root.iterdir()) if mirror_root.is_dir() else []
@@ -269,21 +309,37 @@ def check_shared_skill_parity() -> list[str]:
     return errors
 
 
-def check_gemini_workflow_skill_scoping() -> list[str]:
-    """Ensure legacy Gemini workflow prompts cannot be mistaken for shared Skills."""
+def check_antigravity_agent_profile() -> list[str]:
+    """Validate Antigravity-native tools, Skills, execution policy, and prompt body."""
+    profile = ROOT / ANTIGRAVITY_AGENT_PROFILE
+    canonical = ROOT / "GEMINI.md"
     errors: list[str] = []
-    for name in GEMINI_WORKFLOW_ONLY_SKILLS:
-        skill_file = ROOT / CANONICAL_SKILLS_DIR / name / "SKILL.md"
-        try:
-            metadata, body = _parse_frontmatter(skill_file)
-        except (OSError, ValueError, yaml.YAMLError) as exc:
-            errors.append(f"Invalid Gemini workflow-only Skill {skill_file}: {exc}")
-            continue
-        description = metadata.get("description")
-        if not isinstance(description, str) or "Workflow-only prompt" not in description:
-            errors.append(f"{skill_file.relative_to(ROOT)} must be identified as a workflow-only prompt")
-        if "## Workflow-only scope" not in body or "Do not activate it for normal interactive" not in body:
-            errors.append(f"{skill_file.relative_to(ROOT)} must explicitly prohibit general interactive activation")
+    try:
+        metadata, profile_body = _parse_frontmatter(profile)
+        canonical_body = canonical.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return [f"Invalid Antigravity agent profile {ANTIGRAVITY_AGENT_PROFILE}: {exc}"]
+
+    expected_metadata = {
+        "name": "openwrt-architect-arduino",
+        "tools": list(ANTIGRAVITY_AGENT_TOOLS),
+        "skills": list(ANTIGRAVITY_AGENT_SKILLS),
+        "mainAgent": True,
+        "subagent": True,
+        "model": "inherit",
+        "commandExecutionPolicy": "sandbox",
+    }
+    for key, expected in expected_metadata.items():
+        if metadata.get(key) != expected:
+            errors.append(
+                f"{ANTIGRAVITY_AGENT_PROFILE}: {key} must be {expected!r}, "
+                f"got {metadata.get(key)!r}"
+            )
+    description = metadata.get("description")
+    if not isinstance(description, str) or not description.strip():
+        errors.append(f"{ANTIGRAVITY_AGENT_PROFILE}: description must be non-empty")
+    if profile_body != canonical_body:
+        errors.append(f"{ANTIGRAVITY_AGENT_PROFILE}: prompt body is stale relative to GEMINI.md")
     return errors
 
 
@@ -293,7 +349,7 @@ def check_copilot_agent_profile() -> list[str]:
     profile = ROOT / COPILOT_AGENT_PROFILE
     canonical = ROOT / "GEMINI.md"
     try:
-        _canonical_metadata, canonical_body = _parse_frontmatter(canonical)
+        canonical_body = canonical.read_text(encoding="utf-8").strip()
         metadata, profile_body = _parse_frontmatter(profile)
     except (OSError, ValueError, yaml.YAMLError) as exc:
         return [f"Invalid Copilot agent profile {COPILOT_AGENT_PROFILE}: {exc}"]
@@ -346,6 +402,8 @@ def check_rules_parity() -> list[str]:
     except OSError as exc:
         return [f"Cannot read canonical rules file {canonical_path}: {exc}"]
     errors: list[str] = []
+    if canonical.startswith("---\n"):
+        errors.append("GEMINI.md must be plain Markdown without platform-specific YAML frontmatter")
     agent_discovery_link = ROOT / ".agents"
     if not agent_discovery_link.is_symlink():
         errors.append(".agents must remain a Git symlink to .agent")
@@ -373,15 +431,10 @@ def check_rules_parity() -> list[str]:
                 errors.append(f"Rules mismatch: {relative_path} does not resolve to GEMINI.md")
         except OSError as exc:
             errors.append(f"Cannot read symlink {relative_path}: {exc}")
-    for relative_path in GENERATED_AGENT_PROFILES:
-        profile = ROOT / relative_path
-        try:
-            if profile.is_symlink():
-                errors.append(f"{relative_path} must be a generated regular file, not a symlink")
-            elif profile.read_text(encoding="utf-8").strip() != canonical:
-                errors.append(f"Generated agent profile is stale: {relative_path}")
-        except OSError as exc:
-            errors.append(f"Cannot read generated agent profile {relative_path}: {exc}")
+    agent_profile = ROOT / ANTIGRAVITY_AGENT_PROFILE
+    if agent_profile.is_symlink():
+        errors.append(f"{ANTIGRAVITY_AGENT_PROFILE} must be a generated regular file, not a symlink")
+    errors.extend(check_antigravity_agent_profile())
     agent_path = ROOT / AGENT_JSON
     try:
         agent_data: object = json.loads(agent_path.read_text(encoding="utf-8"))
@@ -399,9 +452,9 @@ def check_rules_parity() -> list[str]:
     if obsolete.exists() or obsolete.is_symlink():
         errors.append(f"Obsolete duplicate exists: {OBSOLETE_COPILOT_FILE}; remove the duplicate file")
     errors.extend(check_shared_skill_parity())
-    errors.extend(check_gemini_workflow_skill_scoping())
     errors.extend(check_copilot_agent_profile())
     errors.extend(check_copilot_instruction_parity())
+    errors.extend(check_mcp_config_portability())
     return errors
 
 
@@ -425,20 +478,38 @@ def sync_rules_to_agent_json() -> bool:
 
 
 def sync_generated_agent_profiles() -> bool:
-    """Generate the Gemini profile and a Copilot-native adapter from GEMINI.md."""
+    """Generate Antigravity- and Copilot-native adapters from plain Markdown guidance."""
     try:
         canonical_path = ROOT / "GEMINI.md"
-        canonical = canonical_path.read_text(encoding="utf-8")
-        _metadata, body = _parse_frontmatter(canonical_path)
-        for relative_path in GENERATED_AGENT_PROFILES:
-            profile = ROOT / relative_path
-            profile.parent.mkdir(parents=True, exist_ok=True)
-            profile.write_text(canonical, encoding="utf-8")
-            print(f" Generated {relative_path}")
+        canonical = canonical_path.read_text(encoding="utf-8").strip()
+        antigravity_profile = ROOT / ANTIGRAVITY_AGENT_PROFILE
+        antigravity_profile.parent.mkdir(parents=True, exist_ok=True)
+        antigravity_frontmatter = [
+            "---",
+            "name: openwrt-architect-arduino",
+            "description: >-",
+            "  Principal engineering architect for Arduino MCU Bridge 2, OpenWrt, embedded firmware, Protobuf,",
+            "  security, and CI.",
+            "mainAgent: true",
+            "subagent: true",
+            "model: inherit",
+            "commandExecutionPolicy: sandbox",
+            "tools:",
+            *[f"  - {tool}" for tool in ANTIGRAVITY_AGENT_TOOLS],
+            "skills:",
+            *[f"  - {skill}" for skill in ANTIGRAVITY_AGENT_SKILLS],
+            "---",
+            "",
+        ]
+        antigravity_profile.write_text(
+            "\n".join(antigravity_frontmatter) + canonical + "\n",
+            encoding="utf-8",
+        )
+        print(f" Generated {ANTIGRAVITY_AGENT_PROFILE}")
 
         copilot_profile = ROOT / COPILOT_AGENT_PROFILE
         copilot_profile.parent.mkdir(parents=True, exist_ok=True)
-        frontmatter = "\n".join(
+        copilot_frontmatter = "\n".join(
             (
                 "---",
                 "name: openwrt-architect-arduino",
@@ -448,7 +519,10 @@ def sync_generated_agent_profiles() -> bool:
                 "",
             )
         )
-        copilot_profile.write_text(frontmatter + body.rstrip() + "\n", encoding="utf-8")
+        copilot_profile.write_text(
+            copilot_frontmatter + canonical + "\n",
+            encoding="utf-8",
+        )
         print(f" Generated {COPILOT_AGENT_PROFILE}")
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"Failed to generate agent profiles: {exc}", file=sys.stderr)
@@ -546,7 +620,8 @@ def main(
             "--fix",
             "-f",
             help=(
-                "Regenerate agent profiles, agent.json instructions, Copilot Skill mirrors, "
+                "Regenerate Antigravity/Copilot agent profiles, agent.json instructions, "
+                "Copilot Skill mirrors, "
                 "and command TOML files"
             ),
         ),
@@ -565,7 +640,7 @@ def main(
         raise typer.Exit(code=1)
     print(
         "All cross-platform agent parity checks passed "
-        "(instructions, Skills, profiles, Gemini model, and workflow-command pairs)."
+        "(plain instructions, Antigravity/Copilot profiles, Skills, Gemini model, and workflow-command pairs)."
     )
 
 

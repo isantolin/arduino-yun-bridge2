@@ -527,8 +527,17 @@ def test_ubus_service_rpc_callback_execution(mock_runtime: MockRuntimeFacade, mo
 
     # 2. Callback when req is None or does not have reply
     cb(None, {})
-
     service.stop()
+
+    # 3. Callback when handler raises an exception
+    failing_service = UbusService(mock_runtime)
+    mocker.patch.object(failing_service, "ubus_handle_ping", side_effect=ValueError("Test handler exception"))
+    assert failing_service.start() is True
+    fail_methods = mock_ubus.add.call_args[0][1]
+    fail_cb = fail_methods["ping"]["method"]
+    with pytest.raises(ValueError, match="Test handler exception"):
+        fail_cb(mock_req, {})
+    failing_service.stop()
 
 
 def test_ubus_service_connect_returns_none(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
@@ -885,3 +894,108 @@ def test_ubus_pump_events_fallback_when_fd_not_found(mock_runtime: MockRuntimeFa
 
     service.pump_events(mock_ubus.loop)
     mock_ubus.loop.assert_called_once_with(250)
+
+
+def test_ubus_connect_preload_uloop_init_handles_error(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    mock_ubus = MagicMock()
+    mock_ubus.connect.return_value = True
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+
+    mocker.patch("ctypes.util.find_library", return_value="libubox.so")
+    mocker.patch("ctypes.CDLL", side_effect=OSError("Failed to load libubox"))
+
+    assert service.start(max_attempts=1) is True
+
+
+def test_ubus_detect_fd_socket_peer_oserror_and_iterdir_oserror(
+    mock_runtime: MockRuntimeFacade, mocker: MockerFixture
+) -> None:
+    service = UbusService(mock_runtime)
+    mocker.patch.object(Path, "exists", return_value=True)
+
+    entry_sock = MagicMock()
+    entry_sock.name = "15"
+    entry_sock.readlink.return_value = "socket:[999]"
+
+    mocker.patch.object(Path, "iterdir", return_value=[entry_sock])
+
+    mock_s = MagicMock()
+    mock_s.getpeername.side_effect = OSError("Socket not connected")
+    mocker.patch("socket.socket", return_value=mock_s)
+
+    assert service.detect_ubus_fd() is None
+    mock_s.detach.assert_called_once()
+
+    mocker.patch.object(Path, "iterdir", side_effect=OSError("Access denied to proc fd"))
+    assert service.detect_ubus_fd() is None
+
+
+def test_ubus_pump_events_select_error_and_loop_error(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    mock_ubus = MagicMock()
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service.is_active = True
+
+    mocker.patch.object(service, "detect_ubus_fd", return_value=50)
+    mocker.patch("select.select", side_effect=ValueError("Bad file descriptor"))
+
+    service.pump_events(mock_ubus.loop)
+    mock_ubus.loop.assert_not_called()
+
+    # Test loop_ubus(0) error handling
+    service.is_active = True
+    calls = 0
+
+    def mock_select(r: list[int], w: list[int], x: list[int], to: float) -> tuple[list[int], list[int], list[int]]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ([50], [], [])
+        service.is_active = False
+        return ([], [], [])
+
+    mocker.patch("select.select", side_effect=mock_select)
+    mock_ubus.loop.side_effect = RuntimeError("Dispatch error")
+
+    service.pump_events(mock_ubus.loop)
+    mock_ubus.loop.assert_called_once_with(0)
+
+
+def test_ubus_pump_events_fallback_loop_error(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    mock_ubus = MagicMock()
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service.is_active = True
+
+    mocker.patch.object(service, "detect_ubus_fd", return_value=None)
+
+    def mock_loop(to: int) -> None:
+        service.is_active = False
+        raise RuntimeError("Native poll error")
+
+    mock_ubus.loop.side_effect = mock_loop
+
+    service.pump_events(mock_ubus.loop)
+    mock_ubus.loop.assert_called_once_with(250)
+
+
+async def test_ubus_service_run_cancelled_stops_service(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    import time
+
+    mock_ubus = MagicMock()
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service.connection = True
+    service.is_active = True
+
+    def slow_pump(_loop: Any) -> None:
+        while service.is_active:
+            time.sleep(0.01)
+
+    mocker.patch.object(service, "pump_events", side_effect=slow_pump)
+
+    task = asyncio.create_task(service.run())
+    await asyncio.sleep(0.05)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert service.is_active is False

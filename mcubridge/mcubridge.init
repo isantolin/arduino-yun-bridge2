@@ -68,6 +68,7 @@ start_service() {
     if [ -n "$serial_base" ] && [ -f /etc/inittab ]; then
         if grep -q "^${serial_base}:" /etc/inittab 2>/dev/null || grep -q "::askconsole:" /etc/inittab 2>/dev/null; then
             sed -i -e "/^${serial_base}:/d" -e "/::askconsole:/d" /etc/inittab
+            logger -t mcubridge -p daemon.warn "Serial console on $serial_base removed from /etc/inittab; reboot recommended for procd to release port completely"
             for pid in $(ls -l /proc/[0-9]*/fd/* 2>/dev/null | grep "${serial_base}" | awk -F'/' '{print $3}' | sort -u); do
                 case "$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')" in
                     *askfirst*|*login*|*getty*)

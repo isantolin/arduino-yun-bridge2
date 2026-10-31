@@ -9,6 +9,9 @@ from __future__ import annotations
 import asyncio
 import functools
 import importlib
+import select
+import socket
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -70,6 +73,15 @@ class UbusService:
             return False
 
         def _connect() -> bool:
+            try:
+                import ctypes
+                import ctypes.util
+
+                ubox_lib = ctypes.util.find_library("ubox")
+                if ubox_lib:
+                    ctypes.CDLL(ubox_lib).uloop_init()
+            except (OSError, AttributeError):
+                pass
             if self.ubus_backend.connect() is not True:
                 raise OSError("ubus.connect() did not return True")
             return True
@@ -147,10 +159,57 @@ class UbusService:
             self.stop()
             raise
 
+    def _detect_ubus_fd(self) -> int | None:
+        """Find the underlying socket file descriptor for the connected ubus context."""
+        sock_path = getattr(self.ubus_backend, "get_socket_path", lambda: None)() or "/var/run/ubus/ubus.sock"
+        proc_fd = Path("/proc/self/fd")
+        if not proc_fd.exists():
+            return None
+        try:
+            for fd_entry in proc_fd.iterdir():
+                if not fd_entry.name.isdigit():
+                    continue
+                fd = int(fd_entry.name)
+                try:
+                    link = str(fd_entry.readlink())
+                    if link.startswith("socket:"):
+                        s = socket.socket(fileno=fd)
+                        try:
+                            peer = s.getpeername()
+                            if peer == sock_path or (isinstance(peer, str) and "ubus" in peer):
+                                return fd
+                        except OSError:
+                            pass
+                        finally:
+                            s.detach()
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        return None
+
     def _pump_events(self, loop_ubus: Any) -> None:
-        """Run the native blocking poll off-loop; the timeout bounds shutdown latency."""
-        while self.is_active:
-            loop_ubus(250)
+        """Run the native blocking poll off-loop; bounded by select timeout or native loop."""
+        sock_fd = self._detect_ubus_fd()
+        if sock_fd is not None:
+            logger.debug("UBUS event loop using socket select poll", fd=sock_fd)
+            while self.is_active:
+                try:
+                    r, _, _ = select.select([sock_fd], [], [], 0.25)
+                except (OSError, ValueError):
+                    break
+                if r and self.is_active:
+                    try:
+                        loop_ubus(0)
+                    except (OSError, RuntimeError) as exc:
+                        logger.debug("Error in ubus dispatch loop", error=str(exc))
+        else:
+            logger.debug("UBUS socket FD not found; using fallback native poll")
+            while self.is_active:
+                try:
+                    loop_ubus(250)
+                except (OSError, RuntimeError) as exc:
+                    logger.debug("Error in ubus dispatch loop", error=str(exc))
 
     def ubus_handle_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.status' returning holistic SIL-2 snapshot."""

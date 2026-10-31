@@ -181,9 +181,7 @@ def check_github_action_model_wiring() -> list[str]:
             continue
         missing = [item for item in required if item not in content]
         if missing:
-            errors.append(
-                f"{workflow_path.relative_to(ROOT)} is missing canonical model wiring: {', '.join(missing)}"
-            )
+            errors.append(f"{workflow_path.relative_to(ROOT)} is missing canonical model wiring: {', '.join(missing)}")
             continue
         if not (
             content.index("actions/checkout@v7")
@@ -202,13 +200,9 @@ def check_prompt_parity() -> list[str]:
     command_names = {path.stem for path in command_dir.glob("gemini-*.toml") if path.is_file()}
     if not workflow_names:
         errors.append(f"No Gemini workflow Markdown files found in {workflow_dir}")
+    errors.extend(f"Missing command TOML for workflow: {name}" for name in sorted(workflow_names - command_names))
     errors.extend(
-        f"Missing command TOML for workflow: {name}"
-        for name in sorted(workflow_names - command_names)
-    )
-    errors.extend(
-        f"Orphan command TOML without workflow Markdown: {name}"
-        for name in sorted(command_names - workflow_names)
+        f"Orphan command TOML without workflow Markdown: {name}" for name in sorted(command_names - workflow_names)
     )
     for name in sorted(workflow_names & command_names):
         md_path = workflow_dir / f"{name}.md"
@@ -245,9 +239,7 @@ def check_shared_skill_parity() -> list[str]:
     if not source_root.is_dir():
         return [f"Canonical shared Skills directory missing: {CANONICAL_SKILLS_DIR}"]
 
-    source_names = {
-        entry.name for entry in source_root.iterdir() if entry.is_dir()
-    }
+    source_names = {entry.name for entry in source_root.iterdir() if entry.is_dir()}
     required_names = set(REQUIRED_SHARED_SKILLS)
     errors.extend(
         f"Required shared Skill missing: {CANONICAL_SKILLS_DIR / required_name / 'SKILL.md'}"
@@ -259,9 +251,7 @@ def check_shared_skill_parity() -> list[str]:
     )
 
     mirror_entries: list[Path] = list(mirror_root.iterdir()) if mirror_root.is_dir() else []
-    mirror_names: set[str] = {
-        mirror_entry.name for mirror_entry in mirror_entries if mirror_entry.is_dir()
-    }
+    mirror_names: set[str] = {mirror_entry.name for mirror_entry in mirror_entries if mirror_entry.is_dir()}
     errors.extend(
         f"Orphan generated Copilot Skill mirror: {COPILOT_SKILLS_DIR / orphan}"
         for orphan in sorted(mirror_names - source_names)
@@ -331,10 +321,7 @@ def check_antigravity_agent_profile() -> list[str]:
     }
     for key, expected in expected_metadata.items():
         if metadata.get(key) != expected:
-            errors.append(
-                f"{ANTIGRAVITY_AGENT_PROFILE}: {key} must be {expected!r}, "
-                f"got {metadata.get(key)!r}"
-            )
+            errors.append(f"{ANTIGRAVITY_AGENT_PROFILE}: {key} must be {expected!r}, got {metadata.get(key)!r}")
     description = metadata.get("description")
     if not isinstance(description, str) or not description.strip():
         errors.append(f"{ANTIGRAVITY_AGENT_PROFILE}: description must be non-empty")
@@ -539,14 +526,9 @@ def sync_generated_skill_mirror() -> bool:
     try:
         mirror_root.mkdir(parents=True, exist_ok=True)
         source_names = set(REQUIRED_SHARED_SKILLS)
-        missing_skills = [
-            name for name in sorted(source_names)
-            if not (source_root / name / "SKILL.md").is_file()
-        ]
+        missing_skills = [name for name in sorted(source_names) if not (source_root / name / "SKILL.md").is_file()]
         if missing_skills:
-            raise FileNotFoundError(
-                "Missing canonical shared Skill manifests: " + ", ".join(missing_skills)
-            )
+            raise FileNotFoundError("Missing canonical shared Skill manifests: " + ", ".join(missing_skills))
         for name in sorted(source_names):
             source_dir = source_root / name
             mirror_dir = mirror_root / name

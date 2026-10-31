@@ -810,7 +810,7 @@ async def test_ubus_service_run_rejects_non_callable_loop(mock_runtime: MockRunt
 def test_ubus_detect_fd_proc_missing(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     service = UbusService(mock_runtime)
     mocker.patch.object(Path, "exists", return_value=False)
-    assert service._detect_ubus_fd() is None
+    assert service.detect_ubus_fd() is None
 
 
 def test_ubus_detect_fd_success_and_failures(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
@@ -842,7 +842,7 @@ def test_ubus_detect_fd_success_and_failures(mock_runtime: MockRuntimeFacade, mo
     mock_socket_instance.getpeername.return_value = "/var/run/ubus/ubus.sock"
     mocker.patch("socket.socket", return_value=mock_socket_instance)
 
-    assert service._detect_ubus_fd() == 12
+    assert service.detect_ubus_fd() == 12
     mock_socket_instance.detach.assert_called_once()
 
 
@@ -851,7 +851,7 @@ def test_ubus_pump_events_with_detected_socket_fd(mock_runtime: MockRuntimeFacad
     service = UbusService(mock_runtime, ubus_module=mock_ubus)
     service.is_active = True
 
-    mocker.patch.object(service, "_detect_ubus_fd", return_value=42)
+    mocker.patch.object(service, "detect_ubus_fd", return_value=42)
 
     calls = 0
 
@@ -867,5 +867,21 @@ def test_ubus_pump_events_with_detected_socket_fd(mock_runtime: MockRuntimeFacad
 
     mocker.patch("select.select", side_effect=mock_select)
 
-    service._pump_events(mock_ubus.loop)
+    service.pump_events(mock_ubus.loop)
     mock_ubus.loop.assert_called_once_with(0)
+
+
+def test_ubus_pump_events_fallback_when_fd_not_found(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    mock_ubus = MagicMock()
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service.is_active = True
+
+    mocker.patch.object(service, "detect_ubus_fd", return_value=None)
+
+    def mock_loop(timeout: int) -> None:
+        service.is_active = False
+
+    mock_ubus.loop.side_effect = mock_loop
+
+    service.pump_events(mock_ubus.loop)
+    mock_ubus.loop.assert_called_once_with(250)

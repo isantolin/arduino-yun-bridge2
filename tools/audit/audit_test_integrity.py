@@ -91,6 +91,8 @@ ALLOWLIST_PY_HELPERS = {
     "connect_and_run",
     "supervise",
     "on_subscribe_resp",
+    "detect_ubus_fd",
+    "pump_events",
 }
 
 

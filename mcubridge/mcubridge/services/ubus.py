@@ -80,8 +80,8 @@ class UbusService:
                 ubox_lib = ctypes.util.find_library("ubox")
                 if ubox_lib:
                     ctypes.CDLL(ubox_lib).uloop_init()
-            except (OSError, AttributeError):
-                pass
+            except (OSError, AttributeError) as exc:
+                logger.debug("Optional ubox uloop_init preload skipped", error=str(exc))
             if self.ubus_backend.connect() is not True:
                 raise OSError("ubus.connect() did not return True")
             return True
@@ -149,7 +149,7 @@ class UbusService:
         if not callable(loop_ubus):
             raise RuntimeError("python-ubus backend has no callable loop() API")
         logger.info("Starting OpenWrt UBUS event loop")
-        pump_task = asyncio.create_task(asyncio.to_thread(self._pump_events, loop_ubus))
+        pump_task = asyncio.create_task(asyncio.to_thread(self.pump_events, loop_ubus))
         try:
             await asyncio.shield(pump_task)
         except asyncio.CancelledError:
@@ -159,7 +159,7 @@ class UbusService:
             self.stop()
             raise
 
-    def _detect_ubus_fd(self) -> int | None:
+    def detect_ubus_fd(self) -> int | None:
         """Find the underlying socket file descriptor for the connected ubus context."""
         sock_path = getattr(self.ubus_backend, "get_socket_path", lambda: None)() or "/var/run/ubus/ubus.sock"
         proc_fd = Path("/proc/self/fd")
@@ -178,25 +178,27 @@ class UbusService:
                             peer = s.getpeername()
                             if peer == sock_path or (isinstance(peer, str) and "ubus" in peer):
                                 return fd
-                        except OSError:
-                            pass
+                        except OSError as exc:
+                            logger.debug("Failed getting peer name for socket fd", fd=fd, error=str(exc))
                         finally:
                             s.detach()
-                except OSError:
+                except OSError as exc:
+                    logger.debug("Failed reading socket link for fd", fd_name=fd_entry.name, error=str(exc))
                     continue
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed inspecting /proc/self/fd for ubus socket", error=str(exc))
         return None
 
-    def _pump_events(self, loop_ubus: Any) -> None:
+    def pump_events(self, loop_ubus: Any) -> None:
         """Run the native blocking poll off-loop; bounded by select timeout or native loop."""
-        sock_fd = self._detect_ubus_fd()
+        sock_fd = self.detect_ubus_fd()
         if sock_fd is not None:
             logger.debug("UBUS event loop using socket select poll", fd=sock_fd)
             while self.is_active:
                 try:
                     r, _, _ = select.select([sock_fd], [], [], 0.25)
-                except (OSError, ValueError):
+                except (OSError, ValueError) as exc:
+                    logger.debug("UBUS socket select poll interrupted", error=str(exc))
                     break
                 if r and self.is_active:
                     try:

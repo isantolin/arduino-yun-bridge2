@@ -70,7 +70,8 @@ bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
   return true;
 }
 
-// Generated static dispatch table; command IDs and bindings are defined in Protobuf.
+// Generated static dispatch table; command IDs and bindings are defined in
+// Protobuf.
 #include "protocol/rpc_dispatch_table.inc"
 
 void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {

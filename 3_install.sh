@@ -381,6 +381,17 @@ else
     # Only configure secrets if the package installed successfully
     ensure_secure_serial_secret
     configure_serial_link_settings
+
+    # Detach active console on the target serial port from inittab if present
+    target_serial="$(uci_get_general serial_port)"
+    [ -z "$target_serial" ] && target_serial="${MCUBRIDGE_DEFAULT_SERIAL_PORT:-/dev/ttyATH0}"
+    target_base="$(basename "$target_serial")"
+    if [ -n "$target_base" ] && [ -f /etc/inittab ]; then
+        if grep -q "^${target_base}:" /etc/inittab 2>/dev/null || grep -q "::askconsole:" /etc/inittab 2>/dev/null; then
+            echo "[INFO] Detaching active console on $target_base from /etc/inittab..."
+            sed -i -e "/^${target_base}:/d" -e "/::askconsole:/d" /etc/inittab
+        fi
+    fi
 fi
 
 # --- System & LuCI Configuration ---

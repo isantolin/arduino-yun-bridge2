@@ -18,7 +18,10 @@ namespace {
 class RenodeSAMD21Stream final : public Stream {
  public:
   int available() override {
-    return _has_peeked || (registerAt(kInterruptFlagOffset) & kReceiveComplete) != 0U ? 1 : 0;
+    return _has_peeked ||
+                   (registerAt(kInterruptFlagOffset) & kReceiveComplete) != 0U
+               ? 1
+               : 0;
   }
 
   int read() override {

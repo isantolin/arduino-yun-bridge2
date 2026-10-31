@@ -116,7 +116,7 @@ def _write_minimal_agent_fixture(root: Path) -> str:
     for relative_path in COPILOT_SCOPED_INSTRUCTIONS:
         instruction = root / relative_path
         instruction.parent.mkdir(parents=True, exist_ok=True)
-        instruction.write_text("---\napplyTo: \"**/*.py\"\n---\n\nTest scope.\n", encoding="utf-8")
+        instruction.write_text('---\napplyTo: "**/*.py"\n---\n\nTest scope.\n', encoding="utf-8")
     return canonical
 
 
@@ -124,10 +124,7 @@ def test_check_model_parity_success() -> None:
     assert check_model_parity() == []
 
 
-
-def test_check_chatgpt_skill_export_requires_every_shared_skill(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_check_chatgpt_skill_export_requires_every_shared_skill(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     assert check_chatgpt_skill_export() == []
@@ -174,9 +171,7 @@ def test_check_github_action_model_wiring_requires_canonical_file(mocker: Mocker
     assert "tools/gemini_model" in errors[0]
 
 
-def test_shared_skill_parity_rejects_github_workflow_prompts_as_skills(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_shared_skill_parity_rejects_github_workflow_prompts_as_skills(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     workflow_skill = tmp_path / CANONICAL_SKILLS_DIR / "gemini-invoke" / "SKILL.md"
     workflow_skill.parent.mkdir(parents=True)
@@ -189,9 +184,7 @@ def test_shared_skill_parity_rejects_github_workflow_prompts_as_skills(
     assert any("Unexpected non-shared Skill directory" in error for error in errors)
 
 
-def test_antigravity_profile_rejects_copilot_tool_aliases(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_antigravity_profile_rejects_copilot_tool_aliases(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     profile = tmp_path / ANTIGRAVITY_AGENT_PROFILE
     content = profile.read_text(encoding="utf-8").replace("  - view_file", "  - read")
@@ -201,9 +194,7 @@ def test_antigravity_profile_rejects_copilot_tool_aliases(
     assert any("tools must be" in error for error in errors)
 
 
-def test_mcp_config_portability_rejects_absolute_executable_paths(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_mcp_config_portability_rejects_absolute_executable_paths(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     config = tmp_path / ".agent" / "mcp_config.json"
     config.write_text(
@@ -215,9 +206,7 @@ def test_mcp_config_portability_rejects_absolute_executable_paths(
     assert any("host-specific absolute path" in error for error in errors)
 
 
-def test_check_rules_parity_requires_symlinks_and_generated_profiles(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_check_rules_parity_requires_symlinks_and_generated_profiles(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
     assert check_rules_parity() == []
@@ -242,9 +231,7 @@ def test_check_rules_parity_rejects_platform_frontmatter_in_canonical_guide(
     assert any("plain Markdown without platform-specific YAML frontmatter" in error for error in errors)
 
 
-def test_check_rules_parity_requires_agents_directory_symlink(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_check_rules_parity_requires_agents_directory_symlink(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     agent_link = tmp_path / ".agents"
     agent_link.unlink()
@@ -254,9 +241,7 @@ def test_check_rules_parity_requires_agents_directory_symlink(
     assert any(".agents must remain a Git symlink to .agent" in error for error in errors)
 
 
-def test_check_rules_parity_rejects_obsolete_copilot_duplicate(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_check_rules_parity_rejects_obsolete_copilot_duplicate(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     (tmp_path / ".github" / "copilot-instructions").write_text("duplicate\n", encoding="utf-8")
     mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
@@ -323,18 +308,14 @@ def test_sync_generated_files_preserves_agent_metadata_and_generates_outputs(
     assert agent["name"] == "test-agent"
     assert agent["model"] == "test-model"
     assert agent["instructions"] == canonical
-    command = tomllib.loads(
-        (tmp_path / ".github" / "commands" / "gemini-example.toml").read_text(encoding="utf-8")
-    )
+    command = tomllib.loads((tmp_path / ".github" / "commands" / "gemini-example.toml").read_text(encoding="utf-8"))
     assert command == {"description": "Example command", "prompt": "Prompt body"}
     assert check_model_parity() == []
     assert check_prompt_parity() == []
     assert check_shared_skill_parity() == []
 
 
-def test_cli_fix_is_repeatable_and_checks_generated_artifacts(
-    mocker: MockerFixture, tmp_path: Path
-) -> None:
+def test_cli_fix_is_repeatable_and_checks_generated_artifacts(mocker: MockerFixture, tmp_path: Path) -> None:
     _write_minimal_agent_fixture(tmp_path)
     workflow_dir = tmp_path / ".agent" / "workflows"
     workflow_dir.mkdir(parents=True)

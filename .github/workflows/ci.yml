@@ -32,6 +32,8 @@ jobs:
         env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, agent-parity, codebase-auditor, py, arduino]
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -95,6 +97,8 @@ jobs:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - name: Setup Arduino CLI
         run: |
@@ -138,6 +142,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -205,6 +211,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -242,6 +250,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -271,6 +281,8 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -307,6 +319,8 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -345,6 +359,8 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -403,6 +419,8 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -459,6 +477,8 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:

@@ -216,13 +216,20 @@ EOF
     fi
 done
 # Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono for Arduino)
-if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ]; then
-    if [ ! -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
-        python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
+if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmodules" ]; then
+    if [ ! -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ] && [ -d "${ROOT_DIR}/.git" ]; then
+        git -C "${ROOT_DIR}" submodule update --init --recursive third_party/avr_pigweed_port 2>/dev/null || true
     fi
-    mkdir -p "$LIB_DIR"
-    rm -rf "$LIB_DIR/PigweedAVR"
-    cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" "$LIB_DIR/PigweedAVR"
+    if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ]; then
+        if [ ! -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
+            python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
+        fi
+        if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
+            mkdir -p "$LIB_DIR"
+            rm -rf "$LIB_DIR/PigweedAVR"
+            cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" "$LIB_DIR/PigweedAVR"
+        fi
+    fi
 fi
 
 # Unity test framework (host tests only)

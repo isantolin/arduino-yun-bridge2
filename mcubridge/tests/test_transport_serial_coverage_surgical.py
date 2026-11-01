@@ -85,7 +85,7 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
 
     read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
-    mock_serial.read_until.assert_called_once_with(protocol.FRAME_DELIMITER)
+    mock_serial.read_until.assert_called_once_with(protocol.FRAME_DELIMITER, protocol.MAX_SERIAL_FRAME_BYTES)
 
 
 async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:

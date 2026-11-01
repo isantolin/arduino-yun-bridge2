@@ -32,7 +32,7 @@ runs:
       shell: bash
       run: |
         python -m pip install packaging typer tenacity vulture pytest grpclib mypy-protobuf jinja2 nanopb psutil pyelftools black httpx
-        python -m pip install --no-deps pigweed==0.0.24
+        python -m pip install pigweed==0.0.24
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         if command -v protoc-gen-grpclib_python >/dev/null 2>&1; then
           sudo ln -sf "$(command -v protoc-gen-grpclib_python)" /usr/local/bin/ || true
@@ -44,7 +44,7 @@ runs:
       shell: bash
       run: |
         python tools/audit/sync_runtime_deps.py
-        pip install --no-deps -r requirements/runtime.txt
+        pip install -r requirements/runtime.txt
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         if command -v protoc-gen-grpclib_python >/dev/null 2>&1; then
           sudo ln -sf "$(command -v protoc-gen-grpclib_python)" /usr/local/bin/ || true

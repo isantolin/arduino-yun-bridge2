@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import Annotated
 import serial
 import serial.tools.list_ports
-from serial import SerialException
 from serial.urlhandler import protocol_socket
 import typer
 from pw_hdlc.decode import FrameDecoder
@@ -191,7 +190,7 @@ async def run_debug_loop(
         finally:
             await asyncio.to_thread(ser.close)
 
-    except (OSError, ValueError, RuntimeError, TypeError, SerialException) as e:
+    except (OSError, ValueError, RuntimeError, TypeError) as e:
         sys.stderr.write(f"Serial Error: {e}\n")
         sys.exit(1)
 

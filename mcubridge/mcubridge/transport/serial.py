@@ -309,7 +309,6 @@ class SerialTransport:
                 self.state.serial_decode_errors += 1
                 logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame.data.hex())
                 return
-
             spec = protocol.RPC_METHOD_TO_SPEC.get((pkt.service_id, pkt.method_id))
             cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
             seq_id = pkt.call_id
@@ -516,6 +515,10 @@ class SerialTransport:
                 encoded.hex().upper(),
             )
 
+        return await self.send_bytes(encoded)
+
+    async def send_bytes(self, encoded: bytes) -> bool:
+        """Write pre-encoded frame bytes directly to serial port. [SIL-2]"""
         try:
             if not self.serial:
                 return False

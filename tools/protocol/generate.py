@@ -276,8 +276,6 @@ def _extract_commands_and_statuses(
         command["name"] = value.name
         command["value"] = value.number
         command["expects_direct_response"] = bool(command_options.response_command)
-        if command_options.HasField("mcu_dispatch"):
-            command["mcu_dispatch"] = _message_to_dict(command_options.mcu_dispatch)
         commands.append(command)
 
     request_by_response = {cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")}
@@ -295,144 +293,11 @@ def _extract_commands_and_statuses(
             "value": value.number,
             "description": status_options.description,
         }
-        if status_options.HasField("mcu_dispatch"):
-            status["mcu_dispatch"] = _message_to_dict(status_options.mcu_dispatch)
         statuses.append(status)
     return commands, statuses
 
 
-_MCU_DISPATCH_TEMPLATES: Final[dict[str, str]] = {
-    "member_no_payload": "&BridgeClass::_dispatchMemberNoPayload<{handler_ptr}, {flags}>",
-    "member_with_msg": "&BridgeClass::_dispatchMemberWithMsg<{handler_ptr}, {payload_type}, {flags}>",
-    "member_with_ctx_msg": "&BridgeClass::_dispatchMemberWithCtxMsg<{handler_ptr}, {payload_type}, {flags}>",
-    "static_with_msg": "&BridgeClass::_dispatchStaticWithMsg<{handler_ptr}, {payload_type}, {flags}>",
-    "target_with_msg": (
-        "&BridgeClass::_dispatchTargetWithMsg<{target_instance}, {handler_ptr}, {payload_type}, {flags}>"
-    ),
-    "target_action": "&BridgeClass::_dispatchTargetAction<{target_instance}, {handler_ptr}, {flags}>",
-}
-_FEATURE_PREFIX_MACROS: Final[dict[str, str]] = {
-    "CMD_CONSOLE_": "BRIDGE_ENABLE_CONSOLE",
-    "CMD_DATASTORE_": "BRIDGE_ENABLE_DATASTORE",
-    "CMD_MAILBOX_": "BRIDGE_ENABLE_MAILBOX",
-    "CMD_FILE_": "BRIDGE_ENABLE_FILESYSTEM",
-    "CMD_PROCESS_": "BRIDGE_ENABLE_PROCESS",
-    "CMD_SPI_": "BRIDGE_ENABLE_SPI",
-}
-_QUERY_HANDLERS: Final[frozenset[str]] = frozenset({"_handleSimpleQuery", "_handlePinRead", "_handleSpiTransfer"})
-_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
-def _require_identifier(value: object, error_msg: str) -> str:
-    if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
-        raise ValueError(error_msg)
-    return value
-
-
-def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
-    """Render a fixed-allocation MCU dispatch adapter instantiation."""
-    adapter = str(dispatch.get("adapter", ""))
-    template = _MCU_DISPATCH_TEMPLATES.get(adapter)
-    if template is None:
-        raise ValueError(f"Unknown MCU dispatch adapter {adapter!r} for {name}")
-
-    handler = _require_identifier(dispatch.get("handler", ""), f"Invalid MCU dispatch handler for {name}")
-    default_cls = f"{dispatch['target_instance']}Class" if dispatch.get("target_instance") else "BridgeClass"
-    handler_class = _require_identifier(
-        dispatch.get("handler_class") or default_cls, f"Invalid MCU dispatch handler class for {name}"
-    )
-    handler_args = dispatch.get("handler_template_args", "")
-    if not isinstance(handler_args, str):
-        raise ValueError(f"Invalid handler template arguments for {name}")
-    handler_ptr = f"&{handler_class}::{handler}<{handler_args}>" if handler_args else f"&{handler_class}::{handler}"
-
-    payload_type = (
-        _require_identifier(dispatch.get("payload_type", ""), f"Missing or invalid payload type for {name}")
-        if "{payload_type}" in template
-        else ""
-    )
-    target_instance = (
-        _require_identifier(dispatch.get("target_instance", ""), f"Missing or invalid target instance for {name}")
-        if "{target_instance}" in template
-        else ""
-    )
-    is_query = handler in _QUERY_HANDLERS
-    flag_vals = (
-        dispatch.get("needs_ack", not is_query),
-        dispatch.get("retransmit_on_dup", is_query),
-        dispatch.get("check_dup", True),
-    )
-    if not all(isinstance(v, bool) for v in flag_vals):
-        raise ValueError(f"Invalid MCU dispatch boolean metadata for {name}")
-    flags_str = ", ".join("true" if v else "false" for v in flag_vals)
-    return template.format(
-        handler_ptr=handler_ptr, payload_type=payload_type, target_instance=target_instance, flags=flags_str
-    )
-
-
-def _build_mcu_dispatch_entries(commands: list[dict[str, Any]], statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build the static C++ dispatch table from Protobuf command/status options."""
-    entries: list[dict[str, Any]] = []
-    adapter_prefix = "MCU_DISPATCH_ADAPTER_"
-
-    for kind, items in (("command", commands), ("status", statuses)):
-        for item in items:
-            raw_dispatch = item.get("mcu_dispatch")
-            if not raw_dispatch:
-                continue
-            if not isinstance(raw_dispatch, dict):
-                raise ValueError(f"Invalid MCU dispatch metadata for {item['name']}")
-            dispatch: dict[str, Any] = dict(cast(dict[str, Any], raw_dispatch))
-            adapter = dispatch.get("adapter", "")
-            if not isinstance(adapter, str) or not adapter.startswith(adapter_prefix):
-                raise ValueError(f"Missing or invalid MCU dispatch adapter for {item['name']}")
-            dispatch["adapter"] = adapter.removeprefix(adapter_prefix).lower()
-            if item.get("pb_message") and not dispatch.get("payload_type"):
-                dispatch["payload_type"] = f"rpc_pb_{item['pb_message']}"
-
-            expression = format_mcu_dispatch_expression(dispatch, item["name"])
-            inferred_macro = next(
-                (m for pfx, m in _FEATURE_PREFIX_MACROS.items() if str(item["name"]).startswith(pfx)), ""
-            )
-            feature_macro = dispatch.get("feature_macro") or inferred_macro
-            if feature_macro and (
-                not isinstance(feature_macro, str) or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
-            ):
-                raise ValueError(f"Invalid MCU dispatch feature macro for {item['name']}")
-            key = f"rpc::StatusCode::STATUS_{item['name']}" if kind == "status" else f"rpc::CommandId::{item['name']}"
-            entries.append(
-                {
-                    "name": item["name"],
-                    "value": item["value"],
-                    "key": key,
-                    "expression": expression,
-                    "feature_macro": feature_macro,
-                }
-            )
-
-    entries.sort(key=lambda entry: entry["value"])
-    if len(entries) != len({entry["value"] for entry in entries}):
-        raise ValueError("MCU dispatch table contains duplicate command/status IDs")
-    return entries
-
-
-def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any, env_desc: Any) -> dict[str, Any]:
-    if env_desc is not None and "payload_type" in env_desc.oneofs_by_name:
-        payload_fields = [
-            {"name": f.message_type.name, "field": f.name}
-            for f in env_desc.oneofs_by_name["payload_type"].fields
-            if f.message_type
-        ]
-        payload_structs = [item for item in payload_fields if item["name"] != "DaemonMetrics"]
-        payload_names = [p["name"] for p in payload_structs]
-        mcu_names = set(payload_names) | {"RpcEnvelope"}
-        all_structs = [{"name": n} for d in all_descs for n in d.message_types_by_name if n in mcu_names]
-    else:
-        payload_fields = []
-        payload_structs = []
-        payload_names = []
-        all_structs = []
-
+def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any) -> dict[str, Any]:
     action_items: dict[str, list[dict[str, Any]]] = {}
     for a in opts.Extensions[pb_module.actions]:
         if "_" in a.name:
@@ -466,10 +331,6 @@ def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: An
         for t in opts.Extensions[pb_module.daemon_tasks]
     ]
     return {
-        "payload_fields": payload_fields,
-        "payload_structs": payload_structs,
-        "payload_names": payload_names,
-        "all_structs": all_structs,
         "grouped_actions": grouped_actions,
         "topics": topics,
         "ubus_methods": ubus_methods,
@@ -704,12 +565,10 @@ def _extract_operations_context(
     all_descs: list[Any],
     opts: Any,
     commands: list[dict[str, Any]],
-    env_desc: Any,
     svc_desc: Any,
 ) -> dict[str, Any]:
-    payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts, env_desc)
-    payload_fields = payload_ctx["payload_fields"]
-    p_fields_map = {p["name"]: p["field"] for p in payload_fields}
+    payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts)
+    p_fields_map: dict[str, str] = {}
 
     rpc_specs, streaming_rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
     cmd_by_name = {c["name"]: c for c in commands}
@@ -744,10 +603,6 @@ def _extract_operations_context(
     )
     return {
         "grouped_actions": payload_ctx["grouped_actions"],
-        "all_structs": payload_ctx["all_structs"],
-        "payload_fields": payload_fields,
-        "payload_structs": payload_ctx["payload_structs"],
-        "payload_names": payload_ctx["payload_names"],
         "operations": operations,
         "metrics": _extract_metric_specs(pb_module, all_descs),
         "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
@@ -830,15 +685,11 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     opts: Any = next(d.GetOptions() for d in all_descs if d.GetOptions().HasExtension(pb_module.constants))
     cmd_enum: Any = next(d.enum_types_by_name["Command"] for d in all_descs if "Command" in d.enum_types_by_name)
     status_enum: Any = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
-    env_desc: Any = next(
-        (d.message_types_by_name["RpcEnvelope"] for d in all_descs if "RpcEnvelope" in d.message_types_by_name),
-        None,
-    )
     svc_desc: Any = next(d.services_by_name["LocalBridge"] for d in all_descs if "LocalBridge" in d.services_by_name)
 
     consts_ctx = _extract_constants_and_handshake(pb_module, opts, parsed.major, parsed.minor, parsed.micro)
     commands, statuses = _extract_commands_and_statuses(pb_module, cmd_enum, status_enum)
-    ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, env_desc, svc_desc)
+    ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, svc_desc)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
 
     return (
@@ -848,7 +699,6 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
         | {
             "commands": commands,
             "statuses": statuses,
-            "mcu_dispatch_entries": _build_mcu_dispatch_entries(commands, statuses),
         }
     )
 

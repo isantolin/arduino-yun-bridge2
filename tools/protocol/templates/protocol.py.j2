@@ -11,14 +11,18 @@ from enum import IntEnum, StrEnum
 import functools
 import operator
 import posixpath
+import re
 from typing import Any, Final, cast
 
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
 import parse
+from pw_rpc import ids
+from pw_rpc.descriptors import Service
 import structlog
 
 from . import mcubridge_pb2 as pb
+from . import mcu_wire_pb2
 
 type McuDispatchTable = dict[int, Callable[..., Any]]
 
@@ -690,105 +694,70 @@ class RpcMethodSpec:
     response_type: type[ProtobufMessage] | None = None
 
 
-COMMAND_TO_RPC: Final[dict[int, RpcMethodSpec]] = {
-    Command.CMD_SET_PIN_MODE.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "SetPinMode", 4099056864, pb.PinMode, pb.Empty
-    ),
-    Command.CMD_DIGITAL_WRITE.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "DigitalWrite", 859904307, pb.DigitalWrite, pb.Empty
-    ),
-    Command.CMD_ANALOG_WRITE.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "AnalogWrite", 434813564, pb.AnalogWrite, pb.Empty
-    ),
-    Command.CMD_DIGITAL_READ.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "DigitalRead", 1512406173, pb.PinRead, pb.DigitalReadResponse
-    ),
-    Command.CMD_ANALOG_READ.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "AnalogRead", 304073808, pb.PinRead, pb.AnalogReadResponse
-    ),
-    Command.CMD_PIN_SUBSCRIBE.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "SubscribePins", 3933572293, pb.PinSubscribeRequest, pb.PinSubscribeResponse
-    ),
-    Command.CMD_PIN_UPDATE_EVENT.value: RpcMethodSpec(
-        "bridge.GpioService", 127336915, "SubscribePins", 3933572293, None, pb.PinUpdateEvent
-    ),
-    Command.CMD_GET_VERSION.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "GetVersion", 132813196, pb.SubscribeRequest, pb.VersionResponse
-    ),
-    Command.CMD_GET_FREE_MEMORY.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "GetFreeMemory", 2509554858, pb.SubscribeRequest, pb.FreeMemoryResponse
-    ),
-    Command.CMD_LINK_SYNC.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "LinkSync", 3036082941, pb.LinkSync, pb.LinkSync
-    ),
-    Command.CMD_LINK_RESET.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "LinkReset", 340519156, pb.SubscribeRequest, pb.Empty
-    ),
-    Command.CMD_GET_CAPABILITIES.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "GetCapabilities", 1247616995, pb.SubscribeRequest, pb.Capabilities
-    ),
-    Command.CMD_SET_BAUDRATE.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "SetBaudrate", 2716060091, pb.SetBaudratePacket, pb.SetBaudratePacket
-    ),
-    Command.CMD_ENTER_BOOTLOADER.value: RpcMethodSpec(
-        "bridge.SystemService", 2273688469, "EnterBootloader", 3922771890, pb.EnterBootloader, pb.Empty
-    ),
-    Command.CMD_CLOCK_SYNC.value: RpcMethodSpec(
-        "bridge.ClockSyncService", 995309254, "ClockSync", 3082852960, pb.ClockSyncRequest, pb.ClockSyncResponse
-    ),
-    Command.CMD_SPI_BEGIN.value: RpcMethodSpec(
-        "bridge.SpiService", 1949997347, "Begin", 1296100220, pb.SubscribeRequest, pb.Empty
-    ),
-    Command.CMD_SPI_TRANSFER.value: RpcMethodSpec(
-        "bridge.SpiService", 1949997347, "Transfer", 2878954099, pb.SpiTransfer, pb.SpiTransferResponse
-    ),
-    Command.CMD_SPI_END.value: RpcMethodSpec(
-        "bridge.SpiService", 1949997347, "End", 1662600456, pb.SubscribeRequest, pb.Empty
-    ),
-    Command.CMD_SPI_SET_CONFIG.value: RpcMethodSpec(
-        "bridge.SpiService", 1949997347, "SetConfig", 2587308997, pb.SpiConfig, pb.Empty
-    ),
-    Command.CMD_FILE_WRITE.value: RpcMethodSpec(
-        "bridge.FileSystemService", 3666578813, "Write", 3563259270, pb.FileWrite, pb.Empty
-    ),
-    Command.CMD_FILE_READ.value: RpcMethodSpec(
-        "bridge.FileSystemService", 3666578813, "Read", 1534617306, pb.FileRead, pb.FileReadResponse
-    ),
-    Command.CMD_FILE_REMOVE.value: RpcMethodSpec(
-        "bridge.FileSystemService", 3666578813, "Remove", 743911626, pb.FileRemove, pb.Empty
-    ),
-    Command.CMD_MAILBOX_PUSH.value: RpcMethodSpec(
-        "bridge.MailboxService", 3259408431, "Push", 3095627742, pb.MailboxPush, pb.Empty
-    ),
-    Command.CMD_MAILBOX_READ.value: RpcMethodSpec(
-        "bridge.MailboxService", 3259408431, "Read", 1534617306, pb.SubscribeRequest, pb.MailboxReadResponse
-    ),
-    Command.CMD_MAILBOX_AVAILABLE.value: RpcMethodSpec(
-        "bridge.MailboxService", 3259408431, "Available", 2873000224, pb.SubscribeRequest, pb.MailboxAvailableResponse
-    ),
-    Command.CMD_MAILBOX_PROCESSED.value: RpcMethodSpec(
-        "bridge.MailboxService", 3259408431, "Processed", 1847225595, pb.MailboxProcessed, pb.Empty
-    ),
-    Command.CMD_PROCESS_RUN_ASYNC.value: RpcMethodSpec(
-        "bridge.ProcessService", 2410016298, "RunAsync", 1537884217, pb.ProcessRunAsync, pb.ProcessRunAsyncResponse
-    ),
-    Command.CMD_PROCESS_POLL.value: RpcMethodSpec(
-        "bridge.ProcessService", 2410016298, "Poll", 2140205475, pb.SubscribeRequest, pb.ProcessPollResponse
-    ),
-    Command.CMD_PROCESS_KILL.value: RpcMethodSpec(
-        "bridge.ProcessService", 2410016298, "Kill", 2090308450, pb.ProcessKill, pb.Empty
-    ),
-    Command.CMD_DATASTORE_PUT.value: RpcMethodSpec(
-        "bridge.DataStoreService", 2574079764, "Put", 1325645876, pb.DatastorePut, pb.Empty
-    ),
-    Command.CMD_DATASTORE_GET.value: RpcMethodSpec(
-        "bridge.DataStoreService", 2574079764, "Get", 1192871405, pb.DatastoreGet, pb.DatastoreGetResponse
-    ),
+RPC_METHOD_TO_SPEC: Final[dict[tuple[int, int], RpcMethodSpec]] = {
+    (ids.calculate(f"bridge.{svc.name}"), m.id): RpcMethodSpec(
+        service_name=f"bridge.{svc.name}",
+        service_id=ids.calculate(f"bridge.{svc.name}"),
+        method_name=m.name,
+        method_id=m.id,
+        request_type=m.request_type,
+        response_type=m.response_type,
+    )
+    for desc in mcu_wire_pb2.DESCRIPTOR.services_by_name.values()
+    for svc in (Service.from_descriptor(desc),)
+    for m in svc.methods
 }
 
-RPC_METHOD_TO_SPEC: Final[dict[tuple[int, int], RpcMethodSpec]] = {
-    (spec.service_id, spec.method_id): spec for spec in COMMAND_TO_RPC.values()
+RPC_METHOD_BY_NAME: Final[dict[tuple[str, str], RpcMethodSpec]] = {
+    (spec.service_name, spec.method_name): spec for spec in RPC_METHOD_TO_SPEC.values()
 }
+
+_CMD_TO_RPC_NAME: Final[dict[int, tuple[str, str]]] = {
+    Command.CMD_SET_PIN_MODE.value: ("bridge.GpioService", "SetPinMode"),
+    Command.CMD_DIGITAL_WRITE.value: ("bridge.GpioService", "DigitalWrite"),
+    Command.CMD_ANALOG_WRITE.value: ("bridge.GpioService", "AnalogWrite"),
+    Command.CMD_DIGITAL_READ.value: ("bridge.GpioService", "DigitalRead"),
+    Command.CMD_ANALOG_READ.value: ("bridge.GpioService", "AnalogRead"),
+    Command.CMD_PIN_SUBSCRIBE.value: ("bridge.GpioService", "SubscribePins"),
+    Command.CMD_GET_VERSION.value: ("bridge.SystemService", "GetVersion"),
+    Command.CMD_GET_FREE_MEMORY.value: ("bridge.SystemService", "GetFreeMemory"),
+    Command.CMD_LINK_SYNC.value: ("bridge.SystemService", "LinkSync"),
+    Command.CMD_LINK_RESET.value: ("bridge.SystemService", "LinkReset"),
+    Command.CMD_GET_CAPABILITIES.value: ("bridge.SystemService", "GetCapabilities"),
+    Command.CMD_SET_BAUDRATE.value: ("bridge.SystemService", "SetBaudrate"),
+    Command.CMD_ENTER_BOOTLOADER.value: ("bridge.SystemService", "EnterBootloader"),
+    Command.CMD_CLOCK_SYNC.value: ("bridge.ClockSyncService", "ClockSync"),
+    Command.CMD_SPI_BEGIN.value: ("bridge.SpiService", "Begin"),
+    Command.CMD_SPI_TRANSFER.value: ("bridge.SpiService", "Transfer"),
+    Command.CMD_SPI_END.value: ("bridge.SpiService", "End"),
+    Command.CMD_SPI_SET_CONFIG.value: ("bridge.SpiService", "SetConfig"),
+    Command.CMD_FILE_WRITE.value: ("bridge.FileSystemService", "Write"),
+    Command.CMD_FILE_READ.value: ("bridge.FileSystemService", "Read"),
+    Command.CMD_FILE_REMOVE.value: ("bridge.FileSystemService", "Remove"),
+    Command.CMD_MAILBOX_PUSH.value: ("bridge.MailboxService", "Push"),
+    Command.CMD_MAILBOX_READ.value: ("bridge.MailboxService", "Read"),
+    Command.CMD_MAILBOX_AVAILABLE.value: ("bridge.MailboxService", "Available"),
+    Command.CMD_MAILBOX_PROCESSED.value: ("bridge.MailboxService", "Processed"),
+    Command.CMD_PROCESS_RUN_ASYNC.value: ("bridge.ProcessService", "RunAsync"),
+    Command.CMD_PROCESS_POLL.value: ("bridge.ProcessService", "Poll"),
+    Command.CMD_PROCESS_KILL.value: ("bridge.ProcessService", "Kill"),
+    Command.CMD_DATASTORE_PUT.value: ("bridge.DataStoreService", "Put"),
+    Command.CMD_DATASTORE_GET.value: ("bridge.DataStoreService", "Get"),
+}
+
+COMMAND_TO_RPC: Final[dict[int, RpcMethodSpec]] = {
+    cmd: RPC_METHOD_BY_NAME[pair]
+    for cmd, pair in _CMD_TO_RPC_NAME.items()
+    if pair in RPC_METHOD_BY_NAME
+}
+COMMAND_TO_RPC[Command.CMD_PIN_UPDATE_EVENT.value] = RpcMethodSpec(
+    service_name="bridge.GpioService",
+    service_id=ids.calculate("bridge.GpioService"),
+    method_name="SubscribePins",
+    method_id=ids.calculate("SubscribePins"),
+    request_type=None,
+    response_type=mcu_wire_pb2.PinUpdateEvent,
+)
 
 RPC_TO_COMMAND: Final[dict[tuple[int, int], int]] = {
     (spec.service_id, spec.method_id): cmd for cmd, spec in COMMAND_TO_RPC.items()

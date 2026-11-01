@@ -49,7 +49,6 @@ if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
         --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
         --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
         --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
-        --cpp-structs "${LIB_DIR}/src/protocol/rpc_structs.h" \
         --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 fi
 
@@ -69,14 +68,29 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$EMULATOR" = "simavr" ]; then
-    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256"
+    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DWOLFSSL_NO_ATOMIC -DWOLFSSL_NO_FENCE -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+    AVR_PROPS=()
+    AVR_STDCPP_INC=""
+    if command -v avr-gcc >/dev/null 2>&1; then
+        SYS_AVR_GCC_VER="$(avr-gcc -dumpversion | cut -d. -f1)"
+        if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then
+            SYS_AVR_GCC_PATH="$(dirname "$(dirname "$(command -v avr-gcc)")")"
+            AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${SYS_AVR_GCC_PATH}")
+            if [ -d "$USER_LIB_DIR/PigweedAVR/gcc${SYS_AVR_GCC_VER}/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc${SYS_AVR_GCC_VER}/include"
+            elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc15/include"
+            fi
+        fi
+    fi
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include"
+        "${AVR_PROPS[@]}"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
         "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
         "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
         "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"

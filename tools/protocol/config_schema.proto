@@ -213,15 +213,10 @@ option (rpc.pb.constants) = {
   uint8_mask: 255
   uint16_max: 65535
   bootloader_magic: 3735929054
-  crc_size: 4
-  crc_covered_header_size: 7
-  crc32_mask: 4294967295
-  nonce_counter_mask: 18446744073709551615
-  frame_delimiter: 0
-  status_code_min: 48
-  status_code_max: 63
-  system_command_min: 64
-  system_command_max: 79
+  frame_delimiter: 126
+  hdlc_address_rpc: 1
+  hdlc_address_log: 2
+  hdlc_address_console: 3
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
@@ -311,13 +306,10 @@ option (rpc.pb.handshake) = {
   hkdf_output_length: 32
   nonce_random_bytes: 8
   nonce_counter_bytes: 8
-  mcu_aead_nonce_prefix: 1296258304
-  mpu_aead_nonce_prefix: 1297110272
 };
 option (rpc.pb.hardware) = {
   max_observers_avr: 4
   max_observers_other: 8
-  rx_history_size: 1
   rx_buffer_size_avr: 256
   rx_buffer_size_other: 512
   max_pending_tx_frames_avr: 1
@@ -336,7 +328,6 @@ option (rpc.pb.hardware) = {
   startup_stabilization_ms: 50
   baudrate_change_delay_ms: 50
   max_consecutive_crc_errors: 5
-  rx_dedupe_interval_ms: 1000
   flow_control_xoff_threshold: 48
   flow_control_xon_threshold: 16
   hkdf_key_length: 32
@@ -597,8 +588,8 @@ option (rpc.pb.ubus_methods) = {
 };
 
 message Constants {
-  reserved 14 to 20, 24, 27, 29, 31, 33 to 34, 39 to 53, 67 to 68;
-  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max";
+  reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68;
+  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask";
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
     (cpp_type) = "size_t",
@@ -699,59 +690,11 @@ message Constants {
     (py_name) = "BOOTLOADER_MAGIC",
     (py_type) = "int"
   ];
-  uint32 crc_size = 25 [
-    (cpp_name) = "RPC_CRC_SIZE",
-    (cpp_type) = "size_t",
-    (py_name) = "CRC_SIZE",
-    (py_type) = "int"
-  ];
-  uint32 crc_covered_header_size = 26 [
-    (cpp_name) = "RPC_CRC_COVERED_HEADER_SIZE",
-    (cpp_type) = "size_t",
-    (py_name) = "CRC_COVERED_HEADER_SIZE",
-    (py_type) = "int"
-  ];
-  uint32 crc32_mask = 28 [
-    (cpp_name) = "RPC_CRC32_MASK",
-    (cpp_type) = "uint32_t",
-    (py_name) = "CRC32_MASK",
-    (py_type) = "int"
-  ];
-  uint64 nonce_counter_mask = 30 [
-    (cpp_name) = "RPC_NONCE_COUNTER_MASK",
-    (cpp_type) = "uint64_t",
-    (py_name) = "NONCE_COUNTER_MASK",
-    (py_type) = "int"
-  ];
   uint32 frame_delimiter = 32 [
     (cpp_name) = "RPC_FRAME_DELIMITER",
     (cpp_type) = "uint8_t",
     (py_name) = "FRAME_DELIMITER",
     (py_type) = "bytes"
-  ];
-  uint32 status_code_min = 35 [
-    (cpp_name) = "RPC_STATUS_CODE_MIN",
-    (cpp_type) = "uint8_t",
-    (py_name) = "STATUS_CODE_MIN",
-    (py_type) = "int"
-  ];
-  uint32 status_code_max = 36 [
-    (cpp_name) = "RPC_STATUS_CODE_MAX",
-    (cpp_type) = "uint8_t",
-    (py_name) = "STATUS_CODE_MAX",
-    (py_type) = "int"
-  ];
-  uint32 system_command_min = 37 [
-    (cpp_name) = "RPC_SYSTEM_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "SYSTEM_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 system_command_max = 38 [
-    (cpp_name) = "RPC_SYSTEM_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "SYSTEM_COMMAND_MAX",
-    (py_type) = "int"
   ];
   uint32 max_serial_frame_bytes = 54 [
     (py_name) = "MAX_SERIAL_FRAME_BYTES",
@@ -882,12 +825,32 @@ message Constants {
     (py_name) = "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS",
     (py_type) = "float"
   ];
+  uint32 hdlc_address_rpc = 87 [
+    (cpp_name) = "RPC_HDLC_ADDRESS_RPC",
+    (cpp_type) = "uint8_t",
+    (py_name) = "HDLC_ADDRESS_RPC",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 hdlc_address_log = 88 [
+    (cpp_name) = "RPC_HDLC_ADDRESS_LOG",
+    (cpp_type) = "uint8_t",
+    (py_name) = "HDLC_ADDRESS_LOG",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  uint32 hdlc_address_console = 89 [
+    (cpp_name) = "RPC_HDLC_ADDRESS_CONSOLE",
+    (cpp_type) = "uint8_t",
+    (py_name) = "HDLC_ADDRESS_CONSOLE",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
 }
 
 message Hardware {
   uint32 max_observers_avr = 1;
   uint32 max_observers_other = 2;
-  uint32 rx_history_size = 3;
   uint32 rx_buffer_size_avr = 4;
   uint32 rx_buffer_size_other = 5;
   uint32 max_pending_tx_frames_avr = 6;
@@ -909,7 +872,6 @@ message Hardware {
   uint32 startup_stabilization_ms = 19;
   uint32 baudrate_change_delay_ms = 20;
   uint32 max_consecutive_crc_errors = 21;
-  uint32 rx_dedupe_interval_ms = 22;
   uint32 flow_control_xoff_threshold = 23 [
     (py_name) = "FLOW_CONTROL_XOFF_THRESHOLD",
     (py_type) = "int"
@@ -920,8 +882,8 @@ message Hardware {
   ];
   uint32 hkdf_key_length = 25;
   uint32 key_and_digest_buffer_size = 26;
-  reserved 27 to 31;
-  reserved "avr_digital_pins", "avr_analog_pins", "samd_digital_pins", "samd_analog_pins", "fallback_max_pin";
+  reserved 3, 22, 27 to 31;
+  reserved "rx_history_size", "rx_dedupe_interval_ms", "avr_digital_pins", "avr_analog_pins", "samd_digital_pins", "samd_analog_pins", "fallback_max_pin";
   uint32 fallback_free_memory = 32;
   uint32 capabilities_feat_extended = 33;
   uint32 serial_timeout_ms = 34 [
@@ -1045,18 +1007,6 @@ message Handshake {
     (cpp_name) = "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
     (cpp_type) = "unsigned int",
     (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES",
-    (py_type) = "int"
-  ];
-  uint32 mcu_aead_nonce_prefix = 18 [
-    (cpp_name) = "RPC_MCU_AEAD_NONCE_PREFIX",
-    (cpp_type) = "uint32_t",
-    (py_name) = "MCU_AEAD_NONCE_PREFIX",
-    (py_type) = "int"
-  ];
-  uint32 mpu_aead_nonce_prefix = 19 [
-    (cpp_name) = "RPC_MPU_AEAD_NONCE_PREFIX",
-    (cpp_type) = "uint32_t",
-    (py_name) = "MPU_AEAD_NONCE_PREFIX",
     (py_type) = "int"
   ];
 }
@@ -1286,17 +1236,6 @@ enum Status {
   CRC_MISMATCH = 53 [(status_opts) = {description: "CRC check failed."}];
   TIMEOUT = 54 [(status_opts) = {description: "Operation timed out."}];
   NOT_IMPLEMENTED = 55 [(status_opts) = {description: "Command defined but not supported."}];
-  ACK = 56 [(status_opts) = {
-    description: "Generic acknowledgement for fire-and-forget commands."
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_MSG
-      handler: "_handleStatusAck"
-      payload_type: "rpc_pb_AckPacket"
-      needs_ack: false
-      retransmit_on_dup: false
-      check_dup: false
-    }
-  }];
 }
 
 enum Command {

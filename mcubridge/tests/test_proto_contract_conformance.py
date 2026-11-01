@@ -9,12 +9,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 from hypothesis import given, strategies as st
 import pytest
-from dirty_equals import IsInt, IsPositiveInt, IsStr
+from dirty_equals import IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import REGISTRY, Command, Status
 from mcubridge.protocol.structures import PendingPinRequest
@@ -315,31 +315,11 @@ async def test_status_reporting_and_ack(
     report = pb.StatusReport.FromString(captured[-1].payload)
     assert report.message == "fault"
 
-    # Status with AckPacket
-    await handle_status(Status.OK, 3, pb.AckPacket(command_id=0x05))
-    report = pb.StatusReport.FromString(captured[-1].payload)
-    assert report.status == IsInt
-
     # Status with raw hex
     raw = b"\xde\xad\xbe\xef"
     await handle_status(Status.OK, 4, raw)
     report = pb.StatusReport.FromString(captured[-1].payload)
     assert report.message == IsStr(regex=r"<hex:[0-9a-f]+>")
-
-    # ACK packet valid, raw bytes, corrupt bytes
-    mock_debug = MagicMock()
-    mock_error = MagicMock()
-    monkeypatch.setattr("mcubridge.services.runtime.logger.debug", mock_debug)
-    monkeypatch.setattr("mcubridge.services.runtime.logger.error", mock_error)
-
-    await handle_status(Status.ACK, 1, pb.AckPacket(command_id=0x01))
-    mock_debug.assert_called_with("MCU ACK received", command_id="0x01")
-
-    await handle_status(Status.ACK, 2, pb.AckPacket(command_id=0x02).SerializeToString())
-    mock_debug.assert_called_with("MCU ACK received", command_id="0x02")
-
-    await handle_status(Status.ACK, 3, b"\xff\xff\xff")
-    mock_error.assert_called_once()
 
 
 async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:

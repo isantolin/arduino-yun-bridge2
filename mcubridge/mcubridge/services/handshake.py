@@ -41,7 +41,6 @@ from ..protocol.protocol import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     Command,
     REGISTRY,
-    Status,
 )
 from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from ..state.context import RuntimeState
@@ -129,8 +128,6 @@ class SendFrameCallable(Protocol):
 
 EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
 
-AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
-
 logger = structlog.get_logger("mcubridge.service.handshake")
 
 
@@ -167,7 +164,6 @@ class SerialHandshakeManager:
         serial_timing: pb.HandshakeConfig,
         send_frame: SendFrameCallable,
         enqueue_cloud: EnqueueMessageCallable,
-        acknowledge_frame: AcknowledgeFrameCallable,
         sync_waiter: Callable[[bytes], Awaitable[bool]] | None = None,
         topic_resolver: Callable[[str, Any], str | None] | None = None,
         logger_: Any | None = None,
@@ -177,7 +173,6 @@ class SerialHandshakeManager:
         self.timing = serial_timing
         self.send_frame = send_frame
         self._enqueue_cloud = enqueue_cloud
-        self._acknowledge_frame = acknowledge_frame
         self.sync_waiter: Callable[[bytes], Awaitable[bool]] = (
             sync_waiter if sync_waiter is not None else self.wait_for_link_sync_confirmation
         )
@@ -200,7 +195,17 @@ class SerialHandshakeManager:
 
     @fsm_state.setter
     def fsm_state(self, new_state: HandshakeState) -> None:
-        self.set_fsm_state(new_state)
+        """Explicit state override and metric alignment."""
+        old_state = self.fsm_state
+        if old_state == new_state:
+            return
+
+        self.fsm.current_state_value = new_state.value
+        self._state.metrics.handshake_state.state(new_state)
+        if new_state == HandshakeState.SYNCHRONIZED:
+            self.on_enter_synchronized()
+        elif old_state == HandshakeState.SYNCHRONIZED:
+            self.on_exit_synchronized()
 
     def on_enter_synchronized(self) -> None:
         """[SIL-2] Native hook executed on entering synchronized state."""
@@ -213,19 +218,6 @@ class SerialHandshakeManager:
     def after_transition(self, event: str, source: State, target: State) -> None:
         """[SIL-2] Native observer recording deterministic state metrics."""
         self._state.metrics.handshake_state.state(HandshakeState(target.value))
-
-    def set_fsm_state(self, new_state: HandshakeState) -> None:
-        """Explicit state override and metric alignment."""
-        old_state = self.fsm_state
-        if old_state == new_state:
-            return
-
-        self.fsm.current_state_value = new_state.value
-        self._state.metrics.handshake_state.state(new_state)
-        if new_state == HandshakeState.SYNCHRONIZED:
-            self.on_enter_synchronized()
-        elif old_state == HandshakeState.SYNCHRONIZED:
-            self.on_exit_synchronized()
 
     def transition(self, event: HandshakeEvent) -> HandshakeState:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
@@ -347,11 +339,6 @@ class SerialHandshakeManager:
         expected = self._state.link_handshake_nonce
         if expected is None:
             self._logger.error("Unexpected LINK_SYNC_RESP without pending nonce")
-            await self._acknowledge_frame(
-                Command.CMD_LINK_SYNC_RESP.value,
-                seq_id,
-                status=Status.MALFORMED,
-            )
             await self.handle_handshake_failure("unexpected_sync_resp")
             return False
 
@@ -363,11 +350,6 @@ class SerialHandshakeManager:
                 self._logger.error(
                     ("LINK_SYNC_RESP throttled due to rate limit (remaining=%.2fs)"),
                     remaining,
-                )
-                await self._acknowledge_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    seq_id,
-                    status=Status.MALFORMED,
                 )
                 await self.handle_handshake_failure("sync_rate_limited")
                 return False
@@ -385,11 +367,6 @@ class SerialHandshakeManager:
             self._logger.error(
                 "LINK_SYNC_RESP protobuf decode failed (len=%d)",
                 len(payload) if isinstance(payload, bytes) else 0,
-            )
-            await self._acknowledge_frame(
-                Command.CMD_LINK_SYNC_RESP.value,
-                seq_id,
-                status=Status.MALFORMED,
             )
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("sync_decode_failed")
@@ -416,11 +393,6 @@ class SerialHandshakeManager:
                 missing_expected_tag,
                 tag_mismatch,
                 nonce.hex(),
-            )
-            await self._acknowledge_frame(
-                Command.CMD_LINK_SYNC_RESP.value,
-                seq_id,
-                status=Status.MALFORMED,
             )
             self.clear_handshake_expectations()
             await self.handle_handshake_failure(

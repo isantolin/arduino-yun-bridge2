@@ -25,11 +25,7 @@ using boolean = bool;
 using byte = uint8_t;
 using word = uint16_t;
 
-#ifndef _NEW
-#define _NEW
-inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
-inline void operator delete(void*, void*) noexcept {}
-#endif
+#include <new>
 
 // Constants
 #define HIGH 1

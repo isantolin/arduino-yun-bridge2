@@ -28,7 +28,7 @@ def test_build_protocol_context_contains_template_data() -> None:
     assert context["python_constants"]
     assert context["client_constants"]
     assert context["commands"] == spec["commands"]
-    assert context["payload_fields"]
+    assert isinstance(context["payload_fields"], list)
     assert context["topic_auth_map"]
     assert context["runtime_config_fields"] == spec["runtime_config_fields"]
     assert context["operations"]
@@ -53,12 +53,6 @@ def test_build_protocol_context_contains_template_data() -> None:
         "watchdog_beats",
         "published_messages",
     ]
-    assert {constant["name"]: constant["value"] for constant in context["handshake_constants"]}[
-        "RPC_MCU_AEAD_NONCE_PREFIX"
-    ] == 1296258304
-    assert {constant["name"]: constant["value"] for constant in context["handshake_constants"]}[
-        "RPC_MPU_AEAD_NONCE_PREFIX"
-    ] == 1297110272
     assert {constant["name"]: constant["value"] for constant in context["python_handshake_constants"]}[
         "HANDSHAKE_HKDF_INFO_SESSION"
     ] == 'b"session-key"'

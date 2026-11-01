@@ -108,14 +108,6 @@ class ProcessContext:
         self.fsm = ProcessMachine(model=self, state_field="status", start_value=self.status)
 
 
-class LinkConnectionState(StrEnum):
-    """[SIL-2] Discrete physical connection states between MPU and MCU."""
-
-    DISCONNECTED = "disconnected"
-    CONNECTED = "connected"
-    SYNCHRONIZED = "synchronized"
-
-
 class SerialLinkMachine(StateMachine):
     """[SIL-2] Strongly-typed deterministic FSM for serial link connection and physical flow control."""
 
@@ -260,16 +252,6 @@ class CloudLinkMachine(StateMachine):
         | reconnecting.to(disabled)
         | disabled.to(disabled)
     )
-
-
-class FileTransferState(StrEnum):
-    """[SIL-2] Discrete states for file chunk streaming."""
-
-    IDLE = "idle"
-    TRANSFERRING = "transferring"
-    COMPLETED = "completed"
-    TIMED_OUT = "timed_out"
-    ABORTED = "aborted"
 
 
 class FileTransferMachine(StateMachine):

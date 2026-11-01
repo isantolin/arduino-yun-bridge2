@@ -74,12 +74,12 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.acknowledge.return_value = True
+        mock_serial.send_raw.return_value = True
         service = BridgeService(config, state, mock_serial)
 
         # Before sync, MCU frames other than handshake are ignored/denied
         await service.handle_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 1, b"")
-        mock_serial.acknowledge.assert_not_called()
+        mock_serial.send_raw.assert_not_called()
     finally:
         if service is not None:
             service.cleanup()
@@ -638,18 +638,21 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     assert mock_serial.send.called
 
     # Test synchronous (non-awaitable) handler path
+    called_sync = []
+
     def _sync_handler(_seq: int, _p: Any) -> dict[str, str]:
+        called_sync.append(_seq)
         return {"status": "ok"}
 
     svc.mcu_registry[Command.CMD_CLOCK_SYNC_RESP.value] = _sync_handler
     await svc.handle_mcu_frame(Command.CMD_CLOCK_SYNC_RESP.value, 2, b"")
-    mock_serial.acknowledge.assert_called_with(Command.CMD_CLOCK_SYNC_RESP.value, 2)
+    assert called_sync == [2]
 
-    # Test handler returning False (no ack)
-    mock_serial.acknowledge.reset_mock()
-    svc.mcu_registry[Command.CMD_PROCESS_KILL.value] = AsyncMock(return_value=False)
+    # Test handler returning False
+    called_async = AsyncMock(return_value=False)
+    svc.mcu_registry[Command.CMD_PROCESS_KILL.value] = called_async
     await svc.handle_mcu_frame(Command.CMD_PROCESS_KILL.value, 3, pb.ProcessKill(pid=123).SerializeToString())
-    assert not mock_serial.acknowledge.called
+    called_async.assert_awaited_once()
 
 
 async def test_runtime_handle_request_route_none_and_inbound_props(

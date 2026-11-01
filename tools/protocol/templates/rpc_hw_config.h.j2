@@ -30,7 +30,6 @@ inline constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = {{ hardware.mailbox_rx_buffer
 inline constexpr uint16_t MAX_MAILBOX_QUEUE_SIZE = {{ hardware.max_mailbox_queue_size_other }}U;
 #endif
 
-inline constexpr uint16_t RX_HISTORY_SIZE = {{ hardware.rx_history_size }}U;
 inline constexpr uint16_t MAX_PENDING_DATASTORE = {{ hardware.max_pending_datastore }}U;
 inline constexpr uint16_t MAX_PENDING_PROCESS_POLLS = {{ hardware.max_pending_process_polls }}U;
 inline constexpr uint32_t FILE_LARGE_WARNING_BYTES = {{ hardware.file_large_warning_bytes }}UL;
@@ -39,7 +38,6 @@ inline constexpr uint16_t STARTUP_DRAIN_FINAL = {{ hardware.startup_drain_final 
 inline constexpr uint32_t STARTUP_STABILIZATION_MS = {{ hardware.startup_stabilization_ms }}UL;
 inline constexpr uint32_t BAUDRATE_CHANGE_DELAY_MS = {{ hardware.baudrate_change_delay_ms }}UL;
 inline constexpr uint16_t MAX_CONSECUTIVE_CRC_ERRORS = {{ hardware.max_consecutive_crc_errors }}U;
-inline constexpr uint32_t RX_DEDUPE_INTERVAL_MS = {{ hardware.rx_dedupe_interval_ms }}UL;
 inline constexpr uint16_t FLOW_CONTROL_XOFF_THRESHOLD = {{ hardware.flow_control_xoff_threshold }}U;
 inline constexpr uint16_t FLOW_CONTROL_XON_THRESHOLD = {{ hardware.flow_control_xon_threshold }}U;
 inline constexpr uint16_t HKDF_KEY_LENGTH = {{ hardware.hkdf_key_length }}U;
@@ -50,6 +48,7 @@ inline constexpr uint32_t CAPABILITIES_FEAT_EXTENDED = {{ hardware.capabilities_
 
 // SIL-2 Safety & Timing
 inline constexpr uint32_t SERIAL_TIMEOUT_MS = {{ hardware.serial_timeout_ms }}UL;
+inline constexpr uint32_t SPI_TIMEOUT_MS = {{ hardware.spi_timeout_ms }}UL;
 inline constexpr uint32_t BOOTLOADER_DELAY_MS = {{ hardware.bootloader_delay_ms }}UL;
 inline constexpr uint16_t FILE_MAX_READ_CHUNKS = {{ hardware.file_max_read_chunks }}U;
 

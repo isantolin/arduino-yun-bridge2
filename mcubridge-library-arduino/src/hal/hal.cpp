@@ -6,7 +6,6 @@
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"  // IWYU pragma: keep
 #include "security/security.h"
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -230,7 +229,9 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
 #else
   const etl::string_view name = "GENERIC";
 #endif
-  rpc::Payload::copy_to_pb_string(caps.board_name, name);
+  const size_t len = etl::min(name.size(), sizeof(caps.board_name) - 1);
+  etl::copy_n(name.data(), len, caps.board_name);
+  caps.board_name[len] = '\0';
 
 #if defined(BRIDGE_ENABLE_DEBUG_FRAMES)
   caps.debug_frames = true;

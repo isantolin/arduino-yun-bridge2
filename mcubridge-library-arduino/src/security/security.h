@@ -44,35 +44,7 @@ void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key);
 
-/**
- * @brief Encrypt a frame and populate its nonce/tag.
- * @param nonce_counter Non-null monotonic counter required to prevent nonce
- * reuse.
- */
-bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
-                        etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key, uint64_t* nonce_counter,
-                        etl::span<uint8_t> out_payload,
-                        etl::span<uint8_t> out_nonce,
-                        etl::span<uint8_t> out_tag,
-                        uint32_t nonce_prefix = rpc::RPC_MCU_AEAD_NONCE_PREFIX);
 
-/**
- * @brief Securely decrypt a frame's payload.
- */
-bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
-                        etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key,
-                        etl::span<const uint8_t> nonce,
-                        etl::span<const uint8_t> tag,
-                        etl::span<uint8_t> out_payload);
-
-/**
- * @brief Validate monotonic nonce counter to prevent replay attacks.
- * @param last_seen_counter Required per-link replay state; null is rejected.
- */
-bool validate_frame_nonce(etl::span<const uint8_t> nonce,
-                          uint64_t* last_seen_counter);
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.

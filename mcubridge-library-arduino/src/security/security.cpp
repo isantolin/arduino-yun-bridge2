@@ -15,8 +15,6 @@
 #include <wolfssl/wolfcrypt/kdf.h>
 
 #include "../config/bridge_config.h"  // IWYU pragma: keep
-#include "../protocol/rpc_structs.h"
-#include "pb_encode.h"
 
 namespace rpc {
 namespace security {
@@ -114,125 +112,6 @@ void derive_session_key(etl::span<const uint8_t> secret,
               static_cast<word32>(out_key.size())) != 0) {
     etl::fill(out_key.begin(), out_key.end(), 0U);
   }
-}
-
-static size_t build_aad(uint16_t cmd_id, uint16_t seq_id,
-                        etl::span<uint8_t> out_ad) {
-  payload::RpcEnvelope aad_env = rpc_pb_RpcEnvelope_init_zero;
-  aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd_id;
-  aad_env.sequence_id = seq_id;
-
-  etl::fill(out_ad.begin(), out_ad.end(), 0U);
-  pb_ostream_t stream = pb_ostream_from_buffer(out_ad.data(), out_ad.size());
-  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                 &aad_env)) {
-    return 0U;
-  }
-  return stream.bytes_written;
-}
-
-bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
-                        etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key, uint64_t* nonce_counter,
-                        etl::span<uint8_t> out_payload,
-                        etl::span<uint8_t> out_nonce,
-                        etl::span<uint8_t> out_tag, uint32_t nonce_prefix) {
-  // Validar tamaños exactos de búferes antes de invocar a wolfSSL
-  if (!nonce_counter || key.size() != rpc::RPC_AEAD_KEY_SIZE ||
-      out_nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
-      out_tag.size() != rpc::RPC_AEAD_TAG_SIZE ||
-      out_payload.size() < in.size()) {
-    return false;
-  }
-
-  // Prevenir desbordamiento (wrap-around) del contador de 64 bits
-  if (*nonce_counter >= rpc::RPC_NONCE_COUNTER_MASK) {
-    return false;  // Abortar cifrado para evitar reutilizar Nonce
-  }
-  (*nonce_counter)++;
-
-  const uint64_t current_nonce = *nonce_counter;
-
-  static_assert(sizeof(uint32_t) + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
-                "[SIL-2] Nonce layout mismatch");
-  static_assert(
-      rpc::RPC_MCU_AEAD_NONCE_PREFIX != rpc::RPC_MPU_AEAD_NONCE_PREFIX,
-      "AEAD nonce prefixes must be direction-specific");
-  etl::byte_stream_writer nonce_writer(out_nonce, etl::endian::big);
-  nonce_writer.write<uint32_t>(nonce_prefix);
-  nonce_writer.write<uint64_t>(current_nonce);
-
-  etl::array<uint8_t, 16> ad;
-  const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
-  if (ad_len == 0U) {
-    return false;  // [FAIL-CLOSED] Error al codificar AAD Protobuf
-  }
-
-  return wc_ChaCha20Poly1305_Encrypt(
-             const_cast<byte*>(key.data()), out_nonce.data(),
-             const_cast<byte*>(ad.data()), static_cast<word32>(ad_len),
-             const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
-             out_payload.data(), out_tag.data()) == 0;
-}
-
-bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
-                        etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key,
-                        etl::span<const uint8_t> nonce,
-                        etl::span<const uint8_t> tag,
-                        etl::span<uint8_t> out_payload) {
-  // Validar tamaños exactos de búferes antes de invocar a wolfSSL
-  if (key.size() != rpc::RPC_AEAD_KEY_SIZE ||
-      nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
-      tag.size() != rpc::RPC_AEAD_TAG_SIZE || out_payload.size() < in.size()) {
-    return false;
-  }
-
-  etl::array<uint8_t, 16> ad;
-  const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
-  if (ad_len == 0U) {
-    return false;  // [FAIL-CLOSED] Error al codificar AAD Protobuf
-  }
-
-  return wc_ChaCha20Poly1305_Decrypt(
-             const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
-             const_cast<byte*>(ad.data()), static_cast<word32>(ad_len),
-             const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
-             const_cast<byte*>(tag.data()), out_payload.data()) == 0;
-}
-
-bool validate_frame_nonce(etl::span<const uint8_t> nonce,
-                          uint64_t* last_seen_counter) {
-  // Exigir tamaño exacto del Nonce AEAD usando constante
-  if (!last_seen_counter || nonce.size() != rpc::RPC_AEAD_NONCE_SIZE) {
-    return false;
-  }
-
-  // [ANTI-REFLECTION] Validar que los primeros 4 bytes coincidan estrictamente
-  // con RPC_MPU_AEAD_NONCE_PREFIX
-  etl::byte_stream_reader nonce_reader(nonce, etl::endian::big);
-  const auto prefix_val = nonce_reader.read<uint32_t>();
-  if (!prefix_val.has_value() ||
-      prefix_val.value() != rpc::RPC_MPU_AEAD_NONCE_PREFIX) {
-    return false;
-  }
-
-  const auto counter_val = nonce_reader.read<uint64_t>();
-  if (!counter_val.has_value()) {
-    return false;
-  }
-  const uint64_t counter = counter_val.value();
-
-  // [ANTI-REPLAY] Si el contador es menor o igual al último visto, rechazar
-  if (counter <= *last_seen_counter) {
-    return false;
-  }
-
-  // Actualizar el contador solo cuando la validación es exitosa
-  *last_seen_counter = counter;
-
-  return true;
 }
 
 // --- Self-Tests Implementation ---

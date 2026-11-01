@@ -2,11 +2,13 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #endif
 #include <Arduino.h>
-#include <etl/numeric.h>
+#include <etl/array.h>
+#include <etl/span.h>
 #include <unity.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
+#include "services/Console.h"
 #include "test_support.h"
 
 // [SIL-2] Global stub definitions for host environment
@@ -16,26 +18,36 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 using bridge::test::TestAccessor;
 
+static rpc::StatusCode s_captured_harden_status = rpc::StatusCode::STATUS_OK;
+static void capture_harden_status(rpc::StatusCode s, etl::span<const uint8_t>) {
+  s_captured_harden_status = s;
+}
+
 void setUp() {}
 void tearDown() {}
 
-void test_bridge_protocol_version_mismatch() {
+void test_bridge_malformed_rpc_packet() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc_pb_RpcEnvelope f;
-  f.version = static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1);
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
-  f.sequence_id = 1;
+  s_captured_harden_status = rpc::StatusCode::STATUS_OK;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<&capture_harden_status>());
 
-  etl::array<uint8_t, 256> buf;
-  size_t len = rpc::serialize_frame(f, buf);
-  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
+  // Send invalid varint/protobuf byte sequence on address 1 (RPC)
+  const uint8_t malformed_rpc[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  etl::array<uint8_t, 64> frame_buf;
+  size_t frame_len = TestHdlc::encodeUIFrame(
+      1, etl::span<const uint8_t>(malformed_rpc, sizeof(malformed_rpc)),
+      frame_buf);
+  TEST_ASSERT_TRUE(frame_len > 0);
 
-  // Should have emitted STATUS_MALFORMED
-  TEST_ASSERT_EQUAL(0, stream.available());
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), frame_len));
+
+  TEST_ASSERT_EQUAL(static_cast<int>(rpc::StatusCode::STATUS_MALFORMED),
+                    static_cast<int>(s_captured_harden_status));
+  Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
 void test_bridge_unknown_command_jump_table() {
@@ -44,32 +56,35 @@ void test_bridge_unknown_command_jump_table() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = 254;  // empty
-  f.sequence_id = 1;
+  // Send an RPC request with unknown service and method
+  etl::array<uint8_t, 256> frame_buf;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      0xDEADBEEF, 0xCAFEBABE,
+      etl::span<const uint8_t>(), frame_buf, 42, 1);
+  TEST_ASSERT_TRUE(len > 0);
 
-  ba.dispatch(f);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  // Server should send a response (Status::NotFound)
   TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
 }
 
-void test_bridge_tx_queue_full_force() {
+void test_bridge_console_stream_rx() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  // Fill the queue
-  etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> frame_ids{};
-  etl::iota(frame_ids.begin(), frame_ids.end(), 0);
-  etl::for_each(frame_ids.begin(), frame_ids.end(), [](uint16_t fid) {
-    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, fid, {});
-    TEST_ASSERT_TRUE(ok);
-  });
+  // Feed raw console stream data on HDLC address 3
+  const uint8_t console_data[] = {'H', 'e', 'l', 'l', 'o'};
+  etl::array<uint8_t, 64> frame_buf;
+  size_t len = TestHdlc::encodeUIFrame(
+      3, etl::span<const uint8_t>(console_data, sizeof(console_data)),
+      frame_buf);
+  TEST_ASSERT_TRUE(len > 0);
 
-  // Next one must fail
-  bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 99, {});
-  TEST_ASSERT_FALSE(ok);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_bridge_packet_received_edge_cases() {
@@ -77,39 +92,25 @@ void test_bridge_packet_received_edge_cases() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  // 1. Too short packet
-  etl::array<uint8_t, 2> short_pkt = {0, 1};
-  ba.invokePacketReceived(short_pkt);
+  // 1. Incomplete HDLC frame (no end flag)
+  const uint8_t short_pkt[] = {0x7E, 0x01, 0x00};
+  ba.feedHdlcBytes(etl::span<const uint8_t>(short_pkt, sizeof(short_pkt)));
 
-  // 2. CRC mismatch
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
-  f.sequence_id = 1;
+  // 2. Corrupt CRC frame
+  etl::array<uint8_t, 256> frame_buf;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("GetVersion"),
+      etl::span<const uint8_t>(), frame_buf, 1, 1);
+  TEST_ASSERT_TRUE(len > 0);
 
-  etl::array<uint8_t, 256> buf;
-  size_t len = rpc::serialize_frame(f, buf);
-  buf[len - 1] ^= 0xFF;  // Break CRC
-  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
+  // Invalidate CRC
+  frame_buf[len - 2] ^= 0xFF;
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
 
-  TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
-}
-
-void test_bridge_ack_orphans() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-
-  // Ack while not awaiting
-  ba.handleAck(static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION));
-
-  // Ack with wrong command ID while awaiting
-  ba.setSynchronized();
-  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 1, {}));
-  ba.handleAck(
-      static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION));  // Wrong ID
-
-  TEST_ASSERT(ba.isAwaitingAck());
+  // Should not have processed corrupt frame
+  TEST_ASSERT_FALSE(ba.isSynchronized());
 }
 
 void test_bridge_begin_idempotency() {
@@ -127,33 +128,28 @@ void test_bridge_linksync_auth_failure() {
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
-  rpc::payload::LinkSync sync_msg = {};
+  rpc_pb_LinkSync sync_msg = rpc_pb_LinkSync_init_default;
   memset(sync_msg.nonce.bytes, 0xAA, 16);
   sync_msg.nonce.size = 16;
-  memset(sync_msg.tag.bytes, 0xFF, 16);
+  memset(sync_msg.tag.bytes, 0xFF, 16);  // Bad tag
   sync_msg.tag.size = 16;
 
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f.sequence_id = 1;
+  uint8_t payload_buf[64];
+  pb_ostream_t ostream =
+      pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  TEST_ASSERT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_msg));
 
-  bridge::test::set_pb_payload(f, sync_msg);
-  ba.dispatch(f);
+  etl::array<uint8_t, 256> frame_buf;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("LinkSync"),
+      etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
+      1, 1);
+  TEST_ASSERT_TRUE(len > 0);
 
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_FALSE(ba.isSynchronized());
-}
-
-void test_bridge_retransmit_empty_queue() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-
-  // Calling internal timeout/flush on empty queue must remain safe and silent
-  ba.onAckTimeout();
-  ba.flushPendingTxQueue();
-  TEST_ASSERT_EQUAL_UINT32(0, stream.tx_buf.len);
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_bridge_security_pre_sync_rejection() {
@@ -164,14 +160,16 @@ void test_bridge_security_pre_sync_rejection() {
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
-  // Try to send a restricted command before sync
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_CONSOLE_WRITE);
-  f.sequence_id = 1;
+  // Try to send a restricted service command (e.g. FileSystem) before sync
+  etl::array<uint8_t, 256> frame_buf;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.FileSystemService"),
+      pw::tokenizer::Hash("Remove"),
+      etl::span<const uint8_t>(), frame_buf, 1, 1);
+  TEST_ASSERT_TRUE(len > 0);
 
-  ba.dispatch(f);
-
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_FALSE(ba.isSynchronized());
 }
 
@@ -184,29 +182,36 @@ void test_bridge_nonce_reuse_attack() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   // 1. Sync properly
-  rpc::payload::LinkSync sync_msg = {};
+  rpc_pb_LinkSync sync_msg = rpc_pb_LinkSync_init_default;
   memset(sync_msg.nonce.bytes, 0xAA, 16);
   sync_msg.nonce.size = 16;
   ba.computeHandshakeTag(sync_msg.nonce.bytes, 16, sync_msg.tag.bytes);
   sync_msg.tag.size = 16;
 
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f.sequence_id = 1;
+  uint8_t payload_buf[64];
+  pb_ostream_t ostream =
+      pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  TEST_ASSERT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_msg));
 
-  bridge::test::set_pb_payload(f, sync_msg);
-  ba.dispatch(f);
+  etl::array<uint8_t, 256> frame_buf;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("LinkSync"),
+      etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
+      1, 1);
+  TEST_ASSERT_TRUE(len > 0);
+
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_bridge_protocol_version_mismatch);
+  RUN_TEST(test_bridge_malformed_rpc_packet);
   RUN_TEST(test_bridge_unknown_command_jump_table);
-  RUN_TEST(test_bridge_tx_queue_full_force);
+  RUN_TEST(test_bridge_console_stream_rx);
   RUN_TEST(test_bridge_packet_received_edge_cases);
-  RUN_TEST(test_bridge_ack_orphans);
   RUN_TEST(test_bridge_begin_idempotency);
   RUN_TEST(test_bridge_linksync_auth_failure);
   RUN_TEST(test_bridge_security_pre_sync_rejection);

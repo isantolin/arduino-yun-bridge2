@@ -1,4 +1,6 @@
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
 #define BRIDGE_ENABLE_TEST_INTERFACE
+#endif
 #include <Arduino.h>
 #include <etl/exception.h>
 #include <sys/types.h>
@@ -37,52 +39,44 @@ void on_datastore_get(etl::string_view, etl::span<const uint8_t>) {}
 void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                      etl::span<const uint8_t>) {}
 
-bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
-                             rpc_pb_RpcEnvelope& out, size_t attempts_left) {
-  if (attempts_left == 0) return false;
-  rpc_pb_RpcEnvelope candidate;
-  if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
-  const uint16_t raw_cmd = candidate.command_id;
-  const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
-                            raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
-                           (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-                            raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
-  if (!is_excluded) {
-    out = candidate;
-    return true;
-  }
-  return extract_encrypted_frame(tx, cursor, out, attempts_left - 1);
+inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
+                             uint32_t method_id,
+                             etl::span<const uint8_t> payload = {}) {
+  etl::array<uint8_t, 256> frame_raw;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest, service_id, method_id, payload,
+      frame_raw);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 }
 
-rpc_pb_RpcEnvelope make_empty_frame(uint16_t cmd, uint16_t seq) {
-  rpc_pb_RpcEnvelope frame;
-  frame.version = rpc::PROTOCOL_VERSION;
-  frame.command_id = cmd;
-  frame.sequence_id = seq;
-  return frame;
+template <typename ProtoMsg>
+inline void feed_rpc_request_msg(TestAccessor& ba, uint32_t service_id,
+                                 uint32_t method_id,
+                                 const pb_msgdesc_t* fields,
+                                 const ProtoMsg& msg) {
+  uint8_t pl_buf[128];
+  pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
+  pb_encode(&pbos, fields, &msg);
+  feed_rpc_request(ba, service_id, method_id,
+                   etl::span<const uint8_t>(pl_buf, pbos.bytes_written));
 }
 
-template <typename T>
-rpc_pb_RpcEnvelope make_payload_frame(
-    uint16_t cmd, uint16_t seq, const T& payload,
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>& /*storage*/) {
-  rpc_pb_RpcEnvelope frame;
-  frame.version = rpc::PROTOCOL_VERSION;
-  frame.command_id = cmd;
-  frame.sequence_id = seq;
-  bridge::test::set_pb_payload(frame, payload);
-  return frame;
-}
-
-rpc_pb_RpcEnvelope make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
-  rpc_pb_RpcEnvelope frame;
-  frame.version = rpc::PROTOCOL_VERSION;
-  frame.command_id = cmd;
-  frame.sequence_id = seq;
-  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
-  frame.payload_type.encrypted_payload_with_tag.size = 1;
-  frame.payload_type.encrypted_payload_with_tag.bytes[0] = 0xC1;
-  return frame;
+template <typename ProtoMsg>
+inline void invoke_response(TestAccessor& ba, uint32_t service_id,
+                            uint32_t method_id, const pb_msgdesc_t* fields,
+                            const ProtoMsg& msg, uint32_t call_id = 0) {
+  uint8_t payload_buf[128];
+  pb_ostream_t pbos = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  pb_encode(&pbos, fields, &msg);
+  pw::rpc_avr::RpcPacket pkt;
+  pkt.type = pw::rpc_avr::PacketType::kResponse;
+  pkt.channel_id = 1;
+  pkt.service_id = service_id;
+  pkt.method_id = method_id;
+  pkt.call_id = call_id;
+  pkt.payload = pw::ConstByteSpan(
+      reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+  ba.invokeRpcResponse(pkt);
 }
 
 void test_dispatch_valid_payload_handlers_unique_seq() {
@@ -91,171 +85,127 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  uint16_t seq = 100;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kFsSvc = pw::tokenizer::Hash("bridge.FileSystemService");
+  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("bridge.SpiService");
+  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("bridge.DataStoreService");
 
-  auto set_baud = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE), seq++,
-      []() {
-        rpc::payload::SetBaudratePacket p;
-        p.baudrate = 57600;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(set_baud);
+  // 1. SetBaudrate
+  rpc_pb_SetBaudratePacket baud_msg = rpc_pb_SetBaudratePacket_init_default;
+  baud_msg.baudrate = 57600;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("SetBaudrate"),
+                       rpc_pb_SetBaudratePacket_fields, baud_msg);
 
-  auto set_pin = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE), seq++,
-      []() {
-        rpc::payload::PinMode p;
-        p.pin = 255;
-        p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(set_pin);
+  // 2. SetPinMode
+  rpc_pb_PinMode pin_mode_msg = rpc_pb_PinMode_init_default;
+  pin_mode_msg.pin = 255;
+  pin_mode_msg.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                       rpc_pb_PinMode_fields, pin_mode_msg);
 
-  auto dwrite = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), seq++,
-      []() {
-        rpc::payload::DigitalWrite p;
-        p.pin = 255;
-        p.value = 1;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(dwrite);
+  // 3. DigitalWrite
+  rpc_pb_DigitalWrite dwrite_msg = rpc_pb_DigitalWrite_init_default;
+  dwrite_msg.pin = 255;
+  dwrite_msg.value = 1;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                       rpc_pb_DigitalWrite_fields, dwrite_msg);
 
-  auto awrite = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE), seq++,
-      []() {
-        rpc::payload::AnalogWrite p;
-        p.pin = 255;
-        p.value = 42;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(awrite);
+  // 4. AnalogWrite
+  rpc_pb_AnalogWrite awrite_msg = rpc_pb_AnalogWrite_init_default;
+  awrite_msg.pin = 255;
+  awrite_msg.value = 42;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
+                       rpc_pb_AnalogWrite_fields, awrite_msg);
 
-  auto ds = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP), seq++,
-      []() {
-        rpc::payload::DatastoreGetResponse p;
-        uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes(p.value, v, 4);
-        return p;
-      }(),
-      buf);
-  ba.dispatch(ds);
+  // 5. FileWrite
+  rpc_pb_FileWrite fw_msg = rpc_pb_FileWrite_init_default;
+  strncpy(fw_msg.path, "edge.bin", sizeof(fw_msg.path));
+  fw_msg.data.size = 4;
+  fw_msg.data.bytes[0] = 1;
+  fw_msg.data.bytes[1] = 2;
+  fw_msg.data.bytes[2] = 3;
+  fw_msg.data.bytes[3] = 4;
+  feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Write"),
+                       rpc_pb_FileWrite_fields, fw_msg);
 
-  auto fw = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), seq++,
-      []() {
-        rpc::payload::FileWrite p;
-        strncpy(p.path, "edge.bin", sizeof(p.path));
-        uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes(p.data, v, 4);
-        return p;
-      }(),
-      buf);
-  ba.dispatch(fw);
+  // 6. FileRead
+  rpc_pb_FileRead fr_msg = rpc_pb_FileRead_init_default;
+  strncpy(fr_msg.path, "edge.bin", sizeof(fr_msg.path));
+  feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Read"),
+                       rpc_pb_FileRead_fields, fr_msg);
 
-  auto fr = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_READ), seq++,
-      []() {
-        rpc::payload::FileRead p;
-        strncpy(p.path, "edge.bin", sizeof(p.path));
-        return p;
-      }(),
-      buf);
-  ba.dispatch(fr);
+  // 7. FileRemove
+  rpc_pb_FileRemove frm_msg = rpc_pb_FileRemove_init_default;
+  strncpy(frm_msg.path, "edge.bin", sizeof(frm_msg.path));
+  feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Remove"),
+                       rpc_pb_FileRemove_fields, frm_msg);
 
-  auto frm = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE), seq++,
-      []() {
-        rpc::payload::FileRemove p;
-        strncpy(p.path, "edge.bin", sizeof(p.path));
-        return p;
-      }(),
-      buf);
-  ba.dispatch(frm);
+  // 8. ProcessKill
+  rpc_pb_ProcessKill pk_msg = rpc_pb_ProcessKill_init_default;
+  pk_msg.pid = 123;
+  feed_rpc_request_msg(ba, kProcSvc, pw::tokenizer::Hash("Kill"),
+                       rpc_pb_ProcessKill_fields, pk_msg);
 
-  auto frr = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP), seq++,
-      []() {
-        rpc::payload::FileReadResponse p;
-        uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes(p.content, v, 4);
-        return p;
-      }(),
-      buf);
-  ba.dispatch(frr);
+  // 9. SpiConfig
+  rpc_pb_SpiConfig sc_msg = rpc_pb_SpiConfig_init_default;
+  sc_msg.frequency = 1000000;
+  sc_msg.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  sc_msg.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
+  feed_rpc_request_msg(ba, kSpiSvc, pw::tokenizer::Hash("SetConfig"),
+                       rpc_pb_SpiConfig_fields, sc_msg);
 
-  auto pr = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP), seq++,
-      []() {
-        rpc::payload::ProcessRunAsyncResponse p;
-        p.pid = 123;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(pr);
+  // 10. SpiBegin & SpiEnd
+  feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("Begin"));
+  feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("End"));
 
-  auto pp = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP), seq++,
-      []() {
-        rpc::payload::ProcessPollResponse p;
-        p.status = 0;
-        p.exit_code = 0;
-        uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes(p.stdout_data, v, 4);
-        rpc::payload::copy_to_pb_bytes(p.stderr_data, v, 4);
-        return p;
-      }(),
-      buf);
-  ba.dispatch(pp);
+  // 11. GetCapabilities
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("GetCapabilities"));
 
-  auto pk = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL), seq++,
-      []() {
-        rpc::payload::ProcessKill p;
-        p.pid = 123;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(pk);
+  // 12. SpiTransfer
+  rpc_pb_SpiTransfer st_msg = rpc_pb_SpiTransfer_init_default;
+  feed_rpc_request_msg(ba, kSpiSvc, pw::tokenizer::Hash("Transfer"),
+                       rpc_pb_SpiTransfer_fields, st_msg);
 
-  auto sc = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG), seq++,
-      []() {
-        rpc::payload::SpiConfig p;
-        p.frequency = 1000000;
-        p.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
-        p.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(sc);
+  // 13. DataStoreGet response
+  rpc_pb_DatastoreGetResponse ds_resp = rpc_pb_DatastoreGetResponse_init_default;
+  ds_resp.value.size = 4;
+  ds_resp.value.bytes[0] = 1;
+  ds_resp.value.bytes[1] = 2;
+  ds_resp.value.bytes[2] = 3;
+  ds_resp.value.bytes[3] = 4;
+  invoke_response(ba, kDsSvc, pw::tokenizer::Hash("Get"),
+                  rpc_pb_DatastoreGetResponse_fields, ds_resp);
 
-  auto sbegin = make_empty_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), seq++);
-  ba.dispatch(sbegin);
+  // 14. FileRead response
+  rpc_pb_FileReadResponse fr_resp = rpc_pb_FileReadResponse_init_default;
+  fr_resp.content.size = 4;
+  fr_resp.content.bytes[0] = 1;
+  fr_resp.content.bytes[1] = 2;
+  fr_resp.content.bytes[2] = 3;
+  fr_resp.content.bytes[3] = 4;
+  invoke_response(ba, kFsSvc, pw::tokenizer::Hash("Read"),
+                  rpc_pb_FileReadResponse_fields, fr_resp);
 
-  auto send =
-      make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_END), seq++);
-  ba.dispatch(send);
+  // 15. ProcessRunAsync response
+  rpc_pb_ProcessRunAsyncResponse pr_resp =
+      rpc_pb_ProcessRunAsyncResponse_init_default;
+  pr_resp.pid = 123;
+  invoke_response(ba, kProcSvc, pw::tokenizer::Hash("RunAsync"),
+                  rpc_pb_ProcessRunAsyncResponse_fields, pr_resp);
 
-  auto cap = make_empty_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES), seq++);
-  ba.dispatch(cap);
+  // 16. ProcessPoll response
+  rpc_pb_ProcessPollResponse pp_resp = rpc_pb_ProcessPollResponse_init_default;
+  pp_resp.status = 0;
+  pp_resp.exit_code = 0;
+  pp_resp.stdout_data.size = 4;
+  pp_resp.stderr_data.size = 4;
+  invoke_response(ba, kProcSvc, pw::tokenizer::Hash("Poll"),
+                  rpc_pb_ProcessPollResponse_fields, pp_resp);
 
-  auto transfer =
-      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),
-                         seq++, rpc::payload::SpiTransfer{}, buf);
-  ba.dispatch(transfer);
   Bridge.process();
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_dispatch_malformed_payload_paths() {
@@ -264,34 +214,68 @@ void test_dispatch_malformed_payload_paths() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  uint16_t seq = 300;
-  const etl::array<uint16_t, 18> ids = {
-      rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
-      rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER),
-      rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
-      rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
-      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
-      rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH),
-      rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_READ),
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE),
-      rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),
-      rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)};
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kFsSvc = pw::tokenizer::Hash("bridge.FileSystemService");
+  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("bridge.SpiService");
+  constexpr uint32_t kClkSvc = pw::tokenizer::Hash("bridge.ClockSyncService");
+  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("bridge.DataStoreService");
+  constexpr uint32_t kMailboxSvc = pw::tokenizer::Hash("bridge.MailboxService");
 
-  etl::for_each(ids.begin(), ids.end(), [&ba, &seq](uint16_t cmd) {
-    auto malformed = make_malformed_payload_frame(cmd, seq++);
-    ba.dispatch(malformed);
-  });
+  // Malformed payload: truncated or invalid wire bytes
+  const uint8_t malformed_bytes[] = {0xC1, 0xFF, 0xEE, 0xDD};
+  etl::span<const uint8_t> bad_pl(malformed_bytes, sizeof(malformed_bytes));
+
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("SetBaudrate"), bad_pl);
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("EnterBootloader"), bad_pl);
+  feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"), bad_pl);
+  feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"), bad_pl);
+  feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"), bad_pl);
+  feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalRead"), bad_pl);
+  feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogRead"), bad_pl);
+  feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"), bad_pl);
+  feed_rpc_request(ba, kFsSvc, pw::tokenizer::Hash("Write"), bad_pl);
+  feed_rpc_request(ba, kFsSvc, pw::tokenizer::Hash("Read"), bad_pl);
+  feed_rpc_request(ba, kFsSvc, pw::tokenizer::Hash("Remove"), bad_pl);
+  feed_rpc_request(ba, kProcSvc, pw::tokenizer::Hash("Kill"), bad_pl);
+  feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("SetConfig"), bad_pl);
+  feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("Transfer"), bad_pl);
+  feed_rpc_request(ba, kClkSvc, pw::tokenizer::Hash("ClockSync"), bad_pl);
+
+  // Malformed responses
+  pw::rpc_avr::RpcPacket bad_pkt;
+  bad_pkt.type = pw::rpc_avr::PacketType::kResponse;
+  bad_pkt.channel_id = 1;
+  bad_pkt.payload = pw::ConstByteSpan(
+      reinterpret_cast<const std::byte*>(bad_pl.data()), bad_pl.size());
+
+  bad_pkt.service_id = kDsSvc;
+  bad_pkt.method_id = pw::tokenizer::Hash("Get");
+  ba.invokeRpcResponse(bad_pkt);
+
+  bad_pkt.service_id = kMailboxSvc;
+  bad_pkt.method_id = pw::tokenizer::Hash("Read");
+  ba.invokeRpcResponse(bad_pkt);
+
+  bad_pkt.service_id = kMailboxSvc;
+  bad_pkt.method_id = pw::tokenizer::Hash("Available");
+  ba.invokeRpcResponse(bad_pkt);
+
+  bad_pkt.service_id = kFsSvc;
+  bad_pkt.method_id = pw::tokenizer::Hash("Read");
+  ba.invokeRpcResponse(bad_pkt);
+
+  bad_pkt.service_id = kProcSvc;
+  bad_pkt.method_id = pw::tokenizer::Hash("RunAsync");
+  ba.invokeRpcResponse(bad_pkt);
+
+  bad_pkt.service_id = kProcSvc;
+  bad_pkt.method_id = pw::tokenizer::Hash("Poll");
+  ba.invokeRpcResponse(bad_pkt);
+
   Bridge.process();
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_packet_received_security_paths() {
@@ -300,38 +284,62 @@ void test_packet_received_security_paths() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf;
-  auto secure = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 500,
-      []() {
-        rpc::payload::DigitalWrite p;
-        p.pin = 13;
-        p.value = 1;
-        return p;
-      }(),
-      payload_buf);
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
 
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
-  size_t wire_len = rpc::serialize_frame(secure, wire);
-  ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+  // 1. Valid HDLC frame with DigitalWrite succeeds
+  rpc_pb_DigitalWrite dw = rpc_pb_DigitalWrite_init_default;
+  dw.pin = 13;
+  dw.value = 1;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                       rpc_pb_DigitalWrite_fields, dw);
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
 
-  // Edge case: encrypted payload with tag size < 16 bytes
-  rpc_pb_RpcEnvelope short_tag_frame = rpc_pb_RpcEnvelope_init_default;
-  short_tag_frame.version = rpc::PROTOCOL_VERSION;
-  short_tag_frame.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-  short_tag_frame.sequence_id = 501;
-  short_tag_frame.which_payload_type =
-      rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
-  short_tag_frame.payload_type.encrypted_payload_with_tag.size = 10;
-  etl::fill_n(short_tag_frame.payload_type.encrypted_payload_with_tag.bytes, 10,
-              0xAA);
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire2;
-  size_t wire_len2 = rpc::serialize_frame(short_tag_frame, wire2);
-  ba.invokePacketReceived(etl::span<const uint8_t>(wire2.data(), wire_len2));
+  // 2. Corrupt FCS frame is dropped by decoder
+  etl::array<uint8_t, 128> corrupt_frame;
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest, kGpioSvc,
+      pw::tokenizer::Hash("DigitalWrite"), etl::span<const uint8_t>(),
+      corrupt_frame);
+  TEST_ASSERT_GREATER_THAN(2, len);
+  if (len >= 2) {
+    corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC
+  }
+  ba.feedHdlcBytes(etl::span<const uint8_t>(corrupt_frame.data(), len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
+
+  // 3. Truncated RPC packet inside HDLC frame (< 4 bytes)
+  const uint8_t short_bytes[] = {0x01, 0x02};
+  etl::array<uint8_t, 64> hdlc_short;
+  size_t short_len = TestHdlc::encodeUIFrame(
+      1, etl::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
+      hdlc_short);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_short.data(), short_len));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+
+  // 4. Unknown HDLC address (e.g. 0x99) dropped safely
+  etl::array<uint8_t, 64> hdlc_unknown_addr;
+  size_t unk_len = TestHdlc::encodeUIFrame(
+      0x99, etl::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
+      hdlc_unknown_addr);
+  ba.feedHdlcBytes(
+      etl::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+
+  // 5. Unsynchronized access with shared secret set rejects non-LinkSync RPC
+  resetArduinoStubPinStates();
+  reset_bridge_core(Bridge, stream, 0U, "top-secret");
+  auto& secret_bridge = TestAccessor::create(Bridge);
+  secret_bridge.clearSynchronized();
+
+  dw.pin = 14;
+  dw.value = 1;
+  feed_rpc_request_msg(secret_bridge, kGpioSvc,
+                       pw::tokenizer::Hash("DigitalWrite"),
+                       rpc_pb_DigitalWrite_fields, dw);
+  TEST_ASSERT_FALSE(secret_bridge.isSynchronized());
+  TEST_ASSERT_NOT_EQUAL(HIGH, g_arduino_stub_pin_states[14U].value);
 }
 
 void test_console_and_policy_edges() {
@@ -349,36 +357,30 @@ void test_console_and_policy_edges() {
   etl::fill(fill_chars.begin(), fill_chars.end(), 'x');
   etl::for_each(fill_chars.begin(), fill_chars.end(),
                 [](char c) { Console.write(c); });
-
   TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  auto frame = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 600,
-      []() {
-        rpc::payload::ConsoleWrite p;
-        uint8_t v[] = {0x41, 0x42};
-        rpc::payload::copy_to_pb_bytes(p.data, v, 2);
-        return p;
-      }(),
-      buf);
+  // Feed console raw bytes on HDLC Address 0x03
+  reset_bridge_core(Bridge, stream);
+  auto& ba2 = TestAccessor::create(Bridge);
+  ba2.setSynchronized();
+  Console.begin();
 
-  ba.setSynchronized();
-  ba.dispatch(frame);
+  const uint8_t console_in[] = {0x41, 0x42};
+  etl::array<uint8_t, 64> hdlc_console;
+  size_t len = TestHdlc::encodeUIFrame(
+      3, etl::span<const uint8_t>(console_in, sizeof(console_in)),
+      hdlc_console);
+  ba2.feedHdlcBytes(etl::span<const uint8_t>(hdlc_console.data(), len));
+
   TEST_ASSERT_EQUAL(0x41, Console.peek());
   TEST_ASSERT_EQUAL(0x41, Console.read());
   TEST_ASSERT_EQUAL(0x42, Console.read());
   TEST_ASSERT_EQUAL(-1, Console.read());
 
-  ba.applyTimingConfig([]() {
-    rpc::payload::HandshakeConfig p;
-    p.ack_timeout_ms = 250;
-    p.ack_retry_limit = 2;
-    p.response_timeout_ms = 500;
-    return p;
-  }());
-  TEST_ASSERT_TRUE(
-      ba.isSecurityCheckPassed(rpc::to_underlying(rpc::StatusCode::STATUS_OK)));
+  // Send console stream with null stream returns false
+  ba2.setNullStream();
+  TEST_ASSERT_FALSE(Bridge.sendConsoleStream(
+      etl::span<const uint8_t>(console_in, sizeof(console_in))));
 
   Bridge.enterSafeState();
 }
@@ -388,9 +390,7 @@ void test_observer_and_task_runtime_edges() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  ba.setSerialTaskBridgeNull();
   ba.invokeSerialTask();
-  ba.setTimerTaskBridgeNull();
   ba.invokeTimerTask();
 
   class FlowStream : public Stream {
@@ -419,55 +419,30 @@ void test_timer_link_and_bootloader_edges() {
   ba.setTimerLastTick(1);
   ba.invokeTimerTask();
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  rpc::payload::LinkSync sync = {};
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
+
+  // LinkSync
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
   memset(sync.nonce.bytes, 0x11, 12);
-  sync.nonce.size = 20;
-  memset(sync.tag.bytes, 0x22, 16);
-  sync.tag.size = 16;
-  auto linksync = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 700, sync, buf);
-  ba.dispatch(linksync);
+  sync.nonce.size = 12;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
 
-  auto linkreset = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET), 701,
-      []() {
-        rpc::payload::HandshakeConfig p;
-        p.ack_timeout_ms = 123;
-        p.ack_retry_limit = 1;
-        p.response_timeout_ms = 456;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(linkreset);
-  ba.applyTimingConfig([]() {
-    rpc::payload::HandshakeConfig p;
-    p.ack_timeout_ms = 0;
-    p.ack_retry_limit = 0;
-    p.response_timeout_ms = 0;
-    return p;
-  }());
+  // LinkReset
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 
-  auto baud_new = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE), 703,
-      []() {
-        rpc::payload::SetBaudratePacket p;
-        p.baudrate = 115200;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(baud_new);
+  // SetBaudrate
+  rpc_pb_SetBaudratePacket baud_msg = rpc_pb_SetBaudratePacket_init_default;
+  baud_msg.baudrate = 115200;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("SetBaudrate"),
+                       rpc_pb_SetBaudratePacket_fields, baud_msg);
 
-  auto boot_ok = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), 706,
-      []() {
-        rpc::payload::EnterBootloader p;
-        p.magic = rpc::RPC_BOOTLOADER_MAGIC;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(boot_ok);
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
+  // EnterBootloader
+  rpc_pb_EnterBootloader boot_msg = rpc_pb_EnterBootloader_init_default;
+  boot_msg.magic = rpc::RPC_BOOTLOADER_MAGIC;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("EnterBootloader"),
+                       rpc_pb_EnterBootloader_fields, boot_msg);
 }
 
 void test_service_capacity_and_send_fail_edges() {
@@ -475,25 +450,16 @@ void test_service_capacity_and_send_fail_edges() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
-  auto pin_mode_ok = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE), 780,
-      []() {
-        rpc::payload::PinMode p;
-        p.pin = 13;
-        p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
-        return p;
-      }(),
-      frame_buf);
-  ba.dispatch(pin_mode_ok);
+
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+  rpc_pb_PinMode pm = rpc_pb_PinMode_init_default;
+  pm.pin = 13;
+  pm.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                       rpc_pb_PinMode_fields, pm);
 
   Console.begin();
   Console.process();
-  etl::array<uint8_t, 4> console_bytes;
-  console_bytes.fill(0x42);
-  rpc::payload::ConsoleWrite cmsg;
-  rpc::payload::copy_to_pb_bytes(cmsg.data, console_bytes.data(), 4);
-  Console._push(cmsg);
 
   Bridge.enterSafeState();
   FileSystem.read("blocked.bin",
@@ -512,117 +478,64 @@ void test_filesystem_spi_fsm_edges() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
+  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("bridge.SpiService");
+
   etl::array<uint8_t, 2> fs_data = {1, 2};
-  rpc::payload::FileWrite fwp;
+  rpc_pb_FileWrite fwp = rpc_pb_FileWrite_init_default;
   strncpy(fwp.path, "/bad", sizeof(fwp.path));
-  rpc::payload::copy_to_pb_bytes(fwp.data, fs_data.data(), fs_data.size());
+  fwp.data.size = fs_data.size();
+  etl::copy_n(fs_data.data(), fs_data.size(), fwp.data.bytes);
   FileSystem._onWrite(fwp);
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  auto spi_begin =
-      make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), 800);
-  ba.dispatch(spi_begin);
+  feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("Begin"));
+
   etl::array<uint8_t, 3> spi_payload = {0xA1, 0xB2, 0xC3};
-  rpc::payload::SpiTransfer stp;
-  rpc::payload::copy_to_pb_bytes(stp.data, spi_payload.data(),
-                                 spi_payload.size());
-  auto spi_transfer = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER), 801, stp, buf);
-  ba.dispatch(spi_transfer);
-  auto spi_end =
-      make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_END), 802);
-  ba.dispatch(spi_end);
+  rpc_pb_SpiTransfer stp = rpc_pb_SpiTransfer_init_default;
+  stp.data.size = spi_payload.size();
+  etl::copy_n(spi_payload.data(), spi_payload.size(), stp.data.bytes);
+  feed_rpc_request_msg(ba, kSpiSvc, pw::tokenizer::Hash("Transfer"),
+                       rpc_pb_SpiTransfer_fields, stp);
+
+  feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("End"));
 
   bridge::fsm::BridgeFsm fsm;
   fsm.start();
   fsm.receive(bridge::fsm::EvReset());
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_encrypted_rx_nonce_paths() {
   BiStream stream;
-  reset_bridge_core(Bridge, stream);
+  reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
 
-  rpc::payload::LinkSync sync = {};
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
+
+  // 1. LinkSync with valid HMAC tag succeeds
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
   memset(sync.nonce.bytes, 0xAB, 12);
   sync.nonce.size = 12;
   ba.computeHandshakeTag(sync.nonce.bytes, 12, sync.tag.bytes);
   sync.tag.size = 16;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  auto linksync = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 900, sync, buf);
-  ba.dispatch(linksync);
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_TRUE(ba.isSynchronized());
-  ba.handleAck(ba.getLastCommandId());
-  stream.tx_buf.clear();
 
-  etl::array<uint8_t, 2> payload = {0x55, 0x66};
-  rpc::payload::ConsoleWrite cmsg;
-  rpc::payload::copy_to_pb_bytes(cmsg.data, payload.data(), payload.size());
-  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 901, cmsg));
+  // 2. LinkSync with bad tag fails
+  ba.clearSynchronized();
+  sync.tag.bytes[0] ^= 0xFF;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  size_t cursor = 0;
-  rpc_pb_RpcEnvelope encrypted;
-  if (extract_encrypted_frame(stream.tx_buf, cursor, encrypted, 4)) {
-    // 1. Anti-reflection test: Looping back MCU's own frame must be rejected by
-    // anti-reflection
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> reflected_wire;
-    size_t reflected_wire_len = rpc::serialize_frame(
-        encrypted,
-        etl::span<uint8_t>(reflected_wire.data(), reflected_wire.size()));
-    ba.invokePacketReceived(
-        etl::span<const uint8_t>(reflected_wire.data(), reflected_wire_len));
+  // 3. LinkSync with short nonce (< 12) fails
+  sync.nonce.size = 8;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_FALSE(ba.isSynchronized());
 
-    // 2. Legitimate incoming MPU frame: encrypted with
-    // RPC_MPU_AEAD_NONCE_PREFIX
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> mpu_pl = {};
-    pb_ostream_t pl_stream =
-        pb_ostream_from_buffer(mpu_pl.data(), mpu_pl.size());
-    const bool pb_ok = pb_encode(
-        &pl_stream, rpc::Payload::get_fields<rpc_pb_ConsoleWrite>(), &cmsg);
-    TEST_ASSERT_TRUE(pb_ok);
-
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> mpu_ciphertext = {};
-    etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mpu_nonce = {};
-    etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> mpu_tag = {};
-    uint64_t mpu_tx_counter = 0U;
-    const bool enc_ok = rpc::security::aead_encrypt_frame(
-        rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 902,
-        etl::span<const uint8_t>(mpu_pl.data(), pl_stream.bytes_written),
-        ba.getSessionKey(), &mpu_tx_counter, mpu_ciphertext, mpu_nonce, mpu_tag,
-        rpc::RPC_MPU_AEAD_NONCE_PREFIX);
-    TEST_ASSERT_TRUE(enc_ok);
-
-    rpc_pb_RpcEnvelope valid_env = rpc::build_envelope(
-        rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 902,
-        etl::span<const uint8_t>(mpu_ciphertext.data(),
-                                 pl_stream.bytes_written),
-        mpu_nonce, mpu_tag);
-
-    // 3. Success case: valid MPU frame accepted
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
-    size_t wire_len = rpc::serialize_frame(
-        valid_env, etl::span<uint8_t>(wire.data(), wire.size()));
-    ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
-
-    // 4. Replay attack: nonce reuse rejected
-    ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
-
-    // 5. Decrypt failure: corrupt tag/payload bytes rejected
-    rpc_pb_RpcEnvelope tampered = valid_env;
-    tampered.sequence_id = 999;
-    if (tampered.payload_type.encrypted_payload_with_tag.size > 0) {
-      tampered.payload_type.encrypted_payload_with_tag.bytes[0] ^= 0xFF;
-    }
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire_tampered;
-    size_t wire_tampered_len = rpc::serialize_frame(
-        tampered,
-        etl::span<uint8_t>(wire_tampered.data(), wire_tampered.size()));
-    ba.invokePacketReceived(
-        etl::span<const uint8_t>(wire_tampered.data(), wire_tampered_len));
-  }
+  // 4. Cryptographic self-tests
+  TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
 }
 
 void test_fault_injection_harness_paths() {
@@ -651,25 +564,10 @@ void test_fault_injection_harness_paths() {
   reset_bridge_core(Bridge, stream);
   auto& ba2 = TestAccessor::create(Bridge);
   ba2.setSynchronized();
-  ba2.exhaustTxPayloadPool();
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::BRIDGE_POOL_ALLOC_FAIL);
-  TEST_ASSERT_FALSE(
-      Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77, {}));
-
-  ba2.enqueueNullPendingFrame(
-      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 78, 0);
-  ba2.clearPendingTxQueue();
 
   ba2.setHardwareSerial(&Serial);
   ba2.setPendingBaudrate(115200U);
   ba2.onBaudrateChange();
-
-  // Branch coverage for requires_ack (default path)
-  TEST_ASSERT_FALSE(
-      rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)));
-  TEST_ASSERT_TRUE(
-      rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)));
 
   class FlowStream : public Stream {
    public:
@@ -686,37 +584,6 @@ void test_fault_injection_harness_paths() {
   ba_flow.setSerialTaskXoffSent(true);
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
-
-  BiStream secure_stream;
-  reset_bridge_core(Bridge, secure_stream);
-  auto& bs = TestAccessor::create(Bridge);
-  rpc::payload::LinkSync s_sync = {};
-  memset(s_sync.nonce.bytes, 0x44, 12);
-  s_sync.nonce.size = 12;
-  bs.computeHandshakeTag(s_sync.nonce.bytes, 12, s_sync.tag.bytes);
-  s_sync.tag.size = 16;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> tmp_buf;
-  auto s_linksync = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 950, s_sync, tmp_buf);
-  bs.dispatch(s_linksync);
-  TEST_ASSERT_TRUE(bs.isSynchronized());
-  bs.handleAck(bs.getLastCommandId());
-  secure_stream.tx_buf.clear();
-  etl::array<uint8_t, 2> s_payload = {0x41, 0x42};
-  rpc::payload::ConsoleWrite s_cmsg;
-  rpc::payload::copy_to_pb_bytes(s_cmsg.data, s_payload.data(),
-                                 s_payload.size());
-  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951, s_cmsg));
-  size_t cursor = 0;
-  rpc_pb_RpcEnvelope s_encrypted;
-  if (extract_encrypted_frame(secure_stream.tx_buf, cursor, s_encrypted, 4)) {
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
-    const size_t wire_len = rpc::serialize_frame(
-        s_encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
-    bridge::test::fault::enable(
-        bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL);
-    bs.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
-  }
 }
 
 void test_architectural_extensions_edge_paths() {
@@ -771,22 +638,22 @@ void test_architectural_extensions_edge_paths() {
   ba.invokeWatchdog();
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
+  constexpr uint32_t kClkSvc = pw::tokenizer::Hash("bridge.ClockSyncService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+
+  // ClockSync
   rpc_pb_ClockSyncRequest sync_req = rpc_pb_ClockSyncRequest_init_default;
   sync_req.host_time_us = 987654321ULL;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  auto sync_frame = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_CLOCK_SYNC), 301, sync_req, buf);
-  ba.dispatch(sync_frame);
+  feed_rpc_request_msg(ba, kClkSvc, pw::tokenizer::Hash("ClockSync"),
+                       rpc_pb_ClockSyncRequest_fields, sync_req);
 
   // Disable non-existent pin
   rpc_pb_PinSubscribeRequest sub_dis_unreg =
       rpc_pb_PinSubscribeRequest_init_default;
   sub_dis_unreg.pin = 99;
   sub_dis_unreg.enabled = false;
-  auto sub_frame_dis =
-      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
-                         305, sub_dis_unreg, buf);
-  ba.dispatch(sub_frame_dis);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_dis_unreg);
 
   // Subscribe pin INPUT
   rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
@@ -795,9 +662,8 @@ void test_architectural_extensions_edge_paths() {
   sub_req.interval_ms = 10;
   sub_req.hysteresis = 1;
   sub_req.enabled = true;
-  auto sub_frame = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 302, sub_req, buf);
-  ba.dispatch(sub_frame);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_req);
 
   // Subscribe pin INPUT_PULLUP
   rpc_pb_PinSubscribeRequest sub_pu = rpc_pb_PinSubscribeRequest_init_default;
@@ -806,9 +672,8 @@ void test_architectural_extensions_edge_paths() {
   sub_pu.interval_ms = 10;
   sub_pu.hysteresis = 2;
   sub_pu.enabled = true;
-  auto sub_frame_pu = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 306, sub_pu, buf);
-  ba.dispatch(sub_frame_pu);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_pu);
 
   // Subscribe pin OUTPUT
   rpc_pb_PinSubscribeRequest sub_an = rpc_pb_PinSubscribeRequest_init_default;
@@ -817,37 +682,32 @@ void test_architectural_extensions_edge_paths() {
   sub_an.interval_ms = 10;
   sub_an.hysteresis = 5;
   sub_an.enabled = true;
-  auto sub_frame_an = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 307, sub_an, buf);
-  ba.dispatch(sub_frame_an);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_an);
 
   // Update existing subscription
   sub_req.interval_ms = 5;
-  auto sub_update = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 303, sub_req, buf);
-  ba.dispatch(sub_update);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_req);
 
   // Fill subscriptions to full capacity (8 max) then attempt 9th
   etl::array<uint8_t, 8> sub_pins{};
   uint8_t sub_pin_val = 10;
   etl::generate(sub_pins.begin(), sub_pins.end(),
                 [&sub_pin_val]() { return sub_pin_val++; });
-  etl::for_each(sub_pins.begin(), sub_pins.end(), [&ba, &buf](uint8_t p) {
+  etl::for_each(sub_pins.begin(), sub_pins.end(), [&ba, kGpioSvc](uint8_t p) {
     rpc_pb_PinSubscribeRequest s = rpc_pb_PinSubscribeRequest_init_default;
     s.pin = p;
     s.enabled = true;
-    auto f = make_payload_frame(
-        rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 310 + p, s, buf);
-    ba.dispatch(f);
+    feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                         rpc_pb_PinSubscribeRequest_fields, s);
   });
   rpc_pb_PinSubscribeRequest sub_overflow =
       rpc_pb_PinSubscribeRequest_init_default;
   sub_overflow.pin = 50;
   sub_overflow.enabled = true;
-  auto f_overflow =
-      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
-                         330, sub_overflow, buf);
-  ba.dispatch(f_overflow);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_overflow);
 
   // Subscription task execution paths
   ba.clearSynchronized();
@@ -869,41 +729,21 @@ void test_architectural_extensions_edge_paths() {
 
   // Disable subscription
   sub_req.enabled = false;
-  auto sub_disable = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 304, sub_req, buf);
-  ba.dispatch(sub_disable);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_req);
 
   // Pin read out of bounds
   rpc_pb_PinRead bad_read = rpc_pb_PinRead_init_default;
   bad_read.pin = 250;
-  auto f_bad_dig = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ), 340, bad_read, buf);
-  ba.dispatch(f_bad_dig);
-  auto f_bad_ana = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ), 341, bad_read, buf);
-  ba.dispatch(f_bad_ana);
-
-  // Queue full send failure
-  ba.fillPendingTxQueue();
-  rpc_pb_PinSubscribeRequest sub_dummy =
-      rpc_pb_PinSubscribeRequest_init_default;
-  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_PIN_SUBSCRIBE, 1, sub_dummy,
-                                rpc_pb_ChannelId_CHANNEL_CONTROL,
-                                rpc_pb_QosProfile_QOS_RELIABLE));
-  ba.clearPendingTxQueue();
-
-  // Pool exhausted send failure
-  ba.exhaustTxPayloadPool();
-  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_PIN_SUBSCRIBE, 2, sub_dummy,
-                                rpc_pb_ChannelId_CHANNEL_CONTROL,
-                                rpc_pb_QosProfile_QOS_RELIABLE));
-  reset_bridge_core(Bridge, stream);
-  ba.setSynchronized();
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("DigitalRead"),
+                       rpc_pb_PinRead_fields, bad_read);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("AnalogRead"),
+                       rpc_pb_PinRead_fields, bad_read);
 
   // Null stream paths
   ba.setNullStream();
   ba.invokeInitializeRuntime();
-  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, 350));
+  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
   reset_bridge_core(Bridge, stream);
   ba.setSynchronized();
 }
@@ -970,8 +810,6 @@ int main() {
   RUN_TEST(test_dispatch_malformed_payload_paths);
   RUN_TEST(test_packet_received_security_paths);
   RUN_TEST(test_console_and_policy_edges);
-  // RUN_TEST(test_security_invalid_size_guards); // Eradicated with thin
-  // wrappers
   RUN_TEST(test_observer_and_task_runtime_edges);
   RUN_TEST(test_timer_link_and_bootloader_edges);
   RUN_TEST(test_service_capacity_and_send_fail_edges);

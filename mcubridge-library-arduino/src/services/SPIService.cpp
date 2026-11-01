@@ -19,7 +19,7 @@ void SPIServiceClass::end() {
   _initialized = false;
 }
 
-void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
+void SPIServiceClass::setConfig(const rpc_pb_SpiConfig& config) {
   constexpr decltype(SPI_MODE0) SPI_MODES[] = {SPI_MODE0, SPI_MODE1, SPI_MODE2,
                                                SPI_MODE3};
   const size_t mode_idx = static_cast<size_t>(config.data_mode >> 2U);
@@ -28,7 +28,10 @@ void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
                              : SPI_MODE0;
   _settings =
       SPISettings(config.frequency,
-                  static_cast<decltype(MSBFIRST)>(config.bit_order), data_mode);
+                  (config.bit_order == rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST)
+                      ? LSBFIRST
+                      : MSBFIRST,
+                  data_mode);
 }
 
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
@@ -41,7 +44,7 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
 
   const bool completed =
       etl::all_of(buffer.begin(), buffer.end(), [&](auto& b) {
-        if (millis() - start > rpc::RPC_SPI_TIMEOUT_MS) {
+        if (millis() - start > bridge::config::SPI_TIMEOUT_MS) {
           return false;
         }
         b = SPI.transfer(b);

@@ -23,12 +23,13 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from cobs import cobsr
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
+from pw_rpc.internal.packet_pb2 import RpcPacket
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.state.storage import LmdbCache
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
@@ -46,17 +47,17 @@ class BenchmarkMetric:
     latency_us_per_op: float
 
 
-def benchmark_cobsr_framing(iterations: int = 20_000) -> list[BenchmarkMetric]:
-    """Benchmark raw COBS/R encoding and decoding."""
+def benchmark_hdlc_framing(iterations: int = 20_000) -> list[BenchmarkMetric]:
+    """Benchmark raw HDLC encoding and decoding."""
     payload = b"\x01\x02\x03\x00\x05\x06\x07\x00\x09\x10\x11\x12\x13\x14\x15" * 4  # 60 bytes
     payload_len = len(payload)
 
     # 1. Encode
     start = time.perf_counter()
-    encoded_list = [cobsr.encode(payload) for _ in range(iterations)]
+    encoded_list = [ui_frame(1, payload) for _ in range(iterations)]
     dur_enc = time.perf_counter() - start
     enc_metric = BenchmarkMetric(
-        name="COBS/R Encode",
+        name="HDLC Encode",
         operations=iterations,
         duration_sec=dur_enc,
         ops_per_sec=iterations / dur_enc,
@@ -68,10 +69,11 @@ def benchmark_cobsr_framing(iterations: int = 20_000) -> list[BenchmarkMetric]:
     enc_data = encoded_list[0]
     start = time.perf_counter()
     for _ in range(iterations):
-        cobsr.decode(enc_data)
+        decoder = FrameDecoder()
+        list(decoder.process(enc_data))
     dur_dec = time.perf_counter() - start
     dec_metric = BenchmarkMetric(
-        name="COBS/R Decode",
+        name="HDLC Decode",
         operations=iterations,
         duration_sec=dur_dec,
         ops_per_sec=iterations / dur_dec,
@@ -200,15 +202,17 @@ def benchmark_lmdb_storage(iterations: int = 10_000) -> list[BenchmarkMetric]:
 
 
 def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
-    """Benchmark full RPC frame construction and parsing with CRC32."""
+    """Benchmark full RPC frame construction and parsing with Pigweed HDLC."""
     msg = pb.DigitalWrite(pin=13, value=1)
 
     # 1. Build Frame
     start = time.perf_counter()
-    raw_frames = [build_frame(protocol.Command.CMD_DIGITAL_WRITE.value, i, payload=msg) for i in range(iterations)]
+    raw_frames = [
+        protocol.encode_hdlc_rpc(protocol.Command.CMD_DIGITAL_WRITE.value, msg, call_id=i) for i in range(iterations)
+    ]
     dur_build = time.perf_counter() - start
     build_metric = BenchmarkMetric(
-        name="build_frame() RPC Frame",
+        name="encode_hdlc_rpc() Frame",
         operations=iterations,
         duration_sec=dur_build,
         ops_per_sec=iterations / dur_build,
@@ -220,10 +224,14 @@ def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
     sample = raw_frames[0]
     start = time.perf_counter()
     for _ in range(iterations):
-        parse_frame(sample)
+        decoder = FrameDecoder()
+        for frame in decoder.process(sample):
+            if frame.ok():
+                pkt = RpcPacket()
+                pkt.ParseFromString(frame.data)
     dur_parse = time.perf_counter() - start
     parse_metric = BenchmarkMetric(
-        name="parse_frame() RPC Frame",
+        name="decode_hdlc_rpc() Frame",
         operations=iterations,
         duration_sec=dur_parse,
         ops_per_sec=iterations / dur_parse,
@@ -237,7 +245,6 @@ def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
 def measure_module_audit() -> list[tuple[str, float, float, str]]:
     """Audit core python modules for import latency and disk footprint."""
     core_modules = [
-        "mcubridge.protocol.frame",
         "mcubridge.protocol.structures",
         "mcubridge.protocol.protocol",
         "mcubridge.services.runtime",
@@ -290,7 +297,7 @@ def main(
     tracemalloc.start()
 
     print("🚀 Running MCU Bridge 2 Performance Benchmarks...")
-    framing_metrics = benchmark_cobsr_framing(iterations=iterations)
+    framing_metrics = benchmark_hdlc_framing(iterations=iterations)
     rpc_metrics = benchmark_rpc_frames(iterations=iterations)
     crypto_metrics = benchmark_aead_crypto(iterations=min(iterations, 10_000))
     proto_metrics = benchmark_protobuf_serialization(iterations=iterations)

@@ -10,12 +10,10 @@ from unittest.mock import AsyncMock, MagicMock
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 import serialx
-from cobs import cobsr
 from google.protobuf.message import Message as ProtobufMessage
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -90,9 +88,7 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     mock_serial.readuntil.assert_awaited_once_with(protocol.FRAME_DELIMITER)
 
 
-async def test_process_packet_baudrate_negotiation_response(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = MagicMock()
     transport.serial = mock_serial
@@ -100,16 +96,15 @@ async def test_process_packet_baudrate_negotiation_response(
     fut: asyncio.Future[bool] = asyncio.Future()
     transport.negotiation_future = fut
 
-    raw = cobsr.encode(build_frame(Command.CMD_SET_BAUDRATE_RESP.value, 1))
+    raw = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
 
-    process_packet: Callable[[bytes], Awaitable[None]] = transport.process_packet
-    await process_packet(raw)
+    await transport.feed_data(raw)
     assert fut.done()
     assert fut.result() is True
     assert mock_serial.transport.serial.baudrate == 115200
 
 
-async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_correlate_frame_success_status(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
     pending.command_id = Command.CMD_FILE_WRITE.value
@@ -117,27 +112,10 @@ async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeCon
     pending.success = None
     transport.current_command = pending
 
-    # ACK payload for CMD_FILE_WRITE
-    ack = pb.AckPacket(command_id=Command.CMD_FILE_WRITE.value)
     correlate_frame: Callable[..., None] = transport.correlate_frame
-    correlate_frame(Status.ACK.value, ack)
+    correlate_frame(Status.OK.value, b"ok_payload")
 
-    pending.mark_success.assert_called_once_with(ack)
-
-
-async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    transport = SerialTransport(mock_config, mock_state, None)
-    pending = MagicMock()
-    pending.command_id = Command.CMD_FILE_WRITE.value
-    pending.expected_resp_ids = set()
-    pending.success = None
-    transport.current_command = pending
-
-    # Corrupted ACK payload (invalid protobuf bytes)
-    correlate_frame: Callable[..., None] = transport.correlate_frame
-    correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
-    assert pending.ack_received is True
-    pending.mark_success.assert_called_once_with(b"\xff\xff\xff\xff")
+    pending.mark_success.assert_called_once_with(b"ok_payload")
 
 
 async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
@@ -208,29 +186,29 @@ async def test_logging_not_debug_branches(
     ok = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
     assert ok is True
 
-    # 2. process_packet when logger is not debug
+    # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
-    encoded = cobsr.encode(build_frame(Command.CMD_GET_VERSION_RESP.value, 1, payload.SerializeToString()))
-    await transport.process_packet(encoded)
+    encoded = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION_RESP.value, payload, call_id=1)
+    await transport.feed_data(encoded)
     assert mock_state.metrics.serial_bytes_received.value > 0
 
 
-async def test_process_packet_uninitialized_protobuf(
+async def test_feed_data_uninitialized_protobuf(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_proto = MagicMock(spec=ProtobufMessage)
     mock_proto.IsInitialized.return_value = False
 
-    mocker_frame = MagicMock()
-    mocker_frame.envelope.command_id = Command.CMD_GET_VERSION.value
-    mocker_frame.envelope.sequence_id = 1
-    mocker_frame.envelope.nonce = b"\x00" * 12
-    mocker_frame.payload = mock_proto
+    fake_spec = MagicMock()
+    fake_spec.response_type.return_value = mock_proto
 
-    mocker.patch("mcubridge.transport.serial.parse_frame", return_value=mocker_frame)
+    mocker.patch.dict("mcubridge.protocol.protocol.RPC_METHOD_TO_SPEC", {(0x1000, 0x2000): fake_spec})
+    mocker.patch.dict("mcubridge.protocol.protocol.RPC_TO_COMMAND", {(0x1000, 0x2000): 0x50})
+
+    encoded = protocol.encode_hdlc_rpc(1, 0x1000, 0x2000, 1, b"dummy_payload")
     initial_errors = mock_state.serial_decode_errors
-    await transport.process_packet(b"\x00" * 20)
+    await transport.feed_data(encoded)
     assert mock_state.serial_decode_errors == initial_errors + 1
 
 

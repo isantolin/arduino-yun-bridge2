@@ -414,15 +414,21 @@ def _build_mcu_dispatch_entries(commands: list[dict[str, Any]], statuses: list[d
 
 
 def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any, env_desc: Any) -> dict[str, Any]:
-    payload_fields = [
-        {"name": f.message_type.name, "field": f.name}
-        for f in env_desc.oneofs_by_name["payload_type"].fields
-        if f.message_type
-    ]
-    payload_structs = [item for item in payload_fields if item["name"] != "DaemonMetrics"]
-    payload_names = [p["name"] for p in payload_structs]
-    mcu_names = set(payload_names) | {"RpcEnvelope"}
-    all_structs = [{"name": n} for d in all_descs for n in d.message_types_by_name if n in mcu_names]
+    if env_desc is not None and "payload_type" in env_desc.oneofs_by_name:
+        payload_fields = [
+            {"name": f.message_type.name, "field": f.name}
+            for f in env_desc.oneofs_by_name["payload_type"].fields
+            if f.message_type
+        ]
+        payload_structs = [item for item in payload_fields if item["name"] != "DaemonMetrics"]
+        payload_names = [p["name"] for p in payload_structs]
+        mcu_names = set(payload_names) | {"RpcEnvelope"}
+        all_structs = [{"name": n} for d in all_descs for n in d.message_types_by_name if n in mcu_names]
+    else:
+        payload_fields = []
+        payload_structs = []
+        payload_names = []
+        all_structs = []
 
     action_items: dict[str, list[dict[str, Any]]] = {}
     for a in opts.Extensions[pb_module.actions]:
@@ -822,7 +828,8 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     cmd_enum: Any = next(d.enum_types_by_name["Command"] for d in all_descs if "Command" in d.enum_types_by_name)
     status_enum: Any = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
     env_desc: Any = next(
-        d.message_types_by_name["RpcEnvelope"] for d in all_descs if "RpcEnvelope" in d.message_types_by_name
+        (d.message_types_by_name["RpcEnvelope"] for d in all_descs if "RpcEnvelope" in d.message_types_by_name),
+        None,
     )
     svc_desc: Any = next(d.services_by_name["LocalBridge"] for d in all_descs if "LocalBridge" in d.services_by_name)
 
@@ -911,11 +918,8 @@ def _resolve_proto_path(spec_path: Path) -> Path:
 def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, Path | None, bool, bool]]:
     cpp_dir = args.cpp.parent if args.cpp else None
     luci_root = repo_root / "luci-app-mcubridge"
-    return [
-        ("rpc_protocol.h.j2", "common", args.cpp, False, False),
+    specs: list[tuple[str, str, Path | None, bool, bool]] = [
         ("rpc_hw_config.h.j2", "common", cpp_dir / "rpc_hw_config.h" if cpp_dir else None, False, False),
-        ("rpc_structs.h.j2", "common", args.cpp_structs, False, False),
-        ("rpc_dispatch_table.inc.j2", "common", cpp_dir / "rpc_dispatch_table.inc" if cpp_dir else None, False, False),
         ("protocol.py.j2", "python", args.py, False, True),
         ("protocol_client.py.j2", "client", args.py_client, False, True),
         ("mcubridge_uci.j2", "common", luci_root / "root/etc/config/mcubridge", False, False),
@@ -928,10 +932,13 @@ def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, P
             False,
         ),
     ]
+    if args.cpp:
+        specs.append(("rpc_protocol.h.j2", "common", args.cpp, False, False))
+    return specs
 
 
 def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> list[Path]:
-    explicit_outputs = [path for path in (args.cpp, args.cpp_structs, args.py, args.py_client) if path]
+    explicit_outputs = [path for path in (args.cpp, args.py, args.py_client) if path]
     outputs = list(explicit_outputs)
     if args.cpp:
         for stem in ("config_schema", "mcu_wire"):

@@ -78,7 +78,7 @@ def test_parse_payload_invalid() -> None:
 def test_name_for_command() -> None:
     assert frame_debug.name_for_command(Command.CMD_GET_VERSION.value) == "CMD_GET_VERSION"
     # Keep testing Status resolution
-    assert frame_debug.name_for_command(Status.ACK.value) == "ACK"
+    assert frame_debug.name_for_command(Status.OK.value) == "OK"
     assert frame_debug.name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
 
 
@@ -87,26 +87,22 @@ def test_snapshot_render() -> None:
         command_id=Command.CMD_GET_VERSION.value,
         command_name="CMD_GET_VERSION",
         payload_length=5,
-        crc=TEST_BROKEN_CRC,
-        raw_length=10,
-        cobs_length=12,
-        expected_serial_bytes=13,
-        encoded_packet=b"encoded",
-        raw_frame_hex="0102",
-        encoded_hex="0304",
+        hdlc_length=12,
+        encoded_packet=b"encoded_packet",
+        encoded_hex="03 04",
     )
     rendered = snapshot.render()
     assert "CMD_GET_VERSION (0x40)" in rendered
     assert "Payload Length: 5 bytes" in rendered
-    assert "Raw Length: 10 bytes" in rendered
-    assert "COBS Length: 12 bytes" in rendered
-    assert f"CRC32: 0x{TEST_BROKEN_CRC:08X}" in rendered
+    assert "HDLC Length: 12 bytes" in rendered
+    assert "Encoded Frame (hex): 03 04" in rendered
+    assert "Total Wire Bytes: 14 bytes" in rendered
 
 
 def test_frame_debug_list_ports_empty(mocker: MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     empty_list: list[serialx.SerialPortInfo] = []
     mocker.patch.object(frame_debug.serialx, "list_serial_ports", return_value=empty_list)
-    frame_debug.main(list_ports=True)
+    frame_debug.list_ports()
     captured = capsys.readouterr()
     assert "No serial ports detected." in captured.out
 
@@ -122,7 +118,7 @@ def test_frame_debug_list_ports_found(mocker: MockerFixture, capsys: pytest.Capt
     mock_port.serial_number = "0001"
     found_list: list[MagicMock] = [mock_port]
     mocker.patch.object(frame_debug.serialx, "list_serial_ports", return_value=found_list)
-    frame_debug.main(list_ports=True)
+    frame_debug.list_ports()
     captured = capsys.readouterr()
     assert "Found 1 serial port(s):" in captured.out
     assert "/dev/ttyUSB0" in captured.out
@@ -131,9 +127,10 @@ def test_frame_debug_list_ports_found(mocker: MockerFixture, capsys: pytest.Capt
     assert "SER=0001" in captured.out
 
 
-def test_frame_debug_main_missing_command(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc:
-        frame_debug.main(command="")
-    assert exc.value.code == 1
-    captured = capsys.readouterr()
-    assert "Missing option '--command'" in captured.err
+def test_frame_debug_generate_missing_command() -> None:
+    from typer.testing import CliRunner
+
+    runner = CliRunner()
+    result = runner.invoke(frame_debug.cli, ["generate"])
+    assert result.exit_code != 0
+    assert "Missing option" in result.output or "Usage:" in result.output

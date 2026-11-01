@@ -12,6 +12,7 @@
  */
 
 #include <Arduino.h>
+#include <PigweedAVR.h>
 #include <Bridge.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
@@ -34,21 +35,9 @@ void setup() {
   digitalWrite(LED_BUILTIN, LOW);
 
   // [SIL-2] PROHIBIDO usar Serial.print() si comparte puerto con el Bridge.
-  // La comunicación serie se reserva exclusivamente para los marcos binarios
-  // COBS.
+  // La comunicación serie se reserva exclusivamente para las tramas
+  // Pigweed HDLC.
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
-
-  // Registrar callback para comandos remotos despachados desde el Gateway
-  // Central
-  Bridge.onCommand(BridgeClass::CommandHandler::create(
-      [](const rpc_pb_RpcEnvelope& envelope) {
-        // En caso de recibir comandos específicos o eventos de control
-        if (envelope.command_id ==
-            rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)) {
-          // El daemon en Linux ya procesa la escritura de pin directamente,
-          // pero el MCU puede interceptar comandos personalizados si se desea.
-        }
-      }));
 
   // Registrar observador de estado para registrar anomalías
   Bridge.onStatus(BridgeClass::StatusHandler::create(

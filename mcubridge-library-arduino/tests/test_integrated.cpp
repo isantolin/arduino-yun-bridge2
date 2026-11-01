@@ -25,17 +25,28 @@ void integrated_test_bridge_core() {
   reset_bridge_core(Bridge, g_test_stream);
   auto& accessor = bridge::test::TestAccessor::create(Bridge);
 
-  rpc::payload::LinkSync sync_req = {};
+  rpc_pb_LinkSync sync_req = rpc_pb_LinkSync_init_default;
   memset(sync_req.nonce.bytes, 1, 16);
   sync_req.nonce.size = 16;
+  accessor.computeHandshakeTag(sync_req.nonce.bytes, 16, sync_req.tag.bytes);
+  sync_req.tag.size = 16;
 
-  rpc_pb_RpcEnvelope sync_frame = rpc_pb_RpcEnvelope_init_default;
-  sync_frame.version = rpc::PROTOCOL_VERSION;
-  sync_frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.sequence_id = 1;
+  uint8_t payload_buf[64];
+  pb_ostream_t ostream =
+      pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  TEST_ASSERT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_req));
 
-  bridge::test::set_pb_payload(sync_frame, sync_req);
-  accessor.dispatch(sync_frame);
+  etl::array<uint8_t, 256> frame_buf;
+  size_t frame_len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("LinkSync"),
+      etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
+      1, 1);
+  TEST_ASSERT_TRUE(frame_len > 0);
+
+  accessor.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), frame_len));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void integrated_test_components() {

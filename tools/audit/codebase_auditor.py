@@ -141,6 +141,7 @@ def audit_ast_integrity() -> list[str]:
         "__pycache__",
         "typings",
         "Unity",
+        "third_party",
     }
     for path in ROOT.rglob("*.py"):
         try:

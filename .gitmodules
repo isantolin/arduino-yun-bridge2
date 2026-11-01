@@ -1,0 +1,3 @@
+[submodule "third_party/avr_pigweed_port"]
+	path = third_party/avr_pigweed_port
+	url = https://github.com/isantolin/avr_pigweed_port.git

@@ -43,22 +43,37 @@ void test_all_handlers_coverage() {
   BiStream stream;
   reset_bridge_comp(stream);
 
-  rpc_pb_RpcEnvelope frame = rpc_pb_RpcEnvelope_init_default;
-  frame.version = rpc::PROTOCOL_VERSION;
-  frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-  TestAccessor::create(Bridge).dispatch(frame);
+  etl::array<uint8_t, 128> frame_buf;
+  size_t sz = 0;
+
+  // Call GetVersion
+  sz = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                            pw::tokenizer::Hash("bridge.SystemService"),
+                            pw::tokenizer::Hash("GetVersion"),
+                            etl::span<const uint8_t>(), frame_buf);
+  TestAccessor::create(Bridge).feedHdlcBytes(
+      etl::span<const uint8_t>(frame_buf.data(), sz));
   Mailbox.process();
 
-  frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  TestAccessor::create(Bridge).dispatch(frame);
+  // Call GetFreeMemory
+  sz = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                            pw::tokenizer::Hash("bridge.SystemService"),
+                            pw::tokenizer::Hash("GetFreeMemory"),
+                            etl::span<const uint8_t>(), frame_buf);
+  TestAccessor::create(Bridge).feedHdlcBytes(
+      etl::span<const uint8_t>(frame_buf.data(), sz));
   Mailbox.process();
 
-  frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
-  TestAccessor::create(Bridge).dispatch(frame);
+  // Call GetCapabilities
+  sz = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                            pw::tokenizer::Hash("bridge.SystemService"),
+                            pw::tokenizer::Hash("GetCapabilities"),
+                            etl::span<const uint8_t>(), frame_buf);
+  TestAccessor::create(Bridge).feedHdlcBytes(
+      etl::span<const uint8_t>(frame_buf.data(), sz));
   Mailbox.process();
 
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(TestAccessor::create(Bridge).isAwaitingAck());
 }
 
 void test_process_api() {
@@ -67,8 +82,6 @@ void test_process_api() {
 
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
-  TEST_ASSERT_TRUE(Process._pending_run_async.empty());
-  TEST_ASSERT_TRUE(Process._pending_polls.empty());
 #endif
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
@@ -133,18 +146,24 @@ void test_mailbox_api() {
   Mailbox.signalProcessed(456);
 
   // 3. Test receiving events (dispatching)
-  rpc_pb_RpcEnvelope frame = rpc_pb_RpcEnvelope_init_default;
-  frame.version = rpc::PROTOCOL_VERSION;
-
-  // CMD_MAILBOX_PUSH
+  // bridge.MailboxService/Push (request from MPU)
   {
-    rpc_pb_MailboxPush push_msg = {};
+    rpc_pb_MailboxPush push_msg = rpc_pb_MailboxPush_init_default;
     push_msg.data.size = 2;
     push_msg.data.bytes[0] = 0x11;
     push_msg.data.bytes[1] = 0x22;
-    frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
-    bridge::test::set_pb_payload(frame, push_msg);
-    TestAccessor::create(Bridge).dispatch(frame);
+    uint8_t payload_buf[64];
+    pb_ostream_t pbos =
+        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+    TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_MailboxPush_fields, &push_msg));
+    etl::array<uint8_t, 128> hdlc_buf;
+    size_t sz = build_hdlc_rpc_frame(
+        1, pw::rpc_avr::PacketType::kRequest,
+        pw::tokenizer::Hash("bridge.MailboxService"),
+        pw::tokenizer::Hash("Push"),
+        etl::span<const uint8_t>(payload_buf, pbos.bytes_written), hdlc_buf);
+    TestAccessor::create(Bridge).feedHdlcBytes(
+        etl::span<const uint8_t>(hdlc_buf.data(), sz));
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(2, last_message_len);
@@ -152,18 +171,27 @@ void test_mailbox_api() {
     TEST_ASSERT_EQUAL_UINT8(0x22, last_message_data[1]);
   }
 
-  // CMD_MAILBOX_READ_RESP
+  // bridge.MailboxService/Read (response to MCU requestRead)
   {
     message_callback_called = false;
-    rpc_pb_MailboxReadResponse read_resp = {};
+    rpc_pb_MailboxReadResponse read_resp =
+        rpc_pb_MailboxReadResponse_init_default;
     read_resp.content.size = 3;
     read_resp.content.bytes[0] = 0x33;
     read_resp.content.bytes[1] = 0x44;
     read_resp.content.bytes[2] = 0x55;
-    frame.command_id =
-        rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
-    bridge::test::set_pb_payload(frame, read_resp);
-    TestAccessor::create(Bridge).dispatch(frame);
+    uint8_t payload_buf[64];
+    pb_ostream_t pbos =
+        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+    TEST_ASSERT_TRUE(
+        pb_encode(&pbos, rpc_pb_MailboxReadResponse_fields, &read_resp));
+    pw::rpc_avr::RpcPacket pkt;
+    pkt.type = pw::rpc_avr::PacketType::kResponse;
+    pkt.service_id = pw::tokenizer::Hash("bridge.MailboxService");
+    pkt.method_id = pw::tokenizer::Hash("Read");
+    pkt.payload = pw::ConstByteSpan(
+        reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+    TestAccessor::create(Bridge).invokeRpcResponse(pkt);
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(3, last_message_len);
@@ -172,14 +200,23 @@ void test_mailbox_api() {
     TEST_ASSERT_EQUAL_UINT8(0x55, last_message_data[2]);
   }
 
-  // CMD_MAILBOX_AVAILABLE_RESP
+  // bridge.MailboxService/Available (response to MCU requestAvailable)
   {
-    rpc_pb_MailboxAvailableResponse avail_resp = {};
+    rpc_pb_MailboxAvailableResponse avail_resp =
+        rpc_pb_MailboxAvailableResponse_init_default;
     avail_resp.count = 42;
-    frame.command_id =
-        rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
-    bridge::test::set_pb_payload(frame, avail_resp);
-    TestAccessor::create(Bridge).dispatch(frame);
+    uint8_t payload_buf[32];
+    pb_ostream_t pbos =
+        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+    TEST_ASSERT_TRUE(
+        pb_encode(&pbos, rpc_pb_MailboxAvailableResponse_fields, &avail_resp));
+    pw::rpc_avr::RpcPacket pkt;
+    pkt.type = pw::rpc_avr::PacketType::kResponse;
+    pkt.service_id = pw::tokenizer::Hash("bridge.MailboxService");
+    pkt.method_id = pw::tokenizer::Hash("Available");
+    pkt.payload = pw::ConstByteSpan(
+        reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+    TestAccessor::create(Bridge).invokeRpcResponse(pkt);
     Mailbox.process();
     TEST_ASSERT_TRUE(available_callback_called);
     TEST_ASSERT_EQUAL_UINT32(42, last_available_count);
@@ -205,7 +242,7 @@ void test_send_pin_event_api() {
 void test_spi_data_modes_map_to_native_settings() {
   SPIService.begin();
   etl::array<uint8_t, 1> payload = {0xA5};
-  rpc::payload::SpiConfig config = {};
+  rpc_pb_SpiConfig config = rpc_pb_SpiConfig_init_default;
   config.frequency = 1000000;
   config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST;
 
@@ -244,11 +281,6 @@ void test_spi_data_modes_map_to_native_settings() {
   SPIService.end();
 }
 
-static bool g_rpc_mgr_cb_called = false;
-static void test_rpc_mgr_callback(const rpc::payload::DatastoreGetResponse&) {
-  g_rpc_mgr_cb_called = true;
-}
-
 static void dummy_fs_read(etl::span<const uint8_t>) {}
 static void dummy_process_run(int32_t) {}
 static void dummy_process_poll(rpc::StatusCode, uint16_t,
@@ -274,8 +306,8 @@ void test_component_extended_operations() {
   FileSystem.write("test.txt", etl::span<const uint8_t>(mbox_data, 3));
   FileSystem.remove("test.txt");
 
-  rpc::payload::FileReadResponse fr_p;
-  rpc::payload::copy_to_pb_bytes(fr_p.content, mbox_data, 3);
+  rpc_pb_FileReadResponse fr_p = rpc_pb_FileReadResponse_init_default;
+  bridge::pb::copy_bytes(fr_p.content, etl::span<const uint8_t>(mbox_data, 3));
   FileSystem._onResponse(fr_p);
 
   // Process
@@ -286,11 +318,12 @@ void test_component_extended_operations() {
                       rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                       etl::span<const uint8_t>)>::create<dummy_process_poll>());
 
-  rpc::payload::ProcessRunAsyncResponse prar;
+  rpc_pb_ProcessRunAsyncResponse prar =
+      rpc_pb_ProcessRunAsyncResponse_init_default;
   prar.pid = 123;
   Process._onRunAsyncResponse(prar);
 
-  rpc::payload::ProcessPollResponse ppr_p;
+  rpc_pb_ProcessPollResponse ppr_p = rpc_pb_ProcessPollResponse_init_default;
   ppr_p.status = 0;
   ppr_p.exit_code = 0;
   Process._onPollResponse(ppr_p);
@@ -301,32 +334,6 @@ void test_component_extended_operations() {
   SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));
 
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
-}
-
-void test_pending_rpc_manager() {
-  bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2> mgr;
-  TEST_ASSERT_TRUE(mgr.empty());
-  TEST_ASSERT_FALSE(mgr.full());
-
-  auto h = bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2>::
-      HandlerType::create<test_rpc_mgr_callback>();
-  TEST_ASSERT_TRUE(mgr.push(h));
-  TEST_ASSERT_FALSE(mgr.empty());
-  TEST_ASSERT_TRUE(mgr.push(h));
-  TEST_ASSERT_FALSE(mgr.push(h));
-  TEST_ASSERT_TRUE(mgr.full());
-
-  rpc::payload::DatastoreGetResponse resp = {};
-  g_rpc_mgr_cb_called = false;
-  TEST_ASSERT_TRUE(mgr.dispatch(
-      resp, [](const auto& handler, const auto& msg) { handler(msg); }));
-  TEST_ASSERT_TRUE(g_rpc_mgr_cb_called);
-  TEST_ASSERT_FALSE(mgr.empty());
-  mgr.pop();
-  TEST_ASSERT_TRUE(mgr.empty());
-  TEST_ASSERT_FALSE(mgr.dispatch(resp, [](const auto&, const auto&) {}));
-  mgr.clear();
-  TEST_ASSERT_TRUE(mgr.empty());
 }
 
 static int32_t s_captured_pid = 0;
@@ -349,8 +356,6 @@ void test_process_edges() {
 
   // 2. Observer notification onLost
   Process.onLost();
-  TEST_ASSERT_TRUE(Process._pending_run_async.empty());
-  TEST_ASSERT_TRUE(Process._pending_polls.empty());
 
   // 3. Queue full and trigger full-queue error callback path (-1)
   s_captured_pid = 0;
@@ -360,9 +365,9 @@ void test_process_edges() {
       "pwd", {},
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
-  TEST_ASSERT_FALSE(Process._pending_run_async.empty());
 
-  rpc::payload::ProcessRunAsyncResponse p_resp;
+  rpc_pb_ProcessRunAsyncResponse p_resp =
+      rpc_pb_ProcessRunAsyncResponse_init_default;
   p_resp.pid = 42;
   Process._onRunAsyncResponse(p_resp);
   TEST_ASSERT_EQUAL(42, s_captured_pid);
@@ -370,7 +375,6 @@ void test_process_edges() {
   // 4. Invalid callback should not enqueue
   Process.reset();
   Process.runAsync("ls", {}, ProcessType::ProcessRunHandler{});
-  TEST_ASSERT_TRUE(Process._pending_run_async.empty());
 
   // 5. Oversized arg failure
   etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
@@ -409,16 +413,15 @@ void test_process_edges() {
   Process.reset();
   Process.poll(
       10, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
-  TEST_ASSERT_FALSE(Process._pending_polls.empty());
   Process.poll(
       11, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
 
-  Process._pending_run_async.clear();
-  rpc_pb_ProcessRunAsyncResponse pr_empty = {};
+  Process.reset();
+  rpc_pb_ProcessRunAsyncResponse pr_empty =
+      rpc_pb_ProcessRunAsyncResponse_init_default;
   Process._onRunAsyncResponse(pr_empty);
 
-  Process._pending_polls.clear();
-  rpc_pb_ProcessPollResponse pp_empty = {};
+  rpc_pb_ProcessPollResponse pp_empty = rpc_pb_ProcessPollResponse_init_default;
   Process._onPollResponse(pp_empty);
 
   // 10. Process kill when send fails
@@ -477,12 +480,8 @@ void test_console_edges() {
   TEST_ASSERT_EQUAL(-1, Console.read());
   TEST_ASSERT_EQUAL(-1, Console.peek());
 
-  rpc::payload::ConsoleWrite cwrite = {};
-  cwrite.data.size = 3;
-  cwrite.data.bytes[0] = 'X';
-  cwrite.data.bytes[1] = 'Y';
-  cwrite.data.bytes[2] = 'Z';
-  Console._push(cwrite);
+  uint8_t cdata[] = {'X', 'Y', 'Z'};
+  Console.pushBytes(cdata, sizeof(cdata));
 
   TEST_ASSERT_EQUAL((int)'X', Console.peek());
   TEST_ASSERT_EQUAL(3, Console.available());
@@ -532,7 +531,8 @@ void test_datastore_edges() {
 
   // Empty key/val
   DataStore.set(etl::string_view(), etl::span<const uint8_t>());
-  rpc::payload::DatastoreGetResponse ds_resp = {};
+  rpc_pb_DatastoreGetResponse ds_resp =
+      rpc_pb_DatastoreGetResponse_init_default;
   DataStore._onResponse(ds_resp);
 
   // Pending gets full
@@ -542,12 +542,13 @@ void test_datastore_edges() {
   etl::for_each(get_steps.begin(), get_steps.end(),
                 [&](int) { DataStore.get("k", dummy_handler); });
 
-  // Valid handler with response (covers lines 43, 44, 46)
-  DataStore._pending_gets.clear();
+  // Valid handler with response
+  DataStore.onLost();
   s_ds_edge_called = false;
   DataStore.get("k_valid",
                 DataStoreClass::GetHandler::create<&dummy_ds_valid_handler>());
-  rpc::payload::DatastoreGetResponse ds_resp_val = {};
+  rpc_pb_DatastoreGetResponse ds_resp_val =
+      rpc_pb_DatastoreGetResponse_init_default;
   ds_resp_val.value.size = 2;
   ds_resp_val.value.bytes[0] = 0x55;
   ds_resp_val.value.bytes[1] = 0xAA;
@@ -555,13 +556,13 @@ void test_datastore_edges() {
   TEST_ASSERT_TRUE(s_ds_edge_called);
 
   // Invalid handler with synchronized bridge so handler gets pushed
-  DataStore._pending_gets.clear();
+  DataStore.onLost();
   DataStoreClass::GetHandler invalid_handler;
   DataStore.get("k2", invalid_handler);
   DataStore._onResponse(ds_resp);
 
   // Empty queue response
-  DataStore._pending_gets.clear();
+  DataStore.onLost();
   DataStore._onResponse(ds_resp);
 
   // Send fail branches
@@ -588,7 +589,7 @@ void test_filesystem_edges() {
 
   // 2. Read response with invalid handler
   FileSystem.read(etl::string_view(), FileSystemClass::FileSystemReadHandler());
-  rpc::payload::FileReadResponse rresp = {};
+  rpc_pb_FileReadResponse rresp = rpc_pb_FileReadResponse_init_default;
   FileSystem._onResponse(rresp);
 
   // 3. Read response with valid handler
@@ -668,7 +669,7 @@ void test_spi_edges() {
 
   // 1. SPI config
   SPIService.begin();
-  rpc::payload::SpiConfig sc;
+  rpc_pb_SpiConfig sc = rpc_pb_SpiConfig_init_default;
   sc.frequency = 4000000;
   sc.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
   sc.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
@@ -692,15 +693,20 @@ void test_spi_edges() {
   TEST_ASSERT_EQUAL(0U, t3);
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
-  // 4. Direct router handleSpiTransfer
+  // 4. SPI Transfer via HDLC RPC
   rpc_pb_SpiTransfer spi_req = rpc_pb_SpiTransfer_init_default;
   spi_req.data.size = 0;
-  bridge::router::CommandContext spi_ctx(
-      nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 42,
-      false);
-  ba.handleSpiTransfer(spi_ctx, spi_req);
+  uint8_t req_buf[32];
+  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
+  pb_encode(&pos, rpc_pb_SpiTransfer_fields, &spi_req);
+  etl::array<uint8_t, 64> hdlc_buf;
+  size_t sz = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.SpiService"), pw::tokenizer::Hash("Transfer"),
+      etl::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
   ba.setTxEnabled(false);
-  ba.handleSpiTransfer(spi_ctx, spi_req);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
   ba.setTxEnabled(true);
 
   // 5. onLost
@@ -717,7 +723,7 @@ void test_mailbox_edges() {
   reset_bridge_comp(stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  // Enqueue via _onEnqueuePayload 5 times to overflow _queue (capacity 4)
+  // Enqueue via _enqueue 5 times to overflow _queue (capacity 4)
   rpc_pb_MailboxPush mb_msg = rpc_pb_MailboxPush_init_default;
   mb_msg.data.size = 3;
   mb_msg.data.bytes[0] = 1;
@@ -725,12 +731,13 @@ void test_mailbox_edges() {
   mb_msg.data.bytes[2] = 3;
   constexpr etl::array<uint8_t, 5> push_attempts{};
   etl::for_each(push_attempts.begin(), push_attempts.end(), [&mb_msg](uint8_t) {
-    MailboxClass::_onEnqueuePayload<rpc_pb_MailboxPush,
-                                    &rpc_pb_MailboxPush::data>(mb_msg);
+    MailboxClass::_enqueue(
+        etl::span<const uint8_t>(mb_msg.data.bytes, mb_msg.data.size));
   });
 
   // Available response with and without callback
-  rpc::payload::MailboxAvailableResponse av_resp = {};
+  rpc_pb_MailboxAvailableResponse av_resp =
+      rpc_pb_MailboxAvailableResponse_init_default;
   av_resp.count = 2;
   Mailbox.registerAvailableCallback(
       MailboxClass::AvailableCallback::create<&mb_avail_cb>());
@@ -770,7 +777,6 @@ int main() {
   RUN_TEST(test_send_pin_event_api);
   RUN_TEST(test_spi_data_modes_map_to_native_settings);
   RUN_TEST(test_component_extended_operations);
-  RUN_TEST(test_pending_rpc_manager);
   RUN_TEST(test_process_edges);
   RUN_TEST(test_console_edges);
   RUN_TEST(test_datastore_edges);

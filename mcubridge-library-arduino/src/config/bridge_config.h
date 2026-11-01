@@ -95,12 +95,10 @@ inline constexpr bool ENABLE_SPI = BRIDGE_ENABLE_SPI;
 
 namespace scheduler {
 enum TimerId : uint8_t {
-  TIMER_ACK_TIMEOUT = 0,
-  TIMER_RX_DEDUPE = 1,
-  TIMER_BAUDRATE_CHANGE = 2,
-  TIMER_BOOTLOADER_DELAY = 3,
-  TIMER_HANDSHAKE_TIMEOUT = 4,  // [SIL-2/H-2] Handshake response watchdog
-  NUMBER_OF_TIMERS = 5
+  TIMER_BAUDRATE_CHANGE = 0,
+  TIMER_BOOTLOADER_DELAY = 1,
+  TIMER_HANDSHAKE_TIMEOUT = 2,
+  NUMBER_OF_TIMERS = 3
 };
 }  // namespace scheduler
 }  // namespace bridge

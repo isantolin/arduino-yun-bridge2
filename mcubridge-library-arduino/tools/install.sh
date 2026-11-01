@@ -142,7 +142,6 @@ install_dependency() {
 # --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
 ETL_VERSION="20.49.0"
 WOLFSSL_VERSION="v5.9.4-stable"
-PACKETSERIAL_REF="heads/master"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
@@ -216,7 +215,15 @@ EOF
         done
     fi
 done
-install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/${PACKETSERIAL_REF}" "src/Codecs/COBSR.h" "$LIB_DIR"
+# Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono for Arduino)
+if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ]; then
+    if [ ! -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
+        python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
+    fi
+    mkdir -p "$LIB_DIR"
+    rm -rf "$LIB_DIR/PigweedAVR"
+    cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" "$LIB_DIR/PigweedAVR"
+fi
 
 # Unity test framework (host tests only)
 install_dependency "Unity" \

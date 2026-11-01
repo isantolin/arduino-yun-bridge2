@@ -7,7 +7,10 @@ lint:
     - FILE_LOWER_SNAKE_CASE
   except:
     - PACKAGE_DIRECTORY_MATCH
-# Generated source APIs may be retired; wire-level compatibility remains enforced.
+# Clean-break protocol evolution without reserved tombstones.
 breaking:
   use:
     - WIRE
+  except:
+    - FIELD_NO_DELETE_UNLESS_NUMBER_RESERVED
+    - ENUM_VALUE_NO_DELETE_UNLESS_NUMBER_RESERVED

@@ -45,7 +45,7 @@ define Package/$(PKG_NAME)
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
 		+python3 \
-		+python3-cobs \
+		+python3-pigweed \
 		+python3-protobuf \
 		+python3-serialx \
 		+python3-tenacity \

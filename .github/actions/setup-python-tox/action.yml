@@ -44,7 +44,7 @@ runs:
       shell: bash
       run: |
         python tools/audit/sync_runtime_deps.py
-        pip install -r requirements/runtime.txt
+        pip install --no-deps -r requirements/runtime.txt
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         if command -v protoc-gen-grpclib_python >/dev/null 2>&1; then
           sudo ln -sf "$(command -v protoc-gen-grpclib_python)" /usr/local/bin/ || true

@@ -85,7 +85,7 @@ pip install \
     "typer>=0.12.5"
 ```
 
-> **Nota:** No se requieren librerías de enlace serie (`pyserial`/`serialx`) ni utilidades de bajo nivel (`cobs`) en el cliente, ya que el empaquetado binario y el transporte físico son gestionados íntegramente por el daemon de borde.
+> **Nota:** No se requieren librerías de enlace serie (`pyserial`) ni utilidades de bajo nivel en el cliente, ya que el empaquetado binario y el transporte físico son gestionados íntegramente por el daemon de borde.
 
 ---
 

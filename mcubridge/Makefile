@@ -47,7 +47,7 @@ define Package/$(PKG_NAME)
 		+python3 \
 		+python3-pigweed \
 		+python3-protobuf \
-		+python3-serialx \
+		+python3-pyserial \
 		+python3-tenacity \
 		+python3-uvloop \
 		+python3-cryptography \

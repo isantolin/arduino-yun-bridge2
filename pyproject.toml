@@ -20,8 +20,8 @@ dependencies = [
     "pigweed==0.0.24",
     "protobuf==5.28.3",
     "psutil==7.2.2",
+    "pyserial==3.5",
     "python-statemachine==3.2.2",
-    "serialx==1.15.1",
     "shellingham==1.5.4",
     "structlog==26.1.0",
     "tenacity==9.2.1",
@@ -71,10 +71,7 @@ markers = [
     "timeout: timeout marker accepted during IDE discovery even when pytest-timeout is absent",
     "xdist_group: mark test to run in an isolated xdist worker group",
 ]
-filterwarnings = [
-    "error",
-    "ignore::pytest.PytestExperimentalApiWarning",
-]
+filterwarnings = ["error", "ignore::pytest.PytestExperimentalApiWarning"]
 
 [tool.pyright]
 typeCheckingMode = "strict"

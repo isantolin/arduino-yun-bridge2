@@ -157,7 +157,10 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
         cfg_default, config_default_ref = _resolve_field_default(field_desc, opts, pb_module, default_sources)
-        if getattr(field_desc, "is_repeated", False) or field_desc.label == FieldDescriptor.LABEL_REPEATED:
+        if (
+            getattr(field_desc, "is_repeated", False)
+            or getattr(field_desc, "label", None) == FieldDescriptor.LABEL_REPEATED
+        ):
             py_type, typed_val = "list", []
         elif field_desc.type in _FIELD_CONVERTERS:
             py_type, converter = _FIELD_CONVERTERS[field_desc.type]

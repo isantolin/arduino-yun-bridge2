@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
-import serialx
 from hypothesis import example, given
 from hypothesis import strategies as st
 from mcubridge.protocol import protocol
@@ -100,8 +101,8 @@ def test_snapshot_render() -> None:
 
 
 def test_frame_debug_list_ports_empty(mocker: MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
-    empty_list: list[serialx.SerialPortInfo] = []
-    mocker.patch.object(frame_debug.serialx, "list_serial_ports", return_value=empty_list)
+    empty_list: list[Any] = []
+    mocker.patch.object(frame_debug.serial.tools.list_ports, "comports", return_value=empty_list)
     frame_debug.list_ports()
     captured = capsys.readouterr()
     assert "No serial ports detected." in captured.out
@@ -117,7 +118,7 @@ def test_frame_debug_list_ports_found(mocker: MockerFixture, capsys: pytest.Capt
     mock_port.pid = 0xEA60
     mock_port.serial_number = "0001"
     found_list: list[MagicMock] = [mock_port]
-    mocker.patch.object(frame_debug.serialx, "list_serial_ports", return_value=found_list)
+    mocker.patch.object(frame_debug.serial.tools.list_ports, "comports", return_value=found_list)
     frame_debug.list_ports()
     captured = capsys.readouterr()
     assert "Found 1 serial port(s):" in captured.out

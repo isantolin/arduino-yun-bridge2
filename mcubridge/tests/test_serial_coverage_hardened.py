@@ -11,10 +11,11 @@ import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
-import serialx
+import serial
+from serial import SerialException
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
@@ -34,34 +35,35 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
         allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
-    mock_serialx = AsyncMock(spec=serialx.AsyncSerial)
-    mock_serialx.is_open = True
-    mock_serialx.write = AsyncMock(return_value=10)
-    mock_serialx.flush = AsyncMock()
-    mock_serialx.close = AsyncMock()
-    mock_serialx.set_modem_pins = AsyncMock()
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=10)
+    mock_serial.flush = MagicMock()
+    mock_serial.close = MagicMock()
+    mock_serial.dtr = True
+    mock_serial.baudrate = 115200
 
     transport = SerialTransport(config=config, state=state, service=None)
-    transport.serial = mock_serialx
-    return transport, state, mock_serialx
+    transport.serial = mock_serial
+    return transport, state, mock_serial
 
 
 async def test_serial_transport_acknowledge(tmp_path: Path) -> None:
-    transport, state, mock_serialx = _make_transport(tmp_path)
+    transport, state, mock_serial = _make_transport(tmp_path)
 
     await transport.send_raw(Status.OK.value, b"", 42)
-    assert mock_serialx.write.called
+    assert mock_serial.write.called
 
     state.cleanup()
 
 
 async def test_serial_transport_send_raw(tmp_path: Path) -> None:
-    transport, state, mock_serialx = _make_transport(tmp_path)
+    transport, state, mock_serial = _make_transport(tmp_path)
 
     # 1. Normal send_raw
     res = await transport.send_raw(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13), seq_id=10)
     assert res is True
-    assert mock_serialx.write.called
+    assert mock_serial.write.called
 
     # 2. send_raw with closed serial
     transport.serial = None
@@ -69,24 +71,26 @@ async def test_serial_transport_send_raw(tmp_path: Path) -> None:
     assert res_none is False
 
     # 3. send_raw with write exception
-    transport.serial = mock_serialx
-    mock_serialx.write.side_effect = serialx.SerialException("device disconnected")
+    transport.serial = mock_serial
+    mock_serial.write.side_effect = SerialException("device disconnected")
     res_err = await transport.send_raw(Command.CMD_DIGITAL_READ.value, b"")
     assert res_err is False
 
     state.cleanup()
 
 
-async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
-    transport, state, mock_serialx = _make_transport(tmp_path)
+async def test_serial_transport_toggle_dtr(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("time.sleep", MagicMock())
+    transport, state, mock_serial = _make_transport(tmp_path)
 
     # 1. Success
     toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
-    assert mock_serialx.set_modem_pins.called
+    assert mock_serial.dtr is True
 
     # 2. Error handling during DTR toggle
-    mock_serialx.set_modem_pins.side_effect = serialx.SerialException("DTR error")
+    type(mock_serial).dtr = PropertyMock(side_effect=SerialException("DTR error"))
     await toggle_dtr()
 
     state.cleanup()

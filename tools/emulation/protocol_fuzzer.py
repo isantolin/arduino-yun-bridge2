@@ -8,18 +8,18 @@ using Hypothesis RuleBasedStateMachine for mathematical reproducibility and mini
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, cast
 
 import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
-import serialx
+import serial
 import structlog
 import typer
 
 from mcubridge.protocol import protocol
+from mcubridge.transport.serial import resolve_serial_url
 
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Any, h_stateful
@@ -44,41 +44,28 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id: int = 0
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
-        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
-        self.reader: asyncio.StreamReader | None = None
-        self.writer: asyncio.StreamWriter | None = None
-        self.loop.run_until_complete(self._connect())
+        self.ser: serial.Serial | None = None
+        self._connect()
 
-    async def _connect(self) -> None:
-        reader, writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
-        assert isinstance(reader, asyncio.StreamReader)
-        assert isinstance(writer, asyncio.StreamWriter)
-        self.reader = reader
-        self.writer = writer
+    def _connect(self) -> None:
+        url = resolve_serial_url(self.port)
+        self.ser = serial.serial_for_url(url, baudrate=self.baudrate, timeout=0.1, write_timeout=2.0)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
-    async def _send_raw(self, data: bytes) -> None:
-        writer = self.writer
-        if writer is not None:
-            writer.write(data)
-            await writer.drain()
+    def _send_raw(self, data: bytes) -> None:
+        ser = self.ser
+        if ser is not None:
+            ser.write(data)
+            ser.flush()
             self.frames_sent += 1
 
-    async def _close(self) -> None:
-        writer = self.writer
-        if writer is not None:
-            writer.close()
-            try:
-                await writer.wait_closed()
-            except OSError as exc:
-                logger.warning("writer_close_warning", error=str(exc))
-            self.writer = None
-            self.reader = None
-
     def teardown(self) -> None:
-        if not self.loop.is_closed():
-            self.loop.run_until_complete(self._close())
-            self.loop.close()
+        if self.ser is not None:
+            try:
+                self.ser.close()
+            except OSError as exc:
+                logger.warning("ser_close_warning", error=str(exc))
+            self.ser = None
         super().teardown()
 
     def _next_seq_id(self) -> int:
@@ -93,7 +80,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         """Generate valid version probe frames with arbitrary valid payloads."""
         seq: int = self._next_seq_id()
         frame: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
-        self.loop.run_until_complete(self._send_raw(frame))
+        self._send_raw(frame)
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
@@ -105,18 +92,18 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         seq: int = self._next_seq_id()
         raw = bytearray(self._build_raw_frame(cmd, seq, payload))
         raw[-1 - corrupt_idx] ^= 0x01
-        self.loop.run_until_complete(self._send_raw(bytes(raw)))
+        self._send_raw(bytes(raw))
 
     @rule(raw_bytes=st.binary(min_size=1, max_size=128))
     def fuzz_malformed_hdlc(self, raw_bytes: bytes) -> None:
         """Inject arbitrary unencoded byte sequences ending in frame delimiter."""
         frame: bytes = raw_bytes + protocol.FRAME_DELIMITER
-        self.loop.run_until_complete(self._send_raw(frame))
+        self._send_raw(frame)
 
     @rule(noise=st.binary(min_size=1, max_size=64))
     def fuzz_wire_noise(self, noise: bytes) -> None:
         """Simulate physical wire line noise and jitter."""
-        self.loop.run_until_complete(self._send_raw(noise))
+        self._send_raw(noise)
 
     @rule(
         cmd=st.integers(min_value=0x7000, max_value=protocol.UINT16_MAX),
@@ -126,16 +113,16 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         """Inject unregistered command IDs to verify graceful rejection."""
         seq: int = self._next_seq_id()
         frame: bytes = self._build_raw_frame(cmd, seq, payload)
-        self.loop.run_until_complete(self._send_raw(frame))
+        self._send_raw(frame)
 
-    async def _read_probe(self) -> bytes | None:
-        reader = self.reader
-        if reader is None:
+    def _read_probe(self) -> bytes | None:
+        ser = self.ser
+        if ser is None:
             return None
         try:
-            async with asyncio.timeout(0.1):
-                return await reader.readuntil(protocol.FRAME_DELIMITER)
-        except (TimeoutError, asyncio.IncompleteReadError, OSError):
+            data = ser.read_until(protocol.FRAME_DELIMITER)
+            return data or None
+        except OSError:
             return None
 
     @rule()
@@ -143,8 +130,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
         seq: int = self._next_seq_id()
         probe: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
-        self.loop.run_until_complete(self._send_raw(probe))
-        resp: bytes | None = self.loop.run_until_complete(self._read_probe())
+        self._send_raw(probe)
+        resp: bytes | None = self._read_probe()
         if resp is not None:
             self.probe_responses_received += 1
 
@@ -154,7 +141,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         assert 0 <= self.seq_id <= protocol.UINT16_MAX
         assert self.frames_sent >= 0
         assert self.probe_responses_received >= 0
-        assert self.writer is not None, "Serial writer disconnected unexpectedly"
+        assert self.ser is not None, "Serial port is None"
+        assert self.ser.is_open, "Serial port is not open"
 
 
 @cli.command()

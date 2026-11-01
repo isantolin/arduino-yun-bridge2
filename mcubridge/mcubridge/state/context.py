@@ -283,7 +283,7 @@ class RuntimeState:
     """Aggregated mutable state shared across the daemon layers. [SIL-2]"""
 
     metrics: DaemonMetrics
-    serial_writer: asyncio.BaseTransport | None
+    serial_writer: Any | None
     state: str
     connection_fsm: LinkConnectionMachine
     cloud_link_state: str
@@ -360,7 +360,7 @@ class RuntimeState:
 
     def __init__(self, **kwargs: Any) -> None:
         self.metrics: DaemonMetrics = kwargs.get("metrics") or DaemonMetrics()
-        self.serial_writer: asyncio.BaseTransport | None = kwargs.get("serial_writer")
+        self.serial_writer: Any | None = kwargs.get("serial_writer")
         self.state: str = kwargs.get("state", "disconnected")
 
         self.cloud_queue_limit: int = kwargs.get("cloud_queue_limit", DEFAULT_CLOUD_QUEUE_LIMIT)

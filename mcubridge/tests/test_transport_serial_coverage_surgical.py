@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
-import serialx
+import serial
+from serial import SerialException
 from google.protobuf.message import Message as ProtobufMessage
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
@@ -41,11 +42,8 @@ def mock_state(mock_config: RuntimeConfig) -> RuntimeState:
 
 async def test_switch_local_baudrate_failure_raises(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = MagicMock()
-    # Trigger AttributeError when setting baudrate
-    type(mock_serial.transport.serial).baudrate = property(
-        fget=lambda self: 9600, fset=MagicMock(side_effect=AttributeError("No baudrate attr"))
-    )
+    mock_serial = MagicMock(spec=serial.Serial)
+    type(mock_serial).baudrate = PropertyMock(side_effect=AttributeError("No baudrate attr"))
     transport.serial = mock_serial
 
     switch_local_baudrate: Callable[[int], None] = transport.switch_local_baudrate
@@ -53,55 +51,57 @@ async def test_switch_local_baudrate_failure_raises(mock_config: RuntimeConfig, 
         switch_local_baudrate(115200)
 
 
-async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_toggle_dtr_exception_handled(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
+    monkeypatch.setattr("time.sleep", MagicMock())
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = AsyncMock()
-    mock_serial.set_modem_pins.side_effect = serialx.SerialException("DTR failed")
+    mock_serial = MagicMock(spec=serial.Serial)
+    type(mock_serial).dtr = PropertyMock(side_effect=SerialException("DTR failed"))
     transport.serial = mock_serial
 
     toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
-    mock_serial.set_modem_pins.assert_awaited_once_with(dtr=False)
 
 
-async def test_read_loop_limit_overrun(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_read_loop_data_flow(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = AsyncMock()
-    mock_serial.readuntil.side_effect = [
-        asyncio.LimitOverrunError("Overrun", 100),
-        asyncio.IncompleteReadError(b"partial", expected=10),
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.read_until.side_effect = [
+        b"~",
+        OSError("Done"),
     ]
-    mock_serial.read.return_value = b""
 
     read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
-    assert mock_state.serial_decode_errors == 1
+    assert mock_serial.read_until.call_count == 2
 
 
 async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = AsyncMock()
-    mock_serial.readuntil.side_effect = OSError("Read hardware error")
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.read_until.side_effect = OSError("Read hardware error")
 
     read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
-    mock_serial.readuntil.assert_awaited_once_with(protocol.FRAME_DELIMITER)
+    mock_serial.read_until.assert_called_once_with(protocol.FRAME_DELIMITER)
 
 
 async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = MagicMock()
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.baudrate = 9600
     transport.serial = mock_serial
     transport.state.connection_fsm.start_negotiating()
     fut: asyncio.Future[bool] = asyncio.Future()
     transport.negotiation_future = fut
 
     raw = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
-
     await transport.feed_data(raw)
     assert fut.done()
     assert fut.result() is True
-    assert mock_serial.transport.serial.baudrate == 115200
+    assert mock_serial.baudrate == 115200
 
 
 async def test_correlate_frame_success_status(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
@@ -120,14 +120,14 @@ async def test_correlate_frame_success_status(mock_config: RuntimeConfig, mock_s
 
 async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = AsyncMock()
+    mock_serial = MagicMock(spec=serial.Serial)
     transport.serial = mock_serial
 
     await transport.stop()
 
     stop_event = transport.stop_event
     assert stop_event.is_set()
-    mock_serial.close.assert_awaited_once()
+    mock_serial.close.assert_called_once()
 
 
 async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
@@ -178,7 +178,10 @@ async def test_logging_not_debug_branches(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = AsyncMock()
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=10)
+    mock_serial.flush = MagicMock()
     transport.serial = mock_serial
 
     mocker.patch("mcubridge.transport.serial.logger.is_enabled_for", return_value=False)
@@ -220,20 +223,11 @@ async def test_connect_and_run_negotiation_failure(
     mock_config.serial_port = "/dev/ttyS0"
     transport = SerialTransport(mock_config, mock_state, None)
 
-    mock_serial_obj = AsyncMock()
-    mock_serial_obj.transport = MagicMock()
+    mock_serial_obj = MagicMock(spec=serial.Serial)
+    mock_serial_obj.is_open = True
+    mock_serial_obj.dtr = True
 
-    class _MockAsyncSerial:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> Any:
-            return mock_serial_obj
-
-        async def __aexit__(self, *args: Any) -> None:
-            pass
-
-    mocker.patch("serialx.AsyncSerial", _MockAsyncSerial)
+    mocker.patch("serial.serial_for_url", return_value=mock_serial_obj)
     mocker.patch.object(transport, "toggle_dtr", new=AsyncMock())
     mocker.patch.object(transport, "negotiate_baudrate", new=AsyncMock(return_value=False))
     with pytest.raises(ConnectionError, match="Baudrate negotiation failed"):

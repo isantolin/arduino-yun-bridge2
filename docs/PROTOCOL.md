@@ -126,11 +126,11 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 1. **UART Serie POSIX (Físico / PTY)**:
    - Dispositivos TTY como `/dev/ttyATH0`, `/dev/ttyUSB0`, `/dev/ttyMCU`.
-   - Control directo de baudrate y modem pins (`DTR`/`RTS`) vía `python3-serialx`.
+   - Control directo de baudrate y modem pins (`DTR`/`RTS`) vía `python3-pyserial`.
 2. **Sockets de Red Inalámbrica (WiFi TCP / Ethernet)**:
    - URIs de conexión configurables: `tcp://192.168.1.150:9000`, `wifi://mcu.local:8888`, `127.0.0.1:9000`.
-   - Gestión de streams asíncronos mediante el adaptador de cero sobrecarga `AsyncTcpConnection` (`(StreamReader, StreamWriter)`).
-   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing COBS/R, CRC32 y encriptación AEAD.
+   - Gestión de streams de red mediante soporte nativo de sockets URL en `pyserial`.
+   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing HDLC, CRC32 y encriptación AEAD.
 3. **Bluetooth SPP / BLE UART**:
    - Puertos virtuales RFCOMM (`/dev/rfcomm0`) o transceptores transparentes UART sobre BLE Nordic UART Service (NUS).
    - En el lado MCU, se utiliza `BluetoothSerial` o `Serial1` (`BridgeBluetooth.ino`).
@@ -140,7 +140,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 - **BridgeService (Python 3.13.9+)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
 - **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola, aplicando la política de seguridad y controlando la concurrencia.
 - **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
-- **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte polimórfico transparente para `serialx.AsyncSerial` (UART POSIX) y `AsyncTcpConnection` (WiFi TCP / sockets de red).
+- **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte transparente para `pyserial` (UART POSIX y sockets TCP/WiFi).
 - **gRPC Bidirectional Stream (HTTP/2 + TLS 1.3)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway delegando la negociación y reanudación de sesión TLS 1.3 a OpenSSL y el stack estándar de Python.
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.2 (`pb_decode_noinit`); no se afirma certificación SIL-2.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante streaming gRPC.

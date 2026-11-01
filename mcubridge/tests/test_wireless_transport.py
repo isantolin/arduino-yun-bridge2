@@ -11,7 +11,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import serialx
+import serial
 import structlog
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
@@ -25,12 +25,12 @@ logger = structlog.get_logger(__name__)
 
 
 def test_resolve_serial_url() -> None:
-    """Verify robust URL canonicalization for serialx transport dispatch."""
-    # 1. TCP and WiFi URIs canonicalized with default port if missing
-    assert resolve_serial_url("tcp://192.168.1.100:9000") == "tcp://192.168.1.100:9000"
-    assert resolve_serial_url("tcp://192.168.1.100") == "tcp://192.168.1.100:9000"
-    assert resolve_serial_url("wifi://lamp.local:8888") == "wifi://lamp.local:8888"
-    assert resolve_serial_url("wifi://lamp.local") == "wifi://lamp.local:9000"
+    """Verify robust URL canonicalization for pyserial transport dispatch."""
+    # 1. TCP and WiFi URIs canonicalized to socket:// with default port if missing
+    assert resolve_serial_url("tcp://192.168.1.100:9000") == "socket://192.168.1.100:9000"
+    assert resolve_serial_url("tcp://192.168.1.100") == "socket://192.168.1.100:9000"
+    assert resolve_serial_url("wifi://lamp.local:8888") == "socket://lamp.local:8888"
+    assert resolve_serial_url("wifi://lamp.local") == "socket://lamp.local:9000"
 
     # 2. Native socket:// kept intact or canonicalized
     assert resolve_serial_url("socket://10.0.0.5:9999") == "socket://10.0.0.5:9999"
@@ -45,22 +45,19 @@ def test_resolve_serial_url() -> None:
     assert resolve_serial_url("") == ""
 
 
-def test_serialx_uri_dispatch_resolution() -> None:
-    """Verify that serialx native URI dispatch instantiates AsyncSerial across schemes."""
+def test_pyserial_uri_dispatch_resolution() -> None:
+    """Verify that pyserial serial_for_url resolves across schemes."""
     for uri in [
-        "tcp://192.168.1.100:9000",
-        "wifi://lamp.local:8888",
-        "socket://10.0.0.5:9000",
+        "socket://127.0.0.1:9000",
+        "loop://",
     ]:
-        ser = serialx.async_serial_for_url(uri, baudrate=115200)
+        ser = serial.serial_for_url(uri, do_not_open=True)
         assert ser.is_open is False
-
-    posix_ser = serialx.async_serial_for_url("/dev/ttyATH0", baudrate=115200)
-    assert posix_ser.is_open is False
+        ser.close()
 
 
-async def test_serialx_socket_transport_lifecycle() -> None:
-    """Verify serialx native socket transport lifecycle and connection to a real server."""
+async def test_pyserial_socket_transport_lifecycle() -> None:
+    """Verify pyserial native socket transport lifecycle and connection to a real server."""
 
     async def handle_ping(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -77,14 +74,14 @@ async def test_serialx_socket_transport_lifecycle() -> None:
     assert server.sockets is not None
     port = server.sockets[0].getsockname()[1]
 
-    async with serialx.AsyncSerial(url=f"socket://127.0.0.1:{port}", baudrate=115200) as ser:
-        assert ser.is_open is True
-        assert ser.transport is not None
-        await ser.write(b"PING\x00")
-        await ser.drain()
-        reply = await ser.readuntil(b"\x00")
-        assert reply == b"PING\x00"
+    ser = await asyncio.to_thread(serial.serial_for_url, f"socket://127.0.0.1:{port}", timeout=1.0)
+    assert ser.is_open is True
+    await asyncio.to_thread(ser.write, b"PING\x00")
+    await asyncio.to_thread(ser.flush)
+    reply = await asyncio.to_thread(ser.read_until, b"\x00")
+    assert reply == b"PING\x00"
 
+    await asyncio.to_thread(ser.close)
     server.close()
     await server.wait_closed()
 
@@ -92,7 +89,7 @@ async def test_serialx_socket_transport_lifecycle() -> None:
 async def test_serial_transport_tcp_connect_and_stream(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    """Verify SerialTransport end-to-end loop over an active TCP server using serialx."""
+    """Verify SerialTransport end-to-end loop over an active TCP server using pyserial."""
     received_packets: list[bytes] = []
 
     async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -186,16 +183,15 @@ async def test_switch_local_baudrate_on_tcp_connection(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     """Verify switching baudrate on a network transport is a safe no-op."""
-    mock_serialx = AsyncMock(spec=serialx.AsyncSerial)
-    mock_serialx.transport = MagicMock()
-    mock_serialx.transport.serial = MagicMock()
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.baudrate = 115200
 
     transport = SerialTransport(runtime_config, runtime_state, None)
-    transport.serial = mock_serialx
+    transport.serial = mock_serial
 
     # Baudrate switch helper
     transport.switch_local_baudrate(230400)
-    assert mock_serialx.transport.serial.baudrate == 230400
+    assert mock_serial.baudrate == 230400
 
 
 async def test_serial_transport_tcp_stop_event_branch(

@@ -11,7 +11,7 @@ rationale = "Base interpreter shipped on the target image"
 [[dependency]]
 name = "pigweed"
 openwrt = "python3-pigweed"
-pip = "pigweed==0.0.24"
+pip = ""
 rationale = "Google Pigweed RPC, HDLC framing, and tokenizer for MCU-MPU transport"
 
 

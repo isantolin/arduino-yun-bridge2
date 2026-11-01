@@ -608,3 +608,15 @@ async def test_send_raw_arbitrary_payload_and_sequence_property(
         assert frames[0].ok()
     finally:
         state.cleanup()
+
+
+async def test_serial_transport_process_hdlc_log_frame(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_frame = MagicMock()
+    mock_frame.address = protocol.HDLC_ADDRESS_LOG
+    mock_frame.data = b"\x01\x02\x03\x04"
+    mock_frame.raw_encoded = b"~test~"
+    await transport.process_hdlc_frame(mock_frame)
+    assert runtime_state.metrics.serial_frames_received.value >= 1

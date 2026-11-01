@@ -88,6 +88,7 @@ ALLOWLIST_PY_HELPERS = {
     "on_subscribe_resp",
     "detect_ubus_fd",
     "pump_events",
+    "process_hdlc_frame",
 }
 
 

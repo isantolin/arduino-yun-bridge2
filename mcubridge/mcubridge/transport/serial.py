@@ -28,6 +28,7 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_tokenizer import detokenize
 from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 
 from mcubridge.protocol import protocol
@@ -154,6 +155,7 @@ class SerialTransport:
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
         self.max_attempts = max(1, self.config.serial_retry_attempts or 1)
         self.decoder = FrameDecoder()
+        self.detokenizer = detokenize.Detokenizer()
 
     class _RetryableSerialError(Exception):
         """Marker exception to request another send attempt."""
@@ -309,7 +311,8 @@ class SerialTransport:
         self.state.metrics.serial_frames_received.inc()
 
         if frame.address == protocol.HDLC_ADDRESS_LOG:
-            logger.info("MCU log", raw=frame.data)
+            decoded_log = str(self.detokenizer.detokenize(frame.data))
+            logger.info("MCU log", log=decoded_log, raw=frame.data)
             return
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:

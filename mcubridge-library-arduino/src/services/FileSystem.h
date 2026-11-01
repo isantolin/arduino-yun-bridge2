@@ -3,33 +3,32 @@
 
 #undef min
 #undef max
+#include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 
 #include "Bridge.h"
-#include "protocol/PendingRpc.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/mcu_wire.pb.h"
 
 class FileSystemClass : public bridge::BridgeObserver {
  public:
   using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 
-  FileSystemClass();
+  FileSystemClass() = default;
   static void write(etl::string_view path, etl::span<const uint8_t> data);
   void read(etl::string_view path, FileSystemReadHandler handler);
   static void remove(etl::string_view path);
 
-  static void _onWrite(const rpc::payload::FileWrite& msg);
-  static void _onRead(const rpc::payload::FileRead& msg);
-  static void _onRemove(const rpc::payload::FileRemove& msg);
-  void _onResponse(const rpc::payload::FileReadResponse& msg);
+  static void _onWrite(const rpc_pb_FileWrite& msg);
+  static void _onRead(const rpc_pb_FileRead& msg);
+  static void _onRemove(const rpc_pb_FileRemove& msg);
+  void _onResponse(const rpc_pb_FileReadResponse& msg);
 
   void onLost() override { _pending_reads.clear(); }
 
-  bridge::PendingRpcManager<rpc::payload::FileReadResponse, 1,
-                            FileSystemReadHandler>
-      _pending_reads;
+ private:
+  etl::circular_buffer<FileSystemReadHandler, 1> _pending_reads;
 };
 
 using FileSystemType = FileSystemClass;

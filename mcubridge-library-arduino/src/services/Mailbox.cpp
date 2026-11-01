@@ -8,35 +8,41 @@
 
 MailboxClass::MailboxClass() {}
 
-void MailboxClass::push(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxPush p = {};
-  rpc::Payload::copy_to_pb_bytes(p.data, data);
-  Bridge.sendOrEmitStatus(
-      rpc::CommandId::CMD_MAILBOX_PUSH, 0, p,
-      etl::string_view(rpc::status_reason::MAILBOX_PUSH_FAILED));
-}
-
 typename MailboxClass::MessageCallback MailboxClass::_message_callback;
-
 typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
-
 etl::circular_buffer<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
     MailboxClass::_queue;
 
+void MailboxClass::push(etl::span<const uint8_t> data) {
+  rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
+  bridge::pb::copy_bytes(p.data, data);
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Push");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxPush_fields, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
+}
+
 bool MailboxClass::requestRead() {
-  return Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
+  return Bridge.sendRpcRequestNoPayload(kServiceId, kMethodId);
 }
 
 bool MailboxClass::requestAvailable() {
-  return Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Available");
+  return Bridge.sendRpcRequestNoPayload(kServiceId, kMethodId);
 }
 
 void MailboxClass::signalProcessed(uint32_t message_id) {
-  rpc::payload::MailboxProcessed p = {};
+  rpc_pb_MailboxProcessed p = rpc_pb_MailboxProcessed_init_default;
   p.message_id = message_id;
-  Bridge.sendOrEmitStatus(
-      rpc::CommandId::CMD_MAILBOX_PROCESSED, 0, p,
-      etl::string_view(rpc::status_reason::MAILBOX_PROCESSED_FAILED));
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Processed");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxProcessed_fields, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
 }
 
 void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
@@ -49,7 +55,7 @@ void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::_onAvailableResponse(
-    const rpc::payload::MailboxAvailableResponse& msg) {
+    const rpc_pb_MailboxAvailableResponse& msg) {
   if (_available_callback) {
     _available_callback(msg.count);
   }

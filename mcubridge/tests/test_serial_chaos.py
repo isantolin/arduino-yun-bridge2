@@ -9,12 +9,10 @@ from unittest.mock import AsyncMock
 
 import anyio
 import pytest
-from cobs import cobsr
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -59,7 +57,7 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
     mock_serial.is_open = True
     transport.serial = mock_serial
 
-    valid_frame = cobsr.encode(build_frame(command_id=0x01, sequence_id=1, payload=b"ok")) + protocol.FRAME_DELIMITER
+    valid_frame = protocol.encode_hdlc_rpc(0x01, b"ok", call_id=1)
     corrupt_frame = corrupt_payload + protocol.FRAME_DELIMITER
 
     call_count = 0

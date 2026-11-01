@@ -9,10 +9,10 @@ rationale = "Base interpreter shipped on the target image"
 
 
 [[dependency]]
-name = "python-cobs"
-openwrt = "python3-cobs"
-pip = "cobs==1.2.2"
-rationale = "COBS framing for the RPC protocol"
+name = "pigweed"
+openwrt = "python3-pigweed"
+pip = "pigweed==0.0.24"
+rationale = "Google Pigweed RPC, HDLC framing, and tokenizer for MCU-MPU transport"
 
 
 [[dependency]]
@@ -202,15 +202,6 @@ ref_type = "tags"
 version = "v5.9.4-stable"
 check_file = "wolfssl/wolfcrypt/settings.h"
 rationale = "FIPS 140-3 / SIL-2 compliant cryptography engine (ChaCha20-Poly1305, HKDF, SHA-256)"
-
-[[cpp_dependency]]
-name = "PacketSerial"
-github = "isantolin/PacketSerial2"
-ref_type = "heads"
-version = "master"
-check_file = "src/Codecs/COBSR.h"
-rationale = "COBS/R framing and packet encoder/decoder for serial stream synchronization"
-
 [[cpp_dependency]]
 name = "Unity"
 github = "ThrowTheSwitch/Unity"

@@ -74,7 +74,7 @@ _STATUS_DESCRIPTIONS: Final[dict[Status, str]] = {
 }
 
 SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(
-    s.value for s in Status if s not in (Status.OK, Status.ACK)
+    s.value for s in Status if s != Status.OK
 )
 SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({Status.OK.value})
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
@@ -673,3 +673,196 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- for const in runtime_config_constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
+
+# ==============================================================================
+# Pigweed RPC Method Specifications & HDLC Serialization Helpers
+# ==============================================================================
+
+@dataclass(frozen=True, slots=True)
+class RpcMethodSpec:
+    """Pigweed RPC method specification linking Command, service, and method IDs."""
+
+    service_name: str
+    service_id: int
+    method_name: str
+    method_id: int
+    request_type: type[ProtobufMessage] | None = None
+    response_type: type[ProtobufMessage] | None = None
+
+
+COMMAND_TO_RPC: Final[dict[int, RpcMethodSpec]] = {
+    Command.CMD_SET_PIN_MODE.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "SetPinMode", 4099056864, pb.PinMode, pb.Empty
+    ),
+    Command.CMD_DIGITAL_WRITE.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "DigitalWrite", 859904307, pb.DigitalWrite, pb.Empty
+    ),
+    Command.CMD_ANALOG_WRITE.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "AnalogWrite", 434813564, pb.AnalogWrite, pb.Empty
+    ),
+    Command.CMD_DIGITAL_READ.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "DigitalRead", 1512406173, pb.PinRead, pb.DigitalReadResponse
+    ),
+    Command.CMD_ANALOG_READ.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "AnalogRead", 304073808, pb.PinRead, pb.AnalogReadResponse
+    ),
+    Command.CMD_PIN_SUBSCRIBE.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "SubscribePins", 3933572293, pb.PinSubscribeRequest, pb.PinSubscribeResponse
+    ),
+    Command.CMD_PIN_UPDATE_EVENT.value: RpcMethodSpec(
+        "bridge.GpioService", 127336915, "SubscribePins", 3933572293, None, pb.PinUpdateEvent
+    ),
+    Command.CMD_GET_VERSION.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "GetVersion", 132813196, pb.SubscribeRequest, pb.VersionResponse
+    ),
+    Command.CMD_GET_FREE_MEMORY.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "GetFreeMemory", 2509554858, pb.SubscribeRequest, pb.FreeMemoryResponse
+    ),
+    Command.CMD_LINK_SYNC.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "LinkSync", 3036082941, pb.LinkSync, pb.LinkSync
+    ),
+    Command.CMD_LINK_RESET.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "LinkReset", 340519156, pb.SubscribeRequest, pb.Empty
+    ),
+    Command.CMD_GET_CAPABILITIES.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "GetCapabilities", 1247616995, pb.SubscribeRequest, pb.Capabilities
+    ),
+    Command.CMD_SET_BAUDRATE.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "SetBaudrate", 2716060091, pb.SetBaudratePacket, pb.SetBaudratePacket
+    ),
+    Command.CMD_ENTER_BOOTLOADER.value: RpcMethodSpec(
+        "bridge.SystemService", 2273688469, "EnterBootloader", 3922771890, pb.EnterBootloader, pb.Empty
+    ),
+    Command.CMD_CLOCK_SYNC.value: RpcMethodSpec(
+        "bridge.ClockSyncService", 995309254, "ClockSync", 3082852960, pb.ClockSyncRequest, pb.ClockSyncResponse
+    ),
+    Command.CMD_SPI_BEGIN.value: RpcMethodSpec(
+        "bridge.SpiService", 1949997347, "Begin", 1296100220, pb.SubscribeRequest, pb.Empty
+    ),
+    Command.CMD_SPI_TRANSFER.value: RpcMethodSpec(
+        "bridge.SpiService", 1949997347, "Transfer", 2878954099, pb.SpiTransfer, pb.SpiTransferResponse
+    ),
+    Command.CMD_SPI_END.value: RpcMethodSpec(
+        "bridge.SpiService", 1949997347, "End", 1662600456, pb.SubscribeRequest, pb.Empty
+    ),
+    Command.CMD_SPI_SET_CONFIG.value: RpcMethodSpec(
+        "bridge.SpiService", 1949997347, "SetConfig", 2587308997, pb.SpiConfig, pb.Empty
+    ),
+    Command.CMD_FILE_WRITE.value: RpcMethodSpec(
+        "bridge.FileSystemService", 3666578813, "Write", 3563259270, pb.FileWrite, pb.Empty
+    ),
+    Command.CMD_FILE_READ.value: RpcMethodSpec(
+        "bridge.FileSystemService", 3666578813, "Read", 1534617306, pb.FileRead, pb.FileReadResponse
+    ),
+    Command.CMD_FILE_REMOVE.value: RpcMethodSpec(
+        "bridge.FileSystemService", 3666578813, "Remove", 743911626, pb.FileRemove, pb.Empty
+    ),
+    Command.CMD_MAILBOX_PUSH.value: RpcMethodSpec(
+        "bridge.MailboxService", 3259408431, "Push", 3095627742, pb.MailboxPush, pb.Empty
+    ),
+    Command.CMD_MAILBOX_READ.value: RpcMethodSpec(
+        "bridge.MailboxService", 3259408431, "Read", 1534617306, pb.SubscribeRequest, pb.MailboxReadResponse
+    ),
+    Command.CMD_MAILBOX_AVAILABLE.value: RpcMethodSpec(
+        "bridge.MailboxService", 3259408431, "Available", 2873000224, pb.SubscribeRequest, pb.MailboxAvailableResponse
+    ),
+    Command.CMD_MAILBOX_PROCESSED.value: RpcMethodSpec(
+        "bridge.MailboxService", 3259408431, "Processed", 1847225595, pb.MailboxProcessed, pb.Empty
+    ),
+    Command.CMD_PROCESS_RUN_ASYNC.value: RpcMethodSpec(
+        "bridge.ProcessService", 2410016298, "RunAsync", 1537884217, pb.ProcessRunAsync, pb.ProcessRunAsyncResponse
+    ),
+    Command.CMD_PROCESS_POLL.value: RpcMethodSpec(
+        "bridge.ProcessService", 2410016298, "Poll", 2140205475, pb.SubscribeRequest, pb.ProcessPollResponse
+    ),
+    Command.CMD_PROCESS_KILL.value: RpcMethodSpec(
+        "bridge.ProcessService", 2410016298, "Kill", 2090308450, pb.ProcessKill, pb.Empty
+    ),
+    Command.CMD_DATASTORE_PUT.value: RpcMethodSpec(
+        "bridge.DataStoreService", 2574079764, "Put", 1325645876, pb.DatastorePut, pb.Empty
+    ),
+    Command.CMD_DATASTORE_GET.value: RpcMethodSpec(
+        "bridge.DataStoreService", 2574079764, "Get", 1192871405, pb.DatastoreGet, pb.DatastoreGetResponse
+    ),
+}
+
+RPC_METHOD_TO_SPEC: Final[dict[tuple[int, int], RpcMethodSpec]] = {
+    (spec.service_id, spec.method_id): spec for spec in COMMAND_TO_RPC.values()
+}
+
+RPC_TO_COMMAND: Final[dict[tuple[int, int], int]] = {
+    (spec.service_id, spec.method_id): cmd for cmd, spec in COMMAND_TO_RPC.items()
+}
+
+
+def encode_hdlc_rpc(
+    channel_id_or_command: int,
+    payload_or_service: Any = b"",
+    method_id: int | None = None,
+    call_id: int = 1,
+    payload: Any = b"",
+    packet_type: int = 0,
+    status: int = 0,
+) -> bytes:
+    """Build and encode a Pigweed HDLC UI frame carrying an RpcPacket.
+
+    Supports two calling conventions:
+    1. Direct RPC: encode_hdlc_rpc(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
+    2. Command-based: encode_hdlc_rpc(command_id, payload=b"", call_id=1)
+    """
+    from google.protobuf.message import Message as ProtobufMessage
+    from pw_hdlc.encode import ui_frame
+    from pw_rpc.internal.packet_pb2 import RpcPacket
+
+    if method_id is None:
+        cmd_id = channel_id_or_command
+        raw_payload = payload_or_service
+        actual_call_id = call_id
+        spec = COMMAND_TO_RPC.get(cmd_id)
+        if spec is not None:
+            srv_id = spec.service_id
+            meth_id = spec.method_id
+        else:
+            srv_id = cmd_id
+            meth_id = cmd_id
+        actual_payload = (
+            raw_payload.SerializeToString()
+            if isinstance(raw_payload, ProtobufMessage)
+            else (raw_payload if isinstance(raw_payload, bytes) else b"")
+        )
+        pkt = RpcPacket(
+            type=packet_type,
+            channel_id=1,
+            service_id=srv_id,
+            method_id=meth_id,
+            call_id=actual_call_id,
+            status=status,
+            payload=actual_payload,
+        )
+    else:
+        srv_id = int(payload_or_service)
+        meth_id = method_id
+        actual_payload = (
+            payload.SerializeToString()
+            if isinstance(payload, ProtobufMessage)
+            else (payload if isinstance(payload, bytes) else b"")
+        )
+        pkt = RpcPacket(
+            type=packet_type,
+            channel_id=channel_id_or_command,
+            service_id=srv_id,
+            method_id=meth_id,
+            call_id=call_id,
+            status=status,
+            payload=actual_payload,
+        )
+
+    return ui_frame(HDLC_ADDRESS_RPC, pkt.SerializeToString())
+
+
+def encode_hdlc_console(data: bytes) -> bytes:
+    """Encode raw console stream bytes into a Pigweed HDLC UI frame on HDLC_ADDRESS_CONSOLE."""
+    from pw_hdlc.encode import ui_frame
+
+    return ui_frame(HDLC_ADDRESS_CONSOLE, data)
+

@@ -10,7 +10,7 @@
 #undef max
 #include <etl/span.h>
 
-#include "protocol/rpc_structs.h"
+#include "protocol/mcu_wire.pb.h"
 
 class SPIServiceClass : public bridge::BridgeObserver {
  public:
@@ -18,7 +18,7 @@ class SPIServiceClass : public bridge::BridgeObserver {
 
   void begin();
   void end();
-  void setConfig(const rpc::payload::SpiConfig& config);
+  void setConfig(const rpc_pb_SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
   void onLost() override { end(); }

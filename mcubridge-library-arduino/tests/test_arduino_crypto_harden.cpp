@@ -10,19 +10,13 @@
 #include <unity.h>
 
 #include "../src/config/bridge_config.h"
-#include "../src/protocol/rpc_structs.h"
+#include "../src/protocol/mcu_wire.pb.h"
 #include "../src/security/security.h"
 
 namespace {
 
-constexpr uint16_t kCommandId =
-    rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-constexpr uint16_t kSequenceId = 1U;
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kHandshakeNonce =
     {1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U, 16U};
-constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kAeadKey = {1U};
-constexpr etl::array<uint8_t, 8U> kPayload = {
-    {'T', 'E', 'S', 'T', 'D', 'A', 'T', 'A'}};
 constexpr etl::array<uint8_t, 13U> kSecret = {
     {'s', 'h', 'a', 'r', 'e', 'd', '-', 's', 'e', 'c', 'r', 'e', 't'}};
 
@@ -92,180 +86,6 @@ void test_derive_session_key_clears_invalid_outputs(void) {
   TEST_ASSERT_TRUE(valid_key_derived);
 }
 
-void test_aead_encrypt_rejects_invalid_buffer_sizes(void) {
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_key = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
-  etl::array<uint8_t, kPayload.size()> output = {};
-  uint64_t nonce_counter = 0U;
-
-  const bool invalid_key = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, short_key, &nonce_counter, output,
-      nonce, tag);
-  TEST_ASSERT_FALSE(invalid_key);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce = {};
-  const bool invalid_nonce = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, output,
-      short_nonce, tag);
-  TEST_ASSERT_FALSE(invalid_nonce);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE - 1U> short_tag = {};
-  const bool invalid_tag = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, output,
-      nonce, short_tag);
-  TEST_ASSERT_FALSE(invalid_tag);
-
-  etl::array<uint8_t, kPayload.size() - 1U> short_output = {};
-  const bool insufficient_output = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, short_output,
-      nonce, tag);
-  TEST_ASSERT_FALSE(insufficient_output);
-  TEST_ASSERT_EQUAL_UINT64(0U, nonce_counter);
-}
-
-void test_aead_decrypt_validates_buffers_and_tag(void) {
-  etl::array<uint8_t, kPayload.size()> ciphertext = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
-  uint64_t nonce_counter = 0U;
-  const bool encrypted = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, ciphertext,
-      nonce, tag);
-  TEST_ASSERT_TRUE(encrypted);
-  etl::array<uint8_t, sizeof(uint32_t)> expected_mcu_prefix = {};
-  etl::byte_stream_writer prefix_writer(
-      etl::span<uint8_t>(expected_mcu_prefix.data(),
-                         expected_mcu_prefix.size()),
-      etl::endian::big);
-  prefix_writer.write<uint32_t>(rpc::RPC_MCU_AEAD_NONCE_PREFIX);
-  const bool mcu_prefix_matches = etl::equal(
-      expected_mcu_prefix.begin(), expected_mcu_prefix.end(), nonce.begin());
-  TEST_ASSERT_TRUE(mcu_prefix_matches);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_key = {};
-  etl::array<uint8_t, kPayload.size()> plaintext = {};
-  const bool invalid_key = rpc::security::aead_decrypt_frame(
-      kCommandId, kSequenceId, ciphertext, short_key, nonce, tag, plaintext);
-  TEST_ASSERT_FALSE(invalid_key);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce = {};
-  const bool invalid_nonce =
-      rpc::security::aead_decrypt_frame(kCommandId, kSequenceId, ciphertext,
-                                        kAeadKey, short_nonce, tag, plaintext);
-  TEST_ASSERT_FALSE(invalid_nonce);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE - 1U> short_tag = {};
-  const bool invalid_tag_size =
-      rpc::security::aead_decrypt_frame(kCommandId, kSequenceId, ciphertext,
-                                        kAeadKey, nonce, short_tag, plaintext);
-  TEST_ASSERT_FALSE(invalid_tag_size);
-
-  etl::array<uint8_t, kPayload.size() - 1U> short_output = {};
-  const bool insufficient_output = rpc::security::aead_decrypt_frame(
-      kCommandId, kSequenceId, ciphertext, kAeadKey, nonce, tag, short_output);
-  TEST_ASSERT_FALSE(insufficient_output);
-
-  const bool decrypted = rpc::security::aead_decrypt_frame(
-      kCommandId, kSequenceId, ciphertext, kAeadKey, nonce, tag, plaintext);
-  TEST_ASSERT_TRUE(decrypted);
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kPayload.data(), plaintext.data(),
-                                kPayload.size());
-
-  tag[0] ^= 0xFFU;
-  const bool invalid_tag_content = rpc::security::aead_decrypt_frame(
-      kCommandId, kSequenceId, ciphertext, kAeadKey, nonce, tag, plaintext);
-  TEST_ASSERT_FALSE(invalid_tag_content);
-}
-
-void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
-  etl::byte_stream_writer prefix_writer(
-      etl::span<uint8_t>(nonce.data(), sizeof(uint32_t)), etl::endian::big);
-  prefix_writer.write<uint32_t>(rpc::RPC_MPU_AEAD_NONCE_PREFIX);
-  nonce[11] = 1U;
-  uint64_t last_seen_counter = 0U;
-
-  const bool first_nonce =
-      rpc::security::validate_frame_nonce(nonce, &last_seen_counter);
-  TEST_ASSERT_TRUE(first_nonce);
-  TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
-
-  const bool replayed_nonce =
-      rpc::security::validate_frame_nonce(nonce, &last_seen_counter);
-  TEST_ASSERT_FALSE(replayed_nonce);
-  TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
-
-  // Anti-reflection: nonces with MCU prefix must be rejected
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mcu_reflected_nonce = {};
-  etl::byte_stream_writer mcu_prefix_writer(
-      etl::span<uint8_t>(mcu_reflected_nonce.data(), sizeof(uint32_t)),
-      etl::endian::big);
-  mcu_prefix_writer.write<uint32_t>(rpc::RPC_MCU_AEAD_NONCE_PREFIX);
-  mcu_reflected_nonce[11] = 2U;
-  const bool reflected_rejected = rpc::security::validate_frame_nonce(
-      mcu_reflected_nonce, &last_seen_counter);
-  TEST_ASSERT_FALSE(reflected_rejected);
-  TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
-
-  // Nonces with random/arbitrary prefix must be rejected
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> random_prefix_nonce = {
-      0x12U, 0x34U, 0x56U, 0x78U};
-  random_prefix_nonce[11] = 2U;
-  const bool random_rejected = rpc::security::validate_frame_nonce(
-      random_prefix_nonce, &last_seen_counter);
-  TEST_ASSERT_FALSE(random_rejected);
-  TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> newer_nonce = nonce;
-  newer_nonce[11] = 2U;
-  const bool missing_counter_rejected =
-      rpc::security::validate_frame_nonce(newer_nonce, nullptr);
-  TEST_ASSERT_FALSE(missing_counter_rejected);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mpu_nonce = {};
-  etl::byte_stream_writer mpu_writer(
-      etl::span<uint8_t>(mpu_nonce.data(), sizeof(uint32_t)), etl::endian::big);
-  mpu_writer.write<uint32_t>(rpc::RPC_MPU_AEAD_NONCE_PREFIX);
-  mpu_nonce[rpc::RPC_AEAD_NONCE_SIZE - 1U] = 3U;
-  uint64_t mpu_last_seen_counter = 2U;
-  const bool peer_prefix_accepted =
-      rpc::security::validate_frame_nonce(mpu_nonce, &mpu_last_seen_counter);
-  TEST_ASSERT_TRUE(peer_prefix_accepted);
-  TEST_ASSERT_EQUAL_UINT64(3U, mpu_last_seen_counter);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce = {};
-  uint64_t size_test_counter = 0U;
-  const bool short_nonce_rejected =
-      rpc::security::validate_frame_nonce(short_nonce, &size_test_counter);
-  TEST_ASSERT_FALSE(short_nonce_rejected);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE + 1U> long_nonce = {};
-  const bool long_nonce_rejected =
-      rpc::security::validate_frame_nonce(long_nonce, &size_test_counter);
-  TEST_ASSERT_FALSE(long_nonce_rejected);
-  TEST_ASSERT_EQUAL_UINT64(0U, size_test_counter);
-}
-
-void test_bridge_nonce_overflow_protection(void) {
-  uint64_t nonce_counter = rpc::RPC_NONCE_COUNTER_MASK - 1U;
-  etl::array<uint8_t, kPayload.size()> output = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
-
-  const bool last_valid_nonce = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, output,
-      nonce, tag);
-  TEST_ASSERT_TRUE(last_valid_nonce);
-  TEST_ASSERT_EQUAL_UINT64(rpc::RPC_NONCE_COUNTER_MASK, nonce_counter);
-
-  const bool overflow_rejected = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, output,
-      nonce, tag);
-  TEST_ASSERT_FALSE(overflow_rejected);
-  TEST_ASSERT_EQUAL_UINT64(rpc::RPC_NONCE_COUNTER_MASK, nonce_counter);
-}
-
 #if BRIDGE_ENABLE_POST_TESTS
 void test_cryptographic_self_tests_run(void) {
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
@@ -279,10 +99,6 @@ int main(int argc, char** argv) {
   RUN_TEST(test_handshake_authenticate_rejects_invalid_buffers);
   RUN_TEST(test_handshake_authenticate_truncates_and_checks_tag);
   RUN_TEST(test_derive_session_key_clears_invalid_outputs);
-  RUN_TEST(test_aead_encrypt_rejects_invalid_buffer_sizes);
-  RUN_TEST(test_aead_decrypt_validates_buffers_and_tag);
-  RUN_TEST(test_nonce_counter_accepts_random_prefix_and_rejects_replay);
-  RUN_TEST(test_bridge_nonce_overflow_protection);
 #if BRIDGE_ENABLE_POST_TESTS
   RUN_TEST(test_cryptographic_self_tests_run);
 #endif

@@ -91,7 +91,6 @@ async def test_handle_mcu_frame_rpc_handlers(
     req_mb = pb.MailboxPush(data=b"test_payload")
     await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 10, req_mb.SerializeToString())
     mock_pub.assert_awaited()
-    serial.acknowledge.assert_awaited_once_with(Command.CMD_MAILBOX_PUSH.value, 10)
     mock_incoming.append.assert_awaited_once_with(b"test_payload")
 
     # 2. MCU Datastore Put

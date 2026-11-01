@@ -1,75 +1,51 @@
-"""Property-based fuzzing tests for RPC protocol framing and COBS/R encoding. [SIL-2]"""
+"""Property-based fuzzing tests for Pigweed HDLC framing and RPC packet parsing. [SIL-2]"""
 
 from __future__ import annotations
 
 import pytest
-from cobs import cobsr
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 from hypothesis import event, given, note, settings, target
 from hypothesis import strategies as st
-from mcubridge.protocol.frame import build_frame, parse_frame
-from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
+from pw_hdlc.decode import FrameDecoder
+from pw_rpc.internal.packet_pb2 import RpcPacket
 
-EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
-
-
-@pytest.mark.fuzz
-@settings(max_examples=200, derandomize=True, deadline=None)
-@given(raw_data=st.binary(max_size=256))
-def test_frame_parsing_resilience_to_fuzzing(raw_data: bytes) -> None:
-    """Fuzzing property: parse_frame must either decode safely or reject with descriptive ValueError."""
-    success = False
-    try:
-        decoded = parse_frame(raw_data)
-        success = decoded.envelope.version == 2
-    except ValueError as exc:
-        success = bool(str(exc))
-    assert success is True
+from mcubridge.protocol import protocol
 
 
 @pytest.mark.fuzz
 @settings(max_examples=200, derandomize=True, deadline=None)
 @given(raw_data=st.binary(max_size=256))
-def test_cobs_decoding_resilience(raw_data: bytes) -> None:
-    """Fuzzing property: COBS decoder must never crash with unhandled exceptions."""
-    success = False
-    try:
-        res = cobsr.decode(raw_data)
-        success = len(res) >= 0
-    except EXPECTED_COBS_ERRORS as exc:
-        success = bool(str(exc))
-    assert success is True
+def test_hdlc_decoder_resilience_to_fuzzing(raw_data: bytes) -> None:
+    """Fuzzing property: FrameDecoder must process arbitrary binary data without unhandled exceptions."""
+    decoder = FrameDecoder()
+    frames = list(decoder.process(raw_data))
+    assert isinstance(frames, list)
+    for frame in frames:
+        assert isinstance(frame.ok(), bool)
 
 
 @pytest.mark.fuzz
 @settings(max_examples=200, derandomize=True, deadline=None)
-@given(raw_data=st.binary(max_size=CRC_COVERED_HEADER_SIZE + 5))
-def test_frame_header_parsing_resilience(raw_data: bytes) -> None:
-    """Targeted property: header-sized byte slices must deterministically validate or fail."""
+@given(raw_data=st.binary(max_size=256))
+def test_rpc_packet_parsing_resilience(raw_data: bytes) -> None:
+    """Fuzzing property: RpcPacket protobuf parsing must either succeed or raise ProtobufDecodeError."""
+    pkt = RpcPacket()
     success = False
     try:
-        decoded = parse_frame(raw_data)
-        success = decoded.envelope.version == 2
-    except ValueError as exc:
+        pkt.ParseFromString(raw_data)
+        success = pkt.IsInitialized()
+    except ProtobufDecodeError as exc:
         success = bool(str(exc))
     assert success is True
-
-
-@pytest.mark.fuzz
-@settings(max_examples=200, derandomize=True, deadline=None)
-@given(data=st.binary(max_size=512))
-def test_cobs_roundtrip_isomorphism(data: bytes) -> None:
-    """Algebraic invariant: COBS/R encode then decode is an exact roundtrip isomorphism."""
-    encoded = cobsr.encode(data)
-    assert b"\x00" not in encoded
-    assert cobsr.decode(encoded) == data
 
 
 @pytest.mark.fuzz
 @settings(max_examples=60, derandomize=True, deadline=None)
 @given(
-    commands=st.lists(
+    rpc_packets=st.lists(
         st.tuples(
-            st.integers(min_value=1, max_value=255),
+            st.integers(min_value=1, max_value=0xFFFFFFFF),
+            st.integers(min_value=1, max_value=0xFFFFFFFF),
             st.integers(min_value=0, max_value=1000),
             st.binary(min_size=0, max_size=128),
         ),
@@ -78,18 +54,18 @@ def test_cobs_roundtrip_isomorphism(data: bytes) -> None:
     ),
     chunk_sizes=st.lists(st.integers(min_value=1, max_value=16), min_size=1, max_size=50),
 )
-def test_streaming_chunking_fragmentation_invariant(
-    commands: list[tuple[int, int, bytes]],
+def test_hdlc_streaming_chunking_fragmentation_invariant(
+    rpc_packets: list[tuple[int, int, int, bytes]],
     chunk_sizes: list[int],
 ) -> None:
-    """SIL-2 Streaming Invariant: COBS frame extraction across arbitrary byte fragmentation."""
-    # 1. Build contiguous wire byte stream with framing delimiter 0x00
-    expected_frames: list[tuple[int, int, bytes]] = []
+    """SIL-2 Streaming Invariant: HDLC frame extraction across arbitrary byte fragmentation."""
+    # 1. Build contiguous wire byte stream with HDLC UI framing
+    expected_frames: list[tuple[int, int, int, bytes]] = []
     wire_parts: list[bytes] = []
-    for cmd_id, seq_id, payload in commands:
-        frame_bytes = build_frame(cmd_id, seq_id, payload)
-        wire_parts.append(cobsr.encode(frame_bytes) + b"\x00")
-        expected_frames.append((cmd_id, seq_id, payload))
+    for service_id, method_id, call_id, payload in rpc_packets:
+        frame_bytes = protocol.encode_hdlc_rpc(1, service_id, method_id, call_id, payload)
+        wire_parts.append(frame_bytes)
+        expected_frames.append((service_id, method_id, call_id, payload))
     wire_stream = b"".join(wire_parts)
 
     note(f"Total wire bytes: {len(wire_stream)}, expected frames: {len(expected_frames)}")
@@ -107,34 +83,27 @@ def test_streaming_chunking_fragmentation_invariant(
 
     event(f"stream_chunks_{min(len(chunks), 20)}")
 
-    # 3. Feed chunks into incremental streaming buffer
-    buffer = bytearray()
-    extracted_frames: list[tuple[int, int, bytes]] = []
+    # 3. Feed chunks into HDLC FrameDecoder incrementally
+    decoder = FrameDecoder()
+    extracted_frames: list[tuple[int, int, int, bytes]] = []
     for chunk in chunks:
-        buffer.extend(chunk)
-        while b"\x00" in buffer:
-            packet, _, rest = buffer.partition(b"\x00")
-            buffer = bytearray(rest)
-            if packet:
-                decoded_cobs = cobsr.decode(bytes(packet))
-                decoded_frame = parse_frame(decoded_cobs)
-                payload_val = (
-                    decoded_frame.payload
-                    if isinstance(decoded_frame.payload, bytes)
-                    else decoded_frame.payload.SerializeToString()
-                )
+        for frame in decoder.process(chunk):
+            if frame.ok() and frame.address == protocol.HDLC_ADDRESS_RPC:
+                pkt = RpcPacket()
+                pkt.ParseFromString(frame.data)
                 extracted_frames.append(
                     (
-                        decoded_frame.envelope.command_id,
-                        decoded_frame.envelope.sequence_id,
-                        payload_val,
+                        pkt.service_id,
+                        pkt.method_id,
+                        pkt.call_id,
+                        pkt.payload,
                     )
                 )
 
     # 4. Deterministic post-condition assertions
-    assert len(buffer) == 0, f"Dangling incomplete bytes in stream buffer: {bytes(buffer)!r}"
     assert len(extracted_frames) == len(expected_frames)
     for expected, actual in zip(expected_frames, extracted_frames, strict=True):
         assert actual[0] == expected[0]
         assert actual[1] == expected[1]
         assert actual[2] == expected[2]
+        assert actual[3] == expected[3]

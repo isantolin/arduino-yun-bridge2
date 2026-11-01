@@ -9,18 +9,16 @@ void ConsoleClass::begin() {
   _tx_buffer.clear();
 }
 
-void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
-  const auto& data = msg.data;
-  const size_t to_write =
-      etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
-  _rx_buffer.push(data.bytes, data.bytes + to_write);
+void ConsoleClass::pushBytes(const uint8_t* data, size_t size) {
+  if (data == nullptr || size == 0) return;
+  const size_t to_write = etl::min(size, _rx_buffer.available());
+  _rx_buffer.push(data, data + to_write);
 }
 
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
-    rpc::payload::ConsoleWrite p = {};
-    rpc::Payload::copy_to_pb_bytes(p.data, _tx_buffer);
-    if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
+    if (Bridge.sendConsoleStream(
+            etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()))) {
       _tx_buffer.clear();
     }
   }

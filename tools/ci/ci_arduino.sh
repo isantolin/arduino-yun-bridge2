@@ -63,7 +63,6 @@ python3 ./tools/protocol/generate.py \
     --spec ./tools/protocol/cloud_gateway.proto \
     --py ./mcubridge/mcubridge/protocol/protocol.py \
     --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
-    --cpp-structs ./mcubridge-library-arduino/src/protocol/rpc_structs.h \
     --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 
 echo "Installing libraries..."

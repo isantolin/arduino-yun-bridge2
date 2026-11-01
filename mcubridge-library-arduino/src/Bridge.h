@@ -1,6 +1,6 @@
 /**
  * @file Bridge.h
- * @brief Arduino MCU Bridge v2 - MCU-side RPC library.
+ * @brief Arduino MCU Bridge v2 - MCU-side Pigweed HDLC and RPC library.
  */
 
 #ifndef BRIDGE_H
@@ -19,6 +19,15 @@
 #ifdef max
 #undef max
 #endif
+#ifdef round
+#undef round
+#endif
+
+#include <PigweedAVR.h>
+
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 
 // clang-format off
 #if defined(ARDUINO_BOARD)
@@ -29,6 +38,7 @@
 #else
 #include <Embedded_Template_Library.h>
 #endif
+
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/settings.h>
 #include <etl/algorithm.h>
@@ -37,31 +47,21 @@
 #include <etl/callback_timer.h>
 #include <etl/debounce.h>
 #include <etl/delegate.h>
-#include <etl/deque.h>
 #include <etl/fsm.h>
 #include <etl/observer.h>
-#include <etl/pool.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/vector.h>
-#include <PacketSerial.h>
-#include <Codecs/COBSR.h>
 // clang-format on
 
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
 #include "hal/hal.h"
-#include "protocol/rpc_frame.h"
+#include "protocol/mcu_wire.pb.h"
+#include "pb_encode.h"
+#include "pb_decode.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
-
-// [SIL-2] Template De-bloating: Extern declarations
-namespace etl {
-extern template class span<uint8_t>;
-extern template class span<const uint8_t>;
-extern template class span<char>;
-extern template class span<const char>;
-}  // namespace etl
+#include "security/security.h"
 
 namespace bridge {
 
@@ -83,18 +83,28 @@ class BridgeObserver {
   virtual void onLost() {}
 };
 
-namespace router {
-struct CommandContext {
-  const rpc_pb_RpcEnvelope* envelope;
-  uint16_t raw_command;
-  uint16_t sequence_id;
-  bool is_duplicate;
-  CommandContext(const rpc_pb_RpcEnvelope* f, uint16_t cmd, uint16_t seq,
-                 bool dup)
-      : envelope(f), raw_command(cmd), sequence_id(seq), is_duplicate(dup) {}
-};
+namespace pb {
+inline void copy_string(char* dst, size_t dst_cap, etl::string_view src) {
+  if (dst_cap == 0) return;
+  const size_t len = etl::min(src.size(), dst_cap - 1);
+  etl::copy_n(src.data(), len, dst);
+  dst[len] = '\0';
+}
 
-}  // namespace router
+template <typename PbBytesField>
+inline void copy_bytes(PbBytesField& dst, etl::span<const uint8_t> src) {
+  const size_t len = etl::min(src.size(), sizeof(dst.bytes));
+  etl::copy_n(src.data(), len, dst.bytes);
+  dst.size = static_cast<pb_size_t>(len);
+}
+
+template <typename PbBytesField>
+inline void copy_bytes(PbBytesField& dst, const uint8_t* src, size_t size) {
+  const size_t len = etl::min(size, sizeof(dst.bytes));
+  etl::copy_n(src, len, dst.bytes);
+  dst.size = static_cast<pb_size_t>(len);
+}
+}  // namespace pb
 
 }  // namespace bridge
 
@@ -107,18 +117,13 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
-  // [SIL-2] Bounded synchronization: polls process() until the link is
-  // synchronized or timeout_ms elapses. Enters safe state on timeout.
-  // Returns isSynchronized().
   bool awaitSynchronization(
       uint32_t timeout_ms = bridge::config::SYNC_TIMEOUT_MS,
       uint32_t poll_delay_ms = 2);
   bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
-  bool hasPendingTx() const { return !_pending_tx_queue.empty(); }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
   void resetWcetStats() { _wcet_max_micros = 0; }
 
-  // Explicit registration if needed, otherwise direct calls
   void enterSafeState();
 
   using SafetyPinState = bridge::hal::SafetyPinState;
@@ -133,26 +138,19 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
   uint32_t getWatchdogTimeout() const { return _watchdog_timeout_ms; }
 
+  using StatusHandler =
+      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
+  void onStatus(StatusHandler h) { _status_handler = h; }
+
   void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p = {}) {
     if (_status_handler.is_valid()) {
       _status_handler(s, p);
     }
-    if (!sendFrame(s, 0, p)) {
-      enterSafeState();
-    }
   }
 
   void emitStatus(rpc::StatusCode s, etl::string_view p) {
-    if (_status_handler.is_valid()) {
-      _status_handler(
-          s, etl::span<const uint8_t>(
-                 reinterpret_cast<const uint8_t*>(p.data()), p.size()));
-    }
-    rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-    rpc::Payload::copy_to_pb_string(resp.message, p);
-    if (!send(s, 0, resp)) {
-      enterSafeState();
-    }
+    emitStatus(s, etl::span<const uint8_t>(
+                      reinterpret_cast<const uint8_t*>(p.data()), p.size()));
   }
 
   [[nodiscard]] bool sendPinEvent(uint8_t pin, uint16_t value);
@@ -166,158 +164,119 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return true;
   }
 
-  template <typename T>
-  [[nodiscard]] bool sendFrame(T command, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {}) {
-    static_assert(etl::is_enum_v<T> || etl::is_integral_v<T>,
-                  "Command must be enum or integral");
-    const uint16_t cmd = static_cast<uint16_t>(command);
-    const bool is_system = rpc::is_system_command(cmd);
-    if (!_state_flags.test(FLAG_TX_ENABLED) && !is_system) return false;
-    if (rpc::requires_ack(cmd)) {
-      return _enqueuePendingTx(cmd, seq,
-                               [p](uint8_t* dst, size_t cap, size_t& written) {
-                                 const size_t pl_size = etl::min(p.size(), cap);
-                                 etl::copy_n(p.data(), pl_size, dst);
-                                 written = pl_size;
-                                 return true;
-                               });
-    }
-    _transmit(cmd, seq, p);
-    return true;
-  }
+  [[nodiscard]] bool sendConsoleStream(etl::span<const uint8_t> data);
 
-  template <typename T>
-  [[nodiscard]] bool sendSinglePass(
-      uint16_t command_id, uint16_t sequence_id, const T& packet,
-      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
-    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-    env.version = rpc::PROTOCOL_VERSION;
-    env.command_id = command_id;
-    env.sequence_id = sequence_id;
-    env.channel_id = channel_id;
-    env.qos = qos;
-    rpc::Payload::set<T>(env, packet);
-    return _sendFrameRaw(env, command_id);
-  }
-
-  template <typename T>
-  [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    return sendSinglePass<T>(rpc::to_underlying(s), seq, packet);
-  }
-
-  template <typename T>
-  [[nodiscard]] bool send(
-      rpc::CommandId c, uint16_t seq, const T& packet,
-      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
-    const uint16_t raw_cmd = rpc::to_underlying(c);
-    const bool is_excluded = rpc::is_system_command(raw_cmd);
-    const bool do_encrypt =
-        isSynchronized() && !_shared_secret.empty() && !is_excluded;
-
-    if (do_encrypt) {
-      return _sendEncryptedImpl(raw_cmd, seq, rpc::Payload::get_fields<T>(),
-                                &packet, channel_id, qos);
-    }
-    return sendSinglePass<T>(raw_cmd, seq, packet, channel_id, qos);
-  }
-
-  template <typename T>
-  bool sendOrEmitStatus(
-      rpc::CommandId c, uint16_t seq, const T& packet,
-      etl::string_view error_reason = etl::string_view(),
-      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
-    if (!send(c, seq, packet, channel_id, qos)) {
-      if (error_reason.empty()) {
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
-      } else {
-        emitStatus(rpc::StatusCode::STATUS_ERROR, error_reason);
-      }
+  template <typename ProtoMsg>
+  [[nodiscard]] bool sendRpcRequest(uint32_t service_id, uint32_t method_id,
+                                    const pb_msgdesc_t* fields,
+                                    const ProtoMsg& msg, uint32_t call_id = 0) {
+    if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+    uint8_t payload_buf[rpc::MAX_PAYLOAD_SIZE];
+    pb_ostream_t pb_stream =
+        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+    if (fields != nullptr && !pb_encode(&pb_stream, fields, &msg)) {
       return false;
     }
-    return true;
+
+    pw::rpc_avr::RpcPacket packet;
+    packet.type = pw::rpc_avr::PacketType::kRequest;
+    packet.channel_id = 1;
+    packet.service_id = service_id;
+    packet.method_id = method_id;
+    packet.call_id = call_id;
+    packet.payload = pw::ConstByteSpan(
+        reinterpret_cast<const std::byte*>(payload_buf),
+        pb_stream.bytes_written);
+
+    uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
+    auto encode_res =
+        packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
+    if (!encode_res.ok()) return false;
+
+    auto write_res = pw::hdlc::WriteUIFrame(
+        1,
+        pw::ConstByteSpan(reinterpret_cast<const std::byte*>(frame_buf),
+                          encode_res.size()),
+        _arduino_stream);
+    return write_res.ok();
   }
 
-  using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
-  using StatusHandler =
-      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  void onCommand(CommandHandler h) { _command_handler = h; }
-  void onStatus(StatusHandler h) { _status_handler = h; }
+  [[nodiscard]] bool sendRpcRequestNoPayload(uint32_t service_id,
+                                            uint32_t method_id,
+                                            uint32_t call_id = 0) {
+    if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+    pw::rpc_avr::RpcPacket packet;
+    packet.type = pw::rpc_avr::PacketType::kRequest;
+    packet.channel_id = 1;
+    packet.service_id = service_id;
+    packet.method_id = method_id;
+    packet.call_id = call_id;
 
-  __attribute__((noinline)) void _dispatchCommand(
-      const rpc_pb_RpcEnvelope& envelope);
-  void _onAckTimeout();
-  void _onRxDedupe();
+    uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
+    auto encode_res =
+        packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
+    if (!encode_res.ok()) return false;
+
+    auto write_res = pw::hdlc::WriteUIFrame(
+        1,
+        pw::ConstByteSpan(reinterpret_cast<const std::byte*>(frame_buf),
+                          encode_res.size()),
+        _arduino_stream);
+    return write_res.ok();
+  }
+
   void _onBaudrateChange();
-  void _retransmitLastFrame();
-  bool _isSecurityCheckPassed(uint16_t command_id) const;
+  void _onHandshakeTimeout();
 
- protected:
-  struct TxPayloadBuffer {
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;
-  };
-  struct PendingTxFrame {
-    uint16_t command_id;
-    uint16_t sequence_id;
-    TxPayloadBuffer* buffer;
-    size_t length;
-  };
-
-  template <typename FillFn>
-  bool _enqueuePendingTx(uint16_t cmd, uint16_t seq, const FillFn& fill_fn) {
-    BRIDGE_ATOMIC_BLOCK {
-      if (_pending_tx_queue.full()) return false;
-      auto* buf = _tx_payload_pool.allocate();
-      if (!buf) return false;
-      size_t written = 0;
-      if (!fill_fn(buf->data.data(), buf->data.size(), written)) {
-        _tx_payload_pool.release(buf);
-        return false;
-      }
-      _pending_tx_queue.push_back({cmd, seq, buf, written});
-      if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
-      return true;
+  static void _handleSetPinMode(const rpc_pb_PinMode& m);
+  template <typename MsgType, bool IsAnalog>
+  static void _handlePinWrite(const MsgType& m) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!digitalPinIsValid(m.pin)) return;
+#endif
+    if constexpr (IsAnalog) {
+      analogWrite(m.pin,
+                  static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
+    } else {
+      pinMode(m.pin, OUTPUT);
+      digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
     }
   }
 
-  __attribute__((noinline)) void _transmit(uint16_t command_id,
-                                           uint16_t sequence_id,
-                                           etl::span<const uint8_t> payload);
+  rpc_pb_PinSubscribeResponse _handlePinSubscribe(
+      const rpc_pb_PinSubscribeRequest& m);
+  rpc_pb_LinkSync _handleLinkSync(const rpc_pb_LinkSync& m);
+  void _handleLinkReset();
+  void _handleSetBaudrate(const rpc_pb_SetBaudratePacket& msg);
+  void _handleEnterBootloader(const rpc_pb_EnterBootloader& msg);
+
+  static void _fillVersion(rpc_pb_VersionResponse& resp);
+  static void _fillFreeMemory(rpc_pb_FreeMemoryResponse& resp);
+  static void _fillCapabilities(rpc_pb_Capabilities& resp);
+
+ protected:
   void _initializeRuntime();
   void _initObservers();
+  void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
+  void _dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet);
 
-  // STRICT ORDER FOR CONSTRUCTOR
   Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
-  CommandHandler _command_handler;
-  StatusHandler _status_handler;
-  uint16_t _last_command_id = 0;
-  uint16_t _tx_sequence_id = 0;
-  uint8_t _retry_count = 0;
-  uint8_t _retry_limit = rpc::RPC_DEFAULT_RETRY_LIMIT;
-  uint16_t _ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
-  uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
-  uint32_t _pending_baudrate = 0;
+  avr_port::ArduinoStream _arduino_stream;
+  pw::hdlc::DecoderBuffer<bridge::config::RX_BUFFER_SIZE> _hdlc_decoder;
+  pw::rpc_avr::RpcServer<8> _rpc_server;
 
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_buffer;
-  PacketSerial2::PacketSerial<PacketSerial2::COBSR, PacketSerial2::NoCRC,
-                              PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
-      _packet_serial;
+  StatusHandler _status_handler;
+  uint32_t _pending_baudrate = 0;
+  uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
 
   etl::vector<uint8_t, 64> _shared_secret;
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _session_key;
-  uint64_t _tx_nonce_counter = 0;
-  uint64_t _rx_nonce_counter = 0;
   bridge::fsm::BridgeFsm _fsm;
 
-  __attribute__((noinline)) void _watchdogTask();
-  __attribute__((noinline)) void _serialTask();
-  __attribute__((noinline)) void _timerTask();
-  void
-  _onHandshakeTimeout();  // [SIL-2/H-2] Handshake response watchdog callback
+  void _watchdogTask();
+  void _serialTask();
+  void _timerTask();
+  void _subscriptionTask();
 
   enum StateFlags : uint8_t {
     FLAG_POST_PASSED = 0,
@@ -328,25 +287,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   uint32_t _timer_last_tick_ms = 0;
   etl::bitset<FLAG_COUNT> _state_flags;
-
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
-  // [SIL-2/C-1] Unified Shared Memory Region.
-  // _working_buffer (64B), _crypto_buffer (64B), and _tx_frame_buffer (176B)
-  // have disjoint lifetimes within the TX pipeline:
-  //   1. _working_buffer: serialized payload (dead before _crypto_buffer write)
-  //   2. _crypto_buffer: AEAD ciphertext (dead before _tx_frame_buffer write)
-  //   3. _tx_frame_buffer: final framed output (dead after serial send)
-  // Unioning saves 128 bytes of SRAM on AVR targets.
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> _shared_mem;
-
-  etl::span<uint8_t> _payload_buffer_span() {
-    return {_shared_mem.data(), rpc::MAX_PAYLOAD_SIZE};
-  }
-  etl::span<uint8_t> _tx_frame_buffer_span() {
-    return {_shared_mem.data(), rpc::MAX_FRAME_SIZE};
-  }
-  rpc_pb_RpcEnvelope _tx_envelope = rpc_pb_RpcEnvelope_init_zero;
-
   uint32_t _wcet_max_micros = 0;
 
   struct PinSubscription {
@@ -363,239 +304,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       _pin_subscriptions;
   uint32_t _watchdog_timeout_ms{0};
   uint32_t _last_rx_ms{0};
-
-  etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
-      _tx_payload_pool;
-  etl::deque<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>
-      _pending_tx_queue;
-
-  etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
-
-  bool _preDispatch(const bridge::router::CommandContext& ctx, bool needs_ack,
-                    bool retransmit_on_dup, bool check_dup = true);
-
-  // [SIL-2] Tag type: marks payload-free dispatch cases (no Protobuf decode).
-  struct _NoPayload {};
-
-  // [ETL] Dispatch table entry. Uses a regular (non-member) function pointer so
-  // the table can be defined as `static const` in Bridge.cpp without adding any
-  // data to sizeof(BridgeClass) — critical for AVR RAM budgets.
-  struct DispatchEntry {
-    uint16_t command_id;
-    void (*fn)(BridgeClass&, const bridge::router::CommandContext&);
-  };
-  // Sorted table defined in Bridge.cpp; size exported as k_dispatch_table_size.
-#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-  static const DispatchEntry k_dispatch_table[] PROGMEM;
-#else
-  static const DispatchEntry k_dispatch_table[];
-#endif
-  static const size_t k_dispatch_table_size;
-
-  // [SIL-2] Unified template dispatcher — consolidates decode + ack + dup-check
-  // boilerplate from _dispatchCommand into a single auditable point.
-  // Template wrapper per Rule 3 (AGENTS.md): only template wrappers allowed.
-  //
-  // Handler signature for _NoPayload: (const bridge::router::CommandContext&)
-  // Handler signature for typed PB:   (const bridge::router::CommandContext&,
-  //                                    const MsgType&)
-  template <typename MsgType, typename Handler>
-  bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
-                    bool needs_ack, bool retransmit_on_dup = false,
-                    bool check_dup = true) {
-    if (!_preDispatch(ctx, needs_ack, retransmit_on_dup, check_dup)) {
-      return false;
-    }
-    if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
-      const pb_size_t expected_tag = rpc::Payload::get_tag<MsgType>();
-      if (ctx.envelope->which_payload_type == expected_tag) {
-        // [Zero-Copy] Direct reference to active union member in Nanopb
-        // envelope
-        const auto& m = rpc::Payload::get<MsgType>(*ctx.envelope);
-        handler(ctx, m);
-      } else if (ctx.envelope->which_payload_type ==
-                 rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
-        MsgType m = {};
-        if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m)) {
-          emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-          return false;
-        }
-        handler(ctx, m);
-      } else {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return false;
-      }
-    } else {
-      handler(ctx);
-    }
-    return true;
-  }
-
-  // [SIL-2] Reusable template command dispatchers — eliminating repetitive
-  // per-command wrapper methods. Zero-heap, zero-copy, compile-time bound.
-  template <auto MemberFn, bool NeedsAck = true, bool RetransmitOnDup = false,
-            bool CheckDup = true>
-  static void _dispatchMemberNoPayload(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<_NoPayload>(
-        ctx,
-        [&self](const bridge::router::CommandContext& c) {
-          (self.*MemberFn)(c);
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  template <auto MemberFn, typename MsgType, bool NeedsAck = true,
-            bool RetransmitOnDup = false, bool CheckDup = true>
-  static void _dispatchMemberWithCtxMsg(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<MsgType>(
-        ctx,
-        [&self](const bridge::router::CommandContext& c, const MsgType& m) {
-          (self.*MemberFn)(c, m);
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  template <auto MemberFn, typename MsgType, bool NeedsAck = true,
-            bool RetransmitOnDup = false, bool CheckDup = true>
-  static void _dispatchMemberWithMsg(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<MsgType>(
-        ctx,
-        [&self](const bridge::router::CommandContext&, const MsgType& m) {
-          (self.*MemberFn)(m);
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  template <auto StaticFn, typename MsgType, bool NeedsAck = true,
-            bool RetransmitOnDup = false, bool CheckDup = true>
-  static void _dispatchStaticWithMsg(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<MsgType>(
-        ctx,
-        [](const bridge::router::CommandContext&, const MsgType& m) {
-          StaticFn(m);
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  template <auto& TargetInstance, auto MemberFn, typename MsgType,
-            bool NeedsAck = true, bool RetransmitOnDup = false,
-            bool CheckDup = true>
-  static void _dispatchTargetWithMsg(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<MsgType>(
-        ctx,
-        [](const bridge::router::CommandContext&, const MsgType& m) {
-          (TargetInstance.*MemberFn)(m);
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  template <auto& TargetInstance, auto ActionFn, bool NeedsAck = true,
-            bool RetransmitOnDup = false, bool CheckDup = true>
-  static void _dispatchTargetAction(BridgeClass& self,
-                                    const bridge::router::CommandContext& ctx) {
-    self._dispatchCmd<_NoPayload>(
-        ctx,
-        [](const bridge::router::CommandContext&) {
-          (TargetInstance.*ActionFn)();
-        },
-        NeedsAck, RetransmitOnDup, CheckDup);
-  }
-
-  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
-
-  void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-  void _handleStatusAck(const rpc_pb_AckPacket& m);
-  template <typename RespType, rpc::CommandId RespCmd, auto FillFn>
-  void _handleSimpleQuery(const bridge::router::CommandContext& ctx) {
-    RespType resp = {};
-    FillFn(resp);
-    if (!send(RespCmd, ctx.sequence_id, resp)) {
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-    }
-  }
-
-  static inline void _fillVersion(rpc_pb_VersionResponse& resp) {
-    resp.major = rpc::FIRMWARE_VERSION_MAJOR;
-    resp.minor = rpc::FIRMWARE_VERSION_MINOR;
-    resp.patch = static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH);
-  }
-
-  static inline void _fillFreeMemory(rpc_pb_FreeMemoryResponse& resp) {
-    resp.value = static_cast<uint32_t>(bridge::hal::getFreeMemory());
-  }
-
-  __attribute__((noinline)) void _handleLinkSync(
-      const bridge::router::CommandContext& ctx, const rpc_pb_LinkSync& m);
-  void _handleLinkReset(const bridge::router::CommandContext& ctx);
-  template <bool EnableTx>
-  void _handleFlowControl(const bridge::router::CommandContext&) {
-    _state_flags.set(FLAG_TX_ENABLED, EnableTx);
-  }
-  void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
-  void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
-  __attribute__((noinline)) void _handleSpiTransfer(
-      const bridge::router::CommandContext& ctx, const rpc_pb_SpiTransfer& m);
-  __attribute__((noinline)) void _handleReceivedFrame(
-      etl::span<const uint8_t> p);
-  void onUnknownCommand(const bridge::router::CommandContext& ctx);
-
-  void _processAck(uint16_t command_id, uint16_t sequence_id);
-
-  static __attribute__((noinline)) bool _decodePayload(
-      const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
-      void* dest);
-
-  static void _handleSetPinMode(const rpc_pb_PinMode& m);
-  template <typename MsgType, bool IsAnalog>
-  static void _handlePinWrite(const MsgType& m);
-  template <typename RespType, rpc::CommandId RespCmd, uint8_t MaxPins,
-            auto ReadFn>
-  void _handlePinRead(const bridge::router::CommandContext& ctx,
-                      const rpc_pb_PinRead& m) {
-#if !defined(ARDUINO_ARCH_AVR) && !defined(ARDUINO_ARCH_SAMD) && \
-    !defined(BRIDGE_HOST_TEST)
-    if constexpr (RespCmd == rpc::CommandId::CMD_ANALOG_READ_RESP) {
-      static_cast<void>(ctx);
-      static_cast<void>(m);
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-      return;
-    }
-#endif
-    if (m.pin < MaxPins) {
-      RespType resp = {};
-      resp.value = static_cast<uint32_t>(ReadFn(m.pin));
-      if (!send(RespCmd, ctx.sequence_id, resp)) {
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
-      }
-    } else {
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-    }
-  }
-  void _handlePinSubscribe(const bridge::router::CommandContext& ctx,
-                           const rpc_pb_PinSubscribeRequest& m);
-  void _handleClockSync(const bridge::router::CommandContext& ctx,
-                        const rpc_pb_ClockSyncRequest& m);
-  void _subscriptionTask();
-  void _serialize_and_send(const rpc_pb_RpcEnvelope& env);
-  [[nodiscard]] bool _sendFrameRaw(const rpc_pb_RpcEnvelope& env,
-                                   uint16_t command_id);
-  bool _sendEncryptedImpl(
-      uint16_t raw_cmd, uint16_t seq, const pb_msgdesc_t* fields,
-      const void* src,
-      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE);
-
-  void _clearPendingTxQueue();
-  void _flushPendingTxQueue();
 };
 
 #ifndef BRIDGE_NO_GLOBAL_EXTERN
 extern BridgeClass Bridge;
 #endif
 
-#endif
+#endif  // BRIDGE_H

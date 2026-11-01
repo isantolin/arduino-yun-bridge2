@@ -232,55 +232,50 @@ def test_get_ssl_context_insecure() -> None:
     assert ctx.verify_mode == ssl.CERT_NONE
 
 
-def test_protocol_frame_validation_error_paths() -> None:
-    import struct
-    from binascii import crc32
-    from mcubridge.protocol import frame, protocol
+def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
+    from pw_hdlc.decode import FrameDecoder
+    from pw_rpc.internal.packet_pb2 import RpcPacket
+    from mcubridge.protocol import protocol
 
-    with pytest.raises(ValueError, match="Invalid command ID"):
-        frame.build_frame(-1, 1)
+    # 1. RPC HDLC encoding & decoding
+    pin_msg = pb.PinRead(pin=13)
+    encoded_rpc = protocol.encode_hdlc_rpc(protocol.Command.CMD_DIGITAL_READ.value, pin_msg, call_id=42)
+    assert encoded_rpc.startswith(b"\x7e")
+    assert encoded_rpc.endswith(b"\x7e")
 
-    with pytest.raises(ValueError, match="Invalid command ID"):
-        frame.build_frame(protocol.UINT16_MAX + 1, 1)
+    decoder = FrameDecoder()
+    frames = list(decoder.process(encoded_rpc))
+    assert len(frames) == 1
+    frame = frames[0]
+    assert frame.ok()
+    assert frame.address == protocol.HDLC_ADDRESS_RPC
 
-    with pytest.raises(ValueError, match="Invalid sequence ID"):
-        frame.build_frame(1, -1)
+    pkt = RpcPacket()
+    pkt.ParseFromString(frame.data)
+    assert pkt.call_id == 42
+    decoded_pin = pb.PinRead()
+    decoded_pin.ParseFromString(pkt.payload)
+    assert decoded_pin.pin == 13
 
-    with pytest.raises(ValueError, match="Invalid sequence ID"):
-        frame.build_frame(1, protocol.UINT16_MAX + 1)
+    # 2. Console HDLC encoding & decoding
+    encoded_console = protocol.encode_hdlc_console(b"hello world\n")
+    decoder_console = FrameDecoder()
+    console_frames = list(decoder_console.process(encoded_console))
+    assert len(console_frames) == 1
+    assert console_frames[0].ok()
+    assert console_frames[0].address == protocol.HDLC_ADDRESS_CONSOLE
+    assert console_frames[0].data == b"hello world\n"
 
-    env = pb.RpcEnvelope(version=99, command_id=1, sequence_id=1)
-    body = env.SerializeToString()
-    bad_ver_frame = body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
-    with pytest.raises(ValueError, match="Unsupported protocol version"):
-        frame.parse_frame(bad_ver_frame)
-
-    # Protobuf parsing and CRC verification accept a buffer view without a bytes copy.
-    session_key = b"k" * protocol.AEAD_KEY_SIZE
-    nonce = b"n" * protocol.AEAD_NONCE_SIZE
-    encoded = frame.build_frame(0x1234, 0x1234, b"payload", nonce=nonce, session_key=session_key)
-    decoded = frame.parse_frame(memoryview(encoded), session_key)
-    assert decoded.envelope.command_id == 0x1234
-    assert decoded.envelope.sequence_id == 0x1234
-    assert decoded.payload == b"payload"
+    # 3. Corrupted HDLC frame FCS error
+    corrupted = bytearray(encoded_rpc)
+    corrupted[-3] ^= 0xFF
+    decoder_bad = FrameDecoder()
+    bad_frames = list(decoder_bad.process(bytes(corrupted)))
+    assert len(bad_frames) == 1
+    assert not bad_frames[0].ok()
 
 
 def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
-    from mcubridge.protocol import frame, protocol
-
-    # 1. frame.build_frame with encrypted payload exceeding MAX_PAYLOAD_SIZE (line 87)
-    with pytest.raises(ValueError, match="exceeds maximum"):
-        frame.build_frame(
-            command_id=1,
-            sequence_id=1,
-            payload=b"X" * (protocol.MAX_PAYLOAD_SIZE + 1),
-            session_key=b"k" * 32,
-        )
-
-    # 2. frame.build_frame with unencrypted protobuf message not in PAYLOAD_FIELD_MAP (line 98->105)
-    unmapped_msg = pb.RuntimeConfig(serial_port="/dev/dummy")
-    raw_frame = frame.build_frame(command_id=1, sequence_id=1, payload=unmapped_msg)
-    assert len(raw_frame) > 0
 
     # 3. structures.get_ssl_context with valid cafile
     ca_file = tmp_path / "test_ca.crt"

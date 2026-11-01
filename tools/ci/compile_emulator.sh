@@ -30,7 +30,7 @@ else
     WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
     WOLFSSL_INC="$WOLFSSL_PATH"
 fi
-PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
+PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 
 # Use system Python
 GEN_PYTHON=$(command -v python3 || command -v python)
@@ -41,15 +41,14 @@ mkdir -p "${METADATA_DIR}"
     --json-output "${METADATA_DIR}/arduino_core_metadata.json"
 
 echo "[emulator] Verifying library paths..."
-ls -la "${PACKETSERIAL_PATH}" || echo "PACKETSERIAL_PATH not found"
-ls -la "${PACKETSERIAL_PATH}/src" || echo "PACKETSERIAL_PATH/src not found"
+ls -la "${PIGWEED_PATH}" || echo "PIGWEED_PATH not found"
+ls -la "${PIGWEED_PATH}/src" || echo "PIGWEED_PATH/src not found"
 
 echo "[emulator] Generating protocol bindings..."
 if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
-    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \
     --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
     echo "ERROR: Protocol generation failed. See above for missing dependencies."
     exit 1
@@ -91,15 +90,24 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
     -I"${WOLFSSL_INC}" \
-    -I"${PACKETSERIAL_PATH}" \
-    -I"${PACKETSERIAL_PATH}/src" \
+    -I"${PIGWEED_PATH}" \
+    -I"${PIGWEED_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${NANOPB_SOURCES[@]}" \
+    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
+    "$PIGWEED_PATH/src/assert_avr.cpp" \
+    "$PIGWEED_PATH/src/system_clock_avr.cpp" \
+    "$PIGWEED_PATH/src/log_avr.cpp" \
+    "$PIGWEED_PATH/src/rpc_server.cpp" \
+    "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
+    "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
+    "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
+    "$PIGWEED_PATH/src/pw_varint_varint.cc" \
+    "$PIGWEED_PATH/src/pw_status_status.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
-    "${SRC_DIR}/Instantiations.cpp" \
     "${SRC_DIR}/BridgeInstance.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
@@ -127,15 +135,24 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
     -I"${WOLFSSL_INC}" \
-    -I"${PACKETSERIAL_PATH}" \
-    -I"${PACKETSERIAL_PATH}/src" \
+    -I"${PIGWEED_PATH}" \
+    -I"${PIGWEED_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
     "${NANOPB_SOURCES[@]}" \
+    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
+    "$PIGWEED_PATH/src/assert_avr.cpp" \
+    "$PIGWEED_PATH/src/system_clock_avr.cpp" \
+    "$PIGWEED_PATH/src/log_avr.cpp" \
+    "$PIGWEED_PATH/src/rpc_server.cpp" \
+    "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
+    "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
+    "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
+    "$PIGWEED_PATH/src/pw_varint_varint.cc" \
+    "$PIGWEED_PATH/src/pw_status_status.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
-    "${SRC_DIR}/Instantiations.cpp" \
     "${SRC_DIR}/BridgeInstance.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \

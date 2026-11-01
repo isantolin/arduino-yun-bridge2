@@ -10,7 +10,7 @@
 
 #include "Bridge.h"
 #include "config/bridge_config.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/mcu_wire.pb.h"
 
 #ifndef MAILBOX_QUEUE_CAPACITY
 #define MAILBOX_QUEUE_CAPACITY bridge::config::MAX_MAILBOX_QUEUE_SIZE
@@ -35,21 +35,15 @@ class MailboxClass : public bridge::BridgeObserver {
     _available_callback = cb;
   }
 
-  template <typename MsgType, auto FieldPtr>
-  static void _onEnqueuePayload(const MsgType& msg) {
-    const auto& field = msg.*FieldPtr;
-    _enqueue(etl::span<const uint8_t>(field.bytes, field.size));
-  }
-
   static void _onAvailableResponse(
-      const rpc::payload::MailboxAvailableResponse& msg);
+      const rpc_pb_MailboxAvailableResponse& msg);
+
+  static void _enqueue(etl::span<const uint8_t> data);
 
   static void process();
   void onLost() override;
 
-  // Reemplazar en Mailbox.h (sección private):
  private:
-  static void _enqueue(etl::span<const uint8_t> data);
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
   static etl::circular_buffer<MailboxBuffer, MAILBOX_QUEUE_CAPACITY> _queue;

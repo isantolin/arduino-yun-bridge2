@@ -24,9 +24,6 @@ class TestAccessor : public BridgeClass {
     _fsm.receive(bridge::fsm::EvHandshakeStart());
     _fsm.receive(bridge::fsm::EvHandshakeComplete());
     _state_flags.set(FLAG_TX_ENABLED, true);
-    etl::array<uint8_t, 32> dummy_key;
-    dummy_key.fill(0xAA);
-    setSessionKey(dummy_key);
   }
 
   bool isFault() const {
@@ -47,8 +44,6 @@ class TestAccessor : public BridgeClass {
   void trigger(const TEvent& ev) {
     _fsm.receive(ev);
   }
-
-  void dispatch(const rpc_pb_RpcEnvelope& frame) { _dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
   bool isTxEnabled() const { return _state_flags.test(FLAG_TX_ENABLED); }
@@ -71,44 +66,39 @@ class TestAccessor : public BridgeClass {
     }
   }
 
-  void onAckTimeout() { _onAckTimeout(); }
   void onHandshakeTimeout() { _onHandshakeTimeout(); }
-  void handleAck(uint16_t cmd) {
-    rpc_pb_AckPacket m = rpc_pb_AckPacket_init_default;
-    m.command_id = cmd;
-    _handleStatusAck(m);
-  }
-  void invokePacketReceived(etl::span<const uint8_t> p) {
-    _handleReceivedFrame(p);
+
+  void invokeHdlcFrameReceived(const pw::hdlc::Frame& frame) {
+    _handleReceivedHdlcFrame(frame);
   }
 
-  void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
-    (void)send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
+  void feedHdlcByte(uint8_t b) {
+    auto res = _hdlc_decoder.Process(static_cast<std::byte>(b));
+    if (res.ok()) {
+      _handleReceivedHdlcFrame(res.value());
+    }
   }
-  bool isAwaitingAck() const {
-    return _fsm.get_state_id() ==
-           static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::AWAITING_ACK);
+
+  void feedHdlcBytes(etl::span<const uint8_t> data) {
+    for (uint8_t b : data) {
+      feedHdlcByte(b);
+    }
   }
-  uint16_t getLastCommandId() const { return _last_command_id; }
-  void onRxDedupe() { _onRxDedupe(); }
+
+  void invokeRpcResponse(const pw::rpc_avr::RpcPacket& pkt) {
+    _dispatchRpcResponse(pkt);
+  }
+
   void setPendingBaudrate(uint32_t b) { _pending_baudrate = b; }
   void onBaudrateChange() { _onBaudrateChange(); }
   void invokeWatchdog() { _watchdogTask(); }
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
   bool isSerialXoffSent() const { return _state_flags.test(FLAG_SERIAL_XOFF); }
-  void handleSpiTransfer(const bridge::router::CommandContext& ctx,
-                         const rpc_pb_SpiTransfer& req) {
-    _handleSpiTransfer(ctx, req);
-  }
-  void handleLinkReset(const bridge::router::CommandContext& ctx) {
-    _handleLinkReset(ctx);
-  }
+
   void startTimersForCoverage() {
-    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT);
-    _timers.start(bridge::scheduler::TIMER_RX_DEDUPE);
-    _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
     _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
+    _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
   }
   void startBootloaderTimerForCoverage() {
     _timers.start(bridge::scheduler::TIMER_BOOTLOADER_DELAY);
@@ -116,53 +106,17 @@ class TestAccessor : public BridgeClass {
   void setSerialTaskXoffSent(bool value) {
     _state_flags.set(FLAG_SERIAL_XOFF, value);
   }
-  void setSerialTaskBridgeNull() {}
-  void setTimerTaskBridgeNull() {}
   void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
-  void clearPendingTxQueue() { _clearPendingTxQueue(); }
-  void flushPendingTxQueue() { _flushPendingTxQueue(); }
-  bool decodePayload(const bridge::router::CommandContext& ctx,
-                     const pb_msgdesc_t* fields, void* dest) {
-    return _decodePayload(ctx, fields, dest);
-  }
-  void exhaustTxPayloadPool() { exhaustTxPayloadPoolRecursive(); }
-  void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id,
-                               size_t length) {
-    _pending_tx_queue.push_back({command_id, sequence_id, nullptr, length});
-  }
+
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
-  void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
-    _applyTimingConfig(msg);
-  }
   void clearSharedSecret() { _shared_secret.clear(); }
-  bool isSecurityCheckPassed(uint16_t cmd) const {
-    return _isSecurityCheckPassed(cmd);
-  }
 
-  void setSessionKey(etl::span<const uint8_t> key) {
-    etl::copy_n(key.begin(), etl::min(key.size(), _session_key.size()),
-                _session_key.begin());
-  }
-  etl::span<const uint8_t> getSessionKey() const { return _session_key; }
-  void setRxNonceCounter(uint64_t counter) { _rx_nonce_counter = counter; }
-
-  void fillPendingTxQueue() {
-    const size_t capacity =
-        _pending_tx_queue.max_size() - _pending_tx_queue.size();
-    etl::array<uint8_t, 16> fill_tokens{};
-    const size_t needed = etl::min(capacity, fill_tokens.size());
-    etl::for_each(fill_tokens.begin(), fill_tokens.begin() + needed,
-                  [this](uint8_t) {
-                    if (!_pending_tx_queue.full()) {
-                      _pending_tx_queue.push_back({1, 1, nullptr, 0});
-                    }
-                  });
-  }
   void setNullStream() { _stream = nullptr; }
   void setLastRxMs(uint32_t ms) { _last_rx_ms = ms; }
   void invokeSubscriptionTask() { _subscriptionTask(); }
   void invokeInitializeRuntime() { _initializeRuntime(); }
+
   void setSubscriptionLastValue(size_t idx, uint16_t val) {
     if (idx < _pin_subscriptions.size()) {
       _pin_subscriptions[idx].last_value = val;
@@ -182,13 +136,6 @@ class TestAccessor : public BridgeClass {
   void setIdle() {
     if (!_fsm.is_started()) _fsm.start();
     _fsm.receive(bridge::fsm::EvReset());
-  }
-
- private:
-  void exhaustTxPayloadPoolRecursive() {
-    auto* slot = _tx_payload_pool.allocate();
-    if (slot == nullptr) return;
-    exhaustTxPayloadPoolRecursive();
   }
 };
 

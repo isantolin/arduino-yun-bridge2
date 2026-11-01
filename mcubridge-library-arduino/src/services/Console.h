@@ -9,13 +9,13 @@
 #include <etl/vector.h>
 
 #include "Bridge.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/mcu_wire.pb.h"
 
 class ConsoleClass : public Stream, public bridge::BridgeObserver {
  public:
   ConsoleClass() = default;
   void begin();
-  void _push(const rpc::payload::ConsoleWrite& msg);
+  void pushBytes(const uint8_t* data, size_t size);
   void process();
 
   void onLost() override {

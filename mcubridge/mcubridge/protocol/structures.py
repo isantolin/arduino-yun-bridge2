@@ -271,7 +271,6 @@ class PendingCommand:
     attempts: int = 0
     success: bool | None = None
     failure_status: int | None = None
-    ack_received: bool = False
     completion: asyncio.Event = field(default_factory=asyncio.Event)
     response_payload: bytes | ProtobufMessage | None = None
 

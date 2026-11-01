@@ -55,7 +55,6 @@ ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
-    --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \
     --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 
 echo "[host-cpp] Installing library dependencies..."
@@ -74,7 +73,7 @@ else
     WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
     WOLFSSL_INC="$WOLFSSL_PATH"
 fi
-PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
+PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -102,7 +101,6 @@ SOURCES=(
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/Bridge.cpp"
-    "${SRC_DIR}/Instantiations.cpp"
     "${TEST_DIR}/bridge_test_global.cpp"
     "${SRC_DIR}/services/Console.cpp"
     "${SRC_DIR}/services/DataStore.cpp"
@@ -113,6 +111,19 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
+    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp"
+    "$PIGWEED_PATH/src/assert_avr.cpp"
+    "$PIGWEED_PATH/src/system_clock_avr.cpp"
+    "$PIGWEED_PATH/src/log_avr.cpp"
+    "$PIGWEED_PATH/src/rpc_server.cpp"
+    "$PIGWEED_PATH/src/pw_checksum_crc32.cc"
+    "$PIGWEED_PATH/src/pw_hdlc_decoder.cc"
+    "$PIGWEED_PATH/src/pw_hdlc_encoder.cc"
+    "$PIGWEED_PATH/src/pw_varint_varint.cc"
+    "$PIGWEED_PATH/src/pw_status_status.cc"
+    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc"
+    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc"
+    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc"
 )
 
 INC_FLAGS=(
@@ -128,8 +139,8 @@ INC_FLAGS=(
     -I"$ETL_PATH/arduino"
     -I"$WOLFSSL_PATH"
     -I"$WOLFSSL_INC"
-    -I"$PACKETSERIAL_PATH"
-    -I"$PACKETSERIAL_PATH/src"
+    -I"$PIGWEED_PATH"
+    -I"$PIGWEED_PATH/src"
 )
 
 COMMON_DEFS=(
@@ -141,6 +152,7 @@ COMMON_DEFS=(
     -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
+    -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
 )
 

@@ -15,10 +15,9 @@ from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import serialx
-from cobs import cobsr
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import MCU_AEAD_NONCE_PREFIX, Command, Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
@@ -50,7 +49,7 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
 async def test_serial_transport_acknowledge(tmp_path: Path) -> None:
     transport, state, mock_serialx = _make_transport(tmp_path)
 
-    await transport.acknowledge(Command.CMD_DIGITAL_READ.value, 42, status=Status.OK)
+    await transport.send_raw(Status.OK.value, b"", 42)
     assert mock_serialx.write.called
 
     state.cleanup()
@@ -110,36 +109,23 @@ async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
     state.cleanup()
 
 
-async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> None:
+async def test_serial_transport_feed_data_hdlc_rpc(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
+    service_mock = AsyncMock()
+    transport.service = service_mock
 
     state.connection_fsm.synchronize()
-    state.link_last_nonce_counter = 100
 
-    # Build valid frame with counter <= last_counter (replay attempt)
-    old_nonce = MCU_AEAD_NONCE_PREFIX.to_bytes(4, "big") + (90).to_bytes(8, "big")
-    raw_frame = build_frame(
-        command_id=Command.CMD_DIGITAL_READ_RESP.value,
-        sequence_id=1,
-        payload=pb.DigitalReadResponse(value=1),
-        nonce=old_nonce,
+    # Valid HDLC RPC frame
+    encoded = protocol.encode_hdlc_rpc(
+        Command.CMD_DIGITAL_READ.value,
+        pb.PinRead(pin=13),
+        call_id=5,
     )
 
-    process_packet: Callable[[bytes], Awaitable[None]] = transport.process_packet
-    await process_packet(cobsr.encode(raw_frame))
-    # Replay must be dropped without advancing counter
-    assert state.link_last_nonce_counter == 100
-
-    # Valid newer counter
-    new_nonce = MCU_AEAD_NONCE_PREFIX.to_bytes(4, "big") + (105).to_bytes(8, "big")
-    raw_frame_valid = build_frame(
-        command_id=Command.CMD_DIGITAL_READ_RESP.value,
-        sequence_id=2,
-        payload=pb.DigitalReadResponse(value=1),
-        nonce=new_nonce,
-    )
-    await process_packet(cobsr.encode(raw_frame_valid))
-    assert state.link_last_nonce_counter == 105
+    await transport.feed_data(encoded)
+    service_mock.handle_mcu_frame.assert_awaited_once()
+    assert state.serial_decode_errors == 0
 
     state.cleanup()
 

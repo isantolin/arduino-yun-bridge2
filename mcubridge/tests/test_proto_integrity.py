@@ -282,7 +282,6 @@ def test_command_specs_multidimensional_integrity() -> None:
         assert spec.auth_field == (opts.auth_field or None)
         if opts.pb_message:
             assert spec.pb_class is getattr(pb, opts.pb_message)
-            assert spec.payload_field is not None
             msg_spec = protocol.REGISTRY.get(opts.pb_message)
             assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
@@ -411,39 +410,35 @@ def test_spi_data_modes_round_trip(data_mode_name: str) -> None:
 
 
 def test_rpc_envelope_strong_typing() -> None:
-    """SIL-2: Verify RpcEnvelope channel_id and qos fields are bound to strongly-typed enums."""
-    env_fields = pb.RpcEnvelope.DESCRIPTOR.fields_by_name
+    """SIL-2: Verify Pigweed RpcPacket fields and roundtrip serialization."""
+    from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
-    # channel_id must be TYPE_ENUM bound to ChannelId
-    channel_field = env_fields["channel_id"]
-    assert channel_field.type == FieldDescriptor.TYPE_ENUM
-    assert channel_field.enum_type is not None
-    assert channel_field.enum_type.name == "ChannelId"
-
-    # qos must be TYPE_ENUM bound to QosProfile
-    qos_field = env_fields["qos"]
-    assert qos_field.type == FieldDescriptor.TYPE_ENUM
-    assert qos_field.enum_type is not None
-    assert qos_field.enum_type.name == "QosProfile"
+    pkt_fields = RpcPacket.DESCRIPTOR.fields_by_name
+    type_field = pkt_fields["type"]
+    assert type_field.type == FieldDescriptor.TYPE_ENUM
+    assert type_field.enum_type is not None
+    assert type_field.enum_type.name == "PacketType"
 
     # Roundtrip test
-    envelope = pb.RpcEnvelope(
-        version=2,
-        command_id=0x01,
-        sequence_id=0x0A,
-        channel_id=pb.ChannelId.CHANNEL_CONTROL,
-        qos=pb.QosProfile.QOS_BEST_EFFORT,
+    packet = RpcPacket(
+        type=PacketType.REQUEST,
+        channel_id=1,
+        service_id=0x1234,
+        method_id=0x5678,
+        call_id=10,
+        payload=b"test_payload",
     )
-    serialized = envelope.SerializeToString()
+    serialized = packet.SerializeToString()
 
-    restored = pb.RpcEnvelope()
+    restored = RpcPacket()
     restored.ParseFromString(serialized)
 
-    assert restored.version == 2
-    assert restored.command_id == 0x01
-    assert restored.sequence_id == 0x0A
-    assert restored.channel_id == pb.ChannelId.CHANNEL_CONTROL
-    assert restored.qos == pb.QosProfile.QOS_BEST_EFFORT
+    assert restored.type == PacketType.REQUEST
+    assert restored.channel_id == 1
+    assert restored.service_id == 0x1234
+    assert restored.method_id == 0x5678
+    assert restored.call_id == 10
+    assert restored.payload == b"test_payload"
 
 
 def test_mcubridge_options_cleanliness() -> None:

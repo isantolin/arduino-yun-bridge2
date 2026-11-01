@@ -11,7 +11,6 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from tools.protocol import generate
 
 EXPECTED_DISPATCH_NAMES: Final[set[str]] = {
-    "ACK",
     "CMD_GET_VERSION",
     "CMD_GET_FREE_MEMORY",
     "CMD_LINK_SYNC",
@@ -56,7 +55,6 @@ def test_dispatch_table_is_derived_from_protobuf_and_sorted() -> None:
     assert values == sorted(set(values))
 
     by_name: dict[str, dict[str, Any]] = {str(entry["name"]): entry for entry in entries}
-    assert by_name["ACK"]["key"] == "rpc::StatusCode::STATUS_ACK"
     assert by_name["CMD_GET_VERSION"]["key"] == "rpc::CommandId::CMD_GET_VERSION"
     assert by_name["CMD_GET_VERSION"]["expression"] == (
         "&BridgeClass::_dispatchMemberNoPayload<"

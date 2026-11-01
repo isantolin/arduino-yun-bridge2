@@ -303,7 +303,6 @@ echo "[INFO] Regenerating protocol files from spec..."
     --spec "$REPO_ROOT/tools/protocol/cloud_gateway.proto" \
     --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
-    --cpp-structs "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_structs.h" \
     --py-client "$REPO_ROOT/mcubridge-client-examples/mcubridge_client/protocol.py" || exit 1
 
 # --- DOWNLOAD CACHE SYMLINK SETUP ---

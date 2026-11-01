@@ -1,9 +1,13 @@
 #define BRIDGE_HOST_TEST 1
 #include <Arduino.h>
+#include <PigweedAVR.h>
 #include <etl/array.h>
+#include <etl/span.h>
 #include <unity.h>
 
-#include "protocol/rpc_frame.h"
+#include "protocol/mcu_wire.pb.h"
+#include "protocol/rpc_protocol.h"
+#include "test_support.h"
 
 HardwareSerial Serial;
 HardwareSerial Serial1;
@@ -12,125 +16,119 @@ Stream* g_arduino_stream_delegate = nullptr;
 void setUp(void) {}
 void tearDown(void) {}
 
-void test_protocol_frame_logic_exhaustive() {
-  using namespace rpc;
+void test_hdlc_roundtrip_and_crc() {
+  etl::array<uint8_t, 256> out_buf;
+  const uint8_t test_payload[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+  size_t encoded_len = TestHdlc::encodeUIFrame(
+      1, etl::span<const uint8_t>(test_payload, sizeof(test_payload)), out_buf);
+  TEST_ASSERT_TRUE(encoded_len > sizeof(test_payload));
 
-  // 1. requires_ack exhaustive
-  TEST_ASSERT(requires_ack((uint16_t)CommandId::CMD_CONSOLE_WRITE));
-  TEST_ASSERT(!requires_ack((uint16_t)CommandId::CMD_GET_VERSION));
+  // Decode frame
+  pw::hdlc::DecoderBuffer<256> decoder;
+  bool frame_found = false;
+  for (size_t i = 0; i < encoded_len; ++i) {
+    auto res = decoder.Process(static_cast<std::byte>(out_buf[i]));
+    if (res.ok()) {
+      frame_found = true;
+      TEST_ASSERT_EQUAL_UINT64(1, res.value().address());
+      TEST_ASSERT_EQUAL(sizeof(test_payload), res.value().data().size());
+      TEST_ASSERT_EQUAL_UINT8_ARRAY(test_payload, res.value().data().data(),
+                                    sizeof(test_payload));
+    }
+  }
+  TEST_ASSERT_TRUE(frame_found);
 
-  // 3. serialize_frame error paths (buffer too small)
-  etl::array<uint8_t, 2> small_buf;
-  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-  TEST_ASSERT_EQUAL(
-      0, serialize_frame(env, etl::span<uint8_t>(small_buf.data(), 2)));
-
-  // 4. parse_frame error paths
-  etl::array<uint8_t, 128> raw;
-  raw.fill(0);
-
-  // Malformed: too short
-  TEST_ASSERT(
-      !parse_frame(etl::span<const uint8_t>(raw.data(), 2)).has_value());
-
-  // Malformed: wrong version
-  rpc_pb_RpcEnvelope env_valid = rpc_pb_RpcEnvelope_init_default;
-  env_valid.version = 0xFF;
-  size_t v_len = serialize_frame(env_valid, raw);
-  TEST_ASSERT(
-      !parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
-
-  // CRC Mismatch
-  env_valid.version = PROTOCOL_VERSION;
-  v_len = serialize_frame(env_valid, raw);
-  TEST_ASSERT(v_len > 0);
-  raw[v_len - 1] ^= 0xFF;  // Break CRC
-
-  auto res = parse_frame(etl::span<const uint8_t>(raw.data(), v_len));
-  TEST_ASSERT(!res.has_value());
-  TEST_ASSERT(res.error() == FrameError::CRC_MISMATCH);
-
-  // Correct CRC
-  raw[v_len - 1] ^= 0xFF;  // Restore CRC
-  TEST_ASSERT(
-      parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
-
-  // Malformed Protobuf with valid CRC
-  etl::array<uint8_t, 8> malformed_proto_buf;
-  malformed_proto_buf[0] = 0xFF;
-  malformed_proto_buf[1] = 0xFF;
-  malformed_proto_buf[2] = 0xFF;
-  malformed_proto_buf[3] = 0xFF;
-  const uint32_t calc_crc = etl::crc32_t16(malformed_proto_buf.begin(),
-                                           malformed_proto_buf.begin() + 4);
-  malformed_proto_buf[4] = calc_crc & 0xFF;
-  malformed_proto_buf[5] = (calc_crc >> 8) & 0xFF;
-  malformed_proto_buf[6] = (calc_crc >> 16) & 0xFF;
-  malformed_proto_buf[7] = (calc_crc >> 24) & 0xFF;
-
-  auto res_malformed =
-      parse_frame(etl::span<const uint8_t>(malformed_proto_buf.data(), 8));
-  TEST_ASSERT(!res_malformed.has_value());
-  TEST_ASSERT(res_malformed.error() == FrameError::MALFORMED);
+  // Test CRC corruption
+  pw::hdlc::DecoderBuffer<256> corrupt_decoder;
+  frame_found = false;
+  // Corrupt payload byte
+  out_buf[3] ^= 0xFF;
+  for (size_t i = 0; i < encoded_len; ++i) {
+    auto res = corrupt_decoder.Process(static_cast<std::byte>(out_buf[i]));
+    if (res.ok()) {
+      frame_found = true;
+    }
+  }
+  TEST_ASSERT_FALSE(frame_found);
 }
 
-void test_protocol_builder_exhaustive() {
-  using namespace rpc;
-  etl::array<uint8_t, 128> buf;
-  etl::array<uint8_t, 3> payload = {1, 2, 3};
+void test_hdlc_address_demux() {
+  const uint64_t addresses[] = {1, 2, 3};
 
-  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-  env.version = PROTOCOL_VERSION;
-  env.command_id = (uint16_t)CommandId::CMD_GET_VERSION;
-  env.sequence_id = 1;
-  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
-  etl::copy_n(payload.begin(), 3,
-              env.payload_type.encrypted_payload_with_tag.bytes);
-  env.payload_type.encrypted_payload_with_tag.size = 3;
+  for (uint64_t addr : addresses) {
+    etl::array<uint8_t, 128> frame_buf;
+    const uint8_t payload[] = {0xAA, 0xBB};
+    size_t len = TestHdlc::encodeUIFrame(
+        addr, etl::span<const uint8_t>(payload, sizeof(payload)), frame_buf);
+    TEST_ASSERT_TRUE(len > 0);
 
-  // Success path
-  size_t len = serialize_frame(env, etl::span<uint8_t>(buf.data(), 128));
-  TEST_ASSERT(len > 0);
-
-  // Buffer too small
-  len = serialize_frame(env, etl::span<uint8_t>(buf.data(), 2));
-  TEST_ASSERT_EQUAL(0, len);
+    pw::hdlc::DecoderBuffer<256> decoder;
+    bool found = false;
+    for (size_t i = 0; i < len; ++i) {
+      auto res = decoder.Process(static_cast<std::byte>(frame_buf[i]));
+      if (res.ok()) {
+        found = true;
+        TEST_ASSERT_EQUAL_UINT64(addr, res.value().address());
+      }
+    }
+    TEST_ASSERT_TRUE(found);
+  }
 }
 
-void test_capabilities_frame_exact() {
-  using namespace rpc;
-  // Frame sent by Python daemon for CMD_GET_CAPABILITIES (0x48)
-  const uint8_t raw[] = {0x08, 0x02, 0x10, 0x48, 0x18, 0x04, 0x22, 0x0c, 0x00,
-                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                         0x00, 0x00, 0x32, 0x00, 0x45, 0xba, 0x21, 0x23};
-  auto res = parse_frame(etl::span<const uint8_t>(raw, sizeof(raw)));
-  TEST_ASSERT(res.has_value());
-  TEST_ASSERT_EQUAL(2, res->version);
-  TEST_ASSERT_EQUAL(72, res->command_id);
-  TEST_ASSERT_EQUAL(4, res->sequence_id);
-  TEST_ASSERT_EQUAL(rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag,
-                    res->which_payload_type);
+void test_rpc_packet_encoding_and_decoding() {
+  pw::rpc_avr::RpcPacket packet;
+  packet.type = pw::rpc_avr::PacketType::kRequest;
+  packet.channel_id = 1;
+  packet.service_id = pw::tokenizer::Hash("bridge.SystemService");
+  packet.method_id = pw::tokenizer::Hash("GetVersion");
+  packet.call_id = 42;
+
+  const uint8_t payload[] = {0x10, 0x20, 0x30};
+  packet.payload = pw::ConstByteSpan(
+      reinterpret_cast<const std::byte*>(payload), sizeof(payload));
+
+  uint8_t encoded_buf[128];
+  auto enc_res = packet.Encode(pw::as_writable_bytes(pw::span(encoded_buf)));
+  TEST_ASSERT_TRUE(enc_res.ok());
+  TEST_ASSERT_TRUE(enc_res.size() > 0);
+
+  auto dec_res = pw::rpc_avr::RpcPacket::Decode(
+      pw::as_bytes(pw::span(encoded_buf, enc_res.size())));
+  TEST_ASSERT_TRUE(dec_res.ok());
+
+  const auto& decoded = dec_res.value();
+  TEST_ASSERT_TRUE(decoded.type == pw::rpc_avr::PacketType::kRequest);
+  TEST_ASSERT_EQUAL_UINT32(1, decoded.channel_id);
+  TEST_ASSERT_EQUAL_UINT32(packet.service_id, decoded.service_id);
+  TEST_ASSERT_EQUAL_UINT32(packet.method_id, decoded.method_id);
+  TEST_ASSERT_EQUAL_UINT32(42, decoded.call_id);
+  TEST_ASSERT_EQUAL(sizeof(payload), decoded.payload.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, decoded.payload.data(),
+                                sizeof(payload));
 }
 
-void test_ack_frame_exact() {
-  using namespace rpc;
-  const uint8_t raw[] = {0x08, 0x02, 0x10, 0x38, 0x22, 0x0c, 0x00, 0x00, 0x00,
-                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                         0x92, 0x02, 0x02, 0x08, 0x60, 0xb8, 0x1b, 0xa5, 0xb9};
-  auto res = parse_frame(etl::span<const uint8_t>(raw, sizeof(raw)));
-  TEST_ASSERT(res.has_value());
-  TEST_ASSERT_EQUAL(2, res->version);
-  TEST_ASSERT_EQUAL(56, res->command_id);
-  TEST_ASSERT_EQUAL(0, res->sequence_id);
-  TEST_ASSERT_EQUAL(rpc_pb_RpcEnvelope_ack_packet_tag, res->which_payload_type);
-  TEST_ASSERT_EQUAL(96, res->payload_type.ack_packet.command_id);
+void test_service_id_tokenizer_hashing() {
+  constexpr uint32_t kSystem = pw::tokenizer::Hash("bridge.SystemService");
+  constexpr uint32_t kGpio = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kDataStore =
+      pw::tokenizer::Hash("bridge.DataStoreService");
+  constexpr uint32_t kMailbox = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kProcess = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kFileSystem =
+      pw::tokenizer::Hash("bridge.FileSystemService");
+
+  TEST_ASSERT_NOT_EQUAL(0, kSystem);
+  TEST_ASSERT_NOT_EQUAL(0, kGpio);
+  TEST_ASSERT_NOT_EQUAL(kSystem, kGpio);
+  TEST_ASSERT_NOT_EQUAL(kDataStore, kMailbox);
+  TEST_ASSERT_NOT_EQUAL(kProcess, kFileSystem);
 }
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_protocol_frame_logic_exhaustive);
-  RUN_TEST(test_protocol_builder_exhaustive);
-  RUN_TEST(test_capabilities_frame_exact);
-  RUN_TEST(test_ack_frame_exact);
+  RUN_TEST(test_hdlc_roundtrip_and_crc);
+  RUN_TEST(test_hdlc_address_demux);
+  RUN_TEST(test_rpc_packet_encoding_and_decoding);
+  RUN_TEST(test_service_id_tokenizer_hashing);
   return UNITY_END();
 }

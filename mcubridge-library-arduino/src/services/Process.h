@@ -3,15 +3,15 @@
 
 #undef min
 #undef max
+#include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/utility.h>
 
 #include "Bridge.h"
-#include "protocol/PendingRpc.h"
+#include "protocol/mcu_wire.pb.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
 
 class ProcessClass : public bridge::BridgeObserver {
  public:
@@ -21,26 +21,25 @@ class ProcessClass : public bridge::BridgeObserver {
                          etl::span<const uint8_t>)>;
   using PendingPoll = etl::pair<int32_t, ProcessPollHandler>;
 
-  ProcessClass();
+  ProcessClass() = default;
   static void runAsync(etl::string_view cmd,
                        etl::span<const etl::string_view> args,
                        ProcessRunHandler handler);
   void poll(int32_t pid, ProcessPollHandler handler);
   static void kill(int32_t pid);
 
-  void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
-  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
+  void _onRunAsyncResponse(const rpc_pb_ProcessRunAsyncResponse& msg);
+  void _onPollResponse(const rpc_pb_ProcessPollResponse& msg);
   void reset();
 
   void onLost() override { reset(); }
 
-  bridge::PendingRpcManager<rpc::payload::ProcessRunAsyncResponse,
-                            bridge::config::MAX_PENDING_PROCESS_POLLS,
-                            ProcessRunHandler>
+ private:
+  etl::circular_buffer<ProcessRunHandler,
+                       bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_run_async;
-  bridge::PendingRpcManager<rpc::payload::ProcessPollResponse,
-                            bridge::config::MAX_PENDING_PROCESS_POLLS,
-                            PendingPoll>
+  etl::circular_buffer<PendingPoll,
+                       bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_polls;
 };
 

@@ -1,7 +1,8 @@
-"""Command line tool to debug and generate MCU Bridge frames."""
+"""Command line tool to debug and generate MCU Bridge Pigweed HDLC frames."""
 
 from __future__ import annotations
 
+import asyncio
 import binascii
 import sys
 from collections.abc import Iterable
@@ -10,12 +11,11 @@ from typing import Annotated
 
 import serialx
 import typer
+from pw_hdlc.decode import FrameDecoder
+from pw_rpc.internal.packet_pb2 import RpcPacket
 
-# [SIL-2] Use direct library functions for framing
-from cobs import cobs
 from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import DecodedFrame, build_frame, parse_frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
 
@@ -24,12 +24,8 @@ class FrameDebugSnapshot:
     command_id: int
     command_name: str
     payload_length: int
-    crc: int
-    raw_length: int
-    cobs_length: int
-    expected_serial_bytes: int
+    hdlc_length: int
     encoded_packet: bytes
-    raw_frame_hex: str
     encoded_hex: str
 
     def render(self) -> str:
@@ -37,12 +33,9 @@ class FrameDebugSnapshot:
         return (
             f"Command: {self.command_name} (0x{self.command_id:02X})\n"
             f"Payload Length: {self.payload_length} bytes\n"
-            f"Raw Length: {self.raw_length} bytes\n"
-            f"COBS Length: {self.cobs_length} bytes\n"
-            f"CRC32: 0x{self.crc:08X}\n"
-            f"Raw Frame (hex): {self.raw_frame_hex}\n"
+            f"HDLC Length: {self.hdlc_length} bytes\n"
             f"Encoded Frame (hex): {self.encoded_hex}\n"
-            f"Total Wire Bytes: {self.expected_serial_bytes} bytes"
+            f"Total Wire Bytes: {len(self.encoded_packet)} bytes"
         )
 
 
@@ -81,7 +74,6 @@ def parse_payload(payload_str: str | None) -> bytes:
     if not payload_str:
         return b""
 
-    # Remove 0x prefix and spaces
     clean_hex = payload_str.replace("0x", "").replace(" ", "")
     try:
         return binascii.unhexlify(clean_hex)
@@ -96,13 +88,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 
 def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDebugSnapshot:
-    # Use sequence_id=0 for debug snapshots
-    raw_frame = build_frame(command_id=command_id, sequence_id=0, payload=payload)
-    # CRC is at the end of the frame (little-endian)
-    crc_size = protocol.CRC_SIZE
-    crc = int.from_bytes(raw_frame[-crc_size:], "little")
-    encoded_body = cobs.encode(raw_frame)
-    encoded_packet = encoded_body + FRAME_DELIMITER
+    encoded_packet = protocol.encode_hdlc_rpc(command_id, payload, call_id=0)
 
     if isinstance(payload, (bytes, bytearray, memoryview)):
         payload_length = len(payload)
@@ -115,35 +101,29 @@ def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDe
         command_id=command_id,
         command_name=name_for_command(command_id),
         payload_length=payload_length,
-        crc=crc,
-        raw_length=len(raw_frame),
-        cobs_length=len(encoded_body),
-        expected_serial_bytes=len(encoded_packet),
+        hdlc_length=len(encoded_packet),
         encoded_packet=encoded_packet,
-        raw_frame_hex=_hex_with_spacing(raw_frame),
         encoded_hex=_hex_with_spacing(encoded_packet),
     )
 
 
-def _decode_frame(encoded_packet: bytes) -> DecodedFrame:
-    return parse_frame(cobs.decode(encoded_packet))
+def _decode_frame(encoded_packet: bytes) -> tuple[int, int, bytes]:
+    decoder = FrameDecoder()
+    for frame in decoder.process(encoded_packet):
+        if frame.ok() and frame.address == protocol.HDLC_ADDRESS_RPC:
+            pkt = RpcPacket()
+            pkt.ParseFromString(frame.data)
+            cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
+            return cmd_id, pkt.call_id, pkt.payload
+    raise ValueError("No valid HDLC RPC frame found")
 
 
-def _print_response(decoded: DecodedFrame) -> None:
-    envelope = decoded.envelope
-    payload = decoded.payload
-    if isinstance(payload, (bytes, bytearray, memoryview)):
-        payload_len = len(payload)
-    elif hasattr(payload, "SerializeToString"):
-        payload_len = len(payload.SerializeToString())
-    else:
-        payload_len = 0
-
+def _print_response(cmd_id: int, call_id: int, payload: bytes) -> None:
     sys.stdout.write(
         f"[FrameDebug] --- MCU Response ---\n"
-        f"cmd_id=0x{envelope.command_id:02X}\n"
-        f"seq_id={envelope.sequence_id}\n"
-        f"payload_len={payload_len}\n"
+        f"cmd_id=0x{cmd_id:02X}\n"
+        f"call_id={call_id}\n"
+        f"payload_len={len(payload)}\n"
     )
 
 
@@ -188,8 +168,8 @@ async def run_debug_loop(
                     packet = await reader.readuntil(FRAME_DELIMITER)
                     if packet:
                         try:
-                            decoded = _decode_frame(packet[:-1])
-                            _print_response(decoded)
+                            cmd_id, call_id, resp_payload = _decode_frame(packet)
+                            _print_response(cmd_id, call_id, resp_payload)
                         except (OSError, ValueError, RuntimeError, TypeError) as e:
                             sys.stderr.write(f"Error decoding response: {e}\n")
             except TimeoutError:
@@ -219,68 +199,55 @@ cli = typer.Typer(help="MCU Bridge Frame Debugger", add_completion=False)
 
 
 @cli.command()
-def main(
-    command: Annotated[str, typer.Option("--command", "-c", help="Command ID (hex, int, or name)")] = "",
-    port: Annotated[str | None, typer.Option("--port", "-p", help="Serial port device (e.g. /dev/ttyATH0)")] = None,
-    baudrate: Annotated[int, typer.Option("--baudrate", "-b", help="Baudrate")] = DEFAULT_BAUDRATE,
-    payload: Annotated[str, typer.Option("--payload", help="Payload hex string")] = "",
-    interval: Annotated[float, typer.Option("--interval", help="Interval between frames")] = 1.0,
-    count: Annotated[int, typer.Option("--count", help="Number of frames (0 for infinite)")] = 1,
-    generate: Annotated[bool, typer.Option("--generate", help="Only generate and print frame")] = False,
-    list_ports: Annotated[
-        bool,
-        typer.Option("--list-ports", "-l", help="List available serial ports and exit"),
-    ] = False,
+def generate(
+    command: Annotated[str, typer.Option("--command", "-c", help="Command name (e.g. CMD_DIGITAL_READ) or ID")],
+    payload: Annotated[str, typer.Option("--payload", "-p", help="Payload in hex format (e.g. 0x010203)")] = "",
 ) -> None:
-    if list_ports:
-        ports = serialx.list_serial_ports()
-        if not ports:
-            sys.stdout.write("No serial ports detected.\n")
-            return
-        sys.stdout.write(f"Found {len(ports)} serial port(s):\n")
-        for p in ports:
-            hw_info: list[str] = []
-            if p.vid is not None and p.pid is not None:
-                hw_info.append(f"VID:PID={p.vid:04X}:{p.pid:04X}")
-            if p.serial_number:
-                hw_info.append(f"SER={p.serial_number}")
-            hw_str = f" [{' '.join(hw_info)}]" if hw_info else ""
-            desc_str = f" - {p.description}" if p.description else ""
-            sys.stdout.write(f"  • {p.device}{desc_str}{hw_str}\n")
+    """Generate and display frame debug information without sending."""
+    import anyio
+
+    anyio.run(run_generate_only, command, payload)
+
+
+@cli.command()
+def send(
+    port: Annotated[str, typer.Option("--port", help="Serial port URL, device or TCP socket")] = "/dev/ttyATH0",
+    baudrate: Annotated[int, typer.Option("--baudrate", help="Serial baudrate")] = DEFAULT_BAUDRATE,
+    command: Annotated[
+        str, typer.Option("--command", "-c", help="Command name (e.g. CMD_DIGITAL_READ) or ID")
+    ] = "CMD_GET_VERSION",
+    payload: Annotated[str, typer.Option("--payload", "-p", help="Payload in hex format (e.g. 0x010203)")] = "",
+    interval: Annotated[float, typer.Option("--interval", "-i", help="Interval between frames in seconds")] = 1.0,
+    count: Annotated[int, typer.Option("--count", "-n", help="Number of frames to send (0 = infinite)")] = 1,
+) -> None:
+    """Generate and transmit frames over the serial transport."""
+    import anyio
+
+    anyio.run(run_debug_loop, port, baudrate, command, payload, interval, count)
+
+
+@cli.command()
+def list_ports() -> None:
+    """List available serial ports and exit."""
+    ports = serialx.list_serial_ports()
+    if not ports:
+        sys.stdout.write("No serial ports detected.\n")
         return
+    sys.stdout.write(f"Found {len(ports)} serial port(s):\n")
+    for p in ports:
+        hw_info: list[str] = []
+        if p.vid is not None and p.pid is not None:
+            hw_info.append(f"VID:PID={p.vid:04X}:{p.pid:04X}")
+        if p.serial_number:
+            hw_info.append(f"SER={p.serial_number}")
+        hw_str = f" [{' '.join(hw_info)}]" if hw_info else ""
+        desc_str = f" - {p.description}" if p.description else ""
+        sys.stdout.write(f"  • {p.device}{desc_str}{hw_str}\n")
 
-    if not command:
-        sys.stderr.write("Error: Missing option '--command' / '-c'.\n")
-        sys.exit(1)
 
-    if generate:
-        asyncio.run(run_generate_only(command, payload))
-    else:
-        target_port = port
-        if not target_port:
-            detected = serialx.list_serial_ports()
-            if len(detected) == 1:
-                target_port = detected[0].device
-                sys.stdout.write(f"[FrameDebug] Auto-detected serial port: {target_port}\n")
-            else:
-                sys.stderr.write(
-                    "Error: Must specify --generate or --port <device>. Use --list-ports to see devices.\n"
-                )
-                sys.exit(1)
-
-        asyncio.run(
-            run_debug_loop(
-                target_port,
-                baudrate,
-                command,
-                payload,
-                interval,
-                count,
-            )
-        )
+def main() -> None:
+    cli()
 
 
 if __name__ == "__main__":
-    import asyncio
-
-    cli()
+    main()

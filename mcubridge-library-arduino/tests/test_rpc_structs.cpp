@@ -3,7 +3,10 @@
 #include <string.h>
 #include <unity.h>
 
-#include "protocol/rpc_structs.h"
+#include "pb_decode.h"
+#include "pb_encode.h"
+#include "protocol/mcu_wire.pb.h"
+#include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
 // Global stubs
@@ -14,228 +17,316 @@ void setUp(void) {}
 void tearDown(void) {}
 
 template <typename T>
-bool roundtrip_verify(const T& p) {
+bool roundtrip_verify(const pb_msgdesc_t* fields, const T& p) {
   uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
-  pb_ostream_t ostream = pb_ostream_from_buffer(buffer, rpc::MAX_PAYLOAD_SIZE);
-  if (!pb_encode(&ostream, rpc::Payload::get_fields<T>(), &p)) return false;
+  pb_ostream_t ostream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+  if (!pb_encode(&ostream, fields, &p)) return false;
   size_t used = ostream.bytes_written;
 
   T p2 = {};
   pb_istream_t istream = pb_istream_from_buffer(buffer, used);
-  return pb_decode_noinit(&istream, rpc::Payload::get_fields<T>(), &p2);
+  return pb_decode_noinit(&istream, fields, &p2);
 }
 
-template <typename T>
-bool chaos_decode_verify() {
-  uint8_t buffer[2] = {0x91, 0xFF};  // Junk
-  T p = {};
-  pb_istream_t istream = pb_istream_from_buffer(buffer, 2);
-  return !pb_decode_noinit(&istream, rpc::Payload::get_fields<T>(), &p);
-}
-
-void test_all_structs_roundtrip() {
+void test_all_wire_messages_roundtrip() {
   size_t count = 0;
-  auto test_roundtrip = [&](const auto& p) {
-    TEST_ASSERT_TRUE(roundtrip_verify(p));
-    count++;
-  };
-  test_roundtrip([]() {
-    rpc::payload::VersionResponse p = {};
+
+  {
+    rpc_pb_VersionResponse p = rpc_pb_VersionResponse_init_default;
     p.major = 1;
     p.minor = 2;
     p.patch = 3;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::FreeMemoryResponse p = {};
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_VersionResponse_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_FreeMemoryResponse p = rpc_pb_FreeMemoryResponse_init_default;
     p.value = 1024;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::Capabilities p = {};
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FreeMemoryResponse_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_Capabilities p = rpc_pb_Capabilities_init_default;
     p.ver = 1;
     p.arch = 2;
     p.dig = 20;
     p.ana = 6;
     p.feat = 0xFF;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::PinMode p = {};
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_Capabilities_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_PinMode p = rpc_pb_PinMode_init_default;
     p.pin = 13;
     p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::DigitalWrite p = {};
-    p.pin = 2;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_PinMode_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_DigitalWrite p = rpc_pb_DigitalWrite_init_default;
+    p.pin = 13;
     p.value = 1;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::AnalogWrite p = {};
-    p.pin = 5;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_DigitalWrite_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_AnalogWrite p = rpc_pb_AnalogWrite_init_default;
+    p.pin = 9;
     p.value = 128;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::PinRead p = {};
-    p.pin = 7;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::DigitalReadResponse p = {};
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_AnalogWrite_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_PinRead p = rpc_pb_PinRead_init_default;
+    p.pin = 2;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_PinRead_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_ClockSyncRequest p = rpc_pb_ClockSyncRequest_init_default;
+    p.host_time_us = 1234567890ULL;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ClockSyncRequest_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_ClockSyncResponse p = rpc_pb_ClockSyncResponse_init_default;
+    p.host_time_us = 1234567890ULL;
+    p.mcu_time_us = 12345U;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ClockSyncResponse_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_PinSubscribeRequest p = rpc_pb_PinSubscribeRequest_init_default;
+    p.pin = 3;
+    p.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+    p.interval_ms = 50;
+    p.hysteresis = 2;
+    p.enabled = true;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_PinSubscribeRequest_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_PinSubscribeResponse p = rpc_pb_PinSubscribeResponse_init_default;
+    p.pin = 3;
+    p.success = true;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_PinSubscribeResponse_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_PinUpdateEvent p = rpc_pb_PinUpdateEvent_init_default;
+    p.pin = 3;
     p.value = 1;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::AnalogReadResponse p = {};
+    p.timestamp_micros = 50000;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_PinUpdateEvent_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_DigitalReadResponse p = rpc_pb_DigitalReadResponse_init_default;
+    p.value = 1;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_DigitalReadResponse_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_AnalogReadResponse p = rpc_pb_AnalogReadResponse_init_default;
     p.value = 512;
-    return p;
-  }());
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_AnalogReadResponse_fields, p));
+    count++;
+  }
 
-  const char* str = "test";
-  rpc::payload::ConsoleWrite cw = {};
-  rpc::payload::copy_to_pb_bytes(cw.data, reinterpret_cast<const uint8_t*>(str),
-                                 4);
-  test_roundtrip(cw);
+  {
+    rpc_pb_ConsoleWrite p = rpc_pb_ConsoleWrite_init_default;
+    p.data.size = 5;
+    memcpy(p.data.bytes, "hello", 5);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ConsoleWrite_fields, p));
+    count++;
+  }
 
-  rpc::payload::DatastorePut dp = {};
-  strncpy(dp.key, str, sizeof(dp.key));
-  rpc::payload::copy_to_pb_bytes(dp.value,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(dp);
+  {
+    rpc_pb_DatastorePut p = rpc_pb_DatastorePut_init_default;
+    strncpy(p.key, "key1", sizeof(p.key) - 1);
+    p.value.size = 4;
+    memcpy(p.value.bytes, "val1", 4);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_DatastorePut_fields, p));
+    count++;
+  }
 
-  rpc::payload::DatastoreGet dg = {};
-  strncpy(dg.key, str, sizeof(dg.key));
-  test_roundtrip(dg);
+  {
+    rpc_pb_DatastoreGet p = rpc_pb_DatastoreGet_init_default;
+    strncpy(p.key, "key1", sizeof(p.key) - 1);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_DatastoreGet_fields, p));
+    count++;
+  }
 
-  rpc::payload::DatastoreGetResponse dgr = {};
-  rpc::payload::copy_to_pb_bytes(dgr.value,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(dgr);
+  {
+    rpc_pb_DatastoreGetResponse p = rpc_pb_DatastoreGetResponse_init_default;
+    p.value.size = 4;
+    memcpy(p.value.bytes, "val1", 4);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_DatastoreGetResponse_fields, p));
+    count++;
+  }
 
-  rpc::payload::MailboxPush mbp = {};
-  rpc::payload::copy_to_pb_bytes(mbp.data,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(mbp);
+  {
+    rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
+    p.data.size = 4;
+    memcpy(p.data.bytes, "mail", 4);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_MailboxPush_fields, p));
+    count++;
+  }
 
-  test_roundtrip([]() {
-    rpc::payload::MailboxProcessed p = {};
-    p.message_id = 1;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::MailboxAvailableResponse p = {};
+  {
+    rpc_pb_MailboxProcessed p = rpc_pb_MailboxProcessed_init_default;
+    p.message_id = 99;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_MailboxProcessed_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_MailboxAvailableResponse p =
+        rpc_pb_MailboxAvailableResponse_init_default;
     p.count = 5;
-    return p;
-  }());
+    TEST_ASSERT_TRUE(
+        roundtrip_verify(rpc_pb_MailboxAvailableResponse_fields, p));
+    count++;
+  }
 
-  rpc::payload::MailboxReadResponse mbr = {};
-  rpc::payload::copy_to_pb_bytes(mbr.content,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(mbr);
+  {
+    rpc_pb_MailboxReadResponse p = rpc_pb_MailboxReadResponse_init_default;
+    p.content.size = 4;
+    memcpy(p.content.bytes, "data", 4);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_MailboxReadResponse_fields, p));
+    count++;
+  }
 
-  rpc::payload::FileWrite fw = {};
-  strncpy(fw.path, str, sizeof(fw.path));
-  rpc::payload::copy_to_pb_bytes(fw.data, reinterpret_cast<const uint8_t*>(str),
-                                 4);
-  test_roundtrip(fw);
+  {
+    rpc_pb_FileWrite p = rpc_pb_FileWrite_init_default;
+    strncpy(p.path, "/tmp/foo", sizeof(p.path) - 1);
+    p.data.size = 4;
+    memcpy(p.data.bytes, "1234", 4);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileWrite_fields, p));
+    count++;
+  }
 
-  rpc::payload::FileRead fr = {};
-  strncpy(fr.path, str, sizeof(fr.path));
-  test_roundtrip(fr);
+  {
+    rpc_pb_FileRead p = rpc_pb_FileRead_init_default;
+    strncpy(p.path, "/tmp/foo", sizeof(p.path) - 1);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileRead_fields, p));
+    count++;
+  }
 
-  rpc::payload::FileRemove frm = {};
-  strncpy(frm.path, str, sizeof(frm.path));
-  test_roundtrip(frm);
+  {
+    rpc_pb_FileRemove p = rpc_pb_FileRemove_init_default;
+    strncpy(p.path, "/tmp/foo", sizeof(p.path) - 1);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileRemove_fields, p));
+    count++;
+  }
 
-  rpc::payload::FileReadResponse frr = {};
-  rpc::payload::copy_to_pb_bytes(frr.content,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(frr);
+  {
+    rpc_pb_FileReadResponse p = rpc_pb_FileReadResponse_init_default;
+    p.content.size = 3;
+    memcpy(p.content.bytes, "abc", 3);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileReadResponse_fields, p));
+    count++;
+  }
 
-  rpc::payload::ProcessRunAsync pra = {};
-  strncpy(pra.command, str, sizeof(pra.command));
-  test_roundtrip(pra);
+  {
+    rpc_pb_ProcessRunAsync p = rpc_pb_ProcessRunAsync_init_default;
+    strncpy(p.command, "ls -la", sizeof(p.command) - 1);
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ProcessRunAsync_fields, p));
+    count++;
+  }
 
-  test_roundtrip([]() {
-    rpc::payload::ProcessRunAsyncResponse p = {};
-    p.pid = 123;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::ProcessPoll p = {};
-    p.pid = 123;
-    return p;
-  }());
+  {
+    rpc_pb_ProcessRunAsyncResponse p =
+        rpc_pb_ProcessRunAsyncResponse_init_default;
+    p.pid = 1234;
+    TEST_ASSERT_TRUE(
+        roundtrip_verify(rpc_pb_ProcessRunAsyncResponse_fields, p));
+    count++;
+  }
 
-  rpc::payload::ProcessPollResponse ppr = {};
-  ppr.status = 0;
-  ppr.exit_code = 0;
-  rpc::payload::copy_to_pb_bytes(ppr.stdout_data,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  rpc::payload::copy_to_pb_bytes(ppr.stderr_data,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(ppr);
+  {
+    rpc_pb_ProcessPoll p = rpc_pb_ProcessPoll_init_default;
+    p.pid = 1234;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ProcessPoll_fields, p));
+    count++;
+  }
 
-  test_roundtrip([]() {
-    rpc::payload::ProcessKill p = {};
-    p.pid = 123;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::AckPacket p = {};
-    p.command_id = 42;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::HandshakeConfig p = {};
-    p.ack_timeout_ms = 200;
-    p.ack_retry_limit = 5;
-    p.response_timeout_ms = 2000;
-    return p;
-  }());
-  test_roundtrip([]() {
-    rpc::payload::SetBaudratePacket p = {};
-    p.baudrate = 57600;
-    return p;
-  }());
-  test_roundtrip(rpc::payload::LinkSync{});
-  test_roundtrip(rpc::payload::EnterBootloader{});
+  {
+    rpc_pb_ProcessPollResponse p = rpc_pb_ProcessPollResponse_init_default;
+    p.status = 0;
+    p.exit_code = 0;
+    p.finished = true;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ProcessPollResponse_fields, p));
+    count++;
+  }
 
-  rpc::payload::SpiTransfer st = {};
-  rpc::payload::copy_to_pb_bytes(st.data, reinterpret_cast<const uint8_t*>(str),
-                                 4);
-  test_roundtrip(st);
+  {
+    rpc_pb_ProcessKill p = rpc_pb_ProcessKill_init_default;
+    p.pid = 1234;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_ProcessKill_fields, p));
+    count++;
+  }
 
-  rpc::payload::SpiTransferResponse strr = {};
-  rpc::payload::copy_to_pb_bytes(strr.data,
-                                 reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(strr);
 
-  test_roundtrip([]() {
-    rpc::payload::SpiConfig p = {};
-    p.frequency = 1;
+  {
+    rpc_pb_SetBaudratePacket p = rpc_pb_SetBaudratePacket_init_default;
+    p.baudrate = 115200;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_SetBaudratePacket_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_EnterBootloader p = rpc_pb_EnterBootloader_init_default;
+    p.magic = 0xDEADBEEF;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_EnterBootloader_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_SpiTransfer p = rpc_pb_SpiTransfer_init_default;
+    p.data.size = 2;
+    p.data.bytes[0] = 0x55;
+    p.data.bytes[1] = 0xAA;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_SpiTransfer_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_SpiTransferResponse p = rpc_pb_SpiTransferResponse_init_default;
+    p.data.size = 2;
+    p.data.bytes[0] = 0x12;
+    p.data.bytes[1] = 0x34;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_SpiTransferResponse_fields, p));
+    count++;
+  }
+
+  {
+    rpc_pb_SpiConfig p = rpc_pb_SpiConfig_init_default;
     p.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
-    p.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
-    return p;
-  }());
-  TEST_ASSERT_TRUE(count > 0);
-}
+    p.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
+    p.frequency = 4000000;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_SpiConfig_fields, p));
+    count++;
+  }
 
-void test_all_structs_chaos() {
-  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::VersionResponse>());
-  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::Capabilities>());
-  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::ConsoleWrite>());
-  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::DatastorePut>());
-  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::FileWrite>());
-  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::ProcessPollResponse>());
+  TEST_ASSERT_EQUAL(36, count);
 }
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_all_structs_roundtrip);
-  RUN_TEST(test_all_structs_chaos);
+  RUN_TEST(test_all_wire_messages_roundtrip);
   return UNITY_END();
 }

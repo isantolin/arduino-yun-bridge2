@@ -13,15 +13,11 @@ constexpr int32_t kProcessInvalidPid = -1;
 
 }  // namespace
 
-ProcessClass::ProcessClass() {}
-
 void ProcessClass::runAsync(etl::string_view cmd,
                             etl::span<const etl::string_view> args,
                             typename ProcessClass::ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_LIMIT_REACHED));
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     handler(kProcessInvalidPid);
     return;
   }
@@ -41,21 +37,21 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   if (!ok) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_RUN_ASYNC_FAILED));
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
 
-  rpc::payload::ProcessRunAsync p = {};
-  rpc::Payload::copy_to_pb_string(
-      p.command,
+  rpc_pb_ProcessRunAsync p = rpc_pb_ProcessRunAsync_init_default;
+  bridge::pb::copy_string(
+      p.command, sizeof(p.command),
       etl::string_view(command_buffer.data(), command_buffer.size()));
 
-  if (!Bridge.sendOrEmitStatus(
-          rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p,
-          etl::string_view(rpc::status_reason::PROCESS_RUN_ASYNC_FAILED))) {
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("RunAsync");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
+                             rpc_pb_ProcessRunAsync_fields, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
@@ -66,18 +62,18 @@ void ProcessClass::runAsync(etl::string_view cmd,
 void ProcessClass::poll(int32_t pid,
                         typename ProcessClass::ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_LIMIT_REACHED));
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
   }
 
-  rpc::payload::ProcessPoll p = {};
+  rpc_pb_ProcessPoll p = rpc_pb_ProcessPoll_init_default;
   p.pid = static_cast<uint32_t>(pid);
 
-  if (!Bridge.sendOrEmitStatus(
-          rpc::CommandId::CMD_PROCESS_POLL, 0, p,
-          etl::string_view(rpc::status_reason::PROCESS_RUN_INTERNAL_ERROR))) {
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Poll");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_ProcessPoll_fields,
+                             p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
   }
 
@@ -87,34 +83,41 @@ void ProcessClass::poll(int32_t pid,
 }
 
 void ProcessClass::kill(int32_t pid) {
-  rpc::payload::ProcessKill p = {};
+  rpc_pb_ProcessKill p = rpc_pb_ProcessKill_init_default;
   p.pid = static_cast<uint32_t>(pid);
-  Bridge.sendOrEmitStatus(
-      rpc::CommandId::CMD_PROCESS_KILL, 0, p,
-      etl::string_view(rpc::status_reason::PROCESS_KILL_FAILED));
+
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Kill");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_ProcessKill_fields,
+                             p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
 }
 
 void ProcessClass::_onRunAsyncResponse(
-    const rpc::payload::ProcessRunAsyncResponse& msg) {
-  _pending_run_async.dispatch(
-      msg, [](const ProcessRunHandler& handler,
-              const rpc::payload::ProcessRunAsyncResponse& response) {
-        handler(static_cast<int32_t>(response.pid));
-      });
+    const rpc_pb_ProcessRunAsyncResponse& msg) {
+  if (!_pending_run_async.empty()) {
+    auto handler = _pending_run_async.front();
+    _pending_run_async.pop();
+    if (handler.is_valid()) {
+      handler(static_cast<int32_t>(msg.pid));
+    }
+  }
 }
 
 void ProcessClass::_onPollResponse(
-    const rpc::payload::ProcessPollResponse& msg) {
-  _pending_polls.dispatch(
-      msg, [](const PendingPoll& pending,
-              const rpc::payload::ProcessPollResponse& response) {
-        pending.second(static_cast<rpc::StatusCode>(response.status),
-                       response.exit_code,
-                       etl::span<const uint8_t>(response.stdout_data.bytes,
-                                                response.stdout_data.size),
-                       etl::span<const uint8_t>(response.stderr_data.bytes,
-                                                response.stderr_data.size));
-      });
+    const rpc_pb_ProcessPollResponse& msg) {
+  if (!_pending_polls.empty()) {
+    auto pending = _pending_polls.front();
+    _pending_polls.pop();
+    if (pending.second.is_valid()) {
+      pending.second(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+                     etl::span<const uint8_t>(msg.stdout_data.bytes,
+                                              msg.stdout_data.size),
+                     etl::span<const uint8_t>(msg.stderr_data.bytes,
+                                              msg.stderr_data.size));
+    }
+  }
 }
 
 void ProcessClass::reset() {

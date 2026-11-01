@@ -157,7 +157,6 @@ class BridgeService:
             serial_timing=derive_serial_timing(config),
             send_frame=serial.send_raw,
             enqueue_cloud=self.enqueue_cloud,
-            acknowledge_frame=serial.acknowledge,
             logger_=logger,
         )
 
@@ -176,7 +175,7 @@ class BridgeService:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
 
     async def send_mcu_error(self, message: str) -> bool:
-        return bool(self.serial and await self.serial.send(Status.ERROR.value, pb.GenericResponse(message=message)))
+        return bool(self.serial and await self.serial.send(Status.ERROR.value, b""))
 
     async def _send_mcu_status(self, ok: bool, error_message: str = "") -> bool:
         return await (self.send_mcu_ok() if ok else self.send_mcu_error(error_message))
@@ -186,7 +185,7 @@ class BridgeService:
     ) -> Any:
         if not self.serial:
             return False
-        return await self.serial.send(Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message=msg))
+        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
     # --- External Interface ---
 
@@ -489,14 +488,7 @@ class BridgeService:
 
                 res = handler(sequence_id, p)
                 if inspect.isawaitable(res):
-                    res = await res
-                if (
-                    res is not False
-                    and getattr(res, "status", None) != "error"
-                    and getattr(res, "pid", 1) != 0
-                    and command_id not in _STATUS_VALUES
-                ):
-                    await serial.acknowledge(command_id, sequence_id)
+                    await res
             elif spec is None or spec.paired_request_id is None:
                 self.state.unknown_command_count += 1
                 self.state.unknown_command_last_id = command_id
@@ -1017,28 +1009,15 @@ class BridgeService:
     mcu_xon = functools.partialmethod(set_mcu_paused, False)
 
     async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
-        if status is Status.ACK:
-            try:
-                p = (
-                    cast(pb.AckPacket, payload)
-                    if isinstance(payload, ProtobufMessage)
-                    else pb.AckPacket.FromString(payload)
-                )
-                logger.debug("MCU ACK received", command_id=f"0x{p.command_id:02X}")
-            except (ProtobufDecodeError, TypeError, ValueError) as e:
-                logger.error("Failed to decode MCU ACK packet", error=str(e))
-            return
         self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
         text = ""
         if payload:
-            try:
-                if isinstance(payload, ProtobufMessage):
-                    text = getattr(payload, "message", str(payload))
-                else:
-                    text = pb.GenericResponse.FromString(payload).message
-            except (ProtobufDecodeError, TypeError, ValueError):
-                text = format_ubus_bytes(payload) if isinstance(payload, bytes) else str(payload)
-        log_func = logger.error if status not in {Status.OK, Status.ACK} else logger.debug
+            text = (
+                format_ubus_bytes(payload)
+                if isinstance(payload, bytes)
+                else getattr(payload, "message", str(payload))
+            )
+        log_func = logger.error if status != Status.OK else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_cloud_status_report(
             pb.StatusReport(

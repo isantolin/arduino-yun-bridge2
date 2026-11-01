@@ -10,7 +10,6 @@ requires-python = ">=3.13"
 dependencies = [
     "annotated-doc==0.0.5",
     "anyio==4.15.1",
-    "cobs==1.2.2",
     "cryptography==50.0.2",
     "grpclib==0.4.9",
     "h2==4.4.1",
@@ -18,6 +17,7 @@ dependencies = [
     "hyperframe==6.1.0",
     "lmdb==3.0.0",
     "parse==1.22.4",
+    "pigweed==0.0.24",
     "protobuf==7.36.2",
     "psutil==7.2.2",
     "python-statemachine==3.2.2",

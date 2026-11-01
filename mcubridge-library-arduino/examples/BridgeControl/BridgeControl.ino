@@ -10,6 +10,7 @@
  */
 
 #include <Bridge.h>
+#include <PigweedAVR.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <services/Console.h>
@@ -31,15 +32,9 @@ void setup() {
 
   // [SIL-2] PROHIBIDO usar Serial.print() si comparte puerto con el Bridge.
   // En emulación, Serial (UART0) es el canal del protocolo. Cualquier texto
-  // enviado aquí corromperá el stream COBS y bloqueará la sincronización.
+  // enviado aquí corromperá el stream HDLC y bloqueará la sincronización.
 
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
-
-  Bridge.onCommand(BridgeClass::CommandHandler::create(
-      [](const rpc_pb_RpcEnvelope& envelope) {
-        Console.print(F("Comando RPC no manejado: ID=0x"));
-        Console.println(envelope.command_id, HEX);
-      }));
 
   Bridge.onStatus(BridgeClass::StatusHandler::create(
       [](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {

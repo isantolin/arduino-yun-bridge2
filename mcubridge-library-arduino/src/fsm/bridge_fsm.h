@@ -13,23 +13,20 @@ enum class StateId : uint8_t {
   UNSYNCHRONIZED = 1,
   HANDSHAKE = 2,
   SYNCHRONIZED = 3,
-  AWAITING_ACK = 4,
-  FAULT = 5,
-  ENTERING_BOOTLOADER = 6,
-  CHANGING_BAUDRATE = 7
+  FAULT = 4,
+  ENTERING_BOOTLOADER = 5,
+  CHANGING_BAUDRATE = 6
 };
 
 // --- Events ---
 struct EvHandshakeStart : public etl::message<0> {};
 struct EvHandshakeComplete : public etl::message<1> {};
 struct EvHandshakeFailed : public etl::message<2> {};
-struct EvSendCritical : public etl::message<3> {};
-struct EvAckReceived : public etl::message<4> {};
-struct EvTimeout : public etl::message<5> {};
-struct EvReset : public etl::message<6> {};
-struct EvEnterBootloader : public etl::message<7> {};
-struct EvBaudrateChange : public etl::message<8> {};
-struct EvBaudrateApplied : public etl::message<9> {};
+struct EvTimeout : public etl::message<3> {};
+struct EvReset : public etl::message<4> {};
+struct EvEnterBootloader : public etl::message<5> {};
+struct EvBaudrateChange : public etl::message<6> {};
+struct EvBaudrateApplied : public etl::message<7> {};
 
 // --- Forward Declarations ---
 class BridgeFsm;
@@ -37,7 +34,6 @@ class StartupState;
 class UnsynchronizedState;
 class HandshakeState;
 class SynchronizedState;
-class AwaitingAckState;
 class FaultState;
 class EnteringBootloaderState;
 class ChangingBaudrateState;
@@ -89,43 +85,26 @@ class UnsynchronizedState
 
 class HandshakeState
     : public BaseBridgeState<HandshakeState, StateId::HANDSHAKE, false,
-                             EvHandshakeComplete, EvSendCritical,
-                             EvHandshakeFailed, EvReset, EvTimeout> {
+                             EvHandshakeComplete, EvHandshakeFailed, EvReset,
+                             EvTimeout> {
  public:
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
-  etl::fsm_state_id_t on_event(const EvSendCritical&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
-  }
 };
 
 class SynchronizedState
     : public BaseBridgeState<SynchronizedState, StateId::SYNCHRONIZED, false,
-                             EvSendCritical, EvReset, EvHandshakeFailed,
-                             EvTimeout, EvEnterBootloader, EvBaudrateChange> {
+                             EvReset, EvHandshakeFailed, EvTimeout,
+                             EvEnterBootloader, EvBaudrateChange> {
  public:
   using BaseBridgeState::on_event;
-  etl::fsm_state_id_t on_event(const EvSendCritical&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
-  }
   etl::fsm_state_id_t on_event(const EvEnterBootloader&) {
     return static_cast<etl::fsm_state_id_t>(StateId::ENTERING_BOOTLOADER);
   }
   etl::fsm_state_id_t on_event(const EvBaudrateChange&) {
     return static_cast<etl::fsm_state_id_t>(StateId::CHANGING_BAUDRATE);
-  }
-};
-
-class AwaitingAckState
-    : public BaseBridgeState<AwaitingAckState, StateId::AWAITING_ACK, false,
-                             EvAckReceived, EvTimeout, EvReset,
-                             EvHandshakeFailed> {
- public:
-  using BaseBridgeState::on_event;
-  etl::fsm_state_id_t on_event(const EvAckReceived&) {
-    return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
 };
 
@@ -152,19 +131,17 @@ class BridgeFsm : public etl::fsm {
   BridgeFsm();
 
   bool isSynchronized() const;
-  bool isAwaitingAck() const;
 
  private:
   StartupState _startup_state;
   UnsynchronizedState _unsynchronized_state;
   HandshakeState _handshake_state;
   SynchronizedState _synchronized_state;
-  AwaitingAckState _awaiting_ack_state;
   FaultState _fault_state;
   EnteringBootloaderState _entering_bootloader_state;
   ChangingBaudrateState _changing_baudrate_state;
 
-  etl::array<etl::ifsm_state*, 8> _state_table;
+  etl::array<etl::ifsm_state*, 7> _state_table;
 };
 
 }  // namespace bridge::fsm

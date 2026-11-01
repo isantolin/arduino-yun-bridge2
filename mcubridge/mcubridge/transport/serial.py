@@ -25,13 +25,13 @@ import anyio
 import serialx
 import structlog
 import tenacity
-from cobs import cobsr
-from google.protobuf.message import Message as ProtobufMessage
+from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
+from pw_hdlc.decode import FrameDecoder
+from pw_rpc.internal.packet_pb2 import RpcPacket
 from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 
-from mcubridge.protocol import is_system_command, protocol
+from mcubridge.protocol import protocol
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import (
     FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
     REGISTRY,
@@ -42,14 +42,7 @@ from mcubridge.protocol.protocol import (
     SERIAL_SUCCESS_STATUS_CODES,
     Status,
 )
-from mcubridge.protocol.structures import (
-    PendingCommand,
-    parse_serial_response,
-)
-from mcubridge.security.security import (
-    generate_nonce_with_counter,
-    validate_nonce_counter,
-)
+from mcubridge.protocol.structures import PendingCommand
 from mcubridge.services.handshake import SerialHandshakeFatal
 
 logger = structlog.get_logger("mcubridge.serial")
@@ -160,6 +153,7 @@ class SerialTransport:
         self._ack_timeout = max(self.config.serial_retry_timeout or 0, float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0)
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
         self.max_attempts = max(1, self.config.serial_retry_attempts or 1)
+        self.decoder = FrameDecoder()
 
     class _RetryableSerialError(Exception):
         """Marker exception to request another send attempt."""
@@ -184,7 +178,6 @@ class SerialTransport:
             if self.current_command:
                 self.current_command.mark_failure(Status.TIMEOUT.value)
             self.current_command = None
-            self.state.link_last_nonce_counter = 0
 
     async def run(self) -> None:
         """Main lifecycle loop of the serial transport."""
@@ -280,13 +273,22 @@ class SerialTransport:
         if self.serial:
             await self.serial.close()
 
+    async def feed_data(self, data: bytes | memoryview) -> None:
+        """Feed incoming serial bytes into the HDLC frame decoder and dispatch valid frames."""
+        raw_bytes = bytes(data) if isinstance(data, memoryview) else data
+        for frame in self.decoder.process(raw_bytes):
+            if not frame.ok():
+                self.state.serial_decode_errors += 1
+                await self.check_baudrate_fallback()
+                continue
+            await self.process_hdlc_frame(frame)
+
     async def read_loop(self, serial: serialx.AsyncSerial) -> None:
         while not self.stop_event.is_set():
             try:
                 packet_with_sep = await serial.readuntil(protocol.FRAME_DELIMITER)
-                packet_view = memoryview(packet_with_sep)[:-1]
-                if packet_view:
-                    await self.process_packet(packet_view)
+                if packet_with_sep:
+                    await self.feed_data(packet_with_sep)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
                 await serial.read(protocol.MAX_SERIAL_FRAME_BYTES)
@@ -300,62 +302,77 @@ class SerialTransport:
                     logger.error("Error in serial read loop", error=str(exc))
                 break
 
-    async def process_packet(self, encoded_packet: bytes | memoryview) -> None:
-        """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
-        raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
-        try:
-            decoded = cobsr.decode(raw_bytes)
-            decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
-        except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
-            self.state.serial_decode_errors += 1
-            if isinstance(exc, ValueError) and str(exc) == "CRC mismatch":
-                await self.check_baudrate_fallback()
-            logger.error("Malformed frame received from MCU", error=str(exc), raw_hex=raw_bytes.hex())
-            return
-
-        envelope = decoded_frame.envelope
-        payload = decoded_frame.payload
-        cmd_id, seq_id = envelope.command_id, envelope.sequence_id
-
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "[MCU -> SERIAL] [CMD:0x%02X] [RAW]: [%s%s]",
-                cmd_id,
-                raw_bytes.hex().upper(),
-                protocol.FRAME_DELIMITER.hex().upper(),
-            )
-
-        if (
-            self.state.connection_fsm.negotiating_baud.is_active
-            and self.negotiation_future
-            and not self.negotiation_future.done()
-            and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
-        ):
-            self.switch_local_baudrate(self.config.serial_baud)
-            self.negotiation_future.set_result(True)
-            return
-
-        # Anti-replay validation
-        if self.state.is_synchronized and not is_system_command(cmd_id):
-            ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
-            if not ok:
-                logger.error("Anti-replay validation failed")
-                return
-            self.state.link_last_nonce_counter = new_counter
-
-        # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
-        if isinstance(payload, ProtobufMessage) and not payload.IsInitialized():
-            logger.error("Transport gate rejected uninitialized payload from MCU")
-            self.state.serial_decode_errors += 1
-            return
-
-        # Correlation and Service dispatch
-        self.correlate_frame(cmd_id, payload, seq_id)
-        if self.service:
-            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
-
-        self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
+    async def process_hdlc_frame(self, frame: Any) -> None:
+        """Processes a validated HDLC frame received from the serial link. [SIL-2]"""
+        raw_len = len(frame.raw_encoded) if hasattr(frame, "raw_encoded") else len(frame.data)
+        self.state.metrics.serial_bytes_received.inc(raw_len)
         self.state.metrics.serial_frames_received.inc()
+
+        if frame.address == protocol.HDLC_ADDRESS_LOG:
+            logger.info("MCU log", raw=frame.data)
+            return
+
+        if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
+            if self.service:
+                await self.service.handle_mcu_frame(protocol.Command.CMD_CONSOLE_WRITE.value, 0, frame.data)
+            return
+
+        if frame.address == protocol.HDLC_ADDRESS_RPC:
+            pkt = RpcPacket()
+            try:
+                pkt.ParseFromString(frame.data)
+            except (ProtobufDecodeError, ValueError) as exc:
+                self.state.serial_decode_errors += 1
+                logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame.data.hex())
+                return
+
+            spec = protocol.RPC_METHOD_TO_SPEC.get((pkt.service_id, pkt.method_id))
+            cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
+            seq_id = pkt.call_id
+
+            payload: ProtobufMessage | bytes = pkt.payload
+            if spec and spec.response_type and pkt.payload:
+                try:
+                    resp_msg = spec.response_type()
+                    resp_msg.ParseFromString(pkt.payload)
+                    payload = resp_msg
+                except (ProtobufDecodeError, ValueError) as exc:
+                    logger.warning(
+                        "Unable to parse RPC response payload",
+                        service_id=pkt.service_id,
+                        method_id=pkt.method_id,
+                        error=str(exc),
+                    )
+
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "[MCU -> SERIAL] [CMD:0x%02X] [SVC:0x%08X METH:0x%08X SEQ:%d]",
+                    cmd_id,
+                    pkt.service_id,
+                    pkt.method_id,
+                    seq_id,
+                )
+
+            if (
+                self.state.connection_fsm.negotiating_baud.is_active
+                and self.negotiation_future
+                and not self.negotiation_future.done()
+                and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
+            ):
+                self.switch_local_baudrate(self.config.serial_baud)
+                self.negotiation_future.set_result(True)
+                return
+
+            # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
+            if isinstance(payload, ProtobufMessage) and not payload.IsInitialized():
+                logger.error("Transport gate rejected uninitialized payload from MCU")
+                self.state.serial_decode_errors += 1
+                return
+
+            # Correlation and Service dispatch
+            self.correlate_frame(cmd_id, payload, seq_id)
+            if self.service:
+                await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
     def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:
         pending = self.current_command
@@ -386,36 +403,10 @@ class SerialTransport:
                     command_id=command_id,
                 )
             return
-        if command_id == Status.ACK.value:
-            ack_pkt = parse_serial_response(payload, pb.AckPacket) if payload else None
-            ack_target = ack_pkt.command_id if ack_pkt is not None else pending.command_id
-            if logger.is_enabled_for(logging.DEBUG):
-                logger.debug(
-                    "Correlation ACK match",
-                    ack_target=ack_target,
-                    pending_cmd=pending.command_id,
-                    expected_resp_ids=pending.expected_resp_ids,
-                )
-            if ack_target == pending.command_id:
-                pending.ack_received = True
-                if not pending.expected_resp_ids:
-                    pending.mark_success(payload)
-            return
         spec = REGISTRY.get(command_id)
         paired_req_id = spec.paired_request_id if spec else None
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "Correlation check paired_request_id",
-                resp_req=paired_req_id,
-                pending_cmd=pending.command_id,
-            )
-        if paired_req_id == pending.command_id:
-            decoded: ProtobufMessage | None = (
-                parse_serial_response(payload, spec.pb_class)
-                if isinstance(payload, bytes) and spec is not None and spec.pb_class is not None
-                else None
-            )
-            pending.mark_success(decoded if decoded is not None else payload)
+        if command_id == pending.command_id or (paired_req_id is not None and paired_req_id == pending.command_id):
+            pending.mark_success(payload)
             return
         if command_id in SERIAL_FAILURE_STATUS_CODES:
             pending.mark_failure(command_id)
@@ -468,7 +459,6 @@ class SerialTransport:
 
                 async def _send_attempt() -> Any:
                     pending.attempts = (pending.attempts or 0) + 1
-                    pending.ack_received = False
                     pending.success = None
 
                     attempt_seq = seq_id
@@ -508,7 +498,7 @@ class SerialTransport:
         if not self.serial:
             return False
 
-        if not self.state.serial_tx_allowed.is_set() and command_id != Status.ACK.value:
+        if not self.state.serial_tx_allowed.is_set():
             try:
                 async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
@@ -524,34 +514,23 @@ class SerialTransport:
             self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
             seq_id = self.tx_sequence_id
 
-        is_excluded = is_system_command(command_id)
-        nonce = protocol.ZERO_NONCE
-        if self.state.is_synchronized and not is_excluded:
-            nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
-            self.state.link_nonce_counter = new_counter
-
-        encoded = cobsr.encode(
-            build_frame(
-                command_id=command_id,
-                sequence_id=seq_id,
-                payload=payload,
-                nonce=nonce,
-                session_key=self.state.link_session_key if self.state.is_synchronized else None,
-            )
-        )
+        if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
+            data = payload.data if hasattr(payload, "data") else (payload if isinstance(payload, bytes) else b"")
+            encoded = protocol.encode_hdlc_console(data)
+        else:
+            encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id)
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
-                "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s%s]",
+                "[SERIAL -> MCU] [CMD:0x%02X] [HDLC]: [%s]",
                 command_id,
                 encoded.hex().upper(),
-                protocol.FRAME_DELIMITER.hex().upper(),
             )
 
         try:
-            await self.serial.write(encoded + protocol.FRAME_DELIMITER)
+            await self.serial.write(encoded)
             await self.serial.drain()
-            self.state.metrics.serial_bytes_sent.inc(len(encoded) + len(protocol.FRAME_DELIMITER))
+            self.state.metrics.serial_bytes_sent.inc(len(encoded))
             self.state.metrics.serial_frames_sent.inc()
             return True
         except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
@@ -576,5 +555,3 @@ class SerialTransport:
                 if self.state.connection_fsm.negotiating_baud.is_active:
                     self.state.connection_fsm.connect()
 
-    async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
-        await self.send_raw(status.value, pb.AckPacket(command_id=command_id), seq_id)

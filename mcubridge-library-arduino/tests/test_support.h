@@ -2,7 +2,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/crc32.h>
+#include <etl/span.h>
 #include <etl/string_view.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -10,8 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "protocol/rpc_frame.h"
+#include "protocol/mcu_wire.pb.h"
 #include "protocol/rpc_protocol.h"
+#include "pb_encode.h"
+#include "pb_decode.h"
+#include <PigweedAVR.h>
 
 template <size_t N>
 struct ByteBuffer {
@@ -121,82 +124,74 @@ class BiStream : public Stream {
 };
 
 // ---------------------------------------------------------------------------
-#include <Codecs/COBSR.h>
-#include <PacketSerial.h>
-
-// COBS/R encoder/decoder for building test frames.
-// [SIL-2] Mirrors the PacketSerial2::COBSR codec used in production.
-// Validated by roundtrip tests in test_protocol.cpp and test_bridge_core.cpp.
+// Pigweed HDLC test frame encoder & decoder helpers
 // ---------------------------------------------------------------------------
 
-struct TestCOBS {
-  static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
-    PacketSerial2::COBSR codec;
-    auto res = codec.encode(etl::span<const uint8_t>(src, len),
-                            etl::span<uint8_t>(dst, len + (len / 254) + 10));
-    return res ? res.value() : 0;
-  }
-
-  static size_t decode(const uint8_t* source, size_t length,
-                       uint8_t* destination) {
-    PacketSerial2::COBSR codec;
-    auto res = codec.decode(etl::span<const uint8_t>(source, length),
-                            etl::span<uint8_t>(destination, 1024));
-    return res ? res.value() : 0;
+struct TestHdlc {
+  template <size_t N>
+  static size_t encodeUIFrame(uint64_t address, etl::span<const uint8_t> payload,
+                              etl::array<uint8_t, N>& out_buf) {
+    pw::stream::MemoryWriter writer(
+        pw::as_writable_bytes(pw::span(out_buf.data(), out_buf.size())));
+    auto res = pw::hdlc::WriteUIFrame(
+        address,
+        pw::as_bytes(pw::span(payload.data(), payload.size())), writer);
+    return res.ok() ? writer.bytes_written() : 0;
   }
 };
 
-// ---------------------------------------------------------------------------
-// Frame extraction helper – decodes COBS segments and validates CRC.
-// ---------------------------------------------------------------------------
+template <size_t N>
+inline bool extract_next_valid_hdlc_frame(
+    const ByteBuffer<N>& buffer, size_t& cursor,
+    pw::hdlc::DecoderBuffer<1024>& decoder,
+    pw::hdlc::Frame& out_frame) {
+  while (cursor < buffer.len) {
+    auto res = decoder.Process(static_cast<std::byte>(buffer.data[cursor++]));
+    if (res.ok()) {
+      out_frame = res.value();
+      return true;
+    }
+  }
+  return false;
+}
+
+inline size_t build_rpc_packet(pw::rpc_avr::PacketType type, uint32_t service_id,
+                               uint32_t method_id,
+                               etl::span<const uint8_t> payload, uint8_t* out_buf,
+                               size_t out_max, uint32_t call_id = 0,
+                               uint32_t channel_id = 1) {
+  pw::rpc_avr::RpcPacket packet;
+  packet.type = type;
+  packet.channel_id = channel_id;
+  packet.service_id = service_id;
+  packet.method_id = method_id;
+  packet.call_id = call_id;
+  packet.payload = pw::ConstByteSpan(
+      reinterpret_cast<const std::byte*>(payload.data()), payload.size());
+  auto res = packet.Encode(pw::as_writable_bytes(pw::span(out_buf, out_max)));
+  return res.ok() ? res.size() : 0;
+}
 
 template <size_t N>
-[[maybe_unused]] inline bool extract_next_valid_frame(
-    const ByteBuffer<N>& buffer, size_t& cursor,
-    rpc_pb_RpcEnvelope& out_frame) {
-  etl::array<uint8_t, 1024> decoded_buf;
-  const uint8_t* const buf_begin = buffer.data.data();
-  const uint8_t* const buf_end = buffer.data.data() + buffer.len;
-
-  bool frame_found = false;
-  etl::array<uint8_t, N> scan_tokens{};
-  const size_t remaining = buffer.len > cursor ? buffer.len - cursor : 0;
-  auto scan_it = etl::find_if(
-      scan_tokens.begin(), scan_tokens.begin() + remaining, [&](uint8_t) {
-        if (cursor >= buffer.len) return true;
-        if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
-          cursor++;
-          return false;
-        }
-        const uint8_t* const begin_ptr = buf_begin + cursor;
-        const uint8_t* const delim_ptr =
-            etl::find(begin_ptr, buf_end, rpc::RPC_FRAME_DELIMITER);
-        const size_t segment_len = static_cast<size_t>(delim_ptr - begin_ptr);
-        const size_t end = cursor + segment_len;
-
-        const size_t decoded_len =
-            TestCOBS::decode(begin_ptr, segment_len, decoded_buf.data());
-        cursor = end;
-
-        if (decoded_len >= rpc::RPC_CRC_SIZE + 2U) {
-          auto result = rpc::parse_frame(
-              etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
-          if (result) {
-            out_frame = result.value();
-            frame_found = true;
-            return true;
-          }
-        }
-        return false;
-      });
-  (void)scan_it;
-
-  return frame_found;
+inline size_t build_hdlc_rpc_frame(uint64_t address,
+                                   pw::rpc_avr::PacketType type,
+                                   uint32_t service_id, uint32_t method_id,
+                                   etl::span<const uint8_t> payload,
+                                   etl::array<uint8_t, N>& out_frame_buf,
+                                   uint32_t call_id = 0,
+                                   uint32_t channel_id = 1) {
+  uint8_t packet_buf[512];
+  size_t pkt_len =
+      build_rpc_packet(type, service_id, method_id, payload, packet_buf,
+                       sizeof(packet_buf), call_id, channel_id);
+  if (pkt_len == 0) return 0;
+  return TestHdlc::encodeUIFrame(
+      address, etl::span<const uint8_t>(packet_buf, pkt_len), out_frame_buf);
 }
 
 // ---------------------------------------------------------------------------
 // Canonical bridge reset helper – available when BRIDGE_ENABLE_TEST_INTERFACE
-// is defined (all test files except test_protocol.cpp).
+// is defined.
 // ---------------------------------------------------------------------------
 
 #ifdef BRIDGE_ENABLE_TEST_INTERFACE
@@ -215,73 +210,4 @@ inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   auto& ba = bridge::test::TestAccessor::create(bridge);
   ba.setIdle();
 }
-
-namespace rpc {
-
-inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
-                                         etl::span<const uint8_t> payload = {},
-                                         etl::span<const uint8_t> nonce = {},
-                                         etl::span<const uint8_t> tag = {}) {
-  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-  env.version = PROTOCOL_VERSION;
-  env.command_id = cmd_id;
-  env.sequence_id = seq_id;
-
-  const bool is_excluded = (cmd_id >= rpc::RPC_STATUS_CODE_MIN &&
-                            cmd_id <= rpc::RPC_STATUS_CODE_MAX) ||
-                           (cmd_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-                            cmd_id <= rpc::RPC_SYSTEM_COMMAND_MAX);
-  const bool do_encrypt = !is_excluded;
-
-  if (!nonce.empty()) {
-    const size_t n_size =
-        etl::min(nonce.size(), static_cast<size_t>(rpc::RPC_AEAD_NONCE_SIZE));
-    etl::copy_n(nonce.begin(), n_size, env.nonce.bytes);
-    env.nonce.size = static_cast<pb_size_t>(n_size);
-  }
-
-  if (!payload.empty()) {
-    const size_t p_size =
-        etl::min(payload.size(), static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
-    etl::copy_n(payload.begin(), p_size,
-                env.payload_type.encrypted_payload_with_tag.bytes);
-    size_t total_size = p_size;
-    if (!tag.empty() && do_encrypt) {
-      const size_t t_size =
-          etl::min(tag.size(), static_cast<size_t>(rpc::RPC_AEAD_TAG_SIZE));
-      etl::copy_n(tag.begin(), t_size,
-                  env.payload_type.encrypted_payload_with_tag.bytes + p_size);
-      total_size += t_size;
-    }
-    env.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(total_size);
-  } else if (!tag.empty() && do_encrypt) {
-    const size_t t_size =
-        etl::min(tag.size(), static_cast<size_t>(rpc::RPC_AEAD_TAG_SIZE));
-    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
-    etl::copy_n(tag.begin(), t_size,
-                env.payload_type.encrypted_payload_with_tag.bytes);
-    env.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(t_size);
-  }
-
-  return env;
-}
-
-}  // namespace rpc
-
-namespace bridge::test {
-template <typename T>
-void set_pb_payload(rpc_pb_RpcEnvelope& frame, const T& msg) {
-  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
-  pb_ostream_t stream = pb_ostream_from_buffer(
-      frame.payload_type.encrypted_payload_with_tag.bytes, 80U);
-  if (pb_encode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-    frame.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(stream.bytes_written);
-  }
-}
-}  // namespace bridge::test
-
 #endif

@@ -10,12 +10,12 @@ from __future__ import annotations
 import asyncio
 
 import structlog
-from cobs import cobsr
+from pw_hdlc.decode import FrameDecoder
+from pw_rpc.internal.packet_pb2 import RpcPacket
+
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame, parse_frame
-from mcubridge.security.security import generate_nonce_with_counter
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -30,63 +30,61 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     frames_received_by_mcu: list[tuple[int, bytes, int]] = []
 
     async def mock_mcu_tcp_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        decoder = FrameDecoder()
         try:
             while True:
-                delimited = await reader.readuntil(protocol.FRAME_DELIMITER)
-                packet = delimited[:-1]
-                if not packet:
-                    continue
+                chunk = await reader.read(512)
+                if not chunk:
+                    break
 
-                raw_frame = cobsr.decode(packet)
-                decoded = parse_frame(raw_frame)
-                cmd_id = decoded.envelope.command_id
-                rx_seq = decoded.envelope.sequence_id
-                payload = decoded.payload
-                frames_received_by_mcu.append(
-                    (cmd_id, payload if isinstance(payload, bytes) else payload.SerializeToString(), rx_seq)
-                )
+                for frame in decoder.process(chunk):
+                    if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
+                        continue
 
-                # Simulate MCU responses based on received command
-                if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
-                    sync_req = (
-                        payload
-                        if isinstance(payload, pb.LinkSync)
-                        else pb.LinkSync.FromString(
-                            payload if isinstance(payload, bytes) else payload.SerializeToString()
+                    pkt = RpcPacket()
+                    pkt.ParseFromString(frame.data)
+                    cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
+                    rx_seq = pkt.call_id
+                    payload = pkt.payload
+
+                    frames_received_by_mcu.append((cmd_id, payload, rx_seq))
+
+                    # Simulate MCU responses based on received command
+                    if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
+                        sync_req = pb.LinkSync.FromString(payload)
+                        tag = service.handshake.calculate_handshake_tag(
+                            runtime_config.serial_shared_secret, sync_req.nonce
                         )
-                    )
-                    tag = service.handshake.calculate_handshake_tag(runtime_config.serial_shared_secret, sync_req.nonce)
-                    resp_pb = pb.LinkSync(
-                        nonce=sync_req.nonce,
-                        tag=tag,
-                    )
-                    resp_frame = build_frame(
-                        protocol.Command.CMD_LINK_SYNC_RESP.value,
-                        rx_seq,
-                        payload=resp_pb,
-                    )
-                    writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
-                    await writer.drain()
+                        resp_pb = pb.LinkSync(
+                            nonce=sync_req.nonce,
+                            tag=tag,
+                        )
+                        resp_frame = protocol.encode_hdlc_rpc(
+                            protocol.Command.CMD_LINK_SYNC_RESP.value,
+                            resp_pb,
+                            call_id=rx_seq,
+                        )
+                        writer.write(resp_frame)
+                        await writer.drain()
 
-                elif cmd_id == protocol.Command.CMD_GET_VERSION.value:
-                    resp_pb = pb.VersionResponse(major=2, minor=8, patch=5)
-                    resp_frame = build_frame(
-                        protocol.Command.CMD_GET_VERSION_RESP.value,
-                        rx_seq,
-                        payload=resp_pb,
-                    )
-                    writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
-                    await writer.drain()
+                    elif cmd_id == protocol.Command.CMD_GET_VERSION.value:
+                        resp_pb = pb.VersionResponse(major=2, minor=8, patch=5)
+                        resp_frame = protocol.encode_hdlc_rpc(
+                            protocol.Command.CMD_GET_VERSION_RESP.value,
+                            resp_pb,
+                            call_id=rx_seq,
+                        )
+                        writer.write(resp_frame)
+                        await writer.drain()
 
-                elif cmd_id == protocol.Command.CMD_DIGITAL_WRITE.value:
-                    # ACK with STATUS_OK
-                    resp_frame = build_frame(
-                        protocol.Status.OK.value,
-                        rx_seq,
-                        payload=b"",
-                    )
-                    writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
-                    await writer.drain()
+                    elif cmd_id == protocol.Command.CMD_DIGITAL_WRITE.value:
+                        resp_frame = protocol.encode_hdlc_rpc(
+                            protocol.Status.OK.value,
+                            b"",
+                            call_id=rx_seq,
+                        )
+                        writer.write(resp_frame)
+                        await writer.drain()
 
         except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
             logger.debug("Mock MCU TCP server connection closed", error=str(exc))
@@ -151,69 +149,48 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     """Verify analog reading and datastore exchange over wireless TCP link."""
-    mcu_counter = 0
 
     async def mock_mcu_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        nonlocal mcu_counter
+        decoder = FrameDecoder()
         try:
             while True:
-                delimited = await reader.readuntil(protocol.FRAME_DELIMITER)
-                packet = delimited[:-1]
-                if not packet:
-                    continue
+                chunk = await reader.read(512)
+                if not chunk:
+                    break
 
-                raw_frame = cobsr.decode(packet)
-                decoded = parse_frame(raw_frame)
-                cmd_id = decoded.envelope.command_id
-                rx_seq = decoded.envelope.sequence_id
-                payload = decoded.payload
+                for frame in decoder.process(chunk):
+                    if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
+                        continue
 
-                if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
-                    sync_req = (
-                        payload
-                        if isinstance(payload, pb.LinkSync)
-                        else pb.LinkSync.FromString(
-                            payload if isinstance(payload, bytes) else payload.SerializeToString()
+                    pkt = RpcPacket()
+                    pkt.ParseFromString(frame.data)
+                    cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
+                    rx_seq = pkt.call_id
+                    payload = pkt.payload
+
+                    if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
+                        sync_req = pb.LinkSync.FromString(payload)
+                        tag = service.handshake.calculate_handshake_tag(
+                            runtime_config.serial_shared_secret, sync_req.nonce
                         )
-                    )
-                    tag = service.handshake.calculate_handshake_tag(runtime_config.serial_shared_secret, sync_req.nonce)
-                    resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag)
-                    resp_frame = build_frame(
-                        protocol.Command.CMD_LINK_SYNC_RESP.value,
-                        rx_seq,
-                        payload=resp_pb,
-                    )
-                    writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
-                    await writer.drain()
+                        resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag)
+                        resp_frame = protocol.encode_hdlc_rpc(
+                            protocol.Command.CMD_LINK_SYNC_RESP.value,
+                            resp_pb,
+                            call_id=rx_seq,
+                        )
+                        writer.write(resp_frame)
+                        await writer.drain()
 
-                elif cmd_id == protocol.Command.CMD_ANALOG_READ.value:
-                    ack_pb = pb.AckPacket(command_id=protocol.Command.CMD_ANALOG_READ.value)
-                    nonce1, mcu_counter = generate_nonce_with_counter(
-                        mcu_counter, prefix_val=protocol.MCU_AEAD_NONCE_PREFIX
-                    )
-                    ack_frame = build_frame(
-                        protocol.Status.ACK.value,
-                        rx_seq,
-                        payload=ack_pb,
-                        session_key=runtime_state.link_session_key,
-                        nonce=nonce1,
-                    )
-                    writer.write(cobsr.encode(ack_frame) + protocol.FRAME_DELIMITER)
-                    await writer.drain()
-
-                    resp_pb = pb.AnalogReadResponse(value=742)
-                    nonce2, mcu_counter = generate_nonce_with_counter(
-                        mcu_counter, prefix_val=protocol.MCU_AEAD_NONCE_PREFIX
-                    )
-                    resp_frame = build_frame(
-                        protocol.Command.CMD_ANALOG_READ_RESP.value,
-                        rx_seq,
-                        payload=resp_pb,
-                        session_key=runtime_state.link_session_key,
-                        nonce=nonce2,
-                    )
-                    writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
-                    await writer.drain()
+                    elif cmd_id == protocol.Command.CMD_ANALOG_READ.value:
+                        resp_pb = pb.AnalogReadResponse(value=742)
+                        resp_frame = protocol.encode_hdlc_rpc(
+                            protocol.Command.CMD_ANALOG_READ_RESP.value,
+                            resp_pb,
+                            call_id=rx_seq,
+                        )
+                        writer.write(resp_frame)
+                        await writer.drain()
 
         except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
             logger.debug("Mock MCU WiFi server connection closed", error=str(exc))

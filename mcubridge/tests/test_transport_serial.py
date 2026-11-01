@@ -6,11 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from cobs import cobsr
+from pw_hdlc.decode import FrameDecoder
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingCommand
 
@@ -37,9 +35,7 @@ def _make_config() -> RuntimeConfig:
     )
 
 
-async def test_process_packet_crc_mismatch_reports_crc(
-    mocker: MockerFixture,
-) -> None:
+async def test_feed_data_crc_mismatch_reports_crc() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
@@ -48,48 +44,38 @@ async def test_process_packet_crc_mismatch_reports_crc(
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         transport = SerialTransport(config, state, service)
 
-        # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in parse_frame)
-        raw = b"\xff" + b"x" * 20
-
-        def mock_decode(data: Any) -> bytes:
-            return raw
-
-        mocker.patch.object(cobsr, "decode", side_effect=mock_decode)
-
-        # Manual call to async method
-        await transport.process_packet(b"\x02encoded")
+        # Invalid HDLC frame with bad FCS
+        bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
+        await transport.feed_data(bad_frame)
 
         assert state.serial_decode_errors == 1
     finally:
         state.cleanup()
 
 
-async def test_process_packet_success_dispatches() -> None:
+async def test_feed_data_success_dispatches() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-
         service.handle_mcu_frame = AsyncMock()
 
-        frame_bytes = build_frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi")
-        encoded = cobsr.encode(frame_bytes)
+        encoded = protocol.encode_hdlc_console(b"hi")
         transport = SerialTransport(config, state, service)
-        await transport.process_packet(encoded)
+        await transport.feed_data(encoded)
 
         service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
     finally:
         state.cleanup()
 
 
-async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
+async def test_feed_data_negotiation_ack_switches_local_baudrate() -> None:
     config = _make_config()
     config.serial_baud = 230400
     config.serial_safe_baud = 115200
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-
         transport = SerialTransport(config, state, service)
 
         mock_serial = AsyncMock()
@@ -98,21 +84,18 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
 
         mock_serial.transport.serial = MagicMock(spec=Serial)
         mock_serial.transport.serial.baudrate = config.serial_safe_baud
-
         transport.serial = mock_serial
 
         transport.state.connection_fsm.start_negotiating()
         fut = asyncio.get_running_loop().create_future()
         transport.negotiation_future = fut
 
-        encoded = cobsr.encode(
-            build_frame(
-                command_id=Command.CMD_SET_BAUDRATE_RESP.value,
-                sequence_id=0,
-                payload=b"",
-            )
+        encoded = protocol.encode_hdlc_rpc(
+            Command.CMD_SET_BAUDRATE_RESP.value,
+            b"",
+            call_id=0,
         )
-        await transport.process_packet(encoded)
+        await transport.feed_data(encoded)
 
         assert await fut
         assert mock_serial.transport.serial.baudrate == config.serial_baud
@@ -186,7 +169,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         state.cleanup()
 
 
-async def test_process_packet_fallback_triggers_negotiation(
+async def test_feed_data_fallback_triggers_negotiation(
     mocker: MockerFixture,
 ) -> None:
     config = _make_config()
@@ -211,20 +194,14 @@ async def test_process_packet_fallback_triggers_negotiation(
         mock_serial.write = AsyncMock(side_effect=_resolve_neg)
         transport.serial = mock_serial
 
-        # Create an invalid frame manually
-        raw = b"\xff" + b"x" * 20
+        bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
 
-        def mock_decode_fallback(data: Any) -> bytes:
-            return raw
-
-        mocker.patch.object(cobsr, "decode", side_effect=mock_decode_fallback)
-
-        await transport.process_packet(b"\x02encoded")
+        await transport.feed_data(bad_frame)
         assert transport.consecutive_crc_errors == 1
         assert not mock_serial.write.called
 
         # Second error (threshold reached)
-        await transport.process_packet(b"\x02encoded")
+        await transport.feed_data(bad_frame)
         assert transport.consecutive_crc_errors == 0
         assert mock_serial.write.called
         mock_serial.write.assert_awaited_once()
@@ -310,35 +287,37 @@ async def test_serial_transport_correlate_frame_branches(
     transport = SerialTransport(runtime_config, runtime_state, None)
     correlate_fn: Callable[[int, bytes], None] = transport.correlate_frame
 
+    # 1. Matching command ID resolves pending command
     curr1 = PendingCommand(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
     )
     transport.current_command = curr1
-    ack_pkt = pb.AckPacket(command_id=Command.CMD_ANALOG_WRITE.value)
-    correlate_fn(Status.ACK.value, ack_pkt.SerializeToString())
-    assert curr1.ack_received is False
+    correlate_fn(Command.CMD_DIGITAL_WRITE.value, b"data")
+    assert curr1.success is True
+    assert curr1.response_payload == b"data"
 
+    # 2. Failure status code marks failure
     curr2 = PendingCommand(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
     )
     transport.current_command = curr2
-    ack_matching = pb.AckPacket(command_id=Command.CMD_DIGITAL_WRITE.value)
-    correlate_fn(Status.ACK.value, ack_matching.SerializeToString())
-    assert curr2.ack_received is True
-    assert curr2.success is None
+    correlate_fn(Status.ERROR.value, b"")
+    assert curr2.success is False
 
+    # 3. Status.OK without expected_resp_ids marks success
     curr3 = PendingCommand(
         command_id=Command.CMD_DIGITAL_WRITE.value,
-        expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
+        expected_resp_ids=[],
     )
     transport.current_command = curr3
-    correlate_fn(Status.OK.value, b"")
-    assert curr3.success is None
+    correlate_fn(Status.OK.value, b"ok")
+    assert curr3.success is True
+    assert curr3.response_payload == b"ok"
 
 
-async def test_serial_process_packet_negotiating_non_baud_cmd(
+async def test_serial_feed_data_negotiating_non_baud_cmd(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
@@ -346,14 +325,13 @@ async def test_serial_process_packet_negotiating_non_baud_cmd(
     fut = asyncio.get_running_loop().create_future()
     transport.negotiation_future = fut
 
-    frame_bytes = build_frame(
-        command_id=Command.CMD_GET_VERSION.value,
-        payload=b"",
-        sequence_id=1,
+    encoded = protocol.encode_hdlc_rpc(
+        Command.CMD_GET_VERSION.value,
+        b"",
+        call_id=1,
     )
-    encoded = cobsr.encode(frame_bytes)
-    proc_packet_fn: Callable[[bytes], Awaitable[None]] = transport.process_packet
-    await proc_packet_fn(encoded)
+    feed_fn: Callable[[bytes], Awaitable[None]] = transport.feed_data
+    await feed_fn(encoded)
     assert not fut.done()
 
 
@@ -452,7 +430,7 @@ async def test_serial_correlate_frame_already_resolved(
     transport.current_command = cmd
 
     correlate: Callable[[int, bytes], None] = transport.correlate_frame
-    correlate(protocol.Status.ACK.value, b"new_data")
+    correlate(protocol.Status.OK.value, b"new_data")
     assert cmd.response_payload == b"original"
 
 
@@ -463,15 +441,15 @@ async def test_serial_transport_edge_branches(
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
 
-    # 1. correlate_frame with empty ACK payload (line 368->381)
+    # 1. correlate_frame with Status.OK when expected_resp_ids is empty
     pending = PendingCommand(
         command_id=Command.CMD_DIGITAL_WRITE.value,
-        expected_resp_ids=[Status.ACK.value],
+        expected_resp_ids=[],
     )
     transport.current_command = pending
     correlate: Callable[[int, bytes], None] = transport.correlate_frame
-    correlate(Status.ACK.value, b"")
-    assert pending.ack_received is True
+    correlate(Status.OK.value, b"")
+    assert pending.success is True
 
     # 2. send() when serial is None (line 434)
     transport.serial = None
@@ -583,15 +561,15 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
 
 
 @given(raw_bytes=st.binary(min_size=0, max_size=256))
-async def test_process_packet_fuzz_resilience_property(raw_bytes: bytes) -> None:
+async def test_feed_data_fuzz_resilience_property(raw_bytes: bytes) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         transport = SerialTransport(config, state, service)
 
-        # Fuzz process_packet with arbitrary bytes: must never raise unhandled exceptions
-        await transport.process_packet(raw_bytes)
+        # Fuzz feed_data with arbitrary bytes: must never raise unhandled exceptions
+        await transport.feed_data(raw_bytes)
         assert state.serial_decode_errors >= 0
     finally:
         state.cleanup()
@@ -620,13 +598,13 @@ async def test_send_raw_arbitrary_payload_and_sequence_property(
         assert ok is True
         assert mock_serial.write.called
         written_data: bytes = mock_serial.write.call_args[0][0]
-        # Frame delimiter must be at the end
+        # HDLC frame starts and ends with FRAME_DELIMITER (0x7E)
+        assert written_data.startswith(protocol.FRAME_DELIMITER)
         assert written_data.endswith(protocol.FRAME_DELIMITER)
-        # Body before delimiter must not contain 0x00 bytes (COBS invariant)
-        body = written_data[:-1]
-        assert b"\x00" not in body
-        # COBS decoding must succeed
-        decoded = cobsr.decode(body)
-        assert len(decoded) > 0
+        # HDLC decoding must succeed
+        decoder = FrameDecoder()
+        frames = list(decoder.process(written_data))
+        assert len(frames) == 1
+        assert frames[0].ok()
     finally:
         state.cleanup()

@@ -27,7 +27,7 @@ import tenacity
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Command
 from mcubridge.services.handshake import (
     HandshakeEvent,
     HandshakeMachine,
@@ -40,8 +40,6 @@ from mcubridge.state.context import (
     CloudLinkMachine,
     CloudLinkState,
     FileTransferMachine,
-    FileTransferState,
-    LinkConnectionState,
     ProcessContext,
     ProcessState,
     RuntimeState,
@@ -89,13 +87,9 @@ class LinkConnectionStateMachine(RuleBasedStateMachine):
     @invariant()
     def verify_link_invariants(self) -> None:
         current: str = self.state.state
-        assert current in (
-            LinkConnectionState.DISCONNECTED.value,
-            LinkConnectionState.CONNECTED.value,
-            LinkConnectionState.SYNCHRONIZED.value,
-        )
+        assert current in ("disconnected", "connected", "synchronized")
         # SIL-2 Critical Invariant: is_synchronized MUST strictly track synchronized state
-        assert (current == LinkConnectionState.SYNCHRONIZED.value) == self.state.is_synchronized
+        assert (current == "synchronized") == self.state.is_synchronized
         # Metric state must match FSM state synchronously
         assert self.state.metrics.link_state.value == current
 
@@ -314,13 +308,7 @@ class FileTransferStateMachine(RuleBasedStateMachine):
     @invariant()
     def verify_transfer_invariants(self) -> None:
         current: str = str(self.fsm.current_state_value)
-        assert current in (
-            FileTransferState.IDLE.value,
-            FileTransferState.TRANSFERRING.value,
-            FileTransferState.COMPLETED.value,
-            FileTransferState.TIMED_OUT.value,
-            FileTransferState.ABORTED.value,
-        )
+        assert current in ("idle", "transferring", "completed", "timed_out", "aborted")
 
 
 class HandshakeStateMachine(RuleBasedStateMachine):
@@ -427,7 +415,6 @@ def handshake_setup(
         serial_timing=timing,
         send_frame=send_frame,
         enqueue_cloud=enqueue_cloud,
-        acknowledge_frame=acknowledge_frame,
     )
     yield manager, state, send_frame, config, timing, acknowledge_frame
     state.cleanup()
@@ -590,7 +577,6 @@ async def test_handshake_malformed_sync_resp(
     result = await manager.handle_link_sync_resp(1, b"\xff\xff\xff")  # Invalid protobuf
     assert not result
     assert state.last_handshake_error == "sync_decode_failed"
-    handshake_setup[-1].assert_called_with(Command.CMD_LINK_SYNC_RESP.value, 1, status=Status.MALFORMED)
 
 
 async def test_wait_for_link_sync_confirmation_timeout(
@@ -641,7 +627,6 @@ async def test_handshake_wait_confirmation_already_synchronized(
         serial_timing=pb.HandshakeConfig(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
     )
     runtime_state.connection_fsm.synchronize()
 
@@ -659,7 +644,6 @@ async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, 
         serial_timing=pb.HandshakeConfig(),
         send_frame=mock_send,
         enqueue_cloud=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
     )
     sync_attempt: Callable[[], Awaitable[bool]] = hs.synchronize_attempt
 
@@ -701,7 +685,6 @@ async def test_handshake_resp_rate_limit_and_secret_none(
         serial_timing=pb.HandshakeConfig(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
     )
 
     runtime_state.link_handshake_nonce = b"expected_nonce_12b"
@@ -732,7 +715,6 @@ async def test_handshake_capabilities_resp_future_none(
         serial_timing=pb.HandshakeConfig(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
     )
     hs.capabilities_future = None
     assert await hs.handle_capabilities_resp(1, b"") is True
@@ -748,14 +730,12 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
         serial_timing=pb.HandshakeConfig(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=mock_cloud,
-        acknowledge_frame=AsyncMock(),
     )
 
-    set_fsm_state: Callable[[HandshakeState], None] = hs.set_fsm_state
-    set_fsm_state(HandshakeState.SYNCHRONIZED)
+    hs.fsm_state = HandshakeState.SYNCHRONIZED
     assert hs.fsm_state == HandshakeState.SYNCHRONIZED
-    set_fsm_state(HandshakeState.SYNCHRONIZED)  # no-op same state
-    set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    hs.fsm_state = HandshakeState.SYNCHRONIZED  # no-op same state
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     assert hs.fsm_state == HandshakeState.UNSYNCHRONIZED
 
     runtime_state.link_handshake_nonce = None
@@ -783,7 +763,6 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
         serial_timing=pb.HandshakeConfig(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
-        acknowledge_frame=AsyncMock(),
     )
 
     # 1. check_rate_limit when now >= limit_until (line 121)
@@ -792,7 +771,6 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     assert remaining == 0.0
 
     # 2. _synchronize_attempt() when confirmed is False and current_state == HandshakeState.FAULT (line 328)
-    set_fsm_state: Callable[[HandshakeState], None] = hs.set_fsm_state
     sync_fn: Callable[[], Awaitable[bool]] = hs.synchronize_attempt
 
     async def _mock_wait_fault(_nonce: bytes) -> bool:
@@ -800,7 +778,7 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
         return False
 
     hs.sync_waiter = _mock_wait_fault
-    set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     res_fault = await sync_fn()
     assert res_fault is False
 
@@ -810,6 +788,6 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
         return False
 
     hs.sync_waiter = _mock_wait_mismatch
-    set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     res_mismatch = await sync_fn()
     assert res_mismatch is False

@@ -1,8 +1,8 @@
 #include "Unity/src/unity.h"
 #include "config/bridge_config.h"
 #include "hal/hal.h"
+#include "protocol/mcu_wire.pb.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
 
 bool g_host_has_sd = false;
 bool g_host_fs_enabled = false;

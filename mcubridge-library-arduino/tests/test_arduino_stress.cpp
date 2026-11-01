@@ -28,26 +28,15 @@ namespace {
 
 using bridge::test::TestAccessor;
 
-void test_bridge_reliable_retry_exhaustion() {
+void test_bridge_handshake_timeout() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
 
-  // 1. Send reliable frame
-  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 1, {}));
-  TEST_ASSERT_TRUE(ba.isAwaitingAck());
-
-  // 2. Trigger timeout multiple times until limit
-  etl::array<int, rpc::RPC_DEFAULT_RETRY_LIMIT - 1> retries{};
-  etl::for_each(retries.begin(), retries.end(), [&](int) {
-    ba.onAckTimeout();
-    TEST_ASSERT_TRUE(ba.isAwaitingAck());
-  });
-
-  // Final call that triggers transition
-  ba.onAckTimeout();
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
+  // Trigger handshake timeout before sync
+  ba.onHandshakeTimeout();
+  TEST_ASSERT_TRUE(ba.isFault());
+  TEST_ASSERT_FALSE(ba.isTxEnabled());
 }
 
 void test_bridge_packet_corruption_chaos() {
@@ -55,15 +44,15 @@ void test_bridge_packet_corruption_chaos() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  // Inyectar ruido asíncrono
-  etl::array<uint8_t, 5> noise = {0x00, 0xFF, 0xAA, 0x55, 0x00};
-  ba.invokePacketReceived(noise);
+  // Inject asynchronous random noise into HDLC decoder
+  const uint8_t noise[] = {0x00, 0xFF, 0xAA, 0x55, 0x7E, 0x12, 0x34};
+  ba.feedHdlcBytes(etl::span<const uint8_t>(noise, sizeof(noise)));
 
-  // Inyectar frame truncado
-  etl::array<uint8_t, 3> truncated = {0x02, 0x01, 0x00};
-  ba.invokePacketReceived(truncated);
+  // Inject truncated frame with valid flag start but cut off
+  const uint8_t truncated[] = {0x7E, 0x01, 0x00, 0x7E};
+  ba.feedHdlcBytes(etl::span<const uint8_t>(truncated, sizeof(truncated)));
 
-  TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_bridge_dispatch_security_denial() {
@@ -75,16 +64,21 @@ void test_bridge_dispatch_security_denial() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "secure_secret_1234567890123456");
 
   // MPU is NOT synchronized yet.
-  // Try to send a restricted command
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f.sequence_id = 1;
+  // Try to send a restricted command (GetFreeMemory) before mutual auth
+  // handshake
+  etl::array<uint8_t, 256> frame_buf;
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                           pw::tokenizer::Hash("bridge.SystemService"),
+                           pw::tokenizer::Hash("GetFreeMemory"),
+                           etl::span<const uint8_t>(), frame_buf, 1, 1);
+  TEST_ASSERT_TRUE(len > 0);
 
-  ba.dispatch(f);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
 
-  // Should have sent some response (error status)
-  TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
+  // Must not synchronize and TX must remain disabled
+  TEST_ASSERT_FALSE(ba.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isTxEnabled());
 }
 
 void test_bridge_fsm_illegal_transitions() {
@@ -93,8 +87,7 @@ void test_bridge_fsm_illegal_transitions() {
   auto& ba = TestAccessor::create(Bridge);
 
   ba.setIdle();
-  // EvAckReceived in Idle should be ignored and keep link unsynchronized
-  ba.trigger(bridge::fsm::EvAckReceived());
+  ba.trigger(bridge::fsm::EvBaudrateApplied());
   TEST_ASSERT_TRUE(ba.isUnsynchronized());
 }
 
@@ -102,7 +95,7 @@ void test_bridge_fsm_illegal_transitions() {
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_bridge_reliable_retry_exhaustion);
+  RUN_TEST(test_bridge_handshake_timeout);
   RUN_TEST(test_bridge_packet_corruption_chaos);
   RUN_TEST(test_bridge_dispatch_security_denial);
   RUN_TEST(test_bridge_fsm_illegal_transitions);

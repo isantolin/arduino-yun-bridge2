@@ -21,7 +21,7 @@ fi
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
 WOLFSSL_DIR="$ARDUINO_LIBS/wolfSSL"
 if [ ! -d "$WOLFSSL_DIR" ]; then WOLFSSL_DIR="$ARDUINO_LIBS/wolfssl"; fi
-PACKETSERIAL_INC="$ARDUINO_LIBS/PacketSerial/src"
+PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
 
 INCLUDES=(
     "-I${SRC_DIR}"
@@ -32,7 +32,8 @@ INCLUDES=(
     "-I${ETL_INC}"
     "-I${WOLFSSL_DIR}"
     "-I${WOLFSSL_DIR}/src"
-    "-I${PACKETSERIAL_INC}"
+    "-I${PIGWEED_INC}"
+    "-I${ARDUINO_LIBS}/PigweedAVR"
 )
 
 COMPILE_FLAGS=(

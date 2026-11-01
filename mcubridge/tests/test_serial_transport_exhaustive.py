@@ -6,10 +6,8 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
-from cobs import cobsr
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
 
@@ -53,20 +51,21 @@ async def test_reset(mock_serial_setup: tuple[SerialTransport, RuntimeState, Mag
     cmd.mark_failure.assert_called_once()
 
 
-async def test_read_loop_cobs_decode_error(
+async def test_read_loop_decode_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
-    transport, _state, mock_serial = mock_serial_setup
+    transport, state, mock_serial = mock_serial_setup
 
-    # First call returns invalid COBS packet + delimiter, second raises CancelledError to end loop
+    # First call returns invalid HDLC packet + delimiter, second raises CancelledError to end loop
     mock_serial.readuntil.side_effect = [
-        b"\xff\xff" + protocol.FRAME_DELIMITER,
+        b"\x7e\xff\xff\x7e",
         asyncio.CancelledError(),
     ]
 
     read_loop_fn = transport.read_loop
     with pytest.raises(asyncio.CancelledError):
         await read_loop_fn(mock_serial)
+    assert state.serial_decode_errors >= 1
 
 
 async def test_read_loop_crc_error_recovery(
@@ -74,12 +73,11 @@ async def test_read_loop_crc_error_recovery(
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
 
-    # Valid COBS, invalid CRC
-    raw_body = b"invalid_frame_body"
-    encoded = cobsr.encode(raw_body) + protocol.FRAME_DELIMITER
+    # Invalid CRC on HDLC frame
+    bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
 
     mock_serial.readuntil.side_effect = [
-        encoded,
+        bad_frame,
         asyncio.CancelledError(),
     ]
 
@@ -94,11 +92,10 @@ async def test_read_loop_valid_frame_dispatch(
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
 
-    frame_bytes = build_frame(command_id=0x01, sequence_id=1, payload=b"test_payload")
-    cobs_frame = cobsr.encode(frame_bytes) + protocol.FRAME_DELIMITER
+    hdlc_frame = protocol.encode_hdlc_console(b"test_payload")
 
     mock_serial.readuntil.side_effect = [
-        cobs_frame,
+        hdlc_frame,
         asyncio.CancelledError(),
     ]
 

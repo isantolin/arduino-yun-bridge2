@@ -25,9 +25,10 @@ rationale = "Template engine for professional and auditable code generation [BUI
 [[dependency]]
 name = "protobuf"
 openwrt = "python3-protobuf"
-pip = "protobuf==7.36.2"
+pip = "protobuf==5.28.3"
+check_latest = false
 gateway = true
-rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [v36.2 final: Edition 2026 naming & UPB performance features]"
+rationale = "Pinned to protobuf 5.28.3 commanded by Google Pigweed priority (pigweed 0.0.24 requires protobuf~=5.28.2)"
 
 
 [[dependency]]
@@ -250,8 +251,9 @@ rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]
 name = "mypy-protobuf"
-pip = "mypy-protobuf==5.1.0"
-rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions"
+pip = "mypy-protobuf==3.5.0"
+check_latest = false
+rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions [commanded by Pigweed]"
 
 [[dev_dependency]]
 name = "pexpect"
@@ -270,8 +272,9 @@ rationale = "Fast Python type checker and LSP language server for strict type sa
 
 [[dev_dependency]]
 name = "types-protobuf"
-pip = "types-protobuf==7.35.1.20260906"
-rationale = "Type stubs for google.protobuf required by pyrefly"
+pip = "types-protobuf==5.28.3.20241030"
+check_latest = false
+rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pigweed]"
 
 [[dev_dependency]]
 name = "types-psutil"

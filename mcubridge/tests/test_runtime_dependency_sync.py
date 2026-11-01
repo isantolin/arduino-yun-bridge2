@@ -167,3 +167,41 @@ def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Invalid ecosystem version"):
         sync_runtime_deps.sync_metadata("not_a_pep440_version!", tmp_path)
+
+
+def test_check_latest_versions_enforces_pigweed_constraints() -> None:
+    pigweed_dep: sync_runtime_deps.DepEntry = {
+        "name": "pigweed",
+        "openwrt": "python3-pigweed",
+        "pip": "pigweed==0.0.24",
+        "check_latest": False,
+        "gateway": True,
+        "edge": True,
+    }
+    deps_violating: list[sync_runtime_deps.DepEntry] = [
+        pigweed_dep,
+        {
+            "name": "protobuf",
+            "openwrt": "python3-protobuf",
+            "pip": "protobuf==7.36.2",
+            "check_latest": True,
+            "gateway": True,
+            "edge": True,
+        },
+    ]
+    outdated = sync_runtime_deps.check_latest_versions(deps_violating)
+    assert any("violates authoritative Pigweed requirement" in item[0] for item in outdated)
+
+    deps_satisfying: list[sync_runtime_deps.DepEntry] = [
+        pigweed_dep,
+        {
+            "name": "protobuf",
+            "openwrt": "python3-protobuf",
+            "pip": "protobuf==5.28.3",
+            "check_latest": True,
+            "gateway": True,
+            "edge": True,
+        },
+    ]
+    outdated_satisfying = sync_runtime_deps.check_latest_versions(deps_satisfying)
+    assert not any("violates authoritative Pigweed requirement" in item[0] for item in outdated_satisfying)

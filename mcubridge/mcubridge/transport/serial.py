@@ -19,7 +19,7 @@ import asyncio
 import errno
 import logging
 import sys
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import anyio
 import serialx
@@ -518,7 +518,12 @@ class SerialTransport:
             seq_id = self.tx_sequence_id
 
         if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
-            data = payload.data if hasattr(payload, "data") else (payload if isinstance(payload, bytes) else b"")
+            if isinstance(payload, bytes):
+                data = payload
+            elif hasattr(payload, "data"):
+                data = cast(bytes, getattr(payload, "data", b""))
+            else:
+                data = b""
             encoded = protocol.encode_hdlc_console(data)
         else:
             encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id)

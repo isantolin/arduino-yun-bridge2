@@ -18,7 +18,7 @@ dependencies = [
     "lmdb==3.0.0",
     "parse==1.22.4",
     "pigweed==0.0.24",
-    "protobuf==5.28.3",
+    "protobuf==7.36.2",
     "psutil==7.2.2",
     "python-statemachine==3.2.2",
     "serialx==1.15.1",

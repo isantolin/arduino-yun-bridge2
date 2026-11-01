@@ -998,4 +998,4 @@ async def test_ubus_service_run_cancelled_stops_service(mock_runtime: MockRuntim
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert service.is_active is False
+    assert not service.is_active

@@ -11,7 +11,7 @@ from enum import IntEnum, StrEnum
 import functools
 import operator
 import posixpath
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
@@ -831,7 +831,7 @@ def encode_hdlc_rpc(
             else (raw_payload if isinstance(raw_payload, bytes) else b"")
         )
         pkt = RpcPacket(
-            type=packet_type,
+            type=cast(Any, packet_type),
             channel_id=1,
             service_id=srv_id,
             method_id=meth_id,
@@ -848,7 +848,7 @@ def encode_hdlc_rpc(
             else (payload if isinstance(payload, bytes) else b"")
         )
         pkt = RpcPacket(
-            type=packet_type,
+            type=cast(Any, packet_type),
             channel_id=channel_id_or_command,
             service_id=srv_id,
             method_id=meth_id,

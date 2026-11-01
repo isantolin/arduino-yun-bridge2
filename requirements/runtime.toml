@@ -25,10 +25,9 @@ rationale = "Template engine for professional and auditable code generation [BUI
 [[dependency]]
 name = "protobuf"
 openwrt = "python3-protobuf"
-pip = "protobuf==5.28.3"
-check_latest = false
+pip = "protobuf==7.36.2"
 gateway = true
-rationale = "Pinned to protobuf 5.28.3 to strictly satisfy Google Pigweed (pigweed 0.0.24 requires protobuf~=5.28.2)"
+rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [v36.2 final: Edition 2026 naming & UPB performance features]"
 
 
 [[dependency]]

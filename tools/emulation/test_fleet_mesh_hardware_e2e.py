@@ -28,7 +28,7 @@ import structlog
 import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
-from mcubridge_client import cloud_gateway_pb2, mcu_wire_pb2
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session
 from tools.arduino_core_metadata import ArduinoCoreMetadata, read_metadata_json, resolve_core_metadata
 from tools.boards import (
@@ -174,12 +174,12 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name) as (_channel, stub):
-            ver_resp: mcu_wire_pb2.VersionResponse = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
+            ver_resp: mcu_wire_pb2.VersionResponse = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
             for _ in range(5):
                 if ver_resp.major == 2 and ver_resp.minor == 8:
                     break
                 await asyncio.sleep(0.5)
-                ver_resp = await stub.GetVersion(cloud_gateway_pb2.SubscribeRequest())
+                ver_resp = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
             if ver_resp.major != 2 or ver_resp.minor != 8:
                 logger.error("Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor)
                 return False
@@ -189,7 +189,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                 version=f"{ver_resp.major}.{ver_resp.minor}.{ver_resp.patch}",
             )
 
-            mem_resp = await stub.GetFreeMemory(cloud_gateway_pb2.SubscribeRequest())
+            mem_resp = await stub.GetFreeMemory(mcu_wire_pb2.SubscribeRequest())
             if mem_resp.value == 0:
                 logger.error("Free memory reported as 0", node=node.name)
                 return False

@@ -638,7 +638,7 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     assert mock_serial.send.called
 
     # Test synchronous (non-awaitable) handler path
-    called_sync = []
+    called_sync: list[int] = []
 
     def _sync_handler(_seq: int, _p: Any) -> dict[str, str]:
         called_sync.append(_seq)

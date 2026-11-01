@@ -5,7 +5,7 @@ inputs:
   version:
     description: 'Protoc version'
     required: false
-    default: '36.2'
+    default: '28.3'
 runs:
   using: 'composite'
   steps:

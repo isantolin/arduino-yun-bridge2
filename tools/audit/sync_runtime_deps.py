@@ -575,6 +575,8 @@ def update_workflows(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool
         content = wf.read_text(encoding="utf-8")
         new_content = re.sub(r"""PROTOC_VERSION=(?!["']?\$\{\{)[^\n]+""", f"PROTOC_VERSION={protoc_version}", content)
         new_content = re.sub(r"protobuf==\d+\.\d+(\.\d+)?", f"protobuf=={protobuf_pip_version}", new_content)
+        if "setup-protoc" in str(wf):
+            new_content = re.sub(r"(default:\s*['\"])\d+\.\d+(['\"])", rf"\g<1>{protoc_version}\g<2>", new_content)
         if _write_if_changed(wf, new_content, dry_run=dry_run):
             any_updated = True
             if not dry_run:

@@ -42,7 +42,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
           sudo npm install -g --allow-scripts=@bufbuild/buf @bufbuild/buf
-          python -m pip install semgrep protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff pyelftools
+          python -m pip install semgrep vulture pytest pyrefly types-psutil types-pexpect flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
@@ -211,7 +211,7 @@ jobs:
           cache-suffix: emulation
       - name: Install Python Dependencies
         run: |
-          pip install --no-deps -r requirements/runtime.txt
+          pip install -r requirements/runtime.txt
           pip install -r mcubridge-gateway/requirements.txt nanopb black
       - name: Install Emulation Tools
         run: |

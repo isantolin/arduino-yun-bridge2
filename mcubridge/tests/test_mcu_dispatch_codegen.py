@@ -65,39 +65,36 @@ def test_commands_are_derived_from_protobuf_and_sorted() -> None:
 def test_pigweed_rpc_method_mappings() -> None:
     from mcubridge.protocol import protocol
 
-    assert len(protocol.COMMAND_TO_RPC) > 0
-    assert len(protocol.RPC_METHOD_TO_SPEC) > 0
-    assert len(protocol.RPC_TO_COMMAND) > 0
+    assert len(protocol.REGISTRY.by_rpc) > 0
+    assert len(protocol.REGISTRY.by_command_id) > 0
 
-    for cmd, spec in protocol.COMMAND_TO_RPC.items():
-        assert isinstance(cmd, int)
-        assert isinstance(spec.service_id, int)
-        assert spec.service_id > 0
-        assert isinstance(spec.method_id, int)
-        assert spec.method_id > 0
+    for (srv_id, meth_id), spec in protocol.REGISTRY.by_rpc.items():
+        assert isinstance(srv_id, int)
+        assert srv_id > 0
+        assert isinstance(meth_id, int)
+        assert meth_id > 0
         assert isinstance(spec.service_name, str)
         assert len(spec.service_name) > 0
         assert isinstance(spec.method_name, str)
         assert len(spec.method_name) > 0
 
-        key = (spec.service_id, spec.method_id)
-        assert key in protocol.RPC_METHOD_TO_SPEC
-        matched_spec = protocol.RPC_METHOD_TO_SPEC[key]
-        assert matched_spec.service_id == spec.service_id
-        assert matched_spec.method_id == spec.method_id
-        assert matched_spec.service_name == spec.service_name
-        assert matched_spec.method_name == spec.method_name
+        assert protocol.REGISTRY.get((srv_id, meth_id)) is spec
+        assert spec.service_id == srv_id
+        assert spec.method_id == meth_id
 
-    # Verify key Pigweed RPC service and method mappings
-    gpio_write = protocol.COMMAND_TO_RPC[protocol.Command.CMD_DIGITAL_WRITE.value]
+    # Verify key Pigweed RPC service and method mappings via REGISTRY
+    gpio_write = protocol.REGISTRY.get(protocol.Command.CMD_DIGITAL_WRITE.value)
+    assert gpio_write is not None
     assert gpio_write.service_name == "bridge.GpioService"
     assert gpio_write.method_name == "DigitalWrite"
 
-    sys_ver = protocol.COMMAND_TO_RPC[protocol.Command.CMD_GET_VERSION.value]
+    sys_ver = protocol.REGISTRY.get(protocol.Command.CMD_GET_VERSION.value)
+    assert sys_ver is not None
     assert sys_ver.service_name == "bridge.SystemService"
     assert sys_ver.method_name == "GetVersion"
 
-    ds_put = protocol.COMMAND_TO_RPC[protocol.Command.CMD_DATASTORE_PUT.value]
+    ds_put = protocol.REGISTRY.get(protocol.Command.CMD_DATASTORE_PUT.value)
+    assert ds_put is not None
     assert ds_put.service_name == "bridge.DataStoreService"
     assert ds_put.method_name == "Put"
 

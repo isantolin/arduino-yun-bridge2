@@ -31,8 +31,20 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
+from pw_rpc import ids
+from pw_rpc.descriptors import Service
 
-REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb", "mypy_protobuf", "grpclib", "black", "typer", "packaging"]
+REQUIRED_DEPS = [
+    "jinja2",
+    "google.protobuf",
+    "nanopb",
+    "mypy_protobuf",
+    "grpclib",
+    "black",
+    "typer",
+    "packaging",
+    "pw_rpc",
+]
 MISSING_DEPS: list[str] = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep.split(".")[0]) is None]
 HAS_BUF: bool = shutil.which("buf") is not None
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -381,17 +393,27 @@ def _extract_rpc_specs(
 
 
 def _build_command_operation(
-    cmd: dict[str, Any], pb_module: Any, rpc_by_cmd: dict[str, Any], p_fields_map: dict[str, str]
+    cmd: dict[str, Any],
+    pb_module: Any,
+    rpc_by_cmd: dict[str, Any],
+    p_fields_map: dict[str, str],
+    mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     c_name = cmd["name"]
     pb_msg = cmd.get("pb_message")
     matched_rpc = rpc_by_cmd.get(c_name)
+    mcu_rpc = (mcu_rpc_by_cmd or {}).get(c_name)
     op: dict[str, Any] = {"name": c_name, "command_id": f"Command.{c_name}.value"}
+    if mcu_rpc:
+        op["service_name"] = mcu_rpc["service_name"]
+        op["service_id"] = mcu_rpc["service_id"]
+        op["method_name"] = mcu_rpc["method_name"]
+        op["method_id"] = mcu_rpc["method_id"]
     if pb_msg and hasattr(pb_module, pb_msg):
         op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
         op["payload_field"] = p_fields_map[pb_msg]
-    for str_key in ("cloud_topic", "auth_field"):
+    for str_key in ("cloud_topic", "auth_field", "mcu_handler", "mcu_unsupported_reason"):
         if cmd.get(str_key):
             op[str_key] = cmd[str_key]
     if cmd.get("response_command"):
@@ -416,6 +438,11 @@ def _build_command_operation(
             op["rpc_topic"] = matched_rpc["rpc_topic"]
         if matched_rpc.get("is_custom_handler"):
             op["is_custom_handler"] = True
+    elif mcu_rpc:
+        if mcu_rpc.get("req_cls"):
+            op["request_type"] = f"pb.{mcu_rpc['req_cls']}"
+        if mcu_rpc.get("resp_cls"):
+            op["response_type"] = f"pb.{mcu_rpc['resp_cls']}"
     return op
 
 
@@ -447,9 +474,10 @@ def _build_operations_catalog(
     msg_topics: dict[str, str],
     telem_map: dict[str, str],
     pb_module: Any,
+    mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     operations: list[dict[str, Any]] = [
-        _build_command_operation(cmd, pb_module, rpc_by_cmd, p_fields_map) for cmd in commands
+        _build_command_operation(cmd, pb_module, rpc_by_cmd, p_fields_map, mcu_rpc_by_cmd) for cmd in commands
     ]
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
     operations.extend(
@@ -598,8 +626,53 @@ def _extract_operations_context(
         }
     )
 
+    mcu_services = [
+        s for d in all_descs for s in d.services_by_name.values() if s.name not in ("CloudBridge", "LocalBridge")
+    ]
+    mcu_rpc_by_cmd: dict[str, dict[str, Any]] = {}
+    for s_desc in mcu_services:
+        svc = Service.from_descriptor(s_desc)
+        s_prefix = svc.name.removesuffix("Service")
+        s_name = f"bridge.{svc.name}"
+        s_id = ids.calculate(s_name)
+        for m in svc.methods:
+            candidates = [
+                f"CMD_{_snake_case(m.name).upper()}",
+                f"CMD_{s_prefix.upper()}_{_snake_case(m.name).upper()}",
+                f"CMD_{_snake_case(s_prefix).upper()}_{_snake_case(m.name).upper()}",
+                f"CMD_PIN_{_snake_case(m.name.removesuffix('Pins')).upper()}",
+            ]
+            if s_prefix == "FileSystem":
+                candidates.insert(0, f"CMD_FILE_{_snake_case(m.name).upper()}")
+            matched = next((c for c in candidates if c in cmd_by_name), None)
+            if matched:
+                mcu_rpc_by_cmd[matched] = {
+                    "service_name": s_name,
+                    "service_id": s_id,
+                    "method_name": m.name,
+                    "method_id": m.id,
+                    "req_cls": (
+                        m.request_type.DESCRIPTOR.name
+                        if hasattr(m.request_type, "DESCRIPTOR")
+                        else m.request_type.__name__
+                    ),
+                    "resp_cls": (
+                        m.response_type.DESCRIPTOR.name
+                        if hasattr(m.response_type, "DESCRIPTOR")
+                        else m.response_type.__name__
+                    ),
+                }
+    mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
+        "service_name": "bridge.GpioService",
+        "service_id": ids.calculate("bridge.GpioService"),
+        "method_name": "SubscribePins",
+        "method_id": ids.calculate("SubscribePins"),
+        "req_cls": None,
+        "resp_cls": "PinUpdateEvent",
+    }
+
     operations = _build_operations_catalog(
-        commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module
+        commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module, mcu_rpc_by_cmd
     )
     return {
         "grouped_actions": payload_ctx["grouped_actions"],

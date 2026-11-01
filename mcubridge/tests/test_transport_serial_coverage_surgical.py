@@ -203,11 +203,15 @@ async def test_feed_data_uninitialized_protobuf(
     mock_proto = MagicMock(spec=ProtobufMessage)
     mock_proto.IsInitialized.return_value = False
 
-    fake_spec = MagicMock()
-    fake_spec.response_type.return_value = mock_proto
+    fake_spec = protocol.OperationSpec(
+        name="fake",
+        command_id=0x50,
+        service_id=0x1000,
+        method_id=0x2000,
+        response_type=lambda: mock_proto,
+    )
 
-    mocker.patch.dict("mcubridge.protocol.protocol.RPC_METHOD_TO_SPEC", {(0x1000, 0x2000): fake_spec})
-    mocker.patch.dict("mcubridge.protocol.protocol.RPC_TO_COMMAND", {(0x1000, 0x2000): 0x50})
+    mocker.patch.dict(protocol.REGISTRY.by_rpc, {(0x1000, 0x2000): fake_spec})
 
     encoded = protocol.encode_hdlc_rpc(1, 0x1000, 0x2000, 1, b"dummy_payload")
     initial_errors = mock_state.serial_decode_errors

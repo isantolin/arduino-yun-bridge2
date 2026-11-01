@@ -183,6 +183,10 @@ class OperationSpec:
 
     name: str
     command_id: int | None = None
+    service_name: str | None = None
+    service_id: int | None = None
+    method_name: str | None = None
+    method_id: int | None = None
     rpc_name: str | None = None
     rpc_topic: str | None = None
     pb_class: type[Any] | None = None
@@ -198,6 +202,8 @@ class OperationSpec:
     response_type: type[ProtobufMessage] | None = None
     default_factory: Callable[[], ProtobufMessage] | None = None
     handler_name: str | None = None
+    mcu_handler: str | None = None
+    mcu_unsupported_reason: str | None = None
     metrics_blob_field: str | None = None
     cardinality: Cardinality = Cardinality.UNARY_UNARY
     is_custom_handler: bool = False
@@ -223,12 +229,11 @@ class ProtocolRegistry:
         "metrics",
         "line_protocol_fields",
         "by_command_id",
+        "by_rpc",
         "by_name",
         "by_type",
         "rpc_aliases",
         "topic_lookup",
-        "mcu_dispatch_handlers",
-        "mcu_unsupported_reasons",
         "topic_auth_map",
         "rpc_specs",
         "ubus_signatures",
@@ -244,8 +249,8 @@ class ProtocolRegistry:
         line_protocol_fields: tuple[LineProtocolFieldSpec, ...] = (),
         rpc_aliases: dict[str, str] | None = None,
         topic_lookup: dict[str, Topic],
-        mcu_dispatch_handlers: dict[int, str],
-        mcu_unsupported_reasons: dict[int, str],
+        mcu_dispatch_handlers: dict[int, str] | None = None,
+        mcu_unsupported_reasons: dict[int, str] | None = None,
         topic_auth_map: dict[tuple[str, str], str] | None = None,
         ubus_signatures: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (),
         daemon_tasks: tuple[DaemonTaskSpec, ...] = (),
@@ -254,8 +259,6 @@ class ProtocolRegistry:
         self.metrics = metrics
         self.line_protocol_fields = line_protocol_fields
         self.topic_lookup = topic_lookup
-        self.mcu_dispatch_handlers = mcu_dispatch_handlers
-        self.mcu_unsupported_reasons = mcu_unsupported_reasons
         self.rpc_specs = tuple(op for op in operations if op.handler_name is not None)
         self.ubus_signatures = ubus_signatures
         self.daemon_tasks = daemon_tasks
@@ -264,6 +267,11 @@ class ProtocolRegistry:
         )
 
         self.by_command_id = {op.command_id: op for op in operations if op.command_id is not None}
+        self.by_rpc = {
+            (op.service_id, op.method_id): op
+            for op in operations
+            if op.service_id is not None and op.method_id is not None
+        }
         self.by_name = {op.name: op for op in operations}
         self.by_type: dict[type[ProtobufMessage], OperationSpec] = {}
 
@@ -299,6 +307,22 @@ class ProtocolRegistry:
                         self.topic_auth_map.setdefault((alias_str.lower(), sfx.lower()), op.auth_field)
                         self.topic_auth_map.setdefault((alias_str.upper(), sfx.upper()), op.auth_field)
 
+    @property
+    def mcu_dispatch_handlers(self) -> dict[int, str]:
+        return {
+            op.command_id: op.mcu_handler
+            for op in self.operations
+            if op.command_id is not None and op.mcu_handler
+        }
+
+    @property
+    def mcu_unsupported_reasons(self) -> dict[int, str]:
+        return {
+            op.command_id: op.mcu_unsupported_reason
+            for op in self.operations
+            if op.command_id is not None and op.mcu_unsupported_reason
+        }
+
     def lookup_topic(self, segment: str) -> Topic | None:
         return self.topic_lookup.get(segment.lower())
 
@@ -326,6 +350,8 @@ class ProtocolRegistry:
 
     def get(self, key: Any) -> OperationSpec | None:
         """Polymorphic O(1) operation lookup. [SIL-2]"""
+        if isinstance(key, tuple):
+            return self.by_rpc.get(key)
         if isinstance(key, int):
             return self.by_command_id.get(key)
         if isinstance(key, str):
@@ -334,6 +360,8 @@ class ProtocolRegistry:
             return self.by_type.get(key)
         if isinstance(key, ProtobufMessage):
             return self.by_type.get(type(key)) or self.by_name.get(key.DESCRIPTOR.name)
+        if hasattr(key, "service_id") and hasattr(key, "method_id"):
+            return self.by_rpc.get((key.service_id, key.method_id))
         if hasattr(key, "value") and isinstance(key.value, int):
             return self.by_command_id.get(key.value)
         return None
@@ -422,16 +450,23 @@ class ProtocolRegistry:
         """Build O(1) MCU dispatch registry from Protocol SSOT. [SIL-2]"""
         status_fn = status_handler or getattr(target, "handle_mcu_status", None)
         unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
-        dispatch: dict[int, Callable[..., Any]] = {}
+        dispatch: dict[Any, Callable[..., Any]] = {}
         if status_fn is not None:
             for s in Status:
-                if s.value not in self.mcu_dispatch_handlers:
-                    dispatch[s.value] = functools.partial(status_fn, s)
-        for code, handler_path in self.mcu_dispatch_handlers.items():
-            dispatch[code] = operator.attrgetter(handler_path)(target)
-        if unsupp_fn is not None:
-            for code, reason in self.mcu_unsupported_reasons.items():
-                dispatch[code] = functools.partial(unsupp_fn, msg=reason)
+                dispatch[s.value] = functools.partial(status_fn, s)
+        for op in self.operations:
+            if op.mcu_handler:
+                fn = operator.attrgetter(op.mcu_handler)(target)
+                if op.command_id is not None:
+                    dispatch[op.command_id] = fn
+                if op.service_id is not None and op.method_id is not None:
+                    dispatch[(op.service_id, op.method_id)] = fn
+            elif op.mcu_unsupported_reason and unsupp_fn is not None:
+                fn = functools.partial(unsupp_fn, msg=op.mcu_unsupported_reason)
+                if op.command_id is not None:
+                    dispatch[op.command_id] = fn
+                if op.service_id is not None and op.method_id is not None:
+                    dispatch[(op.service_id, op.method_id)] = fn
         return dispatch
 
     def build_ubus_methods(
@@ -499,6 +534,12 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- if op.command_id %}
             command_id={{ op.command_id }},
             {%- endif %}
+            {%- if op.service_id %}
+            service_name={{ op.service_name|tojson }},
+            service_id={{ op.service_id }},
+            method_name={{ op.method_name|tojson }},
+            method_id={{ op.method_id }},
+            {%- endif %}
             {%- if op.rpc_name %}
             rpc_name={{ op.rpc_name|tojson }},
             {%- endif %}
@@ -543,6 +584,12 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- endif %}
             {%- if op.handler_name %}
             handler_name={{ op.handler_name|tojson }},
+            {%- endif %}
+            {%- if op.mcu_handler %}
+            mcu_handler={{ op.mcu_handler|tojson }},
+            {%- endif %}
+            {%- if op.mcu_unsupported_reason %}
+            mcu_unsupported_reason=STATUS_REASON_{{ op.mcu_unsupported_reason|upper }},
             {%- endif %}
             {%- if op.metrics_blob_field %}
             metrics_blob_field={{ op.metrics_blob_field|tojson }},
@@ -602,16 +649,6 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
         {%- for alias in topic.aliases %}
         {{ alias|tojson }}: Topic.{{ topic.name }},
         {%- endfor %}
-        {%- endfor %}
-    },
-    mcu_dispatch_handlers={
-        {%- for c in commands if c.mcu_handler %}
-        Command.{{ c.name }}.value: {{ c.mcu_handler|tojson }},
-        {%- endfor %}
-    },
-    mcu_unsupported_reasons={
-        {%- for c in commands if c.mcu_unsupported_reason %}
-        Command.{{ c.name }}.value: STATUS_REASON_{{ c.mcu_unsupported_reason|upper }},
         {%- endfor %}
     },
     ubus_signatures=(
@@ -678,93 +715,11 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- endfor %}
 
 # ==============================================================================
-# Pigweed RPC Method Specifications & HDLC Serialization Helpers
+# Pigweed HDLC Serialization Helpers
 # ==============================================================================
 
-@dataclass(frozen=True, slots=True)
-class RpcMethodSpec:
-    """Pigweed RPC method specification linking Command, service, and method IDs."""
-
-    service_name: str
-    service_id: int
-    method_name: str
-    method_id: int
-    request_type: type[ProtobufMessage] | None = None
-    response_type: type[ProtobufMessage] | None = None
-
-
-RPC_METHOD_TO_SPEC: Final[dict[tuple[int, int], RpcMethodSpec]] = {
-    (ids.calculate(f"bridge.{svc.name}"), m.id): RpcMethodSpec(
-        service_name=f"bridge.{svc.name}",
-        service_id=ids.calculate(f"bridge.{svc.name}"),
-        method_name=m.name,
-        method_id=m.id,
-        request_type=m.request_type,
-        response_type=m.response_type,
-    )
-    for desc in mcu_wire_pb2.DESCRIPTOR.services_by_name.values()
-    for svc in (Service.from_descriptor(desc),)
-    for m in svc.methods
-}
-
-RPC_METHOD_BY_NAME: Final[dict[tuple[str, str], RpcMethodSpec]] = {
-    (spec.service_name, spec.method_name): spec for spec in RPC_METHOD_TO_SPEC.values()
-}
-
-_CMD_TO_RPC_NAME: Final[dict[int, tuple[str, str]]] = {
-    Command.CMD_SET_PIN_MODE.value: ("bridge.GpioService", "SetPinMode"),
-    Command.CMD_DIGITAL_WRITE.value: ("bridge.GpioService", "DigitalWrite"),
-    Command.CMD_ANALOG_WRITE.value: ("bridge.GpioService", "AnalogWrite"),
-    Command.CMD_DIGITAL_READ.value: ("bridge.GpioService", "DigitalRead"),
-    Command.CMD_ANALOG_READ.value: ("bridge.GpioService", "AnalogRead"),
-    Command.CMD_PIN_SUBSCRIBE.value: ("bridge.GpioService", "SubscribePins"),
-    Command.CMD_GET_VERSION.value: ("bridge.SystemService", "GetVersion"),
-    Command.CMD_GET_FREE_MEMORY.value: ("bridge.SystemService", "GetFreeMemory"),
-    Command.CMD_LINK_SYNC.value: ("bridge.SystemService", "LinkSync"),
-    Command.CMD_LINK_RESET.value: ("bridge.SystemService", "LinkReset"),
-    Command.CMD_GET_CAPABILITIES.value: ("bridge.SystemService", "GetCapabilities"),
-    Command.CMD_SET_BAUDRATE.value: ("bridge.SystemService", "SetBaudrate"),
-    Command.CMD_ENTER_BOOTLOADER.value: ("bridge.SystemService", "EnterBootloader"),
-    Command.CMD_CLOCK_SYNC.value: ("bridge.ClockSyncService", "ClockSync"),
-    Command.CMD_SPI_BEGIN.value: ("bridge.SpiService", "Begin"),
-    Command.CMD_SPI_TRANSFER.value: ("bridge.SpiService", "Transfer"),
-    Command.CMD_SPI_END.value: ("bridge.SpiService", "End"),
-    Command.CMD_SPI_SET_CONFIG.value: ("bridge.SpiService", "SetConfig"),
-    Command.CMD_FILE_WRITE.value: ("bridge.FileSystemService", "Write"),
-    Command.CMD_FILE_READ.value: ("bridge.FileSystemService", "Read"),
-    Command.CMD_FILE_REMOVE.value: ("bridge.FileSystemService", "Remove"),
-    Command.CMD_MAILBOX_PUSH.value: ("bridge.MailboxService", "Push"),
-    Command.CMD_MAILBOX_READ.value: ("bridge.MailboxService", "Read"),
-    Command.CMD_MAILBOX_AVAILABLE.value: ("bridge.MailboxService", "Available"),
-    Command.CMD_MAILBOX_PROCESSED.value: ("bridge.MailboxService", "Processed"),
-    Command.CMD_PROCESS_RUN_ASYNC.value: ("bridge.ProcessService", "RunAsync"),
-    Command.CMD_PROCESS_POLL.value: ("bridge.ProcessService", "Poll"),
-    Command.CMD_PROCESS_KILL.value: ("bridge.ProcessService", "Kill"),
-    Command.CMD_DATASTORE_PUT.value: ("bridge.DataStoreService", "Put"),
-    Command.CMD_DATASTORE_GET.value: ("bridge.DataStoreService", "Get"),
-}
-
-COMMAND_TO_RPC: Final[dict[int, RpcMethodSpec]] = {
-    cmd: RPC_METHOD_BY_NAME[pair]
-    for cmd, pair in _CMD_TO_RPC_NAME.items()
-    if pair in RPC_METHOD_BY_NAME
-}
-COMMAND_TO_RPC[Command.CMD_PIN_UPDATE_EVENT.value] = RpcMethodSpec(
-    service_name="bridge.GpioService",
-    service_id=ids.calculate("bridge.GpioService"),
-    method_name="SubscribePins",
-    method_id=ids.calculate("SubscribePins"),
-    request_type=None,
-    response_type=mcu_wire_pb2.PinUpdateEvent,
-)
-
-RPC_TO_COMMAND: Final[dict[tuple[int, int], int]] = {
-    (spec.service_id, spec.method_id): cmd for cmd, spec in COMMAND_TO_RPC.items()
-}
-
-
 def encode_hdlc_rpc(
-    channel_id_or_command: int,
+    channel_id_or_command: int | OperationSpec | tuple[int, int],
     payload_or_service: Any = b"",
     method_id: int | None = None,
     call_id: int = 1,
@@ -776,23 +731,26 @@ def encode_hdlc_rpc(
 
     Supports two calling conventions:
     1. Direct RPC: encode_hdlc_rpc(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
-    2. Command-based: encode_hdlc_rpc(command_id, payload=b"", call_id=1)
+    2. Operation/Command: encode_hdlc_rpc(command_or_op, payload=b"", call_id=1)
     """
     from google.protobuf.message import Message as ProtobufMessage
     from pw_hdlc.encode import ui_frame
     from pw_rpc.internal.packet_pb2 import RpcPacket
 
     if method_id is None:
-        cmd_id = channel_id_or_command
-        raw_payload = payload_or_service
-        actual_call_id = call_id
-        spec = COMMAND_TO_RPC.get(cmd_id)
-        if spec is not None:
+        target = channel_id_or_command
+        spec = REGISTRY.get(target)
+        if spec is not None and spec.service_id is not None and spec.method_id is not None:
             srv_id = spec.service_id
             meth_id = spec.method_id
+        elif isinstance(target, tuple) and len(target) == 2:
+            srv_id, meth_id = target
         else:
-            srv_id = cmd_id
-            meth_id = cmd_id
+            val = target if isinstance(target, int) else 0
+            srv_id = val
+            meth_id = val
+        raw_payload = payload_or_service
+        actual_call_id = call_id
         actual_payload = (
             raw_payload.SerializeToString()
             if isinstance(raw_payload, ProtobufMessage)
@@ -808,6 +766,7 @@ def encode_hdlc_rpc(
             payload=actual_payload,
         )
     else:
+        channel_id = int(channel_id_or_command) if isinstance(channel_id_or_command, int) else 1
         srv_id = int(payload_or_service)
         meth_id = method_id
         actual_payload = (
@@ -817,7 +776,7 @@ def encode_hdlc_rpc(
         )
         pkt = RpcPacket(
             type=cast(Any, packet_type),
-            channel_id=channel_id_or_command,
+            channel_id=channel_id,
             service_id=srv_id,
             method_id=meth_id,
             call_id=call_id,

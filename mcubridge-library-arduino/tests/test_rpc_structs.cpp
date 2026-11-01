@@ -280,7 +280,6 @@ void test_all_wire_messages_roundtrip() {
     count++;
   }
 
-
   {
     rpc_pb_SetBaudratePacket p = rpc_pb_SetBaudratePacket_init_default;
     p.baudrate = 115200;

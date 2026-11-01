@@ -1,5 +1,6 @@
 #pragma once
 
+#include <PigweedAVR.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/span.h>
@@ -10,11 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pb_decode.h"
+#include "pb_encode.h"
 #include "protocol/mcu_wire.pb.h"
 #include "protocol/rpc_protocol.h"
-#include "pb_encode.h"
-#include "pb_decode.h"
-#include <PigweedAVR.h>
 
 template <size_t N>
 struct ByteBuffer {
@@ -129,13 +129,14 @@ class BiStream : public Stream {
 
 struct TestHdlc {
   template <size_t N>
-  static size_t encodeUIFrame(uint64_t address, etl::span<const uint8_t> payload,
+  static size_t encodeUIFrame(uint64_t address,
+                              etl::span<const uint8_t> payload,
                               etl::array<uint8_t, N>& out_buf) {
     pw::stream::MemoryWriter writer(
         pw::as_writable_bytes(pw::span(out_buf.data(), out_buf.size())));
     auto res = pw::hdlc::WriteUIFrame(
-        address,
-        pw::as_bytes(pw::span(payload.data(), payload.size())), writer);
+        address, pw::as_bytes(pw::span(payload.data(), payload.size())),
+        writer);
     return res.ok() ? writer.bytes_written() : 0;
   }
 };
@@ -143,8 +144,7 @@ struct TestHdlc {
 template <size_t N>
 inline bool extract_next_valid_hdlc_frame(
     const ByteBuffer<N>& buffer, size_t& cursor,
-    pw::hdlc::DecoderBuffer<1024>& decoder,
-    pw::hdlc::Frame& out_frame) {
+    pw::hdlc::DecoderBuffer<1024>& decoder, pw::hdlc::Frame& out_frame) {
   while (cursor < buffer.len) {
     auto res = decoder.Process(static_cast<std::byte>(buffer.data[cursor++]));
     if (res.ok()) {
@@ -155,11 +155,11 @@ inline bool extract_next_valid_hdlc_frame(
   return false;
 }
 
-inline size_t build_rpc_packet(pw::rpc_avr::PacketType type, uint32_t service_id,
-                               uint32_t method_id,
-                               etl::span<const uint8_t> payload, uint8_t* out_buf,
-                               size_t out_max, uint32_t call_id = 0,
-                               uint32_t channel_id = 1) {
+inline size_t build_rpc_packet(pw::rpc_avr::PacketType type,
+                               uint32_t service_id, uint32_t method_id,
+                               etl::span<const uint8_t> payload,
+                               uint8_t* out_buf, size_t out_max,
+                               uint32_t call_id = 0, uint32_t channel_id = 1) {
   pw::rpc_avr::RpcPacket packet;
   packet.type = type;
   packet.channel_id = channel_id;

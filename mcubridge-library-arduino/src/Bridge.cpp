@@ -1,9 +1,9 @@
 #include "Bridge.h"
 
 #include <etl/algorithm.h>
+#include <etl/fixed_iterator.h>
 #include <etl/functional.h>
 #include <etl/iterator.h>
-#include <etl/fixed_iterator.h>
 #include <etl/utility.h>
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/types.h>
@@ -306,8 +306,7 @@ class SpiRpcService final : public pw::rpc_avr::RpcService {
       const size_t len =
           etl::min(static_cast<size_t>(req.data.size), sizeof(resp.data.bytes));
       etl::copy_n(req.data.bytes, len, resp.data.bytes);
-      size_t tr =
-          SPIService.transfer(etl::span<uint8_t>(resp.data.bytes, len));
+      size_t tr = SPIService.transfer(etl::span<uint8_t>(resp.data.bytes, len));
       resp.data.size = static_cast<pb_size_t>(tr);
       pb_ostream_t out = pb_ostream_from_buffer(
           reinterpret_cast<uint8_t*>(response_buffer.data()),
@@ -392,8 +391,7 @@ class MailboxRpcService final : public pw::rpc_avr::RpcService {
       if (!pb_decode_noinit(&stream, rpc_pb_MailboxPush_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
-      Mailbox._enqueue(
-          etl::span<const uint8_t>(req.data.bytes, req.data.size));
+      Mailbox._enqueue(etl::span<const uint8_t>(req.data.bytes, req.data.size));
       return pw::OkStatus();
     }
     return pw::Status::NotFound();
@@ -439,8 +437,7 @@ void BridgeClass::_initObservers() {
 }
 
 BridgeClass::BridgeClass(Stream& stream)
-    : _stream(&stream),
-      _arduino_stream(stream) {
+    : _stream(&stream), _arduino_stream(stream) {
   _initObservers();
 }
 
@@ -605,8 +602,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       if (!_shared_secret.empty() && !isSynchronized()) {
         constexpr uint32_t kSystemServiceId =
             pw::tokenizer::Hash("bridge.SystemService");
-        constexpr uint32_t kLinkSyncMethodId =
-            pw::tokenizer::Hash("LinkSync");
+        constexpr uint32_t kLinkSyncMethodId = pw::tokenizer::Hash("LinkSync");
         if (pkt.service_id != kSystemServiceId ||
             pkt.method_id != kLinkSyncMethodId) {
           emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -640,8 +636,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
 void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
 #if BRIDGE_ENABLE_DATASTORE
   if (packet.service_id == pw::tokenizer::Hash("bridge.DataStoreService")) {
-    rpc_pb_DatastoreGetResponse resp =
-        rpc_pb_DatastoreGetResponse_init_default;
+    rpc_pb_DatastoreGetResponse resp = rpc_pb_DatastoreGetResponse_init_default;
     pb_istream_t stream = pb_istream_from_buffer(
         reinterpret_cast<const uint8_t*>(packet.payload.data()),
         packet.payload.size());
@@ -666,13 +661,11 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
         Mailbox._onAvailableResponse(resp);
       }
     } else if (packet.method_id == kRead) {
-      rpc_pb_MailboxReadResponse resp =
-          rpc_pb_MailboxReadResponse_init_default;
+      rpc_pb_MailboxReadResponse resp = rpc_pb_MailboxReadResponse_init_default;
       pb_istream_t stream = pb_istream_from_buffer(
           reinterpret_cast<const uint8_t*>(packet.payload.data()),
           packet.payload.size());
-      if (pb_decode_noinit(&stream, rpc_pb_MailboxReadResponse_fields,
-                           &resp)) {
+      if (pb_decode_noinit(&stream, rpc_pb_MailboxReadResponse_fields, &resp)) {
         Mailbox._enqueue(
             etl::span<const uint8_t>(resp.content.bytes, resp.content.size));
       }
@@ -695,8 +688,7 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
         Process._onRunAsyncResponse(resp);
       }
     } else if (packet.method_id == kPoll) {
-      rpc_pb_ProcessPollResponse resp =
-          rpc_pb_ProcessPollResponse_init_default;
+      rpc_pb_ProcessPollResponse resp = rpc_pb_ProcessPollResponse_init_default;
       pb_istream_t stream = pb_istream_from_buffer(
           reinterpret_cast<const uint8_t*>(packet.payload.data()),
           packet.payload.size());
@@ -958,12 +950,10 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
   packet.service_id = pw::tokenizer::Hash("bridge.GpioService");
   packet.method_id = pw::tokenizer::Hash("SubscribePins");
   packet.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(payload_buf),
-      pb_stream.bytes_written);
+      reinterpret_cast<const std::byte*>(payload_buf), pb_stream.bytes_written);
 
   uint8_t frame_buf[64];
-  auto encode_res =
-      packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
+  auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
   if (!encode_res.ok()) return false;
 
   auto write_res = pw::hdlc::WriteUIFrame(

@@ -557,4 +557,3 @@ class SerialTransport:
             with anyio.CancelScope(shield=True):
                 if self.state.connection_fsm.negotiating_baud.is_active:
                     self.state.connection_fsm.connect()
-

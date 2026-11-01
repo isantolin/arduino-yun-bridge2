@@ -1013,9 +1013,7 @@ class BridgeService:
         text = ""
         if payload:
             text = (
-                format_ubus_bytes(payload)
-                if isinstance(payload, bytes)
-                else getattr(payload, "message", str(payload))
+                format_ubus_bytes(payload) if isinstance(payload, bytes) else getattr(payload, "message", str(payload))
             )
         log_func = logger.error if status != Status.OK else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)

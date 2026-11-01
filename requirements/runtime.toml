@@ -11,7 +11,7 @@ rationale = "Base interpreter shipped on the target image"
 [[dependency]]
 name = "pigweed"
 openwrt = "python3-pigweed"
-pip = ""
+pip = "pigweed==0.0.24"
 rationale = "Google Pigweed RPC, HDLC framing, and tokenizer for MCU-MPU transport"
 
 
@@ -25,9 +25,10 @@ rationale = "Template engine for professional and auditable code generation [BUI
 [[dependency]]
 name = "protobuf"
 openwrt = "python3-protobuf"
-pip = "protobuf==7.36.2"
+pip = "protobuf==5.28.3"
+check_latest = false
 gateway = true
-rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [v36.2 final: Edition 2026 naming & UPB performance features]"
+rationale = "Pinned to protobuf 5.28.3 to strictly satisfy Google Pigweed (pigweed 0.0.24 requires protobuf~=5.28.2)"
 
 
 [[dependency]]
@@ -87,7 +88,7 @@ rationale = "Deterministic finite state machine (FSM) implementation matching SI
 [[dependency]]
 name = "anyio"
 openwrt = "python3-anyio"
-pip = "anyio==4.15.1"
+pip = "anyio==4.16.0"
 gateway = true
 rationale = "Asynchronous file I/O (anyio.Path), structured concurrency, and typed memory streams"
 
@@ -300,7 +301,7 @@ rationale = "Primary testing framework and test runner"
 
 [[dev_dependency]]
 name = "pytest-asyncio"
-pip = "pytest-asyncio==1.4.1"
+pip = "pytest-asyncio==1.4.1.post1"
 rationale = "Asyncio integration for pytest managing event loop lifecycles"
 
 [[dev_dependency]]

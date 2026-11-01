@@ -2,8 +2,8 @@
  * BridgeWiFi.ino - Reference Example for Arduino MCU Bridge 2 over WiFi TCP
  *
  * Demonstrates SIL-2 Zero-Heap RPC bridge over wireless TCP stream
- * (WiFiClient). Framing (Pigweed HDLC + CRC32) and AEAD ChaCha20-Poly1305 encryption
- * operate transparently across wireless sockets.
+ * (WiFiClient). Framing (Pigweed HDLC + CRC32) and AEAD ChaCha20-Poly1305
+ * encryption operate transparently across wireless sockets.
  */
 
 #include <Arduino.h>
@@ -58,8 +58,8 @@ inline WiFiClass WiFi;
 #include <WiFi.h>
 #endif
 
-#include <PigweedAVR.h>
 #include <Bridge.h>
+#include <PigweedAVR.h>
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/settings.h>
 

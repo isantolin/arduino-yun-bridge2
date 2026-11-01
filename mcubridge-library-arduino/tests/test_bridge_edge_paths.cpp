@@ -43,16 +43,14 @@ inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
                              etl::span<const uint8_t> payload = {}) {
   etl::array<uint8_t, 256> frame_raw;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest, service_id, method_id, payload,
-      frame_raw);
+  size_t len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                                    service_id, method_id, payload, frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 }
 
 template <typename ProtoMsg>
 inline void feed_rpc_request_msg(TestAccessor& ba, uint32_t service_id,
-                                 uint32_t method_id,
-                                 const pb_msgdesc_t* fields,
+                                 uint32_t method_id, const pb_msgdesc_t* fields,
                                  const ProtoMsg& msg) {
   uint8_t pl_buf[128];
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
@@ -169,7 +167,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                        rpc_pb_SpiTransfer_fields, st_msg);
 
   // 13. DataStoreGet response
-  rpc_pb_DatastoreGetResponse ds_resp = rpc_pb_DatastoreGetResponse_init_default;
+  rpc_pb_DatastoreGetResponse ds_resp =
+      rpc_pb_DatastoreGetResponse_init_default;
   ds_resp.value.size = 4;
   ds_resp.value.bytes[0] = 1;
   ds_resp.value.bytes[1] = 2;
@@ -298,10 +297,10 @@ void test_packet_received_security_paths() {
 
   // 2. Corrupt FCS frame is dropped by decoder
   etl::array<uint8_t, 128> corrupt_frame;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest, kGpioSvc,
-      pw::tokenizer::Hash("DigitalWrite"), etl::span<const uint8_t>(),
-      corrupt_frame);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest, kGpioSvc,
+                           pw::tokenizer::Hash("DigitalWrite"),
+                           etl::span<const uint8_t>(), corrupt_frame);
   TEST_ASSERT_GREATER_THAN(2, len);
   if (len >= 2) {
     corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC
@@ -323,8 +322,7 @@ void test_packet_received_security_paths() {
   size_t unk_len = TestHdlc::encodeUIFrame(
       0x99, etl::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
       hdlc_unknown_addr);
-  ba.feedHdlcBytes(
-      etl::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
   // 5. Unsynchronized access with shared secret set rejects non-LinkSync RPC

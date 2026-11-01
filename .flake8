@@ -15,7 +15,7 @@ exclude =
     dist,
     openwrt-sdk,
     mcubridge-library-arduino,
-    mcubridge/mcubridge.egg-info,
     .tmp_tests,
-    .pytest_cache
+    .pytest_cache,
+    third_party
 

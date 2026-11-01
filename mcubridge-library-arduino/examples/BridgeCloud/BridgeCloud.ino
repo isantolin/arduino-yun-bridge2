@@ -12,8 +12,8 @@
  */
 
 #include <Arduino.h>
-#include <PigweedAVR.h>
 #include <Bridge.h>
+#include <PigweedAVR.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <services/Console.h>

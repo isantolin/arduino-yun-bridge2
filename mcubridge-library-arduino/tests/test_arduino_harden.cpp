@@ -59,8 +59,7 @@ void test_bridge_unknown_command_jump_table() {
   // Send an RPC request with unknown service and method
   etl::array<uint8_t, 256> frame_buf;
   size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
-      0xDEADBEEF, 0xCAFEBABE,
+      1, pw::rpc_avr::PacketType::kRequest, 0xDEADBEEF, 0xCAFEBABE,
       etl::span<const uint8_t>(), frame_buf, 42, 1);
   TEST_ASSERT_TRUE(len > 0);
 
@@ -98,11 +97,11 @@ void test_bridge_packet_received_edge_cases() {
 
   // 2. Corrupt CRC frame
   etl::array<uint8_t, 256> frame_buf;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
-      pw::tokenizer::Hash("bridge.SystemService"),
-      pw::tokenizer::Hash("GetVersion"),
-      etl::span<const uint8_t>(), frame_buf, 1, 1);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                           pw::tokenizer::Hash("bridge.SystemService"),
+                           pw::tokenizer::Hash("GetVersion"),
+                           etl::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
 
   // Invalidate CRC
@@ -162,11 +161,11 @@ void test_bridge_security_pre_sync_rejection() {
 
   // Try to send a restricted service command (e.g. FileSystem) before sync
   etl::array<uint8_t, 256> frame_buf;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
-      pw::tokenizer::Hash("bridge.FileSystemService"),
-      pw::tokenizer::Hash("Remove"),
-      etl::span<const uint8_t>(), frame_buf, 1, 1);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                           pw::tokenizer::Hash("bridge.FileSystemService"),
+                           pw::tokenizer::Hash("Remove"),
+                           etl::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
 
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));

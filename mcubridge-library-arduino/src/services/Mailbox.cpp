@@ -18,7 +18,8 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   bridge::pb::copy_bytes(p.data, data);
   constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Push");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxPush_fields, p)) {
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxPush_fields,
+                             p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
@@ -40,7 +41,8 @@ void MailboxClass::signalProcessed(uint32_t message_id) {
   p.message_id = message_id;
   constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Processed");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxProcessed_fields, p)) {
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
+                             rpc_pb_MailboxProcessed_fields, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }

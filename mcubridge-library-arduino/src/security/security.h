@@ -44,8 +44,6 @@ void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key);
 
-
-
 /**
  * @brief Securely zero memory, resistant to compiler optimization.
  */

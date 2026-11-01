@@ -57,9 +57,9 @@
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
 #include "hal/hal.h"
-#include "protocol/mcu_wire.pb.h"
-#include "pb_encode.h"
 #include "pb_decode.h"
+#include "pb_encode.h"
+#include "protocol/mcu_wire.pb.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
 
@@ -184,13 +184,12 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     packet.service_id = service_id;
     packet.method_id = method_id;
     packet.call_id = call_id;
-    packet.payload = pw::ConstByteSpan(
-        reinterpret_cast<const std::byte*>(payload_buf),
-        pb_stream.bytes_written);
+    packet.payload =
+        pw::ConstByteSpan(reinterpret_cast<const std::byte*>(payload_buf),
+                          pb_stream.bytes_written);
 
     uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
-    auto encode_res =
-        packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
+    auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
     if (!encode_res.ok()) return false;
 
     auto write_res = pw::hdlc::WriteUIFrame(
@@ -202,8 +201,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   [[nodiscard]] bool sendRpcRequestNoPayload(uint32_t service_id,
-                                            uint32_t method_id,
-                                            uint32_t call_id = 0) {
+                                             uint32_t method_id,
+                                             uint32_t call_id = 0) {
     if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
     pw::rpc_avr::RpcPacket packet;
     packet.type = pw::rpc_avr::PacketType::kRequest;
@@ -213,8 +212,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     packet.call_id = call_id;
 
     uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
-    auto encode_res =
-        packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
+    auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
     if (!encode_res.ok()) return false;
 
     auto write_res = pw::hdlc::WriteUIFrame(

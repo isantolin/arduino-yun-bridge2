@@ -22,7 +22,7 @@ static BiStream g_test_stream;
 
 void integrated_test_bridge_core() {
   g_test_stream.clear();
-  reset_bridge_core(Bridge, g_test_stream);
+  reset_bridge_core(Bridge, g_test_stream, 0, "top-secret");
   auto& accessor = bridge::test::TestAccessor::create(Bridge);
 
   rpc_pb_LinkSync sync_req = rpc_pb_LinkSync_init_default;

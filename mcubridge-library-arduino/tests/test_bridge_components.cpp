@@ -34,7 +34,7 @@ using namespace bridge::test;
 void reset_bridge_comp(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) bridge::test::TestAccessor(stream);
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, nullptr);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 }

@@ -41,8 +41,8 @@ class FlowControlStream final : public Stream {
 void setUp() {}
 void tearDown() {}
 
-void reset_bridge() {
-  Bridge.begin(115200, "6368616e67656d65313233");
+void reset_bridge(const char* secret = nullptr) {
+  Bridge.begin(115200, secret);
   Console.begin();
 }
 
@@ -53,7 +53,7 @@ void test_bridge_initialization() {
 }
 
 void test_bridge_handshake() {
-  reset_bridge();
+  reset_bridge("6368616e67656d65313233");
   auto& ba = TestAccessor::create(Bridge);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
@@ -607,10 +607,37 @@ void test_bridge_dispatch_extra_branches() {
 void test_bridge_authenticated_digital_write_frame() {
   BiStream stream;
   stream.clear();
-  reset_bridge_core(Bridge, stream);
+  constexpr char kSharedSecret[] = "top-secret";
+  reset_bridge_core(Bridge, stream, 0U, kSharedSecret);
   resetArduinoStubPinStates();
   auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
+
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> handshake_nonce = {};
+  handshake_nonce.fill(0xABU);
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  etl::copy_n(handshake_nonce.begin(), handshake_nonce.size(),
+              sync.nonce.bytes);
+  sync.nonce.size = handshake_nonce.size();
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> handshake_tag = {};
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size,
+                         handshake_tag.data());
+  etl::copy_n(handshake_tag.begin(), handshake_tag.size(), sync.tag.bytes);
+  sync.tag.size = handshake_tag.size();
+
+  uint8_t sync_payload[64];
+  pb_ostream_t sync_stream =
+      pb_ostream_from_buffer(sync_payload, sizeof(sync_payload));
+  TEST_ASSERT_TRUE(pb_encode(&sync_stream, rpc_pb_LinkSync_fields, &sync));
+  etl::array<uint8_t, 128> sync_frame;
+  size_t sync_frame_len = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("LinkSync"),
+      etl::span<const uint8_t>(sync_payload, sync_stream.bytes_written),
+      sync_frame);
+  TEST_ASSERT_GREATER_THAN(0, sync_frame_len);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(sync_frame.data(), sync_frame_len));
+  TEST_ASSERT_TRUE(ba.isSynchronized());
 
   rpc_pb_DigitalWrite request = rpc_pb_DigitalWrite_init_default;
   request.pin = 13U;
@@ -621,19 +648,71 @@ void test_bridge_authenticated_digital_write_frame() {
   TEST_ASSERT_TRUE(
       pb_encode(&payload_stream, rpc_pb_DigitalWrite_fields, &request));
 
-  etl::array<uint8_t, 128> hdlc_buf;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+  uint8_t rpc_packet[128];
+  const size_t rpc_packet_size = build_rpc_packet(
+      pw::rpc_avr::PacketType::kRequest,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalWrite"),
       etl::span<const uint8_t>(payload, payload_stream.bytes_written),
-      hdlc_buf);
+      rpc_packet, sizeof(rpc_packet));
+  TEST_ASSERT_GREATER_THAN(0, rpc_packet_size);
+
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> host_to_mcu_key = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host_key = {};
+  const auto secret =
+      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kSharedSecret),
+                               sizeof(kSharedSecret) - 1U);
+  TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
+      secret, handshake_nonce, host_to_mcu_key, mcu_to_host_key));
+
+  constexpr uint64_t kCounter = 1U;
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
+  etl::array<uint8_t, 128> envelope = {};
+  aad[0] = 1U;
+  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
+    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - i) * 8U;
+    const uint8_t counter_byte = static_cast<uint8_t>(kCounter >> shift);
+    envelope[i] = counter_byte;
+    nonce[4U + i] = counter_byte;
+    aad[1U + i] = counter_byte;
+  }
+  auto ciphertext = etl::span<uint8_t>(
+      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE, rpc_packet_size);
+  auto tag = etl::span<uint8_t>(
+      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + rpc_packet_size,
+      rpc::RPC_AEAD_TAG_SIZE);
+  TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
+      host_to_mcu_key, nonce, aad,
+      etl::span<const uint8_t>(rpc_packet, rpc_packet_size), ciphertext, tag));
+
+  const size_t envelope_size =
+      rpc::RPC_AEAD_COUNTER_SIZE + rpc_packet_size + rpc::RPC_AEAD_TAG_SIZE;
+  etl::array<uint8_t, 160> hdlc_buf;
+  size_t len = TestHdlc::encodeUIFrame(
+      1, etl::span<const uint8_t>(envelope.data(), envelope_size), hdlc_buf);
+  TEST_ASSERT_GREATER_THAN(0, len);
+
+  tag[0] ^= 0x01U;
+  len = TestHdlc::encodeUIFrame(
+      1, etl::span<const uint8_t>(envelope.data(), envelope_size), hdlc_buf);
+  TEST_ASSERT_GREATER_THAN(0, len);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), len));
+  TEST_ASSERT_NOT_EQUAL(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+
+  tag[0] ^= 0x01U;
+  len = TestHdlc::encodeUIFrame(
+      1, etl::span<const uint8_t>(envelope.data(), envelope_size), hdlc_buf);
+  TEST_ASSERT_GREATER_THAN(0, len);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), len));
   Bridge.process();
 
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
   TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
   TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+
+  rpc::security::secure_zero(host_to_mcu_key);
+  rpc::security::secure_zero(mcu_to_host_key);
 }
 
 void test_bridge_receive_security_gate_variants() {

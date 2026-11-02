@@ -537,6 +537,8 @@ void test_link_sync_authentication_paths() {
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
+
   // The explicitly unauthenticated mode requires an empty tag and a valid
   // nonce.
   sync.tag.size = 0;

@@ -864,4 +864,3 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         handle_mock.assert_not_awaited()
     finally:
         state.cleanup()
-

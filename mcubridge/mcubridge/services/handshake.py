@@ -272,9 +272,7 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_response_tag(
-            self._config.serial_shared_secret, nonce
-        )
+        self._state.link_expected_tag = self.calculate_handshake_response_tag(self._config.serial_shared_secret, nonce)
         self._state.link_cipher = None
 
         reset_ok = await self.send_frame(
@@ -401,9 +399,7 @@ class SerialHandshakeManager:
         session_cipher: LinkCipher | None = None
         if self._config.serial_shared_secret:
             try:
-                session_cipher = LinkCipher.for_host(
-                    self._config.serial_shared_secret, nonce
-                )
+                session_cipher = LinkCipher.for_host(self._config.serial_shared_secret, nonce)
             except ValueError as exc:
                 self._logger.error("Unable to derive serial AEAD session keys", error=str(exc))
                 self.clear_handshake_expectations()
@@ -610,15 +606,11 @@ class SerialHandshakeManager:
 
     @staticmethod
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        return SerialHandshakeManager._calculate_handshake_tag(
-            secret, nonce, protocol.HANDSHAKE_HKDF_INFO_AUTH
-        )
+        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_AUTH)
 
     @staticmethod
     def calculate_handshake_response_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        return SerialHandshakeManager._calculate_handshake_tag(
-            secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE
-        )
+        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE)
 
     @staticmethod
     def _calculate_handshake_tag(secret: bytes | None, nonce: bytes, info: bytes) -> bytes:

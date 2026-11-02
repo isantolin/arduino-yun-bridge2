@@ -618,10 +618,7 @@ def test_handshake_calculate_tag_matches_wire_vector() -> None:
     expected_tag = bytes.fromhex("f07a5aa13405715b8b54efde57ac8130")
     assert SerialHandshakeManager.calculate_handshake_tag(secret, nonce) == expected_tag
     expected_response_tag = bytes.fromhex("468299fac4fb82de1391f8a9a84bafd5")
-    assert (
-        SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce)
-        == expected_response_tag
-    )
+    assert SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce) == expected_response_tag
 
 
 @given(

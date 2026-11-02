@@ -508,7 +508,7 @@ class SerialTransport:
                         async with asyncio.timeout(effective_timeout):
                             await pending.completion.wait()
                             if pending.success:
-                                return pending.response_payload if pending.response_payload else True
+                                return pending.response_payload or True
                     except TimeoutError as exc:
                         raise self._RetryableSerialError() from exc
 

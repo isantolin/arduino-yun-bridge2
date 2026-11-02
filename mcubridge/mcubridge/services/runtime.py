@@ -1351,11 +1351,7 @@ class BridgeService:
         route = protocol.parse_topic(self.state.cloud_topic_prefix, req.topic_name)
         is_query = has_correlation or (route is not None and route.direction == "req")
 
-        correlation = (
-            req.correlation_data
-            if has_correlation
-            else (secrets.token_bytes(12) if is_query else b"")
-        )
+        correlation = req.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
 
         with structlog.contextvars.bound_contextvars(
             topic=req.topic_name, correlation=correlation.hex() if correlation else ""

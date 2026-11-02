@@ -199,7 +199,7 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
 
 inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                               unsigned long baudrate = 0,
-                              const char* secret = "top-secret") {
+                              const char* secret = nullptr) {
   bridge.~BridgeClass();
   new (&bridge) bridge::test::TestAccessor(stream);
   if (baudrate) {

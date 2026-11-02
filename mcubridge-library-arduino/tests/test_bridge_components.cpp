@@ -190,7 +190,7 @@ void test_mailbox_api() {
     pkt.service_id = pw::tokenizer::Hash("bridge.MailboxService");
     pkt.method_id = pw::tokenizer::Hash("Read");
     pkt.payload = pw::ConstByteSpan(
-        reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+        reinterpret_cast<const pw::byte*>(payload_buf), pbos.bytes_written);
     TestAccessor::create(Bridge).invokeRpcResponse(pkt);
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
@@ -215,7 +215,7 @@ void test_mailbox_api() {
     pkt.service_id = pw::tokenizer::Hash("bridge.MailboxService");
     pkt.method_id = pw::tokenizer::Hash("Available");
     pkt.payload = pw::ConstByteSpan(
-        reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+        reinterpret_cast<const pw::byte*>(payload_buf), pbos.bytes_written);
     TestAccessor::create(Bridge).invokeRpcResponse(pkt);
     Mailbox.process();
     TEST_ASSERT_TRUE(available_callback_called);

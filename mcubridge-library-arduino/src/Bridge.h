@@ -19,6 +19,9 @@
 #ifdef max
 #undef max
 #endif
+#ifdef abs
+#undef abs
+#endif
 #ifdef round
 #undef round
 #endif
@@ -185,7 +188,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     packet.method_id = method_id;
     packet.call_id = call_id;
     packet.payload =
-        pw::ConstByteSpan(reinterpret_cast<const std::byte*>(payload_buf),
+        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(payload_buf),
                           pb_stream.bytes_written);
 
     uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
@@ -194,7 +197,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
     auto write_res = pw::hdlc::WriteUIFrame(
         1,
-        pw::ConstByteSpan(reinterpret_cast<const std::byte*>(frame_buf),
+        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(frame_buf),
                           encode_res.size()),
         _arduino_stream);
     return write_res.ok();
@@ -217,7 +220,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
     auto write_res = pw::hdlc::WriteUIFrame(
         1,
-        pw::ConstByteSpan(reinterpret_cast<const std::byte*>(frame_buf),
+        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(frame_buf),
                           encode_res.size()),
         _arduino_stream);
     return write_res.ok();

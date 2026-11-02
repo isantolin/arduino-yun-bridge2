@@ -76,10 +76,16 @@ if [ "$EMULATOR" = "simavr" ]; then
         if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then
             SYS_AVR_GCC_PATH="$(dirname "$(dirname "$(command -v avr-gcc)")")"
             AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${SYS_AVR_GCC_PATH}")
-            if [ -d "$USER_LIB_DIR/PigweedAVR/gcc${SYS_AVR_GCC_VER}/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc${SYS_AVR_GCC_VER}/include"
-            elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
+            if [ "$SYS_AVR_GCC_VER" -ge 16 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc16/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc16/include"
+            elif [ "$SYS_AVR_GCC_VER" -ge 14 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
                 AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc15/include"
+            elif [ "$SYS_AVR_GCC_VER" -ge 13 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc13/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc13/include"
+            elif [ "$SYS_AVR_GCC_VER" -ge 11 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc12/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc12/include"
+            elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc10/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc10/include"
             fi
         fi
     fi

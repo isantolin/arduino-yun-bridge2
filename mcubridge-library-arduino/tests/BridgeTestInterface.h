@@ -73,7 +73,7 @@ class TestAccessor : public BridgeClass {
   }
 
   void feedHdlcByte(uint8_t b) {
-    auto res = _hdlc_decoder.Process(static_cast<std::byte>(b));
+    auto res = _hdlc_decoder.Process(static_cast<pw::byte>(b));
     if (res.ok()) {
       _handleReceivedHdlcFrame(res.value());
     }

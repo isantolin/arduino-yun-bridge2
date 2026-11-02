@@ -47,7 +47,7 @@ jobs:
           python -m pip install semgrep vulture pytest pyrefly types-psutil types-pexpect flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
-        run: sudo apt-get update && sudo apt-get install -y g++ make
+        run: sudo apt-get update && sudo apt-get install -y g++ make gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
         run: |
@@ -102,6 +102,7 @@ jobs:
       - uses: ./.github/actions/setup-protoc
       - name: Setup Arduino CLI
         run: |
+          sudo apt-get update && sudo apt-get install -y gcc-avr avr-libc
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores and Dependencies
@@ -150,7 +151,7 @@ jobs:
           cache-suffix: coverage
       - name: Install Build Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y g++ make
+          sudo apt-get update && sudo apt-get install -y g++ make gcc-avr avr-libc
       - name: Setup Arduino CLI
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
@@ -224,7 +225,7 @@ jobs:
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ socat
+          sudo apt-get install -y g++ socat gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -259,7 +260,7 @@ jobs:
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ socat
+          sudo apt-get install -y g++ socat gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -289,7 +290,7 @@ jobs:
           cache-suffix: simavr
       - name: Setup Arduino CLI & Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat
+          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat gcc-avr avr-libc
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino AVR Core & Libraries
@@ -427,7 +428,7 @@ jobs:
           cache-suffix: fleet-mesh
       - name: Setup System Packages & Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores & Libraries

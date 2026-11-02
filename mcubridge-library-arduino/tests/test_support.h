@@ -146,7 +146,7 @@ inline bool extract_next_valid_hdlc_frame(
     const ByteBuffer<N>& buffer, size_t& cursor,
     pw::hdlc::DecoderBuffer<1024>& decoder, pw::hdlc::Frame& out_frame) {
   while (cursor < buffer.len) {
-    auto res = decoder.Process(static_cast<std::byte>(buffer.data[cursor++]));
+    auto res = decoder.Process(static_cast<pw::byte>(buffer.data[cursor++]));
     if (res.ok()) {
       out_frame = res.value();
       return true;
@@ -167,7 +167,7 @@ inline size_t build_rpc_packet(pw::rpc_avr::PacketType type,
   packet.method_id = method_id;
   packet.call_id = call_id;
   packet.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(payload.data()), payload.size());
+      reinterpret_cast<const pw::byte*>(payload.data()), payload.size());
   auto res = packet.Encode(pw::as_writable_bytes(pw::span(out_buf, out_max)));
   return res.ok() ? res.size() : 0;
 }

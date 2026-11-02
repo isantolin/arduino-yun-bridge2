@@ -570,7 +570,7 @@ void BridgeClass::_serialTask() {
     etl::for_each_n(chunk.begin(), to_read, [this](uint8_t&) {
       const int b = _stream->read();
       if (b >= 0) {
-        auto result = _hdlc_decoder.Process(static_cast<std::byte>(b));
+        auto result = _hdlc_decoder.Process(static_cast<pw::byte>(b));
         if (result.ok()) {
           _handleReceivedHdlcFrame(result.value());
         }
@@ -616,7 +616,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       if (res.ok() && res.size() > 0) {
         pw::hdlc::WriteUIFrame(
             1,
-            pw::ConstByteSpan(reinterpret_cast<const std::byte*>(resp_buf),
+            pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(resp_buf),
                               res.size()),
             _arduino_stream);
       }
@@ -776,7 +776,7 @@ bool BridgeClass::sendConsoleStream(etl::span<const uint8_t> data) {
   if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
   auto res = pw::hdlc::WriteUIFrame(
       3,
-      pw::ConstByteSpan(reinterpret_cast<const std::byte*>(data.data()),
+      pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(data.data()),
                         data.size()),
       _arduino_stream);
   return res.ok();
@@ -950,7 +950,7 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
   packet.service_id = pw::tokenizer::Hash("bridge.GpioService");
   packet.method_id = pw::tokenizer::Hash("SubscribePins");
   packet.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(payload_buf), pb_stream.bytes_written);
+      reinterpret_cast<const pw::byte*>(payload_buf), pb_stream.bytes_written);
 
   uint8_t frame_buf[64];
   auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
@@ -958,7 +958,7 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
 
   auto write_res = pw::hdlc::WriteUIFrame(
       1,
-      pw::ConstByteSpan(reinterpret_cast<const std::byte*>(frame_buf),
+      pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(frame_buf),
                         encode_res.size()),
       _arduino_stream);
   return write_res.ok();

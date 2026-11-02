@@ -27,7 +27,7 @@ void test_hdlc_roundtrip_and_crc() {
   pw::hdlc::DecoderBuffer<256> decoder;
   bool frame_found = false;
   for (size_t i = 0; i < encoded_len; ++i) {
-    auto res = decoder.Process(static_cast<std::byte>(out_buf[i]));
+    auto res = decoder.Process(static_cast<pw::byte>(out_buf[i]));
     if (res.ok()) {
       frame_found = true;
       TEST_ASSERT_EQUAL_UINT64(1, res.value().address());
@@ -44,7 +44,7 @@ void test_hdlc_roundtrip_and_crc() {
   // Corrupt payload byte
   out_buf[3] ^= 0xFF;
   for (size_t i = 0; i < encoded_len; ++i) {
-    auto res = corrupt_decoder.Process(static_cast<std::byte>(out_buf[i]));
+    auto res = corrupt_decoder.Process(static_cast<pw::byte>(out_buf[i]));
     if (res.ok()) {
       frame_found = true;
     }
@@ -65,7 +65,7 @@ void test_hdlc_address_demux() {
     pw::hdlc::DecoderBuffer<256> decoder;
     bool found = false;
     for (size_t i = 0; i < len; ++i) {
-      auto res = decoder.Process(static_cast<std::byte>(frame_buf[i]));
+      auto res = decoder.Process(static_cast<pw::byte>(frame_buf[i]));
       if (res.ok()) {
         found = true;
         TEST_ASSERT_EQUAL_UINT64(addr, res.value().address());
@@ -85,7 +85,7 @@ void test_rpc_packet_encoding_and_decoding() {
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   packet.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(payload), sizeof(payload));
+      reinterpret_cast<const pw::byte*>(payload), sizeof(payload));
 
   uint8_t encoded_buf[128];
   auto enc_res = packet.Encode(pw::as_writable_bytes(pw::span(encoded_buf)));

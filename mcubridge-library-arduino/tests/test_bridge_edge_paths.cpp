@@ -73,7 +73,7 @@ inline void invoke_response(TestAccessor& ba, uint32_t service_id,
   pkt.method_id = method_id;
   pkt.call_id = call_id;
   pkt.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+      reinterpret_cast<const pw::byte*>(payload_buf), pbos.bytes_written);
   ba.invokeRpcResponse(pkt);
 }
 
@@ -247,7 +247,7 @@ void test_dispatch_malformed_payload_paths() {
   bad_pkt.type = pw::rpc_avr::PacketType::kResponse;
   bad_pkt.channel_id = 1;
   bad_pkt.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(bad_pl.data()), bad_pl.size());
+      reinterpret_cast<const pw::byte*>(bad_pl.data()), bad_pl.size());
 
   bad_pkt.service_id = kDsSvc;
   bad_pkt.method_id = pw::tokenizer::Hash("Get");

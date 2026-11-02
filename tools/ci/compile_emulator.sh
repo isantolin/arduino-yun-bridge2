@@ -78,7 +78,7 @@ NANOPB_SOURCES=(
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
+    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -104,6 +104,8 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
     "$PIGWEED_PATH/src/pw_varint_varint.cc" \
     "$PIGWEED_PATH/src/pw_status_status.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -123,7 +125,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
+    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -149,6 +151,8 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
     "$PIGWEED_PATH/src/pw_varint_varint.cc" \
     "$PIGWEED_PATH/src/pw_status_status.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

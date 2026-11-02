@@ -10,12 +10,15 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 import serial
+from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from serial import SerialException
 from google.protobuf.message import Message as ProtobufMessage
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
+from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
@@ -94,11 +97,21 @@ async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfi
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.baudrate = 9600
     transport.serial = mock_serial
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    host_to_mcu, mcu_to_host = derive_link_keys(mock_config.serial_shared_secret, nonce)
+    transport.state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
+    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
     transport.state.connection_fsm.start_negotiating()
     fut: asyncio.Future[bool] = asyncio.Future()
     transport.negotiation_future = fut
+    transport.negotiation_target_baudrate = mock_config.serial_baud
 
-    raw = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
+    cleartext = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
+    frame = next(FrameDecoder().process(cleartext))
+    raw = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
+    )
     await transport.feed_data(raw)
     assert fut.done()
     assert fut.result() is True
@@ -179,6 +192,10 @@ async def test_logging_not_debug_branches(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    host_to_mcu, mcu_to_host = derive_link_keys(mock_config.serial_shared_secret, nonce)
+    transport.state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
+    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
     mock_serial.write = MagicMock(return_value=10)
@@ -192,7 +209,12 @@ async def test_logging_not_debug_branches(
 
     # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
-    encoded = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION_RESP.value, payload, call_id=1)
+    cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION_RESP.value, payload, call_id=1)
+    frame = next(FrameDecoder().process(cleartext))
+    encoded = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
+    )
     await transport.feed_data(encoded)
     assert mock_state.metrics.serial_bytes_received.value > 0
 

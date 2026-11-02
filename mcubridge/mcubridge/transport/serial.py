@@ -105,6 +105,7 @@ class SerialTransport:
 
         self.stop_event = asyncio.Event()
         self.negotiation_future: asyncio.Future[bool] | None = None
+        self.negotiation_target_baudrate: int | None = None
         self.consecutive_crc_errors = 0
         self.tx_sequence_id = 0
 
@@ -188,15 +189,15 @@ class SerialTransport:
                     read_task = tg.create_task(self.read_loop(serial_dev), name="mcubridge-serial-read")
                     stop_task = tg.create_task(self.stop_event.wait(), name="mcubridge-serial-stop")
 
+                    if self.service:
+                        await self.service.on_serial_connected()
+
                     if (
                         not is_network
                         and self.config.serial_baud != connect_baud
                         and not await self.negotiate_baudrate(self.config.serial_baud)
                     ):
                         raise ConnectionError("Baudrate negotiation failed")
-
-                    if self.service:
-                        await self.service.on_serial_connected()
 
                     await asyncio.wait(
                         (read_task, stop_task),
@@ -381,9 +382,10 @@ class SerialTransport:
                 self.state.connection_fsm.negotiating_baud.is_active
                 and self.negotiation_future
                 and not self.negotiation_future.done()
+                and self.negotiation_target_baudrate is not None
                 and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
             ):
-                self.switch_local_baudrate(self.config.serial_baud)
+                self.switch_local_baudrate(self.negotiation_target_baudrate)
                 self.negotiation_future.set_result(True)
                 return
 
@@ -532,7 +534,11 @@ class SerialTransport:
         if not self.serial:
             return False
 
-        if not self.state.serial_tx_allowed.is_set():
+        is_baudrate_negotiation = (
+            command_id == protocol.Command.CMD_SET_BAUDRATE.value
+            and self.state.connection_fsm.negotiating_baud.is_active
+        )
+        if not self.state.serial_tx_allowed.is_set() and not is_baudrate_negotiation:
             try:
                 async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
@@ -611,18 +617,25 @@ class SerialTransport:
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)
+        was_synchronized = self.state.is_synchronized
         self.state.connection_fsm.start_negotiating()
+        self.negotiation_target_baudrate = target_baud
         try:
             self.negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
             async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
                 await self.negotiation_future
+            await asyncio.sleep(protocol.BAUDRATE_CHANGE_DELAY_MS / 1000)
+            if was_synchronized:
+                self.state.connection_fsm.synchronize()
             return True
         except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
+            self.negotiation_future = None
+            self.negotiation_target_baudrate = None
             with anyio.CancelScope(shield=True):
                 if self.state.connection_fsm.negotiating_baud.is_active:
                     self.state.connection_fsm.connect()

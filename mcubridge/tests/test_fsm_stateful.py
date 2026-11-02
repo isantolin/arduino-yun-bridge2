@@ -704,15 +704,25 @@ async def test_handshake_resp_rate_limit_and_secret_none(
         enqueue_cloud=AsyncMock(),
     )
 
-    runtime_state.link_handshake_nonce = b"expected_nonce_12b"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    runtime_state.link_handshake_nonce = nonce
     runtime_state.handshake_rate_until = time.monotonic() + 10.0
-    pkt = pb.LinkSync(nonce=b"expected_nonce_12b", tag=b"tag")
+    pkt = pb.LinkSync(nonce=nonce, tag=b"tag")
     assert await hs.handle_link_sync_resp(1, pkt) is False
 
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+    )
+    hs.transition(HandshakeEvent.START_SYNC)
+    hs.transition(HandshakeEvent.RESET_SENT)
+    hs.transition(HandshakeEvent.SYNC_SENT)
     runtime_config.serial_handshake_min_interval = 0.0
     runtime_config.serial_shared_secret = b""
     runtime_state.handshake_rate_until = 0.0
-    nonce = b"expected_12b_nonce"
     runtime_state.link_handshake_nonce = nonce
     tag = hs.calculate_handshake_response_tag(b"", nonce)
     runtime_state.link_expected_tag = tag

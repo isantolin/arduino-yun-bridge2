@@ -879,7 +879,10 @@ message Hardware {
   uint32 startup_drain_per_tick = 17;
   uint32 startup_drain_final = 18;
   uint32 startup_stabilization_ms = 19;
-  uint32 baudrate_change_delay_ms = 20;
+  uint32 baudrate_change_delay_ms = 20 [
+    (py_name) = "BAUDRATE_CHANGE_DELAY_MS",
+    (py_type) = "int"
+  ];
   uint32 max_consecutive_crc_errors = 21;
   uint32 flow_control_xoff_threshold = 23 [
     (py_name) = "FLOW_CONTROL_XOFF_THRESHOLD",

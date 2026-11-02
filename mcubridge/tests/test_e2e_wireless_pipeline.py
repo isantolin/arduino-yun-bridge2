@@ -41,10 +41,10 @@ def _encode_mcu_rpc_frame(
     encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=call_id)
     if cipher is None:
         return encoded
-    frame = next(FrameDecoder().process(encoded))
+    frame = next(iter(FrameDecoder().process(encoded)))
     return ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
+        cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
     )
 
 

@@ -833,6 +833,6 @@ async def test_handshake_send_failures_and_capabilities_branches(
     assert await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=tag))
     assert runtime_state.handshake_rate_until > 0.0
 
-    # 4. fetch_capabilities_with_delay with capabilities_delay == 0 and send_frame failure
-    await hs.fetch_capabilities_with_delay()
+    # 4. Let background capabilities discovery task (scheduled by handle_link_sync_resp) run
+    await asyncio.sleep(0.02)
     assert await hs.handle_link_reset_resp(1, b"\xaa\xbb")

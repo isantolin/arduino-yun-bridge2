@@ -612,7 +612,9 @@ def _rpc_frame(
     status: int = 0,
 ) -> bytes:
     spec = protocol.REGISTRY.get(command.value)
-    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    assert spec is not None
+    assert spec.service_id is not None
+    assert spec.method_id is not None
     return protocol.encode_hdlc_rpc(
         1,
         spec.service_id,
@@ -638,7 +640,9 @@ async def test_link_sync_response_maps_to_resp_id_and_dispatches() -> None:
         transport = SerialTransport(config, state, service)
         reply = pb.LinkSync(nonce=b"\x01" * 16, tag=b"\x02" * 16)
 
-        await transport.feed_data(_rpc_frame(Command.CMD_LINK_SYNC, packet_type=_PKT_RESPONSE, call_id=7, payload=reply))
+        await transport.feed_data(
+            _rpc_frame(Command.CMD_LINK_SYNC, packet_type=_PKT_RESPONSE, call_id=7, payload=reply)
+        )
 
         service.handle_mcu_frame.assert_awaited_once()
         cmd_id, seq_id, payload = service.handle_mcu_frame.await_args.args

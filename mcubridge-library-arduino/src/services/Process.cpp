@@ -110,8 +110,7 @@ void ProcessClass::_onPollResponse(const rpc_pb_ProcessPollResponse& msg) {
     pending.second(
         static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
         etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-        etl::span<const uint8_t>(msg.stderr_data.bytes,
-                                 msg.stderr_data.size));
+        etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }
 }
 

@@ -528,6 +528,7 @@ class SerialTransport:
             )
 
         try:
+
             def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
                 ser.write(data)
                 ser.flush()

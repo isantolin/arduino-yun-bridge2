@@ -34,9 +34,9 @@ bool DecodeProto(pw::ConstByteSpan request, const pb_msgdesc_t* fields,
 
 pw::Status EncodeResponse(pw::ByteSpan response_buffer, size_t& response_size,
                           const pb_msgdesc_t* fields, const void* src_struct) {
-  pb_ostream_t out = pb_ostream_from_buffer(
-      reinterpret_cast<uint8_t*>(response_buffer.data()),
-      response_buffer.size());
+  pb_ostream_t out =
+      pb_ostream_from_buffer(reinterpret_cast<uint8_t*>(response_buffer.data()),
+                             response_buffer.size());
   pb_encode(&out, fields, src_struct);
   response_size = out.bytes_written;
   return pw::OkStatus();

@@ -33,7 +33,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     ARDUINO_COVERAGE_MIN_FUNCTION="${ARDUINO_COVERAGE_MIN_FUNCTION:-95}"
     rm -rf "${BUILD_DIR}"
 else
-    BUILD_DIR="${LIB_DIR}/build-host-local"
+    BUILD_DIR="${ARDUINO_HOST_BUILD_DIR:-${LIB_DIR}/build-host-local}"
     OUTPUT_ROOT=""
 fi
 

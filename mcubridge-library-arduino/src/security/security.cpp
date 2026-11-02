@@ -15,6 +15,7 @@
 
 #include "../config/bridge_config.h"
 
+/* This MCU has no cryptographic RNG; fail closed if PSA random is requested. */
 extern "C" psa_status_t mbedtls_psa_external_get_random(
     mbedtls_psa_external_random_context_t* context, uint8_t* output,
     size_t output_size, size_t* output_length) {

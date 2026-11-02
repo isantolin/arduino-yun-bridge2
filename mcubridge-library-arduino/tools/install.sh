@@ -221,9 +221,7 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
         git -C "${ROOT_DIR}" submodule update --init --recursive third_party/avr_pigweed_port 2>/dev/null || true
     fi
     if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ]; then
-        if [ ! -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
-            python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
-        fi
+        python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
         if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
             mkdir -p "$LIB_DIR"
             rm -rf "$LIB_DIR/PigweedAVR"

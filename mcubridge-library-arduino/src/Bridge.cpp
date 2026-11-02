@@ -25,6 +25,23 @@ void __attribute__((weak)) handle_error(const etl::exception&) {
 
 namespace {
 
+bool DecodeProto(pw::ConstByteSpan request, const pb_msgdesc_t* fields,
+                 void* dest_struct) {
+  pb_istream_t stream = pb_istream_from_buffer(
+      reinterpret_cast<const uint8_t*>(request.data()), request.size());
+  return pb_decode_noinit(&stream, fields, dest_struct);
+}
+
+pw::Status EncodeResponse(pw::ByteSpan response_buffer, size_t& response_size,
+                          const pb_msgdesc_t* fields, const void* src_struct) {
+  pb_ostream_t out = pb_ostream_from_buffer(
+      reinterpret_cast<uint8_t*>(response_buffer.data()),
+      response_buffer.size());
+  pb_encode(&out, fields, src_struct);
+  response_size = out.bytes_written;
+  return pw::OkStatus();
+}
+
 class GpioRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
@@ -44,9 +61,7 @@ class GpioRpcService final : public pw::rpc_avr::RpcService {
 
     if (method_id == kSetPinMode) {
       rpc_pb_PinMode req = rpc_pb_PinMode_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_PinMode_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_PinMode_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       BridgeClass::_handleSetPinMode(req);
@@ -54,9 +69,7 @@ class GpioRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kDigitalWrite) {
       rpc_pb_DigitalWrite req = rpc_pb_DigitalWrite_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_DigitalWrite_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_DigitalWrite_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       BridgeClass::_handlePinWrite<rpc_pb_DigitalWrite, false>(req);
@@ -64,9 +77,7 @@ class GpioRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kAnalogWrite) {
       rpc_pb_AnalogWrite req = rpc_pb_AnalogWrite_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_AnalogWrite_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_AnalogWrite_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       BridgeClass::_handlePinWrite<rpc_pb_AnalogWrite, true>(req);
@@ -74,56 +85,32 @@ class GpioRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kDigitalRead) {
       rpc_pb_PinRead req = rpc_pb_PinRead_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_PinRead_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_PinRead_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       rpc_pb_DigitalReadResponse resp = rpc_pb_DigitalReadResponse_init_default;
       resp.value = digitalRead(req.pin);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_DigitalReadResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_DigitalReadResponse_fields, &resp);
     }
     if (method_id == kAnalogRead) {
       rpc_pb_PinRead req = rpc_pb_PinRead_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_PinRead_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_PinRead_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
       resp.value = analogRead(req.pin);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_AnalogReadResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_AnalogReadResponse_fields, &resp);
     }
     if (method_id == kSubscribePins) {
       rpc_pb_PinSubscribeRequest req = rpc_pb_PinSubscribeRequest_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_PinSubscribeRequest_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_PinSubscribeRequest_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       rpc_pb_PinSubscribeResponse resp = Bridge._handlePinSubscribe(req);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_PinSubscribeResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_PinSubscribeResponse_fields, &resp);
     }
     return pw::Status::NotFound();
   }
@@ -152,43 +139,23 @@ class SystemRpcService final : public pw::rpc_avr::RpcService {
     if (method_id == kGetVersion) {
       rpc_pb_VersionResponse resp = rpc_pb_VersionResponse_init_default;
       BridgeClass::_fillVersion(resp);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_VersionResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_VersionResponse_fields, &resp);
     }
     if (method_id == kGetFreeMemory) {
       rpc_pb_FreeMemoryResponse resp = rpc_pb_FreeMemoryResponse_init_default;
       BridgeClass::_fillFreeMemory(resp);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_FreeMemoryResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_FreeMemoryResponse_fields, &resp);
     }
     if (method_id == kLinkSync) {
       rpc_pb_LinkSync req = rpc_pb_LinkSync_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_LinkSync_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_LinkSync_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       rpc_pb_LinkSync resp = Bridge._handleLinkSync(req);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_LinkSync_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_LinkSync_fields, &resp);
     }
     if (method_id == kLinkReset) {
       Bridge._handleLinkReset();
@@ -198,27 +165,19 @@ class SystemRpcService final : public pw::rpc_avr::RpcService {
     if (method_id == kGetCapabilities) {
       rpc_pb_Capabilities resp = rpc_pb_Capabilities_init_default;
       Bridge._fillCapabilities(resp);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      pb_encode(&out, rpc_pb_Capabilities_fields, &resp);
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_Capabilities_fields, &resp);
     }
     if (method_id == kSetBaudrate) {
       rpc_pb_SetBaudratePacket req = rpc_pb_SetBaudratePacket_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (pb_decode_noinit(&stream, rpc_pb_SetBaudratePacket_fields, &req)) {
+      if (DecodeProto(request, rpc_pb_SetBaudratePacket_fields, &req)) {
         Bridge._handleSetBaudrate(req);
       }
       return pw::OkStatus();
     }
     if (method_id == kEnterBootloader) {
       rpc_pb_EnterBootloader req = rpc_pb_EnterBootloader_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (pb_decode_noinit(&stream, rpc_pb_EnterBootloader_fields, &req)) {
+      if (DecodeProto(request, rpc_pb_EnterBootloader_fields, &req)) {
         Bridge._handleEnterBootloader(req);
       }
       return pw::OkStatus();
@@ -240,22 +199,14 @@ class ClockSyncRpcService final : public pw::rpc_avr::RpcService {
     constexpr uint32_t kClockSync = pw::tokenizer::Hash("ClockSync");
     if (method_id == kClockSync) {
       rpc_pb_ClockSyncRequest req = rpc_pb_ClockSyncRequest_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_ClockSyncRequest_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_ClockSyncRequest_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       rpc_pb_ClockSyncResponse resp = rpc_pb_ClockSyncResponse_init_default;
       resp.host_time_us = req.host_time_us;
       resp.mcu_time_us = ::micros();
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_ClockSyncResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_ClockSyncResponse_fields, &resp);
     }
     return pw::Status::NotFound();
   }
@@ -287,9 +238,7 @@ class SpiRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kSetConfig) {
       rpc_pb_SpiConfig req = rpc_pb_SpiConfig_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_SpiConfig_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_SpiConfig_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       SPIService.setConfig(req);
@@ -297,9 +246,7 @@ class SpiRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kTransfer) {
       rpc_pb_SpiTransfer req = rpc_pb_SpiTransfer_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_SpiTransfer_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_SpiTransfer_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
@@ -308,14 +255,8 @@ class SpiRpcService final : public pw::rpc_avr::RpcService {
       etl::copy_n(req.data.bytes, len, resp.data.bytes);
       size_t tr = SPIService.transfer(etl::span<uint8_t>(resp.data.bytes, len));
       resp.data.size = static_cast<pb_size_t>(tr);
-      pb_ostream_t out = pb_ostream_from_buffer(
-          reinterpret_cast<uint8_t*>(response_buffer.data()),
-          response_buffer.size());
-      if (!pb_encode(&out, rpc_pb_SpiTransferResponse_fields, &resp)) {
-        return pw::Status::Internal();
-      }
-      response_size = out.bytes_written;
-      return pw::OkStatus();
+      return EncodeResponse(response_buffer, response_size,
+                            rpc_pb_SpiTransferResponse_fields, &resp);
     }
     return pw::Status::NotFound();
   }
@@ -339,9 +280,7 @@ class FileSystemRpcService final : public pw::rpc_avr::RpcService {
 
     if (method_id == kWrite) {
       rpc_pb_FileWrite req = rpc_pb_FileWrite_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_FileWrite_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_FileWrite_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       FileSystem._onWrite(req);
@@ -349,9 +288,7 @@ class FileSystemRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kRead) {
       rpc_pb_FileRead req = rpc_pb_FileRead_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_FileRead_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_FileRead_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       FileSystem._onRead(req);
@@ -359,9 +296,7 @@ class FileSystemRpcService final : public pw::rpc_avr::RpcService {
     }
     if (method_id == kRemove) {
       rpc_pb_FileRemove req = rpc_pb_FileRemove_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_FileRemove_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_FileRemove_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       FileSystem._onRemove(req);
@@ -386,9 +321,7 @@ class MailboxRpcService final : public pw::rpc_avr::RpcService {
     constexpr uint32_t kPush = pw::tokenizer::Hash("Push");
     if (method_id == kPush) {
       rpc_pb_MailboxPush req = rpc_pb_MailboxPush_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(request.data()), request.size());
-      if (!pb_decode_noinit(&stream, rpc_pb_MailboxPush_fields, &req)) {
+      if (!DecodeProto(request, rpc_pb_MailboxPush_fields, &req)) {
         return pw::Status::InvalidArgument();
       }
       Mailbox._enqueue(etl::span<const uint8_t>(req.data.bytes, req.data.size));

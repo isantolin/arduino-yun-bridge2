@@ -791,3 +791,48 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     res_mismatch = await sync_fn()
     assert res_mismatch is False
+
+
+async def test_handshake_send_failures_and_capabilities_branches(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    send_mock = AsyncMock(return_value=False)
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(response_timeout_ms=10),
+        send_frame=send_mock,
+        enqueue_cloud=AsyncMock(),
+    )
+    hs.retry_backoff_base = 0.001
+    hs.retry_backoff_max = 0.002
+
+    # 1. synchronize_attempt fails when CMD_LINK_RESET send fails
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
+    assert not await hs.synchronize_attempt()
+    assert runtime_state.last_handshake_error == "link_reset_send_failed"
+
+    # 2. synchronize_attempt fails when CMD_LINK_SYNC send fails
+    send_mock.side_effect = [True, False]
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
+    assert not await hs.synchronize_attempt()
+    assert runtime_state.last_handshake_error == "link_sync_send_failed"
+
+    # 3. handle_link_sync_resp with rate_limit > 0 and allowed=True, plus capabilities_delay == 0
+    send_mock.side_effect = None
+    send_mock.return_value = False
+    runtime_config.serial_handshake_min_interval = 0.5
+    runtime_state.handshake_rate_until = 0.0
+    nonce = b"1234567890123456"
+    runtime_state.link_handshake_nonce = nonce
+    tag = hs.calculate_handshake_tag(runtime_config.serial_shared_secret, nonce)
+    runtime_state.link_expected_tag = tag
+    hs.capabilities_delay = 0.0
+    hs.fsm_state = HandshakeState.CONFIRMING
+    assert await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=tag))
+    assert runtime_state.handshake_rate_until > 0.0
+
+    # 4. fetch_capabilities_with_delay with capabilities_delay == 0 and send_frame failure
+    await hs.fetch_capabilities_with_delay()
+    assert await hs.handle_link_reset_resp(1, b"\xaa\xbb")

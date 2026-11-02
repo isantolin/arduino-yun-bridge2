@@ -33,7 +33,7 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
     export PATH="${HOME}/.local/bin:${PATH}"
 fi
 
-USER_LIB_DIR="${HOME}/Arduino/libraries"
+USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"
 mkdir -p "$USER_LIB_DIR"
 
 echo "[compile_firmware] Installing required library dependencies for ${EMULATOR}..."

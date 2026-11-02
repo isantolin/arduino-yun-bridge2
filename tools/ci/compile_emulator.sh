@@ -23,6 +23,11 @@ echo "[emulator] Installing library dependencies..."
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
+mapfile -t MBEDTLS_SOURCES < <(find "$MBEDTLS_PATH/tf-psa-crypto" -type f -name '*.c' -print | sort)
+if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
+    echo "[emulator] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
+    exit 1
+fi
 
 # Use system Python
 GEN_PYTHON=$(command -v python3 || command -v python)
@@ -54,21 +59,13 @@ NANOPB_SOURCES=(
     "${SRC_DIR}/protocol/mcu_wire.pb.c"
 )
 
-MBEDTLS_SOURCES=(
-    "$MBEDTLS_PATH/chacha20.c"
-    "$MBEDTLS_PATH/chachapoly.c"
-    "$MBEDTLS_PATH/constant_time.c"
-    "$MBEDTLS_PATH/hkdf.c"
-    "$MBEDTLS_PATH/md.c"
-    "$MBEDTLS_PATH/platform_util.c"
-    "$MBEDTLS_PATH/poly1305.c"
-    "$MBEDTLS_PATH/sha256.c"
-)
 MBEDTLS_OBJ_DIR="${METADATA_DIR}/mbedtls"
 mkdir -p "$MBEDTLS_OBJ_DIR"
 MBEDTLS_OBJECTS=()
 for source in "${MBEDTLS_SOURCES[@]}"; do
-    object="${MBEDTLS_OBJ_DIR}/$(basename "${source%.c}").o"
+    object_name="${source#"$MBEDTLS_PATH/"}"
+    object_name="${object_name//\//_}"
+    object="${MBEDTLS_OBJ_DIR}/${object_name%.c}.o"
     gcc -std=c99 -O2 -g -Wall -Wextra -Werror \
         -DBRIDGE_HOST_TEST=1 -DARDUINO=100 \
         -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \

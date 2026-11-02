@@ -7,6 +7,7 @@
 #include <etl/array.h>
 #include <etl/byte_stream.h>
 #include <etl/span.h>
+#include <psa/crypto.h>
 #include <unity.h>
 
 #include "../src/config/bridge_config.h"
@@ -122,6 +123,13 @@ void test_session_key_derivation_known_answer(void) {
                                 mcu_to_host.size());
 }
 
+void test_psa_random_fails_without_entropy_source(void) {
+  uint8_t random_byte = 0U;
+  TEST_ASSERT_EQUAL_INT(PSA_SUCCESS, psa_crypto_init());
+  TEST_ASSERT_EQUAL_INT(PSA_ERROR_INSUFFICIENT_ENTROPY,
+                        psa_generate_random(&random_byte, sizeof(random_byte)));
+}
+
 #if BRIDGE_ENABLE_POST_TESTS
 void test_cryptographic_self_tests_run(void) {
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
@@ -136,6 +144,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_handshake_tag_generation_and_verification);
   RUN_TEST(test_handshake_tag_known_answer);
   RUN_TEST(test_session_key_derivation_known_answer);
+  RUN_TEST(test_psa_random_fails_without_entropy_source);
 #if BRIDGE_ENABLE_POST_TESTS
   RUN_TEST(test_cryptographic_self_tests_run);
 #endif

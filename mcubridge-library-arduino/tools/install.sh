@@ -180,18 +180,26 @@ fi
 
 # Mbed TLS is staged as an Arduino library with only the required modules.
 MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VERSION}/${MBEDTLS_VERSION}.tar.bz2"
-install_dependency "MbedTLS" "$MBEDTLS_URL" "include/mbedtls/chachapoly.h" "$LIB_DIR" "$MBEDTLS_SHA256"
+install_dependency "MbedTLS" "$MBEDTLS_URL" "tf-psa-crypto/include/psa/crypto.h" "$LIB_DIR" "$MBEDTLS_SHA256"
 MBEDTLS_LIB="$LIB_DIR/MbedTLS"
-mkdir -p "$MBEDTLS_LIB/src"
-cp -a "$MBEDTLS_LIB/include/mbedtls" "$MBEDTLS_LIB/src/"
-if [ -d "$MBEDTLS_LIB/include/psa" ]; then
-    cp -a "$MBEDTLS_LIB/include/psa" "$MBEDTLS_LIB/src/"
-fi
-cp -a "$MBEDTLS_LIB/library/"*.h "$MBEDTLS_LIB/src/"
-for source in chacha20 chachapoly constant_time hkdf md platform_util poly1305 sha256; do
-    cp "$MBEDTLS_LIB/library/$source.c" "$MBEDTLS_LIB/src/"
+MBEDTLS_SRC="$MBEDTLS_LIB/src"
+rm -rf "$MBEDTLS_SRC"
+mkdir -p "$MBEDTLS_SRC"
+cp -a "$MBEDTLS_LIB/include/mbedtls" "$MBEDTLS_SRC/"
+cp -a "$MBEDTLS_LIB/tf-psa-crypto/include/." "$MBEDTLS_SRC/"
+mkdir -p "$MBEDTLS_SRC/tf-psa-crypto/drivers"
+for component in core extras platform utilities; do
+    cp -a "$MBEDTLS_LIB/tf-psa-crypto/$component" "$MBEDTLS_SRC/tf-psa-crypto/"
 done
-cp "$LIB_ROOT/src/config/mbedtls_config.h" "$MBEDTLS_LIB/src/mbedtls/mbedtls_config.h"
+cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin" "$MBEDTLS_SRC/tf-psa-crypto/drivers/"
+for component in core dispatch extras platform utilities; do
+    find "$MBEDTLS_LIB/tf-psa-crypto/$component" -maxdepth 1 -type f -name "*.h" \
+        -exec cp -a {} "$MBEDTLS_SRC/" \;
+done
+find "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/src" -maxdepth 1 -type f -name "*.h" \
+    -exec cp -a {} "$MBEDTLS_SRC/" \;
+cp "$LIB_ROOT/src/config/mbedtls_config.h" "$MBEDTLS_SRC/mbedtls/mbedtls_config.h"
+cp "$LIB_ROOT/src/config/psa_crypto_config.h" "$MBEDTLS_SRC/psa/crypto_config.h"
 cat > "$MBEDTLS_LIB/library.properties" <<EOF
 name=MbedTLS
 version=${MBEDTLS_VERSION#mbedtls-}
@@ -201,7 +209,7 @@ sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
 paragraph=Staged by the McuBridge installer from the pinned upstream release.
 category=Communication
 architectures=*
-includes=mbedtls/chachapoly.h,mbedtls/hkdf.h,mbedtls/md.h
+includes=psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
 EOF
 
 # Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)

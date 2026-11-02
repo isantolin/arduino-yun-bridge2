@@ -228,10 +228,10 @@ rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded
 name = "MbedTLS"
 github = "Mbed-TLS/mbedtls"
 ref_type = "tags"
-version = "mbedtls-3.6.7"
-check_file = "include/mbedtls/chachapoly.h"
-sha256 = "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
-rationale = "Pinned Mbed TLS ChaCha20-Poly1305, HKDF, HMAC, and SHA-256 primitives for MCU link security"
+version = "mbedtls-4.2.0"
+check_file = "tf-psa-crypto/include/psa/crypto.h"
+sha256 = "2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
+rationale = "Pinned Mbed TLS PSA Crypto ChaCha20-Poly1305, HKDF, HMAC, and SHA-256 primitives for MCU link security"
 
 
 # =============================================================================

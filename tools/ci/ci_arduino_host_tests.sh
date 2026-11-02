@@ -66,6 +66,11 @@ mkdir -p "${ARDUINO_LIBS}"
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
+mapfile -t MBEDTLS_SOURCES < <(find "$MBEDTLS_PATH/tf-psa-crypto" -type f -name '*.c' -print | sort)
+if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
+    echo "[host-cpp] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
+    exit 1
+fi
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -74,14 +79,7 @@ fi
 
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
-    "$MBEDTLS_PATH/chacha20.c"
-    "$MBEDTLS_PATH/chachapoly.c"
-    "$MBEDTLS_PATH/constant_time.c"
-    "$MBEDTLS_PATH/hkdf.c"
-    "$MBEDTLS_PATH/md.c"
-    "$MBEDTLS_PATH/platform_util.c"
-    "$MBEDTLS_PATH/poly1305.c"
-    "$MBEDTLS_PATH/sha256.c"
+    "${MBEDTLS_SOURCES[@]}"
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
@@ -182,12 +180,16 @@ echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
 for src in "${SOURCES[@]}"; do
     obj_name=$(basename "${src}").o
+    if [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
+        obj_name="${src#"$MBEDTLS_PATH/"}"
+        obj_name="${obj_name//\//_}.o"
+    fi
     obj="${OBJ_DIR}/${obj_name}"
     OBJECTS+=("${obj}")
 
     if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
         g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}" &
-    elif [[ "${src}" == "$MBEDTLS_PATH/"*.c ]]; then
+    elif [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
         gcc -std=c99 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     elif [[ "${src}" == *.c ]]; then
         g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &

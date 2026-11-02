@@ -192,6 +192,7 @@ for component in core extras platform utilities; do
     cp -a "$MBEDTLS_LIB/tf-psa-crypto/$component" "$MBEDTLS_SRC/tf-psa-crypto/"
 done
 cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin" "$MBEDTLS_SRC/tf-psa-crypto/drivers/"
+cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/include/." "$MBEDTLS_SRC/"
 for component in core dispatch extras platform utilities; do
     find "$MBEDTLS_LIB/tf-psa-crypto/$component" -maxdepth 1 -type f -name "*.h" \
         -exec cp -a {} "$MBEDTLS_SRC/" \;

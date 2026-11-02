@@ -537,7 +537,8 @@ void test_link_sync_authentication_paths() {
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  // The explicitly unauthenticated mode requires an empty tag and a valid nonce.
+  // The explicitly unauthenticated mode requires an empty tag and a valid
+  // nonce.
   sync.tag.size = 0;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
@@ -550,7 +551,7 @@ void test_link_sync_authentication_paths() {
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  // The firmware self-tests cover SHA-256 and HMAC-SHA256 only.
+  // The firmware self-tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
 }
 

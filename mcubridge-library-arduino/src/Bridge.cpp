@@ -42,15 +42,13 @@ pw::Status EncodeResponse(pw::ByteSpan response_buffer, size_t& response_size,
 
 bool isLinkSyncRequest(const pw::rpc_avr::RpcPacket& packet) {
   return packet.type == pw::rpc_avr::PacketType::kRequest &&
-         packet.service_id ==
-             pw::tokenizer::Hash("rpc.pb.SystemService") &&
+         packet.service_id == pw::tokenizer::Hash("rpc.pb.SystemService") &&
          packet.method_id == pw::tokenizer::Hash("LinkSync");
 }
 
 bool isLinkResetRequest(const pw::rpc_avr::RpcPacket& packet) {
   return packet.type == pw::rpc_avr::PacketType::kRequest &&
-         packet.service_id ==
-             pw::tokenizer::Hash("rpc.pb.SystemService") &&
+         packet.service_id == pw::tokenizer::Hash("rpc.pb.SystemService") &&
          packet.method_id == pw::tokenizer::Hash("LinkReset");
 }
 
@@ -555,8 +553,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     const bool clear_link_reset =
         raw_packet.ok() && isLinkResetRequest(raw_packet.value());
 
-    if (!_shared_secret.empty() && _session_keys_ready &&
-        !clear_link_reset) {
+    if (!_shared_secret.empty() && _session_keys_ready && !clear_link_reset) {
       if (!_decryptHdlcFrame(addr, raw_data, data)) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
         return;
@@ -585,9 +582,8 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
 
   if (addr == rpc::RPC_HDLC_ADDRESS_RPC) {
     if (!packet_decoded) {
-      auto decoded_pkt = pw::rpc_avr::RpcPacket::Decode(
-          pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(data.data()),
-                            data.size()));
+      auto decoded_pkt = pw::rpc_avr::RpcPacket::Decode(pw::ConstByteSpan(
+          reinterpret_cast<const pw::byte*>(data.data()), data.size()));
       if (!decoded_pkt.ok()) {
         if (decrypted) {
           rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
@@ -613,7 +609,8 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
                             data.size()),
           pw::as_writable_bytes(pw::span(resp_buf)));
       if (res.size() > 0) {
-        const auto response_data = etl::span<const uint8_t>(resp_buf, res.size());
+        const auto response_data =
+            etl::span<const uint8_t>(resp_buf, res.size());
         if (isLinkSyncRequest(pkt)) {
           pw::hdlc::WriteUIFrame(
               addr,
@@ -673,15 +670,15 @@ bool BridgeClass::_writeHdlcFrame(uint64_t address,
   }
 
   const size_t ciphertext_offset = rpc::RPC_AEAD_COUNTER_SIZE;
-  auto ciphertext = etl::span<uint8_t>(
-      envelope.data() + ciphertext_offset, data.size());
-  auto tag = etl::span<uint8_t>(
-      envelope.data() + ciphertext_offset + data.size(),
-      rpc::RPC_AEAD_TAG_SIZE);
-  if (!rpc::security::aead_encrypt(
-          etl::span<const uint8_t>(_tx_aead_key),
-          etl::span<const uint8_t>(nonce),
-          etl::span<const uint8_t>(aad), data, ciphertext, tag)) {
+  auto ciphertext =
+      etl::span<uint8_t>(envelope.data() + ciphertext_offset, data.size());
+  auto tag =
+      etl::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
+                         rpc::RPC_AEAD_TAG_SIZE);
+  if (!rpc::security::aead_encrypt(etl::span<const uint8_t>(_tx_aead_key),
+                                   etl::span<const uint8_t>(nonce),
+                                   etl::span<const uint8_t>(aad), data,
+                                   ciphertext, tag)) {
     rpc::security::secure_zero(etl::span<uint8_t>(envelope));
     rpc::security::secure_zero(etl::span<uint8_t>(nonce));
     rpc::security::secure_zero(etl::span<uint8_t>(aad));
@@ -703,9 +700,9 @@ bool BridgeClass::_writeHdlcFrame(uint64_t address,
   return written;
 }
 
-bool BridgeClass::_decryptHdlcFrame(
-    uint64_t address, etl::span<const uint8_t> envelope,
-    etl::span<const uint8_t>& plaintext) {
+bool BridgeClass::_decryptHdlcFrame(uint64_t address,
+                                    etl::span<const uint8_t> envelope,
+                                    etl::span<const uint8_t>& plaintext) {
   plaintext = {};
   const size_t overhead = rpc::RPC_AEAD_COUNTER_SIZE + rpc::RPC_AEAD_TAG_SIZE;
   if (!_session_keys_ready || address > UINT8_MAX ||
@@ -734,12 +731,11 @@ bool BridgeClass::_decryptHdlcFrame(
   }
 
   const size_t ciphertext_size = envelope.size() - overhead;
-  const uint8_t* ciphertext =
-      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
+  const uint8_t* ciphertext = envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
   const uint8_t* tag = ciphertext + ciphertext_size;
   const bool decrypted = rpc::security::aead_decrypt(
-      etl::span<const uint8_t>(_rx_aead_key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>(aad),
+      etl::span<const uint8_t>(_rx_aead_key), etl::span<const uint8_t>(nonce),
+      etl::span<const uint8_t>(aad),
       etl::span<const uint8_t>(ciphertext, ciphertext_size),
       etl::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
       etl::span<uint8_t>(_rx_plaintext.data(), ciphertext_size));

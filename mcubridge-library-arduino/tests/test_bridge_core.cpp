@@ -416,8 +416,8 @@ void test_bridge_handshake_authentication_edges() {
   bool ok = rpc::security::handshake_verify_tag(secret, nonce, bad_tag);
   TEST_ASSERT_FALSE(ok);
 
-  const bool empty_tag_ok =
-      rpc::security::handshake_verify_tag(secret, nonce, etl::span<const uint8_t>());
+  const bool empty_tag_ok = rpc::security::handshake_verify_tag(
+      secret, nonce, etl::span<const uint8_t>());
   TEST_ASSERT_FALSE(empty_tag_ok);
 
   const bool generated =
@@ -425,7 +425,8 @@ void test_bridge_handshake_authentication_edges() {
   TEST_ASSERT_TRUE(generated);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> valid_tag = {};
   etl::copy_n(out_tag.begin(), valid_tag.size(), valid_tag.begin());
-  TEST_ASSERT_TRUE(rpc::security::handshake_verify_tag(secret, nonce, valid_tag));
+  TEST_ASSERT_TRUE(
+      rpc::security::handshake_verify_tag(secret, nonce, valid_tag));
 
   etl::array<uint8_t, 16> wrong_tag;
   wrong_tag.fill(0xFF);

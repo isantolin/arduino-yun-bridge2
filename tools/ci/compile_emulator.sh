@@ -22,6 +22,7 @@ echo "[emulator] Installing library dependencies..."
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
+MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
 
 # Use system Python
 GEN_PYTHON=$(command -v python3 || command -v python)
@@ -53,6 +54,29 @@ NANOPB_SOURCES=(
     "${SRC_DIR}/protocol/mcu_wire.pb.c"
 )
 
+MBEDTLS_SOURCES=(
+    "$MBEDTLS_PATH/chacha20.c"
+    "$MBEDTLS_PATH/chachapoly.c"
+    "$MBEDTLS_PATH/constant_time.c"
+    "$MBEDTLS_PATH/hkdf.c"
+    "$MBEDTLS_PATH/md.c"
+    "$MBEDTLS_PATH/platform_util.c"
+    "$MBEDTLS_PATH/poly1305.c"
+    "$MBEDTLS_PATH/sha256.c"
+)
+MBEDTLS_OBJ_DIR="${METADATA_DIR}/mbedtls"
+mkdir -p "$MBEDTLS_OBJ_DIR"
+MBEDTLS_OBJECTS=()
+for source in "${MBEDTLS_SOURCES[@]}"; do
+    object="${MBEDTLS_OBJ_DIR}/$(basename "${source%.c}").o"
+    gcc -std=c99 -O2 -g -Wall -Wextra -Werror \
+        -DBRIDGE_HOST_TEST=1 -DARDUINO=100 \
+        -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
+        -I"${MBEDTLS_PATH}" \
+        -c "$source" -o "$object"
+    MBEDTLS_OBJECTS+=("$object")
+done
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
@@ -67,8 +91,9 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
+    -I"${MBEDTLS_PATH}" \
     "${NANOPB_SOURCES[@]}" \
-    "$PIGWEED_PATH/src/sha256_avr.cpp" \
+    "${MBEDTLS_OBJECTS[@]}" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
@@ -112,8 +137,9 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
+    -I"${MBEDTLS_PATH}" \
     "${NANOPB_SOURCES[@]}" \
-    "$PIGWEED_PATH/src/sha256_avr.cpp" \
+    "${MBEDTLS_OBJECTS[@]}" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \

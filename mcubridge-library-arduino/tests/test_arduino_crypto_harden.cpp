@@ -64,15 +64,14 @@ void test_handshake_tag_generation_rejects_invalid_buffers(void) {
 
 void test_handshake_tag_generation_and_verification(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> generated_tag = {};
-  const bool generated =
-      rpc::security::handshake_generate_tag(kSecret, kHandshakeNonce,
-                                            generated_tag);
+  const bool generated = rpc::security::handshake_generate_tag(
+      kSecret, kHandshakeNonce, generated_tag);
   TEST_ASSERT_TRUE(generated);
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> received_tag = {};
   etl::copy_n(generated_tag.begin(), received_tag.size(), received_tag.begin());
-  TEST_ASSERT_TRUE(rpc::security::handshake_verify_tag(
-      kSecret, kHandshakeNonce, received_tag));
+  TEST_ASSERT_TRUE(rpc::security::handshake_verify_tag(kSecret, kHandshakeNonce,
+                                                       received_tag));
 
   received_tag[0] ^= 0xFFU;
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
@@ -100,8 +99,8 @@ void test_handshake_tag_known_answer(void) {
       kVectorSecret, kVectorNonce, response_tag));
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedResponseTag.data(),
                                 response_tag.data(), response_tag.size());
-  TEST_ASSERT_FALSE(etl::equal(actual_tag.begin(), actual_tag.end(),
-                               response_tag.begin()));
+  TEST_ASSERT_FALSE(
+      etl::equal(actual_tag.begin(), actual_tag.end(), response_tag.begin()));
 }
 
 #if BRIDGE_ENABLE_POST_TESTS

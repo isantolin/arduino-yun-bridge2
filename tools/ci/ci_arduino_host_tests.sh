@@ -74,7 +74,6 @@ fi
 
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
-    "$PIGWEED_PATH/src/sha256_avr.cpp"
     "$MBEDTLS_PATH/chacha20.c"
     "$MBEDTLS_PATH/chachapoly.c"
     "$MBEDTLS_PATH/constant_time.c"

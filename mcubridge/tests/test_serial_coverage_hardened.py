@@ -15,10 +15,12 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import serial
+from pw_hdlc.encode import ui_frame
 from serial import SerialException
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
+from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
@@ -75,6 +77,35 @@ async def test_serial_transport_send_raw(tmp_path: Path) -> None:
     mock_serial.write.side_effect = SerialException("device disconnected")
     res_err = await transport.send_raw(Command.CMD_DIGITAL_READ.value, b"")
     assert res_err is False
+
+    state.cleanup()
+
+
+async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_path: Path) -> None:
+    transport, state, mock_serial = _make_transport(tmp_path)
+    secret = b"serial transport test secret"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    transport.config.serial_shared_secret = secret
+    state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
+    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
+
+    assert await transport.send_raw(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13), seq_id=7)
+    encoded = mock_serial.write.call_args.args[0]
+    outgoing_frame = next(transport.decoder.process(encoded))
+    assert outgoing_frame.address == protocol.HDLC_ADDRESS_RPC
+    decoded_request = mcu_cipher.decrypt(outgoing_frame.address, outgoing_frame.data)
+    assert decoded_request
+
+    service_mock = AsyncMock()
+    transport.service = service_mock
+    console_envelope = mcu_cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"console output")
+    await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_CONSOLE, console_envelope))
+    service_mock.handle_mcu_frame.assert_awaited_once_with(
+        Command.CMD_CONSOLE_WRITE.value,
+        0,
+        pb.ConsoleWrite(data=b"console output"),
+    )
 
     state.cleanup()
 

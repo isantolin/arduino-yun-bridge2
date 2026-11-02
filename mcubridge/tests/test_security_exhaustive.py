@@ -8,12 +8,56 @@ from typing import Any
 import pytest
 from pytest_mock import MockerFixture
 
-from mcubridge.security.security import verify_crypto_integrity
+from mcubridge.protocol import protocol
+from mcubridge.security.security import LinkCipher, derive_link_keys, verify_crypto_integrity
 
 
 def test_verify_crypto_integrity_success() -> None:
     """Verify cryptographic Known Answer Tests (KAT) pass."""
     assert verify_crypto_integrity() is True
+
+
+def test_link_cipher_directional_round_trip() -> None:
+    secret = b"link shared secret"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host = LinkCipher(host_to_mcu, mcu_to_host)
+    mcu = LinkCipher(mcu_to_host, host_to_mcu)
+
+    host_envelope = host.encrypt(protocol.HDLC_ADDRESS_RPC, b"host request")
+    assert host_envelope[: protocol.AEAD_COUNTER_SIZE] == b"\x00" * 7 + b"\x01"
+    assert mcu.decrypt(protocol.HDLC_ADDRESS_RPC, host_envelope) == b"host request"
+
+    mcu_envelope = mcu.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"MCU output")
+    assert host.decrypt(protocol.HDLC_ADDRESS_CONSOLE, mcu_envelope) == b"MCU output"
+
+
+def test_link_cipher_authentication_failure_does_not_advance_receive_counter() -> None:
+    secret = b"link shared secret"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host = LinkCipher(host_to_mcu, mcu_to_host)
+    mcu = LinkCipher(mcu_to_host, host_to_mcu)
+    envelope = host.encrypt(protocol.HDLC_ADDRESS_RPC, b"request")
+
+    with pytest.raises(ValueError, match="authentication failed"):
+        mcu.decrypt(protocol.HDLC_ADDRESS_CONSOLE, envelope)
+    assert mcu.decrypt(protocol.HDLC_ADDRESS_RPC, envelope) == b"request"
+
+
+def test_link_cipher_rejects_replay_and_truncated_frames() -> None:
+    secret = b"link shared secret"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host = LinkCipher(host_to_mcu, mcu_to_host)
+    mcu = LinkCipher(mcu_to_host, host_to_mcu)
+    envelope = host.encrypt(protocol.HDLC_ADDRESS_RPC, b"request")
+
+    assert mcu.decrypt(protocol.HDLC_ADDRESS_RPC, envelope) == b"request"
+    with pytest.raises(ValueError, match="replayed"):
+        mcu.decrypt(protocol.HDLC_ADDRESS_RPC, envelope)
+    with pytest.raises(ValueError, match="truncated"):
+        mcu.decrypt(protocol.HDLC_ADDRESS_RPC, b"\x00" * (protocol.AEAD_COUNTER_SIZE - 1))
 
 
 @pytest.mark.parametrize(

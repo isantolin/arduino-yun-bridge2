@@ -25,7 +25,7 @@ import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_tokenizer import detokenize
 
 from mcubridge.config.settings import RuntimeConfig
@@ -313,6 +313,13 @@ class SerialTransport:
             cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
 
+            if pkt.type == PacketType.RESPONSE and spec and spec.expected_responses:
+                cmd_id = next(iter(spec.expected_responses))
+            elif pkt.type == PacketType.SERVER_ERROR or (
+                pkt.status != 0 and pkt.type == PacketType.RESPONSE and not pkt.payload
+            ):
+                cmd_id = Status.ERROR.value
+
             payload: ProtobufMessage | bytes = pkt.payload
             if spec and spec.response_type and pkt.payload:
                 try:
@@ -354,7 +361,11 @@ class SerialTransport:
 
             # Correlation and Service dispatch
             self.correlate_frame(cmd_id, payload, seq_id)
-            if self.service:
+            if self.service and (
+                pkt.type != PacketType.RESPONSE
+                or (spec is not None and bool(spec.mcu_handler))
+                or cmd_id in getattr(self.service, "mcu_registry", {})
+            ):
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
     def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:

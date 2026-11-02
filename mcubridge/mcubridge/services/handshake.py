@@ -210,6 +210,7 @@ class SerialHandshakeManager:
     def on_enter_synchronized(self) -> None:
         """[SIL-2] Native hook executed on entering synchronized state."""
         self._state.connection_fsm.synchronize()
+        self._state.link_sync_event.set()
 
     def on_exit_synchronized(self) -> None:
         """[SIL-2] Native hook executed on exiting synchronized state."""
@@ -580,6 +581,7 @@ class SerialHandshakeManager:
         self._state.handshake_last_duration = self._state.handshake_duration_since_start()
         self._state.link_last_nonce_counter = 0
         self._state.connection_fsm.synchronize()
+        self._state.link_sync_event.set()
         self._state.handshake_successes += 1
         await self.publish_handshake_event("success")
 

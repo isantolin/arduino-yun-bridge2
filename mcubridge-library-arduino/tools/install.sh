@@ -201,6 +201,15 @@ find "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/src" -maxdepth 1 -type f -name 
     -exec cp -a {} "$MBEDTLS_SRC/" \;
 cp "$LIB_ROOT/src/config/mbedtls_config.h" "$MBEDTLS_SRC/mbedtls/mbedtls_config.h"
 cp "$LIB_ROOT/src/config/psa_crypto_config.h" "$MBEDTLS_SRC/psa/crypto_config.h"
+cat > "$MBEDTLS_SRC/MbedTLS.h" <<'EOF'
+#ifndef MCUBRIDGE_MBEDTLS_ARDUINO_H
+#define MCUBRIDGE_MBEDTLS_ARDUINO_H
+
+#include <psa/crypto.h>
+
+#endif
+EOF
+cp "$MBEDTLS_SRC/MbedTLS.h" "$MBEDTLS_LIB/MbedTLS.h"
 cat > "$MBEDTLS_LIB/library.properties" <<EOF
 name=MbedTLS
 version=${MBEDTLS_VERSION#mbedtls-}
@@ -210,7 +219,7 @@ sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
 paragraph=Staged by the McuBridge installer from the pinned upstream release.
 category=Communication
 architectures=*
-includes=psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
+includes=MbedTLS.h,psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
 EOF
 
 # Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)

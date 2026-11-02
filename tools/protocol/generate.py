@@ -351,20 +351,12 @@ def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: An
 
 def _extract_rpc_specs(
     pb_module: Any, svc_desc: Any
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
     rpc_specs: list[dict[str, Any]] = []
-    streaming_rpc_specs: list[dict[str, Any]] = []
     rpc_aliases: dict[str, str] = {}
     for m in svc_desc.methods:
-        if m.client_streaming and m.server_streaming:
-            cardinality, is_streaming = "Cardinality.STREAM_STREAM", True
-        elif m.client_streaming:
-            cardinality, is_streaming = "Cardinality.STREAM_UNARY", True
-        elif m.server_streaming:
-            cardinality, is_streaming = "Cardinality.UNARY_STREAM", True
-        else:
-            cardinality, is_streaming = "Cardinality.UNARY_UNARY", False
-
+        if m.client_streaming or m.server_streaming:
+            continue
         mo = m.output_type.GetOptions()
         err_init = _opt_ext(mo, pb_module.msg_error_init, "")
         m_opts = m.GetOptions()
@@ -375,20 +367,16 @@ def _extract_rpc_specs(
             rpc_aliases[a] = m.name
         rpc_cmd = _opt_ext(m_opts, pb_module.rpc_command, f"CMD_{_snake_case(m.name).upper()}")
         is_custom = bool(_opt_ext(m_opts, pb_module.is_custom_handler, False))
-        factory = f"lambda: pb.{m.output_type.name}({err_init})" if err_init else f"pb.{m.output_type.name}"
-        item = {
+        item: dict[str, Any] = {
             "name": m.name,
-            "req_cls": m.input_type.name,
-            "resp_cls": m.output_type.name,
-            "default_factory": factory,
+            "default_factory": f"lambda: pb.{m.output_type.name}({err_init})" if err_init else None,
             "handler_name": _snake_case(m.name),
             "rpc_topic": rt,
             "rpc_command": rpc_cmd,
-            "cardinality": cardinality,
             "is_custom_handler": is_custom,
         }
-        (streaming_rpc_specs if is_streaming else rpc_specs).append(item)
-    return rpc_specs, streaming_rpc_specs, rpc_aliases
+        rpc_specs.append(item)
+    return rpc_specs, rpc_aliases
 
 
 def _build_command_operation(
@@ -406,6 +394,8 @@ def _build_command_operation(
     if mcu_rpc:
         op["service_name"] = mcu_rpc["service_name"]
         op["method_name"] = mcu_rpc["method_name"]
+        if mcu_rpc.get("resp_cls"):
+            op["response_type"] = f"pb.{mcu_rpc['resp_cls']}"
     if pb_msg and hasattr(pb_module, pb_msg):
         op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
@@ -421,25 +411,14 @@ def _build_command_operation(
         if cmd.get(bool_key):
             op[bool_key] = True
     if matched_rpc:
-        op.update(
-            {
-                "rpc_name": matched_rpc["name"],
-                "request_type": f"pb.{matched_rpc['req_cls']}",
-                "response_type": f"pb.{matched_rpc['resp_cls']}",
-                "default_factory": matched_rpc["default_factory"],
-                "handler_name": matched_rpc["handler_name"],
-                "cardinality": matched_rpc["cardinality"],
-            }
-        )
+        op["rpc_name"] = matched_rpc["name"]
+        op["handler_name"] = matched_rpc["handler_name"]
+        if matched_rpc.get("default_factory"):
+            op["default_factory"] = matched_rpc["default_factory"]
         if matched_rpc.get("rpc_topic"):
             op["rpc_topic"] = matched_rpc["rpc_topic"]
         if matched_rpc.get("is_custom_handler"):
             op["is_custom_handler"] = True
-    elif mcu_rpc:
-        if mcu_rpc.get("req_cls"):
-            op["request_type"] = f"pb.{mcu_rpc['req_cls']}"
-        if mcu_rpc.get("resp_cls"):
-            op["response_type"] = f"pb.{mcu_rpc['resp_cls']}"
     return op
 
 
@@ -481,12 +460,9 @@ def _build_operations_catalog(
         {
             "name": rpc["name"],
             "rpc_name": rpc["name"],
-            "request_type": f"pb.{rpc['req_cls']}",
-            "response_type": f"pb.{rpc['resp_cls']}",
             "default_factory": rpc["default_factory"],
             "handler_name": rpc["handler_name"],
             "rpc_topic": rpc.get("rpc_topic"),
-            "cardinality": rpc["cardinality"],
             "is_custom_handler": rpc.get("is_custom_handler", False),
         }
         for rpc in rpc_specs
@@ -595,7 +571,7 @@ def _extract_operations_context(
     payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts)
     p_fields_map: dict[str, str] = {}
 
-    rpc_specs, streaming_rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
+    rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
     cmd_by_name = {c["name"]: c for c in commands}
     rpc_by_cmd = {r["rpc_command"]: r for r in rpc_specs if r["rpc_command"] in cmd_by_name}
 
@@ -644,21 +620,10 @@ def _extract_operations_context(
                 mcu_rpc_by_cmd[matched] = {
                     "service_name": svc.full_name,
                     "method_name": m.name,
-                    "req_cls": (
-                        m.request_type.DESCRIPTOR.name
-                        if hasattr(m.request_type, "DESCRIPTOR")
-                        else m.request_type.__name__
-                    ),
-                    "resp_cls": (
-                        m.response_type.DESCRIPTOR.name
-                        if hasattr(m.response_type, "DESCRIPTOR")
-                        else m.response_type.__name__
-                    ),
                 }
     mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
         "service_name": "rpc.pb.GpioService",
         "method_name": "SubscribePins",
-        "req_cls": None,
         "resp_cls": "PinUpdateEvent",
     }
 
@@ -681,7 +646,6 @@ def _extract_operations_context(
         "telemetry_default_field": default_telem,
         "ubus_methods": payload_ctx["ubus_methods"],
         "daemon_tasks": payload_ctx["daemon_tasks"],
-        "streaming_rpc_specs": streaming_rpc_specs,
     }
 
 

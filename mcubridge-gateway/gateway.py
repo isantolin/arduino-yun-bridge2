@@ -41,11 +41,14 @@ from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import (
     DEFAULT_CLOUD_HOST,
     DEFAULT_CLOUD_PORT,
+    LINE_PROTOCOL_FIELDS,
+    METRICS,
+    PROTOCOL_VERSION,
+    RPC_SPECS,
     LineProtocolFieldKind,
     MetricKind,
-    PROTOCOL_VERSION,
-    REGISTRY,
     OperationSpec,
+    build_local_bridge_mapping,
 )
 from mcubridge.protocol.structures import (
     ConsoleQueueTarget,
@@ -129,10 +132,10 @@ class FleetMetrics:
         self.daemon_metrics: dict[str, prometheus_client.Gauge | prometheus_client.Counter] = {}
         self._counter_samples: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
         metric_labels: dict[str, set[str]] = {}
-        for spec in REGISTRY.metrics:
+        for spec in METRICS:
             metric_labels.setdefault(spec.metric_name, set()).update(label.name for label in spec.labels)
 
-        for spec in REGISTRY.metrics:
+        for spec in METRICS:
             if spec.metric_name in self.daemon_metrics:
                 continue
             labelnames = ["device_id", *sorted(metric_labels[spec.metric_name])]
@@ -192,7 +195,7 @@ class FleetMetrics:
 
     def update_daemon_metrics(self, device_id: str, metrics: pb.DaemonMetrics) -> None:
         """Apply a decoded Protobuf snapshot using the generated metric catalog."""
-        for spec in REGISTRY.metrics:
+        for spec in METRICS:
             source = getattr(metrics, spec.source_field)
             samples = source if spec.value_field else (metrics,)
             for sample in samples:
@@ -248,7 +251,7 @@ class TSDBSink:
         }
         fields = ",".join(
             f"{spec.field_name}={value_formatters[spec.kind](getattr(metrics, spec.source_field))}"
-            for spec in REGISTRY.line_protocol_fields
+            for spec in LINE_PROTOCOL_FIELDS
         )
         return f"mcubridge_telemetry,device_id={device_id} {fields} {ts}"
 
@@ -557,7 +560,7 @@ class GatewayLocalBridgeService:
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __mapping__(self) -> dict[str, Handler]:
-        return REGISTRY.build_local_bridge_mapping(self)
+        return build_local_bridge_mapping(self)
 
     async def _forward_rpc(
         self,
@@ -696,7 +699,7 @@ class GatewayLocalBridgeService:
         return forwarder
 
 
-for _spec in REGISTRY.rpc_specs:
+for _spec in RPC_SPECS:
     _name = _spec.rpc_name or _spec.name
     if _name not in GatewayLocalBridgeService.__dict__:
         setattr(GatewayLocalBridgeService, _name, GatewayLocalBridgeService.create_forwarder(_spec))

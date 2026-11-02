@@ -118,7 +118,7 @@ def _decode_frame(encoded_packet: bytes) -> tuple[int, int, bytes]:
         if frame.ok() and frame.address == protocol.HDLC_ADDRESS_RPC:
             pkt = RpcPacket()
             pkt.ParseFromString(frame.data)
-            op = protocol.REGISTRY.get((pkt.service_id, pkt.method_id))
+            op = protocol.get_operation((pkt.service_id, pkt.method_id))
             cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
             return cmd_id, pkt.call_id, pkt.payload
     raise ValueError("No valid HDLC RPC frame found")

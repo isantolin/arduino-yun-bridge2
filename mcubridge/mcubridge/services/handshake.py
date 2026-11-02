@@ -40,7 +40,7 @@ from ..protocol.protocol import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     Command,
-    SERVICES,
+    get_topic_for_message,
 )
 from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from ..state.context import RuntimeState
@@ -177,7 +177,7 @@ class SerialHandshakeManager:
             sync_waiter if sync_waiter is not None else self.wait_for_link_sync_confirmation
         )
         self.topic_resolver: Callable[[str, Any], str | None] = (
-            topic_resolver if topic_resolver is not None else SERVICES.get_topic_for_message
+            topic_resolver if topic_resolver is not None else get_topic_for_message
         )
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)

@@ -25,7 +25,8 @@ import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+from pw_rpc import packets as pw_packets
+from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
 
 from mcubridge.config.settings import RuntimeConfig
@@ -304,9 +305,8 @@ class SerialTransport:
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
-            pkt = RpcPacket()
             try:
-                pkt.ParseFromString(frame.data)
+                pkt = pw_packets.decode(frame.data)
             except (ProtobufDecodeError, ValueError) as exc:
                 self.state.serial_decode_errors += 1
                 logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame.data.hex())
@@ -323,11 +323,14 @@ class SerialTransport:
                 cmd_id = min(spec.expected_responses)
 
             payload: ProtobufMessage | bytes = pkt.payload
-            if spec and spec.response_type and (pkt.type != PacketType.REQUEST or spec.pb_class is None) and pkt.payload:
+            if (
+                spec
+                and spec.response_type
+                and (not pw_packets.for_server(pkt) or spec.pb_class is None)
+                and pkt.payload
+            ):
                 try:
-                    resp_msg = spec.response_type()
-                    resp_msg.ParseFromString(pkt.payload)
-                    payload = resp_msg
+                    payload = cast(ProtobufMessage, cast(Any, pw_packets).decode_payload(pkt, spec.response_type))
                 except (ProtobufDecodeError, ValueError) as exc:
                     logger.warning(
                         "Unable to parse RPC response payload",

@@ -19,11 +19,11 @@ import parse
 from pw_rpc.descriptors import Service as PwRpcService, Services as PwRpcServices
 import structlog
 
-from . import mcubridge_pb2 as pb
+from . import mcu_wire_pb2, mcubridge_pb2 as pb
 
 _PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
     PwRpcService.from_descriptor(desc)
-    for desc in pb.mcu_wire_pb2.DESCRIPTOR.services_by_name.values()
+    for desc in cast(Any, mcu_wire_pb2).DESCRIPTOR.services_by_name.values()
 )
 
 type McuDispatchTable = dict[int, Callable[..., Any]]

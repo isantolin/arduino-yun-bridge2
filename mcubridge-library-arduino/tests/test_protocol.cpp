@@ -84,8 +84,8 @@ void test_rpc_packet_encoding_and_decoding() {
   packet.call_id = 42;
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
-  packet.payload = pw::ConstByteSpan(
-      reinterpret_cast<const pw::byte*>(payload), sizeof(payload));
+  packet.payload = pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(payload),
+                                     sizeof(payload));
 
   uint8_t encoded_buf[128];
   auto enc_res = packet.Encode(pw::as_writable_bytes(pw::span(encoded_buf)));

@@ -13,7 +13,7 @@ from ..protocol.protocol import (
     DEFAULT_PIN_HYSTERESIS,
     DEFAULT_PIN_INTERVAL_MS,
     Command,
-    REGISTRY,
+    SERVICES,
     Topic,
 )
 from ..protocol.structures import create_queued_publish
@@ -117,7 +117,7 @@ class GpioService:
         # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                REGISTRY.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(actual_event.pin), "update"),
+                SERVICES.topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(actual_event.pin), "update"),
                 str(actual_event.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )
@@ -132,7 +132,7 @@ class GpioService:
         pin_str = str(req.pin) if req else "unknown"
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                REGISTRY.topic_path(state.cloud_topic_prefix, topic_kind, pin_str, "value"),
+                SERVICES.topic_path(state.cloud_topic_prefix, topic_kind, pin_str, "value"),
                 str(p.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
                 user_properties=(("bridge-pin", pin_str),),

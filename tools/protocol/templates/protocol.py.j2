@@ -230,26 +230,8 @@ class DaemonTaskSpec:
     description: str = ""
 
 
-class ProtocolRegistry:
-    """Unified Single Source of Truth protocol registry for MCU Bridge. [SIL-2]"""
-
-    __slots__ = (
-        "operations",
-        "pw_services",
-        "metrics",
-        "line_protocol_fields",
-        "by_command_id",
-        "by_rpc",
-        "by_name",
-        "by_type",
-        "rpc_aliases",
-        "topic_lookup",
-        "topic_auth_map",
-        "rpc_specs",
-        "ubus_signatures",
-        "daemon_tasks",
-        "custom_handlers",
-    )
+class RpcServices(PwRpcServices):
+    """Unified Pigweed RPC Services & protocol descriptor container for MCU Bridge. [SIL-2]"""
 
     def __init__(
         self,
@@ -263,8 +245,8 @@ class ProtocolRegistry:
         ubus_signatures: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (),
         daemon_tasks: tuple[DaemonTaskSpec, ...] = (),
     ) -> None:
+        super().__init__(_PW_SERVICES)
         self.operations = operations
-        self.pw_services = _PW_SERVICES
         self.metrics = metrics
         self.line_protocol_fields = line_protocol_fields
         self.topic_lookup = topic_lookup
@@ -302,7 +284,7 @@ class ProtocolRegistry:
                 self.by_name[alias.replace(".", "_")] = target_op
                 self.by_name[alias.replace(".", "/")] = target_op
 
-        # Registry-driven topic authorization map [SIL-2 / SSOT]
+        # Descriptor-driven topic authorization map [SIL-2 / SSOT]
         self.topic_auth_map: dict[tuple[str, str], str] = dict(topic_auth_map or {})
         for op in operations:
             if not op.auth_field:
@@ -445,7 +427,7 @@ class ProtocolRegistry:
         status_handler: Callable[..., Any] | None = None,
         unsupported_handler: Callable[..., Any] | None = None,
     ) -> McuDispatchTable:
-        """Build O(1) MCU dispatch registry from Protocol SSOT. [SIL-2]"""
+        """Build O(1) MCU dispatch table from Protocol SSOT. [SIL-2]"""
         status_fn = status_handler or getattr(target, "handle_mcu_status", None)
         unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
         dispatch: dict[Any, Callable[..., Any]] = {}
@@ -524,7 +506,7 @@ class ProtocolRegistry:
 
 
 
-REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
+SERVICES: Final[RpcServices] = RpcServices(
     operations=(
 {%- for op in operations %}
         OperationSpec(
@@ -735,10 +717,10 @@ def encode_hdlc_rpc(
 
     if method_id is None:
         target = channel_id_or_command
-        spec = REGISTRY.get(target)
+        spec = SERVICES.get(target)
         actual_type = packet_type
         if spec is not None and spec.paired_request_id is not None:
-            paired = REGISTRY.get(spec.paired_request_id)
+            paired = SERVICES.get(spec.paired_request_id)
             if paired is not None:
                 spec = paired
                 if actual_type == 0:

@@ -34,12 +34,12 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
-    REGISTRY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     SERIAL_SUCCESS_STATUS_CODES,
+    SERVICES,
     Status,
 )
 from mcubridge.protocol.structures import PendingCommand
@@ -311,7 +311,7 @@ class SerialTransport:
                 self.state.serial_decode_errors += 1
                 logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame.data.hex())
                 return
-            spec = protocol.REGISTRY.get((pkt.service_id, pkt.method_id))
+            spec = protocol.SERVICES.get((pkt.service_id, pkt.method_id))
             cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
 
@@ -403,7 +403,7 @@ class SerialTransport:
                     command_id=command_id,
                 )
             return
-        spec = REGISTRY.get(command_id)
+        spec = SERVICES.get(command_id)
         paired_req_id = spec.paired_request_id if spec else None
         if command_id == pending.command_id or (paired_req_id is not None and paired_req_id == pending.command_id):
             pending.mark_success(payload)
@@ -432,7 +432,7 @@ class SerialTransport:
         if not self.serial or not self.serial.is_open:
             return False
 
-        spec = REGISTRY.get(command_id)
+        spec = SERVICES.get(command_id)
         is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
 

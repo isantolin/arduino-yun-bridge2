@@ -27,6 +27,7 @@
 #endif
 
 #include <PigweedAVR.h>
+#include <mbedtls/chachapoly.h>
 
 #ifndef ETL_FORCE_STD_INITIALIZER_LIST
 #define ETL_FORCE_STD_INITIALIZER_LIST

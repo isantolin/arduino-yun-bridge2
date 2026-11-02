@@ -141,7 +141,6 @@ install_dependency() {
 
 # --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
 ETL_VERSION="20.49.0"
-WOLFSSL_VERSION="v5.9.4-stable"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
@@ -163,59 +162,7 @@ if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
         echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
     fi
 fi
-# wolfSSL: Prefer official Arduino Library Manager package (wolfssl) if installed
-if [ -d "$LIB_DIR/wolfssl" ] && [ -d "$LIB_DIR/wolfSSL" ]; then
-    rm -rf "$LIB_DIR/wolfSSL"
-fi
-if [ ! -d "$LIB_DIR/wolfssl" ] && [ ! -d "$LIB_DIR/wolfSSL" ]; then
-    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
-fi
-for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
-    if [ -d "$wdir" ]; then
-        mkdir -p "$wdir/src" "$wdir/wolfssl"
-        if [ ! -d "$wdir/src/wolfssl" ] && [ -d "$wdir/wolfssl/wolfcrypt" ]; then
-            cp -a "$wdir/wolfssl" "$wdir/src/wolfssl"
-        fi
-        if [ ! -d "$wdir/src/wolfcrypt" ] && [ -d "$wdir/wolfcrypt/src" ]; then
-            mkdir -p "$wdir/src/wolfcrypt"
-            cp -a "$wdir/wolfcrypt/src" "$wdir/src/wolfcrypt/src"
-            rm -f "$wdir/src/wolfcrypt/src/misc.c" "$wdir/src/wolfcrypt/src/evp.c" 2>/dev/null || true
-        fi
-        if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
-            cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
-            cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
-        fi
-        cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
-        cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
-        cp "$LIB_ROOT/src/user_settings.h" "$wdir/wolfssl/user_settings.h"
-        if [ -d "$wdir/src/wolfssl" ]; then
-            cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/wolfssl/user_settings.h"
-        fi
-        rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c 2>/dev/null || true
-        if [ ! -f "$wdir/library.properties" ] || ! grep -q "^name=" "$wdir/library.properties" 2>/dev/null; then
-            cat > "$wdir/library.properties" <<EOF
-name=wolfSSL
-version=${WOLFSSL_VERSION#v}
-author=wolfSSL Inc.
-maintainer=wolfSSL Inc. <facts@wolfssl.com>
-sentence=Lightweight SSL/TLS and cryptography library for embedded systems
-paragraph=wolfSSL embedded SSL/TLS library with wolfCrypt
-category=Communication
-url=https://www.wolfssl.com/
-architectures=*
-includes=wolfssl.h
-EOF
-        elif ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
-            echo "includes=wolfssl.h" >> "$wdir/library.properties"
-        fi
-        for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do
-            if [ -f "$wcf" ]; then
-                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf"
-            fi
-        done
-    fi
-done
-# Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono for Arduino)
+# Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)
 if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmodules" ]; then
     if [ ! -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ] && [ -d "${ROOT_DIR}/.git" ]; then
         git -C "${ROOT_DIR}" submodule update --init --recursive third_party/avr_pigweed_port 2>/dev/null || true

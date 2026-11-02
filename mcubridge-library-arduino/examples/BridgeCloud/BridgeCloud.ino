@@ -5,7 +5,7 @@
  * to the centralized mcubridge-gateway server.
  *
  * Capabilities demonstrated:
- * 1. Bounded cryptographic handshake (ChaCha20-Poly1305 AEAD).
+ * 1. Bounded cryptographic handshake (HKDF-SHA256 + HMAC-SHA256 via pw_crypto).
  * 2. Asynchronous pin/sensor telemetry streaming via Bridge.sendPinEvent().
  * 3. Remote cloud actuation commands (LED control via incoming RPC).
  * 4. Resilient fault detection and status notification via Bridge.onStatus().
@@ -17,8 +17,6 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <services/Console.h>
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/settings.h>
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.
 #ifndef BRIDGE_SERIAL_SHARED_SECRET

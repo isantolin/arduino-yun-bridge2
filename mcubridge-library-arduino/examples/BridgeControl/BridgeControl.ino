@@ -17,8 +17,6 @@
 #include <services/FileSystem.h>
 #include <services/Mailbox.h>
 #include <services/Process.h>
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/settings.h>
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.
 #ifndef BRIDGE_SERIAL_SHARED_SECRET

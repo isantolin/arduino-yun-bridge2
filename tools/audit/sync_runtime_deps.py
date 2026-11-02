@@ -268,7 +268,6 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
 
     var_map = {
         "Embedded_Template_Library": "ETL_VERSION",
-        "wolfSSL": "WOLFSSL_VERSION",
         "Unity": "UNITY_VERSION",
         "nanopb_core": "NANOPB_VERSION",
     }

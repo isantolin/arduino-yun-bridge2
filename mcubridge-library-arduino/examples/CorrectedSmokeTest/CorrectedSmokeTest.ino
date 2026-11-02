@@ -7,8 +7,6 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <services/Console.h>
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/settings.h>
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.
 #ifndef BRIDGE_SERIAL_SHARED_SECRET

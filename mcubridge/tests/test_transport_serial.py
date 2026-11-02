@@ -613,7 +613,7 @@ def _rpc_frame(
     payload: bytes | Any = b"",
     status: int = 0,
 ) -> bytes:
-    spec = protocol.REGISTRY.get(command.value)
+    spec = protocol.get_operation(command.value)
     assert spec is not None
     assert spec.service_id is not None
     assert spec.method_id is not None

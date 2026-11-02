@@ -8,8 +8,15 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import (
-    REGISTRY,
+    OPERATIONS,
+    RPC_ALIASES,
+    TOPIC_LOOKUP,
     Topic,
+    get_operation,
+    get_topic_for_message,
+    lookup_topic,
+    parse_topic,
+    topic_path,
 )
 
 _SAFE_TEXT = st.text(
@@ -26,8 +33,8 @@ _SAFE_TEXT = st.text(
 )
 def test_topic_path_parse_topic_isomorphism(prefix: str, direction: str, method: str) -> None:
     """Property: Any valid (prefix, direction, method) tuple roundtrips through parse_topic idempotently."""
-    raw = REGISTRY.topic_path(prefix, direction, method)
-    route = REGISTRY.parse_topic(prefix, raw)
+    raw = topic_path(prefix, direction, method)
+    route = parse_topic(prefix, raw)
     assert route is not None
     assert route.raw == raw
     assert route.prefix == prefix
@@ -44,36 +51,36 @@ def test_topic_path_parse_topic_isomorphism(prefix: str, direction: str, method:
 def test_parse_topic_mismatched_prefix_rejected(prefix_a: str, prefix_b: str, direction: str, method: str) -> None:
     """Property: A topic constructed with prefix_b is deterministically rejected when parsed with distinct prefix_a."""
     assume(prefix_a != prefix_b)
-    raw = REGISTRY.topic_path(prefix_b, direction, method)
-    assert REGISTRY.parse_topic(prefix_a, raw) is None
+    raw = topic_path(prefix_b, direction, method)
+    assert parse_topic(prefix_a, raw) is None
 
 
 _KNOWN_COMMAND_IDS = [
-    spec.command_id for spec in REGISTRY.operations if spec.command_id is not None and spec.cloud_topic is not None
+    spec.command_id for spec in OPERATIONS if spec.command_id is not None and spec.cloud_topic is not None
 ]
 
 
 @given(
     prefix=_SAFE_TEXT,
     invalid_service=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=8, max_size=16).filter(
-        lambda s: s not in REGISTRY.topic_lookup
+        lambda s: s not in TOPIC_LOOKUP
     ),
     segments=st.lists(_SAFE_TEXT, max_size=2),
 )
 def test_parse_topic_unrecognized_service_rejected(prefix: str, invalid_service: str, segments: list[str]) -> None:
     """Property: Any service segment not recognized in Topic enum or aliases returns None."""
-    raw = REGISTRY.topic_path(prefix, invalid_service, *segments)
-    assert REGISTRY.parse_topic(prefix, raw) is None
+    raw = topic_path(prefix, invalid_service, *segments)
+    assert parse_topic(prefix, raw) is None
 
 
 @given(s=_SAFE_TEXT)
 def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     """Property: Empty prefix or empty topic string always returns None."""
-    assert REGISTRY.parse_topic("", s) is None
-    assert REGISTRY.parse_topic(s, "") is None
-    assert REGISTRY.parse_topic("", "") is None
-    assert REGISTRY.parse_topic("prefix", "///") is None
-    assert REGISTRY.parse_topic("///", "prefix/gpio/13") is None
+    assert parse_topic("", s) is None
+    assert parse_topic(s, "") is None
+    assert parse_topic("", "") is None
+    assert parse_topic("prefix", "///") is None
+    assert parse_topic("///", "prefix/gpio/13") is None
 
 
 @given(
@@ -82,10 +89,10 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
 )
 def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) -> None:
     """Property: get_topic_for_message returns exact topic path for all registered commands."""
-    res = REGISTRY.get_topic_for_message(prefix, command_id)
+    res = get_topic_for_message(prefix, command_id)
     assert res is not None
     assert res.startswith(prefix)
-    spec = REGISTRY.get(command_id)
+    spec = get_operation(command_id)
     assert spec is not None
     expected_topic = spec.cloud_topic
     assert expected_topic is not None
@@ -99,19 +106,19 @@ def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) ->
 def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
     """Property: get_topic_for_message returns None for any unregistered command ID."""
     assume(unknown_id not in _KNOWN_COMMAND_IDS)
-    assert REGISTRY.get_topic_for_message(prefix, unknown_id) is None
+    assert get_topic_for_message(prefix, unknown_id) is None
 
 
 def test_topics_canonical_service_paths() -> None:
     """Validate canonical service topic paths."""
-    assert REGISTRY.topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
-    assert REGISTRY.topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
-    assert REGISTRY.topic_path("p", Topic.SPI, "transfer") == "p/spi/transfer"
-    assert REGISTRY.topic_path("p", Topic.DATASTORE, "key", "get") == "p/datastore/key/get"
-    assert REGISTRY.topic_path("p", Topic.FILE, "path/to/file", "read") == "p/file/path/to/file/read"
-    assert REGISTRY.topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
-    assert REGISTRY.topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
-    assert REGISTRY.topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
+    assert topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
+    assert topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
+    assert topic_path("p", Topic.SPI, "transfer") == "p/spi/transfer"
+    assert topic_path("p", Topic.DATASTORE, "key", "get") == "p/datastore/key/get"
+    assert topic_path("p", Topic.FILE, "path/to/file", "read") == "p/file/path/to/file/read"
+    assert topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
+    assert topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
+    assert topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
 
 
 def test_topic_aliases_resolve_to_canonical_topics() -> None:
@@ -121,51 +128,51 @@ def test_topic_aliases_resolve_to_canonical_topics() -> None:
         "shell": Topic.SHELL,
     }
     for alias, expected_topic in expected_aliases.items():
-        assert REGISTRY.lookup_topic(alias) == expected_topic
+        assert lookup_topic(alias) == expected_topic
 
 
 def test_topics_edge_cases() -> None:
     """Validate topic parsing and formatting edge cases."""
-    assert REGISTRY.parse_topic("br", "br/invalid_topic/foo") is None
-    assert REGISTRY.parse_topic("br", "br/only_one_segment") is None
-    assert REGISTRY.parse_topic("br", "devices/arduino-01/invalid_dir/gpio.write") is None
-    assert REGISTRY.parse_topic("", "foo") is None
-    assert REGISTRY.parse_topic("br", "") is None
-    assert REGISTRY.topic_path("", Topic.SYSTEM) == "system"
-    assert REGISTRY.topic_path("", Topic.SYSTEM, "") == "system"
+    assert parse_topic("br", "br/invalid_topic/foo") is None
+    assert parse_topic("br", "br/only_one_segment") is None
+    assert parse_topic("br", "devices/arduino-01/invalid_dir/gpio.write") is None
+    assert parse_topic("", "foo") is None
+    assert parse_topic("br", "") is None
+    assert topic_path("", Topic.SYSTEM) == "system"
+    assert topic_path("", Topic.SYSTEM, "") == "system"
 
 
 def test_get_topic_for_message_all_types() -> None:
     """[SIL-2] Test get_topic_for_message across all message input types (str, message, class, invalid)."""
-    assert REGISTRY.get_topic_for_message("bridge", "VersionResponse") == "bridge/system/version/value"
-    assert REGISTRY.get_topic_for_message("bridge", "NonExistentMsg") is None
+    assert get_topic_for_message("bridge", "VersionResponse") == "bridge/system/version/value"
+    assert get_topic_for_message("bridge", "NonExistentMsg") is None
 
     resp = pb.VersionResponse()
-    assert REGISTRY.get_topic_for_message("bridge", resp) == "bridge/system/version/value"
+    assert get_topic_for_message("bridge", resp) == "bridge/system/version/value"
 
-    assert REGISTRY.get_topic_for_message("bridge", pb.VersionResponse) == "bridge/system/version/value"
+    assert get_topic_for_message("bridge", pb.VersionResponse) == "bridge/system/version/value"
 
     class DummyMsg:
         class DESCRIPTOR:
             name = "NonExistent"
 
-    assert REGISTRY.get_topic_for_message("bridge", cast(Any, DummyMsg)) is None
-    assert REGISTRY.get_topic_for_message("bridge", cast(Any, 3.14)) is None
+    assert get_topic_for_message("bridge", cast(Any, DummyMsg)) is None
+    assert get_topic_for_message("bridge", cast(Any, 3.14)) is None
 
 
 def test_registry_rpc_aliases_proto_ssot() -> None:
     """[SIL-2] Verify that rpc_aliases are populated from .proto and resolve correctly."""
-    assert REGISTRY.rpc_aliases
-    assert "gpio.write" in REGISTRY.rpc_aliases
-    assert REGISTRY.rpc_aliases["gpio.write"] == "DigitalWrite"
-    assert "datastore.put" in REGISTRY.rpc_aliases
-    assert REGISTRY.rpc_aliases["datastore.put"] == "DatastorePut"
+    assert RPC_ALIASES
+    assert "gpio.write" in RPC_ALIASES
+    assert RPC_ALIASES["gpio.write"] == "DigitalWrite"
+    assert "datastore.put" in RPC_ALIASES
+    assert RPC_ALIASES["datastore.put"] == "DatastorePut"
 
-    spec_dw = REGISTRY.get("gpio.write")
+    spec_dw = get_operation("gpio.write")
     assert spec_dw is not None
     assert spec_dw.rpc_name == "DigitalWrite"
 
-    spec_ds = REGISTRY.get("datastore.put")
+    spec_ds = get_operation("datastore.put")
     assert spec_ds is not None
     assert spec_ds.rpc_name == "DatastorePut"
 
@@ -173,7 +180,7 @@ def test_registry_rpc_aliases_proto_ssot() -> None:
 def test_registry_fleet_and_direction_topic_parsing() -> None:
     """[SIL-2] Verify parsing of fleet and direction-based canonical topics."""
     # 1. Fleet topic: devices/{device_id}/{direction}/{method}
-    route_fleet = REGISTRY.parse_topic("any_prefix", "devices/arduino-01/req/gpio.write")
+    route_fleet = parse_topic("any_prefix", "devices/arduino-01/req/gpio.write")
     assert route_fleet is not None
     assert route_fleet.device_id == "arduino-01"
     assert route_fleet.direction == "req"
@@ -182,7 +189,7 @@ def test_registry_fleet_and_direction_topic_parsing() -> None:
     assert route_fleet.action == "write"
 
     # 2. Canonical Direction topic: {prefix}/{direction}/{method}
-    route_dir = REGISTRY.parse_topic("yun/bridge", "yun/bridge/req/gpio.write")
+    route_dir = parse_topic("yun/bridge", "yun/bridge/req/gpio.write")
     assert route_dir is not None
     assert route_dir.device_id == ""
     assert route_dir.direction == "req"

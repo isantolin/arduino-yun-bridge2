@@ -212,7 +212,7 @@ async def test_feed_data_uninitialized_protobuf(
         response_type=cast(Any, MagicMock(return_value=mock_proto)),
     )
 
-    mocker.patch.dict(protocol.REGISTRY.by_rpc, {(0x1000, 0x2000): fake_spec})
+    mocker.patch.dict(protocol.BY_RPC, {(0x1000, 0x2000): fake_spec})
 
     encoded = protocol.encode_hdlc_rpc(1, 0x1000, 0x2000, 1, b"dummy_payload")
     initial_errors = mock_state.serial_decode_errors

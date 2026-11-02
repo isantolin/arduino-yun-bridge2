@@ -31,7 +31,6 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
-from pw_rpc import ids
 from pw_rpc.descriptors import Service
 
 REQUIRED_DEPS = [
@@ -406,9 +405,7 @@ def _build_command_operation(
     op: dict[str, Any] = {"name": c_name, "command_id": f"Command.{c_name}.value"}
     if mcu_rpc:
         op["service_name"] = mcu_rpc["service_name"]
-        op["service_id"] = mcu_rpc["service_id"]
         op["method_name"] = mcu_rpc["method_name"]
-        op["method_id"] = mcu_rpc["method_id"]
     if pb_msg and hasattr(pb_module, pb_msg):
         op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
@@ -633,8 +630,6 @@ def _extract_operations_context(
     for s_desc in mcu_services:
         svc = Service.from_descriptor(s_desc)
         s_prefix = svc.name.removesuffix("Service")
-        s_name = f"bridge.{svc.name}"
-        s_id = ids.calculate(s_name)
         for m in svc.methods:
             candidates = [
                 f"CMD_{_snake_case(m.name).upper()}",
@@ -647,10 +642,8 @@ def _extract_operations_context(
             matched = next((c for c in candidates if c in cmd_by_name), None)
             if matched:
                 mcu_rpc_by_cmd[matched] = {
-                    "service_name": s_name,
-                    "service_id": s_id,
+                    "service_name": svc.full_name,
                     "method_name": m.name,
-                    "method_id": m.id,
                     "req_cls": (
                         m.request_type.DESCRIPTOR.name
                         if hasattr(m.request_type, "DESCRIPTOR")
@@ -663,10 +656,8 @@ def _extract_operations_context(
                     ),
                 }
     mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
-        "service_name": "bridge.GpioService",
-        "service_id": ids.calculate("bridge.GpioService"),
+        "service_name": "rpc.pb.GpioService",
         "method_name": "SubscribePins",
-        "method_id": ids.calculate("SubscribePins"),
         "req_cls": None,
         "resp_cls": "PinUpdateEvent",
     }

@@ -15,7 +15,7 @@ void FileSystemClass::write(etl::string_view path,
   bridge::pb::copy_bytes(p.data, data);
 
   constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.FileSystemService");
+      pw::tokenizer::Hash("rpc.pb.FileSystemService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Write");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_FileWrite_fields,
                              p)) {
@@ -31,7 +31,7 @@ void FileSystemClass::read(
   bridge::pb::copy_string(p.path, sizeof(p.path), path);
 
   constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.FileSystemService");
+      pw::tokenizer::Hash("rpc.pb.FileSystemService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
   if (Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_FileRead_fields, p)) {
     _pending_reads.push(handler);
@@ -45,7 +45,7 @@ void FileSystemClass::remove(etl::string_view path) {
   bridge::pb::copy_string(p.path, sizeof(p.path), path);
 
   constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.FileSystemService");
+      pw::tokenizer::Hash("rpc.pb.FileSystemService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Remove");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_FileRemove_fields,
                              p)) {
@@ -86,7 +86,7 @@ void FileSystemClass::_onRead(const rpc_pb_FileRead& msg) {
 
         p.content.size = static_cast<pb_size_t>(res->bytes_read);
         constexpr uint32_t kServiceId =
-            pw::tokenizer::Hash("bridge.FileSystemService");
+            pw::tokenizer::Hash("rpc.pb.FileSystemService");
         constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
         if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
                                    rpc_pb_FileReadResponse_fields, p)) {

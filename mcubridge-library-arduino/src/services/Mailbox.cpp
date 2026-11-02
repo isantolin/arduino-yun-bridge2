@@ -16,7 +16,7 @@ etl::circular_buffer<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
   bridge::pb::copy_bytes(p.data, data);
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Push");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxPush_fields,
                              p)) {
@@ -25,13 +25,13 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
 }
 
 bool MailboxClass::requestRead() {
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
   return Bridge.sendRpcRequestNoPayload(kServiceId, kMethodId);
 }
 
 bool MailboxClass::requestAvailable() {
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Available");
   return Bridge.sendRpcRequestNoPayload(kServiceId, kMethodId);
 }
@@ -39,7 +39,7 @@ bool MailboxClass::requestAvailable() {
 void MailboxClass::signalProcessed(uint32_t message_id) {
   rpc_pb_MailboxProcessed p = rpc_pb_MailboxProcessed_init_default;
   p.message_id = message_id;
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Processed");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
                              rpc_pb_MailboxProcessed_fields, p)) {

@@ -298,7 +298,9 @@ class SerialTransport:
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
-                await self.service.handle_mcu_frame(protocol.Command.CMD_CONSOLE_WRITE.value, 0, frame.data)
+                await self.service.handle_mcu_frame(
+                    protocol.Command.CMD_CONSOLE_WRITE.value, 0, pb.ConsoleWrite(data=bytes(frame.data))
+                )
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
@@ -321,7 +323,7 @@ class SerialTransport:
                 cmd_id = min(spec.expected_responses)
 
             payload: ProtobufMessage | bytes = pkt.payload
-            if spec and spec.response_type and pkt.payload:
+            if spec and spec.response_type and (pkt.type != PacketType.REQUEST or spec.pb_class is None) and pkt.payload:
                 try:
                     resp_msg = spec.response_type()
                     resp_msg.ParseFromString(pkt.payload)

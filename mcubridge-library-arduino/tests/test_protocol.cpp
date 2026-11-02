@@ -79,7 +79,7 @@ void test_rpc_packet_encoding_and_decoding() {
   pw::rpc_avr::RpcPacket packet;
   packet.type = pw::rpc_avr::PacketType::kRequest;
   packet.channel_id = 1;
-  packet.service_id = pw::tokenizer::Hash("bridge.SystemService");
+  packet.service_id = pw::tokenizer::Hash("rpc.pb.SystemService");
   packet.method_id = pw::tokenizer::Hash("GetVersion");
   packet.call_id = 42;
 
@@ -108,14 +108,14 @@ void test_rpc_packet_encoding_and_decoding() {
 }
 
 void test_service_id_tokenizer_hashing() {
-  constexpr uint32_t kSystem = pw::tokenizer::Hash("bridge.SystemService");
-  constexpr uint32_t kGpio = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kSystem = pw::tokenizer::Hash("rpc.pb.SystemService");
+  constexpr uint32_t kGpio = pw::tokenizer::Hash("rpc.pb.GpioService");
   constexpr uint32_t kDataStore =
-      pw::tokenizer::Hash("bridge.DataStoreService");
-  constexpr uint32_t kMailbox = pw::tokenizer::Hash("bridge.MailboxService");
-  constexpr uint32_t kProcess = pw::tokenizer::Hash("bridge.ProcessService");
+      pw::tokenizer::Hash("rpc.pb.DataStoreService");
+  constexpr uint32_t kMailbox = pw::tokenizer::Hash("rpc.pb.MailboxService");
+  constexpr uint32_t kProcess = pw::tokenizer::Hash("rpc.pb.ProcessService");
   constexpr uint32_t kFileSystem =
-      pw::tokenizer::Hash("bridge.FileSystemService");
+      pw::tokenizer::Hash("rpc.pb.FileSystemService");
 
   TEST_ASSERT_NOT_EQUAL(0, kSystem);
   TEST_ASSERT_NOT_EQUAL(0, kGpio);

@@ -12,7 +12,7 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   bridge::pb::copy_bytes(p.value, value);
 
   constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.DataStoreService");
+      pw::tokenizer::Hash("rpc.pb.DataStoreService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Put");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_DatastorePut_fields,
                              p)) {
@@ -31,7 +31,7 @@ void DataStoreClass::get(etl::string_view key,
   bridge::pb::copy_string(p.key, sizeof(p.key), key);
 
   constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.DataStoreService");
+      pw::tokenizer::Hash("rpc.pb.DataStoreService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Get");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_DatastoreGet_fields,
                              p)) {

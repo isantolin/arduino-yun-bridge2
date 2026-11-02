@@ -85,17 +85,17 @@ def test_pigweed_rpc_method_mappings() -> None:
     # Verify key Pigweed RPC service and method mappings via REGISTRY
     gpio_write = protocol.REGISTRY.get(protocol.Command.CMD_DIGITAL_WRITE.value)
     assert gpio_write is not None
-    assert gpio_write.service_name == "bridge.GpioService"
+    assert gpio_write.service_name == "rpc.pb.GpioService"
     assert gpio_write.method_name == "DigitalWrite"
 
     sys_ver = protocol.REGISTRY.get(protocol.Command.CMD_GET_VERSION.value)
     assert sys_ver is not None
-    assert sys_ver.service_name == "bridge.SystemService"
+    assert sys_ver.service_name == "rpc.pb.SystemService"
     assert sys_ver.method_name == "GetVersion"
 
     ds_put = protocol.REGISTRY.get(protocol.Command.CMD_DATASTORE_PUT.value)
     assert ds_put is not None
-    assert ds_put.service_name == "bridge.DataStoreService"
+    assert ds_put.service_name == "rpc.pb.DataStoreService"
     assert ds_put.method_name == "Put"
 
 

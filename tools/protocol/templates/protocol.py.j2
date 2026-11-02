@@ -16,9 +16,15 @@ from typing import Any, Final, cast
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
 import parse
+from pw_rpc.descriptors import Service as PwRpcService, Services as PwRpcServices
 import structlog
 
 from . import mcubridge_pb2 as pb
+
+_PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
+    PwRpcService.from_descriptor(desc)
+    for desc in pb.mcu_wire_pb2.DESCRIPTOR.services_by_name.values()
+)
 
 type McuDispatchTable = dict[int, Callable[..., Any]]
 
@@ -205,6 +211,12 @@ class OperationSpec:
     cardinality: Cardinality = Cardinality.UNARY_UNARY
     is_custom_handler: bool = False
 
+    def __post_init__(self) -> None:
+        if self.service_name and self.method_name:
+            svc = _PW_SERVICES[self.service_name]
+            object.__setattr__(self, "service_id", svc.id)
+            object.__setattr__(self, "method_id", svc.methods[self.method_name].id)
+
 
 @dataclass(frozen=True, slots=True)
 class DaemonTaskSpec:
@@ -223,6 +235,7 @@ class ProtocolRegistry:
 
     __slots__ = (
         "operations",
+        "pw_services",
         "metrics",
         "line_protocol_fields",
         "by_command_id",
@@ -251,6 +264,7 @@ class ProtocolRegistry:
         daemon_tasks: tuple[DaemonTaskSpec, ...] = (),
     ) -> None:
         self.operations = operations
+        self.pw_services = _PW_SERVICES
         self.metrics = metrics
         self.line_protocol_fields = line_protocol_fields
         self.topic_lookup = topic_lookup
@@ -518,11 +532,9 @@ REGISTRY: Final[ProtocolRegistry] = ProtocolRegistry(
             {%- if op.command_id %}
             command_id={{ op.command_id }},
             {%- endif %}
-            {%- if op.service_id %}
+            {%- if op.service_name %}
             service_name={{ op.service_name|tojson }},
-            service_id={{ op.service_id }},
             method_name={{ op.method_name|tojson }},
-            method_id={{ op.method_id }},
             {%- endif %}
             {%- if op.rpc_name %}
             rpc_name={{ op.rpc_name|tojson }},

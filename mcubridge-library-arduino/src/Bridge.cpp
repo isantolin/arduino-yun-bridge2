@@ -45,7 +45,7 @@ pw::Status EncodeResponse(pw::ByteSpan response_buffer, size_t& response_size,
 class GpioRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.GpioService");
+      pw::tokenizer::Hash("rpc.pb.GpioService");
   GpioRpcService() : RpcService(kServiceId) {}
 
   pw::Status HandleMethod(uint32_t method_id, pw::ConstByteSpan request,
@@ -119,7 +119,7 @@ class GpioRpcService final : public pw::rpc_avr::RpcService {
 class SystemRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.SystemService");
+      pw::tokenizer::Hash("rpc.pb.SystemService");
   SystemRpcService() : RpcService(kServiceId) {}
 
   pw::Status HandleMethod(uint32_t method_id, pw::ConstByteSpan request,
@@ -189,7 +189,7 @@ class SystemRpcService final : public pw::rpc_avr::RpcService {
 class ClockSyncRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.ClockSyncService");
+      pw::tokenizer::Hash("rpc.pb.ClockSyncService");
   ClockSyncRpcService() : RpcService(kServiceId) {}
 
   pw::Status HandleMethod(uint32_t method_id, pw::ConstByteSpan request,
@@ -216,7 +216,7 @@ class ClockSyncRpcService final : public pw::rpc_avr::RpcService {
 class SpiRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.SpiService");
+      pw::tokenizer::Hash("rpc.pb.SpiService");
   SpiRpcService() : RpcService(kServiceId) {}
 
   pw::Status HandleMethod(uint32_t method_id, pw::ConstByteSpan request,
@@ -267,7 +267,7 @@ class SpiRpcService final : public pw::rpc_avr::RpcService {
 class FileSystemRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.FileSystemService");
+      pw::tokenizer::Hash("rpc.pb.FileSystemService");
   FileSystemRpcService() : RpcService(kServiceId) {}
 
   pw::Status HandleMethod(uint32_t method_id, pw::ConstByteSpan request,
@@ -311,7 +311,7 @@ class FileSystemRpcService final : public pw::rpc_avr::RpcService {
 class MailboxRpcService final : public pw::rpc_avr::RpcService {
  public:
   static constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("bridge.MailboxService");
+      pw::tokenizer::Hash("rpc.pb.MailboxService");
   MailboxRpcService() : RpcService(kServiceId) {}
 
   pw::Status HandleMethod(uint32_t method_id, pw::ConstByteSpan request,
@@ -534,7 +534,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     if (pkt.type == pw::rpc_avr::PacketType::kRequest) {
       if (!_shared_secret.empty() && !isSynchronized()) {
         constexpr uint32_t kSystemServiceId =
-            pw::tokenizer::Hash("bridge.SystemService");
+            pw::tokenizer::Hash("rpc.pb.SystemService");
         constexpr uint32_t kLinkSyncMethodId = pw::tokenizer::Hash("LinkSync");
         if (pkt.service_id != kSystemServiceId ||
             pkt.method_id != kLinkSyncMethodId) {
@@ -566,7 +566,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
 
 void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
 #if BRIDGE_ENABLE_DATASTORE
-  if (packet.service_id == pw::tokenizer::Hash("bridge.DataStoreService")) {
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.DataStoreService")) {
     rpc_pb_DatastoreGetResponse resp = rpc_pb_DatastoreGetResponse_init_default;
     if (DecodeProto(packet.payload, rpc_pb_DatastoreGetResponse_fields,
                     &resp)) {
@@ -576,7 +576,7 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
   }
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-  if (packet.service_id == pw::tokenizer::Hash("bridge.MailboxService")) {
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.MailboxService")) {
     constexpr uint32_t kRead = pw::tokenizer::Hash("Read");
     constexpr uint32_t kAvailable = pw::tokenizer::Hash("Available");
     if (packet.method_id == kAvailable) {
@@ -598,7 +598,7 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
   }
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  if (packet.service_id == pw::tokenizer::Hash("bridge.ProcessService")) {
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.ProcessService")) {
     constexpr uint32_t kRunAsync = pw::tokenizer::Hash("RunAsync");
     constexpr uint32_t kPoll = pw::tokenizer::Hash("Poll");
     if (packet.method_id == kRunAsync) {
@@ -619,7 +619,7 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
   }
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-  if (packet.service_id == pw::tokenizer::Hash("bridge.FileSystemService")) {
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.FileSystemService")) {
     constexpr uint32_t kRead = pw::tokenizer::Hash("Read");
     if (packet.method_id == kRead) {
       rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
@@ -861,7 +861,7 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
   pw::rpc_avr::RpcPacket packet;
   packet.type = pw::rpc_avr::PacketType::kServerStream;
   packet.channel_id = 1;
-  packet.service_id = pw::tokenizer::Hash("bridge.GpioService");
+  packet.service_id = pw::tokenizer::Hash("rpc.pb.GpioService");
   packet.method_id = pw::tokenizer::Hash("SubscribePins");
   packet.payload = pw::ConstByteSpan(
       reinterpret_cast<const pw::byte*>(payload_buf), pb_stream.bytes_written);

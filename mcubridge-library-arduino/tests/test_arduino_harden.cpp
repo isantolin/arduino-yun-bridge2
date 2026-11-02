@@ -99,7 +99,7 @@ void test_bridge_packet_received_edge_cases() {
   etl::array<uint8_t, 256> frame_buf;
   size_t len =
       build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                           pw::tokenizer::Hash("bridge.SystemService"),
+                           pw::tokenizer::Hash("rpc.pb.SystemService"),
                            pw::tokenizer::Hash("GetVersion"),
                            etl::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
@@ -141,7 +141,7 @@ void test_bridge_linksync_auth_failure() {
   etl::array<uint8_t, 256> frame_buf;
   size_t len = build_hdlc_rpc_frame(
       1, pw::rpc_avr::PacketType::kRequest,
-      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
       1, 1);
@@ -163,7 +163,7 @@ void test_bridge_security_pre_sync_rejection() {
   etl::array<uint8_t, 256> frame_buf;
   size_t len =
       build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                           pw::tokenizer::Hash("bridge.FileSystemService"),
+                           pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                            pw::tokenizer::Hash("Remove"),
                            etl::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
@@ -195,7 +195,7 @@ void test_bridge_nonce_reuse_attack() {
   etl::array<uint8_t, 256> frame_buf;
   size_t len = build_hdlc_rpc_frame(
       1, pw::rpc_avr::PacketType::kRequest,
-      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
       1, 1);

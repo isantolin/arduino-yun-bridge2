@@ -546,13 +546,11 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       uint8_t resp_buf[bridge::config::RX_BUFFER_SIZE];
       auto res = _rpc_server.ProcessPacket(
           frame.data(), pw::as_writable_bytes(pw::span(resp_buf)));
-      if (res.ok() && res.size() > 0) {
-        pw::hdlc::WriteUIFrame(
-            1,
-            pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(resp_buf),
-                              res.size()),
-            _arduino_stream);
-      }
+      pw::hdlc::WriteUIFrame(
+          1,
+          pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(resp_buf),
+                            res.size()),
+          _arduino_stream);
     } else if (pkt.type == pw::rpc_avr::PacketType::kResponse ||
                pkt.type == pw::rpc_avr::PacketType::kServerStream) {
       _dispatchRpcResponse(pkt);

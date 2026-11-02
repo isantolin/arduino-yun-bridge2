@@ -99,9 +99,7 @@ void ProcessClass::_onRunAsyncResponse(
   if (!_pending_run_async.empty()) {
     auto handler = _pending_run_async.front();
     _pending_run_async.pop();
-    if (handler.is_valid()) {
-      handler(static_cast<int32_t>(msg.pid));
-    }
+    handler(static_cast<int32_t>(msg.pid));
   }
 }
 
@@ -109,13 +107,11 @@ void ProcessClass::_onPollResponse(const rpc_pb_ProcessPollResponse& msg) {
   if (!_pending_polls.empty()) {
     auto pending = _pending_polls.front();
     _pending_polls.pop();
-    if (pending.second.is_valid()) {
-      pending.second(
-          static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-          etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-          etl::span<const uint8_t>(msg.stderr_data.bytes,
-                                   msg.stderr_data.size));
-    }
+    pending.second(
+        static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+        etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
+        etl::span<const uint8_t>(msg.stderr_data.bytes,
+                                 msg.stderr_data.size));
   }
 }
 

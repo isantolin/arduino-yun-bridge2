@@ -830,6 +830,9 @@ void test_mailbox_edges() {
            pw::tokenizer::Hash("bridge.MailboxService"),
            pw::tokenizer::Hash("Push"),
            etl::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
+
+  Console.pushBytes(nullptr, 5);
+  Console.pushBytes(payload_bytes, 0);
 }
 
 int main() {

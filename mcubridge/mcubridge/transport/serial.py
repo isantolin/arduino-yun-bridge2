@@ -313,12 +313,12 @@ class SerialTransport:
             cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
 
-            if pkt.type == PacketType.RESPONSE and spec and spec.expected_responses:
-                cmd_id = next(iter(spec.expected_responses))
-            elif pkt.type == PacketType.SERVER_ERROR or (
-                pkt.status != 0 and pkt.type == PacketType.RESPONSE and not pkt.payload
-            ):
+            # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
+            # successful responses map onto the operation's canonical response id.
+            if pkt.type == PacketType.SERVER_ERROR or (pkt.type == PacketType.RESPONSE and pkt.status != 0):
                 cmd_id = Status.ERROR.value
+            elif pkt.type == PacketType.RESPONSE and spec and spec.expected_responses:
+                cmd_id = min(spec.expected_responses)
 
             payload: ProtobufMessage | bytes = pkt.payload
             if spec and spec.response_type and pkt.payload:
@@ -361,10 +361,11 @@ class SerialTransport:
 
             # Correlation and Service dispatch
             self.correlate_frame(cmd_id, payload, seq_id)
+            # Responses to daemon-initiated calls are fully consumed by correlation unless the
+            # daemon registers a handler for them (e.g. LinkSync); re-dispatching them as
+            # requests would trigger spurious NOT_IMPLEMENTED replies to the MCU.
             if self.service and (
-                pkt.type != PacketType.RESPONSE
-                or (spec is not None and bool(spec.mcu_handler))
-                or cmd_id in getattr(self.service, "mcu_registry", {})
+                pkt.type != PacketType.RESPONSE or cmd_id in getattr(self.service, "mcu_registry", {})
             ):
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 

@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import serial
@@ -10,6 +10,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pw_hdlc.decode import FrameDecoder
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingCommand
@@ -590,3 +591,233 @@ async def test_serial_transport_process_hdlc_log_frame(
     mock_frame.raw_encoded = b"~test~"
     await transport.process_hdlc_frame(mock_frame)
     assert runtime_state.metrics.serial_frames_received.value >= 1
+
+
+# ---------------------------------------------------------------------------
+# Pigweed RPC response mapping and dispatch (regressions for PR #58)
+# ---------------------------------------------------------------------------
+
+_PKT_REQUEST = 0
+_PKT_RESPONSE = 1
+_PKT_SERVER_ERROR = 5
+_PW_STATUS_INTERNAL = 13
+
+
+def _rpc_frame(
+    command: Command,
+    *,
+    packet_type: int,
+    call_id: int,
+    payload: bytes | Any = b"",
+    status: int = 0,
+) -> bytes:
+    spec = protocol.REGISTRY.get(command.value)
+    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    return protocol.encode_hdlc_rpc(
+        1,
+        spec.service_id,
+        spec.method_id,
+        call_id,
+        payload=payload,
+        packet_type=packet_type,
+        status=status,
+    )
+
+
+def _service_with_mocked_dispatch(config: RuntimeConfig, state: RuntimeState) -> BridgeService:
+    service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
+    service.handle_mcu_frame = AsyncMock()
+    return service
+
+
+async def test_link_sync_response_maps_to_resp_id_and_dispatches() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+        reply = pb.LinkSync(nonce=b"\x01" * 16, tag=b"\x02" * 16)
+
+        await transport.feed_data(_rpc_frame(Command.CMD_LINK_SYNC, packet_type=_PKT_RESPONSE, call_id=7, payload=reply))
+
+        service.handle_mcu_frame.assert_awaited_once()
+        cmd_id, seq_id, payload = service.handle_mcu_frame.await_args.args
+        assert cmd_id == Command.CMD_LINK_SYNC_RESP.value
+        assert seq_id == 7
+        assert isinstance(payload, pb.LinkSync)
+        assert payload.nonce == reply.nonce
+    finally:
+        state.cleanup()
+
+
+async def test_unhandled_response_is_correlated_but_not_redispatched() -> None:
+    """A DigitalWrite ack must resolve the pending command without a NOT_IMPLEMENTED loop."""
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+        pending = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value, expected_resp_ids=[])
+        pending.sequence_id = 6
+        transport.current_command = pending
+
+        await transport.feed_data(_rpc_frame(Command.CMD_DIGITAL_WRITE, packet_type=_PKT_RESPONSE, call_id=6))
+
+        assert pending.success is True
+        service.handle_mcu_frame.assert_not_awaited()
+    finally:
+        state.cleanup()
+
+
+async def test_error_status_response_fails_pending_even_with_expected_response() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+        pending = PendingCommand(
+            command_id=Command.CMD_GET_VERSION.value,
+            expected_resp_ids=[Command.CMD_GET_VERSION_RESP.value],
+        )
+        pending.sequence_id = 3
+        transport.current_command = pending
+
+        await transport.feed_data(
+            _rpc_frame(
+                Command.CMD_GET_VERSION,
+                packet_type=_PKT_RESPONSE,
+                call_id=3,
+                payload=pb.VersionResponse(major=1),
+                status=_PW_STATUS_INTERNAL,
+            )
+        )
+
+        assert pending.success is False
+        assert pending.failure_status == Status.ERROR.value
+        service.handle_mcu_frame.assert_awaited_once()
+        assert service.handle_mcu_frame.await_args.args[0] == Status.ERROR.value
+    finally:
+        state.cleanup()
+
+
+async def test_server_error_packet_maps_to_status_error() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+
+        await transport.feed_data(_rpc_frame(Command.CMD_DIGITAL_READ, packet_type=_PKT_SERVER_ERROR, call_id=9))
+
+        service.handle_mcu_frame.assert_awaited_once()
+        assert service.handle_mcu_frame.await_args.args[:2] == (Status.ERROR.value, 9)
+    finally:
+        state.cleanup()
+
+
+async def test_mcu_request_is_dispatched_with_request_command_id() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+
+        await transport.feed_data(_rpc_frame(Command.CMD_DATASTORE_GET, packet_type=_PKT_REQUEST, call_id=4))
+
+        service.handle_mcu_frame.assert_awaited_once()
+        assert service.handle_mcu_frame.await_args.args[:2] == (Command.CMD_DATASTORE_GET.value, 4)
+    finally:
+        state.cleanup()
+
+
+async def test_unparseable_response_payload_is_forwarded_as_bytes() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+        garbage = b"\x0a\xff"  # length-delimited field claiming 255 bytes: truncated
+
+        await transport.feed_data(
+            _rpc_frame(Command.CMD_LINK_SYNC, packet_type=_PKT_RESPONSE, call_id=2, payload=garbage)
+        )
+
+        service.handle_mcu_frame.assert_awaited_once()
+        cmd_id, _seq, payload = service.handle_mcu_frame.await_args.args
+        assert cmd_id == Command.CMD_LINK_SYNC_RESP.value
+        assert payload == garbage
+    finally:
+        state.cleanup()
+
+
+async def test_malformed_rpc_packet_counts_decode_error() -> None:
+    from pw_hdlc.encode import ui_frame
+
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+
+        await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_RPC, b"\x0a\xff"))
+
+        assert state.serial_decode_errors == 1
+        service.handle_mcu_frame.assert_not_awaited()
+    finally:
+        state.cleanup()
+
+
+async def test_frames_without_service_or_unknown_address_are_consumed(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    from pw_hdlc.encode import ui_frame
+
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    before = runtime_state.metrics.serial_frames_received.value
+
+    await transport.feed_data(protocol.encode_hdlc_console(b"hi"))
+    await transport.feed_data(_rpc_frame(Command.CMD_DATASTORE_GET, packet_type=_PKT_REQUEST, call_id=1))
+    await transport.feed_data(ui_frame(0x55, b"ignored"))
+
+    assert runtime_state.metrics.serial_frames_received.value == before + 3
+    assert runtime_state.serial_decode_errors == 0
+
+
+async def test_correlate_frame_debug_paths(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    import mcubridge.transport.serial as serial_mod
+
+    mocker.patch.object(serial_mod.logger, "is_enabled_for", return_value=True)
+    debug = mocker.patch.object(serial_mod.logger, "debug")
+    transport = SerialTransport(runtime_config, runtime_state, None)
+
+    stale = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
+    stale.sequence_id = 10
+    transport.current_command = stale
+    transport.correlate_frame(Command.CMD_GET_VERSION_RESP.value, b"", seq_id=11)
+    assert stale.success is None
+
+    stale.mark_success(b"done")
+    transport.correlate_frame(Command.CMD_GET_VERSION_RESP.value, b"late", seq_id=10)
+    assert stale.response_payload == b"done"
+
+    events = [c.args[0] for c in debug.call_args_list]
+    assert "ignoring_stale_frame_sequence_mismatch" in events
+    assert "Pending command already resolved, ignoring further correlation" in events
+
+
+async def test_send_raw_console_payload_variants(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    transport.serial = mock_serial
+
+    assert await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=b"abc"))
+    assert await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, cast(Any, object()))
+
+    written = [c.args[0] for c in mock_serial.write.call_args_list]
+    assert written[0] == protocol.encode_hdlc_console(b"abc")
+    assert written[1] == protocol.encode_hdlc_console(b"")
+
+    transport.serial = None
+    assert await transport.send_bytes(b"\x7e\x7e") is False

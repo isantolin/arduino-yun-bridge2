@@ -676,7 +676,9 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- for f in runtime_config_fields %}
     {{ f.name|tojson }}: {
         "type": {{ f.field_type|tojson }},
-        "description": {{ f.description|tojson }},
+        "description": (
+            {{ f.description|tojson }}
+        ),
         "volatile": {{ f.is_volatile }},
         "min": {{ f.min_val if f.min_val is not none else 'None' }},
         "max": {{ f.max_val if f.max_val is not none else 'None' }},

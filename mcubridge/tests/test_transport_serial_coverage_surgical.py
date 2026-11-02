@@ -110,7 +110,7 @@ async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfi
     frame = next(iter(FrameDecoder().process(cleartext)))
     raw = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
+        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
     )
     await transport.feed_data(raw)
     assert fut.done()
@@ -213,7 +213,7 @@ async def test_logging_not_debug_branches(
     frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
+        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
     )
     await transport.feed_data(encoded)
     assert mock_state.metrics.serial_bytes_received.value > 0

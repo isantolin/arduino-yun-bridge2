@@ -29,9 +29,10 @@ def derive_link_keys(secret: bytes, nonce: bytes) -> tuple[bytes, bytes]:
         salt=nonce,
         info=protocol.HANDSHAKE_HKDF_INFO_SESSION,
     ).derive(secret)
+    split_index = protocol.AEAD_KEY_SIZE
     return (
-        key_material[: protocol.AEAD_KEY_SIZE],
-        key_material[protocol.AEAD_KEY_SIZE :],
+        key_material[:split_index],
+        key_material[split_index:],
     )
 
 
@@ -69,11 +70,12 @@ class LinkCipher:
     def decrypt(self, address: int, envelope: bytes | memoryview) -> bytes:
         """Authenticate and decrypt a frame, rejecting replayed counters."""
         self._validate_address(address)
-        minimum_size = protocol.AEAD_COUNTER_SIZE + protocol.AEAD_TAG_SIZE
+        counter_size = protocol.AEAD_COUNTER_SIZE
+        minimum_size = counter_size + protocol.AEAD_TAG_SIZE
         if len(envelope) < minimum_size:
             raise ValueError("link AEAD frame is truncated")
 
-        counter_bytes = bytes(envelope[: protocol.AEAD_COUNTER_SIZE])
+        counter_bytes = bytes(envelope[:counter_size])
         counter = int.from_bytes(counter_bytes, "big")
         if counter == 0 or counter <= self._rx_counter:
             raise ValueError("link AEAD frame counter is invalid or replayed")
@@ -83,7 +85,7 @@ class LinkCipher:
         try:
             plaintext = self._rx.decrypt(
                 nonce,
-                bytes(envelope[protocol.AEAD_COUNTER_SIZE :]),
+                bytes(envelope[counter_size:]),
                 aad,
             )
         except InvalidTag as exc:

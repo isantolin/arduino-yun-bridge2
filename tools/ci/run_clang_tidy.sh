@@ -13,7 +13,8 @@ python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
     --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
 
 # Ensure Arduino libraries are present
-if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ]; then
+if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
+   [ ! -f "$ARDUINO_LIBS/MbedTLS/src/mbedtls/chachapoly.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi

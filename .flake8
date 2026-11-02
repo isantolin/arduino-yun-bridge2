@@ -18,4 +18,3 @@ exclude =
     .tmp_tests,
     .pytest_cache,
     third_party
-

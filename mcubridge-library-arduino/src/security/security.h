@@ -25,20 +25,16 @@ bool derive_session_keys(etl::span<const uint8_t> secret,
                          etl::span<uint8_t> mcu_to_host_key);
 
 /** Encrypt plaintext with ChaCha20-Poly1305. */
-bool aead_encrypt(etl::span<const uint8_t> key,
-                  etl::span<const uint8_t> nonce,
+bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
                   etl::span<const uint8_t> aad,
                   etl::span<const uint8_t> plaintext,
-                  etl::span<uint8_t> ciphertext,
-                  etl::span<uint8_t> tag);
+                  etl::span<uint8_t> ciphertext, etl::span<uint8_t> tag);
 
 /** Authenticate and decrypt ciphertext with ChaCha20-Poly1305. */
-bool aead_decrypt(etl::span<const uint8_t> key,
-                  etl::span<const uint8_t> nonce,
+bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
                   etl::span<const uint8_t> aad,
                   etl::span<const uint8_t> ciphertext,
-                  etl::span<const uint8_t> tag,
-                  etl::span<uint8_t> plaintext);
+                  etl::span<const uint8_t> tag, etl::span<uint8_t> plaintext);
 
 /** Generate the truncated HMAC-SHA256 tag for a valid handshake nonce. */
 bool handshake_generate_tag(etl::span<const uint8_t> secret,

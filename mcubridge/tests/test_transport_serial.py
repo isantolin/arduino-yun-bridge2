@@ -115,7 +115,7 @@ async def test_feed_data_negotiation_ack_switches_local_baudrate() -> None:
         response_frame = next(iter(FrameDecoder().process(cleartext)))
         encoded = ui_frame(
             protocol.HDLC_ADDRESS_RPC,
-            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(response_frame.data)),
+            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response_frame.data),
         )
         await transport.feed_data(encoded)
 

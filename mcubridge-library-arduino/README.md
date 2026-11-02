@@ -35,7 +35,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 ### External dependencies
 
 - **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, `pw_rpc` server/service dispatch, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log_avr` tokenized diagnostics, and `pw_chrono_avr` atomic millisecond timekeeping).
-- **PigweedAVR (`pw_crypto`)**: Provides the MCU SHA-256 API used by `LinkSync`; firmware HMAC/HKDF composition authenticates the handshake only. RPC frames are not encrypted or protected against replay.
+- **PigweedAVR**: Provides MCU HDLC/RPC framing and dispatch. Mbed TLS supplies ChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, constant-time comparison, and secure zeroization for the authenticated link.
 - **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`, `span`) with strict Zero-STL (`-DETL_NO_STL`) compliance.
 
@@ -46,7 +46,8 @@ This library describes safety- and security-oriented design goals; it does not c
 - **Modular `pw_rpc` Service Dispatch (`pw::rpc_avr::RpcServer`):** Command handling is organized into 8 static `pw::rpc_avr::RpcService` implementations (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) using compile-time `pw::tokenizer::Hash("rpc.pb.<Service>")` identifiers.
 - **Multi-Channel HDLC Framing (`pw_hdlc`):** Multiplexes `pw_rpc` packets (`HDLC_ADDRESS_RPC = 1`), tokenized logs (`HDLC_ADDRESS_LOG = 2`), and console streams (`HDLC_ADDRESS_CONSOLE = 3`) with IEEE 802.3 CRC-32 FCS integrity.
 - **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (`STARTUP`, `UNSYNCHRONIZED`, `HANDSHAKE`, `SYNCHRONIZED`, `AWAITING_ACK`, `FAULT`).
-- **Cryptographic Self-Tests (POST):** MCU Known-Answer Tests cover SHA-256 and HMAC-SHA256. The Python ChaCha20-Poly1305 KAT does not encrypt MCU link frames.
+- **Cryptographic Self-Tests (POST):** MCU Known-Answer Tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The daemon tests its AEAD library and encrypted transport behavior.
+- **Encrypted link:** With a configured shared secret, RPC, console, and log HDLC payloads are encrypted after `LinkSync`. Empty-secret mode is explicitly unauthenticated and unencrypted. Per-session counters reject replay within a session; replay across MCU restarts is not ruled out.
 - **Fail-Secure:** Initialization aborts and the system enters a safe state (`FAULT`) if cryptographic or SRAM March integrity checks fail.
 - **Handshake Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs. No session encryption keys are derived.
 - **Atomic Timekeeping (`pw_chrono_avr`):** Uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for deterministic timeout and interval tracking.

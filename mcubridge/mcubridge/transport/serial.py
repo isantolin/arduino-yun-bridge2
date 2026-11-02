@@ -110,6 +110,7 @@ class SerialTransport:
 
         self.current_command: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
+        self._serial_write_lock = asyncio.Lock()
 
         self._ack_timeout = max(self.config.serial_retry_timeout or 0, float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0)
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
@@ -547,61 +548,66 @@ class SerialTransport:
             self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
             seq_id = self.tx_sequence_id
 
-        cipher = self.state.link_cipher
-        is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
-        is_link_sync = command_id == protocol.Command.CMD_LINK_SYNC.value
-
-        if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
-            if isinstance(payload, bytes):
-                data = payload
-            elif hasattr(payload, "data"):
-                data = cast(bytes, getattr(payload, "data", b""))
-            else:
-                data = b""
-            if self.config.serial_shared_secret and cipher is None:
+        async with self._serial_write_lock:
+            serial_port = self.serial
+            if not serial_port:
                 return False
-            if cipher is None:
-                encoded = protocol.encode_hdlc_console(data)
-            else:
-                from pw_hdlc.encode import ui_frame
 
-                envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
-                encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
-        else:
-            if self.config.serial_shared_secret:
-                if cipher is None and not (is_link_reset or is_link_sync):
+            cipher = self.state.link_cipher
+            is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
+            is_link_sync = command_id == protocol.Command.CMD_LINK_SYNC.value
+
+            if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
+                if isinstance(payload, bytes):
+                    data = payload
+                elif hasattr(payload, "data"):
+                    data = cast(bytes, getattr(payload, "data", b""))
+                else:
+                    data = b""
+                if self.config.serial_shared_secret and cipher is None:
                     return False
-                if cipher is not None and is_link_sync:
-                    return False
-            if cipher is not None and not is_link_reset:
-                from pw_hdlc.encode import ui_frame
+                if cipher is None:
+                    encoded = protocol.encode_hdlc_console(data)
+                else:
+                    from pw_hdlc.encode import ui_frame
 
-                packet = protocol.encode_rpc_packet(command_id, payload, call_id=seq_id or 1)
-                envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
-                encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
+                    envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
+                    encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
             else:
-                encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id or 1)
+                if self.config.serial_shared_secret:
+                    if cipher is None and not (is_link_reset or is_link_sync):
+                        return False
+                    if cipher is not None and is_link_sync:
+                        return False
+                if cipher is not None and not is_link_reset:
+                    from pw_hdlc.encode import ui_frame
 
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "[SERIAL -> MCU] [CMD:0x%02X] [HDLC]: [%s]",
-                command_id,
-                encoded.hex().upper(),
-            )
+                    packet = protocol.encode_rpc_packet(command_id, payload, call_id=seq_id or 1)
+                    envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
+                    encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
+                else:
+                    encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id or 1)
 
-        try:
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "[SERIAL -> MCU] [CMD:0x%02X] [HDLC]: [%s]",
+                    command_id,
+                    encoded.hex().upper(),
+                )
 
-            def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
-                ser.write(data)
-                ser.flush()
+            try:
 
-            await asyncio.to_thread(_write_and_flush, self.serial, encoded)
-            self.state.metrics.serial_bytes_sent.inc(len(encoded))
-            self.state.metrics.serial_frames_sent.inc()
-            return True
-        except (AttributeError, OSError, RuntimeError, ValueError) as exc:
-            logger.error("Serial write failed", error=str(exc))
-            return False
+                def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
+                    ser.write(data)
+                    ser.flush()
+
+                await asyncio.to_thread(_write_and_flush, serial_port, encoded)
+                self.state.metrics.serial_bytes_sent.inc(len(encoded))
+                self.state.metrics.serial_frames_sent.inc()
+                return True
+            except (AttributeError, OSError, RuntimeError, ValueError) as exc:
+                logger.error("Serial write failed", error=str(exc))
+                return False
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)

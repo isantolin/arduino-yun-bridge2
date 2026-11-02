@@ -5,7 +5,7 @@
 ## Completed (Q1-Q3 2026)
 
 ### 1. Security & Architecture Overhaul (v2.8.5)
-- **Pigweed SHA-256 link authentication**: MCU `LinkSync` uses Pigweed SHA-256 with HMAC/HKDF composition and a domain-separated MCU response proof when a shared secret is configured. This does not encrypt frames or prevent frame replay.
+- **Authenticated encrypted MCU link**: Pigweed provides HDLC/RPC transport, while Mbed TLS provides domain-separated `LinkSync` HMAC proofs, directional HKDF keys, and ChaCha20-Poly1305 protection for RPC, console, and log frames. Per-session counters reject replay within the live session; cross-restart replay freshness remains a limitation.
 - **Zero-Wrapper Architecture**: Total flattening of the Python daemon; eradicated 8 redundant component classes for a lean, direct `BridgeService`.
 - **Integrated Flow Control**: Merged `SerialFlowController` into `SerialTransport` with native `tenacity` retry support.
 - **OpenWrt 25.12.6 Support**: Hardened for the latest APK-based OpenWrt release.

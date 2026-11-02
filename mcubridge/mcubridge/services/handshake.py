@@ -371,13 +371,10 @@ class SerialHandshakeManager:
             return False
 
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self.calculate_handshake_response_tag(
-            self._config.serial_shared_secret, nonce
-        )
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
-        tag_mismatch = not bytes_eq(tag_bytes, recalculated_tag)
+        tag_mismatch = expected_tag is None or not bytes_eq(tag_bytes, expected_tag)
 
         if nonce_mismatch:
             self._logger.debug(

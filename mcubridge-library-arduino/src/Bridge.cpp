@@ -453,16 +453,28 @@ void BridgeClass::_initializeRuntime() {
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _initializeRuntime();
 
+  rpc::security::secure_zero(
+      etl::span<uint8_t>(_shared_secret.data(), _shared_secret.size()));
   _shared_secret.clear();
+  bool secret_too_long = false;
   if (secret != nullptr) {
     const etl::string_view s(secret);
-    const size_t len = etl::min(s.size(), _shared_secret.capacity());
-    const auto data_ptr = reinterpret_cast<const uint8_t*>(s.data());
-    _shared_secret.assign(data_ptr, data_ptr + len);
+    if (s.size() > _shared_secret.capacity()) {
+      secret_too_long = true;
+    } else {
+      const auto data_ptr = reinterpret_cast<const uint8_t*>(s.data());
+      _shared_secret.assign(data_ptr, data_ptr + s.size());
+    }
   }
   bridge::hal::init();
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
+
+  if (secret_too_long) {
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    enterSafeState();
+    return;
+  }
 
   _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
   if (!_state_flags.test(FLAG_POST_PASSED)) {
@@ -594,6 +606,14 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       pkt = decoded_pkt.value();
     }
     if (pkt.type == pw::rpc_avr::PacketType::kRequest) {
+      if (!_shared_secret.empty() && _session_keys_ready &&
+          isLinkSyncRequest(pkt)) {
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        if (decrypted) {
+          rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+        }
+        return;
+      }
       if (!_shared_secret.empty() && !isSynchronized() &&
           !isLinkSyncRequest(pkt) && !isLinkResetRequest(pkt)) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);

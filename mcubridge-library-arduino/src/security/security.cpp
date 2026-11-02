@@ -262,18 +262,37 @@ bool run_cryptographic_self_tests() {
   const auto aead_expected_tag = copy_progmem(kat_aead_tag);
   etl::array<uint8_t, 4> ciphertext = {};
   etl::array<uint8_t, RPC_AEAD_TAG_SIZE> tag = {};
+  etl::array<uint8_t, 4> decrypted = {};
   const bool aead_encrypted = aead_encrypt(aead_key, aead_nonce, aead_aad,
                                            aead_plaintext, ciphertext, tag);
-  const bool aead_ok =
+  const bool aead_encrypt_ok =
       aead_encrypted &&
       etl::equal(ciphertext.begin(), ciphertext.end(), aead_expected.begin()) &&
       etl::equal(tag.begin(), tag.end(), aead_expected_tag.begin());
+  const bool aead_decrypt_ok =
+      aead_decrypt(aead_key, aead_nonce, aead_aad, aead_expected,
+                   aead_expected_tag, decrypted) &&
+      etl::equal(decrypted.begin(), decrypted.end(), aead_plaintext.begin());
+
+  auto invalid_tag = aead_expected_tag;
+  invalid_tag[0] ^= 0x01U;
+  etl::array<uint8_t, 4> rejected_plaintext = {0xAAU, 0xAAU, 0xAAU, 0xAAU};
+  const bool bad_tag_rejected =
+      !aead_decrypt(aead_key, aead_nonce, aead_aad, aead_expected, invalid_tag,
+                    rejected_plaintext);
+  const etl::array<uint8_t, 4> zero_plaintext = {};
+  const bool rejected_plaintext_cleared =
+      etl::equal(rejected_plaintext.begin(), rejected_plaintext.end(),
+                 zero_plaintext.begin());
 
   secure_zero(etl::span<uint8_t>(digest));
   secure_zero(etl::span<uint8_t>(hmac_result));
   secure_zero(etl::span<uint8_t>(ciphertext));
   secure_zero(etl::span<uint8_t>(tag));
-  return sha_ok && hmac_ok && aead_ok;
+  secure_zero(etl::span<uint8_t>(decrypted));
+  secure_zero(etl::span<uint8_t>(rejected_plaintext));
+  return sha_ok && hmac_ok && aead_encrypt_ok && aead_decrypt_ok &&
+         bad_tag_rejected && rejected_plaintext_cleared;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

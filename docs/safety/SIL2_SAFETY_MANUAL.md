@@ -49,7 +49,7 @@ flowchart TD
 At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_on_self_tests()`:
 1. **SRAM March Pattern Test**: Non-destructive pattern verification (`0x55`, `0xAA`, `0x00`, `0xFF`) verifying memory cell integrity.
 2. **Stack Sentinel Initialization**: Sets the stack boundary canary (`0x55AA55AA`).
-3. **Cryptographic Self-Tests**: MCU KATs cover SHA-256 and HMAC-SHA256. The daemon's ChaCha20-Poly1305 KAT checks its Python library only; it does not represent frame encryption.
+3. **Cryptographic Self-Tests**: MCU KATs cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The daemon also checks its ChaCha20-Poly1305 library and exercises encrypted transport frames.
 4. **Safety Action**: If any POST step fails, `enterSafeState()` is invoked immediately, disabling transmitters and driving I/O pins to a safe state.
 
 ### 2.4 Continuous Stack Overflow Protection (Watermarking)
@@ -74,7 +74,9 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 
 ### 2.8 Link Authentication and Disconnect Handling
 * With a configured shared secret, `LinkSync` verifies host and MCU HMAC proofs over a 16-byte host nonce. An empty secret explicitly disables authentication.
-* RPC frames are not encrypted or protected by a monotonic replay counter. CRC-32 is error detection, not authentication.
+* With a shared secret, RPC, console, and log frames are protected by ChaCha20-Poly1305 and monotonic per-direction counters within a session. CRC-32 remains error detection, not authentication.
+* Counter state is not persistent across MCU restarts; replay of a previously captured authenticated handshake and its frames is not ruled out.
+* The explicit `LinkReset` control request is plaintext and can force a new handshake; this is not a plaintext data-frame fallback.
 * Disconnects transition the link to `UNSYNCHRONIZED`, clear pending handshake expectations, and require a new synchronization.
 
 ### 2.9 State Machines in Linux MPU (`python-statemachine`)

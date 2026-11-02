@@ -103,6 +103,25 @@ void test_handshake_tag_known_answer(void) {
       etl::equal(actual_tag.begin(), actual_tag.end(), response_tag.begin()));
 }
 
+void test_session_key_derivation_known_answer(void) {
+  constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedHostToMcu = {
+      0x5D, 0xFD, 0x05, 0x83, 0x21, 0x1B, 0x31, 0x36, 0x0B, 0x59, 0x8B,
+      0xC3, 0x79, 0xB2, 0xE4, 0x98, 0x6B, 0xFA, 0xC0, 0x8D, 0x3C, 0xEA,
+      0x83, 0xCF, 0x2D, 0xE7, 0xE7, 0x1A, 0xC2, 0x69, 0xDB, 0xAB};
+  constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedMcuToHost = {
+      0x6F, 0x91, 0xBF, 0x7D, 0x92, 0x38, 0x7A, 0x46, 0x0F, 0xE1, 0x37,
+      0x37, 0xA3, 0x51, 0xF3, 0x3C, 0xF6, 0x3D, 0xFE, 0x26, 0xB2, 0xBC,
+      0x68, 0x51, 0xA7, 0x80, 0x2C, 0x91, 0xF4, 0x3F, 0xEB, 0xBC};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> host_to_mcu = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host = {};
+  TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
+      kVectorSecret, kVectorNonce, host_to_mcu, mcu_to_host));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), host_to_mcu.data(),
+                                host_to_mcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(), mcu_to_host.data(),
+                                mcu_to_host.size());
+}
+
 #if BRIDGE_ENABLE_POST_TESTS
 void test_cryptographic_self_tests_run(void) {
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
@@ -116,6 +135,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_handshake_tag_generation_rejects_invalid_buffers);
   RUN_TEST(test_handshake_tag_generation_and_verification);
   RUN_TEST(test_handshake_tag_known_answer);
+  RUN_TEST(test_session_key_derivation_known_answer);
 #if BRIDGE_ENABLE_POST_TESTS
   RUN_TEST(test_cryptographic_self_tests_run);
 #endif

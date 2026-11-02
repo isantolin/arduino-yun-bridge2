@@ -7,25 +7,25 @@
 
 ## 1. Implementation Scope (Not a Validated Cryptographic Boundary)
 
-The current link protocol authenticates `LinkSync` when a shared secret is configured. It does not derive a session encryption key, encrypt RPC frames, or provide per-frame replay protection. This description is not an assessed or validated cryptographic-module boundary.
+When a shared secret is configured, the link authenticates `LinkSync`, derives directional session keys, and protects RPC, console, and log HDLC payloads with ChaCha20-Poly1305. This description is not an assessed or validated cryptographic-module boundary. Counter-based replay rejection is limited to one session; replay across MCU restarts is not ruled out.
 
 ```mermaid
 graph LR
     subgraph Arduino MCU Boundary
-        A[Pigweed pw_crypto SHA-256]
-        B[LinkSync HMAC/HKDF composition]
+        A[Mbed TLS HKDF / HMAC / ChaCha20-Poly1305]
+        B[Directional session keys and counters]
     end
 
     subgraph Channel
-        UART((pw_hdlc / pw_rpc; CRC-32 only))
+        UART((pw_hdlc / pw_rpc; CRC-32 + AEAD))
     end
 
     subgraph Linux MPU Boundary
-        D[Python cryptography HKDF/HMAC]
+        D[Python cryptography HKDF / HMAC / AEAD]
     end
 
-    B <-->|LinkSync proofs; RPC frames are not encrypted| UART
-    UART <-->|LinkSync proofs; RPC frames are not encrypted| D
+    B <-->|LinkSync proofs; ChaCha20-Poly1305 payloads| UART
+    UART <-->|Authenticated HDLC payloads| D
 ```
 
 ---
@@ -50,9 +50,10 @@ graph LR
 | **HKDF-SHA256** | RFC 5869; NIST SP 800-56C Rev 2 reference | 256-bit | Key Derivation Function (KDF) |
 | **HMAC-SHA256** | RFC 2104 / FIPS references | 256-bit | Domain-separated `LinkSync` request and response proofs |
 | **SHA-256** | FIPS 180-4 reference | 256-bit | Cryptographic Hashing |
+| **ChaCha20-Poly1305** | RFC 8439 | 256-bit key, 96-bit nonce | Authenticated encryption of protected HDLC payloads |
 
 ### 3.2 Startup Known-Answer Tests (KATs)
-The MCU POST runs project KATs for SHA-256 and HMAC-SHA256. The Python daemon's integrity check also tests a ChaCha20-Poly1305 vector through `cryptography`; that check does not imply link-frame encryption.
+The MCU POST runs project KATs for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The Python daemon's integrity check tests a ChaCha20-Poly1305 vector, and transport tests exercise protected frames.
 
 These functional regression checks are not CAVP testing or FIPS 140-3 module validation.
 
@@ -61,13 +62,15 @@ These functional regression checks are not CAVP testing or FIPS 140-3 module val
 ## 4. Key Management & Zeroization
 
 ### 4.1 Ephemeral Key Derivation
-The host request and MCU response proofs use HKDF-SHA256 with the configured shared secret, the canonical `mcubridge-v2` salt, separate `handshake-auth` and `handshake-response` info strings, and HMAC-SHA256 over the 16-byte host nonce. No session encryption key is derived.
+The host request and MCU response proofs use HKDF-SHA256 with the configured shared secret, the canonical `mcubridge-v2` salt, separate `handshake-auth` and `handshake-response` info strings, and HMAC-SHA256 over the 16-byte host nonce. A separate HKDF-SHA256 derivation uses the host nonce as salt and `session-key` as info to produce independent 256-bit keys for each direction.
 
 ### 4.2 Nonce and Replay
-The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks its exact length and binds both HMAC proofs to it. There is no per-frame nonce, monotonic frame counter, or replay state. The handshake nonce does not prevent replay of previously captured RPC frames.
+The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks its exact length and binds both HMAC proofs to it. Each protected frame carries an 8-byte big-endian counter used as the final eight bytes of its 96-bit nonce; the first four bytes are zero. The receiver rejects counters that are zero or not strictly greater than the last accepted counter for that direction.
+
+The MCU does not currently have a demonstrated persistent boot epoch or cross-platform cryptographic random source. Consequently, replay of an old authenticated `LinkSync` exchange and its captured frames after an MCU restart is not ruled out. `LinkReset` remains an explicit plaintext recovery control, not a plaintext fallback for data.
 
 ### 4.3 Key Zeroization
-* **C++ MCU**: Explicit `secure_zero()` calls clear the local HMAC/HKDF key pads, derived key arrays, tags, and expected-tag buffers. This is not a guarantee that every library-internal copy is erased.
+* **C++ MCU**: Mbed TLS platform zeroization clears derived keys, AEAD scratch buffers, handshake intermediates, and the stored shared secret when the bridge is reinitialized. This is not a guarantee that every library-internal copy is erased.
 * **Python MPU**: `secure_zero()` overwrites the supplied mutable `bytearray` or writable `memoryview`. It cannot guarantee removal of immutable copies or every copy retained by the interpreter, allocator, or native libraries; it is not a process-wide zeroization guarantee.
 
 ### 4.4 Cloud Transport

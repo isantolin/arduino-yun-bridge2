@@ -487,14 +487,18 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 - **Detección de errores (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc_avr::Decoder` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon. CRC detecta errores accidentales; no autentica frames.
 - **Autenticación de `LinkSync`:** Con secreto compartido configurado, el host envía un HMAC-SHA256 de 16 bytes y el MCU verifica el tag antes de habilitar métodos fuera de `pre_sync_allowed`. El MCU responde con un HMAC bajo un `HKDF info` distinto para que el host compruebe la identidad compartida del MCU. Ambos tags cubren un nonce host de 16 bytes.
 - Si el secreto está vacío, el protocolo requiere tags vacíos y el enlace queda **sin autenticación**. No existe fallback desde un tag inválido.
-- No hay cifrado AEAD ni protección anti-replay por frame. La autenticación del handshake no autentica el contenido RPC posterior.
+- **Cifrado de enlace:** Tras un `LinkSync` autenticado, los payloads HDLC de RPC (`1`), logs (`2`) y consola (`3`) se cifran y autentican con ChaCha20-Poly1305. El envelope es `contador[8 bytes BE] || ciphertext || tag[16 bytes]`; el nonce es `00 00 00 00 || contador` y el AAD es `dirección HDLC[1 byte] || contador`.
+- Las claves host→MCU y MCU→host se derivan como dos bloques de 32 bytes mediante HKDF-SHA256 (`IKM=secreto`, `salt=nonce del handshake`, `info="session-key"`). Cada dirección mantiene un contador común a todos los canales protegidos; el receptor rechaza contadores cero o no crecientes.
+- `LinkSync` y su respuesta autenticada ocurren antes de activar AEAD. `LinkReset` también es un control plaintext explícito de recuperación; no habilita tráfico de datos plaintext y puede forzar una nueva sincronización.
+- La protección anti-replay de contadores solo dura lo que la sesión. No se garantiza el rechazo de handshakes o frames previamente capturados tras un reinicio del MCU, porque no hay una fuente de frescura criptográfica del MCU compartida y persistente entre las placas soportadas.
 - Los peers deben actualizarse juntos: los tags de respuesta usan un dominio distinto y no hay negociación ni modo de compatibilidad para la semántica anterior.
 
 ### 3.3 Implementación de bibliotecas (Wire Format)
 
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
-| **Autenticación del handshake** | HKDF-SHA256 + HMAC-SHA256; sin AEAD de frame | **Pigweed `pw_crypto::sha256`** más composición MCU de HMAC/HKDF; no hay API AEAD en el export Arduino. | **`cryptography`** para HKDF/HMAC. El KAT ChaCha20-Poly1305 no cifra el enlace. |
+| **Autenticación del handshake** | HKDF-SHA256 + HMAC-SHA256 | **Mbed TLS** (`mbedtls_md_hmac`, `mbedtls_hkdf`, `mbedtls_ct_memcmp`). | **`cryptography`** para HKDF/HMAC y comparación constante. |
+| **Protección del enlace** | ChaCha20-Poly1305 con claves direccionales y contadores monotónicos por sesión | **Mbed TLS** (`mbedtls_chachapoly_*`). | **`cryptography`** (`ChaCha20Poly1305`); envuelve/desenvuelve los payloads HDLC. |
 | **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Pigweed AVR**: `pw::hdlc_avr::Encoder` / `Decoder`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Pigweed AVR**: `pw::rpc_avr::RpcServer` + 8 `RpcService`. | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`). |
 | **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Pigweed AVR**: `pw_log_avr` + `pw_tokenizer`. | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |

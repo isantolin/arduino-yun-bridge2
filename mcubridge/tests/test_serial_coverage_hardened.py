@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 import mcubridge.protocol.mcubridge_pb2 as pb
 import serial
 from pw_hdlc.encode import ui_frame
+from pw_rpc import packets as pw_packets
+from pw_rpc.internal.packet_pb2 import PacketType
 from serial import SerialException
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
@@ -23,6 +25,9 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+
+_TEST_SECRET = b"coverage test shared secret"
+_TEST_NONCE = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
 
 
 def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any, Any]:
@@ -35,8 +40,11 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
         serial_fallback_threshold=3,
         cloud_spool_dir=d,
         allow_non_tmp_paths=True,
+        serial_shared_secret=_TEST_SECRET,
     )
     state = create_runtime_state(config)
+    host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE)
+    state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
     mock_serial.write = MagicMock(return_value=10)
@@ -95,7 +103,13 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
     outgoing_frame = next(transport.decoder.process(encoded))
     assert outgoing_frame.address == protocol.HDLC_ADDRESS_RPC
     decoded_request = mcu_cipher.decrypt(outgoing_frame.address, outgoing_frame.data)
-    assert decoded_request
+    packet = pw_packets.decode(decoded_request)
+    operation = protocol.get_operation(Command.CMD_DIGITAL_READ.value)
+    assert operation is not None
+    assert packet.type == PacketType.REQUEST
+    assert packet.call_id == 7
+    assert (packet.service_id, packet.method_id) == (operation.service_id, operation.method_id)
+    assert pb.PinRead.FromString(packet.payload) == pb.PinRead(pin=13)
 
     service_mock = AsyncMock()
     transport.service = service_mock
@@ -152,11 +166,15 @@ async def test_serial_transport_feed_data_hdlc_rpc(tmp_path: Path) -> None:
     state.connection_fsm.synchronize()
 
     # Valid HDLC RPC frame
-    encoded = protocol.encode_hdlc_rpc(
+    host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE)
+    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
+    packet = protocol.encode_rpc_packet(
         Command.CMD_DIGITAL_READ.value,
         pb.PinRead(pin=13),
         call_id=5,
     )
+    envelope = mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
+    encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
 
     await transport.feed_data(encoded)
     service_mock.handle_mcu_frame.assert_awaited_once()

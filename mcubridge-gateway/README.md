@@ -111,7 +111,7 @@ Where:
   - `evt`: Asynchronous telemetry reports and spontaneous event broadcasts (e.g. `status_online`, `pin_event`).
 - `{method}`: Canonical operation or event name matching `tools/protocol/mcubridge.proto` (e.g. `gpio.write`, `gpio.set_mode`, `file.read`, `system.version`, `datastore.put`, `mailbox.push`).
 
-All routing is resolved declaratively via the protocol Single Source of Truth (`REGISTRY.get_topic_for_message` and `REGISTRY.parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
+All routing is resolved declaratively via the protocol Single Source of Truth (`get_topic_for_message` and `parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
 
 ---
 

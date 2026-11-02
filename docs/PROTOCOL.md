@@ -62,7 +62,7 @@ La **fuente de verdad machine-readable** del protocolo vive modularizada en `too
 ### Serialización de Payloads (Protobuf)
 Todos los payloads del protocolo se definen como mensajes en los schemas bajo `tools/protocol/` y se serializan como **protobuf** dentro del frame RPC (`RpcEnvelope`).
 
-- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`), orquestadas de forma centralizada y determinista por el catálogo `REGISTRY` (`protocol.py`).
+- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`), orquestadas de forma centralizada y determinista por `PW_SERVICES` (`pw_rpc.descriptors.Services`) y las tablas modulares de `protocol.py`.
 - **C++ (MCU):** usa Nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
 
 El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre Nanopb/protobuf, manteniendo las restricciones estáticas de tamaño definidas para los targets de hardware.
@@ -74,7 +74,7 @@ La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de d
 El MCU utiliza un despacho basado en una tabla estática `k_dispatch_table[]` ordenada por `command_id`, almacenada en PROGMEM para AVR. El lookup se realiza con `etl::lower_bound` (O(log N) sobre tabla contigua), evitando la dependencia en rangos de enum contiguos y reduciendo el uso de RAM. El costo y los límites temporales deben medirse en cada target; esta implementación no acredita por sí sola una conformidad SIL-2.
 
 - **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
-- **Catálogo Centralizado de Operaciones (`REGISTRY` SSOT)**: En Python, `REGISTRY` (`protocol.py`) unifica de forma inmutable todas las operaciones del sistema (`OperationSpec`), indexando por `command_id`, nombre RPC, tópicos canónicos y tipos de mensaje en $O(1)$.
+- **Catálogo Centralizado de Servicios y Operaciones (`PW_SERVICES` + `OPERATIONS` SSOT)**: En Python, `protocol.py` expone `PW_SERVICES` (`pw_rpc.descriptors.Services`) y tablas modulares inmutables (`OPERATIONS`, `RPC_SPECS`, `BY_COMMAND_ID`, `BY_RPC`, `BY_NAME`), indexando por `command_id`, nombre RPC, tópicos canónicos y tipos de mensaje en $O(1)$.
 
 ### Determinismo C++17 y Zero-Cost Abstractions
 La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
@@ -105,7 +105,7 @@ python3 tools/protocol/generate.py \
   --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 ```
 
-…se regeneran los bindings de enums/constantes y el registro `REGISTRY`. Además, el generador produce artefactos protobuf para ambos lados:
+…se regeneran los bindings de enums/constantes y el catálogo `PW_SERVICES` / `OPERATIONS`. Además, el generador produce artefactos protobuf para ambos lados:
 
 - **Python:** módulos de mensajes `mcubridge_pb2.py`, stubs `mcubridge_pb2.pyi`, servicios `mcubridge_grpc.py` y catálogo de operaciones unificado `protocol.py`.
 - **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` y cabeceras Nanopb `mcubridge.pb.h` / `mcubridge.pb.c` con `encode()`/`decode()` (estáticos, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
@@ -463,7 +463,7 @@ Hay dos niveles distintos de “ACK” en este sistema:
   - Si el receptor detecta un error de framing/semántica, puede responder con `STATUS_MALFORMED`, `STATUS_ERROR`, etc.
 
 2) **Comandos “ACK-only” (sin respuesta de negocio):** son comandos para los cuales **no existe** `CMD_X_RESP`; el éxito se confirma con `STATUS_ACK`.
-  Esta lista está alineada con el spec (bindings Python: `REGISTRY.operations` con `requires_ack=True`):
+  Esta lista está alineada con el spec (bindings Python: `OPERATIONS` con `requires_ack=True`):
 
 - `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
 - `CMD_CONSOLE_WRITE` (bidireccional)
@@ -513,7 +513,7 @@ CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE
 | **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
 | **COBS/R** | Framing / Escaping | **Externa**: `PacketSerial2` (`COBSR`). | **Externa**: `cobs` (módulo `cobsr` de PyPI). |
 | **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL). | **Interna**: `binascii.crc32` (IEEE 802.3). |
-| **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `REGISTRY` en `protocol.py`). |
+| **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `PW_SERVICES` en `protocol.py`). |
 | **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
 
 ## 4. Códigos de estado (`Status`)
@@ -1109,8 +1109,8 @@ Ejemplos:
 ### 11.2 Resolución Declarativa en la Fuente de Verdad (SSOT)
 
 La resolución y parseo de tópicos se delega exclusivamente en la infraestructura generada en `protocol.py`:
-- `REGISTRY.get_topic_for_message(prefix, message)`: Resuelve el tópico canónico correspondiente a un tipo de mensaje Protobuf o comando ID.
-- `REGISTRY.parse_topic(prefix, topic_name)`: Parsea y valida el tópico entrante, retornando un `TopicRoute` inmutable con campos fuertemente tipados (`raw`, `prefix`, `device_id`, `direction`, `method`) o `None` si la estructura viola el contrato normativo.
+- `get_topic_for_message(prefix, message)`: Resuelve el tópico canónico correspondiente a un tipo de mensaje Protobuf o comando ID.
+- `parse_topic(prefix, topic_name)`: Parsea y valida el tópico entrante, retornando un `TopicRoute` inmutable con campos fuertemente tipados (`raw`, `prefix`, `device_id`, `direction`, `method`) o `None` si la estructura viola el contrato normativo.
 
 Cualquier tópico que no cumpla exactamente con los esquemas canónicos es rechazado de inmediato sin fallbacks ni transformaciones heurísticas.
 

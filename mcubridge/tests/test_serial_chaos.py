@@ -10,6 +10,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
+from mcubridge.security.security import LinkCipher
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -90,6 +91,10 @@ async def test_tx_sequence_wrapping_isomorphism(init_seq: int) -> None:
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
     state.serial_tx_allowed.set()
+    state.link_cipher = LinkCipher.for_host(
+        transport.config.serial_shared_secret,
+        bytes(range(protocol.HANDSHAKE_NONCE_LENGTH)),
+    )
     transport.tx_sequence_id = init_seq
     result = await transport.send_raw(0x01, b"")
     assert result is True

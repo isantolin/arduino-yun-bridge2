@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import asyncio
 
+from google.protobuf.message import DecodeError
+from google.protobuf.message import Message as ProtobufMessage
+from pw_hdlc.encode import ui_frame
 import structlog
 from pw_hdlc.decode import FrameDecoder
 from pw_rpc.internal.packet_pb2 import RpcPacket
@@ -16,11 +19,56 @@ from pw_rpc.internal.packet_pb2 import RpcPacket
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
+from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
 
 logger = structlog.get_logger(__name__)
+
+
+def _make_mcu_cipher(secret: bytes, nonce: bytes) -> LinkCipher:
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    return LinkCipher(mcu_to_host, host_to_mcu)
+
+
+def _encode_mcu_rpc_frame(
+    command_id: int,
+    payload: bytes | ProtobufMessage,
+    call_id: int,
+    cipher: LinkCipher | None,
+) -> bytes:
+    encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=call_id)
+    if cipher is None:
+        return encoded
+    frame = next(FrameDecoder().process(encoded))
+    return ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
+    )
+
+
+def _decode_host_rpc_packet(packet_data: bytes, cipher: LinkCipher | None) -> tuple[RpcPacket, LinkCipher | None]:
+    if cipher is not None:
+        try:
+            packet_data = cipher.decrypt(protocol.HDLC_ADDRESS_RPC, packet_data)
+        except ValueError as exc:
+            control_packet = RpcPacket()
+            try:
+                control_packet.ParseFromString(packet_data)
+            except DecodeError:
+                raise exc from None
+            operation = protocol.get_operation((control_packet.service_id, control_packet.method_id))
+            if operation is None or operation.command_id not in (
+                protocol.Command.CMD_LINK_RESET.value,
+                protocol.Command.CMD_LINK_SYNC.value,
+            ):
+                raise exc
+            return control_packet, None
+
+    packet = RpcPacket()
+    packet.ParseFromString(packet_data)
+    return packet, cipher
 
 
 async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
@@ -31,6 +79,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
     async def mock_mcu_tcp_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         decoder = FrameDecoder()
+        mcu_cipher: LinkCipher | None = None
         try:
             while True:
                 chunk = await reader.read(512)
@@ -41,8 +90,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                     if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
                         continue
 
-                    pkt = RpcPacket()
-                    pkt.ParseFromString(frame.data)
+                    pkt, mcu_cipher = _decode_host_rpc_packet(frame.data, mcu_cipher)
                     op = protocol.get_operation((pkt.service_id, pkt.method_id))
                     cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
                     rx_seq = pkt.call_id
@@ -53,6 +101,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                     # Simulate MCU responses based on received command
                     if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
                         sync_req = pb.LinkSync.FromString(payload)
+                        mcu_cipher = _make_mcu_cipher(runtime_config.serial_shared_secret, sync_req.nonce)
                         tag = service.handshake.calculate_handshake_response_tag(
                             runtime_config.serial_shared_secret, sync_req.nonce
                         )
@@ -70,19 +119,21 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
                     elif cmd_id == protocol.Command.CMD_GET_VERSION.value:
                         resp_pb = pb.VersionResponse(major=2, minor=8, patch=5)
-                        resp_frame = protocol.encode_hdlc_rpc(
+                        resp_frame = _encode_mcu_rpc_frame(
                             protocol.Command.CMD_GET_VERSION_RESP.value,
                             resp_pb,
-                            call_id=rx_seq,
+                            rx_seq,
+                            mcu_cipher,
                         )
                         writer.write(resp_frame)
                         await writer.drain()
 
                     elif cmd_id == protocol.Command.CMD_DIGITAL_WRITE.value:
-                        resp_frame = protocol.encode_hdlc_rpc(
+                        resp_frame = _encode_mcu_rpc_frame(
                             protocol.Status.OK.value,
                             b"",
-                            call_id=rx_seq,
+                            rx_seq,
+                            mcu_cipher,
                         )
                         writer.write(resp_frame)
                         await writer.drain()
@@ -153,6 +204,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
     async def mock_mcu_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         decoder = FrameDecoder()
+        mcu_cipher: LinkCipher | None = None
         try:
             while True:
                 chunk = await reader.read(512)
@@ -163,8 +215,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                     if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
                         continue
 
-                    pkt = RpcPacket()
-                    pkt.ParseFromString(frame.data)
+                    pkt, mcu_cipher = _decode_host_rpc_packet(frame.data, mcu_cipher)
                     op = protocol.get_operation((pkt.service_id, pkt.method_id))
                     cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
                     rx_seq = pkt.call_id
@@ -172,6 +223,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
                     if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
                         sync_req = pb.LinkSync.FromString(payload)
+                        mcu_cipher = _make_mcu_cipher(runtime_config.serial_shared_secret, sync_req.nonce)
                         tag = service.handshake.calculate_handshake_response_tag(
                             runtime_config.serial_shared_secret, sync_req.nonce
                         )
@@ -186,10 +238,11 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
                     elif cmd_id == protocol.Command.CMD_ANALOG_READ.value:
                         resp_pb = pb.AnalogReadResponse(value=742)
-                        resp_frame = protocol.encode_hdlc_rpc(
+                        resp_frame = _encode_mcu_rpc_frame(
                             protocol.Command.CMD_ANALOG_READ_RESP.value,
                             resp_pb,
-                            call_id=rx_seq,
+                            rx_seq,
+                            mcu_cipher,
                         )
                         writer.write(resp_frame)
                         await writer.drain()

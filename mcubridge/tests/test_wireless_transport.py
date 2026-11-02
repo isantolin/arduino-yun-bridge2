@@ -113,6 +113,7 @@ async def test_serial_transport_tcp_connect_and_stream(
     assert server.sockets is not None
     port = server.sockets[0].getsockname()[1]
 
+    runtime_config.serial_shared_secret = b""
     runtime_config.serial_port = f"tcp://127.0.0.1:{port}"
 
     mock_service = MagicMock()

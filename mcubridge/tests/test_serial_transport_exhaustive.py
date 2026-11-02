@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 import pytest
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import protocol
+from mcubridge.security.security import LinkCipher
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
 
@@ -28,6 +29,12 @@ def mock_serial_setup() -> tuple[SerialTransport, RuntimeState, MagicMock]:
     state.serial_tx_allowed.set()
 
     return transport, state, mock_serial
+
+
+def _install_test_cipher(transport: SerialTransport) -> None:
+    if transport.config.serial_shared_secret:
+        nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+        transport.state.link_cipher = LinkCipher.for_host(transport.config.serial_shared_secret, nonce)
 
 
 def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
@@ -106,6 +113,7 @@ async def test_send_raw_success(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
+    _install_test_cipher(transport)
     mock_serial.is_open = True
 
     res = await transport.send_raw(command_id=0x01, payload=b"test")
@@ -119,6 +127,7 @@ async def test_send_raw_write_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
+    _install_test_cipher(transport)
     mock_serial.is_open = True
     mock_serial.write.side_effect = OSError("Write failed")
 

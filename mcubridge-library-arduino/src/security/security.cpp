@@ -10,7 +10,9 @@
 #include <etl/array.h>
 #include <etl/string_view.h>
 #include <mbedtls/chachapoly.h>
+extern "C" {
 #include <mbedtls/constant_time.h>
+}
 #include <mbedtls/hkdf.h>
 #include <mbedtls/md.h>
 #include <mbedtls/platform_util.h>

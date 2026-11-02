@@ -291,29 +291,57 @@ class SerialTransport:
         raw_len = len(frame.raw_encoded) if hasattr(frame, "raw_encoded") else len(frame.data)
         self.state.metrics.serial_bytes_received.inc(raw_len)
         self.state.metrics.serial_frames_received.inc()
+        frame_data = bytes(frame.data)
+
+        if self.config.serial_shared_secret:
+            cipher = self.state.link_cipher
+            if cipher is None:
+                if frame.address != protocol.HDLC_ADDRESS_RPC:
+                    logger.debug("Dropping unprotected pre-handshake HDLC frame", address=frame.address)
+                    return
+            else:
+                try:
+                    frame_data = cipher.decrypt(frame.address, frame_data)
+                except ValueError as exc:
+                    self.state.serial_decode_errors += 1
+                    logger.error("Rejected unauthenticated or replayed HDLC frame", error=str(exc))
+                    return
 
         if frame.address == protocol.HDLC_ADDRESS_LOG:
-            decoded_log = str(self.detokenizer.detokenize(frame.data))
-            logger.info("MCU log", log=decoded_log, raw=frame.data)
+            decoded_log = str(self.detokenizer.detokenize(frame_data))
+            logger.info("MCU log", log=decoded_log, raw=frame_data)
             return
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
                 await self.service.handle_mcu_frame(
-                    protocol.Command.CMD_CONSOLE_WRITE.value, 0, pb.ConsoleWrite(data=bytes(frame.data))
+                    protocol.Command.CMD_CONSOLE_WRITE.value, 0, pb.ConsoleWrite(data=frame_data)
                 )
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
             try:
-                pkt = pw_packets.decode(frame.data)
+                pkt = pw_packets.decode(frame_data)
             except (ProtobufDecodeError, ValueError) as exc:
                 self.state.serial_decode_errors += 1
-                logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame.data.hex())
+                logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame_data.hex())
                 return
             spec = protocol.get_operation((pkt.service_id, pkt.method_id))
             cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
+
+            if self.config.serial_shared_secret and self.state.link_cipher is None:
+                link_sync = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+                is_link_sync_response = (
+                    link_sync is not None
+                    and pkt.service_id == link_sync.service_id
+                    and pkt.method_id == link_sync.method_id
+                    and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
+                )
+                if not is_link_sync_response:
+                    self.state.serial_decode_errors += 1
+                    logger.error("Dropping unprotected pre-handshake RPC frame")
+                    return
 
             # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
             # successful responses map onto the operation's canonical response id.
@@ -519,6 +547,10 @@ class SerialTransport:
             self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
             seq_id = self.tx_sequence_id
 
+        cipher = self.state.link_cipher
+        is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
+        is_link_sync = command_id == protocol.Command.CMD_LINK_SYNC.value
+
         if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
             if isinstance(payload, bytes):
                 data = payload
@@ -526,9 +558,29 @@ class SerialTransport:
                 data = cast(bytes, getattr(payload, "data", b""))
             else:
                 data = b""
-            encoded = protocol.encode_hdlc_console(data)
+            if self.config.serial_shared_secret and cipher is None:
+                return False
+            if cipher is None:
+                encoded = protocol.encode_hdlc_console(data)
+            else:
+                from pw_hdlc.encode import ui_frame
+
+                envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
+                encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
         else:
-            encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id)
+            if self.config.serial_shared_secret:
+                if cipher is None and not (is_link_reset or is_link_sync):
+                    return False
+                if cipher is not None and is_link_sync:
+                    return False
+            if cipher is not None and not is_link_reset:
+                from pw_hdlc.encode import ui_frame
+
+                packet = protocol.encode_rpc_packet(command_id, payload, call_id=seq_id or 1)
+                envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
+                encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
+            else:
+                encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id or 1)
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(

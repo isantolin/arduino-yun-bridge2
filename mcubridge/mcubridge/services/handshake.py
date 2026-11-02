@@ -1,8 +1,4 @@
-"""Serial link handshake coordination.
-
-The configured shared secret authenticates LinkSync with HMAC-SHA256. This
-handshake does not encrypt frames or provide per-frame replay protection.
-"""
+"""Serial link handshake and authenticated session setup."""
 
 from __future__ import annotations
 
@@ -33,6 +29,7 @@ from google.protobuf.message import (
 
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol
+from ..security.security import LinkCipher
 from ..protocol.protocol import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
@@ -278,6 +275,7 @@ class SerialHandshakeManager:
         self._state.link_expected_tag = self.calculate_handshake_response_tag(
             self._config.serial_shared_secret, nonce
         )
+        self._state.link_cipher = None
 
         reset_ok = await self.send_frame(
             Command.CMD_LINK_RESET.value,
@@ -403,11 +401,28 @@ class SerialHandshakeManager:
             )
             return False
 
+        session_cipher: LinkCipher | None = None
+        if self._config.serial_shared_secret:
+            try:
+                session_cipher = LinkCipher.for_host(
+                    self._config.serial_shared_secret, nonce
+                )
+            except ValueError as exc:
+                self._logger.error("Unable to derive serial AEAD session keys", error=str(exc))
+                self.clear_handshake_expectations()
+                await self.handle_handshake_failure("session_key_derivation_failed")
+                return False
+
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
         self.transition(HandshakeEvent.SYNC_CONFIRMED)
+        if self.fsm_state != HandshakeState.SYNCHRONIZED:
+            self.clear_handshake_expectations()
+            await self.handle_handshake_failure("sync_state_transition_failed")
+            return False
 
+        self._state.link_cipher = session_cipher
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised", nonce=payload.hex())

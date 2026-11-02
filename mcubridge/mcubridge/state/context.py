@@ -34,6 +34,7 @@ from ..protocol.structures import (
     PendingPinRequest,
     create_allowed_policy,
 )
+from ..security.security import LinkCipher
 from .metrics import DaemonMetrics
 from .storage import LmdbCache, LmdbDeque
 
@@ -320,6 +321,7 @@ class RuntimeState:
     link_handshake_nonce: bytes | None
     link_sync_event: asyncio.Event
     link_expected_tag: bytes | None
+    link_cipher: LinkCipher | None
     link_nonce_length: int
     handshake_failure_streak: int
     handshake_backoff_until: float
@@ -405,6 +407,7 @@ class RuntimeState:
         self.link_handshake_nonce: bytes | None = kwargs.get("link_handshake_nonce")
         self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
         self.link_expected_tag: bytes | None = kwargs.get("link_expected_tag")
+        self.link_cipher: LinkCipher | None = kwargs.get("link_cipher")
         self.link_nonce_length: int = kwargs.get("link_nonce_length", 0)
         self.handshake_failure_streak: int = kwargs.get("handshake_failure_streak", 0)
         self.handshake_backoff_until: float = kwargs.get("handshake_backoff_until", 0.0)

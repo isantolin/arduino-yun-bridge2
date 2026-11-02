@@ -174,6 +174,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                                     const pb_msgdesc_t* fields,
                                     const ProtoMsg& msg, uint32_t call_id = 0) {
     if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+    if (!_shared_secret.empty() && !_session_keys_ready) return false;
     uint8_t payload_buf[rpc::MAX_PAYLOAD_SIZE];
     pb_ostream_t pb_stream =
         pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
@@ -195,18 +196,16 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
     if (!encode_res.ok()) return false;
 
-    auto write_res = pw::hdlc::WriteUIFrame(
-        1,
-        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(frame_buf),
-                          encode_res.size()),
-        _arduino_stream);
-    return write_res.ok();
+    return _writeHdlcFrame(
+        rpc::RPC_HDLC_ADDRESS_RPC,
+        etl::span<const uint8_t>(frame_buf, encode_res.size()));
   }
 
   [[nodiscard]] bool sendRpcRequestNoPayload(uint32_t service_id,
                                              uint32_t method_id,
                                              uint32_t call_id = 0) {
     if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+    if (!_shared_secret.empty() && !_session_keys_ready) return false;
     pw::rpc_avr::RpcPacket packet;
     packet.type = pw::rpc_avr::PacketType::kRequest;
     packet.channel_id = 1;
@@ -218,12 +217,9 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
     if (!encode_res.ok()) return false;
 
-    auto write_res = pw::hdlc::WriteUIFrame(
-        1,
-        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(frame_buf),
-                          encode_res.size()),
-        _arduino_stream);
-    return write_res.ok();
+    return _writeHdlcFrame(
+        rpc::RPC_HDLC_ADDRESS_RPC,
+        etl::span<const uint8_t>(frame_buf, encode_res.size()));
   }
 
   void _onBaudrateChange();
@@ -260,6 +256,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _initObservers();
   void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
   void _dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet);
+  bool _writeHdlcFrame(uint64_t address, etl::span<const uint8_t> data);
+  bool _decryptHdlcFrame(uint64_t address, etl::span<const uint8_t> envelope,
+                         etl::span<const uint8_t>& plaintext);
+  void _clearLinkSession();
 
   Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
@@ -272,6 +272,12 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
 
   etl::vector<uint8_t, 64> _shared_secret;
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _tx_aead_key{};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _rx_aead_key{};
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
+  uint64_t _tx_aead_counter{0};
+  uint64_t _rx_aead_counter{0};
+  bool _session_keys_ready{false};
   bridge::fsm::BridgeFsm _fsm;
 
   void _watchdogTask();

@@ -555,7 +555,6 @@ void test_fault_injection_harness_paths() {
       static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
   SPIService.end();
 
-  wolfCrypt_Init();
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
 
   bridge::test::fault::enable(

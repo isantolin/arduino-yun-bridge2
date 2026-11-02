@@ -830,3 +830,38 @@ async def test_send_raw_console_payload_variants(runtime_config: RuntimeConfig, 
     written = [c.args[0] for c in mock_serial.write.call_args_list]
     assert written[0] == protocol.encode_hdlc_console(b"abc")
     assert written[1] == protocol.encode_hdlc_console(b"")
+
+
+async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
+        transport = SerialTransport(config, state, service)
+        mock_serial = MagicMock(spec=serial.Serial)
+        mock_serial.is_open = True
+        transport.serial = mock_serial
+        loop = asyncio.get_running_loop()
+
+        def _on_write(data: bytes) -> int:
+            call_id = transport.current_command.sequence_id if transport.current_command else 1
+            loop.call_soon_threadsafe(
+                loop.create_task,
+                transport.feed_data(
+                    _rpc_frame(
+                        Command.CMD_MAILBOX_PUSH,
+                        packet_type=_PKT_RESPONSE,
+                        call_id=call_id or 1,
+                        payload=b"",
+                    )
+                ),
+            )
+            return len(data)
+
+        mock_serial.write = MagicMock(side_effect=_on_write)
+        res = await transport.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=b"PING"))
+        assert res is True
+        handle_mock.assert_not_awaited()
+    finally:
+        state.cleanup()
+

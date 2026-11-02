@@ -16,19 +16,13 @@
 #include <stdint.h>
 
 #include "protocol/rpc_protocol.h"
-
-/* [WOLFSSL] Core headers */
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/hmac.h>
-#include <wolfssl/wolfcrypt/memory.h>
-#include <wolfssl/wolfcrypt/settings.h>
-#include <wolfssl/wolfcrypt/sha256.h>
+#include "pw_crypto/sha256.h"
 
 namespace rpc {
 namespace security {
 
 /**
- * @brief Perform timing-safe HMAC-SHA256 handshake authentication.
+ * @brief Perform timing-safe HMAC-SHA256 handshake authentication via pw_crypto.
  * [MEM-SAVE] Centralizing this logic avoids duplication in BridgeClass
  * handlers.
  */
@@ -38,18 +32,13 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<uint8_t> out_tag);
 
 /**
- * @brief Derive session key from shared secret and nonce using HKDF.
- */
-void derive_session_key(etl::span<const uint8_t> secret,
-                        etl::span<const uint8_t> nonce,
-                        etl::span<uint8_t> out_key);
-
-/**
  * @brief Securely zero memory, resistant to compiler optimization.
  */
 inline void secure_zero(etl::span<uint8_t> buf) {
-  if (buf.empty()) return;
-  wc_ForceZero(buf.data(), buf.size());
+  volatile uint8_t* p = buf.data();
+  for (size_t i = 0; i < buf.size(); ++i) {
+    p[i] = 0U;
+  }
 }
 
 /**

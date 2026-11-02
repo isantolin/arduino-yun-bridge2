@@ -5,8 +5,6 @@
 #include <etl/functional.h>
 #include <etl/iterator.h>
 #include <etl/utility.h>
-#include <wolfssl/wolfcrypt/settings.h>
-#include <wolfssl/wolfcrypt/types.h>
 
 #include "hal/ArchTraits.h"
 #include "security/security.h"
@@ -442,7 +440,6 @@ void BridgeClass::_initializeRuntime() {
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _initializeRuntime();
 
-  wolfCrypt_Init();
   _shared_secret.clear();
   if (secret != nullptr) {
     const etl::string_view s(secret);

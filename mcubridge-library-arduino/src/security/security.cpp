@@ -8,13 +8,13 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
+#include <etl/numeric.h>
 #include <etl/string_view.h>
-#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
-#include <wolfssl/wolfcrypt/hash.h>
-#include <wolfssl/wolfcrypt/hmac.h>
-#include <wolfssl/wolfcrypt/kdf.h>
 
 #include "../config/bridge_config.h"  // IWYU pragma: keep
+#include "pw_bytes/span.h"
+#include "pw_crypto/sha256.h"
+#include "pw_span/span.h"
 
 namespace rpc {
 namespace security {
@@ -38,47 +38,67 @@ static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
   return dst;
 }
 
-// --- HKDF & HMAC Implementation ---
+static void hmac_sha256(etl::span<const uint8_t> key,
+                        etl::span<const uint8_t> data,
+                        etl::span<const uint8_t> extra,
+                        etl::span<uint8_t> out_mac) {
+  constexpr size_t kBlockSize = 64U;
+  etl::array<uint8_t, kBlockSize> k_pad = {};
+  etl::copy(key.begin(), key.end(), k_pad.begin());
+
+  etl::array<uint8_t, kBlockSize> i_key_pad = {};
+  etl::array<uint8_t, kBlockSize> o_key_pad = {};
+  for (size_t i = 0; i < kBlockSize; ++i) {
+    i_key_pad[i] = static_cast<uint8_t>(k_pad[i] ^ 0x36U);
+    o_key_pad[i] = static_cast<uint8_t>(k_pad[i] ^ 0x5CU);
+  }
+
+  etl::array<uint8_t, pw::crypto::sha256::kDigestSizeBytes> inner_hash = {};
+  pw::crypto::sha256::Sha256 inner;
+  inner.Update(pw::as_bytes(pw::span(i_key_pad.data(), i_key_pad.size())));
+  inner.Update(pw::as_bytes(pw::span(data.data(), data.size())));
+  if (!extra.empty()) {
+    inner.Update(pw::as_bytes(pw::span(extra.data(), extra.size())));
+  }
+  (void)inner.Final(
+      pw::as_writable_bytes(pw::span(inner_hash.data(), inner_hash.size())));
+
+  pw::crypto::sha256::Sha256 outer;
+  outer.Update(pw::as_bytes(pw::span(o_key_pad.data(), o_key_pad.size())));
+  outer.Update(pw::as_bytes(pw::span(inner_hash.data(), inner_hash.size())));
+  (void)outer.Final(
+      pw::as_writable_bytes(pw::span(out_mac.data(), out_mac.size())));
+
+  secure_zero(etl::span<uint8_t>(k_pad.data(), k_pad.size()));
+  secure_zero(etl::span<uint8_t>(i_key_pad.data(), i_key_pad.size()));
+  secure_zero(etl::span<uint8_t>(o_key_pad.data(), o_key_pad.size()));
+  secure_zero(etl::span<uint8_t>(inner_hash.data(), inner_hash.size()));
+}
+
+// --- HKDF & HMAC Implementation (built on pw::crypto::sha256) ---
 
 bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
-  // Validar que el secreto no esté vacío y que el buffer de salida sea
-  // suficiente
   if (secret.empty() || out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
     etl::fill(out_tag.begin(), out_tag.end(), 0U);
     return false;
   }
 
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> prk = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> hmac_tag = {};
   const auto salt = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_SALT);
   const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH);
+  constexpr etl::array<uint8_t, 1U> kHkdfCounter = {0x01U};
 
-  // [FAIL-CLOSED] Validar retorno de derivación HKDF
-  int hkdf_res =
-      wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-              salt.data(), static_cast<word32>(salt.size()), info.data(),
-              static_cast<word32>(info.size()), handshake_key.data(),
-              static_cast<word32>(handshake_key.size()));
-  if (hkdf_res != 0) {
-    secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
-    return false;
-  }
-
-  // [FAIL-CLOSED] Validar retorno en cada paso del motor HMAC
-  Hmac hmac_engine;
-  if (wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
-                    rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH) != 0 ||
-      wc_HmacUpdate(&hmac_engine, nonce.data(),
-                    static_cast<word32>(nonce.size())) != 0 ||
-      wc_HmacFinal(&hmac_engine, hmac_tag.data()) != 0) {
-    secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
-    secure_zero(etl::span<uint8_t>(hmac_tag.data(), hmac_tag.size()));
-    etl::fill(out_tag.begin(), out_tag.end(), 0U);
-    return false;
-  }
+  // RFC 5869 HKDF-Extract(salt, IKM=secret) -> PRK
+  hmac_sha256(salt, secret, etl::span<const uint8_t>(), prk);
+  // RFC 5869 HKDF-Expand(PRK, info || 0x01, L=32) -> handshake_key
+  hmac_sha256(prk, info, kHkdfCounter, handshake_key);
+  // HMAC-SHA256(handshake_key, nonce) -> hmac_tag
+  hmac_sha256(handshake_key, nonce, etl::span<const uint8_t>(), hmac_tag);
 
   etl::copy_n(hmac_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH, out_tag.begin());
   bool tag_ok = true;
@@ -90,28 +110,10 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                                    rpc::RPC_HANDSHAKE_TAG_LENGTH);
     }
   }
+  secure_zero(etl::span<uint8_t>(prk.data(), prk.size()));
   secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
   secure_zero(etl::span<uint8_t>(hmac_tag.data(), hmac_tag.size()));
   return tag_ok;
-}
-
-void derive_session_key(etl::span<const uint8_t> secret,
-                        etl::span<const uint8_t> nonce,
-                        etl::span<uint8_t> out_key) {
-  if (secret.empty() || out_key.size() < rpc::RPC_AEAD_KEY_SIZE) {
-    secure_zero(out_key);
-    return;
-  }
-
-  const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION);
-
-  // [FAIL-CLOSED] Limpiar clave en caso de fallo de HKDF
-  if (wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-              nonce.data(), static_cast<word32>(nonce.size()), info.data(),
-              static_cast<word32>(info.size()), out_key.data(),
-              static_cast<word32>(out_key.size())) != 0) {
-    etl::fill(out_key.begin(), out_key.end(), 0U);
-  }
 }
 
 // --- Self-Tests Implementation ---
@@ -138,68 +140,31 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
      0xB8, 0x7E, 0x0D, 0xAD, 0xFC, 0xDF, 0xE3, 0x62, 0xB2, 0x6C}};
 
 bool run_cryptographic_self_tests() {
-  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
+  etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual = {};
 
-  // 1. SHA256 KAT
+  // 1. SHA256 KAT (pw::crypto::sha256)
   const auto sha_msg = copy_progmem(kat_sha256_msg);
-  if (wc_Sha256Hash(sha_msg.data(), static_cast<word32>(sha_msg.size()),
-                    actual.data()) != 0) {
-    return false;
-  }
-
+  const bool sha_res_ok =
+      pw::crypto::sha256::Hash(
+          pw::as_bytes(pw::span(sha_msg.data(), sha_msg.size())),
+          pw::as_writable_bytes(pw::span(actual.data(), actual.size())))
+          .ok();
   const auto sha_expected = copy_progmem(kat_sha256_expected);
-  bool ok = etl::equal(actual.begin(), actual.end(), sha_expected.begin());
+  const bool ok =
+      sha_res_ok &&
+      etl::equal(actual.begin(), actual.end(), sha_expected.begin());
 
-  // 2. HMAC-SHA256 KAT
-  Hmac hmac;
+  // 2. HMAC-SHA256 KAT (pw::crypto::sha256)
   const auto hmac_key = copy_progmem(kat_hmac_key);
-  if (wc_HmacSetKey(&hmac, WC_SHA256, hmac_key.data(),
-                    static_cast<word32>(hmac_key.size())) != 0) {
-    return false;
-  }
-
   const auto hmac_data = copy_progmem(kat_hmac_data);
-  if (wc_HmacUpdate(&hmac, hmac_data.data(),
-                    static_cast<word32>(hmac_data.size())) != 0 ||
-      wc_HmacFinal(&hmac, actual.data()) != 0) {
-    return false;
-  }
-
+  hmac_sha256(hmac_key, hmac_data, etl::span<const uint8_t>(), actual);
   const auto hmac_expected = copy_progmem(kat_hmac_expected);
-  bool hmac_ok =
+  const bool hmac_ok =
       etl::equal(actual.begin(), actual.end(), hmac_expected.begin());
 
-  // 3. ChaCha20-Poly1305 KAT (RFC 8439)
-  static constexpr etl::array<uint8_t, 32> kat_aead_key = {
-      {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a,
-       0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,
-       0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d, 0x9e, 0x9f}};
-  static constexpr etl::array<uint8_t, 12> kat_aead_nonce = {
-      {0x07, 0x00, 0x00, 0x00, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47}};
-  static constexpr etl::array<uint8_t, 12> kat_aead_ad = {
-      {0x50, 0x51, 0x52, 0x53, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7}};
-  static constexpr etl::array<uint8_t, 16> kat_aead_tag_expected = {
-      {0x7d, 0xca, 0x84, 0x79, 0x78, 0x7a, 0x5c, 0x19, 0x0f, 0x58, 0xee, 0xda,
-       0xe6, 0xa0, 0x6b, 0xcf}};
-
-  etl::array<uint8_t, 16> aead_tag_actual;
-  etl::array<uint8_t, 4> aead_out;
-  const int encrypt_res = wc_ChaCha20Poly1305_Encrypt(
-      const_cast<byte*>(kat_aead_key.data()),
-      const_cast<byte*>(kat_aead_nonce.data()),
-      const_cast<byte*>(kat_aead_ad.data()),
-      static_cast<word32>(kat_aead_ad.size()),
-      const_cast<byte*>(reinterpret_cast<const uint8_t*>("test")), 4U,
-      aead_out.data(), aead_tag_actual.data());
-
-  bool aead_res_ok = (encrypt_res == 0);
-  bool aead_tag_ok = etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
-                                kat_aead_tag_expected.begin());
   const uint8_t val_ok = static_cast<uint8_t>(ok);
   const uint8_t val_hmac = static_cast<uint8_t>(hmac_ok);
-  const uint8_t val_aead_res = static_cast<uint8_t>(aead_res_ok);
-  const uint8_t val_aead_tag = static_cast<uint8_t>(aead_tag_ok);
-  return (val_ok & val_hmac & val_aead_res & val_aead_tag) != 0U;
+  return (val_ok & val_hmac) != 0U;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

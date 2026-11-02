@@ -62,30 +62,6 @@ void test_handshake_authenticate_truncates_and_checks_tag(void) {
   TEST_ASSERT_FALSE(mismatching_tag);
 }
 
-void test_derive_session_key_clears_invalid_outputs(void) {
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> empty_secret_output = {0xA5U};
-  rpc::security::derive_session_key(etl::span<const uint8_t>(), kHandshakeNonce,
-                                    empty_secret_output);
-  const bool empty_secret_cleared =
-      etl::all_of(empty_secret_output.begin(), empty_secret_output.end(),
-                  [](uint8_t value) { return value == 0U; });
-  TEST_ASSERT_TRUE(empty_secret_cleared);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_output = {0xA5U};
-  rpc::security::derive_session_key(kSecret, kHandshakeNonce, short_output);
-  const bool short_output_cleared =
-      etl::all_of(short_output.begin(), short_output.end(),
-                  [](uint8_t value) { return value == 0U; });
-  TEST_ASSERT_TRUE(short_output_cleared);
-
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> valid_output = {};
-  rpc::security::derive_session_key(kSecret, kHandshakeNonce, valid_output);
-  const bool valid_key_derived =
-      etl::any_of(valid_output.begin(), valid_output.end(),
-                  [](uint8_t value) { return value != 0U; });
-  TEST_ASSERT_TRUE(valid_key_derived);
-}
-
 #if BRIDGE_ENABLE_POST_TESTS
 void test_cryptographic_self_tests_run(void) {
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
@@ -98,7 +74,6 @@ int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_handshake_authenticate_rejects_invalid_buffers);
   RUN_TEST(test_handshake_authenticate_truncates_and_checks_tag);
-  RUN_TEST(test_derive_session_key_clears_invalid_outputs);
 #if BRIDGE_ENABLE_POST_TESTS
   RUN_TEST(test_cryptographic_self_tests_run);
 #endif

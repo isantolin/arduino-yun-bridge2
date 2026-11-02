@@ -42,8 +42,6 @@
 #include <Embedded_Template_Library.h>
 #endif
 
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/settings.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/bitset.h>

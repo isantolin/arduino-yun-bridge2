@@ -366,11 +366,16 @@ class SerialTransport:
 
             # Correlation and Service dispatch
             self.correlate_frame(cmd_id, payload, seq_id)
-            # Responses to daemon-initiated calls are fully consumed by correlation unless the
-            # daemon registers a handler for them (e.g. LinkSync); re-dispatching them as
-            # requests would trigger spurious NOT_IMPLEMENTED replies to the MCU.
+            # In pw_rpc, PacketType.RESPONSE is only dispatched to service handlers when the
+            # resolved operation is an explicit response/status handler (paired_request_id != None
+            # or status code), never re-triggering bidirectional request handlers like MailboxPush.
+            resolved_spec = protocol.get_operation(cmd_id)
+            is_response_handler = (resolved_spec is not None and resolved_spec.paired_request_id is not None) or (
+                cmd_id in SERIAL_FAILURE_STATUS_CODES or cmd_id in SERIAL_SUCCESS_STATUS_CODES
+            )
             if self.service and (
-                pkt.type != PacketType.RESPONSE or cmd_id in getattr(self.service, "mcu_registry", {})
+                pkt.type != PacketType.RESPONSE
+                or (is_response_handler and cmd_id in getattr(self.service, "mcu_registry", {}))
             ):
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
@@ -474,7 +479,7 @@ class SerialTransport:
                         async with asyncio.timeout(effective_timeout):
                             await pending.completion.wait()
                             if pending.success:
-                                return pending.response_payload if pending.response_payload is not None else True
+                                return pending.response_payload if pending.response_payload else True
                     except TimeoutError as exc:
                         raise self._RetryableSerialError() from exc
 

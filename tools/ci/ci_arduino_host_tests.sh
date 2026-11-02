@@ -65,6 +65,7 @@ mkdir -p "${ARDUINO_LIBS}"
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
+MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -74,6 +75,14 @@ fi
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
     "$PIGWEED_PATH/src/sha256_avr.cpp"
+    "$MBEDTLS_PATH/chacha20.c"
+    "$MBEDTLS_PATH/chachapoly.c"
+    "$MBEDTLS_PATH/constant_time.c"
+    "$MBEDTLS_PATH/hkdf.c"
+    "$MBEDTLS_PATH/md.c"
+    "$MBEDTLS_PATH/platform_util.c"
+    "$MBEDTLS_PATH/poly1305.c"
+    "$MBEDTLS_PATH/sha256.c"
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
@@ -120,6 +129,7 @@ INC_FLAGS=(
     -I"$ETL_PATH/arduino"
     -I"$PIGWEED_PATH"
     -I"$PIGWEED_PATH/src"
+    -I"$MBEDTLS_PATH"
 )
 
 COMMON_DEFS=(
@@ -178,6 +188,8 @@ for src in "${SOURCES[@]}"; do
 
     if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
         g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    elif [[ "${src}" == "$MBEDTLS_PATH/"*.c ]]; then
+        gcc -std=c99 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     elif [[ "${src}" == *.c ]]; then
         g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     else

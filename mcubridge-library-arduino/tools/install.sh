@@ -76,6 +76,7 @@ install_dependency() {
     local url=$2
     local check_file=$3
     local target_base=${4:-"$LIB_DIR"}
+    local expected_sha256=${5:-}
 
     mkdir -p "$target_base"
     local lock_file="$target_base/.${name}.install.lock"
@@ -109,7 +110,19 @@ install_dependency() {
             exit 1
         fi
 
-        unzip -q "$zip_path" -d "$tmp_dir"
+        if [ -n "$expected_sha256" ]; then
+            if ! printf '%s  %s\n' "$expected_sha256" "$zip_path" | sha256sum --check --status; then
+                echo "[ERROR] SHA-256 verification failed for $name." >&2
+                rm -rf "$tmp_dir"
+                exit 1
+            fi
+        fi
+
+        case "$url" in
+            *.tar.bz2) tar -xjf "$zip_path" -C "$tmp_dir" ;;
+            *.tar.gz) tar -xzf "$zip_path" -C "$tmp_dir" ;;
+            *) unzip -q "$zip_path" -d "$tmp_dir" ;;
+        esac
         # Find the directory that contains the files (excluding the zip itself)
         local extracted_root
         extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d ! -path "$tmp_dir" | head -n1)
@@ -144,6 +157,8 @@ ETL_VERSION="20.49.0"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
+MBEDTLS_VERSION="mbedtls-3.6.7"
+MBEDTLS_SHA256="a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)
@@ -162,6 +177,33 @@ if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
         echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
     fi
 fi
+
+# Mbed TLS is staged as an Arduino library with only the required modules.
+MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VERSION}/${MBEDTLS_VERSION}.tar.bz2"
+install_dependency "MbedTLS" "$MBEDTLS_URL" "include/mbedtls/chachapoly.h" "$LIB_DIR" "$MBEDTLS_SHA256"
+MBEDTLS_LIB="$LIB_DIR/MbedTLS"
+mkdir -p "$MBEDTLS_LIB/src"
+cp -a "$MBEDTLS_LIB/include/mbedtls" "$MBEDTLS_LIB/src/"
+if [ -d "$MBEDTLS_LIB/include/psa" ]; then
+    cp -a "$MBEDTLS_LIB/include/psa" "$MBEDTLS_LIB/src/"
+fi
+cp -a "$MBEDTLS_LIB/library/"*.h "$MBEDTLS_LIB/src/"
+for source in chacha20 chachapoly constant_time hkdf md platform_util poly1305 sha256; do
+    cp "$MBEDTLS_LIB/library/$source.c" "$MBEDTLS_LIB/src/"
+done
+cp "$LIB_ROOT/src/config/mbedtls_config.h" "$MBEDTLS_LIB/src/mbedtls/mbedtls_config.h"
+cat > "$MBEDTLS_LIB/library.properties" <<EOF
+name=MbedTLS
+version=${MBEDTLS_VERSION#mbedtls-}
+author=Mbed TLS Contributors
+maintainer=Mbed TLS Contributors
+sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
+paragraph=Staged by the McuBridge installer from the pinned upstream release.
+category=Communication
+architectures=*
+includes=mbedtls/chachapoly.h,mbedtls/hkdf.h,mbedtls/md.h
+EOF
+
 # Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)
 if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmodules" ]; then
     if [ ! -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ] && [ -d "${ROOT_DIR}/.git" ]; then

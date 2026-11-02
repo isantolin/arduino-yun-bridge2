@@ -694,7 +694,7 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 # Pigweed HDLC Serialization Helpers
 # ==============================================================================
 
-def encode_hdlc_rpc(
+def encode_rpc_packet(
     channel_id_or_command: int | OperationSpec | tuple[int, int],
     payload_or_service: Any = b"",
     method_id: int | None = None,
@@ -703,14 +703,13 @@ def encode_hdlc_rpc(
     packet_type: int = 0,
     status: int = 0,
 ) -> bytes:
-    """Build and encode a Pigweed HDLC UI frame carrying an RpcPacket.
+    """Serialize a Pigweed RpcPacket without applying HDLC framing.
 
     Supports two calling conventions:
-    1. Direct RPC: encode_hdlc_rpc(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
-    2. Operation/Command: encode_hdlc_rpc(command_or_op, payload=b"", call_id=1)
+    1. Direct RPC: encode_rpc_packet(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
+    2. Operation/Command: encode_rpc_packet(command_or_op, payload=b"", call_id=1)
     """
     from google.protobuf.message import Message as ProtobufMessage
-    from pw_hdlc.encode import ui_frame
     from pw_rpc.internal.packet_pb2 import RpcPacket
 
     if method_id is None:
@@ -767,7 +766,31 @@ def encode_hdlc_rpc(
             payload=actual_payload,
         )
 
-    return ui_frame(HDLC_ADDRESS_RPC, pkt.SerializeToString())
+    return pkt.SerializeToString()
+
+
+def encode_hdlc_rpc(
+    channel_id_or_command: int | OperationSpec | tuple[int, int],
+    payload_or_service: Any = b"",
+    method_id: int | None = None,
+    call_id: int = 1,
+    payload: Any = b"",
+    packet_type: int = 0,
+    status: int = 0,
+) -> bytes:
+    """Build and encode a Pigweed HDLC UI frame carrying an RpcPacket."""
+    from pw_hdlc.encode import ui_frame
+
+    packet = encode_rpc_packet(
+        channel_id_or_command,
+        payload_or_service,
+        method_id,
+        call_id,
+        payload,
+        packet_type,
+        status,
+    )
+    return ui_frame(HDLC_ADDRESS_RPC, packet)
 
 
 def encode_hdlc_console(data: bytes) -> bytes:
@@ -775,4 +798,3 @@ def encode_hdlc_console(data: bytes) -> bytes:
     from pw_hdlc.encode import ui_frame
 
     return ui_frame(HDLC_ADDRESS_CONSOLE, data)
-

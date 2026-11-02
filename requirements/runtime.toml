@@ -65,7 +65,7 @@ rationale = "Ultra-fast asyncio event loop implementation (libuv)"
 name = "cryptography"
 openwrt = "python3-cryptography"
 pip = "cryptography==50.0.2"
-rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
+rationale = "ChaCha20-Poly1305 frame protection and HKDF/HMAC handshake security"
 
 [[dependency]]
 name = "structlog"
@@ -223,6 +223,15 @@ files = [
     "pb_encode.c",
 ]
 rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded MCUs"
+
+[[cpp_dependency]]
+name = "MbedTLS"
+github = "Mbed-TLS/mbedtls"
+ref_type = "tags"
+version = "mbedtls-3.6.7"
+check_file = "include/mbedtls/chachapoly.h"
+sha256 = "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
+rationale = "Pinned Mbed TLS ChaCha20-Poly1305, HKDF, HMAC, and SHA-256 primitives for MCU link security"
 
 
 # =============================================================================

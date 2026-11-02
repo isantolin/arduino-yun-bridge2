@@ -69,6 +69,7 @@ class _CppDepEntry(TypedDict):
     ref_type: str
     version: str
     check_file: str
+    sha256: str
     rationale: str
     target_dir: str
     files: list[str]
@@ -130,11 +131,14 @@ def load_manifest() -> ManifestData:
                 ref_type=entry.get("ref_type", "tags").strip(),
                 version=entry.get("version", "").strip(),
                 check_file=entry.get("check_file", "").strip(),
+                sha256=entry.get("sha256", "").strip().lower(),
                 rationale=entry.get("rationale", "").strip(),
                 target_dir=entry.get("target_dir", "").strip(),
                 files=files,
             )
         )
+        if normalized_cpp[-1]["sha256"] and not re.fullmatch(r"[0-9a-f]{64}", normalized_cpp[-1]["sha256"]):
+            raise ManifestError(f"Invalid SHA-256 digest for C++ dependency: {normalized_cpp[-1]['name']}")
 
     normalized_dev = [
         DevDepEntry(
@@ -270,6 +274,7 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
         "Embedded_Template_Library": "ETL_VERSION",
         "Unity": "UNITY_VERSION",
         "nanopb_core": "NANOPB_VERSION",
+        "MbedTLS": "MBEDTLS_VERSION",
     }
     lines: list[str] = []
     for dep in cpp_deps:
@@ -283,6 +288,10 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
                 raise ManifestError("nanopb_core must list its runtime files")
             quoted_files = " ".join(f'"{file_name}"' for file_name in dep["files"])
             lines.append(f"NANOPB_CORE_FILES=({quoted_files})")
+        elif dep["name"] == "MbedTLS":
+            if not dep["sha256"]:
+                raise ManifestError("MbedTLS must have a pinned SHA-256 archive digest")
+            lines.append(f'MBEDTLS_SHA256="{dep["sha256"]}"')
 
     new_content = _replace_marked_block(content, CPP_BLOCK_START, CPP_BLOCK_END, "\n".join(lines))
     return _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)

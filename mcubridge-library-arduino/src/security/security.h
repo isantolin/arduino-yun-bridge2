@@ -1,6 +1,6 @@
 /**
  * @file security.h
- * @brief Link handshake authentication built on Pigweed SHA-256.
+ * @brief Link handshake and frame cryptography backed by Mbed TLS.
  *
  * This file is part of Arduino MCU Ecosystem v2.
  * (C) 2025-2026 Ignacio Santolin and contributors.
@@ -8,18 +8,37 @@
 #ifndef RPC_SECURITY_H
 #define RPC_SECURITY_H
 
-#include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/byte_stream.h>
 #include <etl/span.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "protocol/rpc_protocol.h"
-#include "pw_crypto/sha256.h"
 
 namespace rpc {
 namespace security {
+
+/** Derive host-to-MCU and MCU-to-host keys from the shared secret and nonce. */
+bool derive_session_keys(etl::span<const uint8_t> secret,
+                         etl::span<const uint8_t> nonce,
+                         etl::span<uint8_t> host_to_mcu_key,
+                         etl::span<uint8_t> mcu_to_host_key);
+
+/** Encrypt plaintext with ChaCha20-Poly1305. */
+bool aead_encrypt(etl::span<const uint8_t> key,
+                  etl::span<const uint8_t> nonce,
+                  etl::span<const uint8_t> aad,
+                  etl::span<const uint8_t> plaintext,
+                  etl::span<uint8_t> ciphertext,
+                  etl::span<uint8_t> tag);
+
+/** Authenticate and decrypt ciphertext with ChaCha20-Poly1305. */
+bool aead_decrypt(etl::span<const uint8_t> key,
+                  etl::span<const uint8_t> nonce,
+                  etl::span<const uint8_t> aad,
+                  etl::span<const uint8_t> ciphertext,
+                  etl::span<const uint8_t> tag,
+                  etl::span<uint8_t> plaintext);
 
 /** Generate the truncated HMAC-SHA256 tag for a valid handshake nonce. */
 bool handshake_generate_tag(etl::span<const uint8_t> secret,
@@ -36,15 +55,8 @@ bool handshake_verify_tag(etl::span<const uint8_t> secret,
                           etl::span<const uint8_t> nonce,
                           etl::span<const uint8_t> received_tag);
 
-/**
- * @brief Securely zero memory, resistant to compiler optimization.
- */
-inline void secure_zero(etl::span<uint8_t> buf) {
-  volatile uint8_t* p = buf.data();
-  for (size_t i = 0; i < buf.size(); ++i) {
-    p[i] = 0U;
-  }
-}
+/** Securely erase memory through Mbed TLS's platform implementation. */
+void secure_zero(etl::span<uint8_t> buf);
 
 /**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.

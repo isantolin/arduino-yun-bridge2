@@ -589,7 +589,9 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
           pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(data.data()),
                             data.size()));
       if (!decoded_pkt.ok()) {
-        if (decrypted) _clearLinkSession();
+        if (decrypted) {
+          rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+        }
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
@@ -598,10 +600,12 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     if (pkt.type == pw::rpc_avr::PacketType::kRequest) {
       if (!_shared_secret.empty() && !isSynchronized() &&
           !isLinkSyncRequest(pkt) && !isLinkResetRequest(pkt)) {
-          emitStatus(rpc::StatusCode::STATUS_ERROR);
-          enterSafeState();
-          if (decrypted) _clearLinkSession();
-          return;
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        enterSafeState();
+        if (decrypted) {
+          rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+        }
+        return;
       }
       uint8_t resp_buf[bridge::config::RX_BUFFER_SIZE];
       auto res = _rpc_server.ProcessPacket(
@@ -634,6 +638,129 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   if (decrypted) {
     rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
   }
+}
+
+bool BridgeClass::_writeHdlcFrame(uint64_t address,
+                                  etl::span<const uint8_t> data) {
+  if (!_stream) return false;
+  if (_shared_secret.empty()) {
+    return pw::hdlc::WriteUIFrame(
+               address,
+               pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(data.data()),
+                                 data.size()),
+               _arduino_stream)
+        .ok();
+  }
+  if (!_session_keys_ready || address > UINT8_MAX ||
+      data.size() > bridge::config::RX_BUFFER_SIZE -
+                        rpc::RPC_AEAD_COUNTER_SIZE - rpc::RPC_AEAD_TAG_SIZE ||
+      _tx_aead_counter == UINT64_MAX) {
+    return false;
+  }
+
+  static_assert(rpc::RPC_AEAD_NONCE_SIZE == 4U + rpc::RPC_AEAD_COUNTER_SIZE);
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> envelope = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
+  const uint64_t counter = ++_tx_aead_counter;
+  aad[0] = static_cast<uint8_t>(address);
+  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
+    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - i) * 8U;
+    const uint8_t byte = static_cast<uint8_t>(counter >> shift);
+    envelope[i] = byte;
+    nonce[4U + i] = byte;
+    aad[1U + i] = byte;
+  }
+
+  const size_t ciphertext_offset = rpc::RPC_AEAD_COUNTER_SIZE;
+  auto ciphertext = etl::span<uint8_t>(
+      envelope.data() + ciphertext_offset, data.size());
+  auto tag = etl::span<uint8_t>(
+      envelope.data() + ciphertext_offset + data.size(),
+      rpc::RPC_AEAD_TAG_SIZE);
+  if (!rpc::security::aead_encrypt(
+          etl::span<const uint8_t>(_tx_aead_key),
+          etl::span<const uint8_t>(nonce),
+          etl::span<const uint8_t>(aad), data, ciphertext, tag)) {
+    rpc::security::secure_zero(etl::span<uint8_t>(envelope));
+    rpc::security::secure_zero(etl::span<uint8_t>(nonce));
+    rpc::security::secure_zero(etl::span<uint8_t>(aad));
+    return false;
+  }
+
+  const size_t envelope_size =
+      rpc::RPC_AEAD_COUNTER_SIZE + data.size() + rpc::RPC_AEAD_TAG_SIZE;
+  const bool written =
+      pw::hdlc::WriteUIFrame(
+          address,
+          pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(envelope.data()),
+                            envelope_size),
+          _arduino_stream)
+          .ok();
+  rpc::security::secure_zero(etl::span<uint8_t>(envelope));
+  rpc::security::secure_zero(etl::span<uint8_t>(nonce));
+  rpc::security::secure_zero(etl::span<uint8_t>(aad));
+  return written;
+}
+
+bool BridgeClass::_decryptHdlcFrame(
+    uint64_t address, etl::span<const uint8_t> envelope,
+    etl::span<const uint8_t>& plaintext) {
+  plaintext = {};
+  const size_t overhead = rpc::RPC_AEAD_COUNTER_SIZE + rpc::RPC_AEAD_TAG_SIZE;
+  if (!_session_keys_ready || address > UINT8_MAX ||
+      envelope.size() < overhead ||
+      envelope.size() - overhead > _rx_plaintext.size()) {
+    rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+    return false;
+  }
+
+  static_assert(rpc::RPC_AEAD_NONCE_SIZE == 4U + rpc::RPC_AEAD_COUNTER_SIZE);
+  uint64_t counter = 0;
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
+  aad[0] = static_cast<uint8_t>(address);
+  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
+    const uint8_t byte = envelope[i];
+    counter = (counter << 8U) | byte;
+    nonce[4U + i] = byte;
+    aad[1U + i] = byte;
+  }
+  if (counter == 0 || counter <= _rx_aead_counter) {
+    rpc::security::secure_zero(etl::span<uint8_t>(nonce));
+    rpc::security::secure_zero(etl::span<uint8_t>(aad));
+    rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+    return false;
+  }
+
+  const size_t ciphertext_size = envelope.size() - overhead;
+  const uint8_t* ciphertext =
+      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
+  const uint8_t* tag = ciphertext + ciphertext_size;
+  const bool decrypted = rpc::security::aead_decrypt(
+      etl::span<const uint8_t>(_rx_aead_key),
+      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>(aad),
+      etl::span<const uint8_t>(ciphertext, ciphertext_size),
+      etl::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
+      etl::span<uint8_t>(_rx_plaintext.data(), ciphertext_size));
+  rpc::security::secure_zero(etl::span<uint8_t>(nonce));
+  rpc::security::secure_zero(etl::span<uint8_t>(aad));
+  if (!decrypted) {
+    rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+    return false;
+  }
+
+  _rx_aead_counter = counter;
+  plaintext = etl::span<const uint8_t>(_rx_plaintext.data(), ciphertext_size);
+  return true;
+}
+
+void BridgeClass::_clearLinkSession() {
+  rpc::security::secure_zero(etl::span<uint8_t>(_tx_aead_key));
+  rpc::security::secure_zero(etl::span<uint8_t>(_rx_aead_key));
+  _tx_aead_counter = 0;
+  _rx_aead_counter = 0;
+  _session_keys_ready = false;
 }
 
 void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
@@ -979,12 +1106,9 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
   uint8_t frame_buf[64];
   auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
 
-  auto write_res = pw::hdlc::WriteUIFrame(
-      1,
-      pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(frame_buf),
-                        encode_res.size()),
-      _arduino_stream);
-  return write_res.ok();
+  return _writeHdlcFrame(
+      rpc::RPC_HDLC_ADDRESS_RPC,
+      etl::span<const uint8_t>(frame_buf, encode_res.size()));
 }
 
 void BridgeClass::_fillVersion(rpc_pb_VersionResponse& resp) {

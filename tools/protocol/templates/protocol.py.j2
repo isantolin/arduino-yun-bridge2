@@ -16,12 +16,9 @@ from typing import Any, Final, cast
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
 import parse
-from pw_rpc import ids
-from pw_rpc.descriptors import Service
 import structlog
 
 from . import mcubridge_pb2 as pb
-from . import mcu_wire_pb2
 
 type McuDispatchTable = dict[int, Callable[..., Any]]
 
@@ -351,7 +348,7 @@ class ProtocolRegistry:
     def get(self, key: Any) -> OperationSpec | None:
         """Polymorphic O(1) operation lookup. [SIL-2]"""
         if isinstance(key, tuple):
-            return self.by_rpc.get(key)
+            return self.by_rpc.get(cast(tuple[int, int], key))
         if isinstance(key, int):
             return self.by_command_id.get(key)
         if isinstance(key, str):
@@ -361,9 +358,14 @@ class ProtocolRegistry:
         if isinstance(key, ProtobufMessage):
             return self.by_type.get(type(key)) or self.by_name.get(key.DESCRIPTOR.name)
         if hasattr(key, "service_id") and hasattr(key, "method_id"):
-            return self.by_rpc.get((key.service_id, key.method_id))
-        if hasattr(key, "value") and isinstance(key.value, int):
-            return self.by_command_id.get(key.value)
+            srv = getattr(key, "service_id", None)
+            meth = getattr(key, "method_id", None)
+            if isinstance(srv, int) and isinstance(meth, int):
+                return self.by_rpc.get((srv, meth))
+        if hasattr(key, "value"):
+            val = getattr(key, "value", None)
+            if isinstance(val, int):
+                return self.by_command_id.get(val)
         return None
 
     def topic_path(self, prefix: str, topic: str | Topic, *segments: str | int) -> str:

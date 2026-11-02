@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
@@ -208,7 +208,7 @@ async def test_feed_data_uninitialized_protobuf(
         command_id=0x50,
         service_id=0x1000,
         method_id=0x2000,
-        response_type=lambda: mock_proto,
+        response_type=cast(Any, MagicMock(return_value=mock_proto)),
     )
 
     mocker.patch.dict(protocol.REGISTRY.by_rpc, {(0x1000, 0x2000): fake_spec})

@@ -375,12 +375,16 @@ void test_console_and_policy_edges() {
   TEST_ASSERT_EQUAL(0x42, Console.read());
   TEST_ASSERT_EQUAL(-1, Console.read());
 
-  // Send console stream with null stream returns false
+  // Send console/log stream with null stream returns false
   ba2.setNullStream();
   TEST_ASSERT_FALSE(Bridge.sendConsoleStream(
       etl::span<const uint8_t>(console_in, sizeof(console_in))));
+  TEST_ASSERT_FALSE(Bridge.sendLogStream(
+      etl::span<const uint8_t>(console_in, sizeof(console_in))));
 
   Bridge.enterSafeState();
+  TEST_ASSERT_FALSE(Bridge.sendLogStream(
+      etl::span<const uint8_t>(console_in, sizeof(console_in))));
 }
 
 void test_observer_and_task_runtime_edges() {

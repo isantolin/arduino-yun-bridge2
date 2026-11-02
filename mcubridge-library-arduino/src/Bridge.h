@@ -169,6 +169,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   [[nodiscard]] bool sendConsoleStream(etl::span<const uint8_t> data);
+  [[nodiscard]] bool sendLogStream(etl::span<const uint8_t> data);
 
   template <typename ProtoMsg>
   [[nodiscard]] bool sendRpcRequest(uint32_t service_id, uint32_t method_id,

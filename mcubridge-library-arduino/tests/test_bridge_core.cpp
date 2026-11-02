@@ -97,6 +97,9 @@ void test_bridge_send_frame() {
   etl::array<uint8_t, 2> payload = {0xAA, 0xBB};
   TEST_ASSERT_TRUE(
       Bridge.sendConsoleStream(etl::span<const uint8_t>(payload.data(), 2)));
+  TEST_ASSERT_TRUE(
+      Bridge.sendLogStream(etl::span<const uint8_t>(payload.data(), 2)));
+  pw_log_avr_HandleLog(1, payload.data(), payload.size());
   TEST_ASSERT_TRUE(Bridge.sendPinEvent(13, 1));
 }
 

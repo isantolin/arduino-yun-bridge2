@@ -419,6 +419,12 @@ void BridgeClass::_initializeRuntime() {
     setStream(*_stream);
   }
 
+  pw_chrono_avr_InitTimer0();
+  pw_log_avr_SetLogSink(
+      [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
+        (void)Bridge.sendLogStream(etl::span<const uint8_t>(log_data, size));
+      });
+
   _rpc_server.RegisterService(g_gpio_service);
   _rpc_server.RegisterService(g_system_service);
   _rpc_server.RegisterService(g_clock_sync_service);
@@ -487,7 +493,7 @@ void BridgeClass::process() {
 void BridgeClass::_watchdogTask() {
   bridge::hal::watchdog_kick();
   if (_watchdog_timeout_ms > 0 && isSynchronized()) {
-    if (::millis() - _last_rx_ms > _watchdog_timeout_ms) {
+    if (pw_chrono_avr_GetMillis() - _last_rx_ms > _watchdog_timeout_ms) {
       enterSafeState();
     }
   }
@@ -522,7 +528,7 @@ void BridgeClass::_serialTask() {
 }
 
 void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
-  _last_rx_ms = ::millis();
+  _last_rx_ms = pw_chrono_avr_GetMillis();
   const uint64_t addr = frame.address();
   if (addr == 1) {
     auto decoded_pkt = pw::rpc_avr::RpcPacket::Decode(frame.data());
@@ -633,7 +639,7 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
 }
 
 void BridgeClass::_timerTask() {
-  const uint32_t now = ::millis();
+  const uint32_t now = pw_chrono_avr_GetMillis();
   if (_timer_last_tick_ms == 0) _timer_last_tick_ms = now;
   const uint32_t elapsed = now - _timer_last_tick_ms;
   if (elapsed > 0) {
@@ -646,7 +652,7 @@ bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
 bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
                                        uint32_t poll_delay_ms) {
-  const uint32_t start_ms = ::millis();
+  const uint32_t start_ms = pw_chrono_avr_GetMillis();
   const uint32_t step_ms = etl::max<uint32_t>(poll_delay_ms, 1U);
   uint8_t cursor = 0U;
   uint8_t sentinel = 0U;
@@ -655,7 +661,9 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
                      [this, start_ms, timeout_ms, step_ms](uint8_t) {
                        process();
                        if (isSynchronized()) return true;
-                       if (::millis() - start_ms >= timeout_ms) return true;
+                       if (pw_chrono_avr_GetMillis() - start_ms >= timeout_ms) {
+                         return true;
+                       }
                        ::delay(step_ms);
                        return false;
                      });
@@ -692,6 +700,16 @@ bool BridgeClass::sendConsoleStream(etl::span<const uint8_t> data) {
   if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
   auto res = pw::hdlc::WriteUIFrame(
       3,
+      pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(data.data()),
+                        data.size()),
+      _arduino_stream);
+  return res.ok();
+}
+
+bool BridgeClass::sendLogStream(etl::span<const uint8_t> data) {
+  if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+  auto res = pw::hdlc::WriteUIFrame(
+      2,
       pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(data.data()),
                         data.size()),
       _arduino_stream);
@@ -821,7 +839,7 @@ void BridgeClass::_handleLinkReset() {
 
 void BridgeClass::_subscriptionTask() {
   if (!isSynchronized()) return;
-  const uint32_t now = ::millis();
+  const uint32_t now = pw_chrono_avr_GetMillis();
   etl::for_each(_pin_subscriptions.begin(), _pin_subscriptions.end(),
                 [this, now](PinSubscription& sub) {
                   if (!sub.active) return;

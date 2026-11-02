@@ -107,7 +107,7 @@ async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfi
     transport.negotiation_target_baudrate = mock_config.serial_baud
 
     cleartext = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
-    frame = next(FrameDecoder().process(cleartext))
+    frame = next(iter(FrameDecoder().process(cleartext)))
     raw = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
         mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),
@@ -210,7 +210,7 @@ async def test_logging_not_debug_branches(
     # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
     cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION_RESP.value, payload, call_id=1)
-    frame = next(FrameDecoder().process(cleartext))
+    frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
         mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(frame.data)),

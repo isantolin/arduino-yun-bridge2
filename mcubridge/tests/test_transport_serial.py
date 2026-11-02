@@ -112,7 +112,7 @@ async def test_feed_data_negotiation_ack_switches_local_baudrate() -> None:
             b"",
             call_id=0,
         )
-        response_frame = next(FrameDecoder().process(cleartext))
+        response_frame = next(iter(FrameDecoder().process(cleartext)))
         encoded = ui_frame(
             protocol.HDLC_ADDRESS_RPC,
             mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, bytes(response_frame.data)),
@@ -933,7 +933,7 @@ async def test_send_raw_console_payload_variants(runtime_config: RuntimeConfig, 
     assert await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=b"abc"))
     assert await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, cast(Any, object()))
 
-    written = [next(FrameDecoder().process(c.args[0])) for c in mock_serial.write.call_args_list]
+    written = [next(iter(FrameDecoder().process(c.args[0]))) for c in mock_serial.write.call_args_list]
     assert written[0].address == protocol.HDLC_ADDRESS_CONSOLE
     assert mcu_cipher.decrypt(written[0].address, written[0].data) == b"abc"
     assert written[1].address == protocol.HDLC_ADDRESS_CONSOLE

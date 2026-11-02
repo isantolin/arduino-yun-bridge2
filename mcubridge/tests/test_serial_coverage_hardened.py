@@ -100,7 +100,7 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
 
     assert await transport.send_raw(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13), seq_id=7)
     encoded = mock_serial.write.call_args.args[0]
-    outgoing_frame = next(transport.decoder.process(encoded))
+    outgoing_frame = next(iter(transport.decoder.process(encoded)))
     assert outgoing_frame.address == protocol.HDLC_ADDRESS_RPC
     decoded_request = mcu_cipher.decrypt(outgoing_frame.address, outgoing_frame.data)
     packet = pw_packets.decode(decoded_request)

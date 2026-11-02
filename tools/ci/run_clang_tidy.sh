@@ -20,6 +20,7 @@ fi
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
 PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
+MBEDTLS_INC="$ARDUINO_LIBS/MbedTLS/src"
 
 INCLUDES=(
     "-I${SRC_DIR}"
@@ -30,6 +31,7 @@ INCLUDES=(
     "-I${ETL_INC}"
     "-I${PIGWEED_INC}"
     "-I${ARDUINO_LIBS}/PigweedAVR"
+    "-I${MBEDTLS_INC}"
 )
 
 COMPILE_FLAGS=(

@@ -818,6 +818,3 @@ async def test_send_raw_console_payload_variants(runtime_config: RuntimeConfig, 
     written = [c.args[0] for c in mock_serial.write.call_args_list]
     assert written[0] == protocol.encode_hdlc_console(b"abc")
     assert written[1] == protocol.encode_hdlc_console(b"")
-
-    transport.serial = None
-    assert await transport.send_bytes(b"\x7e\x7e") is False

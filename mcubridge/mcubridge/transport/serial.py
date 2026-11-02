@@ -527,14 +527,7 @@ class SerialTransport:
                 encoded.hex().upper(),
             )
 
-        return await self.send_bytes(encoded)
-
-    async def send_bytes(self, encoded: bytes) -> bool:
-        """Write pre-encoded frame bytes directly to serial port. [SIL-2]"""
         try:
-            if not self.serial:
-                return False
-
             def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
                 ser.write(data)
                 ser.flush()

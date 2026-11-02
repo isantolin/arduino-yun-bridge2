@@ -724,6 +724,13 @@ def encode_hdlc_rpc(
     if method_id is None:
         target = channel_id_or_command
         spec = REGISTRY.get(target)
+        actual_type = packet_type
+        if spec is not None and spec.paired_request_id is not None:
+            paired = REGISTRY.get(spec.paired_request_id)
+            if paired is not None:
+                spec = paired
+                if actual_type == 0:
+                    actual_type = 1
         if spec is not None and spec.service_id is not None and spec.method_id is not None:
             srv_id = spec.service_id
             meth_id = spec.method_id
@@ -741,7 +748,7 @@ def encode_hdlc_rpc(
             else (raw_payload if isinstance(raw_payload, bytes) else b"")
         )
         pkt = RpcPacket(
-            type=cast(Any, packet_type),
+            type=cast(Any, actual_type),
             channel_id=1,
             service_id=srv_id,
             method_id=meth_id,

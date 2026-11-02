@@ -765,6 +765,71 @@ void test_mailbox_edges() {
   Mailbox.push(etl::span<const uint8_t>(payload_bytes, 5));
   Mailbox.signalProcessed(789U);
   ba.setTxEnabled(true);
+
+  // Exercise _serialTask() full HDLC frame decode and kResponse / kServerStream / kClientError
+  etl::array<uint8_t, 64> hdlc_buf;
+  size_t sz = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("GetVersion"), etl::span<const uint8_t>(), hdlc_buf);
+  stream.feed(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  Bridge.process();
+
+  sz = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kResponse,
+      pw::tokenizer::Hash("bridge.MailboxService"),
+      pw::tokenizer::Hash("Available"), etl::span<const uint8_t>(), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+
+  sz = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kServerStream,
+      pw::tokenizer::Hash("bridge.MailboxService"),
+      pw::tokenizer::Hash("Read"), etl::span<const uint8_t>(), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+
+  sz = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kClientError,
+      pw::tokenizer::Hash("bridge.MailboxService"),
+      pw::tokenizer::Hash("Read"), etl::span<const uint8_t>(), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+
+  // Unknown method_id fallthroughs in RPC services and _dispatchRpcResponse
+  constexpr uint32_t kUnknownMethod = 0xDEADBEEFU;
+  auto send_rpc = [&](pw::rpc_avr::PacketType ptype, uint32_t srv,
+                      uint32_t meth,
+                      etl::span<const uint8_t> pl = etl::span<const uint8_t>()) {
+    const size_t n =
+        build_hdlc_rpc_frame(1, ptype, srv, meth, pl, hdlc_buf);
+    ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), n));
+  };
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.GpioService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.ClockSyncService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.SpiService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.FileSystemService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.MailboxService"), kUnknownMethod);
+
+  send_rpc(pw::rpc_avr::PacketType::kResponse,
+           pw::tokenizer::Hash("bridge.MailboxService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kResponse,
+           pw::tokenizer::Hash("bridge.ProcessService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kResponse,
+           pw::tokenizer::Hash("bridge.FileSystemService"), kUnknownMethod);
+
+  // Malformed protobuf payloads for SystemService::LinkSync and MailboxService::Push
+  const uint8_t bad_pb[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.SystemService"),
+           pw::tokenizer::Hash("LinkSync"),
+           etl::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("bridge.MailboxService"),
+           pw::tokenizer::Hash("Push"),
+           etl::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
 }
 
 int main() {

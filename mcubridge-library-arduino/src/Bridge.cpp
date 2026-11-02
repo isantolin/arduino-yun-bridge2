@@ -570,10 +570,8 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
 #if BRIDGE_ENABLE_DATASTORE
   if (packet.service_id == pw::tokenizer::Hash("bridge.DataStoreService")) {
     rpc_pb_DatastoreGetResponse resp = rpc_pb_DatastoreGetResponse_init_default;
-    pb_istream_t stream = pb_istream_from_buffer(
-        reinterpret_cast<const uint8_t*>(packet.payload.data()),
-        packet.payload.size());
-    if (pb_decode_noinit(&stream, rpc_pb_DatastoreGetResponse_fields, &resp)) {
+    if (DecodeProto(packet.payload, rpc_pb_DatastoreGetResponse_fields,
+                    &resp)) {
       DataStore._onResponse(resp);
     }
     return;
@@ -586,19 +584,14 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
     if (packet.method_id == kAvailable) {
       rpc_pb_MailboxAvailableResponse resp =
           rpc_pb_MailboxAvailableResponse_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(packet.payload.data()),
-          packet.payload.size());
-      if (pb_decode_noinit(&stream, rpc_pb_MailboxAvailableResponse_fields,
-                           &resp)) {
+      if (DecodeProto(packet.payload, rpc_pb_MailboxAvailableResponse_fields,
+                      &resp)) {
         Mailbox._onAvailableResponse(resp);
       }
     } else if (packet.method_id == kRead) {
       rpc_pb_MailboxReadResponse resp = rpc_pb_MailboxReadResponse_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(packet.payload.data()),
-          packet.payload.size());
-      if (pb_decode_noinit(&stream, rpc_pb_MailboxReadResponse_fields, &resp)) {
+      if (DecodeProto(packet.payload, rpc_pb_MailboxReadResponse_fields,
+                      &resp)) {
         Mailbox._enqueue(
             etl::span<const uint8_t>(resp.content.bytes, resp.content.size));
       }
@@ -613,19 +606,14 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
     if (packet.method_id == kRunAsync) {
       rpc_pb_ProcessRunAsyncResponse resp =
           rpc_pb_ProcessRunAsyncResponse_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(packet.payload.data()),
-          packet.payload.size());
-      if (pb_decode_noinit(&stream, rpc_pb_ProcessRunAsyncResponse_fields,
-                           &resp)) {
+      if (DecodeProto(packet.payload, rpc_pb_ProcessRunAsyncResponse_fields,
+                      &resp)) {
         Process._onRunAsyncResponse(resp);
       }
     } else if (packet.method_id == kPoll) {
       rpc_pb_ProcessPollResponse resp = rpc_pb_ProcessPollResponse_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(packet.payload.data()),
-          packet.payload.size());
-      if (pb_decode_noinit(&stream, rpc_pb_ProcessPollResponse_fields, &resp)) {
+      if (DecodeProto(packet.payload, rpc_pb_ProcessPollResponse_fields,
+                      &resp)) {
         Process._onPollResponse(resp);
       }
     }
@@ -637,10 +625,7 @@ void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
     constexpr uint32_t kRead = pw::tokenizer::Hash("Read");
     if (packet.method_id == kRead) {
       rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
-      pb_istream_t stream = pb_istream_from_buffer(
-          reinterpret_cast<const uint8_t*>(packet.payload.data()),
-          packet.payload.size());
-      if (pb_decode_noinit(&stream, rpc_pb_FileReadResponse_fields, &resp)) {
+      if (DecodeProto(packet.payload, rpc_pb_FileReadResponse_fields, &resp)) {
         FileSystem._onResponse(resp);
       }
     }
@@ -873,9 +858,7 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
   uint8_t payload_buf[32];
   pb_ostream_t pb_stream =
       pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-  if (!pb_encode(&pb_stream, rpc_pb_PinUpdateEvent_fields, &evt)) {
-    return false;
-  }
+  pb_encode(&pb_stream, rpc_pb_PinUpdateEvent_fields, &evt);
 
   pw::rpc_avr::RpcPacket packet;
   packet.type = pw::rpc_avr::PacketType::kServerStream;
@@ -887,7 +870,6 @@ bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
 
   uint8_t frame_buf[64];
   auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
-  if (!encode_res.ok()) return false;
 
   auto write_res = pw::hdlc::WriteUIFrame(
       1,

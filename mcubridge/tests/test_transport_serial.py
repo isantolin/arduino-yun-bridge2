@@ -626,17 +626,18 @@ def _rpc_frame(
     )
 
 
-def _service_with_mocked_dispatch(config: RuntimeConfig, state: RuntimeState) -> BridgeService:
+def _service_with_mocked_dispatch(config: RuntimeConfig, state: RuntimeState) -> tuple[BridgeService, AsyncMock]:
     service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-    service.handle_mcu_frame = AsyncMock()
-    return service
+    handle_mock = AsyncMock()
+    service.handle_mcu_frame = handle_mock
+    return service, handle_mock
 
 
 async def test_link_sync_response_maps_to_resp_id_and_dispatches() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
         reply = pb.LinkSync(nonce=b"\x01" * 16, tag=b"\x02" * 16)
 
@@ -644,8 +645,9 @@ async def test_link_sync_response_maps_to_resp_id_and_dispatches() -> None:
             _rpc_frame(Command.CMD_LINK_SYNC, packet_type=_PKT_RESPONSE, call_id=7, payload=reply)
         )
 
-        service.handle_mcu_frame.assert_awaited_once()
-        cmd_id, seq_id, payload = service.handle_mcu_frame.await_args.args
+        handle_mock.assert_awaited_once()
+        assert handle_mock.await_args is not None
+        cmd_id, seq_id, payload = handle_mock.await_args.args
         assert cmd_id == Command.CMD_LINK_SYNC_RESP.value
         assert seq_id == 7
         assert isinstance(payload, pb.LinkSync)
@@ -659,7 +661,7 @@ async def test_unhandled_response_is_correlated_but_not_redispatched() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
         pending = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value, expected_resp_ids=[])
         pending.sequence_id = 6
@@ -668,7 +670,7 @@ async def test_unhandled_response_is_correlated_but_not_redispatched() -> None:
         await transport.feed_data(_rpc_frame(Command.CMD_DIGITAL_WRITE, packet_type=_PKT_RESPONSE, call_id=6))
 
         assert pending.success is True
-        service.handle_mcu_frame.assert_not_awaited()
+        handle_mock.assert_not_awaited()
     finally:
         state.cleanup()
 
@@ -677,7 +679,7 @@ async def test_error_status_response_fails_pending_even_with_expected_response()
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
         pending = PendingCommand(
             command_id=Command.CMD_GET_VERSION.value,
@@ -698,8 +700,9 @@ async def test_error_status_response_fails_pending_even_with_expected_response()
 
         assert pending.success is False
         assert pending.failure_status == Status.ERROR.value
-        service.handle_mcu_frame.assert_awaited_once()
-        assert service.handle_mcu_frame.await_args.args[0] == Status.ERROR.value
+        handle_mock.assert_awaited_once()
+        assert handle_mock.await_args is not None
+        assert handle_mock.await_args.args[0] == Status.ERROR.value
     finally:
         state.cleanup()
 
@@ -708,13 +711,14 @@ async def test_server_error_packet_maps_to_status_error() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
 
         await transport.feed_data(_rpc_frame(Command.CMD_DIGITAL_READ, packet_type=_PKT_SERVER_ERROR, call_id=9))
 
-        service.handle_mcu_frame.assert_awaited_once()
-        assert service.handle_mcu_frame.await_args.args[:2] == (Status.ERROR.value, 9)
+        handle_mock.assert_awaited_once()
+        assert handle_mock.await_args is not None
+        assert handle_mock.await_args.args[:2] == (Status.ERROR.value, 9)
     finally:
         state.cleanup()
 
@@ -723,13 +727,14 @@ async def test_mcu_request_is_dispatched_with_request_command_id() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
 
         await transport.feed_data(_rpc_frame(Command.CMD_DATASTORE_GET, packet_type=_PKT_REQUEST, call_id=4))
 
-        service.handle_mcu_frame.assert_awaited_once()
-        assert service.handle_mcu_frame.await_args.args[:2] == (Command.CMD_DATASTORE_GET.value, 4)
+        handle_mock.assert_awaited_once()
+        assert handle_mock.await_args is not None
+        assert handle_mock.await_args.args[:2] == (Command.CMD_DATASTORE_GET.value, 4)
     finally:
         state.cleanup()
 
@@ -738,7 +743,7 @@ async def test_unparseable_response_payload_is_forwarded_as_bytes() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
         garbage = b"\x0a\xff"  # length-delimited field claiming 255 bytes: truncated
 
@@ -746,8 +751,9 @@ async def test_unparseable_response_payload_is_forwarded_as_bytes() -> None:
             _rpc_frame(Command.CMD_LINK_SYNC, packet_type=_PKT_RESPONSE, call_id=2, payload=garbage)
         )
 
-        service.handle_mcu_frame.assert_awaited_once()
-        cmd_id, _seq, payload = service.handle_mcu_frame.await_args.args
+        handle_mock.assert_awaited_once()
+        assert handle_mock.await_args is not None
+        cmd_id, _seq, payload = handle_mock.await_args.args
         assert cmd_id == Command.CMD_LINK_SYNC_RESP.value
         assert payload == garbage
     finally:
@@ -760,13 +766,13 @@ async def test_malformed_rpc_packet_counts_decode_error() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = _service_with_mocked_dispatch(config, state)
+        service, handle_mock = _service_with_mocked_dispatch(config, state)
         transport = SerialTransport(config, state, service)
 
         await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_RPC, b"\x0a\xff"))
 
         assert state.serial_decode_errors == 1
-        service.handle_mcu_frame.assert_not_awaited()
+        handle_mock.assert_not_awaited()
     finally:
         state.cleanup()
 

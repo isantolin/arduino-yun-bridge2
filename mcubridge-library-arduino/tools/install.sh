@@ -157,8 +157,8 @@ ETL_VERSION="20.49.0"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
-MBEDTLS_VERSION="mbedtls-3.6.7"
-MBEDTLS_SHA256="a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
+MBEDTLS_VERSION="mbedtls-4.2.0"
+MBEDTLS_SHA256="2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)

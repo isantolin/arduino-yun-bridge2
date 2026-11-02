@@ -772,7 +772,7 @@ void test_mailbox_edges() {
       1, pw::rpc_avr::PacketType::kRequest,
       pw::tokenizer::Hash("bridge.SystemService"),
       pw::tokenizer::Hash("GetVersion"), etl::span<const uint8_t>(), hdlc_buf);
-  stream.feed(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  stream.feed(hdlc_buf.data(), sz);
   Bridge.process();
 
   sz = build_hdlc_rpc_frame(

@@ -523,9 +523,7 @@ class BridgeService:
                 logger.warning("Unrecognized RPC method requested", method=route.method, topic=topic_val)
                 return
 
-            if self.state.topic_authorization and not protocol.allows_method(
-                self.state.topic_authorization, spec
-            ):
+            if self.state.topic_authorization and not protocol.allows_method(self.state.topic_authorization, spec):
                 action = route.action or route.method
                 await self.reject_cloud(request, route.method, action)
                 return

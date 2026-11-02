@@ -16,7 +16,7 @@ from hypothesis import given, strategies as st
 import pytest
 from dirty_equals import IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import REGISTRY, Command, Status
+from mcubridge.protocol.protocol import Command, Status, build_mcu_dispatch
 from mcubridge.protocol.structures import PendingPinRequest
 from mcubridge.services.runtime import BridgeService, PendingMcuRead
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -51,14 +51,14 @@ def svc(mock_config: RuntimeConfig, mock_state: RuntimeState) -> tuple[BridgeSer
 
 
 # -----------------------------------------------------------------------------
-# 1. Declarative Contract Verification (All Registry Entries)
+# 1. Declarative Contract Verification (All Dispatch Entries)
 # -----------------------------------------------------------------------------
 
 
-def test_protocol_registry_coverage(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+def test_protocol_dispatch_coverage(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     """Certifies that all known Commands have defined handlers or default fallbacks."""
     service, _state, _serial = svc
-    dispatch = REGISTRY.build_mcu_dispatch(service)
+    dispatch = build_mcu_dispatch(service)
     for cmd in Command:
         assert cmd.value in dispatch or callable(service.unsupported_mcu_request)
 

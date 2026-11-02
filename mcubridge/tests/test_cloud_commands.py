@@ -11,7 +11,7 @@ from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import REGISTRY, Command, Topic
+from mcubridge.protocol.protocol import Command, Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -52,7 +52,7 @@ async def test_cloud_command_pin_dispatch_property(
     svc, state, serial_mock, mock_publish = _make_service()
     try:
         method = "gpio.set_mode" if is_mode else "gpio.write"
-        t_path = REGISTRY.topic_path(state.cloud_topic_prefix, "req", method)
+        t_path = topic_path(state.cloud_topic_prefix, "req", method)
         payload = (
             pb.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
             if is_mode

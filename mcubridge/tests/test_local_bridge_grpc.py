@@ -17,7 +17,7 @@ from grpclib.server import Stream
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import Command, REGISTRY
+from mcubridge.protocol.protocol import BY_NAME, RPC_SPECS, Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ProcessContext, create_runtime_state
 from tools.testing.mock_stream import MockGrpcStream
@@ -33,7 +33,7 @@ class MockLocalBridgeClient:
         req = await stream.recv_message()
         payload = req.SerializeToString() if req is not None else b""
         res_bytes = await self.service.execute_rpc(method_name, payload)
-        spec = REGISTRY.by_name[method_name]
+        spec = BY_NAME[method_name]
         resp_cls = spec.response_type or pb.GenericResponse
         resp = resp_cls()
         if res_bytes:
@@ -43,7 +43,7 @@ class MockLocalBridgeClient:
     def __getattr__(self, name: str) -> Any:
         if name in ("Publish", "SubscribeConsole"):
             return getattr(self.service, name)
-        if name in REGISTRY.by_name:
+        if name in BY_NAME:
             return lambda stream: self._invoke_rpc(name, stream)
         if hasattr(self.service, name):
             return getattr(self.service, name)
@@ -81,7 +81,7 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         method.name: method for method in methods if not method.client_streaming and not method.server_streaming
     }
 
-    local_rpc_map = {op.rpc_name or op.name: op for op in REGISTRY.rpc_specs}
+    local_rpc_map = {op.rpc_name or op.name: op for op in RPC_SPECS}
     assert set(local_rpc_map) == set(unary_methods)
     assert "SubscribeConsole" not in local_rpc_map
     for name, method in unary_methods.items():
@@ -89,7 +89,7 @@ def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
         assert op.request_type is not None
         assert op.request_type.DESCRIPTOR.full_name == method.input_type.full_name
         assert op.handler_name is not None
-        assert (op.rpc_name or op.name) in REGISTRY.by_name
+        assert (op.rpc_name or op.name) in BY_NAME
 
 
 async def test_local_bridge_pin_operations(tmp_path: Path) -> None:

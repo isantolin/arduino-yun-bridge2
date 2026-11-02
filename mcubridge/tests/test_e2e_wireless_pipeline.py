@@ -43,7 +43,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
                     pkt = RpcPacket()
                     pkt.ParseFromString(frame.data)
-                    op = protocol.REGISTRY.get((pkt.service_id, pkt.method_id))
+                    op = protocol.get_operation((pkt.service_id, pkt.method_id))
                     cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
                     rx_seq = pkt.call_id
                     payload = pkt.payload
@@ -165,7 +165,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
                     pkt = RpcPacket()
                     pkt.ParseFromString(frame.data)
-                    op = protocol.REGISTRY.get((pkt.service_id, pkt.method_id))
+                    op = protocol.get_operation((pkt.service_id, pkt.method_id))
                     cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
                     rx_seq = pkt.call_id
                     payload = pkt.payload

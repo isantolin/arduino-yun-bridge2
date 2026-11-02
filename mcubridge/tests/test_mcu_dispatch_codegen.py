@@ -65,10 +65,11 @@ def test_commands_are_derived_from_protobuf_and_sorted() -> None:
 def test_pigweed_rpc_method_mappings() -> None:
     from mcubridge.protocol import protocol
 
-    assert len(protocol.REGISTRY.by_rpc) > 0
-    assert len(protocol.REGISTRY.by_command_id) > 0
+    assert len(protocol.BY_RPC) > 0
+    assert len(protocol.BY_COMMAND_ID) > 0
+    assert len(protocol.PW_SERVICES) >= 8
 
-    for (srv_id, meth_id), spec in protocol.REGISTRY.by_rpc.items():
+    for (srv_id, meth_id), spec in protocol.BY_RPC.items():
         assert isinstance(srv_id, int)
         assert srv_id > 0
         assert isinstance(meth_id, int)
@@ -78,22 +79,23 @@ def test_pigweed_rpc_method_mappings() -> None:
         assert isinstance(spec.method_name, str)
         assert len(spec.method_name) > 0
 
-        assert protocol.REGISTRY.get((srv_id, meth_id)) is spec
+        assert protocol.get_operation((srv_id, meth_id)) is spec
         assert spec.service_id == srv_id
         assert spec.method_id == meth_id
+        assert protocol.PW_SERVICES[srv_id].methods[meth_id].id == meth_id
 
-    # Verify key Pigweed RPC service and method mappings via REGISTRY
-    gpio_write = protocol.REGISTRY.get(protocol.Command.CMD_DIGITAL_WRITE.value)
+    # Verify key Pigweed RPC service and method mappings via PW_SERVICES and get_operation
+    gpio_write = protocol.get_operation(protocol.Command.CMD_DIGITAL_WRITE.value)
     assert gpio_write is not None
     assert gpio_write.service_name == "rpc.pb.GpioService"
     assert gpio_write.method_name == "DigitalWrite"
 
-    sys_ver = protocol.REGISTRY.get(protocol.Command.CMD_GET_VERSION.value)
+    sys_ver = protocol.get_operation(protocol.Command.CMD_GET_VERSION.value)
     assert sys_ver is not None
     assert sys_ver.service_name == "rpc.pb.SystemService"
     assert sys_ver.method_name == "GetVersion"
 
-    ds_put = protocol.REGISTRY.get(protocol.Command.CMD_DATASTORE_PUT.value)
+    ds_put = protocol.get_operation(protocol.Command.CMD_DATASTORE_PUT.value)
     assert ds_put is not None
     assert ds_put.service_name == "rpc.pb.DataStoreService"
     assert ds_put.method_name == "Put"

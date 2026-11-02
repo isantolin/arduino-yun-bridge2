@@ -349,9 +349,7 @@ def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: An
     }
 
 
-def _extract_rpc_specs(
-    pb_module: Any, svc_desc: Any
-) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
     rpc_specs: list[dict[str, Any]] = []
     rpc_aliases: dict[str, str] = {}
     for m in svc_desc.methods:

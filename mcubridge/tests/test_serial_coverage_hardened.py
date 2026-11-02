@@ -1,7 +1,7 @@
 """SIL-2 Serial Transport Coverage Hardening Test Suite.
 
 Genuinely exercises SerialTransport state transitions, packet encoding/decoding,
-anti-replay counters, baudrate fallback, DTR toggling, and framing error conditions.
+handshake state, baudrate fallback, DTR toggling, and framing error conditions.
 """
 
 from __future__ import annotations

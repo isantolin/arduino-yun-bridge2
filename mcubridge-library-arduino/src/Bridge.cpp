@@ -798,21 +798,38 @@ rpc_pb_PinSubscribeResponse BridgeClass::_handlePinSubscribe(
 
 rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
   rpc_pb_LinkSync resp = rpc_pb_LinkSync_init_default;
-  const size_t n_size =
-      etl::min(static_cast<size_t>(m.nonce.size),
-               static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
-  bridge::pb::copy_bytes(resp.nonce, m.nonce.bytes, n_size);
+  const bool nonce_valid = m.nonce.size == rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  const bool tag_shape_valid =
+      _shared_secret.empty() ? m.tag.size == 0U
+                             : m.tag.size == rpc::RPC_HANDSHAKE_TAG_LENGTH;
+  if (!nonce_valid || !tag_shape_valid) {
+    _fsm.receive(bridge::fsm::EvHandshakeFailed());
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return resp;
+  }
+
+  bridge::pb::copy_bytes(resp.nonce, m.nonce.bytes,
+                         rpc::RPC_HANDSHAKE_NONCE_LENGTH);
   if (!_shared_secret.empty()) {
-    etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
-    if (rpc::security::handshake_authenticate(
+    etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag = {};
+    if (!rpc::security::handshake_verify_tag(
             etl::span<const uint8_t>(_shared_secret),
-            etl::span<const uint8_t>(m.nonce.bytes, n_size),
-            etl::span<const uint8_t>(m.tag.bytes, m.tag.size),
+            etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
+            etl::span<const uint8_t>(m.tag.bytes, m.tag.size))) {
+      _fsm.receive(bridge::fsm::EvHandshakeFailed());
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+      return resp;
+    }
+
+    if (rpc::security::handshake_generate_response_tag(
+            etl::span<const uint8_t>(_shared_secret),
+            etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
             etl::span<uint8_t>(out_tag))) {
       bridge::pb::copy_bytes(resp.tag, out_tag.data(),
                              rpc::RPC_HANDSHAKE_TAG_LENGTH);
       rpc::security::secure_zero(etl::span<uint8_t>(out_tag));
     } else {
+      rpc::security::secure_zero(etl::span<uint8_t>(out_tag));
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return resp;

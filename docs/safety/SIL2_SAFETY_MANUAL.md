@@ -49,7 +49,7 @@ flowchart TD
 At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_on_self_tests()`:
 1. **SRAM March Pattern Test**: Non-destructive pattern verification (`0x55`, `0xAA`, `0x00`, `0xFF`) verifying memory cell integrity.
 2. **Stack Sentinel Initialization**: Sets the stack boundary canary (`0x55AA55AA`).
-3. **Cryptographic Algorithm Self-Tests (CAST)**: Runs hardcoded Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
+3. **Cryptographic Self-Tests**: MCU KATs cover SHA-256 and HMAC-SHA256. The daemon's ChaCha20-Poly1305 KAT checks its Python library only; it does not represent frame encryption.
 4. **Safety Action**: If any POST step fails, `enterSafeState()` is invoked immediately, disabling transmitters and driving I/O pins to a safe state.
 
 ### 2.4 Continuous Stack Overflow Protection (Watermarking)
@@ -72,9 +72,10 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 * **`pb_decode_noinit` Semantics**: Payloads crossing the RPC boundary are decoded directly into pre-allocated static structs without memory re-zeroing (`memset`), preventing CPU cycle exhaustion and stack thrashing on resource-constrained microcontrollers.
 * **Deterministic Bounds**: All variable-length fields are statically constrained via `.options` file definitions.
 
-### 2.8 Transport-Agnostic Safety & Anti-Replay Security
-* **Sequential Nonce Counter Enforcement**: All encrypted frames crossing physical (UART) or wireless (WiFi TCP / Bluetooth SPP) transports are validated against monotonic 64-bit nonces (`validate_nonce_counter`), preventing replay attacks and out-of-order execution.
-* **Fail-Safe Disconnects**: Wireless dropouts trigger deterministic transitions to `UNSYNCHRONIZED`, wiping session keys and requiring complete re-authentication.
+### 2.8 Link Authentication and Disconnect Handling
+* With a configured shared secret, `LinkSync` verifies host and MCU HMAC proofs over a 16-byte host nonce. An empty secret explicitly disables authentication.
+* RPC frames are not encrypted or protected by a monotonic replay counter. CRC-32 is error detection, not authentication.
+* Disconnects transition the link to `UNSYNCHRONIZED`, clear pending handshake expectations, and require a new synchronization.
 
 ### 2.9 State Machines in Linux MPU (`python-statemachine`)
 * **Explicit Lifecycle States**: Handshake (`HandshakeMachine`), physical link (`LinkConnectionMachine`), subprocesses (`ProcessMachine`), and cloud sessions (`GatewaySessionMachine`) use discrete state machines. Their presence alone does not establish SIL-2 determinism or certification.

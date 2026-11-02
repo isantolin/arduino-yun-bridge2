@@ -25,7 +25,6 @@
   "C_Cpp.default.defines": [
     "ARDUINO=100",
     "BRIDGE_HOST_TEST=1",
-    "WOLFSSL_USER_SETTINGS",
     "ETL_NO_STL",
     "BRIDGE_ENABLE_CONSOLE=1",
     "BRIDGE_ENABLE_DATASTORE=1",

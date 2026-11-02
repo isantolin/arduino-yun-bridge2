@@ -35,20 +35,20 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 ### External dependencies
 
 - **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, `pw_rpc` server/service dispatch, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log_avr` tokenized diagnostics, and `pw_chrono_avr` atomic millisecond timekeeping).
-- **wolfSSL**: The library utilizes wolfSSL for AEAD (ChaCha20-Poly1305), HKDF-SHA256, and HMAC-SHA256 operations, ensuring cryptographic integrity.
+- **PigweedAVR (`pw_crypto`)**: Provides the MCU SHA-256 API used by `LinkSync`; firmware HMAC/HKDF composition authenticates the handshake only. RPC frames are not encrypted or protected against replay.
 - **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`, `span`) with strict Zero-STL (`-DETL_NO_STL`) compliance.
 
 ## SIL-2 & MIL-SPEC Design Principles
 
-This library follows IEC 61508 (SIL-2) and FIPS 140-3 design guidelines:
+This library describes safety- and security-oriented design goals; it does not claim IEC 61508 SIL-2 certification or FIPS 140-3 validation:
 - **No Dynamic Memory & Zero STL (`-DETL_NO_STL`):** All buffers are statically allocated using ETL and PigweedAVR static containers. No `malloc`/`new` or `<std::*>` headers in production firmware.
 - **Modular `pw_rpc` Service Dispatch (`pw::rpc_avr::RpcServer`):** Command handling is organized into 8 static `pw::rpc_avr::RpcService` implementations (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) using compile-time `pw::tokenizer::Hash("rpc.pb.<Service>")` identifiers.
 - **Multi-Channel HDLC Framing (`pw_hdlc`):** Multiplexes `pw_rpc` packets (`HDLC_ADDRESS_RPC = 1`), tokenized logs (`HDLC_ADDRESS_LOG = 2`), and console streams (`HDLC_ADDRESS_CONSOLE = 3`) with IEEE 802.3 CRC-32 FCS integrity.
 - **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (`STARTUP`, `UNSYNCHRONIZED`, `HANDSHAKE`, `SYNCHRONIZED`, `AWAITING_ACK`, `FAULT`).
-- **Cryptographic Self-Tests (POST):** Performs Known Answer Tests (KAT) for SHA256, HMAC-SHA256, and ChaCha20-Poly1305 at startup.
+- **Cryptographic Self-Tests (POST):** MCU Known-Answer Tests cover SHA-256 and HMAC-SHA256. The Python ChaCha20-Poly1305 KAT does not encrypt MCU link frames.
 - **Fail-Secure:** Initialization aborts and the system enters a safe state (`FAULT`) if cryptographic or SRAM March integrity checks fail.
-- **Key Isolation:** Uses **HKDF-SHA256** for key derivation, ensuring the shared secret is never used directly for authentication tags.
+- **Handshake Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs. No session encryption keys are derived.
 - **Atomic Timekeeping (`pw_chrono_avr`):** Uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for deterministic timeout and interval tracking.
 - **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 (`rpc::decode_pb`) to eliminate initialization overhead on static memory structures.
 - **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, SPI, WiFi, and Bluetooth.

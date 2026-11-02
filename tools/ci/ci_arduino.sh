@@ -40,22 +40,7 @@ arduino-cli core install arduino:avr arduino:samd arduino:esp32 || {
 
 # Install official dependencies
 echo "Installing official libraries..."
-arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
 arduino-cli lib install WiFiNINA || { echo "Failed to install WiFiNINA"; exit 1; }
-
-# Find actual wolfSSL installation path (casing varies)
-WOLF_ROOT=""
-if [ -d "$USER_LIB_DIR/wolfSSL" ]; then
-    WOLF_ROOT="$USER_LIB_DIR/wolfSSL"
-elif [ -d "$USER_LIB_DIR/wolfssl" ]; then
-    WOLF_ROOT="$USER_LIB_DIR/wolfssl"
-fi
-
-if [ -z "$WOLF_ROOT" ]; then
-    echo "Error: wolfSSL library not found after installation."
-    exit 1
-fi
-WOLF_INC="$WOLF_ROOT/src"
 
 # Install dependencies
 echo "Generating protocol bindings..."
@@ -120,7 +105,7 @@ compile_sketch() {
     BOARD_NAME="${FQBN//:/-}"
     LOG_FILE="${_LOG_DIR}/${BOARD_NAME}__${sketch_name}.log"
 
-    local COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    local COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     local LINK_FLAGS=()
     local AVR_PROPS=()
     local AVR_STDCPP_INC=""

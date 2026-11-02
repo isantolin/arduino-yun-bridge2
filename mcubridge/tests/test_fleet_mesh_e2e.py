@@ -120,7 +120,6 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
         assert node.state.is_connected is True
         assert node.state.is_synchronized is True
         assert node.state.fatal_count == 0
-        assert node.state.link_nonce_counter >= 0
 
     # -------------------------------------------------------------------------
     # SERVICIO 2: Sincronización de Reloj Hardware (Clock Synchronization)

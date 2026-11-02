@@ -21,15 +21,6 @@ echo "[emulator] Installing library dependencies..."
 "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
-if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
-if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH/src"
-else
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH"
-fi
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 
 # Use system Python
@@ -54,20 +45,6 @@ if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
     exit 1
 fi
 
-WOLF_SOURCES=(
-    "$WOLFCRYPT_SRC/sha256.c"
-    "$WOLFCRYPT_SRC/hmac.c"
-    "$WOLFCRYPT_SRC/hash.c"
-    "$WOLFCRYPT_SRC/kdf.c"
-    "$WOLFCRYPT_SRC/error.c"
-    "$WOLFCRYPT_SRC/logging.c"
-    "$WOLFCRYPT_SRC/wc_port.c"
-    "$WOLFCRYPT_SRC/memory.c"
-    "$WOLFCRYPT_SRC/chacha.c"
-    "$WOLFCRYPT_SRC/poly1305.c"
-    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
-)
-
 NANOPB_SOURCES=(
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
@@ -78,7 +55,7 @@ NANOPB_SOURCES=(
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
+    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -88,12 +65,10 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    -I"${WOLFSSL_PATH}" \
-    -I"${WOLFSSL_INC}" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
-    "${WOLF_SOURCES[@]}" \
     "${NANOPB_SOURCES[@]}" \
+    "$PIGWEED_PATH/src/sha256_avr.cpp" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
@@ -125,7 +100,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
+    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -135,12 +110,10 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    -I"${WOLFSSL_PATH}" \
-    -I"${WOLFSSL_INC}" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
-    "${WOLF_SOURCES[@]}" \
     "${NANOPB_SOURCES[@]}" \
+    "$PIGWEED_PATH/src/sha256_avr.cpp" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \

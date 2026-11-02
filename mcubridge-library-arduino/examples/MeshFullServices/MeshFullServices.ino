@@ -6,7 +6,7 @@
  *
  * Implements full active support for 100% of ecosystem services in
  * cycle-accurate hardware emulation (simavr, Renode, QEMU):
- * - Boot Known-Answer Tests (KAT) for SHA-256, HMAC, and ChaCha20-Poly1305
+ * - MCU boot Known-Answer Tests (KAT) for SHA-256 and HMAC-SHA256
  * - SIL-2 Hardware Clock Synchronization (CMD_CLOCK_SYNC / host offset / RTT)
  * - Bi-directional Console Streaming (ConsoleClass)
  * - Inter-node Mailbox routing (MailboxClass)

@@ -3,34 +3,29 @@
 **Status:** This document describes project implementation details only. It is not a CMVP-issued FIPS 140-3 Security Policy, and this repository does not claim FIPS 140-3 validation or provide a validation certificate number. KATs, library use, and standards references are not evidence of module validation.
 **References:** RFC 8439, RFC 5869, NIST SP 800-56C Rev 2
 **Implementation:** Arduino MCU Bridge 2 cryptographic code
-**Software Version:** v2.8.5+  
-
 ---
 
 ## 1. Implementation Scope (Not a Validated Cryptographic Boundary)
 
-The implementation includes a mutual handshake, session-key derivation, and authenticated encryption connecting the Arduino MCU (C++ / wolfCrypt) and Linux MPU (Python / `cryptography`). This description is not an assessed or validated cryptographic-module boundary.
+The current link protocol authenticates `LinkSync` when a shared secret is configured. It does not derive a session encryption key, encrypt RPC frames, or provide per-frame replay protection. This description is not an assessed or validated cryptographic-module boundary.
 
 ```mermaid
 graph LR
     subgraph Arduino MCU Boundary
-        A[wolfCrypt Module]
-        B[ChaCha20-Poly1305]
-        C[HKDF-SHA256]
+        A[Pigweed pw_crypto SHA-256]
+        B[LinkSync HMAC/HKDF composition]
     end
 
     subgraph Channel
-        UART((UART / WiFi TCP / Bluetooth SPP))
+        UART((pw_hdlc / pw_rpc; CRC-32 only))
     end
 
     subgraph Linux MPU Boundary
-        D[cryptography Hazmat]
-        E[ChaCha20Poly1305]
-        F[HKDF-SHA256]
+        D[Python cryptography HKDF/HMAC]
     end
 
-    A <-->|pw_hdlc + pw_rpc Frames| UART
-    UART <-->|pw_hdlc + pw_rpc Frames| D
+    B <-->|LinkSync proofs; RPC frames are not encrypted| UART
+    UART <-->|LinkSync proofs; RPC frames are not encrypted| D
 ```
 
 ---
@@ -43,8 +38,6 @@ graph LR
 
 ### 2.2 Critical Security Parameters (CSPs)
 * **Master Pre-Shared Key ($K_{master}$)**: 256-bit secret stored in UCI `/etc/config/mcubridge` (MPU) and compiled/provisioned in Arduino sketch (MCU).
-* **Ephemeral Session Key ($K_{session}$)**: 256-bit symmetric key derived dynamically per session using HKDF-SHA256.
-* **Monotonic Nonce Counter ($N_{seq}$)**: 64-bit strictly increasing anti-replay counter.
 
 ---
 
@@ -54,17 +47,12 @@ graph LR
 
 | Algorithm | Standard | Key Size | Purpose |
 | :--- | :--- | :--- | :--- |
-| **ChaCha20-Poly1305** | RFC 8439 | 256-bit | Authenticated Encryption with Associated Data (AEAD) |
 | **HKDF-SHA256** | RFC 5869; NIST SP 800-56C Rev 2 reference | 256-bit | Key Derivation Function (KDF) |
-| **HMAC-SHA256** | FIPS 198-1 / FIPS 180-4 references | 256-bit | Handshake Mutual Verification Tag |
+| **HMAC-SHA256** | RFC 2104 / FIPS references | 256-bit | Domain-separated `LinkSync` request and response proofs |
 | **SHA-256** | FIPS 180-4 reference | 256-bit | Cryptographic Hashing |
 
 ### 3.2 Startup Known-Answer Tests (KATs)
-The endpoints run project-owned known-answer tests before normal operation:
-1. **SHA-256 KAT**: Checks the digest for the configured test input.
-2. **HMAC-SHA256 KAT**: Checks the implementation's configured HMAC test vector.
-3. **ChaCha20-Poly1305 KAT**: Checks ciphertext and tag for the implementation's configured key, nonce, AAD, and plaintext.
-4. **Failure behavior**: A failed check prevents normal cryptographic operation.
+The MCU POST runs project KATs for SHA-256 and HMAC-SHA256. The Python daemon's integrity check also tests a ChaCha20-Poly1305 vector through `cryptography`; that check does not imply link-frame encryption.
 
 These functional regression checks are not CAVP testing or FIPS 140-3 module validation.
 
@@ -73,15 +61,14 @@ These functional regression checks are not CAVP testing or FIPS 140-3 module val
 ## 4. Key Management & Zeroization
 
 ### 4.1 Ephemeral Key Derivation
-Session keys are derived using HKDF-SHA256 with the shared secret as input key material, the handshake nonce as salt, the canonical `session-key` info string, and the configured 32-byte output length.
+The host request and MCU response proofs use HKDF-SHA256 with the configured shared secret, the canonical `mcubridge-v2` salt, separate `handshake-auth` and `handshake-response` info strings, and HMAC-SHA256 over the 16-byte host nonce. No session encryption key is derived.
 
-### 4.2 Anti-Replay Nonce Layout
-Every encrypted frame carries a 12-byte nonce: a four-byte direction prefix (`MCU\0` for MCU-originated frames or `MPU\0` for MPU-originated frames), followed by an eight-byte big-endian counter.
-The canonical prefixes are generated from `config_schema.proto`. Receivers validate the nonce length and monotonic counter suffix, require per-link replay state, and remain prefix-permissive to preserve interoperability with existing peers. Replay checks compare the counter to the last accepted counter.
+### 4.2 Nonce and Replay
+The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks its exact length and binds both HMAC proofs to it. There is no per-frame nonce, monotonic frame counter, or replay state. The handshake nonce does not prevent replay of previously captured RPC frames.
 
-### 4.3 Key Zeroization (*Safe Memory Scrubbing*)
-* **C++ MCU**: Memory containing $K_{session}$ and intermediate buffers is zeroized using `wc_ForceZero()` to defeat compiler dead-store elimination.
+### 4.3 Key Zeroization
+* **C++ MCU**: Explicit `secure_zero()` calls clear the local HMAC/HKDF key pads, derived key arrays, tags, and expected-tag buffers. This is not a guarantee that every library-internal copy is erased.
 * **Python MPU**: `secure_zero()` overwrites the supplied mutable `bytearray` or writable `memoryview`. It cannot guarantee removal of immutable copies or every copy retained by the interpreter, allocator, or native libraries; it is not a process-wide zeroization guarantee.
 
-### 4.4 TLS 1.3 Session Management (Cloud Gateway)
-* **Lifecycle**: Ephemeral session tickets for fast gRPC re-handshakes are managed natively by OpenSSL / TLS 1.3 stack with strict time-to-live bounds and single-use resumption policies, preventing TLS 1.3 early-data replay attacks.
+### 4.4 Cloud Transport
+The cloud gateway's TLS behavior is configured separately through its gRPC/TLS stack. This profile makes no project-specific 0-RTT, single-use-ticket, or anti-replay claim.

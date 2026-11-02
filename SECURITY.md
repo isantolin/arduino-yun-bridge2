@@ -25,17 +25,16 @@ If you discover a potential security vulnerability in this project, please repor
 
 Arduino MCU Bridge 2 implements a Safety-Hardened Embedded Architecture designed for high-reliability embedded environments using deterministic FSMs, Zero-Heap memory management, and boot-time Known-Answer Tests.
 
-### 1. Handshake & Encryption
-All communication (physical UART, wireless WiFi TCP, or Bluetooth SPP) requires a successful mutual handshake using a pre-shared secret.
-- **Mutual Authentication:** HMAC-SHA256 used to authenticate the link during synchronization.
-- **AEAD (ChaCha20-Poly1305):** All functional data is encrypted and authenticated using mission-critical ChaCha20-Poly1305.
-- **Anti-Replay:** Monotonic nonces with counter validation prevent replay attacks on both the handshake and functional frames.
-- **Cryptographic references:** HKDF-SHA256 (RFC 5869) is used for session-key derivation with boot-time Known-Answer Tests (KATs) for algorithmic self-validation.
-- **TLS 1.3 0-RTT:** Cloud Gateway connections support secure 0-RTT session ticket resumption with single-use anti-replay enforcement.
+### 1. Link Authentication and Encryption
+- When `serial_shared_secret` is configured, `LinkSync` authenticates the host with HMAC-SHA256 and the MCU returns a domain-separated HMAC proof. Both tags cover the 16-byte host nonce.
+- An empty shared secret explicitly disables link authentication. It is not a fallback for a failed tag, and unauthenticated mode must not be used over an untrusted transport.
+- RPC frames are **not encrypted** and have no per-frame replay protection. The 16-byte handshake nonce is not a monotonic frame counter.
+- Pigweed `pw_crypto` supplies the MCU SHA-256 API. The current Arduino export has no HMAC/HKDF or AEAD API; the firmware composes the handshake HMAC/HKDF using that SHA-256 API. Python uses `cryptography` for its handshake calculations.
+- No project-specific TLS 1.3 0-RTT or session-ticket anti-replay behavior is claimed.
 
 ### 2. Integrity
-- **CRC32 (IEEE 802.3):** Every frame includes a mandatory 32-bit CRC.
-- **Poly1305 MAC:** Every encrypted frame includes a 128-bit authentication tag protecting the header and payload.
+- **CRC32 (IEEE 802.3):** HDLC frames include a 32-bit error-detection checksum. CRC is not cryptographic authentication.
+- No Poly1305 tag or cryptographic frame-integrity check is currently applied to RPC frames.
 
 ### 3. Flash & Resource Protection
 - **RAM-only storage:** The daemon enforces that frequent writes (like cloud payload spooling and file operations) occur in `/tmp` (volatile memory).
@@ -43,9 +42,10 @@ All communication (physical UART, wireless WiFi TCP, or Bluetooth SPP) requires 
 
 ### 4. Cryptographic Self-Validation
 
-- **Power-On Self-Tests (POST):** The system implements Known Answer Tests (KAT) for SHA256, HMAC-SHA256, and ChaCha20-Poly1305 based on NIST and RFC vectors.
+- **MCU POST:** Project KATs cover SHA-256 and HMAC-SHA256.
+- **Python self-test:** The daemon also checks a ChaCha20-Poly1305 library vector. This is not active link encryption.
 
-- **Fail-Secure:** Initialization aborts if the cryptographic engine fails the startup tests, ensuring no communication happens over an untrustworthy link.
+- These tests are functional checks, not independent validation or certification. A successful KAT does not protect RPC frames from modification or replay.
 
 
 

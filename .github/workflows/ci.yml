@@ -297,7 +297,6 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
-          arduino-cli lib install wolfSSL
       - name: Run simavr E2E Test Suite
         run: |
           mkdir -p simavr-logs
@@ -335,7 +334,7 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:samd
-          arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
       - name: Install Renode
         uses: ./.github/actions/setup-renode
       - name: Run Renode E2E Test Suite
@@ -375,7 +374,6 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:esp32
-          arduino-cli lib install wolfSSL
           python -m pip install pyserial esptool
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
@@ -437,7 +435,7 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli core install arduino:samd
           arduino-cli core install arduino:esp32
-          arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
           python -m pip install pyserial esptool
       - name: Install Renode
         uses: ./.github/actions/setup-renode

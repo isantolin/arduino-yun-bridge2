@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)](https://isocpp.org/)
 [![ETL](https://img.shields.io/badge/ETL-Embedded%20Template%20Library-green)](https://www.etlcpp.com/)
-[![Cryptography](https://img.shields.io/badge/Cryptography-ChaCha20--Poly1305-informational)](https://www.rfc-editor.org/rfc/rfc8439)
+[![Cryptography](https://img.shields.io/badge/Cryptography-HMAC--SHA256-informational)](https://www.rfc-editor.org/rfc/rfc2104)
 
 > **Estado de certificación:** Las referencias SIL-2/FIPS describen objetivos de diseño, algoritmos y pruebas del proyecto. Este repositorio no acredita certificación SIL-2 ni validación FIPS 140-3.
 
@@ -19,7 +19,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Control de Flujo (Backpressure) en la Nube:** Regulación mediante colas de telemetría y buffer backpressure en el stream gRPC.
 - **Respuestas correladas sobre gRPC:** El flujo bidireccional gRPC correlaciona de forma nativa peticiones y respuestas mediante identificadores estables (`sequence_id`).
 - **Diseño orientado a seguridad funcional:** Librería MCU escrita en C++17 con ETL y almacenamiento estático en las configuraciones documentadas; esto no constituye una certificación SIL-2.
-- **Criptografía implementada:** **HKDF-SHA256**, **ChaCha20-Poly1305** y pruebas KAT del proyecto; no se afirma validación FIPS 140-3.
+- **Autenticación del enlace:** `LinkSync` usa HKDF-SHA256/HMAC-SHA256 cuando se configura un secreto compartido; el MCU responde con una prueba HMAC separada. Las tramas RPC no se cifran ni tienen protección anti-replay por trama. El KAT ChaCha20-Poly1305 del daemon solo prueba la biblioteca Python.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
 ### Novedades (noviembre 2026 — v2.8.9 Pigweed Migration)
@@ -67,7 +67,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Actualización Nanopb 0.4.9.2 & Deserialización Estática Zero-Copy (`pb_decode_noinit`)**: Migración de todo el ecosistema C++ y herramientas de generación a la versión oficial Nanopb 0.4.9.2, adoptando `pb_decode_noinit` para eliminar limpiezas `memset` redundantes en estructuras estáticas pre-inicializadas.
 - **Soporte TLS 1.3 Nativo para Enlace Cloud Gateway**: Configuración determinista de contextos SSL (`ssl.create_default_context`) delegando la reanudación y gestión de tickets de sesión TLS 1.3 de forma transparente en OpenSSL y el módulo estándar `ssl`.
 - **Topología Canónica de Tópicos Cloud & Cero Backward (v2.8.8)**: Estandarización estricta de rutas en `{prefix}/{req|res|evt}/{method}` y `devices/{device_id}/{req|res|evt}/{method}`, erradicando prefijos heterogéneos y ramas de compatibilidad legacy.
-- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Ejecuta microbenchmarks host-side de framing HDLC, AEAD, Protobuf y LMDB, y reporta RSS/VMS y asignaciones trazadas del proceso Python. Los valores dependen del runner y no representan latencia/rendimiento AVR, SRAM del MCU ni WCET. La medición AVR requiere instrumentación separada en el target o en el emulador.
+- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Ejecuta microbenchmarks host-side de framing HDLC, primitivas AEAD de Python, Protobuf y LMDB; no implica que AEAD proteja el enlace MCU. Reporta RSS/VMS y asignaciones trazadas del proceso Python. Los valores dependen del runner y no representan latencia/rendimiento AVR, SRAM del MCU ni WCET.
 
 ### Novedades (julio 2026)
 

@@ -53,7 +53,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                     # Simulate MCU responses based on received command
                     if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
                         sync_req = pb.LinkSync.FromString(payload)
-                        tag = service.handshake.calculate_handshake_tag(
+                        tag = service.handshake.calculate_handshake_response_tag(
                             runtime_config.serial_shared_secret, sync_req.nonce
                         )
                         resp_pb = pb.LinkSync(
@@ -172,7 +172,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
                     if cmd_id == protocol.Command.CMD_LINK_SYNC.value:
                         sync_req = pb.LinkSync.FromString(payload)
-                        tag = service.handshake.calculate_handshake_tag(
+                        tag = service.handshake.calculate_handshake_response_tag(
                             runtime_config.serial_shared_secret, sync_req.nonce
                         )
                         resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag)

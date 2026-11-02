@@ -1,10 +1,7 @@
-"""Serial handshake coordination utilities for BridgeService.
+"""Serial link handshake coordination.
 
-[MIL-SPEC COMPLIANCE]
-This module implements secure handshake with:
-- HMAC-SHA256 authentication (timing-safe comparison)
-- Nonce with monotonic counter (anti-replay protection)
-- Secure memory zeroization after use
+The configured shared secret authenticates LinkSync with HMAC-SHA256. This
+handshake does not encrypt frames or provide per-frame replay protection.
 """
 
 from __future__ import annotations
@@ -278,7 +275,9 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
+        self._state.link_expected_tag = self.calculate_handshake_response_tag(
+            self._config.serial_shared_secret, nonce
+        )
 
         reset_ok = await self.send_frame(
             Command.CMD_LINK_RESET.value,
@@ -297,7 +296,7 @@ class SerialHandshakeManager:
         self.transition(HandshakeEvent.RESET_SENT)
         await asyncio.sleep(0.05)
 
-        # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
+        # Authenticate the host request with the host-specific handshake key.
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Serialize LINK_SYNC as protobuf.
         sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag)
@@ -374,7 +373,9 @@ class SerialHandshakeManager:
             return False
 
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
+        recalculated_tag = self.calculate_handshake_response_tag(
+            self._config.serial_shared_secret, nonce
+        )
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
@@ -402,9 +403,6 @@ class SerialHandshakeManager:
             )
             return False
 
-        # [SIL-2] Ensure session key is derived on successful sync
-        if self._config.serial_shared_secret:
-            self._state.link_session_key = self.calculate_session_key(self._config.serial_shared_secret, nonce)
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
@@ -579,7 +577,6 @@ class SerialHandshakeManager:
         self._state.last_handshake_error = None
         self._state.last_handshake_unix = time.time()
         self._state.handshake_last_duration = self._state.handshake_duration_since_start()
-        self._state.link_last_nonce_counter = 0
         self._state.connection_fsm.synchronize()
         self._state.link_sync_event.set()
         self._state.handshake_successes += 1
@@ -601,34 +598,34 @@ class SerialHandshakeManager:
 
     @staticmethod
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
+        return SerialHandshakeManager._calculate_handshake_tag(
+            secret, nonce, protocol.HANDSHAKE_HKDF_INFO_AUTH
+        )
+
+    @staticmethod
+    def calculate_handshake_response_tag(secret: bytes | None, nonce: bytes) -> bytes:
+        return SerialHandshakeManager._calculate_handshake_tag(
+            secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE
+        )
+
+    @staticmethod
+    def _calculate_handshake_tag(secret: bytes | None, nonce: bytes, info: bytes) -> bytes:
+        if len(nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
+            raise ValueError("handshake nonce has an invalid length")
         if not secret:
             return b""
 
-        # [MIL-SPEC] Use HKDF derived key for handshake authentication
-        # Eradicated derive_handshake_key wrapper (Llamada directa a cryptography)
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
-            length=protocol.AEAD_KEY_SIZE,
+            length=protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
             salt=protocol.HANDSHAKE_HKDF_SALT,
-            info=protocol.HANDSHAKE_HKDF_INFO_AUTH,
+            info=info,
         )
         auth_key = hkdf.derive(secret)
 
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
-        return h.finalize()[: protocol.AEAD_TAG_SIZE]
-
-    @staticmethod
-    def calculate_session_key(secret: bytes, nonce: bytes) -> bytes:
-        """[MIL-SPEC] Derive a 32-byte session key from shared secret and nonce."""
-
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=protocol.AEAD_KEY_SIZE,
-            salt=nonce,
-            info=protocol.HANDSHAKE_HKDF_INFO_SESSION,
-        )
-        return hkdf.derive(secret)
+        return h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (

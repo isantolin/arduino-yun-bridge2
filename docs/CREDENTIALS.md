@@ -122,6 +122,6 @@ logread | grep mcubridge | grep -i handshake | tail -50
 ```
 
 Key log fields to inspect:
-- `handshake_state`: Should progress `IDLE → CHALLENGE_SENT → SYNCHRONIZED`
-- `hmac_valid`: Must be `true` for successful authentication
-- `nonce_counter`: Should increment monotonically (anti-replay protection)
+- `handshake_state`: Progresses through the daemon FSM (`unsynchronized`, `resetting`, `syncing`, `confirming`, `synchronized`).
+- `LINK_SYNC_RESP auth mismatch` or nonce-mismatch messages indicate failed response verification.
+- No `hmac_valid` field or monotonic anti-replay counter is implemented; frame replay protection is not provided.

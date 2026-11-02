@@ -37,9 +37,6 @@ USER_LIB_DIR="${HOME}/Arduino/libraries"
 mkdir -p "$USER_LIB_DIR"
 
 echo "[compile_firmware] Installing required library dependencies for ${EMULATOR}..."
-if [ "$EMULATOR" = "qemu" ] && [ ! -d "$USER_LIB_DIR/wolfssl" ] && [ ! -d "$USER_LIB_DIR/wolfSSL/src/wolfssl" ]; then
-    arduino-cli lib install wolfSSL || true
-fi
 "${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
 
 # Generate protocol stubs if missing
@@ -68,7 +65,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$EMULATOR" = "simavr" ]; then
-    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DWOLFSSL_NO_ATOMIC -DWOLFSSL_NO_FENCE -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
     AVR_PROPS=()
     AVR_STDCPP_INC=""
     if command -v avr-gcc >/dev/null 2>&1; then
@@ -103,7 +100,7 @@ if [ "$EMULATOR" = "simavr" ]; then
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
-    COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
@@ -142,7 +139,7 @@ elif [ "$EMULATOR" = "qemu" ]; then
     STUBS_OBJ="$(mktemp /tmp/esp32_qemu_stubs_XXXXXX.o)"
     "$XTENSA_GCC" -c "$STUBS_SRC" -o "$STUBS_OBJ"
 
-    COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"

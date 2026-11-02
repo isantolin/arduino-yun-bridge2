@@ -506,37 +506,51 @@ void test_filesystem_spi_fsm_edges() {
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
-void test_encrypted_rx_nonce_paths() {
+void test_link_sync_authentication_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
 
   constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
 
-  // 1. LinkSync with valid HMAC tag succeeds
+  // A correctly authenticated LinkSync succeeds with a 16-byte nonce.
   rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
-  memset(sync.nonce.bytes, 0xAB, 12);
-  sync.nonce.size = 12;
-  ba.computeHandshakeTag(sync.nonce.bytes, 12, sync.tag.bytes);
-  sync.tag.size = 16;
+  memset(sync.nonce.bytes, 0xAB, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size, sync.tag.bytes);
+  sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 
-  // 2. LinkSync with bad tag fails
+  // An empty tag is never accepted when a shared secret is configured.
   ba.clearSynchronized();
-  sync.tag.bytes[0] ^= 0xFF;
+  sync.tag.size = 0;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  // 3. LinkSync with short nonce (< 12) fails
-  sync.nonce.size = 8;
+  // A non-empty tag is never accepted when no shared secret is configured.
+  reset_bridge_core(Bridge, stream, 0U, "");
+  sync.tag.size = 1;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  // 4. Cryptographic self-tests
+  // The explicitly unauthenticated mode requires an empty tag and a valid nonce.
+  sync.tag.size = 0;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSynchronized());
+
+  // A short nonce is rejected even when authentication is disabled.
+  ba.clearSynchronized();
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH - 1U;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_FALSE(ba.isSynchronized());
+
+  // The firmware self-tests cover SHA-256 and HMAC-SHA256 only.
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
 }
 
@@ -815,7 +829,7 @@ int main() {
   RUN_TEST(test_timer_link_and_bootloader_edges);
   RUN_TEST(test_service_capacity_and_send_fail_edges);
   RUN_TEST(test_filesystem_spi_fsm_edges);
-  RUN_TEST(test_encrypted_rx_nonce_paths);
+  RUN_TEST(test_link_sync_authentication_paths);
   RUN_TEST(test_fault_injection_harness_paths);
   RUN_TEST(test_architectural_extensions_edge_paths);
   RUN_TEST(test_force_safe_state_uses_core_bus_pin_map);

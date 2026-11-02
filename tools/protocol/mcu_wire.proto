@@ -180,6 +180,10 @@ message SetBaudratePacket {
   uint32 baudrate = 1;
 }
 
+// LinkSync uses a 16-byte challenge. With a configured shared secret, the
+// request tag authenticates the host and the response tag uses a distinct
+// HKDF info string to authenticate the MCU. With no secret, the tag is empty;
+// this disables authentication and does not encrypt RPC frames.
 message LinkSync {
   bytes nonce = 1;
   bytes tag = 2;

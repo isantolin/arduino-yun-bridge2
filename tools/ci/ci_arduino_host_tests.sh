@@ -64,15 +64,6 @@ mkdir -p "${ARDUINO_LIBS}"
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
-if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
-if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH/src"
-else
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH"
-fi
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 
 if [ "$INSTALL_ONLY" = true ]; then
@@ -82,17 +73,7 @@ fi
 
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
-    "$WOLFCRYPT_SRC/sha256.c"
-    "$WOLFCRYPT_SRC/hmac.c"
-    "$WOLFCRYPT_SRC/hash.c"
-    "$WOLFCRYPT_SRC/kdf.c"
-    "$WOLFCRYPT_SRC/error.c"
-    "$WOLFCRYPT_SRC/logging.c"
-    "$WOLFCRYPT_SRC/wc_port.c"
-    "$WOLFCRYPT_SRC/memory.c"
-    "$WOLFCRYPT_SRC/chacha.c"
-    "$WOLFCRYPT_SRC/poly1305.c"
-    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
+    "$PIGWEED_PATH/src/sha256_avr.cpp"
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
@@ -137,8 +118,6 @@ INC_FLAGS=(
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
-    -I"$WOLFSSL_PATH"
-    -I"$WOLFSSL_INC"
     -I"$PIGWEED_PATH"
     -I"$PIGWEED_PATH/src"
 )
@@ -150,7 +129,6 @@ COMMON_DEFS=(
     -Wno-unused-parameter
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
-    -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
@@ -168,7 +146,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     )
     TP_FLAGS=(
         -O2 -g -fPIC
-        -DARDUINO=100 -DBRIDGE_HOST_TEST=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL
+        -DARDUINO=100 -DBRIDGE_HOST_TEST=1 -DETL_NO_STL
         "${COMMON_DEFS[@]}"
         "${INC_FLAGS[@]}"
     )
@@ -198,7 +176,7 @@ for src in "${SOURCES[@]}"; do
     obj="${OBJ_DIR}/${obj_name}"
     OBJECTS+=("${obj}")
 
-    if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *wolfcrypt* || "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
+    if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
         g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}" &
     elif [[ "${src}" == *.c ]]; then
         g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
@@ -248,7 +226,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     fi
 
     ${PYTHON_CMD} -m gcovr --root "${SRC_DIR}" "${BUILD_DIR}" --filter "${SRC_DIR}" \
-        -e ".*\\.h$" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" \
+        -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" \
         --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max \
         --sort uncovered-percent \
         --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" \

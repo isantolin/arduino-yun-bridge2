@@ -1,7 +1,7 @@
-"""Cryptographic helpers for the MCU Bridge protocol.
+"""Project cryptographic integrity checks.
 
-The implementation uses RFC 8439 AEAD and project-defined KATs. These helpers
-do not imply FIPS 140-3 validation or process-wide secret zeroization.
+The ChaCha20-Poly1305 vector checks the Python library only; it is not used to
+encrypt MCU link frames. These checks do not imply FIPS 140-3 validation.
 """
 
 from __future__ import annotations

@@ -125,7 +125,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 2. **Sockets de Red Inalámbrica (WiFi TCP / Ethernet)**:
    - URIs de conexión configurables: `tcp://192.168.1.150:9000`, `wifi://mcu.local:8888`, `127.0.0.1:9000`.
    - Gestión de streams de red mediante soporte nativo de sockets URL en `pyserial`.
-   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing HDLC, CRC32 y encriptación AEAD.
+   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing HDLC y CRC32. El enlace no cifra los frames RPC.
 3. **Bluetooth SPP / BLE UART**:
    - Puertos virtuales RFCOMM (`/dev/rfcomm0`) o transceptores transparentes UART sobre BLE Nordic UART Service (NUS).
    - En el lado MCU, se utiliza `BluetoothSerial` o `Serial1` (`BridgeBluetooth.ino`).
@@ -484,14 +484,17 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | `call_id` | `7` | `uint32` | Identificador de correlación de llamada para emparejar peticiones, respuestas y reintentos. |
 
 ### 3.2 Integridad y Autenticación
-- **Integridad de trama (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc_avr::Decoder` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon Python.
-- **Autenticación mutua de enlace (`LinkSync`):** El enlace requiere completar el handshake mutuo `HKDF-SHA256` + `HMAC-SHA256` antes de habilitar cualquier método fuera del conjunto `pre_sync_allowed` (`LinkSync`, `LinkReset`, `Xoff`, `Xon`).
+- **Detección de errores (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc_avr::Decoder` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon. CRC detecta errores accidentales; no autentica frames.
+- **Autenticación de `LinkSync`:** Con secreto compartido configurado, el host envía un HMAC-SHA256 de 16 bytes y el MCU verifica el tag antes de habilitar métodos fuera de `pre_sync_allowed`. El MCU responde con un HMAC bajo un `HKDF info` distinto para que el host compruebe la identidad compartida del MCU. Ambos tags cubren un nonce host de 16 bytes.
+- Si el secreto está vacío, el protocolo requiere tags vacíos y el enlace queda **sin autenticación**. No existe fallback desde un tag inválido.
+- No hay cifrado AEAD ni protección anti-replay por frame. La autenticación del handshake no autentica el contenido RPC posterior.
+- Los peers deben actualizarse juntos: los tags de respuesta usan un dominio distinto y no hay negociación ni modo de compatibilidad para la semántica anterior.
 
 ### 3.3 Implementación de bibliotecas (Wire Format)
 
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
-| **Autenticación & Criptografía** | Handshake HKDF + HMAC / AEAD | **wolfCrypt** (HKDF-SHA256, HMAC-SHA256, ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
+| **Autenticación del handshake** | HKDF-SHA256 + HMAC-SHA256; sin AEAD de frame | **Pigweed `pw_crypto::sha256`** más composición MCU de HMAC/HKDF; no hay API AEAD en el export Arduino. | **`cryptography`** para HKDF/HMAC. El KAT ChaCha20-Poly1305 no cifra el enlace. |
 | **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Pigweed AVR**: `pw::hdlc_avr::Encoder` / `Decoder`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Pigweed AVR**: `pw::rpc_avr::RpcServer` + 8 `RpcService`. | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`). |
 | **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Pigweed AVR**: `pw_log_avr` + `pw_tokenizer`. | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
@@ -532,28 +535,29 @@ Los status de aplicación usan el rango `0x30` - `0x3F`.
   - Respuesta (`0x43 CMD_GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
 
 - **`0x44` CMD_LINK_SYNC (Linux → MCU)**
-  - Petición: `nonce: byte[16] || tag: byte[16]`.
-  - Respuesta (`0x45 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`.
+  - Petición: nonce de 16 bytes y tag de 16 bytes si hay secreto; tag vacío si la autenticación está explícitamente deshabilitada.
+  - Respuesta (`0x45 CMD_LINK_SYNC_RESP`, MCU → Linux): el mismo nonce y una prueba HMAC bajo un dominio separado; tag vacío en modo no autenticado.
 
-#### Handshake Sequence Diagram (Mutual Authentication)
+#### Secuencia de autenticación `LinkSync`
 
 ```mermaid
 sequenceDiagram
     participant D as Daemon (Linux)
     participant M as MCU (Arduino)
 
-    Note over D,M: Phase 1: Mutual Challenge
+    Note over D,M: Phase 1: Challenge y prueba del host
     D->>D: Generate nonce (16 bytes)
     D->>D: derived_key = HKDF(secret, "handshake-auth")
     D->>D: our_tag = HMAC-SHA256(derived_key, nonce)[:16]
     D->>M: CMD_LINK_SYNC (0x44) [nonce || our_tag]
 
-    Note over D,M: Phase 2: Verification & Response
+    Note over D,M: Phase 2: Verificación y prueba del MCU
     M->>M: derived_key = HKDF(secret, "handshake-auth")
     M->>M: Verify our_tag == expected_tag
     
     alt Tag Valid
-        M->>M: tag_mcu = HMAC-SHA256(derived_key, nonce)[:16]
+        M->>M: response_key = HKDF(secret, "handshake-response")
+        M->>M: tag_mcu = HMAC-SHA256(response_key, nonce)[:16]
         M->>D: CMD_LINK_SYNC_RESP (0x45) [nonce || tag_mcu]
     else Tag Invalid
         M->>M: enterSafeState()
@@ -561,7 +565,7 @@ sequenceDiagram
         Note over D,M: ✗ MCU rejects MPU
     end
 
-    Note over D,M: Phase 3: Final Verification
+    Note over D,M: Phase 3: Host verifies nonce and MCU proof
     D->>D: Verify tag_mcu == expected_tag
     alt Tag Valid
         D->>D: is_synchronized = true

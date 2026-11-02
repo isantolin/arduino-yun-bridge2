@@ -38,11 +38,17 @@ static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
   return dst;
 }
 
-static void hmac_sha256(etl::span<const uint8_t> key,
+static bool hmac_sha256(etl::span<const uint8_t> key,
                         etl::span<const uint8_t> data,
                         etl::span<const uint8_t> extra,
                         etl::span<uint8_t> out_mac) {
   constexpr size_t kBlockSize = 64U;
+  constexpr size_t kDigestSize = pw::crypto::sha256::kDigestSizeBytes;
+  if (key.size() > kBlockSize || out_mac.size() < kDigestSize) {
+    secure_zero(out_mac);
+    return false;
+  }
+
   etl::array<uint8_t, kBlockSize> k_pad = {};
   etl::copy(key.begin(), key.end(), k_pad.begin());
 
@@ -60,59 +66,102 @@ static void hmac_sha256(etl::span<const uint8_t> key,
   if (!extra.empty()) {
     inner.Update(pw::as_bytes(pw::span(extra.data(), extra.size())));
   }
-  (void)inner.Final(
-      pw::as_writable_bytes(pw::span(inner_hash.data(), inner_hash.size())));
+  bool ok = inner
+                .Final(pw::as_writable_bytes(
+                    pw::span(inner_hash.data(), inner_hash.size())))
+                .ok();
 
-  pw::crypto::sha256::Sha256 outer;
-  outer.Update(pw::as_bytes(pw::span(o_key_pad.data(), o_key_pad.size())));
-  outer.Update(pw::as_bytes(pw::span(inner_hash.data(), inner_hash.size())));
-  (void)outer.Final(
-      pw::as_writable_bytes(pw::span(out_mac.data(), out_mac.size())));
+  if (ok) {
+    pw::crypto::sha256::Sha256 outer;
+    outer.Update(pw::as_bytes(pw::span(o_key_pad.data(), o_key_pad.size())));
+    outer.Update(pw::as_bytes(pw::span(inner_hash.data(), inner_hash.size())));
+    ok = outer
+             .Final(pw::as_writable_bytes(
+                 pw::span(out_mac.data(), out_mac.size())))
+             .ok();
+  }
 
   secure_zero(etl::span<uint8_t>(k_pad.data(), k_pad.size()));
   secure_zero(etl::span<uint8_t>(i_key_pad.data(), i_key_pad.size()));
   secure_zero(etl::span<uint8_t>(o_key_pad.data(), o_key_pad.size()));
   secure_zero(etl::span<uint8_t>(inner_hash.data(), inner_hash.size()));
+  if (!ok) {
+    secure_zero(out_mac);
+  }
+  return ok;
 }
 
 // --- HKDF & HMAC Implementation (built on pw::crypto::sha256) ---
 
-bool handshake_authenticate(etl::span<const uint8_t> secret,
-                            etl::span<const uint8_t> nonce,
-                            etl::span<const uint8_t> received_tag,
-                            etl::span<uint8_t> out_tag) {
-  if (secret.empty() || out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
+static bool derive_handshake_tag(etl::span<const uint8_t> secret,
+                                 etl::span<const uint8_t> nonce,
+                                 etl::span<const uint8_t> info,
+                                 etl::span<uint8_t> out_tag) {
+  if (secret.empty() || nonce.size() != rpc::RPC_HANDSHAKE_NONCE_LENGTH ||
+      out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
     etl::fill(out_tag.begin(), out_tag.end(), 0U);
     return false;
   }
 
+  etl::fill(out_tag.begin(), out_tag.end(), 0U);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> prk = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> hmac_tag = {};
   const auto salt = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_SALT);
-  const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH);
   constexpr etl::array<uint8_t, 1U> kHkdfCounter = {0x01U};
 
   // RFC 5869 HKDF-Extract(salt, IKM=secret) -> PRK
-  hmac_sha256(salt, secret, etl::span<const uint8_t>(), prk);
+  bool ok = hmac_sha256(salt, secret, etl::span<const uint8_t>(), prk);
   // RFC 5869 HKDF-Expand(PRK, info || 0x01, L=32) -> handshake_key
-  hmac_sha256(prk, info, kHkdfCounter, handshake_key);
-  // HMAC-SHA256(handshake_key, nonce) -> hmac_tag
-  hmac_sha256(handshake_key, nonce, etl::span<const uint8_t>(), hmac_tag);
-
-  etl::copy_n(hmac_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH, out_tag.begin());
-  bool tag_ok = true;
-  if (!received_tag.empty()) {
-    if (received_tag.size() != rpc::RPC_HANDSHAKE_TAG_LENGTH) {
-      tag_ok = false;
-    } else {
-      tag_ok = constant_time_equal(hmac_tag.data(), received_tag.data(),
-                                   rpc::RPC_HANDSHAKE_TAG_LENGTH);
-    }
+  if (ok) {
+    ok = hmac_sha256(prk, info, kHkdfCounter, handshake_key);
   }
+  // HMAC-SHA256(handshake_key, nonce) -> hmac_tag
+  if (ok) {
+    ok =
+        hmac_sha256(handshake_key, nonce, etl::span<const uint8_t>(), hmac_tag);
+  }
+
+  if (ok) {
+    etl::copy_n(hmac_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH,
+                out_tag.begin());
+  } else {
+    etl::fill(out_tag.begin(), out_tag.end(), 0U);
+  }
+
   secure_zero(etl::span<uint8_t>(prk.data(), prk.size()));
   secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
   secure_zero(etl::span<uint8_t>(hmac_tag.data(), hmac_tag.size()));
+  return ok;
+}
+
+bool handshake_generate_tag(etl::span<const uint8_t> secret,
+                            etl::span<const uint8_t> nonce,
+                            etl::span<uint8_t> out_tag) {
+  const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH);
+  return derive_handshake_tag(secret, nonce, info, out_tag);
+}
+
+bool handshake_generate_response_tag(etl::span<const uint8_t> secret,
+                                     etl::span<const uint8_t> nonce,
+                                     etl::span<uint8_t> out_tag) {
+  const auto info = copy_progmem(rpc::RPC_HANDSHAKE_HKDF_INFO_RESPONSE);
+  return derive_handshake_tag(secret, nonce, info, out_tag);
+}
+
+bool handshake_verify_tag(etl::span<const uint8_t> secret,
+                          etl::span<const uint8_t> nonce,
+                          etl::span<const uint8_t> received_tag) {
+  if (received_tag.size() != rpc::RPC_HANDSHAKE_TAG_LENGTH) {
+    return false;
+  }
+
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> expected_tag = {};
+  const bool generated = handshake_generate_tag(secret, nonce, expected_tag);
+  const bool tag_ok =
+      generated && constant_time_equal(expected_tag.data(),
+                                       received_tag.data(), expected_tag.size());
+  secure_zero(etl::span<uint8_t>(expected_tag));
   return tag_ok;
 }
 
@@ -150,17 +199,17 @@ bool run_cryptographic_self_tests() {
           pw::as_writable_bytes(pw::span(actual.data(), actual.size())))
           .ok();
   const auto sha_expected = copy_progmem(kat_sha256_expected);
-  const bool ok =
-      sha_res_ok &&
-      etl::equal(actual.begin(), actual.end(), sha_expected.begin());
+  const bool ok = sha_res_ok && etl::equal(actual.begin(), actual.end(),
+                                           sha_expected.begin());
 
   // 2. HMAC-SHA256 KAT (pw::crypto::sha256)
   const auto hmac_key = copy_progmem(kat_hmac_key);
   const auto hmac_data = copy_progmem(kat_hmac_data);
-  hmac_sha256(hmac_key, hmac_data, etl::span<const uint8_t>(), actual);
+  const bool hmac_res_ok =
+      hmac_sha256(hmac_key, hmac_data, etl::span<const uint8_t>(), actual);
   const auto hmac_expected = copy_progmem(kat_hmac_expected);
-  const bool hmac_ok =
-      etl::equal(actual.begin(), actual.end(), hmac_expected.begin());
+  const bool hmac_ok = hmac_res_ok && etl::equal(actual.begin(), actual.end(),
+                                                 hmac_expected.begin());
 
   const uint8_t val_ok = static_cast<uint8_t>(ok);
   const uint8_t val_hmac = static_cast<uint8_t>(hmac_ok);

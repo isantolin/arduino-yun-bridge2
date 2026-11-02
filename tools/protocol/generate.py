@@ -255,7 +255,12 @@ def _extract_constants_and_handshake(
 
     hs_cpp, hs_py, _ = _extract_pb_obj_consts(hs_opt, pb_module)
     handshake_dict: dict[str, Any] = {}
-    for key in ("hkdf_salt", "hkdf_info_auth", "hkdf_info_session"):
+    for key in (
+        "hkdf_salt",
+        "hkdf_info_auth",
+        "hkdf_info_session",
+        "hkdf_info_response",
+    ):
         raw_str: str = getattr(hs_opt, key)
         handshake_dict[key] = raw_str
         handshake_dict[f"{key}_bytes"] = ", ".join(f"0x{ord(c):02X}" for c in raw_str)

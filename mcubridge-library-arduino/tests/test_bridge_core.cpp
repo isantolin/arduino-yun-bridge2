@@ -408,23 +408,29 @@ void test_bridge_serial_tasks_and_flow_control() {
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
 }
 
-void test_bridge_replay_and_security_edges() {
+void test_bridge_handshake_authentication_edges() {
   etl::array<uint8_t, 32> secret = {0};
-  etl::array<uint8_t, 12> nonce = {0};
-  etl::array<uint8_t, 16> out_tag = {0};
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce = {0};
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag = {0};
   etl::array<uint8_t, 5> bad_tag = {0};
-  bool ok =
-      rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
+  bool ok = rpc::security::handshake_verify_tag(secret, nonce, bad_tag);
   TEST_ASSERT_FALSE(ok);
 
-  bool empty_tag_ok = rpc::security::handshake_authenticate(
-      secret, nonce, etl::span<const uint8_t>(), out_tag);
-  TEST_ASSERT_TRUE(empty_tag_ok);
+  const bool empty_tag_ok =
+      rpc::security::handshake_verify_tag(secret, nonce, etl::span<const uint8_t>());
+  TEST_ASSERT_FALSE(empty_tag_ok);
+
+  const bool generated =
+      rpc::security::handshake_generate_tag(secret, nonce, out_tag);
+  TEST_ASSERT_TRUE(generated);
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> valid_tag = {};
+  etl::copy_n(out_tag.begin(), valid_tag.size(), valid_tag.begin());
+  TEST_ASSERT_TRUE(rpc::security::handshake_verify_tag(secret, nonce, valid_tag));
 
   etl::array<uint8_t, 16> wrong_tag;
   wrong_tag.fill(0xFF);
   bool tag_mismatch_ok =
-      rpc::security::handshake_authenticate(secret, nonce, wrong_tag, out_tag);
+      rpc::security::handshake_verify_tag(secret, nonce, wrong_tag);
   TEST_ASSERT_FALSE(tag_mismatch_ok);
 }
 
@@ -775,7 +781,7 @@ int main() {
   RUN_TEST(test_bridge_post_failure);
   RUN_TEST(test_bridge_frame_errors_and_zero_spi);
   RUN_TEST(test_bridge_serial_tasks_and_flow_control);
-  RUN_TEST(test_bridge_replay_and_security_edges);
+  RUN_TEST(test_bridge_handshake_authentication_edges);
   RUN_TEST(test_bridge_fsm_resets_and_link_reset);
   RUN_TEST(test_bridge_dispatch_extra_branches);
   RUN_TEST(test_bridge_authenticated_digital_write_frame);

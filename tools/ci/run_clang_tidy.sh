@@ -19,8 +19,6 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ]; then
 fi
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
-WOLFSSL_DIR="$ARDUINO_LIBS/wolfSSL"
-if [ ! -d "$WOLFSSL_DIR" ]; then WOLFSSL_DIR="$ARDUINO_LIBS/wolfssl"; fi
 PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
 
 INCLUDES=(
@@ -30,8 +28,6 @@ INCLUDES=(
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
     "-I${ETL_INC}"
-    "-I${WOLFSSL_DIR}"
-    "-I${WOLFSSL_DIR}/src"
     "-I${PIGWEED_INC}"
     "-I${ARDUINO_LIBS}/PigweedAVR"
 )
@@ -40,7 +36,6 @@ COMPILE_FLAGS=(
     "-std=c++17"
     "-DPROGMEM="
     "-DPB_PROTO_HEADER_VERSION=40"
-    "-DWOLFSSL_USER_SETTINGS"
     "-DETL_NO_STL"
     "-DETL_FORCE_STD_INITIALIZER_LIST"
     "${INCLUDES[@]}"

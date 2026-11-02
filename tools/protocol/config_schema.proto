@@ -304,8 +304,9 @@ option (rpc.pb.handshake) = {
   hkdf_info_auth: "handshake-auth"
   hkdf_info_session: "session-key"
   hkdf_output_length: 32
-  nonce_random_bytes: 8
-  nonce_counter_bytes: 8
+  hkdf_info_response: "handshake-response"
+  nonce_random_bytes: 16
+  nonce_counter_bytes: 0
 };
 option (rpc.pb.hardware) = {
   max_observers_avr: 4
@@ -590,6 +591,7 @@ option (rpc.pb.ubus_methods) = {
 message Constants {
   reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68;
   reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask";
+  // Parameters retained for the host-side AEAD KAT; frame AEAD is not active.
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
     (cpp_type) = "size_t",
@@ -987,6 +989,7 @@ message Handshake {
     (py_name) = "HANDSHAKE_HKDF_INFO_AUTH",
     (py_type) = "bytes"
   ];
+  // Retained generated metadata; the current link does not derive a session key.
   string hkdf_info_session = 14 [
     (py_name) = "HANDSHAKE_HKDF_INFO_SESSION",
     (py_type) = "bytes"
@@ -1008,6 +1011,10 @@ message Handshake {
     (cpp_type) = "unsigned int",
     (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES",
     (py_type) = "int"
+  ];
+  string hkdf_info_response = 18 [
+    (py_name) = "HANDSHAKE_HKDF_INFO_RESPONSE",
+    (py_type) = "bytes"
   ];
 }
 
@@ -1658,7 +1665,7 @@ message RuntimeConfig {
   ];
   bytes serial_shared_secret = 36 [
     (config_default) = "failsafe_secret_mode",
-    (config_desc) = "ChaCha20-Poly1305 AEAD shared secret",
+    (config_desc) = "Shared secret for LinkSync HMAC authentication; empty disables authentication. Link frames are not encrypted",
     (uci_option) = "serial_shared_secret"
   ];
   string cloud_spool_dir = 37 [

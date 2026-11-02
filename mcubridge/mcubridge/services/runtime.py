@@ -446,7 +446,6 @@ class BridgeService:
             q.clear()
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
-        self.state.link_last_nonce_counter = 0
         self.handshake.clear_handshake_expectations()
         serial = self.serial
         if serial:
@@ -457,7 +456,6 @@ class BridgeService:
         if self.serial:
             await self.serial.reset()
             self.handshake.clear_handshake_expectations()
-            self.state.link_last_nonce_counter = 0
             return True
         return False
 
@@ -1356,7 +1354,7 @@ class BridgeService:
         correlation = (
             req.correlation_data
             if has_correlation
-            else (secrets.token_bytes(protocol.AEAD_NONCE_SIZE) if is_query else b"")
+            else (secrets.token_bytes(12) if is_query else b"")
         )
 
         with structlog.contextvars.bound_contextvars(

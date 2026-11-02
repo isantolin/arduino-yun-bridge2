@@ -320,10 +320,7 @@ class RuntimeState:
     link_handshake_nonce: bytes | None
     link_sync_event: asyncio.Event
     link_expected_tag: bytes | None
-    link_session_key: bytes | None
     link_nonce_length: int
-    link_nonce_counter: int
-    link_last_nonce_counter: int
     handshake_failure_streak: int
     handshake_backoff_until: float
     handshake_rate_until: float
@@ -408,10 +405,7 @@ class RuntimeState:
         self.link_handshake_nonce: bytes | None = kwargs.get("link_handshake_nonce")
         self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
         self.link_expected_tag: bytes | None = kwargs.get("link_expected_tag")
-        self.link_session_key: bytes | None = kwargs.get("link_session_key")
         self.link_nonce_length: int = kwargs.get("link_nonce_length", 0)
-        self.link_nonce_counter: int = kwargs.get("link_nonce_counter", 0)
-        self.link_last_nonce_counter: int = kwargs.get("link_last_nonce_counter", 0)
         self.handshake_failure_streak: int = kwargs.get("handshake_failure_streak", 0)
         self.handshake_backoff_until: float = kwargs.get("handshake_backoff_until", 0.0)
         self.handshake_rate_until: float = kwargs.get("handshake_rate_until", 0.0)

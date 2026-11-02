@@ -29,8 +29,8 @@ graph LR
         F[HKDF-SHA256]
     end
 
-    A <-->|COBS/R Encrypted Frames| UART
-    UART <-->|COBS/R Encrypted Frames| D
+    A <-->|pw_hdlc + pw_rpc Frames| UART
+    UART <-->|pw_hdlc + pw_rpc Frames| D
 ```
 
 ---

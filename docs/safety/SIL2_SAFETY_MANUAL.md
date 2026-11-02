@@ -81,6 +81,11 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 * **Native Listener Hook Dispatch**: State side effects (e.g. enabling `serial_tx_allowed`, setting/clearing `link_sync_event`, escalating process termination) are executed strictly via synchronous, typed listener callbacks (`on_enter_*`, `on_exit_*`), eradicating manual glue code and race-prone polling.
 * **Closed Transition Matrices & Concurrency Safety**: Illegal transitions are rejected deterministically; idempotent transitions and `allow_event_without_transition = True` prevent deadlock or unhandled exception propagation during asynchronous subprocess termination and reconnection events.
 
+### 2.10 Google Pigweed Framing, RPC Dispatch, and Atomic Timekeeping (`pw_hdlc`, `pw_rpc`, `pw_chrono_avr`)
+* **Multi-Channel HDLC Framing (`pw_hdlc`)**: All serial frames use `pw::hdlc_avr` / `pw_hdlc` with IEEE 802.3 CRC-32 FCS verification, isolating `pw_rpc` control packets (`HDLC_ADDRESS_RPC = 1`), tokenized diagnostics (`HDLC_ADDRESS_LOG = 2`), and console streams (`HDLC_ADDRESS_CONSOLE = 3`).
+* **Compile-Time FNV-1a Service Dispatch (`pw::rpc_avr::RpcServer`)**: The MCU dispatches RPC requests across 8 static `pw::rpc_avr::RpcService` instances using `constexpr` `pw::tokenizer::Hash("rpc.pb.<Service>")` and `pw::tokenizer::Hash("<Method>")` identifiers without dynamic allocation or STL dependencies (`-DETL_NO_STL`).
+* **Atomic Millisecond Timekeeping (`pw_chrono_avr`)**: `BridgeClass` uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for atomic 32-bit millisecond timestamps across watchdog supervision, frame timeouts, handshake deadlines, and periodic pin sampling.
+
 ---
 
 ## 3. Project-Reported Safety and Test Metrics

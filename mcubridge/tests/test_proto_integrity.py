@@ -206,16 +206,6 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert expected_reserved_numbers <= reserved_constant_numbers
     assert retired_constants <= set(constants_proto.reserved_name)
 
-    channel_descriptor_file = descriptor_pb2.FileDescriptorProto()
-    channel_descriptor_file.ParseFromString(pb.ChannelId.DESCRIPTOR.file.serialized_pb)
-    channel_enum = next(enum for enum in channel_descriptor_file.enum_type if enum.name == "ChannelId")
-    reserved_channel_numbers = {
-        number for item in channel_enum.reserved_range for number in range(item.start, item.end + 1)
-    }
-    assert {1, 3} <= reserved_channel_numbers
-    assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"} <= set(channel_enum.reserved_name)
-    assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"}.isdisjoint(pb.ChannelId.DESCRIPTOR.values_by_name)
-
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:
     expected_map = {

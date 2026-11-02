@@ -23,7 +23,6 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
     args = generate.GenerationArgs(
         spec=proto_dir / "mcubridge.proto",
         cpp=tmp_path / "out" / "cpp" / "rpc_protocol.h",
-        cpp_structs=tmp_path / "out" / "cpp" / "rpc_structs.h",
         py=tmp_path / "out" / "python" / "protocol.py",
         py_client=tmp_path / "out" / "client" / "protocol_client.py",
     )

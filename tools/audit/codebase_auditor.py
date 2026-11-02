@@ -302,7 +302,6 @@ _PROTO_GENERATED_NAMES = {
     "mcu_wire.pb.h",
     "rpc_hw_config.h",
     "rpc_protocol.h",
-    "rpc_structs.h",
 }
 
 

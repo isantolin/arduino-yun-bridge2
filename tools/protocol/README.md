@@ -13,14 +13,13 @@ python3 tools/protocol/generate.py \
   --spec tools/protocol/cloud_gateway.proto \
   --py mcubridge/mcubridge/protocol/protocol.py \
   --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
-  --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h \
   --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 ```
 
 The command refreshes:
 
-- `mcubridge/mcubridge/protocol/protocol.py` — Python enums and constants from the schema.
-- `mcubridge-library-arduino/src/protocol/rpc_protocol.h`, `rpc_hw_config.h`, `rpc_structs.h`, and `rpc_dispatch_table.inc` — C++ protocol declarations, Nanopb helpers, and the generated static dispatch table.
+- `mcubridge/mcubridge/protocol/protocol.py` — Python enums, `PW_SERVICES` (`pw_rpc.descriptors.Services`), and constants from the schema.
+- `mcubridge-library-arduino/src/protocol/rpc_protocol.h` and `rpc_hw_config.h` — C++ protocol declarations, FNV-1a service/method IDs, and hardware pin geometry constants.
 - `mcubridge/mcubridge/protocol/mcubridge_pb2.py` + `.pyi` — Python protobuf bindings.
 - `mcubridge/mcubridge/protocol/mcubridge_grpc.py` — Python gRPC bindings.
 - `mcubridge-library-arduino/src/protocol/mcu_wire.pb.h` + `config_schema.pb.h` — C Nanopb structs for MCU.

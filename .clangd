@@ -27,6 +27,6 @@ CompileFlags:
     "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/arduino",
     "-I/home/ignaciosantolin/Arduino/libraries/wolfssl",
     "-I/home/ignaciosantolin/Arduino/libraries/wolfssl/src",
-    "-I/home/ignaciosantolin/Arduino/libraries/PacketSerial",
-    "-I/home/ignaciosantolin/Arduino/libraries/PacketSerial/src"
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/third_party/avr_pigweed_port/dist/PigweedAVR/src",
+    "-I/home/ignaciosantolin/Arduino/libraries/PigweedAVR/src"
   ]

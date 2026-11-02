@@ -16,7 +16,7 @@ import serial.tools.list_ports
 from serial.urlhandler import protocol_socket
 import typer
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_rpc import packets as pw_packets
 
 from mcubridge.transport.serial import resolve_serial_url
 
@@ -116,8 +116,7 @@ def _decode_frame(encoded_packet: bytes) -> tuple[int, int, bytes]:
     decoder = FrameDecoder()
     for frame in decoder.process(encoded_packet):
         if frame.ok() and frame.address == protocol.HDLC_ADDRESS_RPC:
-            pkt = RpcPacket()
-            pkt.ParseFromString(frame.data)
+            pkt = pw_packets.decode(frame.data)
             op = protocol.get_operation((pkt.service_id, pkt.method_id))
             cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
             return cmd_id, pkt.call_id, pkt.payload

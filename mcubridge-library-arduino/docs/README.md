@@ -6,7 +6,7 @@ This documentation outlines the internal structure of the McuBridge Arduino libr
 
 - `src/services/` – runtime classes that interact directly with Arduino APIs (e.g. `Bridge.cpp`).
 - `src/fsm/` – **ETL-based finite state machine** (`bridge_fsm.h`) implementing SIL-2 compliant state transitions.
-- `src/protocol/` – protocol helpers shared with the Linux daemon (COBS, CRC, frame builders, nanopb/protobuf payload structs).
+- `src/protocol/` – generated protocol constants (`rpc_protocol.h`, `rpc_hw_config.h`) and Nanopb zero-heap payload bindings (`mcu_wire.pb.h`/`.c`, `config_schema.pb.h`/`.c`) used by the `pw_hdlc` / `pw_rpc` runtime.
 - `src/` – public headers exported to sketches (`Bridge.h`, `Console.h`, etc.).
 - `examples/` – ready-to-upload sketches demonstrating the library (e.g. `BridgeControl`).
 - `docs/` – additional documentation and protocol references (located at root level: `../docs/PROTOCOL.md`).

@@ -52,7 +52,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 │  - Executes local_bridge_service.execute_rpc()         │
 │  - Pure Telemetry Push                                 │
 └───────────────────────────┬────────────────────────────┘
-                            │ Serial Link (COBS/R + CRC32)
+                            │ Serial Link (pw_hdlc + pw_rpc, CRC32 FCS)
                             ▼
 ┌────────────────────────────────────────────────────────┐
 │                 MCU Firmware (Arduino AVR)             │

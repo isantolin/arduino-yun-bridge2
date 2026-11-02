@@ -33,7 +33,7 @@ Todos los clientes se comunican **exclusivamente con el Cloud Gateway** mediante
 │  - Delegated RPC execution (local_bridge_service)           │
 │  - Local IPC via OpenWrt UBUS (ubus call mcubridge)         │
 └──────────────────┬──────────────────────────────────────────┘
-                   │ Serial RPC (COBS/R + CRC32)
+                   │ Serial HDLC + pw_rpc (pw_hdlc + CRC32 FCS)
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 MCU Firmware (Arduino AVR)                  │

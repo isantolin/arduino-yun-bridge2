@@ -917,7 +917,6 @@ def _dispatch_generated_file(
 class GenerationArgs:
     spec: Path
     cpp: Path | None
-    cpp_structs: Path | None
     py: Path | None
     py_client: Path | None
 
@@ -956,11 +955,10 @@ cli = typer.Typer(help="Protocol binding generator for MCU Bridge v2.", add_comp
 def main(
     spec_file: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")],
     cpp: Annotated[Path | None, typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[Path | None, typer.Option("--cpp-structs", help="C++ structs output")] = None,
     py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
-    args = GenerationArgs(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
+    args = GenerationArgs(spec=spec_file, cpp=cpp, py=py, py_client=py_client)
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":
@@ -1040,7 +1038,7 @@ def main(
         "python": py_context,
         "client": context | {"constants": context["client_constants"]},
     }
-    explicit_outputs = (args.cpp, args.cpp_structs, args.py, args.py_client)
+    explicit_outputs = (args.cpp, args.py, args.py_client)
     for template_name, context_name, target_path, executable, is_py in _template_target_specs(args, REPO_ROOT):
         if target_path and (
             target_path.parent.exists()

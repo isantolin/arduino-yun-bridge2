@@ -43,6 +43,13 @@
 - **OpenWrt Native UBUS Integration (v2.8.6)**: Full UBUS RPC interface (`ubus call mcubridge ...`), native LuCI ucode dispatch, and direct hardware control (< 2 ms latency).
 - **Process Management with `psutil`**: Full replacement of `/proc` scraping and `killpg` with deterministic process tree signaling and memory telemetry.
 
+### 5. Google Pigweed (`pw_hdlc` + `pw_rpc`) Architecture Migration (v2.8.9 - Q4 2026)
+- **Pigweed HDLC Link Layer (`pw_hdlc`)**: Complete replacement of legacy single-channel COBS framing with 3-channel `pw_hdlc` UI frames (`HDLC_ADDRESS_RPC = 1`, `HDLC_ADDRESS_LOG = 2`, `HDLC_ADDRESS_CONSOLE = 3`) protected by IEEE 802.3 CRC-32 FCS.
+- **Native `pw_rpc` Engine & `PW_SERVICES` SSOT**:
+  - MCU firmware uses `pw::rpc_avr::RpcServer` and 8 modular `pw::rpc_avr::RpcService` implementations (`rpc.pb.*`) with compile-time `pw::tokenizer::Hash` identifiers and server-streaming pin telemetry (`GpioService/SubscribePins`).
+  - MPU daemon uses `pw_rpc.descriptors.Services` (`PW_SERVICES`) and `pw_rpc.packets` directly for RPC descriptor resolution and packet encoding/decoding.
+- **Embedded Pigweed AVR Modules (`PigweedAVR`)**: Integrated `pw_chrono_avr` (`pw_chrono_avr_GetMillis()`) for atomic millisecond timekeeping and `pw_log_avr` / `pw_tokenizer` decoded via `pw_tokenizer.Detokenizer`, maintaining strict Zero-STL (`-DETL_NO_STL`) and Zero-Heap compliance across AVR, SAMD21, and ESP32-S3.
+
 ## Future Strategic Goals (2026-2027)
 
 ### 1. Zero-Code Experience

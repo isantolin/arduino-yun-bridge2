@@ -22,6 +22,14 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Criptografía implementada:** **HKDF-SHA256**, **ChaCha20-Poly1305** y pruebas KAT del proyecto; no se afirma validación FIPS 140-3.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (noviembre 2026 — v2.8.9 Pigweed Migration)
+
+- **Migración Integral del Enlace Serie y RPC a Google Pigweed (`pw_hdlc` + `pw_rpc`)**:
+  - **Framing y Multiplexación `pw_hdlc`**: Sustitución completa del framing legacy COBS/R y `RpcEnvelope` por tramas UI de `pw_hdlc` (`0x7E`, CRC-32 IEEE 802.3 FCS) multiplexando 3 canales lógicos sobre un único enlace físico: Canal `1` (`HDLC_ADDRESS_RPC` para `pw_rpc`), Canal `2` (`HDLC_ADDRESS_LOG` para logs tokenizados) y Canal `3` (`HDLC_ADDRESS_CONSOLE` para el stream transparente de consola).
+  - **Motor `pw_rpc` en MCU (`pw::rpc_avr::RpcServer`) y MPU (`PW_SERVICES`)**: Implementación de 8 servicios modulares `pw::rpc_avr::RpcService` en C++ (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) con identificadores `pw::tokenizer::Hash("rpc.pb.<Service>")` en tiempo de compilación, y uso directo de `PW_SERVICES` (`pw_rpc.descriptors.Services`) y `pw_rpc.packets` en Python.
+  - **Streaming Server-Side de Pines (`GpioService/SubscribePins`)**: Notificaciones asíncronas `PinUpdateEvent` emitidas como paquetes `PacketType::kServerStream` (`SERVER_STREAM`).
+  - **Reloj Monótono Atómico (`pw_chrono_avr`) y Logs Tokenizados (`pw_log_avr` + `pw_tokenizer`)**: Integración de `pw_chrono_avr_GetMillis()` en el bucle principal de `BridgeClass` y decodificación de diagnósticos tokenizados mediante `pw_tokenizer.Detokenizer` en el daemon Linux.
+
 ### Novedades (septiembre 2026)
 
 - **Ecosistema Determinista de Máquinas de Estado (`python-statemachine`) (v2.8.7)**:
@@ -39,7 +47,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Integración Nativa de OpenWrt UBUS (v2.8.6)**: Integración completa de UBUS (`ubus call mcubridge ...`) a través del daemon, vistas LuCI JavaScript (`status.js`, `capabilities.js`, `webui.js`), scripts de sistema (`pin_rest_cgi.py`, `mcubridge_file_push.py`) y herramientas de diagnóstico (`audit_bridge_status.py --ubus`). Proporciona una interfaz local directa de ultra-baja latencia (< 2 ms) para control de pines GPIO, buzón, datastore transaccional LMDB, transferencia de archivos y ejecución/gestión de procesos.
 - **Resiliencia de Vistas LuCI y Fallback Atómico Frente a Sesiones RPC (v2.8.7)**: Mitigación del defecto upstream en la librería C `python-ubus` ante la inyección automática del parámetro `ubus_rpc_session` por `uhttpd-mod-ubus`. Las vistas LuCI (`status.js` y `capabilities.js`) incorporan validación estricta de respuestas y fallback automático hacia el snapshot atómico `/tmp/mcubridge_status.json` a través de la API nativa en C de `rpcd` (`fs.read`), garantizando telemetría en tiempo real sin bloqueos ni códigos de error crudos en la interfaz web.
 - **Inspección Segura y No Bloqueante de Descriptores en Arranque (`S10boot`) (v2.8.7)**: Reemplazo integral de escaneos bloqueantes de contenido (`grep -l`) en `/proc/*/fd/*` por inspección directa de metadatos de enlaces simbólicos (`ls -l | awk`) en `mcubridge.init` y `99-mcubridge-disable-askconsole`. Elimina los bloqueos del script `S10boot` originados al intentar leer descriptores asociados a puertos serie bloqueantes (`/dev/ttyS1`, `/dev/ttyATH0`), garantizando la inicialización fluida de los servicios de red y de sistema.
-- **Paridad y Robustez en Emulación Hardware QEMU / Malta MIPS (v2.8.7)**: Configuración obligatoria del parámetro `rw` en la línea de comando del kernel QEMU (`root=/dev/sda rw console=ttyS0`) para garantizar la persistencia de sockets, PIDs y configuraciones UCI. Se establecen pautas de sincronización temporal para emulación de hardware con convertidores USB-serie físicos frente a la ausencia de conmutación de línea DTR y la ventana acotada de seguridad SIL-2 (`SYNC_TIMEOUT_MS = 30000ms`).
+- **Paridad y Robustez en Emulación Hardware QEMU / Malta MIPS (v2.8.7)**: Configuración obligatoria del parámetro `rw` en la línea de comando del kernel QEMU (`root=/dev/sda rw console=ttyS0`) para garantizar la persistencia de sockets, PIDs y configuraciones UCI. Se establecen pautas de sincronización temporal para emulación de hardware con convertidores USB-serie físicos frente a la ausencia de conmutación de línea DTR y la ventana acootada de seguridad SIL-2 (`SYNC_TIMEOUT_MS = 30000ms`).
 - **Worker Thread Dedicado para UBUS y Cero Overhead de CPU (v2.8.7)**:
   - Desacoplamiento completo del bucle de eventos UBUS en un hilo de trabajo dedicado (`threading.Thread(name="ubus-worker", daemon=True)`) con llamadas bloqueantes en kernel (`ubus.loop(250)`). Las corutinas asíncronas se despachan thread-safe al bucle principal de asyncio mediante `asyncio.run_coroutine_threadsafe`, reduciendo el uso de CPU de 90% a 0% en reposo sobre procesadores embebidos mononúcleo (MIPS 24Kc).
 - **Handler CGI POSIX de Ultra-Baja Latencia (`pin_rest_cgi.sh`) (v2.8.7)**:
@@ -55,11 +63,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (agosto 2026)
 
-- **Soporte Nativo Inalámbrico (WiFi TCP & Bluetooth SPP/BLE) (v2.8.5)**: Expansión del transporte a enlaces inalámbricos transparentes. Se implementa `AsyncTcpConnection` y detección automática de prefijos de red (`tcp://`, `wifi://`, `socket://`) en el Linux MPU daemon, junto con ejemplos de referencia en Arduino (`BridgeWiFi.ino` y `BridgeBluetooth.ino`). Mantiene idéntica máquina de estados, framing COBS/R, CRC32 y encriptación ChaCha20-Poly1305 sobre sockets de red.
+- **Soporte Nativo Inalámbrico (WiFi TCP & Bluetooth SPP/BLE) (v2.8.5)**: Expansión del transporte a enlaces inalámbricos transparentes. Se implementa `AsyncTcpConnection` y detección automática de prefijos de red (`tcp://`, `wifi://`, `socket://`) en el Linux MPU daemon, junto con ejemplos de referencia en Arduino (`BridgeWiFi.ino` y `BridgeBluetooth.ino`). Mantiene idéntica máquina de estados, framing `pw_hdlc` (CRC-32 FCS) y autenticación sobre sockets de red.
 - **Actualización Nanopb 0.4.9.2 & Deserialización Estática Zero-Copy (`pb_decode_noinit`)**: Migración de todo el ecosistema C++ y herramientas de generación a la versión oficial Nanopb 0.4.9.2, adoptando `pb_decode_noinit` para eliminar limpiezas `memset` redundantes en estructuras estáticas pre-inicializadas.
 - **Soporte TLS 1.3 Nativo para Enlace Cloud Gateway**: Configuración determinista de contextos SSL (`ssl.create_default_context`) delegando la reanudación y gestión de tickets de sesión TLS 1.3 de forma transparente en OpenSSL y el módulo estándar `ssl`.
 - **Topología Canónica de Tópicos Cloud & Cero Backward (v2.8.8)**: Estandarización estricta de rutas en `{prefix}/{req|res|evt}/{method}` y `devices/{device_id}/{req|res|evt}/{method}`, erradicando prefijos heterogéneos y ramas de compatibilidad legacy.
-- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Ejecuta microbenchmarks host-side de framing COBS/R, AEAD, Protobuf y LMDB, y reporta RSS/VMS y asignaciones trazadas del proceso Python. Los valores dependen del runner y no representan latencia/rendimiento AVR, SRAM del MCU ni WCET. La medición AVR requiere instrumentación separada en el target o en el emulador.
+- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Ejecuta microbenchmarks host-side de framing HDLC, AEAD, Protobuf y LMDB, y reporta RSS/VMS y asignaciones trazadas del proceso Python. Los valores dependen del runner y no representan latencia/rendimiento AVR, SRAM del MCU ni WCET. La medición AVR requiere instrumentación separada en el target o en el emulador.
 
 ### Novedades (julio 2026)
 
@@ -210,7 +218,7 @@ EOF
 
 - [Notas de diseño de seguridad funcional](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Arquitectura de almacenamiento estático, POST y monitorización del máximo observado de `Bridge.process()`; no es una certificación ni una prueba formal de WCET.
 - [Perfil de implementación criptográfica](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/security/FIPS140_3_SECURITY_POLICY.md): Algoritmos, KATs y límites de la zeroización; no es una política FIPS validada.
-- [Especificación del Protocolo Binario](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/PROTOCOL.md): Encuadre COBS/R, CRC32, AEAD y tablas de comandos.
+- [Especificación del Protocolo Binario](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/PROTOCOL.md): Framing Google Pigweed `pw_hdlc` (CRC-32 FCS), despacho `pw_rpc` (`PW_SERVICES`), Nanopb y servicios canónicos.
 
 ## Verificación y control de calidad
 

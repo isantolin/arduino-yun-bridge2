@@ -37,13 +37,14 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                       │  - Delegated RPC execution (local_bridge_service)      │
                       └────────────────────────────────────────────────────────┘
                                ▲
-                               │ Serial RPC frames (COBS + CRC32, Channel Multiplexing)
-                               │ (CHANNEL_RPC, CHANNEL_TELEMETRY, CHANNEL_DATASTORE...)
+                               │ Serial HDLC + pw_rpc frames (pw_hdlc + CRC32 FCS, Channel Multiplexing)
+                               │ (Ch 1: HDLC_ADDRESS_RPC, Ch 2: HDLC_ADDRESS_LOG, Ch 3: HDLC_ADDRESS_CONSOLE)
                                ▼
                       ┌────────────────────────────────────────────────────────┐
                       │                 MCU firmware (Arduino)                 │
+                      │  - Pigweed AVR (pw_hdlc, pw_rpc, pw_log_avr, pw_chrono)│
                       │  - SIL-2 Zero-Heap, static Nanopb (pb_decode_noinit)   │
-                      │  - Zero-heap Telemetry Push (Bridge.sendPinEvent)      │
+                      │  - Server-Stream Telemetry Push (Bridge.sendPinEvent)  │
                       │  - Handshake HMAC-auth & Deterministic etl::fsm        │
                       └────────────────────────────────────────────────────────┘
 
@@ -51,40 +52,35 @@ Notas:
 - Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
 - Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
-- Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con streaming de eventos simétrico en tiempo real (p.ej. `Bridge.sendPinEvent` sobre `CHANNEL_TELEMETRY`).
+- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`).
 - gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
 ```
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo vive modularizada en `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto` para mensajes, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
+La **fuente de verdad machine-readable** del protocolo vive modularizada en `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto` para servicios `pw_rpc` y gRPC, mensajes, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**.
 
-### Serialización de Payloads (Protobuf)
-Todos los payloads del protocolo se definen como mensajes en los schemas bajo `tools/protocol/` y se serializan como **protobuf** dentro del frame RPC (`RpcEnvelope`).
+### Serialización de Payloads y Sobres RPC (`pw_rpc` + Protobuf)
+Todos los servicios y payloads del protocolo se definen en los schemas bajo `tools/protocol/` y se transportan dentro de sobres **`pw.rpc.internal.RpcPacket`** sobre tramas **`pw_hdlc`**.
 
-- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`), orquestadas de forma centralizada y determinista por `PW_SERVICES` (`pw_rpc.descriptors.Services`) y las tablas modulares de `protocol.py`.
-- **C++ (MCU):** usa Nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
+- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`, `mcu_wire_pb2.py`) y los módulos oficiales de Google Pigweed (`pw_hdlc`, `pw_rpc.packets`, `pw_rpc.descriptors.Services`, `pw_tokenizer.Detokenizer`), orquestados por `PW_SERVICES` y las tablas modulares de `protocol.py`.
+- **C++ (MCU):** usa Nanopb (`mcu_wire.pb.h` / `config_schema.pb.h`) para codificar/decodificar payloads sin heap dinámico en runtime mediante `rpc::encode_pb` (`pb_encode`) y `rpc::decode_pb` (`pb_decode_noinit`), manteniendo las restricciones estáticas de tamaño definidas en `mcu_wire.options` y `config_schema.options`.
 
-El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre Nanopb/protobuf, manteniendo las restricciones estáticas de tamaño definidas para los targets de hardware.
-
-### Validación Estática (C++)
-La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y fuertemente tipado.
-
-### Despacho de Comandos (Binary Search Dispatch)
-El MCU utiliza un despacho basado en una tabla estática `k_dispatch_table[]` ordenada por `command_id`, almacenada en PROGMEM para AVR. El lookup se realiza con `etl::lower_bound` (O(log N) sobre tabla contigua), evitando la dependencia en rangos de enum contiguos y reduciendo el uso de RAM. El costo y los límites temporales deben medirse en cada target; esta implementación no acredita por sí sola una conformidad SIL-2.
-
+### Despacho de Servicios `pw_rpc` (MCU y MPU)
+- **MCU (`pw::rpc_avr::RpcServer`):** El firmware registra 8 servicios modulares derivados de `pw::rpc_avr::RpcService` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) identificados en tiempo de compilación mediante hashes FNV-1a de 32 bits (`pw::tokenizer::Hash("rpc.pb.<Service>")` y `pw::tokenizer::Hash("<Method>")`).
 - **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
-- **Catálogo Centralizado de Servicios y Operaciones (`PW_SERVICES` + `OPERATIONS` SSOT)**: En Python, `protocol.py` expone `PW_SERVICES` (`pw_rpc.descriptors.Services`) y tablas modulares inmutables (`OPERATIONS`, `RPC_SPECS`, `BY_COMMAND_ID`, `BY_RPC`, `BY_NAME`), indexando por `command_id`, nombre RPC, tópicos canónicos y tipos de mensaje en $O(1)$.
+- **Catálogo Centralizado de Servicios y Operaciones (`PW_SERVICES` + `OPERATIONS` SSOT)**: En Python, `protocol.py` expone `PW_SERVICES` (`pw_rpc.descriptors.Services`) y tablas modulares inmutables (`OPERATIONS`, `RPC_SPECS`, `BY_COMMAND_ID`, `BY_RPC`, `BY_NAME`), resolviendo `service_id`, `method_id`, `request_type`, `response_type`, `cardinality` y `default_factory` directamente desde los descriptores de Pigweed/Protobuf en $O(1)$.
 
 ### Determinismo C++17 y Zero-Cost Abstractions
-La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
+La librería C++ utiliza intensivamente `constexpr` e `if constexpr` (sin STL, `-DETL_NO_STL`) para:
+- Evaluación en `constexpr` de identificadores de servicio y método `pw::tokenizer::Hash(...)`.
 - Resolución de capacidades de hardware en tiempo de compilación.
 - Eliminación de ramas de código inalcanzables según la arquitectura.
-- Reducción del uso de RAM al mover constantes a la sección de solo lectura del binario.
+- Reducción del uso de RAM al mantener constantes en memoria de programa.
 
 Qué se centraliza en los esquemas Protobuf modulares (y se genera a Python/C++ vía el generador):
 
-- **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones estáticas del generador Nanopb (`mcu_wire.options` / `config_schema.options`).
+- **Servicios y Layouts de payload**: cada método RPC define su servicio en `mcu_wire.proto` (`rpc.pb.*`) o `cloud_gateway.proto` (`rpc.pb.LocalBridge`, `mcubridge.cloud.CloudBridge`) y su mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con tamaños máximos estáticos en `mcu_wire.options` / `config_schema.options`.
 - **Defaults compartidos y metadatos de configuración**: los defaults de `RuntimeConfig`, las constantes referenciadas y los defaults de tópicos se declaran en el schema. Los bindings/clientes consumen los valores generados; UCI puede sobrescribir las opciones de despliegue.
 - **Reservas de compatibilidad**: los nombres y números retirados permanecen reservados en el schema. Buf comprueba compatibilidad de wire (`WIRE`); el API fuente de los bindings generados sí puede cambiar.
 
@@ -101,14 +97,13 @@ python3 tools/protocol/generate.py \
   --spec tools/protocol/cloud_gateway.proto \
   --py mcubridge/mcubridge/protocol/protocol.py \
   --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
-  --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h \
   --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 ```
 
 …se regeneran los bindings de enums/constantes y el catálogo `PW_SERVICES` / `OPERATIONS`. Además, el generador produce artefactos protobuf para ambos lados:
 
-- **Python:** módulos de mensajes `mcubridge_pb2.py`, stubs `mcubridge_pb2.pyi`, servicios `mcubridge_grpc.py` y catálogo de operaciones unificado `protocol.py`.
-- **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` y cabeceras Nanopb `mcubridge.pb.h` / `mcubridge.pb.c` con `encode()`/`decode()` (estáticos, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
+- **Python:** módulos de mensajes `mcubridge_pb2.py`, `mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, stubs `.pyi`, servicios `mcubridge_grpc.py` y el módulo `protocol.py`.
+- **C++ (nanopb/protobuf):** cabeceras de protocolo `rpc_protocol.h` y `rpc_hw_config.h`, junto con las cabeceras Nanopb `mcu_wire.pb.h`/`.c` y `config_schema.pb.h`/`.c` (estáticas, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
 
@@ -404,10 +399,10 @@ El Arduino MCU presenta un conflicto de hardware: el puerto serial `/dev/ttyATH0
 1. **Consola del kernel** (legacy 250000 baud, configurada en bootargs)
 2. **Protocolo McuBridge** (opera a 115200 baud)
 
-Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corromper frames COBS del protocolo, causando errores de parsing como:
+Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corromper frames HDLC del protocolo, causando errores de FCS/decodificación como:
 
 ```
-Frame parse error: payload_length=... cmd_id=... (COBS decode failed)
+HDLC frame error on link: FrameStatus.FCS_MISMATCH
 ```
 
 **Solución automática**: El paquete `mcubridge` incluye el script UCI-defaults `95-mcubridge-silence-kernel-console` que:
@@ -431,94 +426,81 @@ dmesg -n 1
 
 ---
 
-# Protocolo binario (RPC)
+# Protocolo binario (Google Pigweed `pw_hdlc` + `pw_rpc`)
 
 ## 1. Visión general
 
-Este protocolo binario se usa entre microcontrolador (MCU) y procesador Linux (MPU). Refleja el comportamiento publicado en el daemon y el firmware.
+El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se basa en **Google Pigweed**:
+- **Capa de enlace (`pw_hdlc`):** Encapsulado HDLC con delimitadores `0x7E`, byte-stuffing (`0x7D`), control UI (`0x03`), secuencia de verificación de trama **CRC-32 IEEE 802.3 (FCS)** y multiplexación nativa por dirección lógica.
+- **Capa de procedimiento remoto (`pw_rpc`):** Transporte de sobres Protobuf `pw.rpc.internal.RpcPacket` (`REQUEST`, `RESPONSE`, `SERVER_STREAM`, `SERVER_ERROR`) direccionados por hashes FNV-1a de 32 bits (`service_id`, `method_id`) y correlacionados por `call_id`.
+- **Serialización de payloads (Protobuf / Nanopb):** Las definiciones viven en `tools/protocol/` (`mcu_wire.proto`, `config_schema.proto`, `cloud_gateway.proto`), generando structs estáticos C++ (`mcu_wire.pb.h`, `config_schema.pb.h`) y descriptores/mensajes Python (`mcubridge_pb2.py`, `mcu_wire_pb2.py`, `protocol.py`).
 
-La comunicación sigue un modelo de RPC: normalmente el MPU inicia peticiones y el MCU responde, pero existen comandos **bidireccionales** (por ejemplo consola/mailbox/archivo) que se interpretan como “push simétrico”.
-Los payloads de cada comando se serializan con **protobuf**. Las definiciones viven en los esquemas bajo `tools/protocol/` y se generan structs nativos para C++ (`rpc_structs.h` / `mcu_wire.pb.h`) y módulos de mensajes para Python (`mcubridge_pb2.py` / `protocol.py`). El frame RPC transporta el payload serializado como bytes opacos dentro del sobre `RpcEnvelope`.
-## 1.1 Contrato de direccionalidad y ACK
+## 1.1 Contrato de direccionalidad, `RpcPacket` y confirmación
 
-### Tipos de mensajes
+### Tipos de llamadas y paquetes `pw_rpc`
 
-- **Request/Response**: un emisor envía `CMD_X` y el otro contesta con `CMD_X_RESP`.
-- **ACK-only (fire-and-forget)**: el emisor envía `CMD_X` y el receptor contesta con `STATUS_ACK` (no existe `CMD_X_RESP`).
-- **Push simétrico**: el mismo `CMD_X` puede viajar en ambas direcciones con el mismo layout de payload; semánticamente es “entrega de datos al otro extremo”. En este caso se usa `STATUS_ACK` para confirmación.
-
-### Semántica de `STATUS_ACK`
-
-`STATUS_ACK` (`0x38`) confirma recepción de un comando que requiere ACK.
-
-- Payload: mensaje protobuf `AckPacket { command_id: uint32 }`.
-- El campo `command_id` corresponde al `command_id` original del frame que se confirma.
-
-### Comandos que requieren ACK
-
-Hay dos niveles distintos de “ACK” en este sistema:
-
-1) **ACK de transporte (recomendado por compatibilidad):** tras procesar exitosamente un frame *no-status* recibido, el receptor responde con `STATUS_ACK (0x38)` para confirmar recepción (y permitir retries acotados si el emisor no ve ese ACK).
-  - Excepciones: frames de `Status` y `CMD_XOFF`/`CMD_XON`.
-  - Si el receptor detecta un error de framing/semántica, puede responder con `STATUS_MALFORMED`, `STATUS_ERROR`, etc.
-
-2) **Comandos “ACK-only” (sin respuesta de negocio):** son comandos para los cuales **no existe** `CMD_X_RESP`; el éxito se confirma con `STATUS_ACK`.
+- **Unary Request / Response (`PacketType.REQUEST` → `PacketType.RESPONSE`):** El emisor envía un `RpcPacket` con `type = REQUEST` (`0`), `service_id`, `method_id`, `call_id` y el payload Protobuf serializado; el receptor responde con `type = RESPONSE` (`1`), el mismo `call_id`, `status` y el payload de respuesta.
+- **Server-Streaming (`PacketType.SERVER_STREAM`):** El MCU emite eventos asíncronos (p. ej. `PinUpdateEvent` en `rpc.pb.GpioService/SubscribePins`) mediante paquetes `type = SERVER_STREAM` (`4`).
+- **Errores de Servidor (`PacketType.SERVER_ERROR`):** Si un servicio o método no existe o el payload está corrupto, el receptor responde con `type = SERVER_ERROR` (`5`) y el código `pw::Status` correspondiente.
+- **Comandos ACK-only:** Son métodos unarios cuyo éxito se confirma mediante `RESPONSE` con `status = 0` (`Ok`) o `AckPacket` (`STATUS_ACK`):
   Esta lista está alineada con el spec (bindings Python: `OPERATIONS` con `requires_ack=True`):
+  - `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
+  - `CMD_CONSOLE_WRITE` (bidireccional)
+  - `CMD_DATASTORE_PUT` (MCU → Linux)
+  - `CMD_MAILBOX_PUSH` (bidireccional)
+  - `CMD_FILE_WRITE` (bidireccional)
 
-- `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
-- `CMD_CONSOLE_WRITE` (bidireccional)
-- `CMD_DATASTORE_PUT` (MCU → Linux)
-- `CMD_MAILBOX_PUSH` (bidireccional)
-- `CMD_FILE_WRITE` (bidireccional)
+## 2. Transporte y Multiplexación de Canales HDLC (`pw_hdlc`)
 
-## 2. Transporte
+Las tramas se encapsulan con **Pigweed HDLC (`pw_hdlc`)** delimitadas por el flag `0x7E` (`HDLC_FRAME_DELIMITER`) y protegidas por un FCS **CRC-32 (IEEE 802.3)** de 4 bytes en little-endian antes del delimitador de cierre.
 
-Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada frame codificado termina en `0x00` (definido como `RPC_FRAME_DELIMITER`).
+El enlace físico comparte **3 canales lógicos HDLC** independientes:
 
-- `MAX_PAYLOAD_SIZE = 64` bytes.
-- Todos los enteros multi-byte se codifican en **Big Endian**.
+| Dirección HDLC | Constante | Uso |
+| :--- | :--- | :--- |
+| `1` | `HDLC_ADDRESS_RPC` | Paquetes `pw_rpc` (`pw.rpc.internal.RpcPacket`): llamadas unarias, respuestas, errores y streams (`SubscribePins`). |
+| `2` | `HDLC_ADDRESS_LOG` | Diagnósticos y logs tokenizados del MCU (`pw_log_avr` / `pw_tokenizer`), decodificados en el MPU con `pw_tokenizer.Detokenizer`. |
+| `3` | `HDLC_ADDRESS_CONSOLE` | Stream bidireccional transparente de bytes de consola (`Console`). |
 
-## 3. Formato de frame (antes de COBS)
+## 3. Formato de trama (`pw_hdlc` + `RpcPacket`)
 
 ```
-+----------+------------+------------+-----------+----------+-----------+----------+
-| Header   | Nonce (12) | Payload    | Tag (16)  | CRC32    |
-+----------+------------+------------+-----------+----------+-----------+----------+
++----------+-------------+--------------+-------------------------------+---------------+----------+
+| Flag     | Address     | Control      | Information (Payload)         | FCS (CRC32)   | Flag     |
+| 0x7E (1) | Varint (1+) | 0x03 UI (1)  | RpcPacket / TokenLog / Bytes  | 4B Little-End | 0x7E (1) |
++----------+-------------+--------------+-------------------------------+---------------+----------+
 ```
 
-### 3.1 Cabecera (7 bytes)
+### 3.1 Sobre Protobuf `pw.rpc.internal.RpcPacket` (Canal `HDLC_ADDRESS_RPC = 1`)
 
-| Campo | Tipo | Descripción |
-| --- | --- | --- |
-| `version` | `uint8_t` | Versión del protocolo (actual: `0x02`). |
-| `payload_length` | `uint16_t` | Longitud del payload **antes** del cifrado. |
-| `command_id` | `uint16_t` | Identificador del comando o status. |
-| `sequence_id` | `uint16_t` | Identificador de secuencia para deduplicación. |
+| Campo Protobuf | Número | Tipo | Descripción |
+| --- | --- | --- | --- |
+| `type` | `1` | `PacketType` | `REQUEST (0)`, `RESPONSE (1)`, `CLIENT_ERROR (2)`, `CLIENT_REQUEST_COMPLETION (3)`, `SERVER_STREAM (4)`, `SERVER_ERROR (5)`, `CLIENT_STREAM (6)`. |
+| `channel_id` | `2` | `uint32` | Canal RPC (`RPC_DEFAULT_CHANNEL_ID = 1`). |
+| `service_id` | `3` | `fixed32` | Hash FNV-1a de 32 bits del nombre completo del servicio (`pw::tokenizer::Hash("rpc.pb.<Service>")`). |
+| `method_id` | `4` | `fixed32` | Hash FNV-1a de 32 bits del nombre del método (`pw::tokenizer::Hash("<Method>")`). |
+| `payload` | `5` | `bytes` | Mensaje Protobuf del método serializado con Nanopb (MCU) o `google.protobuf` (MPU). |
+| `status` | `6` | `uint32` | Código `pw::Status` (`0 = OK`, `13 = INTERNAL`, etc.). |
+| `call_id` | `7` | `uint32` | Identificador de correlación de llamada para emparejar peticiones, respuestas y reintentos. |
 
-### 3.1.1 Seguridad AEAD (ChaCha20-Poly1305)
-
-Si el enlace está sincronizado y el comando no está en la lista de exclusión:
-- **Nonce (12 bytes):** Prefijo direccional de 4 bytes (`MCU\0` MCU → MPU, `MPU\0` MPU → MCU) + contador monótono de 8 bytes en big-endian. El prefijo se genera desde las opciones canónicas de `config_schema.proto`.
-- **Payload:** Datos cifrados.
-- **Tag (16 bytes):** Firma de autenticidad Poly1305 sobre el Header (Associated Data) + Payload.
-
-### 3.2 CRC
-
-CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE 802.3.
+### 3.2 Integridad y Autenticación
+- **Integridad de trama (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc_avr::Decoder` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon Python.
+- **Autenticación mutua de enlace (`LinkSync`):** El enlace requiere completar el handshake mutuo `HKDF-SHA256` + `HMAC-SHA256` antes de habilitar cualquier método fuera del conjunto `pre_sync_allowed` (`LinkSync`, `LinkReset`, `Xoff`, `Xon`).
 
 ### 3.3 Implementación de bibliotecas (Wire Format)
 
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
-| **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
-| **COBS/R** | Framing / Escaping | **Externa**: `PacketSerial2` (`COBSR`). | **Externa**: `cobs` (módulo `cobsr` de PyPI). |
-| **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL). | **Interna**: `binascii.crc32` (IEEE 802.3). |
-| **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `PW_SERVICES` en `protocol.py`). |
-| **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
+| **Autenticación & Criptografía** | Handshake HKDF + HMAC / AEAD | **wolfCrypt** (HKDF-SHA256, HMAC-SHA256, ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
+| **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Pigweed AVR**: `pw::hdlc_avr::Encoder` / `Decoder`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
+| **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Pigweed AVR**: `pw::rpc_avr::RpcServer` + 8 `RpcService`. | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`). |
+| **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Pigweed AVR**: `pw_log_avr` + `pw_tokenizer`. | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
+| **Reloj Monótono MCU** | Timekeeping atómico determinista | **Pigweed AVR**: `pw_chrono_avr_GetMillis()`. | Reloj monótono `time.monotonic()`. |
+| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `PW_SERVICES`). |
 
 ## 4. Códigos de estado (`Status`)
 
-Los status usan el rango `0x30` - `0x3F`.
+Los status de aplicación usan el rango `0x30` - `0x3F`.
 
 | Código | Nombre | Uso típico |
 | --- | --- | --- |
@@ -532,21 +514,12 @@ Los status usan el rango `0x30` - `0x3F`.
 | `0x37` | `STATUS_NOT_IMPLEMENTED` | Definido pero no soportado. |
 | `0x38` | `STATUS_ACK` | ACK para operaciones fire-and-forget/push simétrico. |
 
-## 5. Comandos
+## 5. Servicios y Métodos RPC (`rpc.pb.*`)
 
-## 5.0 Semántica de ACK, retries e idempotencia (importante)
+## 5.0 Correlación por `call_id`, retries e idempotencia
 
-Algunos comandos son **fire-and-forget** (no tienen respuesta “de negocio”) pero sí requieren confirmación mediante `STATUS_ACK (0x38)`.
-
-- **Retries por ACK perdido:** Linux puede reenviar el mismo frame si no recibe `STATUS_ACK` dentro de `ack_timeout_ms` (configurable via `CMD_LINK_RESET`).
-- **Idempotencia (Garantizada vía `sequence_id`):** El protocolo incluye un `sequence_id` de 16 bits en el header.
-  - El receptor (MCU o Daemon) rastrea el último `sequence_id` procesado exitosamente por cada canal.
-  - Si llega un frame con un `sequence_id` idéntico al último procesado, se considera un **duplicado** (reintento del emisor).
-  - El receptor **reenvía el ACK/Respuesta original** pero **no re-ejecuta** la lógica de negocio, garantizando idempotencia estricta.
-
-Notas:
-- Esta deduplicación protege contra retries por ACK perdido sin “romper” casos de uso de repetición rápida.
-- El `sequence_id` debe incrementarse en cada nuevo comando y mantenerse igual para reintentos del mismo comando.
+- **Correlación mediante `call_id`:** Cada invocación `pw_rpc` incluye un `call_id` en `RpcPacket` que permite correlacionar respuestas asíncronas y descartar duplicados o respuestas huérfanas.
+- **Retries acotados:** `SerialTransport` gestiona los reintentos declarativos mediante `tenacity` si no recibe respuesta dentro de `response_timeout_ms`.
 
 ### 5.1 Sistema y control de flujo (0x40 – 0x4F)
 
@@ -607,33 +580,33 @@ sequenceDiagram
 ```
 
 
-#### Handshake Frame Example (Hex Dump)
+#### Handshake Frame Example (`pw_hdlc` + `RpcPacket`)
 
 ```
-# CMD_LINK_SYNC request (Linux → MCU)
-# Header: version=0x02, payload_len=32, cmd_id=0x0044, seq_id=0x0001
-# Payload: 16-byte nonce + 16-byte tag
-# CRC32: IEEE 802.3
+# rpc.pb.SystemService/LinkSync request (Linux → MCU)
+# HDLC Address: 1 (HDLC_ADDRESS_RPC), Control: 0x03 (UI)
+# RpcPacket: type=REQUEST (0), channel_id=1, service_id=Hash("rpc.pb.SystemService"),
+#            method_id=Hash("LinkSync"), call_id=1, payload=HandshakeProof(nonce[16], tag[16])
+# FCS: 4-byte CRC32 (IEEE 802.3, Little Endian)
 
-Raw (before COBS):
-  02 00 20 00 44 00 01            # Header (7 bytes)
-  A1 B2 C3 D4 E5 F6 07 18         # Nonce bytes 0-7
-  29 3A 4B 5C 6D 7E 8F 90         # Nonce bytes 8-15
-  T1 T2 T3 T4 T5 T6 T7 T8         # Tag bytes 0-7
-  T9 TA TB TC TD TE TF T0         # Tag bytes 8-15
-  XX XX XX XX                     # CRC32 (4 bytes)
+HDLC Wire Frame:
+  7E                              # Opening Flag
+  03 03                           # Address=1 (varint encoded: (1<<1)|1 = 0x03), Control=0x03 (UI)
+  <Serialized RpcPacket bytes>    # Protobuf RpcPacket containing HandshakeProof payload
+  XX XX XX XX                     # CRC32 FCS (4 bytes, escaped if 0x7E/0x7D)
+  7E                              # Closing Flag
 ```
 
-- **`0x46` CMD_LINK_RESET (Linux → MCU)**
-  - Petición: opcionalmente `[ack_timeout: u16, retry_limit: u8, response_timeout: u32]`.
-  - Respuesta (`0x47 CMD_LINK_RESET_RESP`): sin payload.
+- **`0x46` CMD_LINK_RESET (`rpc.pb.SystemService/LinkReset`, Linux → MCU)**
+  - Petición: opcionalmente `LinkReset { ack_timeout_ms, retry_limit, response_timeout_ms }`.
+  - Respuesta (`0x47 CMD_LINK_RESET_RESP`): `AckPacket`.
 
-- **`0x4A` CMD_SET_BAUDRATE (Linux → MCU)**
-  - Petición: `[baudrate: u32]`.
-  - Respuesta (`0x4B CMD_SET_BAUDRATE_RESP`): sin payload.
+- **`0x4A` CMD_SET_BAUDRATE (`rpc.pb.SystemService/SetBaudrate`, Linux → MCU)**
+  - Petición: `SetBaudratePacket { baudrate: uint32 }`.
+  - Respuesta (`0x4B CMD_SET_BAUDRATE_RESP`): `AckPacket`.
 
-- **`0x48` CMD_GET_CAPABILITIES (Linux → MCU)**
-  - Petición: sin payload.
+- **`0x48` CMD_GET_CAPABILITIES (`rpc.pb.SystemService/GetCapabilities`, Linux → MCU)**
+  - Petición: `Empty`.
   - Respuesta (`0x49 CMD_GET_CAPABILITIES_RESP`): mensaje protobuf `Capabilities { ver, arch, dig, ana, feat }`.
   - **Propósito:** Introspección estática de hardware (SIL-2 Safety). Permite al MPU validar que la configuración de pines no excede los límites físicos del MCU.
   - **Features Bitmask (`feat`, u32):**
@@ -654,8 +627,8 @@ Raw (before COBS):
     | 12 | `4096` | Filesystem | Sistema de archivos habilitado. |
     | 13 | `8192` | Process | Gestión de procesos habilitada. |
 
-- **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
-  - Sin payload.
+- **`0x4E` CMD_XOFF (`rpc.pb.SystemService/Xoff`, MCU → Linux)** / **`0x4F` CMD_XON (`rpc.pb.SystemService/Xon`, MCU → Linux)**
+  - Sin payload (`Empty`).
   - Semántica: `CMD_XOFF` indica backpressure del MCU (buffers/colas cerca de saturación). Linux debe **detener todo envío** de frames al MCU hasta recibir `CMD_XON`.
   - Implementación esperada en daemon: el gating de TX es global (no sólo consola), y debe liberarse también ante desconexión para evitar deadlocks.
 
@@ -692,16 +665,15 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 - El daemon debe aplicar el gating de forma **global** (todos los comandos, no solo consola).
 - La pausa debe liberarse inmediatamente ante pérdida de conexión serial.
 
-### 5.2 GPIO (0x50 – 0x5F)
+### 5.2 GPIO (`rpc.pb.GpioService`, 0x50 – 0x5F)
 
-- **`0x50` CMD_SET_PIN_MODE (Linux → MCU)**: `[pin: u8, mode: u8]`.
-- **`0x51` CMD_DIGITAL_WRITE (Linux → MCU)**: `[pin: u8, value: u8]`.
-- **`0x52` CMD_ANALOG_WRITE (Linux → MCU)**: `[pin: u8, value: u8]`.
-- **`0x53` CMD_DIGITAL_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x55 CMD_DIGITAL_READ_RESP`: `[value: u8]`.
-- **`0x54` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `[value: u16]`.
-- **`0x57` (87) CMD_PIN_SUBSCRIBE (Linux → MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Requiere confirmación `STATUS_ACK`.
-- **`0x58` (88) CMD_PIN_SUBSCRIBE_RESP (MCU → Linux)**: Payload `PinSubscribeResponse { pin, success }`.
-- **`0x59` (89) CMD_PIN_UPDATE_EVENT (MCU → Linux)**: Payload `PinUpdateEvent { pin, value, timestamp_micros }`. Evento de push asíncrono emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)` (Zero-Heap Nanopb sobre `CHANNEL_TELEMETRY`). El daemon lo reenvía a la nube bajo el tópico `gpio/pin_update`.
+- **`0x50` CMD_SET_PIN_MODE (`SetPinMode`, Linux → MCU)**: `PinMode { pin, mode }`.
+- **`0x51` CMD_DIGITAL_WRITE (`DigitalWrite`, Linux → MCU)**: `DigitalWrite { pin, value }`.
+- **`0x52` CMD_ANALOG_WRITE (`AnalogWrite`, Linux → MCU)**: `AnalogWrite { pin, value }`.
+- **`0x53` CMD_DIGITAL_READ (`DigitalRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta `0x55 CMD_DIGITAL_READ_RESP`: `DigitalReadResponse { value }`.
+- **`0x54` CMD_ANALOG_READ (`AnalogRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `AnalogReadResponse { value }`.
+- **`0x57` (87) CMD_PIN_SUBSCRIBE (`SubscribePins`, Linux → MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Respuesta inicial `0x58 CMD_PIN_SUBSCRIBE_RESP`: `PinSubscribeResponse { pin, success }`.
+- **`0x59` (89) CMD_PIN_UPDATE_EVENT (`SubscribePins` Server-Stream, MCU → Linux)**: Payload `PinUpdateEvent { pin, value, timestamp_micros }`. Evento de streaming (`PacketType::kServerStream` / `PacketType.SERVER_STREAM` sobre `rpc.pb.GpioService/SubscribePins`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico `gpio/pin_update`.
 
 #### Control Bidireccional de GPIO desde Cloud Gateway
 
@@ -714,45 +686,33 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
   - Lectura analógica: `{prefix}/req/gpio.analog_read` con payload Protobuf `PinRead { pin }`.
   - Suscripción de pin: `{prefix}/req/gpio.subscribe` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
 - **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `CMD_DIGITAL_WRITE`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
-- **Correlación Asíncrona**: Cada request/response se correlaciona con `sequence_id` garantizando entrega determinista fin a fin.
+- **Correlación Asíncrona**: Cada request/response se correlaciona con `call_id` / `sequence_id` garantizando entrega determinista fin a fin.
 - **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/gpio.pin_update` (o `br/gpio/pin_update`).
 
-#### GPIO Frame Examples (Hex Dump)
+#### GPIO Frame Examples (`pw_hdlc` + `RpcPacket`)
 
 ```
-# CMD_DIGITAL_WRITE: Set pin 13 HIGH
-# Header: version=0x02, payload_len=2, cmd_id=0x0051, seq_id=0x000A
-# Payload: [pin=13, value=1]
+# rpc.pb.GpioService/DigitalWrite: Set pin 13 HIGH
+# HDLC Address: 1 (HDLC_ADDRESS_RPC), Control: 0x03 (UI)
+# RpcPacket: type=REQUEST (0), channel_id=1, service_id=Hash("rpc.pb.GpioService"),
+#            method_id=Hash("DigitalWrite"), call_id=10, payload=DigitalWrite(pin=13, value=1)
 
-Raw (before COBS):
-  02 00 02 00 51 00 0A            # Header (7 bytes)
-  0D 01                           # pin=13, value=HIGH
-  B7 A3 2C 1F                     # CRC32 (example)
+# rpc.pb.GpioService/AnalogRead: Read analog pin A0 (pin=14)
+# RpcPacket: type=REQUEST (0), channel_id=1, service_id=Hash("rpc.pb.GpioService"),
+#            method_id=Hash("AnalogRead"), call_id=11, payload=PinRead(pin=14)
 
-# CMD_ANALOG_READ: Read analog pin A0
-# cmd_id=0x0054, payload=[pin=14], seq_id=0x000B
-
-Raw:
-  02 00 01 00 54 00 0B            # Header (7 bytes)
-  0E                              # pin=14 (A0)
-  XX XX XX XX                     # CRC32
-
-# CMD_ANALOG_READ_RESP: Value = 512 (0x0200), seq_id=0x000B
-# cmd_id=0x0056, payload=[value_hi, value_lo]
-
-Raw:
-  02 00 02 00 56 00 0B            # Header (7 bytes)
-  02 00                           # value=512 (Big Endian)
-  XX XX XX XX                     # CRC32
+# AnalogRead response: Value = 512
+# RpcPacket: type=RESPONSE (1), channel_id=1, service_id=Hash("rpc.pb.GpioService"),
+#            method_id=Hash("AnalogRead"), call_id=11, payload=AnalogReadResponse(value=512)
 ```
 
 
-### 5.3 Consola (0x60)
+### 5.3 Consola (Canal HDLC `HDLC_ADDRESS_CONSOLE = 3` / `0x60`)
 
-- **`0x60` CMD_CONSOLE_WRITE (bidireccional)**
+- **Stream HDLC Nativo (`HDLC_ADDRESS_CONSOLE = 3`, bidireccional):**
+  - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`encode_hdlc_console`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
+- **`0x60` CMD_CONSOLE_WRITE (compatibilidad RPC):**
   - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`.
-  - Si el texto a enviar supera 62 bytes, se fragmenta en múltiples frames.
-  - Confirmación: `STATUS_ACK (0x38)`.
 
 ### 5.4 Datastore (0x70)
 
@@ -910,7 +870,7 @@ Además de los comandos anteriores, el daemon transmite eventos periódicos y le
 | Repeated CRC errors | `serial_crc_errors` incrementing | Baud rate mismatch or electrical noise | Verify both sides at 115200; use shielded cable |
 | Handshake never completes | `handshake_failure_streak > 0` | Secret mismatch | Rotate credentials, recompile sketch |
 | Commands timeout | `STATUS_TIMEOUT` responses | MCU busy or queue full | Check `CMD_XOFF`/`CMD_XON` flow; reduce rate |
-| Frame parse errors | `COBS decode failed` | Kernel console noise on ttyATH0 | Apply `kernel.printk = 0 0 0 0` (see §Platform Notes) |
+| Frame parse errors | `HDLC frame error on link` | Kernel console noise on ttyATH0 | Apply `kernel.printk = 0 0 0 0` (see §Platform Notes) |
 | GPIO rejected | `STATUS_MALFORMED` on pin ops | Pin number exceeds `num_digital_pins` | Query `CMD_GET_CAPABILITIES` first |
 | File write rejected | `STATUS_ERROR` with quota message | Storage quota exceeded | Increase `file_storage_quota_bytes` or clean up |
 

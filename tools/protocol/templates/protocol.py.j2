@@ -246,8 +246,6 @@ class ProtocolRegistry:
         line_protocol_fields: tuple[LineProtocolFieldSpec, ...] = (),
         rpc_aliases: dict[str, str] | None = None,
         topic_lookup: dict[str, Topic],
-        mcu_dispatch_handlers: dict[int, str] | None = None,
-        mcu_unsupported_reasons: dict[int, str] | None = None,
         topic_auth_map: dict[tuple[str, str], str] | None = None,
         ubus_signatures: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (),
         daemon_tasks: tuple[DaemonTaskSpec, ...] = (),
@@ -303,22 +301,6 @@ class ProtocolRegistry:
                     if topic_enum.name.lower() == pfx.lower() or topic_enum.value.lower() == pfx.lower():
                         self.topic_auth_map.setdefault((alias_str.lower(), sfx.lower()), op.auth_field)
                         self.topic_auth_map.setdefault((alias_str.upper(), sfx.upper()), op.auth_field)
-
-    @property
-    def mcu_dispatch_handlers(self) -> dict[int, str]:
-        return {
-            op.command_id: op.mcu_handler
-            for op in self.operations
-            if op.command_id is not None and op.mcu_handler
-        }
-
-    @property
-    def mcu_unsupported_reasons(self) -> dict[int, str]:
-        return {
-            op.command_id: op.mcu_unsupported_reason
-            for op in self.operations
-            if op.command_id is not None and op.mcu_unsupported_reason
-        }
 
     def lookup_topic(self, segment: str) -> Topic | None:
         return self.topic_lookup.get(segment.lower())

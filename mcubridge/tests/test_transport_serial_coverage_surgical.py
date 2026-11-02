@@ -63,6 +63,7 @@ async def test_toggle_dtr_exception_handled(
 
     toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
+    assert transport.serial is mock_serial
 
 
 async def test_read_loop_data_flow(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:

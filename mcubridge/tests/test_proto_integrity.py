@@ -482,18 +482,28 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.protocol import mcubridge_pb2 as pb
     from mcubridge.services.runtime import BridgeService
 
-    assert len(protocol.REGISTRY.mcu_dispatch_handlers) == 25
-    for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items():
+    mcu_handlers = {
+        op.command_id: op.mcu_handler
+        for op in protocol.REGISTRY.operations
+        if op.command_id is not None and op.mcu_handler
+    }
+    assert len(mcu_handlers) == 25
+    for code, handler_path in mcu_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
 
-    assert len(protocol.REGISTRY.mcu_unsupported_reasons) == 2
-    assert protocol.REGISTRY.mcu_unsupported_reasons[protocol.Command.CMD_DIGITAL_READ.value] == (
+    unsupported_reasons = {
+        op.command_id: op.mcu_unsupported_reason
+        for op in protocol.REGISTRY.operations
+        if op.command_id is not None and op.mcu_unsupported_reason
+    }
+    assert len(unsupported_reasons) == 2
+    assert unsupported_reasons[protocol.Command.CMD_DIGITAL_READ.value] == (
         protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
     )
-    assert protocol.REGISTRY.mcu_unsupported_reasons[protocol.Command.CMD_ANALOG_READ.value] == (
+    assert unsupported_reasons[protocol.Command.CMD_ANALOG_READ.value] == (
         protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
     )
 

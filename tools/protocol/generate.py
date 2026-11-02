@@ -677,6 +677,7 @@ def _extract_operations_context(
     return {
         "grouped_actions": payload_ctx["grouped_actions"],
         "operations": operations,
+        "payload_fields": [],
         "metrics": _extract_metric_specs(pb_module, all_descs),
         "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
         "rpc_aliases": rpc_aliases,

@@ -223,6 +223,7 @@ async def test_serial_transport_toggle_dtr_error(
     transport.serial = mock_serial
     toggle_dtr_fn: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr_fn()
+    assert transport.serial is mock_serial
 
 
 def test_serial_transport_switch_local_baudrate_error(

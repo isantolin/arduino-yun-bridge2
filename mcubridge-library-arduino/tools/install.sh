@@ -178,7 +178,8 @@ if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
     fi
 fi
 
-# Mbed TLS is staged as an Arduino library with only the required modules.
+# Mbed TLS 4 is used on AVR/SAMD. ESP32 uses the PSA provider bundled with its
+# Arduino core to avoid linking two incompatible Mbed TLS implementations.
 MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VERSION}/${MBEDTLS_VERSION}.tar.bz2"
 install_dependency "MbedTLS" "$MBEDTLS_URL" "tf-psa-crypto/include/psa/crypto.h" "$LIB_DIR" "$MBEDTLS_SHA256"
 MBEDTLS_LIB="$LIB_DIR/MbedTLS"
@@ -223,7 +224,7 @@ maintainer=Mbed TLS Contributors
 sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
 paragraph=Staged by the McuBridge installer from the pinned upstream release.
 category=Communication
-architectures=*
+architectures=avr,samd
 includes=MbedTLS.h,psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
 EOF
 

@@ -15,7 +15,9 @@
 
 #include "../config/bridge_config.h"
 
-/* This MCU has no cryptographic RNG; fail closed if PSA random is requested. */
+#if defined(MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG)
+/* AVR/SAMD have no cryptographic RNG; fail closed if PSA random is requested.
+ */
 extern "C" psa_status_t mbedtls_psa_external_get_random(
     mbedtls_psa_external_random_context_t* context, uint8_t* output,
     size_t output_size, size_t* output_length) {
@@ -28,6 +30,7 @@ extern "C" psa_status_t mbedtls_psa_external_get_random(
   *output_length = 0U;
   return PSA_ERROR_INSUFFICIENT_ENTROPY;
 }
+#endif
 
 namespace rpc {
 namespace security {
@@ -259,6 +262,39 @@ bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
     return false;
   }
 
+#if defined(ARDUINO_ARCH_ESP32)
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> output = {};
+  if (plaintext.size() > output.size() - RPC_AEAD_TAG_SIZE) {
+    secure_zero(ciphertext);
+    secure_zero(tag);
+    return false;
+  }
+
+  const bool crypto_initialized = initialize_crypto();
+  mbedtls_svc_key_id_t key_id = 0;
+  const bool key_imported =
+      crypto_initialized &&
+      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_ENCRYPT,
+                 kChaCha20Poly1305, key, key_id);
+  const uint8_t* aad_data = aad.empty() ? &kEmptyBuffer : aad.data();
+  const uint8_t* plaintext_data =
+      plaintext.empty() ? &kEmptyBuffer : plaintext.data();
+  size_t output_length = 0;
+  bool ok = key_imported &&
+            psa_aead_encrypt(key_id, kChaCha20Poly1305, nonce.data(),
+                             nonce.size(), aad_data, aad.size(), plaintext_data,
+                             plaintext.size(), output.data(), output.size(),
+                             &output_length) == PSA_SUCCESS &&
+            output_length == plaintext.size() + tag.size();
+  if (ok) {
+    etl::copy_n(output.begin(), plaintext.size(), ciphertext.begin());
+    etl::copy_n(output.begin() + plaintext.size(), tag.size(), tag.begin());
+  }
+  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
+    ok = false;
+  }
+  secure_zero(etl::span<uint8_t>(output));
+#else
   const bool crypto_initialized = initialize_crypto();
   mbedtls_svc_key_id_t key_id = 0;
   const bool key_imported =
@@ -311,6 +347,7 @@ bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
   if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
     ok = false;
   }
+#endif
   if (!ok) {
     secure_zero(ciphertext);
     secure_zero(tag);
@@ -328,6 +365,36 @@ bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
     return false;
   }
 
+#if defined(ARDUINO_ARCH_ESP32)
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> input = {};
+  if (ciphertext.size() > input.size() - tag.size()) {
+    secure_zero(plaintext);
+    return false;
+  }
+  etl::copy(ciphertext.begin(), ciphertext.end(), input.begin());
+  etl::copy(tag.begin(), tag.end(), input.begin() + ciphertext.size());
+
+  const bool crypto_initialized = initialize_crypto();
+  mbedtls_svc_key_id_t key_id = 0;
+  const bool key_imported =
+      crypto_initialized &&
+      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_DECRYPT,
+                 kChaCha20Poly1305, key, key_id);
+  const uint8_t* aad_data = aad.empty() ? &kEmptyBuffer : aad.data();
+  uint8_t* plaintext_data =
+      plaintext.empty() ? &kEmptyBuffer : plaintext.data();
+  size_t output_length = 0;
+  bool ok = key_imported &&
+            psa_aead_decrypt(key_id, kChaCha20Poly1305, nonce.data(),
+                             nonce.size(), aad_data, aad.size(), input.data(),
+                             ciphertext.size() + tag.size(), plaintext_data,
+                             plaintext.size(), &output_length) == PSA_SUCCESS &&
+            output_length == ciphertext.size();
+  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
+    ok = false;
+  }
+  secure_zero(etl::span<uint8_t>(input));
+#else
   const bool crypto_initialized = initialize_crypto();
   mbedtls_svc_key_id_t key_id = 0;
   const bool key_imported =
@@ -376,6 +443,7 @@ bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
   if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
     ok = false;
   }
+#endif
   if (!ok) {
     secure_zero(plaintext);
   }

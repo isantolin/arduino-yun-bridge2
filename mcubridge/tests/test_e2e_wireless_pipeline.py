@@ -161,13 +161,9 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     service = BridgeService(runtime_config, runtime_state, transport)
     transport.service = service
 
-    # Start transport loop
+    runtime_state.link_sync_event.clear()
     transport_task = asyncio.create_task(transport.run())
-    await asyncio.sleep(0.15)
-
-    # 1. Perform Link Synchronization over Wireless TCP
-    sync_ok = await service.handshake.synchronize()
-    assert sync_ok is True
+    await asyncio.wait_for(runtime_state.link_sync_event.wait(), timeout=5.0)
     assert runtime_state.is_synchronized is True
 
     ver_ok = await service.request_mcu_version()
@@ -261,11 +257,10 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
     service = BridgeService(runtime_config, runtime_state, transport)
     transport.service = service
 
+    runtime_state.link_sync_event.clear()
     transport_task = asyncio.create_task(transport.run())
-    await asyncio.sleep(0.15)
-
-    sync_ok = await service.handshake.synchronize()
-    assert sync_ok is True
+    await asyncio.wait_for(runtime_state.link_sync_event.wait(), timeout=5.0)
+    assert runtime_state.is_synchronized is True
 
     ar_req = pb.PinRead(pin=0)
     raw_res = await transport.send(protocol.Command.CMD_ANALOG_READ.value, ar_req)

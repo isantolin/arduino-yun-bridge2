@@ -89,6 +89,79 @@ void test_bridge_handshake() {
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
 
+void test_bridge_handshake_response_uses_tag_length() {
+  BiStream stream;
+  stream.clear();
+  constexpr char kSharedSecret[] = "top-secret";
+  reset_bridge_core(Bridge, stream, 0U, kSharedSecret);
+  stream.tx_buf.clear();
+  auto& ba = TestAccessor::create(Bridge);
+
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce = {};
+  nonce.fill(0x42U);
+  const auto secret = etl::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(kSharedSecret),
+      sizeof(kSharedSecret) - 1U);
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> request_tag = {};
+  TEST_ASSERT_TRUE(rpc::security::handshake_generate_tag(
+      secret, nonce, request_tag));
+
+  rpc_pb_LinkSync request = rpc_pb_LinkSync_init_default;
+  etl::copy_n(nonce.begin(), nonce.size(), request.nonce.bytes);
+  request.nonce.size = nonce.size();
+  etl::copy_n(request_tag.begin(), request_tag.size(), request.tag.bytes);
+  request.tag.size = request_tag.size();
+
+  uint8_t payload[64];
+  pb_ostream_t output = pb_ostream_from_buffer(payload, sizeof(payload));
+  TEST_ASSERT_TRUE(pb_encode(&output, rpc_pb_LinkSync_fields, &request));
+
+  etl::array<uint8_t, 128> frame = {};
+  const size_t frame_size = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("LinkSync"),
+      etl::span<const uint8_t>(payload, output.bytes_written), frame);
+  TEST_ASSERT_GREATER_THAN(0, frame_size);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(frame.data(), frame_size));
+
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  bool response_decoded = false;
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto decoded_frame =
+        decoder.Process(static_cast<pw::byte>(stream.tx_buf.data[i]));
+    if (!decoded_frame.ok()) {
+      continue;
+    }
+
+    const auto response_packet =
+        pw::rpc_avr::RpcPacket::Decode(decoded_frame.value().data());
+    TEST_ASSERT_TRUE(response_packet.ok());
+    TEST_ASSERT_EQUAL_UINT8(
+        static_cast<uint8_t>(pw::rpc_avr::PacketType::kResponse),
+        static_cast<uint8_t>(response_packet.value().type));
+
+    rpc_pb_LinkSync response = rpc_pb_LinkSync_init_default;
+    const auto response_payload = response_packet.value().payload;
+    pb_istream_t input = pb_istream_from_buffer(
+        reinterpret_cast<const uint8_t*>(response_payload.data()),
+        response_payload.size());
+    TEST_ASSERT_TRUE(pb_decode(&input, rpc_pb_LinkSync_fields, &response));
+    TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_TAG_LENGTH, response.tag.size);
+
+    etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> expected_response_tag =
+        {};
+    TEST_ASSERT_TRUE(rpc::security::handshake_generate_response_tag(
+        secret, nonce, expected_response_tag));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_response_tag.data(),
+                                  response.tag.bytes,
+                                  expected_response_tag.size());
+    response_decoded = true;
+    break;
+  }
+  TEST_ASSERT_TRUE(response_decoded);
+}
+
 void test_bridge_send_frame() {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
@@ -845,6 +918,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
   RUN_TEST(test_bridge_handshake);
+  RUN_TEST(test_bridge_handshake_response_uses_tag_length);
   RUN_TEST(test_bridge_send_frame);
   RUN_TEST(test_bridge_process_rx);
   RUN_TEST(test_bridge_dedup_console_write);

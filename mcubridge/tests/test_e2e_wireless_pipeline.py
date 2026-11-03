@@ -187,11 +187,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
     # 4. Cleanup
     await transport.stop()
-    transport_task.cancel()
-    try:
-        await transport_task
-    except asyncio.CancelledError as exc:
-        logger.debug("Transport task cancelled", error=str(exc))
+    await transport_task
 
     server.close()
     await server.wait_closed()
@@ -283,11 +279,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
     assert ar_resp.value == 742
 
     await transport.stop()
-    transport_task.cancel()
-    try:
-        await transport_task
-    except asyncio.CancelledError as exc:
-        logger.debug("Transport task cancelled", error=str(exc))
+    await transport_task
 
     server.close()
     await server.wait_closed()

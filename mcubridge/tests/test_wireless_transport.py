@@ -138,11 +138,7 @@ async def test_serial_transport_tcp_connect_and_stream(
 
     # Stop transport
     await transport.stop()
-    transport_task.cancel()
-    try:
-        await transport_task
-    except asyncio.CancelledError as exc:
-        logger.debug("Transport task cancelled", error=str(exc))
+    await transport_task
 
     server.close()
     await server.wait_closed()

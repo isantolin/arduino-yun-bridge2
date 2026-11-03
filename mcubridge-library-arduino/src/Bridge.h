@@ -7,6 +7,9 @@
 #define BRIDGE_H
 
 #include <Arduino.h>
+#if !defined(ARDUINO_ARCH_ESP32)
+#include <MbedTLS.h>
+#endif
 #include <stdint.h>
 
 #if defined(ARDUINO_ARCH_AVR)

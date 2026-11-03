@@ -528,7 +528,12 @@ class SerialHandshakeManager:
         )
 
     async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = (self.timing.response_timeout_ms / 1000.0) * 2 if self.timing.response_timeout_ms > 0 else 5.0
+        timeout = 5.0
+        if self.timing.response_timeout_ms > 0:
+            timeout = (self.timing.response_timeout_ms / 1000.0) * 2
+        if self._config.serial_retry_timeout > 0:
+            # Retry sooner if the MCU was still running its startup self-tests.
+            timeout = min(timeout, self._config.serial_retry_timeout)
         try:
             async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:

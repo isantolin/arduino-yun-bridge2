@@ -593,6 +593,20 @@ async def test_wait_for_link_sync_confirmation_timeout(
     assert res is False
 
 
+@pytest.mark.timeout(1)
+async def test_wait_for_link_sync_confirmation_uses_retry_timeout(
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
+) -> None:
+    manager, state, _, config, timing, _ack = handshake_setup
+    timing.response_timeout_ms = 60_000
+    config.serial_retry_timeout = 0.02
+    state.connection_fsm.disconnect()
+
+    assert await manager.wait_for_link_sync_confirmation(b"test_nonce") is False
+
+
 async def test_handshake_attempt_link_sync_timeout(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock

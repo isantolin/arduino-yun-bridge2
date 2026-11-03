@@ -35,9 +35,11 @@ namespace {
 
 constexpr psa_algorithm_t kHkdfSha256 = PSA_ALG_HKDF(PSA_ALG_SHA_256);
 constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);
-constexpr psa_algorithm_t kHandshakeMac =
-    PSA_ALG_TRUNCATED_MAC(kHmacSha256, RPC_HANDSHAKE_TAG_LENGTH);
+constexpr psa_algorithm_t kHandshakeMac = PSA_ALG_TRUNCATED_MAC(
+    kHmacSha256, static_cast<psa_algorithm_t>(RPC_HANDSHAKE_TAG_LENGTH));
 constexpr psa_algorithm_t kChaCha20Poly1305 = PSA_ALG_CHACHA20_POLY1305;
+static_assert(PSA_MAC_LENGTH(PSA_KEY_TYPE_HMAC, 256U, kHandshakeMac) ==
+              RPC_HANDSHAKE_TAG_LENGTH);
 static uint8_t kEmptyBuffer = 0U;
 
 template <size_t N>
@@ -431,6 +433,20 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
     {0x53, 0x75, 0x96, 0x3F, 0x9E, 0x70, 0x9B, 0x58, 0x41, 0x50, 0x41,
      0xBA, 0xD2, 0xD4, 0x4D, 0xE2, 0x1F, 0x50, 0x80, 0x0E, 0x08, 0x41,
      0xB8, 0x7E, 0x0D, 0xAD, 0xFC, 0xDF, 0xE3, 0x62, 0xB2, 0x6C}};
+static constexpr etl::array<uint8_t, 10> kat_handshake_secret PROGMEM = {
+    {'s', 'h', 'a', 'r', 'e', 'd', '-', 'k', 'e', 'y'}};
+static constexpr etl::array<uint8_t, RPC_HANDSHAKE_NONCE_LENGTH>
+    kat_handshake_nonce PROGMEM = {{0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+                                    0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB, 0xAB,
+                                    0xAB, 0xAB}};
+static constexpr etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH>
+    kat_handshake_request_tag PROGMEM = {{0xF0, 0x7A, 0x5A, 0xA1, 0x34, 0x05,
+                                          0x71, 0x5B, 0x8B, 0x54, 0xEF, 0xDE,
+                                          0x57, 0xAC, 0x81, 0x30}};
+static constexpr etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH>
+    kat_handshake_response_tag PROGMEM = {{0x46, 0x82, 0x99, 0xFA, 0xC4, 0xFB,
+                                           0x82, 0xDE, 0x13, 0x91, 0xF8, 0xA9,
+                                           0xA8, 0x4B, 0xAF, 0xD5}};
 static constexpr etl::array<uint8_t, RPC_AEAD_KEY_SIZE> kat_aead_key PROGMEM = {
     {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A,
      0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,
@@ -469,6 +485,27 @@ bool run_cryptographic_self_tests() {
       compute_mac(hmac_key, kHmacSha256, hmac_data, hmac_result) &&
       etl::equal(hmac_result.begin(), hmac_result.end(), hmac_expected.begin());
 
+  const auto handshake_secret = copy_progmem(kat_handshake_secret);
+  const auto handshake_nonce = copy_progmem(kat_handshake_nonce);
+  const auto handshake_request_expected =
+      copy_progmem(kat_handshake_request_tag);
+  const auto handshake_response_expected =
+      copy_progmem(kat_handshake_response_tag);
+  etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_request = {};
+  etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_response = {};
+  const bool handshake_request_ok =
+      handshake_generate_tag(handshake_secret, handshake_nonce,
+                             handshake_request) &&
+      etl::equal(handshake_request.begin(), handshake_request.end(),
+                 handshake_request_expected.begin()) &&
+      handshake_verify_tag(handshake_secret, handshake_nonce,
+                           handshake_request_expected);
+  const bool handshake_response_ok =
+      handshake_generate_response_tag(handshake_secret, handshake_nonce,
+                                      handshake_response) &&
+      etl::equal(handshake_response.begin(), handshake_response.end(),
+                 handshake_response_expected.begin());
+
   const auto aead_key = copy_progmem(kat_aead_key);
   const auto aead_nonce = copy_progmem(kat_aead_nonce);
   const auto aead_aad = copy_progmem(kat_aead_aad);
@@ -502,12 +539,15 @@ bool run_cryptographic_self_tests() {
 
   secure_zero(etl::span<uint8_t>(digest));
   secure_zero(etl::span<uint8_t>(hmac_result));
+  secure_zero(etl::span<uint8_t>(handshake_request));
+  secure_zero(etl::span<uint8_t>(handshake_response));
   secure_zero(etl::span<uint8_t>(ciphertext));
   secure_zero(etl::span<uint8_t>(tag));
   secure_zero(etl::span<uint8_t>(decrypted));
   secure_zero(etl::span<uint8_t>(rejected_plaintext));
-  return sha_ok && hmac_ok && aead_encrypt_ok && aead_decrypt_ok &&
-         bad_tag_rejected && rejected_plaintext_cleared;
+  return sha_ok && hmac_ok && handshake_request_ok && handshake_response_ok &&
+         aead_encrypt_ok && aead_decrypt_ok && bad_tag_rejected &&
+         rejected_plaintext_cleared;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

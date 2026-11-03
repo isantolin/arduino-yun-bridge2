@@ -189,6 +189,8 @@ for src in "${SOURCES[@]}"; do
 
     if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
         g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    elif [[ "${src}" == */tf-psa-crypto/utilities/constant_time.c ]]; then
+        gcc -std=c99 "${BASE_FLAGS[@]}" -D__AVR__ -c "${src}" -o "${obj}" &
     elif [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
         gcc -std=c99 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     elif [[ "${src}" == *.c ]]; then

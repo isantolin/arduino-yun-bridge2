@@ -7,6 +7,9 @@
 #include <etl/array.h>
 #include <etl/byte_stream.h>
 #include <etl/span.h>
+extern "C" {
+#include <mbedtls/constant_time.h>
+}
 #include <psa/crypto.h>
 #include <unity.h>
 
@@ -86,6 +89,17 @@ void test_handshake_tag_generation_and_verification(void) {
       etl::span<const uint8_t>(received_tag.data(), received_tag.size() - 1U)));
 }
 
+void test_ct_memcmp_returns_nonzero_for_high_bit_mismatch(void) {
+  constexpr etl::array<uint8_t, 4U> expected = {};
+  etl::array<uint8_t, 4U> received = {};
+  received[2] = 0x80U;
+
+  TEST_ASSERT_EQUAL_INT(
+      0, mbedtls_ct_memcmp(expected.data(), expected.data(), expected.size()));
+  TEST_ASSERT_NOT_EQUAL(
+      0, mbedtls_ct_memcmp(expected.data(), received.data(), received.size()));
+}
+
 void test_handshake_tag_known_answer(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> actual_tag = {};
   TEST_ASSERT_TRUE(rpc::security::handshake_generate_tag(
@@ -142,6 +156,7 @@ int main(int argc, char** argv) {
   UNITY_BEGIN();
   RUN_TEST(test_handshake_tag_generation_rejects_invalid_buffers);
   RUN_TEST(test_handshake_tag_generation_and_verification);
+  RUN_TEST(test_ct_memcmp_returns_nonzero_for_high_bit_mismatch);
   RUN_TEST(test_handshake_tag_known_answer);
   RUN_TEST(test_session_key_derivation_known_answer);
   RUN_TEST(test_psa_random_fails_without_entropy_source);

@@ -183,6 +183,11 @@ MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VER
 install_dependency "MbedTLS" "$MBEDTLS_URL" "tf-psa-crypto/include/psa/crypto.h" "$LIB_DIR" "$MBEDTLS_SHA256"
 MBEDTLS_LIB="$LIB_DIR/MbedTLS"
 MBEDTLS_SRC="$MBEDTLS_LIB/src"
+MBEDTLS_CT_SOURCE="$MBEDTLS_LIB/tf-psa-crypto/utilities/constant_time.c"
+if ! grep -Fq "AVR constant-time comparison requires byte-wise access" "$MBEDTLS_CT_SOURCE"; then
+    patch --batch --forward --fuzz=0 -p1 -d "$MBEDTLS_LIB/tf-psa-crypto" \
+        < "$LIB_ROOT/patches/mbedtls-4.2.0-avr-ct-memcmp.patch"
+fi
 rm -rf "$MBEDTLS_SRC"
 mkdir -p "$MBEDTLS_SRC"
 cp -a "$MBEDTLS_LIB/include/mbedtls" "$MBEDTLS_SRC/"

@@ -125,6 +125,7 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   return ok;
 #else
   debug_kdf_stage = 0U;
+  debug_kdf_status = 0U;
   if (secret.empty() || output.empty()) {
     debug_kdf_stage = 1U;
     secure_zero(output);
@@ -166,9 +167,10 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   }
   if (ok) {
     const uint8_t* info_data = info.empty() ? &kEmptyBuffer : info.data();
-    ok = psa_key_derivation_input_bytes(&operation,
-                                        PSA_KEY_DERIVATION_INPUT_INFO,
-                                        info_data, info.size()) == PSA_SUCCESS;
+    const psa_status_t status = psa_key_derivation_input_bytes(
+        &operation, PSA_KEY_DERIVATION_INPUT_INFO, info_data, info.size());
+    debug_kdf_status = static_cast<uint32_t>(status);
+    ok = status == PSA_SUCCESS;
     if (!ok) debug_kdf_stage = 7U;
   }
   if (ok) {

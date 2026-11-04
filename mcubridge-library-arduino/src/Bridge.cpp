@@ -15,6 +15,10 @@
 #include "services/Process.h"
 #include "services/SPIService.h"
 
+namespace rpc::security {
+extern uint8_t debug_kdf_stage;
+}
+
 namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception&) {
   Bridge.enterSafeState();
@@ -922,12 +926,12 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> out_tag = {};
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> debug_tag = {};
     if (rpc::security::handshake_generate_tag(
-            etl::span<const uint8_t>(_shared_secret.data(), 32U),
+            etl::span<const uint8_t>(_shared_secret.data(), 10U),
             etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
             etl::span<uint8_t>(debug_tag))) {
       bridge::pb::copy_bytes(resp.tag, debug_tag.data(), debug_tag.size());
     } else {
-      resp.tag.bytes[0] = 0xEEU;
+      resp.tag.bytes[0] = rpc::security::debug_kdf_stage;
       resp.tag.size = 1U;
     }
     rpc::security::secure_zero(etl::span<uint8_t>(debug_tag));

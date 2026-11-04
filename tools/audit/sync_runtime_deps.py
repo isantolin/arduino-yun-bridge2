@@ -68,6 +68,7 @@ class _CppDepEntry(TypedDict):
     github: str
     ref_type: str
     version: str
+    check_latest: bool
     check_file: str
     sha256: str
     rationale: str
@@ -130,6 +131,7 @@ def load_manifest() -> ManifestData:
                 github=entry.get("github", "").strip(),
                 ref_type=entry.get("ref_type", "tags").strip(),
                 version=entry.get("version", "").strip(),
+                check_latest=bool(entry.get("check_latest", True)),
                 check_file=entry.get("check_file", "").strip(),
                 sha256=entry.get("sha256", "").strip().lower(),
                 rationale=entry.get("rationale", "").strip(),
@@ -275,6 +277,7 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
         "Unity": "UNITY_VERSION",
         "nanopb_core": "NANOPB_VERSION",
         "MbedTLS": "MBEDTLS_VERSION",
+        "wolfssl": "WOLFSSL_VERSION",
     }
     lines: list[str] = []
     for dep in cpp_deps:
@@ -292,6 +295,10 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
             if not dep["sha256"]:
                 raise ManifestError("MbedTLS must have a pinned SHA-256 archive digest")
             lines.append(f'MBEDTLS_SHA256="{dep["sha256"]}"')
+        elif dep["name"] == "wolfssl":
+            if not dep["sha256"]:
+                raise ManifestError("wolfssl must have a pinned SHA-256 archive digest")
+            lines.append(f'WOLFSSL_SHA256="{dep["sha256"]}"')
 
     new_content = _replace_marked_block(content, CPP_BLOCK_START, CPP_BLOCK_END, "\n".join(lines))
     return _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)
@@ -490,7 +497,7 @@ def check_latest_versions(
             outdated.append((name, pinned, latest_str))
 
     for cpp_dep in cpp_deps:
-        if cpp_dep["ref_type"] == "heads":
+        if cpp_dep["ref_type"] == "heads" or not cpp_dep["check_latest"]:
             continue
         pinned = cpp_dep["version"]
         gh_latest = _fetch_github_latest_version(cpp_dep["github"])

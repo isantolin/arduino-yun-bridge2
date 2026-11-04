@@ -5,7 +5,7 @@
 ## Completed (Q1-Q3 2026)
 
 ### 1. Security & Architecture Overhaul (v2.8.5)
-- **Authenticated encrypted MCU link**: Pigweed provides HDLC/RPC transport, while Mbed TLS provides domain-separated `LinkSync` HMAC proofs, directional HKDF keys, and ChaCha20-Poly1305 protection for RPC, console, and log frames. Per-session counters reject replay within the live session; cross-restart replay freshness remains a limitation.
+- **Authenticated encrypted MCU link**: Pigweed provides HDLC/RPC transport; PSA provides SHA-256/HMAC, while Mbed TLS 4 (AVR/SAMD) and wolfCrypt 5.8.4 (ESP32) provide HKDF and ChaCha20-Poly1305. Per-session counters reject replay within the live session; cross-restart replay freshness remains a limitation.
 - **Zero-Wrapper Architecture**: Total flattening of the Python daemon; eradicated 8 redundant component classes for a lean, direct `BridgeService`.
 - **Integrated Flow Control**: Merged `SerialFlowController` into `SerialTransport` with native `tenacity` retry support.
 - **OpenWrt 25.12.6 Support**: Hardened for the latest APK-based OpenWrt release.
@@ -52,10 +52,10 @@
 
 ## Future Strategic Goals (2026-2027)
 
-### 1. Authenticated frame encryption (not implemented)
+### 1. Pigweed crypto consolidation
+- The authenticated encrypted MCU link is implemented; preserve its wire format, POST, and fail-closed behavior while evaluating provider consolidation.
 - Prefer a maintained Pigweed AEAD API/backend only after confirming support for AVR, SAMD, and ESP32 and measuring Flash, SRAM, and runtime costs. The current Pigweed ChaCha20 API is a stream cipher, and its BoringSSL backend is marked incompatible with MCU targets; neither provides MCU ChaCha20-Poly1305 in this export.
-- If Pigweed has no suitable AEAD backend, evaluate an existing maintained embedded crypto backend and obtain approval before integrating a new dependency. Do not construct Poly1305 or AEAD manually.
-- Use a single non-downgradable protocol: direction-separated keys, authenticated headers, per-frame sequence nonces, replay rejection, and explicit rekey/exhaustion behavior. Resolve MCU boot/session freshness across all supported boards before implementation.
+- Any provider change still requires compatible MCU support, pinned dependencies, and measured Flash/SRAM/runtime costs. Do not construct Poly1305 or AEAD manually.
 
 ### 1. Zero-Code Experience
 - **Dynamic LuCI UI**: Automated web interface generation based on modular proto definitions.

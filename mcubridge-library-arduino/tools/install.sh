@@ -159,6 +159,8 @@ NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
 MBEDTLS_VERSION="mbedtls-4.2.0"
 MBEDTLS_SHA256="2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
+WOLFSSL_VERSION="5.8.4"
+WOLFSSL_SHA256="a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)
@@ -178,8 +180,8 @@ if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
     fi
 fi
 
-# Mbed TLS 4 is used on AVR/SAMD. ESP32 uses the PSA provider bundled with its
-# Arduino core to avoid linking two incompatible Mbed TLS implementations.
+# Mbed TLS 4 is used on AVR/SAMD. ESP32 keeps PSA SHA-256/HMAC from its Arduino
+# core and uses WolfCrypt for HKDF-SHA256 and ChaCha20-Poly1305.
 MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VERSION}/${MBEDTLS_VERSION}.tar.bz2"
 install_dependency "MbedTLS" "$MBEDTLS_URL" "tf-psa-crypto/include/psa/crypto.h" "$LIB_DIR" "$MBEDTLS_SHA256"
 MBEDTLS_LIB="$LIB_DIR/MbedTLS"
@@ -224,9 +226,26 @@ maintainer=Mbed TLS Contributors
 sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
 paragraph=Staged by the McuBridge installer from the pinned upstream release.
 category=Communication
-architectures=avr,samd,esp32
+architectures=avr,samd
 includes=MbedTLS.h,psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
 EOF
+
+WOLFSSL_URL="https://downloads.arduino.cc/libraries/github.com/wolfSSL/wolfssl-${WOLFSSL_VERSION}.zip"
+install_dependency "wolfssl" "$WOLFSSL_URL" "library.properties" "$LIB_DIR" "$WOLFSSL_SHA256"
+WOLFSSL_LIB="$LIB_DIR/wolfssl"
+if [ ! -d "$WOLFSSL_LIB/src" ]; then
+    echo "[ERROR] wolfssl source directory not found: $WOLFSSL_LIB/src" >&2
+    exit 1
+fi
+WOLFSSL_SETTINGS_TMP="$(mktemp "$WOLFSSL_LIB/src/.user_settings.XXXXXX")"
+if ! cp "$LIB_ROOT/src/config/wolfssl_user_settings.h" "$WOLFSSL_SETTINGS_TMP"; then
+    rm -f "$WOLFSSL_SETTINGS_TMP"
+    exit 1
+fi
+if ! mv -f "$WOLFSSL_SETTINGS_TMP" "$WOLFSSL_LIB/src/user_settings.h"; then
+    rm -f "$WOLFSSL_SETTINGS_TMP"
+    exit 1
+fi
 
 # Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)
 if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmodules" ]; then

@@ -9,13 +9,16 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/string_view.h>
-#if defined(ARDUINO_ARCH_ESP32)
-// The Arduino core's PSA build omits HKDF and ChaCha20-Poly1305.
-#include <MbedTLS.h>
-#endif
 #include <mbedtls/platform_util.h>
 #include <psa/crypto.h>
 #include <psa/crypto_extra.h>
+#if defined(ARDUINO_ARCH_ESP32)
+#include <wolfssl/wolfcrypt/settings.h>
+#endif
+#if defined(ARDUINO_ARCH_ESP32)
+#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
+#include <wolfssl/wolfcrypt/hmac.h>
+#endif
 
 #include "../config/bridge_config.h"
 
@@ -40,14 +43,22 @@ namespace rpc {
 namespace security {
 namespace {
 
-constexpr psa_algorithm_t kHkdfSha256 = PSA_ALG_HKDF(PSA_ALG_SHA_256);
 constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);
 constexpr psa_algorithm_t kHandshakeMac = PSA_ALG_TRUNCATED_MAC(
     kHmacSha256, static_cast<psa_algorithm_t>(RPC_HANDSHAKE_TAG_LENGTH));
+#if !defined(ARDUINO_ARCH_ESP32)
+constexpr psa_algorithm_t kHkdfSha256 = PSA_ALG_HKDF(PSA_ALG_SHA_256);
 constexpr psa_algorithm_t kChaCha20Poly1305 = PSA_ALG_CHACHA20_POLY1305;
+#endif
 static_assert(PSA_MAC_LENGTH(PSA_KEY_TYPE_HMAC, 256U, kHandshakeMac) ==
               RPC_HANDSHAKE_TAG_LENGTH);
 static uint8_t kEmptyBuffer = 0U;
+
+#if defined(ARDUINO_ARCH_ESP32)
+bool fits_wolfssl_length(size_t length) {
+  return length <= static_cast<size_t>(UINT32_MAX);
+}
+#endif
 
 template <size_t N>
 static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
@@ -82,6 +93,35 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> salt,
                         etl::span<const uint8_t> info,
                         etl::span<uint8_t> output) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (secret.empty() || output.empty() ||
+      output.size() > 255U * RPC_SHA256_DIGEST_SIZE ||
+      !fits_wolfssl_length(secret.size()) ||
+      !fits_wolfssl_length(salt.size()) || !fits_wolfssl_length(info.size()) ||
+      !fits_wolfssl_length(output.size())) {
+    secure_zero(output);
+    return false;
+  }
+
+  const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
+  const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
+  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> pseudo_random_key = {};
+  bool ok =
+      wc_HKDF_Extract(WC_SHA256, salt_data, static_cast<word32>(salt.size()),
+                      secret.data(), static_cast<word32>(secret.size()),
+                      pseudo_random_key.data()) == 0;
+  if (ok) {
+    ok = wc_HKDF_Expand(WC_SHA256, pseudo_random_key.data(),
+                        static_cast<word32>(pseudo_random_key.size()),
+                        info_data, static_cast<word32>(info.size()),
+                        output.data(), static_cast<word32>(output.size())) == 0;
+  }
+  secure_zero(etl::span<uint8_t>(pseudo_random_key));
+  if (!ok) {
+    secure_zero(output);
+  }
+  return ok;
+#else
   if (secret.empty() || output.empty() || !initialize_crypto()) {
     secure_zero(output);
     return false;
@@ -132,6 +172,7 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
     secure_zero(output);
   }
   return ok;
+#endif
 }
 
 bool compute_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
@@ -267,37 +308,18 @@ bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
   }
 
 #if defined(ARDUINO_ARCH_ESP32)
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> output = {};
-  if (plaintext.size() > output.size() - RPC_AEAD_TAG_SIZE) {
-    secure_zero(ciphertext);
-    secure_zero(tag);
-    return false;
-  }
-
-  const bool crypto_initialized = initialize_crypto();
-  mbedtls_svc_key_id_t key_id = 0;
-  const bool key_imported =
-      crypto_initialized &&
-      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_ENCRYPT,
-                 kChaCha20Poly1305, key, key_id);
   const uint8_t* aad_data = aad.empty() ? &kEmptyBuffer : aad.data();
   const uint8_t* plaintext_data =
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
-  size_t output_length = 0;
-  bool ok = key_imported &&
-            psa_aead_encrypt(key_id, kChaCha20Poly1305, nonce.data(),
-                             nonce.size(), aad_data, aad.size(), plaintext_data,
-                             plaintext.size(), output.data(), output.size(),
-                             &output_length) == PSA_SUCCESS &&
-            output_length == plaintext.size() + tag.size();
-  if (ok) {
-    etl::copy_n(output.begin(), plaintext.size(), ciphertext.begin());
-    etl::copy_n(output.begin() + plaintext.size(), tag.size(), tag.begin());
-  }
-  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
-    ok = false;
-  }
-  secure_zero(etl::span<uint8_t>(output));
+  uint8_t* ciphertext_data =
+      ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
+  const bool ok =
+      fits_wolfssl_length(aad.size()) &&
+      fits_wolfssl_length(plaintext.size()) &&
+      wc_ChaCha20Poly1305_Encrypt(
+          key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
+          plaintext_data, static_cast<word32>(plaintext.size()),
+          ciphertext_data, tag.data()) == 0;
 #else
   const bool crypto_initialized = initialize_crypto();
   mbedtls_svc_key_id_t key_id = 0;
@@ -370,34 +392,18 @@ bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
   }
 
 #if defined(ARDUINO_ARCH_ESP32)
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> input = {};
-  if (ciphertext.size() > input.size() - tag.size()) {
-    secure_zero(plaintext);
-    return false;
-  }
-  etl::copy(ciphertext.begin(), ciphertext.end(), input.begin());
-  etl::copy(tag.begin(), tag.end(), input.begin() + ciphertext.size());
-
-  const bool crypto_initialized = initialize_crypto();
-  mbedtls_svc_key_id_t key_id = 0;
-  const bool key_imported =
-      crypto_initialized &&
-      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_DECRYPT,
-                 kChaCha20Poly1305, key, key_id);
   const uint8_t* aad_data = aad.empty() ? &kEmptyBuffer : aad.data();
+  const uint8_t* ciphertext_data =
+      ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
   uint8_t* plaintext_data =
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
-  size_t output_length = 0;
-  bool ok = key_imported &&
-            psa_aead_decrypt(key_id, kChaCha20Poly1305, nonce.data(),
-                             nonce.size(), aad_data, aad.size(), input.data(),
-                             ciphertext.size() + tag.size(), plaintext_data,
-                             plaintext.size(), &output_length) == PSA_SUCCESS &&
-            output_length == ciphertext.size();
-  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
-    ok = false;
-  }
-  secure_zero(etl::span<uint8_t>(input));
+  const bool ok =
+      fits_wolfssl_length(aad.size()) &&
+      fits_wolfssl_length(ciphertext.size()) &&
+      wc_ChaCha20Poly1305_Decrypt(
+          key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
+          ciphertext_data, static_cast<word32>(ciphertext.size()), tag.data(),
+          plaintext_data) == 0;
 #else
   const bool crypto_initialized = initialize_crypto();
   mbedtls_svc_key_id_t key_id = 0;

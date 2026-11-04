@@ -231,7 +231,17 @@ ref_type = "tags"
 version = "mbedtls-4.2.0"
 check_file = "tf-psa-crypto/include/psa/crypto.h"
 sha256 = "2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
-rationale = "Pinned Mbed TLS PSA Crypto ChaCha20-Poly1305, HKDF, HMAC, and SHA-256 primitives for MCU link security"
+rationale = "Pinned Mbed TLS 4 PSA provider for AVR/SAMD link crypto; ESP32 uses core PSA for SHA-256/HMAC and WolfCrypt for HKDF/AEAD"
+
+[[cpp_dependency]]
+name = "wolfssl"
+github = "wolfSSL/Arduino-wolfSSL"
+ref_type = "tags"
+version = "5.8.4"
+check_file = "library.properties"
+check_latest = false
+sha256 = "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
+rationale = "GPL-3.0-or-later wolfCrypt HKDF-SHA256 and ChaCha20-Poly1305 provider for ESP32; PSA remains the SHA-256/HMAC provider"
 
 
 # =============================================================================
@@ -240,7 +250,7 @@ rationale = "Pinned Mbed TLS PSA Crypto ChaCha20-Poly1305, HKDF, HMAC, and SHA-2
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.0"
+pip = "coverage==7.17.1"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]

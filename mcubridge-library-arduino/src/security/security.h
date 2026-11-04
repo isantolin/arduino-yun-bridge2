@@ -1,6 +1,6 @@
 /**
  * @file security.h
- * @brief Link handshake and frame cryptography backed by Mbed TLS.
+ * @brief Link handshake and frame cryptography backed by configured providers.
  *
  * This file is part of Arduino MCU Ecosystem v2.
  * (C) 2025-2026 Ignacio Santolin and contributors.
@@ -51,7 +51,7 @@ bool handshake_verify_tag(etl::span<const uint8_t> secret,
                           etl::span<const uint8_t> nonce,
                           etl::span<const uint8_t> received_tag);
 
-/** Securely erase memory through Mbed TLS's platform implementation. */
+/** Securely erase memory through the platform crypto implementation. */
 void secure_zero(etl::span<uint8_t> buf);
 
 /**

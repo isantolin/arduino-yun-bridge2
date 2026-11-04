@@ -497,8 +497,8 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
-| **Autenticación del handshake** | HKDF-SHA256 + HMAC-SHA256 | **Mbed TLS** (`mbedtls_md_hmac`, `mbedtls_hkdf`, `mbedtls_ct_memcmp`). | **`cryptography`** para HKDF/HMAC y comparación constante. |
-| **Protección del enlace** | ChaCha20-Poly1305 con claves direccionales y contadores monotónicos por sesión | **Mbed TLS** (`mbedtls_chachapoly_*`). | **`cryptography`** (`ChaCha20Poly1305`); envuelve/desenvuelve los payloads HDLC. |
+| **Autenticación del handshake** | HKDF-SHA256 + HMAC-SHA256 | **Mbed TLS PSA** para HMAC; Mbed TLS 4 para HKDF en AVR/SAMD y **wolfCrypt 5.8.4** en ESP32. | **`cryptography`** para HKDF/HMAC y comparación constante. |
+| **Protección del enlace** | ChaCha20-Poly1305 con claves direccionales y contadores monotónicos por sesión | **Mbed TLS 4** en AVR/SAMD y **wolfCrypt 5.8.4** en ESP32. | **`cryptography`** (`ChaCha20Poly1305`); envuelve/desenvuelve los payloads HDLC. |
 | **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Pigweed AVR**: `pw::hdlc_avr::Encoder` / `Decoder`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Pigweed AVR**: `pw::rpc_avr::RpcServer` + 8 `RpcService`. | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`). |
 | **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Pigweed AVR**: `pw_log_avr` + `pw_tokenizer`. | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |

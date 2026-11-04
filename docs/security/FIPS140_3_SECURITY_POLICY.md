@@ -12,7 +12,8 @@ When a shared secret is configured, the link authenticates `LinkSync`, derives d
 ```mermaid
 graph LR
     subgraph Arduino MCU Boundary
-        A[Mbed TLS HKDF / HMAC / ChaCha20-Poly1305]
+        A[PSA SHA-256 / HMAC and Mbed TLS zeroization]
+        E[HKDF / ChaCha20-Poly1305: Mbed TLS 4 on AVR/SAMD; wolfCrypt 5.8.4 on ESP32]
         B[Directional session keys and counters]
     end
 
@@ -24,6 +25,8 @@ graph LR
         D[Python cryptography HKDF / HMAC / AEAD]
     end
 
+    A --> E
+    E --> B
     B <-->|LinkSync proofs; ChaCha20-Poly1305 payloads| UART
     UART <-->|Authenticated HDLC payloads| D
 ```
@@ -70,7 +73,7 @@ The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks it
 The MCU does not currently have a demonstrated persistent boot epoch or cross-platform cryptographic random source. Consequently, replay of an old authenticated `LinkSync` exchange and its captured frames after an MCU restart is not ruled out. `LinkReset` remains an explicit plaintext recovery control, not a plaintext fallback for data.
 
 ### 4.3 Key Zeroization
-* **C++ MCU**: Mbed TLS platform zeroization clears derived keys, AEAD scratch buffers, handshake intermediates, and the stored shared secret when the bridge is reinitialized. This is not a guarantee that every library-internal copy is erased.
+* **C++ MCU**: Mbed TLS platform zeroization clears derived keys, output buffers, handshake intermediates, and the stored shared secret when the bridge is reinitialized. This is not a guarantee that every library-internal copy is erased.
 * **Python MPU**: `secure_zero()` overwrites the supplied mutable `bytearray` or writable `memoryview`. It cannot guarantee removal of immutable copies or every copy retained by the interpreter, allocator, or native libraries; it is not a process-wide zeroization guarantee.
 
 ### 4.4 Cloud Transport

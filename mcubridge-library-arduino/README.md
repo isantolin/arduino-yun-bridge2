@@ -35,7 +35,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 ### External dependencies
 
 - **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, `pw_rpc` server/service dispatch, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log_avr` tokenized diagnostics, and `pw_chrono_avr` atomic millisecond timekeeping).
-- **PigweedAVR**: Provides MCU HDLC/RPC framing and dispatch. Mbed TLS supplies ChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, constant-time comparison, and secure zeroization for the authenticated link.
+- **Cryptographic providers**: PSA supplies SHA-256/HMAC-SHA256 and Mbed TLS platform zeroization. HKDF-SHA256 and ChaCha20-Poly1305 use Mbed TLS 4 on AVR/SAMD and wolfCrypt 5.8.4 on ESP32.
 - **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`, `span`) with strict Zero-STL (`-DETL_NO_STL`) compliance.
 

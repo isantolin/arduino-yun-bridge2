@@ -926,8 +926,12 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> out_tag = {};
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> debug_tag = {};
+    constexpr char debug_secret[] =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     if (rpc::security::handshake_generate_tag(
-            etl::span<const uint8_t>(_shared_secret.data(), 10U),
+            etl::span<const uint8_t>(
+                reinterpret_cast<const uint8_t*>(debug_secret),
+                sizeof(debug_secret) - 1U),
             etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
             etl::span<uint8_t>(debug_tag))) {
       bridge::pb::copy_bytes(resp.tag, debug_tag.data(), debug_tag.size());

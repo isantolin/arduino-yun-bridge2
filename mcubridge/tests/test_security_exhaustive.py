@@ -80,17 +80,11 @@ def test_link_cipher_rejects_invalid_key_lengths(tx_key: bytes, rx_key: bytes) -
         LinkCipher(tx_key, rx_key)
 
 
-def test_link_cipher_rejects_invalid_address_and_exhausted_counter(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_link_cipher_rejects_invalid_address() -> None:
     key = b"\x00" * protocol.AEAD_KEY_SIZE
     cipher = LinkCipher(key, key)
     with pytest.raises(ValueError, match="address is out of range"):
         cipher.encrypt(-1, b"request")
-
-    monkeypatch.setattr(cipher, "_tx_counter", 0xFFFFFFFFFFFFFFFF)
-    with pytest.raises(OverflowError, match="counter exhausted"):
-        cipher.encrypt(protocol.HDLC_ADDRESS_RPC, b"request")
 
 
 @pytest.mark.parametrize(

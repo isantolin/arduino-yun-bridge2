@@ -84,6 +84,41 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
+def run_pw_rpc_packet_generate(repo_root: Path) -> None:
+    """Generate pw_rpc's internal packet type with Pigweed's PWPB compiler."""
+    pw_root = repo_root / "third_party" / "avr_pigweed_port" / "third_party" / "pigweed"
+    proto_path = pw_root / "pw_rpc" / "internal" / "packet.proto"
+    plugin_path = pw_root / "pw_protobuf" / "py" / "pw_protobuf" / "plugin.py"
+    output_dir = repo_root / "mcubridge-library-arduino" / "src"
+    if not proto_path.is_file() or not plugin_path.is_file():
+        raise FileNotFoundError("Pigweed pw_rpc PWPB generator sources are missing")
+
+    env = os.environ.copy()
+    python_paths = (
+        pw_root / "pw_protobuf" / "py",
+        pw_root / "pw_rpc" / "py",
+        pw_root / "pw_codegen" / "py",
+        pw_root / "pw_cli" / "py",
+    )
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(
+        [*(str(path) for path in python_paths), *([existing_pythonpath] if existing_pythonpath else [])]
+    )
+
+    command = [
+        "protoc",
+        f"-I{pw_root}",
+        f"--plugin=protoc-gen-pwpb={plugin_path}",
+        f"--pwpb_out={output_dir}",
+        "pw_rpc/internal/packet.proto",
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, cwd=pw_root, env=env)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: pw_rpc packet generation failed:\n{e.stderr}\n")
+        sys.exit(1)
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigFieldDef:
     name: str
@@ -828,6 +863,8 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
     if args.cpp:
         for stem in ("config_schema", "mcu_wire"):
             outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
+        outputs.append(repo_root / "mcubridge-library-arduino/src/protocol/mcu_wire.rpc.pb.h")
+        outputs.append(repo_root / "mcubridge-library-arduino/src/pw_rpc/internal/packet.pwpb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
         for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
@@ -859,8 +896,15 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
         proto_path.parent / "buf.yaml",
         proto_path.parent / "buf.gen.yaml",
         repo_root / ".github/actions/setup-protoc/action.yml",
+        repo_root / "tools/protocol/protoc_gen_mcu_rpc.py",
         *template_paths,
     ]
+    pw_root = repo_root / "third_party" / "avr_pigweed_port" / "third_party" / "pigweed"
+    packet_proto = pw_root / "pw_rpc" / "internal" / "packet.proto"
+    if packet_proto.is_file():
+        input_paths.append(packet_proto)
+        for package in ("pw_protobuf/py/pw_protobuf", "pw_rpc/py/pw_rpc", "pw_codegen/py/pw_codegen"):
+            input_paths.extend(sorted((pw_root / package).rglob("*.py")))
     version_path = repo_root / "VERSION"
     if version_path.is_file():
         input_paths.append(version_path)
@@ -980,6 +1024,8 @@ def main(
 
     sys.stderr.write(f"Generating protocol bindings from {proto_path} via buf...\n")
     run_buf_generate(proto_path.parent)
+    if args.cpp:
+        run_pw_rpc_packet_generate(REPO_ROOT)
 
     proto_spec = load_spec_from_proto(proto_path)
     context = build_protocol_context(proto_spec, version)

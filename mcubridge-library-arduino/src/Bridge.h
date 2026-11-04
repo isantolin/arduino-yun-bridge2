@@ -7,6 +7,7 @@
 #define BRIDGE_H
 
 #include <Arduino.h>
+#include <cstddef>
 #if defined(ARDUINO_ARCH_ESP32)
 #include <wolfssl.h>
 #else
@@ -60,12 +61,16 @@
 #include <etl/vector.h>
 // clang-format on
 
+#include <pw_rpc/channel.h>
+#include <pw_rpc/server.h>
+
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
 #include "hal/hal.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include "protocol/mcu_wire.pb.h"
+#include "protocol/mcu_wire.rpc.pb.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
 
@@ -117,7 +122,20 @@ inline void copy_bytes(PbBytesField& dst, const uint8_t* src, size_t size) {
 class BridgeClass : public etl::observable<bridge::BridgeObserver,
                                            bridge::config::MAX_OBSERVERS> {
  public:
+  class RpcChannelOutput final : public pw::rpc::ChannelOutput {
+   public:
+    explicit RpcChannelOutput(BridgeClass& bridge)
+        : pw::rpc::ChannelOutput("mcu-serial"), bridge_(bridge) {}
+
+    size_t MaximumTransmissionUnit() override;
+    pw::Status Send(pw::span<const std::byte> packet) override;
+
+   private:
+    BridgeClass& bridge_;
+  };
+
   explicit BridgeClass(Stream& stream);
+  ~BridgeClass();
 
   void setStream(Stream& stream);
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
@@ -261,7 +279,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _initObservers();
   void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
   void _dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet);
-  bool _writeHdlcFrame(uint64_t address, etl::span<const uint8_t> data);
+  bool _writeHdlcFrame(uint64_t address, etl::span<const uint8_t> data,
+                       bool plaintext = false);
   bool _decryptHdlcFrame(uint64_t address, etl::span<const uint8_t> envelope,
                          etl::span<const uint8_t>& plaintext);
   void _clearLinkSession();
@@ -270,7 +289,11 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   HardwareSerial* _hardware_serial = nullptr;
   avr_port::ArduinoStream _arduino_stream;
   pw::hdlc::DecoderBuffer<bridge::config::RX_BUFFER_SIZE> _hdlc_decoder;
-  pw::rpc_avr::RpcServer<8> _rpc_server;
+  RpcChannelOutput _rpc_channel_output;
+  pw::rpc::Channel _rpc_channel;
+  pw::rpc::Server _rpc_server;
+  bool _rpc_services_registered{false};
+  bool _rpc_plaintext_response{false};
 
   StatusHandler _status_handler;
   uint32_t _pending_baudrate = 0;

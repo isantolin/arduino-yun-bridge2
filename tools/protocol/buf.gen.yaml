@@ -23,3 +23,7 @@ plugins:
     out: .
     exclude_types:
       - "rpc.pb.DaemonMetrics"
+
+  # 5. Upstream Pigweed RPC server/client stubs for the MCU wire services.
+  - local: ["python3", "protoc_gen_mcu_rpc.py"]
+    out: ../../mcubridge-library-arduino/src/protocol

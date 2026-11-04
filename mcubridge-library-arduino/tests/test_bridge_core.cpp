@@ -39,7 +39,7 @@ class FlowControlStream final : public Stream {
 };
 
 void setUp() {}
-void tearDown() {}
+void tearDown() { Bridge.setStream(Serial); }
 
 void reset_bridge(const char* secret = nullptr) {
   Bridge.begin(115200, secret);

@@ -9,6 +9,10 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/string_view.h>
+#if defined(ARDUINO_ARCH_ESP32)
+// The Arduino core's PSA build omits HKDF and ChaCha20-Poly1305.
+#include <MbedTLS.h>
+#endif
 #include <mbedtls/platform_util.h>
 #include <psa/crypto.h>
 #include <psa/crypto_extra.h>

@@ -224,7 +224,7 @@ maintainer=Mbed TLS Contributors
 sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
 paragraph=Staged by the McuBridge installer from the pinned upstream release.
 category=Communication
-architectures=avr,samd
+architectures=avr,samd,esp32
 includes=MbedTLS.h,psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
 EOF
 

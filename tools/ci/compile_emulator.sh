@@ -17,6 +17,19 @@ METADATA_DIR="${ROOT_DIR}/build/emulation"
 ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
 mkdir -p "${ARDUINO_LIBS}"
 
+# Use system Python
+GEN_PYTHON=$(command -v python3 || command -v python)
+
+echo "[emulator] Generating protocol bindings..."
+if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
+    echo "ERROR: Protocol generation failed. See above for missing dependencies."
+    exit 1
+fi
+
 echo "[emulator] Installing library dependencies..."
 "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
@@ -29,8 +42,6 @@ if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# Use system Python
-GEN_PYTHON=$(command -v python3 || command -v python)
 mkdir -p "${METADATA_DIR}"
 "${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
     --host-test \
@@ -40,16 +51,6 @@ mkdir -p "${METADATA_DIR}"
 echo "[emulator] Verifying library paths..."
 ls -la "${PIGWEED_PATH}" || echo "PIGWEED_PATH not found"
 ls -la "${PIGWEED_PATH}/src" || echo "PIGWEED_PATH/src not found"
-
-echo "[emulator] Generating protocol bindings..."
-if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
-    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-    --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
-    echo "ERROR: Protocol generation failed. See above for missing dependencies."
-    exit 1
-fi
 
 NANOPB_SOURCES=(
     "${SRC_DIR}/pb_encode.c"

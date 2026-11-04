@@ -36,18 +36,15 @@ fi
 USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"
 mkdir -p "$USER_LIB_DIR"
 
+echo "[compile_firmware] Generating protocol bindings..."
+python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
+
 echo "[compile_firmware] Installing required library dependencies for ${EMULATOR}..."
 "${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
-
-# Generate protocol stubs if missing
-if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
-    echo "[compile_firmware] Generating protocol bindings..."
-    python3 "${ROOT_DIR}/tools/protocol/generate.py" \
-        --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
-        --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-        --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
-        --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
-fi
 
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"

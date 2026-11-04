@@ -234,6 +234,13 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
+      - name: Generate Protocol Bindings
+        run: |
+          python tools/protocol/generate.py \
+            --spec tools/protocol/cloud_gateway.proto \
+            --py mcubridge/mcubridge/protocol/protocol.py \
+            --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
+            --py-client mcubridge-client-examples/mcubridge_client/protocol.py
       - name: Install Arduino Dependencies
         run: |
           ./mcubridge-library-arduino/tools/install.sh

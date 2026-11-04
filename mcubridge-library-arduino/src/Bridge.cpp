@@ -15,11 +15,6 @@
 #include "services/Process.h"
 #include "services/SPIService.h"
 
-namespace rpc::security {
-extern uint8_t debug_kdf_stage;
-extern uint32_t debug_kdf_status;
-}
-
 namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception&) {
   Bridge.enterSafeState();
@@ -925,23 +920,6 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
                          rpc::RPC_HANDSHAKE_NONCE_LENGTH);
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> out_tag = {};
-    etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> debug_tag = {};
-    if (rpc::security::handshake_generate_tag(
-            etl::span<const uint8_t>(_shared_secret),
-            etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
-            etl::span<uint8_t>(debug_tag))) {
-      bridge::pb::copy_bytes(resp.tag, debug_tag.data(), debug_tag.size());
-    } else {
-      resp.tag.bytes[0] = rpc::security::debug_kdf_stage;
-      for (size_t i = 0U; i < sizeof(rpc::security::debug_kdf_status); ++i) {
-        resp.tag.bytes[i + 1U] = static_cast<uint8_t>(
-            rpc::security::debug_kdf_status >> (i * 8U));
-      }
-      resp.tag.size = sizeof(rpc::security::debug_kdf_status) + 1U;
-    }
-    rpc::security::secure_zero(etl::span<uint8_t>(debug_tag));
-    return resp;
-
     if (!rpc::security::handshake_verify_tag(
             etl::span<const uint8_t>(_shared_secret),
             etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
@@ -949,21 +927,6 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
       _clearLinkSession();
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
       emitStatus(rpc::StatusCode::STATUS_ERROR);
-      etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> debug_tag = {};
-      constexpr char debug_secret[] =
-          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-      if (rpc::security::handshake_generate_tag(
-              etl::span<const uint8_t>(
-                  reinterpret_cast<const uint8_t*>(debug_secret),
-                  sizeof(debug_secret) - 1U),
-              etl::span<const uint8_t>(m.nonce.bytes, m.nonce.size),
-              etl::span<uint8_t>(debug_tag))) {
-        bridge::pb::copy_bytes(resp.tag, debug_tag.data(), debug_tag.size());
-      } else {
-        resp.tag.bytes[0] = 0xEEU;
-        resp.tag.size = 1U;
-      }
-      rpc::security::secure_zero(etl::span<uint8_t>(debug_tag));
       return resp;
     }
 
@@ -980,8 +943,6 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
         _clearLinkSession();
         _fsm.receive(bridge::fsm::EvHandshakeFailed());
         emitStatus(rpc::StatusCode::STATUS_ERROR);
-        resp.tag.bytes[0] = 0xA3U;
-        resp.tag.size = 1U;
         return resp;
       }
       bridge::pb::copy_bytes(resp.tag, out_tag.data(), out_tag.size());
@@ -994,8 +955,6 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
       _clearLinkSession();
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
       emitStatus(rpc::StatusCode::STATUS_ERROR);
-      resp.tag.bytes[0] = 0xA2U;
-      resp.tag.size = 1U;
       return resp;
     }
   } else {

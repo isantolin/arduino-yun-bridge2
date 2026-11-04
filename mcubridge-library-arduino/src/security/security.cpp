@@ -12,11 +12,13 @@
 #include <mbedtls/platform_util.h>
 #include <psa/crypto.h>
 #include <psa/crypto_extra.h>
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 #include <wolfssl/wolfcrypt/settings.h>
 #endif
 #if defined(ARDUINO_ARCH_ESP32)
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
+#endif
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 #include <wolfssl/wolfcrypt/hmac.h>
 #endif
 
@@ -48,15 +50,17 @@ namespace {
 constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);
 constexpr psa_algorithm_t kHandshakeMac = PSA_ALG_TRUNCATED_MAC(
     kHmacSha256, static_cast<psa_algorithm_t>(RPC_HANDSHAKE_TAG_LENGTH));
-#if !defined(ARDUINO_ARCH_ESP32)
+#if !defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ARCH_AVR)
 constexpr psa_algorithm_t kHkdfSha256 = PSA_ALG_HKDF(PSA_ALG_SHA_256);
+#endif
+#if !defined(ARDUINO_ARCH_ESP32)
 constexpr psa_algorithm_t kChaCha20Poly1305 = PSA_ALG_CHACHA20_POLY1305;
 #endif
 static_assert(PSA_MAC_LENGTH(PSA_KEY_TYPE_HMAC, 256U, kHandshakeMac) ==
               RPC_HANDSHAKE_TAG_LENGTH);
 static uint8_t kEmptyBuffer = 0U;
 
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 bool fits_wolfssl_length(size_t length) {
   return length <= static_cast<size_t>(UINT32_MAX);
 }
@@ -95,7 +99,7 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> salt,
                         etl::span<const uint8_t> info,
                         etl::span<uint8_t> output) {
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
   if (secret.empty() || output.empty() ||
       output.size() > 255U * RPC_SHA256_DIGEST_SIZE ||
       !fits_wolfssl_length(secret.size()) ||
@@ -124,15 +128,7 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   }
   return ok;
 #else
-  debug_kdf_stage = 0U;
-  debug_kdf_status = 0U;
-  if (secret.empty() || output.empty()) {
-    debug_kdf_stage = 1U;
-    secure_zero(output);
-    return false;
-  }
-  if (!initialize_crypto()) {
-    debug_kdf_stage = 2U;
+  if (secret.empty() || output.empty() || !initialize_crypto()) {
     secure_zero(output);
     return false;
   }
@@ -141,7 +137,6 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   const bool key_imported =
       import_key(PSA_KEY_TYPE_DERIVE, secret.size() * 8U, PSA_KEY_USAGE_DERIVE,
                  kHkdfSha256, secret, secret_key);
-  if (!key_imported) debug_kdf_stage = 3U;
   psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
   bool operation_started = false;
   bool ok = key_imported;
@@ -149,44 +144,35 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   if (ok) {
     ok = psa_key_derivation_setup(&operation, kHkdfSha256) == PSA_SUCCESS;
     operation_started = ok;
-    if (!ok) debug_kdf_stage = 4U;
   }
   if (ok) {
     const uint8_t* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
-    const psa_status_t status = psa_key_derivation_input_bytes(
-        &operation, PSA_KEY_DERIVATION_INPUT_SALT, salt_data, salt.size());
-    debug_kdf_status = static_cast<uint32_t>(status);
-    ok = status == PSA_SUCCESS;
-    if (!ok) debug_kdf_stage = 5U;
+    ok = psa_key_derivation_input_bytes(&operation,
+                                        PSA_KEY_DERIVATION_INPUT_SALT,
+                                        salt_data, salt.size()) == PSA_SUCCESS;
   }
   if (ok) {
     ok = psa_key_derivation_input_key(&operation,
                                       PSA_KEY_DERIVATION_INPUT_SECRET,
                                       secret_key) == PSA_SUCCESS;
-    if (!ok) debug_kdf_stage = 6U;
   }
   if (ok) {
     const uint8_t* info_data = info.empty() ? &kEmptyBuffer : info.data();
-    const psa_status_t status = psa_key_derivation_input_bytes(
-        &operation, PSA_KEY_DERIVATION_INPUT_INFO, info_data, info.size());
-    debug_kdf_status = static_cast<uint32_t>(status);
-    ok = status == PSA_SUCCESS;
-    if (!ok) debug_kdf_stage = 7U;
+    ok = psa_key_derivation_input_bytes(&operation,
+                                        PSA_KEY_DERIVATION_INPUT_INFO,
+                                        info_data, info.size()) == PSA_SUCCESS;
   }
   if (ok) {
     ok = psa_key_derivation_output_bytes(&operation, output.data(),
                                          output.size()) == PSA_SUCCESS;
-    if (!ok) debug_kdf_stage = 8U;
   }
 
   if (operation_started &&
       psa_key_derivation_abort(&operation) != PSA_SUCCESS) {
     ok = false;
-    debug_kdf_stage = 9U;
   }
   if (key_imported && psa_destroy_key(secret_key) != PSA_SUCCESS) {
     ok = false;
-    debug_kdf_stage = 10U;
   }
   if (!ok) {
     secure_zero(output);

@@ -43,8 +43,6 @@ extern "C" psa_status_t mbedtls_psa_external_get_random(
 
 namespace rpc {
 namespace security {
-uint8_t debug_kdf_stage = 0U;
-uint32_t debug_kdf_status = 0U;
 namespace {
 
 constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);

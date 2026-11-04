@@ -626,6 +626,11 @@ def test_handshake_calculate_tag_empty_secret() -> None:
     assert SerialHandshakeManager.calculate_handshake_tag(b"", nonce) == b""
 
 
+def test_handshake_calculate_tag_rejects_invalid_nonce_length() -> None:
+    with pytest.raises(ValueError, match="nonce has an invalid length"):
+        SerialHandshakeManager.calculate_handshake_tag(b"secret", b"short")
+
+
 def test_handshake_calculate_tag_matches_wire_vector() -> None:
     secret = b"shared-key"
     nonce = b"\xab" * protocol.HANDSHAKE_NONCE_LENGTH

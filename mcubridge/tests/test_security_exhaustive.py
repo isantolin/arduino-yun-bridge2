@@ -60,6 +60,39 @@ def test_link_cipher_rejects_replay_and_truncated_frames() -> None:
         mcu.decrypt(protocol.HDLC_ADDRESS_RPC, b"\x00" * (protocol.AEAD_COUNTER_SIZE - 1))
 
 
+def test_link_key_derivation_rejects_empty_secret_and_invalid_nonce() -> None:
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    with pytest.raises(ValueError, match="shared secret is empty"):
+        derive_link_keys(b"", nonce)
+    with pytest.raises(ValueError, match="nonce has an invalid length"):
+        derive_link_keys(b"secret", nonce[:-1])
+
+
+@pytest.mark.parametrize(
+    ("tx_key", "rx_key"),
+    [
+        (b"\x00" * (protocol.AEAD_KEY_SIZE - 1), b"\x00" * protocol.AEAD_KEY_SIZE),
+        (b"\x00" * protocol.AEAD_KEY_SIZE, b"\x00" * (protocol.AEAD_KEY_SIZE - 1)),
+    ],
+)
+def test_link_cipher_rejects_invalid_key_lengths(tx_key: bytes, rx_key: bytes) -> None:
+    with pytest.raises(ValueError, match="keys have an invalid length"):
+        LinkCipher(tx_key, rx_key)
+
+
+def test_link_cipher_rejects_invalid_address_and_exhausted_counter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = b"\x00" * protocol.AEAD_KEY_SIZE
+    cipher = LinkCipher(key, key)
+    with pytest.raises(ValueError, match="address is out of range"):
+        cipher.encrypt(-1, b"request")
+
+    monkeypatch.setattr(cipher, "_tx_counter", 0xFFFFFFFFFFFFFFFF)
+    with pytest.raises(OverflowError, match="counter exhausted"):
+        cipher.encrypt(protocol.HDLC_ADDRESS_RPC, b"request")
+
+
 @pytest.mark.parametrize(
     ("target", "kwargs"),
     [

@@ -12,17 +12,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pw_hdlc.decode import FrameDecoder
+from pw_rpc.internal.packet_pb2 import RpcPacket
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-from tools.emulation.test_fleet_mesh_hardware_e2e import wait_for_node_ready
+from mcubridge_client import mcu_wire_pb2
+from tools.emulation import test_fleet_mesh_hardware_e2e as fleet_mesh
 
 
 @pytest.mark.parametrize(
@@ -42,7 +46,83 @@ def test_wait_for_node_ready_requires_sync_and_capabilities(
     status_file = tmp_path / "node-status.json"
     status_file.write_text(json.dumps({"bridge": bridge_status}), encoding="utf-8")
 
-    assert wait_for_node_ready(status_file, timeout=0) is expected
+    assert fleet_mesh.wait_for_node_ready(status_file, timeout=0) is expected
+
+
+def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    sync_operation = fleet_mesh.protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+    assert sync_operation is not None
+    assert sync_operation.method_id is not None
+
+    class FakeSerial:
+        def __init__(self) -> None:
+            self.dtr = True
+            self.incoming = bytearray()
+            self.decoder = FrameDecoder()
+            self.sync_attempts = 0
+            self.closed = False
+
+        def open(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+        def write(self, data: bytes) -> int:
+            for frame in self.decoder.process(data):
+                request = RpcPacket.FromString(frame.data)
+                if request.method_id != sync_operation.method_id:
+                    continue
+                self.sync_attempts += 1
+                sync_request = mcu_wire_pb2.LinkSync.FromString(request.payload)
+                secret = fleet_mesh.DEFAULT_SHARED_SECRET.encode("utf-8")
+                response_tag = fleet_mesh.SerialHandshakeManager.calculate_handshake_response_tag(
+                    secret, sync_request.nonce
+                )
+                if self.sync_attempts == 1:
+                    self._queue_response(request.call_id + 1, sync_request.nonce, response_tag)
+                    self._queue_response(
+                        request.call_id,
+                        sync_request.nonce,
+                        bytes(value ^ 0xFF for value in response_tag),
+                    )
+                else:
+                    self._queue_response(request.call_id, sync_request.nonce, response_tag)
+            return len(data)
+
+        def read(self, size: int) -> bytes:
+            if not self.incoming:
+                time.sleep(0.001)
+                return b""
+            data = bytes(self.incoming[:size])
+            del self.incoming[:size]
+            return data
+
+        def _queue_response(self, call_id: int, nonce: bytes, tag: bytes) -> None:
+            self.incoming.extend(
+                fleet_mesh.protocol.encode_hdlc_rpc(
+                    protocol.Command.CMD_LINK_SYNC_RESP.value,
+                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
+                    call_id=call_id,
+                )
+            )
+
+    fake_serial = FakeSerial()
+
+    def open_serial(*_args: object, **_kwargs: object) -> FakeSerial:
+        return fake_serial
+
+    def fixed_nonce(size: int) -> bytes:
+        return b"\x01" * size
+
+    monkeypatch.setattr(fleet_mesh.serial, "serial_for_url", open_serial)
+    monkeypatch.setattr(fleet_mesh.secrets, "token_bytes", fixed_nonce)
+    monkeypatch.setattr(fleet_mesh, "UART_READY_PROBE_INTERVAL_SECONDS", 0.0)
+
+    assert fleet_mesh.wait_for_firmware_uart_ready("/dev/fake-uart", timeout=1.0)
+    assert fake_serial.sync_attempts == 2
+    assert fake_serial.dtr is False
+    assert fake_serial.closed is True
 
 
 class MeshNodeContext:

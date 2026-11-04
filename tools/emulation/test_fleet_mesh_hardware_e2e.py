@@ -14,7 +14,9 @@ single central ProtobufGateway.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
+import secrets
 import shutil
 import subprocess
 import sys
@@ -24,10 +26,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, cast
 
+import serial
 import structlog
 import tenacity
 import typer
+from google.protobuf.message import DecodeError
+from pw_hdlc.decode import FrameDecoder
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.logging import configure_logging
+from mcubridge.protocol import protocol
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session
 from tools.arduino_core_metadata import ArduinoCoreMetadata, read_metadata_json, resolve_core_metadata
@@ -67,6 +75,7 @@ logger = structlog.get_logger("fleet_mesh_hardware")
 
 PORT_RENODE = 12345
 PORT_QEMU = 12346
+UART_READY_PROBE_INTERVAL_SECONDS = 0.5
 
 
 @dataclass
@@ -77,7 +86,7 @@ class NodeRuntime:
     firmware_path: Path
     temp_dir: Path
     status_file: Path
-    pty_path: Path | None = None
+    pty_path: str | None = None
     procs: list[subprocess.Popen[str]] = field(default_factory=list[subprocess.Popen[str]])
 
 
@@ -125,6 +134,92 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
     start_daemon_thread(stream_pump, f"daemon-{node.name}", proc.stdout, log_collector.on_line, f"daemon-{node.name}")
     node.procs.append(proc)
     return proc
+
+
+def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
+    """Wait for a valid authenticated LinkSync response before starting the daemon."""
+    sync_operation = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+    if sync_operation is None or sync_operation.service_id is None or sync_operation.method_id is None:
+        raise RuntimeError("LinkSync is missing generated RPC metadata")
+    if timeout <= 0:
+        return False
+
+    ser = serial.serial_for_url(
+        port,
+        baudrate=protocol.DEFAULT_SAFE_BAUDRATE,
+        timeout=min(0.1, timeout),
+        write_timeout=min(1.0, timeout),
+        xonxoff=False,
+        rtscts=False,
+        dsrdtr=False,
+        do_not_open=True,
+    )
+    decoder = FrameDecoder()
+    secret = DEFAULT_SHARED_SECRET.encode("utf-8")
+    pending_syncs: dict[int, tuple[bytes, bytes]] = {}
+    call_id = 0
+    next_probe = 0.0
+    deadline = time.monotonic() + timeout
+
+    try:
+        ser.dtr = False
+        ser.open()
+        while time.monotonic() < deadline:
+            now = time.monotonic()
+            if now >= next_probe:
+                call_id = (call_id + 1) & protocol.UINT16_MAX or 1
+                reset_request = protocol.encode_hdlc_rpc(
+                    protocol.Command.CMD_LINK_RESET.value,
+                    b"",
+                    call_id=call_id,
+                )
+                if ser.write(reset_request) != len(reset_request):
+                    raise OSError("Partial write while resetting MCU link readiness probe")
+
+                call_id = (call_id + 1) & protocol.UINT16_MAX or 1
+                nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
+                request_tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+                sync_request = protocol.encode_hdlc_rpc(
+                    protocol.Command.CMD_LINK_SYNC.value,
+                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
+                    call_id=call_id,
+                )
+                if ser.write(sync_request) != len(sync_request):
+                    raise OSError("Partial write while probing MCU UART readiness")
+                pending_syncs[call_id] = (
+                    nonce,
+                    SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce),
+                )
+                next_probe = now + UART_READY_PROBE_INTERVAL_SECONDS
+
+            for frame in decoder.process(ser.read(512)):
+                if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
+                    continue
+                response = RpcPacket()
+                try:
+                    response.ParseFromString(frame.data)
+                except DecodeError:
+                    continue
+                expected = pending_syncs.get(response.call_id)
+                if (
+                    expected is None
+                    or response.type != PacketType.RESPONSE
+                    or response.status != 0
+                    or response.service_id != sync_operation.service_id
+                    or response.method_id != sync_operation.method_id
+                ):
+                    continue
+                try:
+                    sync_response = mcu_wire_pb2.LinkSync.FromString(response.payload)
+                except DecodeError:
+                    continue
+                if sync_response.nonce == expected[0] and hmac.compare_digest(sync_response.tag, expected[1]):
+                    logger.info("Firmware UART authenticated after POST", port=port)
+                    return True
+    finally:
+        ser.close()
+
+    return False
 
 
 def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
@@ -269,7 +364,7 @@ def verify_host_binaries() -> tuple[Path, str, str, str] | None:
     return harness_bin, renode_bin, qemu_bin, socat_bin
 
 
-def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
+def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
     """Execute all 3 hardware emulators concurrently and verify cross-node mesh operations."""
     logger.info("================================================================================")
     logger.info("Starting Master Fleet Mesh Hardware Emulation (simavr + Renode + QEMU)")
@@ -315,7 +410,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         if not simavr_proc or not pty_mega:
             raise RuntimeError("simavr failed to spawn or emit a valid PTY slave path")
         all_procs.append(simavr_proc)
-        all_procs.append(spawn_daemon_for_node(node_mega, pty_mega, log_collector))
+        node_mega.pty_path = pty_mega
 
         # Node 2: Arduino MKR WiFi 1010 (Renode)
         node_mkr = NodeRuntime(
@@ -373,7 +468,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
 
         if not wait_for_path_ready(pty_mkr, timeout=15.0):
             raise RuntimeError("Timed out waiting for Renode PTY bridge")
-        all_procs.append(spawn_daemon_for_node(node_mkr, str(pty_mkr), log_collector))
+        node_mkr.pty_path = str(pty_mkr)
 
         # Node 3: Arduino Nano ESP32 (QEMU)
         node_esp32 = NodeRuntime(
@@ -433,13 +528,36 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 120.0) -> bool:
         )
         if not wait_for_path_ready(pty_qemu, timeout=15.0):
             raise RuntimeError("Timed out waiting for QEMU PTY bridge")
-        all_procs.append(spawn_daemon_for_node(node_esp32, str(pty_qemu), log_collector))
+        node_esp32.pty_path = str(pty_qemu)
 
-        logger.info("Waiting for all 3 hardware emulators to complete cryptographic synchronization...")
         nodes = (node_mega, node_mkr, node_esp32)
-        start_time = time.time()
+        ready_deadline = time.monotonic() + timeout_seconds
+        logger.info("Waiting for all firmware POST checks to enable their UARTs...")
         for node in nodes:
-            remaining = max(1.0, timeout_seconds - (time.time() - start_time))
+            if node.pty_path is None:
+                raise RuntimeError(f"No UART PTY configured for {node.name}")
+            remaining = ready_deadline - time.monotonic()
+            if remaining <= 0 or not wait_for_firmware_uart_ready(node.pty_path, timeout=remaining):
+                logger.error(
+                    "Firmware UART did not complete authenticated LinkSync after POST",
+                    node=node.name,
+                    board=node.board.label,
+                )
+                return False
+            logger.info("Firmware POST passed and UART is responsive", node=node.name, board=node.board.label)
+
+        for node in nodes:
+            if node.pty_path is None:
+                raise RuntimeError(f"No UART PTY configured for {node.name}")
+            all_procs.append(spawn_daemon_for_node(node, node.pty_path, log_collector))
+
+        sync_deadline = ready_deadline
+        logger.info("Waiting for all 3 hardware emulators to complete cryptographic synchronization...")
+        for node in nodes:
+            remaining = sync_deadline - time.monotonic()
+            if remaining <= 0:
+                logger.error("Timed out waiting for all mesh nodes to synchronize")
+                return False
             if not wait_for_node_ready(node.status_file, timeout=remaining):
                 logger.error(
                     "Node failed cryptographic synchronization or capabilities discovery",
@@ -485,7 +603,7 @@ cli = typer.Typer(
 
 @cli.command()
 def main(
-    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 120.0,
+    timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds")] = 180.0,
 ) -> None:
     ok = run_fleet_mesh_hardware_e2e(timeout_seconds=timeout)
     if not ok:

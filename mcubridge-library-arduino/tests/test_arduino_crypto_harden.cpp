@@ -28,9 +28,20 @@ constexpr etl::array<uint8_t, 10U> kVectorSecret = {
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kVectorNonce = {
     0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU,
     0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU};
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH>
+    kLongHandshakeNonce = {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U,
+                           8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U};
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> kExpectedTag = {
     0xF0U, 0x7AU, 0x5AU, 0xA1U, 0x34U, 0x05U, 0x71U, 0x5BU,
     0x8B,  0x54U, 0xEFU, 0xDEU, 0x57U, 0xACU, 0x81U, 0x30U};
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH>
+    kExpectedLongHandshakeTag = {0x76U, 0x8DU, 0xFCU, 0xD9U, 0x27U, 0x29U,
+                                 0xAEU, 0x57U, 0xC1U, 0x2AU, 0xEAU, 0xFDU,
+                                 0x15U, 0x28U, 0x83U, 0xF8U};
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH>
+    kExpectedLongHandshakeResponseTag = {
+        0x4CU, 0x1BU, 0x41U, 0xA8U, 0x9EU, 0xA7U, 0xEAU, 0xD5U,
+        0x8BU, 0xF6U, 0x97U, 0xDBU, 0x29U, 0x8BU, 0x16U, 0xB7U};
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH>
     kExpectedResponseTag = {0x46U, 0x82U, 0x99U, 0xFAU, 0xC4U, 0xFBU,
                             0x82U, 0xDEU, 0x13U, 0x91U, 0xF8U, 0xA9U,
@@ -118,6 +129,44 @@ void test_handshake_tag_known_answer(void) {
       etl::equal(actual_tag.begin(), actual_tag.end(), response_tag.begin()));
 }
 
+void test_long_handshake_secret_known_answer(void) {
+  etl::array<uint8_t, 64U> secret = {};
+  secret.fill(static_cast<uint8_t>('A'));
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> request_tag = {};
+  TEST_ASSERT_TRUE(rpc::security::handshake_generate_tag(
+      secret, kLongHandshakeNonce, request_tag));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedLongHandshakeTag.data(),
+                                request_tag.data(), request_tag.size());
+  TEST_ASSERT_TRUE(rpc::security::handshake_verify_tag(
+      secret, kLongHandshakeNonce, kExpectedLongHandshakeTag));
+
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> response_tag = {};
+  TEST_ASSERT_TRUE(rpc::security::handshake_generate_response_tag(
+      secret, kLongHandshakeNonce, response_tag));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedLongHandshakeResponseTag.data(),
+                                response_tag.data(), response_tag.size());
+
+  constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE>
+      kExpectedHostToMcu = {
+          0xDCU, 0xCFU, 0x88U, 0xF5U, 0x7BU, 0x24U, 0x3BU, 0x24U,
+          0xDEU, 0xC4U, 0x5BU, 0xD2U, 0xCAU, 0xBEU, 0x12U, 0x5AU,
+          0x4EU, 0xDCU, 0x9FU, 0xF7U, 0xC5U, 0xA1U, 0x77U, 0x17U,
+          0x22U, 0x03U, 0xE1U, 0x16U, 0x73U, 0x7AU, 0x9BU, 0x03U};
+  constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedMcuToHost = {
+      0x74U, 0xA8U, 0xD5U, 0xD4U, 0xBDU, 0x85U, 0x87U, 0xCCU,
+      0x3FU, 0xB1U, 0x89U, 0xCCU, 0x5DU, 0x2CU, 0x41U, 0xD2U,
+      0x4EU, 0x63U, 0xF7U, 0xEAU, 0x7AU, 0x64U, 0x2EU, 0x77U,
+      0x64U, 0x78U, 0x81U, 0x6DU, 0x59U, 0xE8U, 0x3AU, 0xEEU};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> host_to_mcu = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host = {};
+  TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
+      secret, kLongHandshakeNonce, host_to_mcu, mcu_to_host));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(),
+                                host_to_mcu.data(), host_to_mcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
+                                mcu_to_host.data(), mcu_to_host.size());
+}
+
 void test_session_key_derivation_known_answer(void) {
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedHostToMcu = {
       0x5D, 0xFD, 0x05, 0x83, 0x21, 0x1B, 0x31, 0x36, 0x0B, 0x59, 0x8B,
@@ -158,6 +207,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_handshake_tag_generation_and_verification);
   RUN_TEST(test_ct_memcmp_returns_nonzero_for_high_bit_mismatch);
   RUN_TEST(test_handshake_tag_known_answer);
+  RUN_TEST(test_long_handshake_secret_known_answer);
   RUN_TEST(test_session_key_derivation_known_answer);
   RUN_TEST(test_psa_random_fails_without_entropy_source);
 #if BRIDGE_ENABLE_POST_TESTS

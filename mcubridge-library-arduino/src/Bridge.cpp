@@ -523,20 +523,18 @@ void BridgeClass::_watchdogTask() {
 
 void BridgeClass::_serialTask() {
   if (!_stream) return;
-  const int avail_count = _stream->available();
-  if (avail_count > 0) {
-    etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> chunk;
-    const size_t to_read =
-        etl::min<size_t>(static_cast<size_t>(avail_count), chunk.size());
-    etl::for_each_n(chunk.begin(), to_read, [this](uint8_t&) {
-      const int b = _stream->read();
-      if (b >= 0) {
-        auto result = _hdlc_decoder.Process(static_cast<pw::byte>(b));
-        if (result.ok()) {
-          _handleReceivedHdlcFrame(result.value());
-        }
+  etl::array<pw::byte, bridge::config::RX_BUFFER_SIZE> chunk;
+  const auto read_result =
+      _arduino_stream.Read(pw::ByteSpan(chunk.data(), chunk.size()));
+  if (read_result.ok()) {
+    for (const pw::byte b : read_result.value()) {
+      auto result = _hdlc_decoder.Process(b);
+      if (result.ok()) {
+        _handleReceivedHdlcFrame(result.value());
       }
-    });
+    }
+  } else if (read_result.status() != pw::Status::ResourceExhausted()) {
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 
   const int avail = _stream->available();

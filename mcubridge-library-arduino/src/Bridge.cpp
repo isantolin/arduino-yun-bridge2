@@ -17,6 +17,7 @@
 
 namespace rpc::security {
 extern uint8_t debug_kdf_stage;
+extern uint32_t debug_kdf_status;
 }
 
 namespace etl {
@@ -932,7 +933,11 @@ rpc_pb_LinkSync BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& m) {
       bridge::pb::copy_bytes(resp.tag, debug_tag.data(), debug_tag.size());
     } else {
       resp.tag.bytes[0] = rpc::security::debug_kdf_stage;
-      resp.tag.size = 1U;
+      for (size_t i = 0U; i < sizeof(rpc::security::debug_kdf_status); ++i) {
+        resp.tag.bytes[i + 1U] = static_cast<uint8_t>(
+            rpc::security::debug_kdf_status >> (i * 8U));
+      }
+      resp.tag.size = sizeof(rpc::security::debug_kdf_status) + 1U;
     }
     rpc::security::secure_zero(etl::span<uint8_t>(debug_tag));
     return resp;

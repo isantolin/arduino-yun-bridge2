@@ -42,6 +42,7 @@ extern "C" psa_status_t mbedtls_psa_external_get_random(
 namespace rpc {
 namespace security {
 uint8_t debug_kdf_stage = 0U;
+uint32_t debug_kdf_status = 0U;
 namespace {
 
 constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);
@@ -151,9 +152,10 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   }
   if (ok) {
     const uint8_t* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
-    ok = psa_key_derivation_input_bytes(&operation,
-                                        PSA_KEY_DERIVATION_INPUT_SALT,
-                                        salt_data, salt.size()) == PSA_SUCCESS;
+    const psa_status_t status = psa_key_derivation_input_bytes(
+        &operation, PSA_KEY_DERIVATION_INPUT_SALT, salt_data, salt.size());
+    debug_kdf_status = static_cast<uint32_t>(status);
+    ok = status == PSA_SUCCESS;
     if (!ok) debug_kdf_stage = 5U;
   }
   if (ok) {

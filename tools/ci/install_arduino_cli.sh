@@ -5,9 +5,9 @@ set -euo pipefail
 # GitHub "latest" page (which can fail on hosted runners due to rate limiting).
 readonly VERSION="1.5.1"
 readonly SHA256="28a8e119c498a25607821c36cb2dc49e8463941b261a0d99091baa7bc692dd2b"
-readonly URL="https://downloads.arduino.cc/arduino-cli/arduino-cli_\${VERSION}_Linux_64bit.tar.gz"
+readonly URL="https://downloads.arduino.cc/arduino-cli/arduino-cli_${VERSION}_Linux_64bit.tar.gz"
 
-DEST="\${BINDIR:-$PWD/bin}"
+DEST="${BINDIR:-$PWD/bin}"
 mkdir -p "$DEST"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT

@@ -461,18 +461,31 @@ class BridgeService:
 
     # --- Dispatchers ---
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | ProtobufMessage) -> None:
+    async def handle_mcu_frame(
+        self, operation_key: int | tuple[int, int], sequence_id: int, payload: bytes | ProtobufMessage
+    ) -> None:
+        """Dispatch an inbound frame by Pigweed service/method, or a control command ID."""
         serial = self.serial
         if not serial:
             return
-        spec = protocol.get_operation(command_id)
+
+        spec = protocol.get_operation(operation_key)
+        command_id = (
+            spec.command_id
+            if spec is not None and spec.command_id is not None
+            else operation_key if isinstance(operation_key, int) else operation_key[1]
+        )
         if not (
             self.state.is_synchronized or command_id in _STATUS_VALUES or (spec is not None and spec.pre_sync_allowed)
         ):
             return
 
         with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):
-            if handler := self.mcu_registry.get(command_id):
+            handler = self.mcu_registry.get(operation_key)
+            if handler is None and isinstance(operation_key, tuple):
+                # Keep command-ID aliases for status/control and older generated handlers.
+                handler = self.mcu_registry.get(command_id)
+            if handler is not None:
                 p = payload
                 if not isinstance(p, ProtobufMessage) and spec is not None and spec.pb_class is not None:
                     p = spec.pb_class()

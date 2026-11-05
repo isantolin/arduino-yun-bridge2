@@ -218,7 +218,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
         pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(payload_buf),
                           pb_stream.bytes_written);
 
-    uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
+    uint8_t frame_buf[kMaxRpcRequestPacketSize];
     auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
     if (!encode_res.ok()) return false;
 
@@ -239,7 +239,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     packet.method_id = method_id;
     packet.call_id = call_id;
 
-    uint8_t frame_buf[bridge::config::RX_BUFFER_SIZE];
+    uint8_t frame_buf[kMaxRpcRequestPacketSize];
     auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
     if (!encode_res.ok()) return false;
 
@@ -268,7 +268,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   rpc_pb_PinSubscribeResponse _handlePinSubscribe(
       const rpc_pb_PinSubscribeRequest& m);
-  rpc_pb_LinkSync _handleLinkSync(const rpc_pb_LinkSync& m);
+  void _handleLinkSync(const rpc_pb_LinkSync& request,
+                       rpc_pb_LinkSync& response);
   void _handleLinkReset();
   void _handleSetBaudrate(const rpc_pb_SetBaudratePacket& msg);
   void _handleEnterBootloader(const rpc_pb_EnterBootloader& msg);
@@ -284,9 +285,19 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet);
   bool _writeHdlcFrame(uint64_t address, etl::span<const uint8_t> data,
                        bool plaintext = false);
+  bool _writeEncryptedHdlcFrame(uint64_t address,
+                                etl::span<const uint8_t> data);
+  bool _writeEncryptedHdlcFrameWithBuffer(uint64_t address,
+                                          etl::span<const uint8_t> data,
+                                          etl::span<uint8_t> envelope);
+  bool _writeEncryptedHdlcFrameWithStackBuffer(uint64_t address,
+                                               etl::span<const uint8_t> data);
   bool _decryptHdlcFrame(uint64_t address, etl::span<const uint8_t> envelope,
                          etl::span<const uint8_t>& plaintext);
   void _clearLinkSession();
+
+  static constexpr size_t kMaxRpcRequestPacketSize =
+      rpc::MAX_PAYLOAD_SIZE + 32U;
 
   Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
@@ -306,6 +317,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _tx_aead_key{};
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _rx_aead_key{};
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
+  bool _rx_plaintext_in_use{false};
   uint64_t _tx_aead_counter{0};
   uint64_t _rx_aead_counter{0};
   bool _session_keys_ready{false};

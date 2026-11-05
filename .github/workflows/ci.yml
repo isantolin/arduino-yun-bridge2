@@ -52,7 +52,7 @@ jobs:
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
@@ -103,7 +103,7 @@ jobs:
       - name: Setup Arduino CLI
         run: |
           sudo apt-get update && sudo apt-get install -y gcc-avr avr-libc
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores and Dependencies
         run: |
@@ -154,7 +154,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y g++ make gcc-avr avr-libc
       - name: Setup Arduino CLI
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Dependencies
         run: |
@@ -229,7 +229,7 @@ jobs:
       - name: Install Arduino CLI and AVR core metadata
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
@@ -271,7 +271,7 @@ jobs:
       - name: Install Arduino CLI and AVR core
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
@@ -298,7 +298,7 @@ jobs:
       - name: Setup Arduino CLI & Tools
         run: |
           sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat gcc-avr avr-libc
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino AVR Core & Libraries
         run: |
@@ -335,7 +335,7 @@ jobs:
       - name: Setup Arduino CLI & Tools
         run: |
           sudo apt-get update && sudo apt-get install -y socat
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino SAMD Core & Libraries
         run: |
@@ -375,7 +375,7 @@ jobs:
       - name: Setup Arduino CLI & Tools
         run: |
           sudo apt-get update && sudo apt-get install -y socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino ESP32 Core & Tools
         run: |

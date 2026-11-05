@@ -58,7 +58,7 @@ async def test_console_write_empty_payload_is_noop(mock_bridge_service: BridgeSe
     response = await mock_bridge_service.console_write(pb.ConsoleWrite(data=b""))
 
     assert response.status == "ok"
-    assert mock_bridge_service.state.console_to_mcu_queue == []
+    assert len(mock_bridge_service.state.console_to_mcu_queue) == 0
 
 
 async def test_reset_link_without_serial_returns_false(mock_bridge_service: BridgeService) -> None:
@@ -67,7 +67,14 @@ async def test_reset_link_without_serial_returns_false(mock_bridge_service: Brid
     assert await mock_bridge_service.reset_link() is False
 
 
-async def test_send_cloud_event_without_cloud_stream_is_noop(mock_bridge_service: BridgeService) -> None:
+async def test_send_cloud_event_without_cloud_stream_is_noop(
+    mock_bridge_service: BridgeService,
+    mocker: MockerFixture,
+) -> None:
     mock_bridge_service.cloud_stream = None
+    debug_log = mocker.patch("mcubridge.services.runtime.logger.debug")
+    mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
 
     await mock_bridge_service.send_cloud_event("status_online", "info", "Device online")
+
+    debug_log.assert_not_called()

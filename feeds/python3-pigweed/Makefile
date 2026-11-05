@@ -7,7 +7,7 @@ PKG_RELEASE:=1
 PYPI_NAME:=pigweed
 PKG_HASH:=98ef14eb3c69a13d3a771d8317d82040b7915c7b83ac3e4792cdd57aa933c96c
 
-PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
+PKG_MAINTAINER:=Ignacio Santolin <ignacio@gmail.com>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
 

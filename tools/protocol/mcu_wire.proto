@@ -434,55 +434,115 @@ message SubscribeRequest {}
 message Empty {}
 
 service GpioService {
-  rpc SetPinMode(rpc.pb.PinMode) returns (rpc.pb.Empty);
-  rpc DigitalWrite(rpc.pb.DigitalWrite) returns (rpc.pb.Empty);
-  rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse);
-  rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.Empty);
-  rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse);
-  rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse);
+  rpc SetPinMode(rpc.pb.PinMode) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_SET_PIN_MODE";
+  }
+  rpc DigitalWrite(rpc.pb.DigitalWrite) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_DIGITAL_WRITE";
+  }
+  rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse) {
+    option (rpc_command) = "CMD_DIGITAL_READ";
+  }
+  rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_ANALOG_WRITE";
+  }
+  rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse) {
+    option (rpc_command) = "CMD_ANALOG_READ";
+  }
+  rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse) {
+    option (rpc_command) = "CMD_PIN_SUBSCRIBE";
+  }
 }
 
 service SystemService {
-  rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse);
-  rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse);
-  rpc LinkSync(rpc.pb.LinkSync) returns (rpc.pb.LinkSync);
-  rpc LinkReset(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty);
-  rpc GetCapabilities(rpc.pb.SubscribeRequest) returns (rpc.pb.Capabilities);
-  rpc SetBaudrate(rpc.pb.SetBaudratePacket) returns (rpc.pb.SetBaudratePacket);
-  rpc EnterBootloader(rpc.pb.EnterBootloader) returns (rpc.pb.Empty);
+  rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse) {
+    option (rpc_command) = "CMD_GET_VERSION";
+  }
+  rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse) {
+    option (rpc_command) = "CMD_GET_FREE_MEMORY";
+  }
+  rpc LinkSync(rpc.pb.LinkSync) returns (rpc.pb.LinkSync) {
+    option (rpc_command) = "CMD_LINK_SYNC";
+  }
+  rpc LinkReset(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_LINK_RESET";
+  }
+  rpc GetCapabilities(rpc.pb.SubscribeRequest) returns (rpc.pb.Capabilities) {
+    option (rpc_command) = "CMD_GET_CAPABILITIES";
+  }
+  rpc SetBaudrate(rpc.pb.SetBaudratePacket) returns (rpc.pb.SetBaudratePacket) {
+    option (rpc_command) = "CMD_SET_BAUDRATE";
+  }
+  rpc EnterBootloader(rpc.pb.EnterBootloader) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_ENTER_BOOTLOADER";
+  }
 }
 
 service ClockSyncService {
-  rpc ClockSync(rpc.pb.ClockSyncRequest) returns (rpc.pb.ClockSyncResponse);
+  rpc ClockSync(rpc.pb.ClockSyncRequest) returns (rpc.pb.ClockSyncResponse) {
+    option (rpc_command) = "CMD_CLOCK_SYNC";
+  }
 }
 
 service SpiService {
-  rpc Begin(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty);
-  rpc End(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty);
-  rpc SetConfig(rpc.pb.SpiConfig) returns (rpc.pb.Empty);
-  rpc Transfer(rpc.pb.SpiTransfer) returns (rpc.pb.SpiTransferResponse);
+  rpc Begin(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_SPI_BEGIN";
+  }
+  rpc End(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_SPI_END";
+  }
+  rpc SetConfig(rpc.pb.SpiConfig) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_SPI_SET_CONFIG";
+  }
+  rpc Transfer(rpc.pb.SpiTransfer) returns (rpc.pb.SpiTransferResponse) {
+    option (rpc_command) = "CMD_SPI_TRANSFER";
+  }
 }
 
 service FileSystemService {
-  rpc Write(rpc.pb.FileWrite) returns (rpc.pb.Empty);
-  rpc Read(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse);
-  rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty);
+  rpc Write(rpc.pb.FileWrite) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_FILE_WRITE";
+  }
+  rpc Read(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse) {
+    option (rpc_command) = "CMD_FILE_READ";
+  }
+  rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_FILE_REMOVE";
+  }
 }
 
 service MailboxService {
-  rpc Push(rpc.pb.MailboxPush) returns (rpc.pb.Empty);
-  rpc Read(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse);
-  rpc Available(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxAvailableResponse);
-  rpc Processed(rpc.pb.MailboxProcessed) returns (rpc.pb.Empty);
+  rpc Push(rpc.pb.MailboxPush) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_MAILBOX_PUSH";
+  }
+  rpc Read(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse) {
+    option (rpc_command) = "CMD_MAILBOX_READ";
+  }
+  rpc Available(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxAvailableResponse) {
+    option (rpc_command) = "CMD_MAILBOX_AVAILABLE";
+  }
+  rpc Processed(rpc.pb.MailboxProcessed) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_MAILBOX_PROCESSED";
+  }
 }
 
 service ProcessService {
-  rpc RunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse);
-  rpc Poll(rpc.pb.SubscribeRequest) returns (rpc.pb.ProcessPollResponse);
-  rpc Kill(rpc.pb.ProcessKill) returns (rpc.pb.Empty);
+  rpc RunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse) {
+    option (rpc_command) = "CMD_PROCESS_RUN_ASYNC";
+  }
+  rpc Poll(rpc.pb.SubscribeRequest) returns (rpc.pb.ProcessPollResponse) {
+    option (rpc_command) = "CMD_PROCESS_POLL";
+  }
+  rpc Kill(rpc.pb.ProcessKill) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_PROCESS_KILL";
+  }
 }
 
 service DataStoreService {
-  rpc Put(rpc.pb.DatastorePut) returns (rpc.pb.Empty);
-  rpc Get(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse);
+  rpc Put(rpc.pb.DatastorePut) returns (rpc.pb.Empty) {
+    option (rpc_command) = "CMD_DATASTORE_PUT";
+  }
+  rpc Get(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse) {
+    option (rpc_command) = "CMD_DATASTORE_GET";
+  }
 }

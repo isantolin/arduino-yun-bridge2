@@ -43,16 +43,14 @@ inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
                              etl::span<const uint8_t> payload = {}) {
   etl::array<uint8_t, 256> frame_raw;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest, service_id, method_id, payload,
-      frame_raw);
+  size_t len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+                                    service_id, method_id, payload, frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 }
 
 template <typename ProtoMsg>
 inline void feed_rpc_request_msg(TestAccessor& ba, uint32_t service_id,
-                                 uint32_t method_id,
-                                 const pb_msgdesc_t* fields,
+                                 uint32_t method_id, const pb_msgdesc_t* fields,
                                  const ProtoMsg& msg) {
   uint8_t pl_buf[128];
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
@@ -75,7 +73,7 @@ inline void invoke_response(TestAccessor& ba, uint32_t service_id,
   pkt.method_id = method_id;
   pkt.call_id = call_id;
   pkt.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(payload_buf), pbos.bytes_written);
+      reinterpret_cast<const pw::byte*>(payload_buf), pbos.bytes_written);
   ba.invokeRpcResponse(pkt);
 }
 
@@ -85,12 +83,12 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
-  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
-  constexpr uint32_t kFsSvc = pw::tokenizer::Hash("bridge.FileSystemService");
-  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("bridge.ProcessService");
-  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("bridge.SpiService");
-  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("bridge.DataStoreService");
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  constexpr uint32_t kFsSvc = pw::tokenizer::Hash("rpc.pb.FileSystemService");
+  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("rpc.pb.ProcessService");
+  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("rpc.pb.SpiService");
+  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("rpc.pb.DataStoreService");
 
   // 1. SetBaudrate
   rpc_pb_SetBaudratePacket baud_msg = rpc_pb_SetBaudratePacket_init_default;
@@ -169,7 +167,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                        rpc_pb_SpiTransfer_fields, st_msg);
 
   // 13. DataStoreGet response
-  rpc_pb_DatastoreGetResponse ds_resp = rpc_pb_DatastoreGetResponse_init_default;
+  rpc_pb_DatastoreGetResponse ds_resp =
+      rpc_pb_DatastoreGetResponse_init_default;
   ds_resp.value.size = 4;
   ds_resp.value.bytes[0] = 1;
   ds_resp.value.bytes[1] = 2;
@@ -214,14 +213,14 @@ void test_dispatch_malformed_payload_paths() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
-  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
-  constexpr uint32_t kFsSvc = pw::tokenizer::Hash("bridge.FileSystemService");
-  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("bridge.ProcessService");
-  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("bridge.SpiService");
-  constexpr uint32_t kClkSvc = pw::tokenizer::Hash("bridge.ClockSyncService");
-  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("bridge.DataStoreService");
-  constexpr uint32_t kMailboxSvc = pw::tokenizer::Hash("bridge.MailboxService");
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  constexpr uint32_t kFsSvc = pw::tokenizer::Hash("rpc.pb.FileSystemService");
+  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("rpc.pb.ProcessService");
+  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("rpc.pb.SpiService");
+  constexpr uint32_t kClkSvc = pw::tokenizer::Hash("rpc.pb.ClockSyncService");
+  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("rpc.pb.DataStoreService");
+  constexpr uint32_t kMailboxSvc = pw::tokenizer::Hash("rpc.pb.MailboxService");
 
   // Malformed payload: truncated or invalid wire bytes
   const uint8_t malformed_bytes[] = {0xC1, 0xFF, 0xEE, 0xDD};
@@ -248,7 +247,7 @@ void test_dispatch_malformed_payload_paths() {
   bad_pkt.type = pw::rpc_avr::PacketType::kResponse;
   bad_pkt.channel_id = 1;
   bad_pkt.payload = pw::ConstByteSpan(
-      reinterpret_cast<const std::byte*>(bad_pl.data()), bad_pl.size());
+      reinterpret_cast<const pw::byte*>(bad_pl.data()), bad_pl.size());
 
   bad_pkt.service_id = kDsSvc;
   bad_pkt.method_id = pw::tokenizer::Hash("Get");
@@ -284,7 +283,7 @@ void test_packet_received_security_paths() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
 
   // 1. Valid HDLC frame with DigitalWrite succeeds
   rpc_pb_DigitalWrite dw = rpc_pb_DigitalWrite_init_default;
@@ -298,10 +297,10 @@ void test_packet_received_security_paths() {
 
   // 2. Corrupt FCS frame is dropped by decoder
   etl::array<uint8_t, 128> corrupt_frame;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest, kGpioSvc,
-      pw::tokenizer::Hash("DigitalWrite"), etl::span<const uint8_t>(),
-      corrupt_frame);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest, kGpioSvc,
+                           pw::tokenizer::Hash("DigitalWrite"),
+                           etl::span<const uint8_t>(), corrupt_frame);
   TEST_ASSERT_GREATER_THAN(2, len);
   if (len >= 2) {
     corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC
@@ -323,8 +322,7 @@ void test_packet_received_security_paths() {
   size_t unk_len = TestHdlc::encodeUIFrame(
       0x99, etl::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
       hdlc_unknown_addr);
-  ba.feedHdlcBytes(
-      etl::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
   // 5. Unsynchronized access with shared secret set rejects non-LinkSync RPC
@@ -377,12 +375,16 @@ void test_console_and_policy_edges() {
   TEST_ASSERT_EQUAL(0x42, Console.read());
   TEST_ASSERT_EQUAL(-1, Console.read());
 
-  // Send console stream with null stream returns false
+  // Send console/log stream with null stream returns false
   ba2.setNullStream();
   TEST_ASSERT_FALSE(Bridge.sendConsoleStream(
       etl::span<const uint8_t>(console_in, sizeof(console_in))));
+  TEST_ASSERT_FALSE(Bridge.sendLogStream(
+      etl::span<const uint8_t>(console_in, sizeof(console_in))));
 
   Bridge.enterSafeState();
+  TEST_ASSERT_FALSE(Bridge.sendLogStream(
+      etl::span<const uint8_t>(console_in, sizeof(console_in))));
 }
 
 void test_observer_and_task_runtime_edges() {
@@ -419,7 +421,7 @@ void test_timer_link_and_bootloader_edges() {
   ba.setTimerLastTick(1);
   ba.invokeTimerTask();
 
-  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
 
   // LinkSync
   rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
@@ -451,7 +453,7 @@ void test_service_capacity_and_send_fail_edges() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
   rpc_pb_PinMode pm = rpc_pb_PinMode_init_default;
   pm.pin = 13;
   pm.mode = rpc_pb_PinModeType_PIN_OUTPUT;
@@ -478,7 +480,7 @@ void test_filesystem_spi_fsm_edges() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("bridge.SpiService");
+  constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("rpc.pb.SpiService");
 
   etl::array<uint8_t, 2> fs_data = {1, 2};
   rpc_pb_FileWrite fwp = rpc_pb_FileWrite_init_default;
@@ -504,37 +506,54 @@ void test_filesystem_spi_fsm_edges() {
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
-void test_encrypted_rx_nonce_paths() {
+void test_link_sync_authentication_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
 
-  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("bridge.SystemService");
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
 
-  // 1. LinkSync with valid HMAC tag succeeds
+  // A correctly authenticated LinkSync succeeds with a 16-byte nonce.
   rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
-  memset(sync.nonce.bytes, 0xAB, 12);
-  sync.nonce.size = 12;
-  ba.computeHandshakeTag(sync.nonce.bytes, 12, sync.tag.bytes);
-  sync.tag.size = 16;
+  memset(sync.nonce.bytes, 0xAB, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size, sync.tag.bytes);
+  sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 
-  // 2. LinkSync with bad tag fails
+  // An empty tag is never accepted when a shared secret is configured.
   ba.clearSynchronized();
-  sync.tag.bytes[0] ^= 0xFF;
+  sync.tag.size = 0;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  // 3. LinkSync with short nonce (< 12) fails
-  sync.nonce.size = 8;
+  // A non-empty tag is never accepted when no shared secret is configured.
+  reset_bridge_core(Bridge, stream, 0U, "");
+  sync.tag.size = 1;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
-  // 4. Cryptographic self-tests
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
+
+  // The explicitly unauthenticated mode requires an empty tag and a valid
+  // nonce.
+  sync.tag.size = 0;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSynchronized());
+
+  // A short nonce is rejected even when authentication is disabled.
+  ba.clearSynchronized();
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH - 1U;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_FALSE(ba.isSynchronized());
+
+  // The firmware self-tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
 }
 
@@ -553,7 +572,6 @@ void test_fault_injection_harness_paths() {
       static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
   SPIService.end();
 
-  wolfCrypt_Init();
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
 
   bridge::test::fault::enable(
@@ -638,8 +656,8 @@ void test_architectural_extensions_edge_paths() {
   ba.invokeWatchdog();
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
-  constexpr uint32_t kClkSvc = pw::tokenizer::Hash("bridge.ClockSyncService");
-  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("bridge.GpioService");
+  constexpr uint32_t kClkSvc = pw::tokenizer::Hash("rpc.pb.ClockSyncService");
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
 
   // ClockSync
   rpc_pb_ClockSyncRequest sync_req = rpc_pb_ClockSyncRequest_init_default;
@@ -814,7 +832,7 @@ int main() {
   RUN_TEST(test_timer_link_and_bootloader_edges);
   RUN_TEST(test_service_capacity_and_send_fail_edges);
   RUN_TEST(test_filesystem_spi_fsm_edges);
-  RUN_TEST(test_encrypted_rx_nonce_paths);
+  RUN_TEST(test_link_sync_authentication_paths);
   RUN_TEST(test_fault_injection_harness_paths);
   RUN_TEST(test_architectural_extensions_edge_paths);
   RUN_TEST(test_force_safe_state_uses_core_bus_pin_map);

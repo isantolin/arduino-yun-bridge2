@@ -35,8 +35,7 @@ class MailboxClass : public bridge::BridgeObserver {
     _available_callback = cb;
   }
 
-  static void _onAvailableResponse(
-      const rpc_pb_MailboxAvailableResponse& msg);
+  static void _onAvailableResponse(const rpc_pb_MailboxAvailableResponse& msg);
 
   static void _enqueue(etl::span<const uint8_t> data);
 

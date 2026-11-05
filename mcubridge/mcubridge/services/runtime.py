@@ -168,8 +168,8 @@ class BridgeService:
             self.cloud_spool = LmdbDeque(
                 path=str(Path(self.config.cloud_spool_dir) / "spool_lmdb"), maxlen=self.state.cloud_queue_limit
             )
-        # [SIL-2] O(1) MCU Dispatch Registry
-        self.mcu_registry = protocol.REGISTRY.build_mcu_dispatch(self)
+        # [SIL-2] O(1) MCU Dispatch Table
+        self.mcu_registry = protocol.build_mcu_dispatch(self)
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
@@ -262,7 +262,7 @@ class BridgeService:
         reply_context: Any | None = None,
     ) -> None:
         """Enqueue a Protobuf StatusReport message to the cloud. [SIL-2]"""
-        topic = protocol.REGISTRY.get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or ""
+        topic = protocol.get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or ""
         await self.enqueue_cloud_publish(
             topic,
             report.SerializeToString(),
@@ -446,7 +446,6 @@ class BridgeService:
             q.clear()
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
-        self.state.link_last_nonce_counter = 0
         self.handshake.clear_handshake_expectations()
         serial = self.serial
         if serial:
@@ -457,7 +456,6 @@ class BridgeService:
         if self.serial:
             await self.serial.reset()
             self.handshake.clear_handshake_expectations()
-            self.state.link_last_nonce_counter = 0
             return True
         return False
 
@@ -467,7 +465,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        spec = protocol.REGISTRY.get(command_id)
+        spec = protocol.get_operation(command_id)
         if not (
             self.state.is_synchronized or command_id in _STATUS_VALUES or (spec is not None and spec.pre_sync_allowed)
         ):
@@ -513,19 +511,17 @@ class BridgeService:
 
         topic_val = request.topic_name or getattr(request, "topic", "")
         with structlog.contextvars.bound_contextvars(topic=topic_val):
-            route = protocol.REGISTRY.parse_topic(self.state.cloud_topic_prefix, topic_val)
+            route = protocol.parse_topic(self.state.cloud_topic_prefix, topic_val)
             if not route or route.direction != "req":
                 logger.warning("Unroutable cloud topic received", topic=topic_val)
                 return
 
-            spec = protocol.REGISTRY.get(route.method)
+            spec = protocol.get_operation(route.method)
             if not spec or not spec.handler_name:
                 logger.warning("Unrecognized RPC method requested", method=route.method, topic=topic_val)
                 return
 
-            if self.state.topic_authorization and not protocol.REGISTRY.allows_method(
-                self.state.topic_authorization, spec
-            ):
+            if self.state.topic_authorization and not protocol.allows_method(self.state.topic_authorization, spec):
                 action = route.action or route.method
                 await self.reject_cloud(request, route.method, action)
                 return
@@ -540,7 +536,7 @@ class BridgeService:
 
             try:
                 resp_bytes = await self.execute_rpc(spec.name, request.payload)
-                resp_topic = request.response_topic or protocol.REGISTRY.topic_path(
+                resp_topic = request.response_topic or protocol.topic_path(
                     route.prefix or self.state.cloud_topic_prefix, "res", route.method
                 )
                 await self.enqueue_cloud_publish(
@@ -550,7 +546,7 @@ class BridgeService:
                 )
             except (RuntimeError, ValueError, OSError, ProtobufDecodeError) as exc:
                 logger.error("RPC execution failed", method=route.method, error=str(exc))
-                err_topic = request.response_topic or protocol.REGISTRY.topic_path(
+                err_topic = request.response_topic or protocol.topic_path(
                     route.prefix or self.state.cloud_topic_prefix, "res", route.method
                 )
                 await self.enqueue_cloud_publish(
@@ -581,7 +577,7 @@ class BridgeService:
             msg = cast(ProtobufMessage | type[ProtobufMessage], msg_or_seq)
             payload = payload_or_msg
         await self.enqueue_cloud_publish(
-            protocol.REGISTRY.get_topic_for_message(self.state.cloud_topic_prefix, msg) or "",
+            protocol.get_topic_for_message(self.state.cloud_topic_prefix, msg) or "",
             payload,
             content_type=content_type,
             message_expiry_interval=message_expiry_interval,
@@ -607,7 +603,7 @@ class BridgeService:
             return pb.GenericResponse(status="error")
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(k, v)
-        tp = getattr(reply_context, "response_topic", None) or protocol.REGISTRY.topic_path(
+        tp = getattr(reply_context, "response_topic", None) or protocol.topic_path(
             self.state.cloud_topic_prefix, "res", "datastore.get"
         )
         await self.enqueue_cloud_publish(
@@ -1013,9 +1009,7 @@ class BridgeService:
         text = ""
         if payload:
             text = (
-                format_ubus_bytes(payload)
-                if isinstance(payload, bytes)
-                else getattr(payload, "message", str(payload))
+                format_ubus_bytes(payload) if isinstance(payload, bytes) else getattr(payload, "message", str(payload))
             )
         log_func = logger.error if status != Status.OK else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
@@ -1067,7 +1061,7 @@ class BridgeService:
             async with asyncio.TaskGroup() as tg:
                 self._tg = tg
                 self.lifecycle_fsm.run()
-                for name, fn, fatals in protocol.REGISTRY.build_supervised_tasks(
+                for name, fn, fatals in protocol.build_supervised_tasks(
                     self, fatal_exception_map={"SerialHandshakeFatal": SerialHandshakeFatal}
                 ):
                     tg.create_task(self.supervise(name, fn, fatals))
@@ -1329,7 +1323,7 @@ class BridgeService:
         return structures.parse_serial_response(res, resp_type, resp_type())
 
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
-        spec = protocol.REGISTRY.by_name.get(method_name)
+        spec = protocol.BY_NAME.get(method_name)
         if not spec or not spec.request_type:
             raise ValueError(f"Unknown RPC method: {method_name}")
 
@@ -1338,7 +1332,7 @@ class BridgeService:
             req.ParseFromString(payload_bytes)
 
         with structlog.contextvars.bound_contextvars(rpc_method=method_name):
-            if spec.handler_name and spec.handler_name in protocol.REGISTRY.custom_handlers:
+            if spec.handler_name and spec.handler_name in protocol.CUSTOM_HANDLERS:
                 resp = await getattr(self, spec.handler_name)(req)
             elif spec.requires_ack and spec.command_id is not None:
                 resp = await self._send_serial_ack(Command(spec.command_id), req)
@@ -1354,14 +1348,10 @@ class BridgeService:
             return
 
         has_correlation = req.HasField("correlation_data")
-        route = protocol.REGISTRY.parse_topic(self.state.cloud_topic_prefix, req.topic_name)
+        route = protocol.parse_topic(self.state.cloud_topic_prefix, req.topic_name)
         is_query = has_correlation or (route is not None and route.direction == "req")
 
-        correlation = (
-            req.correlation_data
-            if has_correlation
-            else (secrets.token_bytes(protocol.AEAD_NONCE_SIZE) if is_query else b"")
-        )
+        correlation = req.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
 
         with structlog.contextvars.bound_contextvars(
             topic=req.topic_name, correlation=correlation.hex() if correlation else ""

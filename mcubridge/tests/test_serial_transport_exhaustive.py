@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 import pytest
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import protocol
+from mcubridge.security.security import LinkCipher
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
 
@@ -20,22 +21,25 @@ def mock_serial_setup() -> tuple[SerialTransport, RuntimeState, MagicMock]:
     transport = SerialTransport(config, state, service)
 
     mock_serial = MagicMock()
-    mock_serial.transport.serial.baudrate = 115200
-    mock_serial.readuntil = AsyncMock(return_value=b"")
-    mock_serial.write = AsyncMock(return_value=None)
-    mock_serial.drain = AsyncMock(return_value=None)
+    mock_serial.baudrate = 115200
+    mock_serial.read_until = MagicMock(return_value=b"")
+    mock_serial.write = MagicMock(return_value=None)
     transport.serial = mock_serial
-    state.serial_writer = mock_serial.transport
+    state.serial_writer = mock_serial
     state.serial_tx_allowed.set()
 
     return transport, state, mock_serial
 
 
+def _install_test_cipher(transport: SerialTransport) -> None:
+    if transport.config.serial_shared_secret:
+        nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+        transport.state.link_cipher = LinkCipher.for_host(transport.config.serial_shared_secret, nonce)
+
+
 def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
     transport, _state, mock_serial = mock_serial_setup
-    mock_inner_serial = MagicMock()
-    type(mock_inner_serial).baudrate = PropertyMock(side_effect=OSError("Baudrate error"))
-    mock_serial.transport.serial = mock_inner_serial
+    type(mock_serial).baudrate = PropertyMock(side_effect=OSError("Baudrate error"))
 
     switch_fn = transport.switch_local_baudrate
     with pytest.raises(RuntimeError, match="UART access failed"):
@@ -57,7 +61,7 @@ async def test_read_loop_decode_error(
     transport, state, mock_serial = mock_serial_setup
 
     # First call returns invalid HDLC packet + delimiter, second raises CancelledError to end loop
-    mock_serial.readuntil.side_effect = [
+    mock_serial.read_until.side_effect = [
         b"\x7e\xff\xff\x7e",
         asyncio.CancelledError(),
     ]
@@ -76,7 +80,7 @@ async def test_read_loop_crc_error_recovery(
     # Invalid CRC on HDLC frame
     bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
 
-    mock_serial.readuntil.side_effect = [
+    mock_serial.read_until.side_effect = [
         bad_frame,
         asyncio.CancelledError(),
     ]
@@ -94,7 +98,7 @@ async def test_read_loop_valid_frame_dispatch(
 
     hdlc_frame = protocol.encode_hdlc_console(b"test_payload")
 
-    mock_serial.readuntil.side_effect = [
+    mock_serial.read_until.side_effect = [
         hdlc_frame,
         asyncio.CancelledError(),
     ]
@@ -109,6 +113,7 @@ async def test_send_raw_success(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
+    _install_test_cipher(transport)
     mock_serial.is_open = True
 
     res = await transport.send_raw(command_id=0x01, payload=b"test")
@@ -122,6 +127,7 @@ async def test_send_raw_write_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
+    _install_test_cipher(transport)
     mock_serial.is_open = True
     mock_serial.write.side_effect = OSError("Write failed")
 

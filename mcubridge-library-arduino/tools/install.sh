@@ -76,6 +76,7 @@ install_dependency() {
     local url=$2
     local check_file=$3
     local target_base=${4:-"$LIB_DIR"}
+    local expected_sha256=${5:-}
 
     mkdir -p "$target_base"
     local lock_file="$target_base/.${name}.install.lock"
@@ -109,7 +110,19 @@ install_dependency() {
             exit 1
         fi
 
-        unzip -q "$zip_path" -d "$tmp_dir"
+        if [ -n "$expected_sha256" ]; then
+            if ! printf '%s  %s\n' "$expected_sha256" "$zip_path" | sha256sum --check --status; then
+                echo "[ERROR] SHA-256 verification failed for $name." >&2
+                rm -rf "$tmp_dir"
+                exit 1
+            fi
+        fi
+
+        case "$url" in
+            *.tar.bz2) tar -xjf "$zip_path" -C "$tmp_dir" ;;
+            *.tar.gz) tar -xzf "$zip_path" -C "$tmp_dir" ;;
+            *) unzip -q "$zip_path" -d "$tmp_dir" ;;
+        esac
         # Find the directory that contains the files (excluding the zip itself)
         local extracted_root
         extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d ! -path "$tmp_dir" | head -n1)
@@ -141,10 +154,13 @@ install_dependency() {
 
 # --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
 ETL_VERSION="20.49.0"
-WOLFSSL_VERSION="v5.9.4-stable"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
+MBEDTLS_VERSION="mbedtls-4.2.0"
+MBEDTLS_SHA256="2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
+WOLFSSL_VERSION="5.8.4"
+WOLFSSL_SHA256="a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)
@@ -163,66 +179,87 @@ if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
         echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
     fi
 fi
-# wolfSSL: Prefer official Arduino Library Manager package (wolfssl) if installed
-if [ -d "$LIB_DIR/wolfssl" ] && [ -d "$LIB_DIR/wolfSSL" ]; then
-    rm -rf "$LIB_DIR/wolfSSL"
+
+# Mbed TLS 4 is used on AVR/SAMD. ESP32 keeps PSA SHA-256/HMAC from its Arduino
+# core and uses WolfCrypt for HKDF-SHA256 and ChaCha20-Poly1305.
+MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VERSION}/${MBEDTLS_VERSION}.tar.bz2"
+install_dependency "MbedTLS" "$MBEDTLS_URL" "tf-psa-crypto/include/psa/crypto.h" "$LIB_DIR" "$MBEDTLS_SHA256"
+MBEDTLS_LIB="$LIB_DIR/MbedTLS"
+MBEDTLS_SRC="$MBEDTLS_LIB/src"
+MBEDTLS_CT_SOURCE="$MBEDTLS_LIB/tf-psa-crypto/utilities/constant_time.c"
+if ! grep -Fq "AVR constant-time comparison requires byte-wise access" "$MBEDTLS_CT_SOURCE"; then
+    patch --batch --forward --fuzz=0 -p1 -d "$MBEDTLS_LIB/tf-psa-crypto" \
+        < "$LIB_ROOT/patches/mbedtls-4.2.0-avr-ct-memcmp.patch"
 fi
-if [ ! -d "$LIB_DIR/wolfssl" ] && [ ! -d "$LIB_DIR/wolfSSL" ]; then
-    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
-fi
-for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
-    if [ -d "$wdir" ]; then
-        mkdir -p "$wdir/src" "$wdir/wolfssl"
-        if [ ! -d "$wdir/src/wolfssl" ] && [ -d "$wdir/wolfssl/wolfcrypt" ]; then
-            cp -a "$wdir/wolfssl" "$wdir/src/wolfssl"
-        fi
-        if [ ! -d "$wdir/src/wolfcrypt" ] && [ -d "$wdir/wolfcrypt/src" ]; then
-            mkdir -p "$wdir/src/wolfcrypt"
-            cp -a "$wdir/wolfcrypt/src" "$wdir/src/wolfcrypt/src"
-            rm -f "$wdir/src/wolfcrypt/src/misc.c" "$wdir/src/wolfcrypt/src/evp.c" 2>/dev/null || true
-        fi
-        if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
-            cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
-            cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
-        fi
-        cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
-        cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
-        cp "$LIB_ROOT/src/user_settings.h" "$wdir/wolfssl/user_settings.h"
-        if [ -d "$wdir/src/wolfssl" ]; then
-            cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/wolfssl/user_settings.h"
-        fi
-        rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c 2>/dev/null || true
-        if [ ! -f "$wdir/library.properties" ] || ! grep -q "^name=" "$wdir/library.properties" 2>/dev/null; then
-            cat > "$wdir/library.properties" <<EOF
-name=wolfSSL
-version=${WOLFSSL_VERSION#v}
-author=wolfSSL Inc.
-maintainer=wolfSSL Inc. <facts@wolfssl.com>
-sentence=Lightweight SSL/TLS and cryptography library for embedded systems
-paragraph=wolfSSL embedded SSL/TLS library with wolfCrypt
-category=Communication
-url=https://www.wolfssl.com/
-architectures=*
-includes=wolfssl.h
-EOF
-        elif ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
-            echo "includes=wolfssl.h" >> "$wdir/library.properties"
-        fi
-        for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do
-            if [ -f "$wcf" ]; then
-                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf"
-            fi
-        done
-    fi
+rm -rf "$MBEDTLS_SRC"
+mkdir -p "$MBEDTLS_SRC"
+cp -a "$MBEDTLS_LIB/include/mbedtls" "$MBEDTLS_SRC/"
+cp -a "$MBEDTLS_LIB/tf-psa-crypto/include/." "$MBEDTLS_SRC/"
+mkdir -p "$MBEDTLS_SRC/tf-psa-crypto/drivers"
+for component in core extras platform utilities; do
+    cp -a "$MBEDTLS_LIB/tf-psa-crypto/$component" "$MBEDTLS_SRC/tf-psa-crypto/"
 done
-# Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono for Arduino)
-if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ]; then
-    if [ ! -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
-        python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
+cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin" "$MBEDTLS_SRC/tf-psa-crypto/drivers/"
+cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/include/." "$MBEDTLS_SRC/"
+for component in core dispatch extras platform utilities; do
+    find "$MBEDTLS_LIB/tf-psa-crypto/$component" -maxdepth 1 -type f -name "*.h" \
+        -exec cp -a {} "$MBEDTLS_SRC/" \;
+done
+find "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/src" -maxdepth 1 -type f -name "*.h" \
+    -exec cp -a {} "$MBEDTLS_SRC/" \;
+cp "$LIB_ROOT/src/config/mbedtls_config.h" "$MBEDTLS_SRC/mbedtls/mbedtls_config.h"
+cp "$LIB_ROOT/src/config/psa_crypto_config.h" "$MBEDTLS_SRC/psa/crypto_config.h"
+cat > "$MBEDTLS_SRC/MbedTLS.h" <<'EOF'
+#ifndef MCUBRIDGE_MBEDTLS_ARDUINO_H
+#define MCUBRIDGE_MBEDTLS_ARDUINO_H
+
+#include <psa/crypto.h>
+
+#endif
+EOF
+cp "$MBEDTLS_SRC/MbedTLS.h" "$MBEDTLS_LIB/MbedTLS.h"
+cat > "$MBEDTLS_LIB/library.properties" <<EOF
+name=MbedTLS
+version=${MBEDTLS_VERSION#mbedtls-}
+author=Mbed TLS Contributors
+maintainer=Mbed TLS Contributors
+sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
+paragraph=Staged by the McuBridge installer from the pinned upstream release.
+category=Communication
+architectures=avr,samd
+includes=MbedTLS.h,psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
+EOF
+
+WOLFSSL_URL="https://downloads.arduino.cc/libraries/github.com/wolfSSL/wolfssl-${WOLFSSL_VERSION}.zip"
+install_dependency "wolfssl" "$WOLFSSL_URL" "library.properties" "$LIB_DIR" "$WOLFSSL_SHA256"
+WOLFSSL_LIB="$LIB_DIR/wolfssl"
+if [ ! -d "$WOLFSSL_LIB/src" ]; then
+    echo "[ERROR] wolfssl source directory not found: $WOLFSSL_LIB/src" >&2
+    exit 1
+fi
+WOLFSSL_SETTINGS_TMP="$(mktemp "$WOLFSSL_LIB/src/.user_settings.XXXXXX")"
+if ! cp "$LIB_ROOT/src/config/wolfssl_user_settings.h" "$WOLFSSL_SETTINGS_TMP"; then
+    rm -f "$WOLFSSL_SETTINGS_TMP"
+    exit 1
+fi
+if ! mv -f "$WOLFSSL_SETTINGS_TMP" "$WOLFSSL_LIB/src/user_settings.h"; then
+    rm -f "$WOLFSSL_SETTINGS_TMP"
+    exit 1
+fi
+
+# Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)
+if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmodules" ]; then
+    if [ ! -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ] && [ -d "${ROOT_DIR}/.git" ]; then
+        git -C "${ROOT_DIR}" submodule update --init --recursive third_party/avr_pigweed_port 2>/dev/null || true
     fi
-    mkdir -p "$LIB_DIR"
-    rm -rf "$LIB_DIR/PigweedAVR"
-    cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" "$LIB_DIR/PigweedAVR"
+    if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ]; then
+        python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
+        if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
+            mkdir -p "$LIB_DIR"
+            rm -rf "$LIB_DIR/PigweedAVR"
+            cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" "$LIB_DIR/PigweedAVR"
+        fi
+    fi
 fi
 
 # Unity test framework (host tests only)

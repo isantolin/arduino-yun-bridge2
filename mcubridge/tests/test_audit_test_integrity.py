@@ -71,6 +71,30 @@ def test_audit_test_only_hooks_positive_detection(tmp_path: Path, mocker: Mocker
     assert any("Rule 5 Violation" in f for f in findings)
 
 
+def test_audit_test_only_hooks_allows_production_local_call(tmp_path: Path, mocker: MockerFixture) -> None:
+    fake_prod = tmp_path / "mcubridge" / "mcubridge" / "security.py"
+    fake_test = tmp_path / "mcubridge" / "tests" / "test_security.py"
+    fake_prod.parent.mkdir(parents=True, exist_ok=True)
+    fake_test.parent.mkdir(parents=True, exist_ok=True)
+
+    fake_prod.write_text(
+        "def derive_keys(secret):\n"
+        "    return secret\n"
+        "\n"
+        "def make_cipher(secret):\n"
+        "    return derive_keys(secret)\n",
+        encoding="utf-8",
+    )
+    fake_test.write_text(
+        "def test_derive_keys():\n    assert derive_keys(b'key') == b'key'\n",
+        encoding="utf-8",
+    )
+
+    mocker.patch("tools.audit.audit_test_integrity.ROOT", tmp_path)
+    findings = audit_test_only_hooks()
+    assert findings == []
+
+
 def test_audit_python_tests_detects_empty_assertions(tmp_path: Path, mocker: MockerFixture) -> None:
     """Verify that Python test functions without assertions are flagged."""
     fake_test = tmp_path / "mcubridge" / "tests" / "test_empty.py"

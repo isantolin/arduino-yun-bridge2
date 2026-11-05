@@ -180,6 +180,12 @@ message SetBaudratePacket {
   uint32 baudrate = 1;
 }
 
+// LinkSync uses a 16-byte challenge. With a configured shared secret, the
+// request tag authenticates the host and the response tag uses a distinct
+// HKDF info string to authenticate the MCU. With no secret, the tag is empty;
+// this disables authentication and frame encryption. With a secret, all HDLC
+// channels use ChaCha20-Poly1305 after the handshake. LinkReset remains a
+// plaintext session-reset control operation.
 message LinkSync {
   bytes nonce = 1;
   bytes tag = 2;

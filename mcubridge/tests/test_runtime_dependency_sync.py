@@ -57,6 +57,34 @@ def test_nanopb_core_file_list_is_synced_to_installer() -> None:
     assert not sync_runtime_deps.update_cpp_install_script(manifest.cpp, dry_run=True)
 
 
+def test_wolfssl_archive_pin_is_synced_to_installer() -> None:
+    manifest = sync_runtime_deps.load_manifest()
+    wolfssl = next(dep for dep in manifest.cpp if dep["name"] == "wolfssl")
+    installer = sync_runtime_deps.ARDUINO_INSTALL_SCRIPT_PATH.read_text(encoding="utf-8")
+
+    assert wolfssl["version"] == "5.8.4"
+    assert wolfssl["sha256"] == "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
+    assert not wolfssl["check_latest"]
+    assert f'WOLFSSL_VERSION="{wolfssl["version"]}"' in installer
+    assert f'WOLFSSL_SHA256="{wolfssl["sha256"]}"' in installer
+    assert "wolfssl-${WOLFSSL_VERSION}.zip" in installer
+    assert not sync_runtime_deps.update_cpp_install_script(manifest.cpp, dry_run=True)
+
+
+def test_check_latest_versions_skips_disabled_cpp_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = sync_runtime_deps.load_manifest()
+    wolfssl = next(dep for dep in manifest.cpp if dep["name"] == "wolfssl")
+
+    def unexpected_http_request(*args: object, **kwargs: object) -> None:
+        pytest.fail(f"unexpected dependency update request: {args}, {kwargs}")
+
+    monkeypatch.setattr(sync_runtime_deps.httpx, "get", unexpected_http_request)
+
+    assert not sync_runtime_deps.check_latest_versions([], [wolfssl])
+
+
 def test_main_dry_run_reports_up_to_date_when_no_changes() -> None:
     result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
 
@@ -167,3 +195,41 @@ def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Invalid ecosystem version"):
         sync_runtime_deps.sync_metadata("not_a_pep440_version!", tmp_path)
+
+
+def test_check_latest_versions_enforces_pigweed_constraints() -> None:
+    pigweed_dep: sync_runtime_deps.DepEntry = {
+        "name": "pigweed",
+        "openwrt": "python3-pigweed",
+        "pip": "pigweed==0.0.24",
+        "check_latest": False,
+        "gateway": True,
+        "edge": True,
+    }
+    deps_violating: list[sync_runtime_deps.DepEntry] = [
+        pigweed_dep,
+        {
+            "name": "protobuf",
+            "openwrt": "python3-protobuf",
+            "pip": "protobuf==7.36.2",
+            "check_latest": True,
+            "gateway": True,
+            "edge": True,
+        },
+    ]
+    outdated = sync_runtime_deps.check_latest_versions(deps_violating)
+    assert any("violates authoritative Pigweed requirement" in item[0] for item in outdated)
+
+    deps_satisfying: list[sync_runtime_deps.DepEntry] = [
+        pigweed_dep,
+        {
+            "name": "protobuf",
+            "openwrt": "python3-protobuf",
+            "pip": "protobuf==5.28.3",
+            "check_latest": True,
+            "gateway": True,
+            "edge": True,
+        },
+    ]
+    outdated_satisfying = sync_runtime_deps.check_latest_versions(deps_satisfying)
+    assert not any("violates authoritative Pigweed requirement" in item[0] for item in outdated_satisfying)

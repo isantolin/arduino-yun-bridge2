@@ -49,7 +49,7 @@ flowchart TD
 At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_on_self_tests()`:
 1. **SRAM March Pattern Test**: Non-destructive pattern verification (`0x55`, `0xAA`, `0x00`, `0xFF`) verifying memory cell integrity.
 2. **Stack Sentinel Initialization**: Sets the stack boundary canary (`0x55AA55AA`).
-3. **Cryptographic Algorithm Self-Tests (CAST)**: Runs hardcoded Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
+3. **Cryptographic Self-Tests**: MCU KATs cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The daemon also checks its ChaCha20-Poly1305 library and exercises encrypted transport frames.
 4. **Safety Action**: If any POST step fails, `enterSafeState()` is invoked immediately, disabling transmitters and driving I/O pins to a safe state.
 
 ### 2.4 Continuous Stack Overflow Protection (Watermarking)
@@ -72,14 +72,22 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 * **`pb_decode_noinit` Semantics**: Payloads crossing the RPC boundary are decoded directly into pre-allocated static structs without memory re-zeroing (`memset`), preventing CPU cycle exhaustion and stack thrashing on resource-constrained microcontrollers.
 * **Deterministic Bounds**: All variable-length fields are statically constrained via `.options` file definitions.
 
-### 2.8 Transport-Agnostic Safety & Anti-Replay Security
-* **Sequential Nonce Counter Enforcement**: All encrypted frames crossing physical (UART) or wireless (WiFi TCP / Bluetooth SPP) transports are validated against monotonic 64-bit nonces (`validate_nonce_counter`), preventing replay attacks and out-of-order execution.
-* **Fail-Safe Disconnects**: Wireless dropouts trigger deterministic transitions to `UNSYNCHRONIZED`, wiping session keys and requiring complete re-authentication.
+### 2.8 Link Authentication and Disconnect Handling
+* With a configured shared secret, `LinkSync` verifies host and MCU HMAC proofs over a 16-byte host nonce. An empty secret explicitly disables authentication.
+* With a shared secret, RPC, console, and log frames are protected by ChaCha20-Poly1305 and monotonic per-direction counters within a session. CRC-32 remains error detection, not authentication.
+* Counter state is not persistent across MCU restarts; replay of a previously captured authenticated handshake and its frames is not ruled out.
+* The explicit `LinkReset` control request is plaintext and can force a new handshake; this is not a plaintext data-frame fallback.
+* Disconnects transition the link to `UNSYNCHRONIZED`, clear pending handshake expectations, and require a new synchronization.
 
 ### 2.9 State Machines in Linux MPU (`python-statemachine`)
 * **Explicit Lifecycle States**: Handshake (`HandshakeMachine`), physical link (`LinkConnectionMachine`), subprocesses (`ProcessMachine`), and cloud sessions (`GatewaySessionMachine`) use discrete state machines. Their presence alone does not establish SIL-2 determinism or certification.
 * **Native Listener Hook Dispatch**: State side effects (e.g. enabling `serial_tx_allowed`, setting/clearing `link_sync_event`, escalating process termination) are executed strictly via synchronous, typed listener callbacks (`on_enter_*`, `on_exit_*`), eradicating manual glue code and race-prone polling.
 * **Closed Transition Matrices & Concurrency Safety**: Illegal transitions are rejected deterministically; idempotent transitions and `allow_event_without_transition = True` prevent deadlock or unhandled exception propagation during asynchronous subprocess termination and reconnection events.
+
+### 2.10 Google Pigweed Framing, RPC Dispatch, and Atomic Timekeeping (`pw_hdlc`, `pw_rpc`, `pw_chrono_avr`)
+* **Multi-Channel HDLC Framing (`pw_hdlc`)**: All serial frames use `pw::hdlc_avr` / `pw_hdlc` with IEEE 802.3 CRC-32 FCS verification, isolating `pw_rpc` control packets (`HDLC_ADDRESS_RPC = 1`), tokenized diagnostics (`HDLC_ADDRESS_LOG = 2`), and console streams (`HDLC_ADDRESS_CONSOLE = 3`).
+* **Compile-Time FNV-1a Service Dispatch (`pw::rpc_avr::RpcServer`)**: The MCU dispatches RPC requests across 8 static `pw::rpc_avr::RpcService` instances using `constexpr` `pw::tokenizer::Hash("rpc.pb.<Service>")` and `pw::tokenizer::Hash("<Method>")` identifiers without dynamic allocation or STL dependencies (`-DETL_NO_STL`).
+* **Atomic Millisecond Timekeeping (`pw_chrono_avr`)**: `BridgeClass` uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for atomic 32-bit millisecond timestamps across watchdog supervision, frame timeouts, handshake deadlines, and periodic pin sampling.
 
 ---
 

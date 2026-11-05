@@ -57,12 +57,12 @@ class TestAccessor : public BridgeClass {
   void computeHandshakeTag(const uint8_t* nonce_ptr, size_t len,
                            uint8_t* tag_out) {
     if (_shared_secret.empty()) return;
-    etl::array<uint8_t, 32> out_tag_full;
-    if (rpc::security::handshake_authenticate(
+    etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> out_tag = {};
+    if (rpc::security::handshake_generate_tag(
             etl::span<const uint8_t>(_shared_secret),
             etl::span<const uint8_t>(nonce_ptr, len),
-            etl::span<const uint8_t>(), etl::span<uint8_t>(out_tag_full))) {
-      etl::copy_n(out_tag_full.begin(), 16, tag_out);
+            etl::span<uint8_t>(out_tag))) {
+      etl::copy_n(out_tag.begin(), out_tag.size(), tag_out);
     }
   }
 
@@ -73,7 +73,7 @@ class TestAccessor : public BridgeClass {
   }
 
   void feedHdlcByte(uint8_t b) {
-    auto res = _hdlc_decoder.Process(static_cast<std::byte>(b));
+    auto res = _hdlc_decoder.Process(static_cast<pw::byte>(b));
     if (res.ok()) {
       _handleReceivedHdlcFrame(res.value());
     }

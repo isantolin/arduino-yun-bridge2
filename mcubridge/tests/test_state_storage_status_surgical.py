@@ -230,6 +230,21 @@ async def test_open_lmdb_env_dir_branch(tmp_path: Path) -> None:
         await cache.close()
 
 
+def test_open_lmdb_env_returns_none_after_retry_exhaustion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    attempts = 0
+
+    def fail_open(*_args: object, **_kwargs: object) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise lmdb.Error("persistent database failure")
+
+    monkeypatch.setattr(storage_mod.lmdb, "open", fail_open)
+    cache = LmdbCache(str(tmp_path / "unavailable.db"))
+
+    assert len(cache) == 0
+    assert attempts == 2
+
+
 async def test_lmdb_deque_popleft_none_val(tmp_path: Path) -> None:
     db_path = str(tmp_path / "deque.db")
     q = LmdbDeque(db_path)

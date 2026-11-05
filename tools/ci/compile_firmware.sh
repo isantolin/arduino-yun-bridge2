@@ -33,24 +33,18 @@ if ! command -v arduino-cli >/dev/null 2>&1; then
     export PATH="${HOME}/.local/bin:${PATH}"
 fi
 
-USER_LIB_DIR="${HOME}/Arduino/libraries"
+USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"
 mkdir -p "$USER_LIB_DIR"
 
-echo "[compile_firmware] Installing required library dependencies for ${EMULATOR}..."
-if [ "$EMULATOR" = "qemu" ] && [ ! -d "$USER_LIB_DIR/wolfssl" ] && [ ! -d "$USER_LIB_DIR/wolfSSL/src/wolfssl" ]; then
-    arduino-cli lib install wolfSSL || true
-fi
-"${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
+echo "[compile_firmware] Generating protocol bindings..."
+python3 "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 
-# Generate protocol stubs if missing
-if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
-    echo "[compile_firmware] Generating protocol bindings..."
-    python3 "${ROOT_DIR}/tools/protocol/generate.py" \
-        --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
-        --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-        --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
-        --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
-fi
+echo "[compile_firmware] Installing required library dependencies for ${EMULATOR}..."
+"${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
 
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
@@ -68,7 +62,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$EMULATOR" = "simavr" ]; then
-    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DWOLFSSL_NO_ATOMIC -DWOLFSSL_NO_FENCE -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
     AVR_PROPS=()
     AVR_STDCPP_INC=""
     if command -v avr-gcc >/dev/null 2>&1; then
@@ -76,10 +70,16 @@ if [ "$EMULATOR" = "simavr" ]; then
         if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then
             SYS_AVR_GCC_PATH="$(dirname "$(dirname "$(command -v avr-gcc)")")"
             AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${SYS_AVR_GCC_PATH}")
-            if [ -d "$USER_LIB_DIR/PigweedAVR/gcc${SYS_AVR_GCC_VER}/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc${SYS_AVR_GCC_VER}/include"
-            elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
+            if [ "$SYS_AVR_GCC_VER" -ge 16 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc16/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc16/include"
+            elif [ "$SYS_AVR_GCC_VER" -ge 14 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
                 AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc15/include"
+            elif [ "$SYS_AVR_GCC_VER" -ge 13 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc13/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc13/include"
+            elif [ "$SYS_AVR_GCC_VER" -ge 11 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc12/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc12/include"
+            elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc10/include" ]; then
+                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc10/include"
             fi
         fi
     fi
@@ -97,7 +97,7 @@ if [ "$EMULATOR" = "simavr" ]; then
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
-    COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
@@ -136,7 +136,7 @@ elif [ "$EMULATOR" = "qemu" ]; then
     STUBS_OBJ="$(mktemp /tmp/esp32_qemu_stubs_XXXXXX.o)"
     "$XTENSA_GCC" -c "$STUBS_SRC" -o "$STUBS_OBJ"
 
-    COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"

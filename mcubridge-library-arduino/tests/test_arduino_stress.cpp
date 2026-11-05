@@ -69,7 +69,7 @@ void test_bridge_dispatch_security_denial() {
   etl::array<uint8_t, 256> frame_buf;
   size_t len =
       build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                           pw::tokenizer::Hash("bridge.SystemService"),
+                           pw::tokenizer::Hash("rpc.pb.SystemService"),
                            pw::tokenizer::Hash("GetFreeMemory"),
                            etl::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);

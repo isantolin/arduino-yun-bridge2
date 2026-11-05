@@ -638,7 +638,7 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     assert mock_serial.send.called
 
     # Test synchronous (non-awaitable) handler path
-    called_sync = []
+    called_sync: list[int] = []
 
     def _sync_handler(_seq: int, _p: Any) -> dict[str, str]:
         called_sync.append(_seq)
@@ -1320,8 +1320,8 @@ async def test_service_supervisor_circuit_breaker(service_stack: tuple[BridgeSer
 
 def test_runtime_action_dispatch_canonical_completeness(mock_bridge_service: BridgeService) -> None:
     """Verify that RPC registry is fully populated with valid handler callables. [SIL-2]"""
-    assert len(protocol.REGISTRY.rpc_specs) >= 20
-    for spec in protocol.REGISTRY.rpc_specs:
+    assert len(protocol.RPC_SPECS) >= 20
+    for spec in protocol.RPC_SPECS:
         assert spec.handler_name is not None
         if spec.is_custom_handler:
             handler = getattr(mock_bridge_service, spec.handler_name, None)

@@ -38,8 +38,7 @@ class ProcessClass : public bridge::BridgeObserver {
   etl::circular_buffer<ProcessRunHandler,
                        bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_run_async;
-  etl::circular_buffer<PendingPoll,
-                       bridge::config::MAX_PENDING_PROCESS_POLLS>
+  etl::circular_buffer<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_polls;
 };
 

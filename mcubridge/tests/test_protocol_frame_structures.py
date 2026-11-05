@@ -10,7 +10,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import REGISTRY, TopicRoute
+from mcubridge.protocol.protocol import TopicRoute, allows_method, get_operation
 
 
 def test_topic_route_properties() -> None:
@@ -56,12 +56,12 @@ def test_create_allowed_policy() -> None:
 
 def test_allows_method() -> None:
     auth = pb.TopicAuthorization(digital_read=True, digital_write=False)
-    spec_read = REGISTRY.get(pb.Command.CMD_DIGITAL_READ)
-    spec_write = REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE)
+    spec_read = get_operation(pb.Command.CMD_DIGITAL_READ)
+    spec_write = get_operation(pb.Command.CMD_DIGITAL_WRITE)
     assert spec_read is not None
-    assert REGISTRY.allows_method(auth, spec_read) is True
+    assert allows_method(auth, spec_read) is True
     assert spec_write is not None
-    assert REGISTRY.allows_method(auth, spec_write) is False
+    assert allows_method(auth, spec_write) is False
 
 
 def _valid_runtime_config() -> pb.RuntimeConfig:
@@ -322,9 +322,9 @@ def test_structures_coverage_boost() -> None:
     class MockAllowAllAuth:
         allow_all = True
 
-    spec_write = REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE)
+    spec_write = get_operation(pb.Command.CMD_DIGITAL_WRITE)
     assert spec_write is not None
-    assert REGISTRY.allows_method(MockAllowAllAuth(), spec_write) is True
-    assert REGISTRY.get(pb.Command.CMD_DIGITAL_WRITE) is not None
-    assert REGISTRY.get(pb.DigitalWrite) is not None
-    assert REGISTRY.get(pb.DigitalWrite()) is not None
+    assert allows_method(MockAllowAllAuth(), spec_write) is True
+    assert get_operation(pb.Command.CMD_DIGITAL_WRITE) is not None
+    assert get_operation(pb.DigitalWrite) is not None
+    assert get_operation(pb.DigitalWrite()) is not None

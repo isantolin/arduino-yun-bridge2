@@ -14,7 +14,6 @@ CompileFlags:
     "-DBRIDGE_ENABLE_FILESYSTEM=1",
     "-DBRIDGE_ENABLE_PROCESS=1",
     "-DBRIDGE_ENABLE_POST_TESTS=1",
-    "-DWOLFSSL_USER_SETTINGS",
     "-DETL_NO_STL",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src/config",
@@ -25,8 +24,8 @@ CompileFlags:
     "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library",
     "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include",
     "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/arduino",
-    "-I/home/ignaciosantolin/Arduino/libraries/wolfssl",
-    "-I/home/ignaciosantolin/Arduino/libraries/wolfssl/src",
-    "-I/home/ignaciosantolin/Arduino/libraries/PacketSerial",
-    "-I/home/ignaciosantolin/Arduino/libraries/PacketSerial/src"
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/third_party/avr_pigweed_port/dist/PigweedAVR/src",
+    "-I/home/ignaciosantolin/Arduino/libraries/PigweedAVR/src",
+    "-I/home/ignaciosantolin/Arduino/libraries/MbedTLS/src",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/tests/Unity/src"
   ]

@@ -1,8 +1,7 @@
-"""Serial transport implementation using serialx streams and transports.
+"""Serial transport implementation using Google Pigweed HDLC and pyserial.
 
-This module implements a Zero-Overhead asyncio transport using StreamReader
-and StreamWriter. It delegates delimiter searching to Python's C core via
-`readuntil`, ensuring maximum throughput for high-speed serial links.
+This module implements a Zero-Overhead asyncio transport using pyserial and
+Google Pigweed HDLC Framing (pw_hdlc).
 
 [SIL-2 COMPLIANCE]
 - Deterministic buffer handling.
@@ -12,81 +11,46 @@ and StreamWriter. It delegates delimiter searching to Python's C core via
 """
 
 from __future__ import annotations
-from mcubridge.state.context import RuntimeState
-from mcubridge.config.settings import RuntimeConfig
 
 import asyncio
-import errno
 import logging
 import sys
-from typing import Any, Protocol
+import time
+from typing import Any, Protocol, cast
 
 import anyio
-import serialx
+import serial
+from serial.urlhandler import protocol_socket
 import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_rpc import packets as pw_packets
+from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
-from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 
-from mcubridge.protocol import protocol
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
-    REGISTRY,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     SERIAL_SUCCESS_STATUS_CODES,
     Status,
+    get_operation,
 )
 from mcubridge.protocol.structures import PendingCommand
 from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.serial")
 
-try:
-    import termios
-except ImportError as exc:
-    logger.debug("termios module not available on this platform", error=str(exc))
-    termios = None
-
-_orig_after_configure: Any = None
-
-
-def safe_after_configure(self: Any, orig_fn: Any = None) -> None:
-    fn = orig_fn if orig_fn is not None else _orig_after_configure
-    try:
-        if fn is not None:
-            fn(self)
-    except OSError as exc:
-        if exc.errno in (errno.EIO, errno.EINVAL, errno.ENOTTY, errno.EOPNOTSUPP):
-            logger.debug("Ignoring unsupported ioctl during serial configuration", errno=exc.errno)
-        else:
-            raise
-
-    if self._fileno is not None and termios is not None:
-        try:
-            attrs = termios.tcgetattr(self._fileno)
-            attrs[6][termios.VMIN] = 1
-            attrs[6][termios.VTIME] = 0
-            termios.tcsetattr(self._fileno, termios.TCSANOW, attrs)
-        except (termios.error, OSError) as exc:
-            logger.debug("Unable to set VMIN=1 on serial descriptor", error=str(exc))
-
-
-if sys.platform == "linux":
-    try:
-        import serialx.platforms.serial_linux as _sl
-
-        _after_cfg_name = "_after_configure_port"
-        _orig_after_configure = getattr(_sl.LinuxSerial, _after_cfg_name, None)
-        setattr(_sl.LinuxSerial, _after_cfg_name, safe_after_configure)
-    except (ImportError, AttributeError) as _exc:
-        logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
+# Register wifi:// and tcp:// scheme aliases in pyserial
+sys.modules["serial.urlhandler.protocol_wifi"] = protocol_socket
+sys.modules["serial.urlhandler.protocol_tcp"] = protocol_socket
 
 
 class SerialBridgeService(Protocol):
@@ -99,24 +63,20 @@ class SerialBridgeService(Protocol):
     async def handle_mcu_frame(self, cmd_id: int, seq_id: int, payload: bytes | ProtobufMessage, /) -> Any: ...
 
 
-serialx.register_uri_handler(
-    scheme="wifi://",
-    unique_scheme="wifi://",
-    sync_cls=SocketSerial,
-    async_transport_cls=SocketSerialTransport,
-    strip_uri_scheme=False,
-)
-
-
 def resolve_serial_url(port_str: str) -> str:
-    """Resolve serial device or network endpoint string into a canonical serialx URL. [SIL-2]"""
+    """Resolve serial device or network endpoint string into a canonical serial URL. [SIL-2]"""
     if not port_str:
         return ""
     clean = port_str.strip()
-    if clean.startswith(("tcp://", "wifi://", "socket://")):
-        scheme, _, host_port = clean.partition("://")
+    if clean.startswith(("tcp://", "wifi://")):
+        _, _, host_port = clean.partition("://")
         if ":" not in host_port:
-            return f"{scheme}://{host_port}:9000"
+            return f"socket://{host_port}:9000"
+        return f"socket://{host_port}"
+    if clean.startswith("socket://"):
+        _, _, host_port = clean.partition("://")
+        if ":" not in host_port:
+            return f"socket://{host_port}:9000"
         return clean
     if ":" in clean and not clean.startswith(("/", ".")):
         return f"socket://{clean}"
@@ -129,7 +89,7 @@ class SerialTransport:
     config: RuntimeConfig
     state: RuntimeState
     service: SerialBridgeService | None
-    serial: serialx.AsyncSerial | None
+    serial: serial.Serial | None
     stop_event: asyncio.Event
 
     def __init__(
@@ -141,15 +101,17 @@ class SerialTransport:
         self.config = config
         self.state = state
         self.service: SerialBridgeService | None = service
-        self.serial: serialx.AsyncSerial | None = None
+        self.serial: serial.Serial | None = None
 
         self.stop_event = asyncio.Event()
         self.negotiation_future: asyncio.Future[bool] | None = None
+        self.negotiation_target_baudrate: int | None = None
         self.consecutive_crc_errors = 0
         self.tx_sequence_id = 0
 
         self.current_command: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
+        self._serial_write_lock = asyncio.Lock()
 
         self._ack_timeout = max(self.config.serial_retry_timeout or 0, float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0)
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
@@ -169,10 +131,10 @@ class SerialTransport:
 
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            if self.serial and hasattr(self.serial.transport, "serial") and self.serial.transport.serial:
-                self.serial.transport.serial.baudrate = target_baud
+            if self.serial:
+                self.serial.baudrate = target_baud
                 logger.info("Local UART switched baudrate", baud=target_baud)
-        except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
+        except (AttributeError, OSError, ValueError) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
     async def reset(self) -> None:
@@ -207,73 +169,99 @@ class SerialTransport:
             logger.info("Connecting to MCU via serial port", port=self.config.serial_port)
 
         try:
-            async with serialx.AsyncSerial(
-                url=url,
+            self.serial = await asyncio.to_thread(
+                serial.serial_for_url,
+                url,
                 baudrate=connect_baud,
+                timeout=0.1,
+                write_timeout=2.0,
                 xonxoff=False,
-                exclusive=False,
-                low_latency=False,
-            ) as self.serial:
-                self.state.serial_writer = self.serial.transport
-                if not is_network:
-                    await self.toggle_dtr()
+                rtscts=False,
+                dsrdtr=False,
+            )
+            self.state.serial_writer = self.serial
+            if not is_network:
+                await self.toggle_dtr()
 
-                try:
-                    async with asyncio.TaskGroup() as tg:
-                        serial = self.serial
-                        read_task = tg.create_task(self.read_loop(serial), name="mcubridge-serial-read")
-                        stop_task = tg.create_task(self.stop_event.wait(), name="mcubridge-serial-stop")
+            try:
+                async with asyncio.TaskGroup() as tg:
+                    serial_dev = self.serial
+                    read_task = tg.create_task(self.read_loop(serial_dev), name="mcubridge-serial-read")
+                    stop_task = tg.create_task(self.stop_event.wait(), name="mcubridge-serial-stop")
 
-                        if (
-                            not is_network
-                            and self.config.serial_baud != connect_baud
-                            and not await self.negotiate_baudrate(self.config.serial_baud)
-                        ):
-                            raise ConnectionError("Baudrate negotiation failed")
-
-                        if self.service:
-                            await self.service.on_serial_connected()
-
-                        await asyncio.wait(
-                            (read_task, stop_task),
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
-                        read_task.cancel()
-                        stop_task.cancel()
-
-                    if not self.stop_event.is_set():
-                        if is_network:
-                            raise ConnectionError("Wireless network connection lost")
-                        raise ConnectionError("Serial connection lost")
-                except BaseExceptionGroup as eg:
-                    if len(eg.exceptions) == 1:
-                        raise eg.exceptions[0] from None
-                    raise
-                finally:
                     if self.service:
-                        with anyio.CancelScope(shield=True):
-                            try:
-                                await self.service.on_serial_disconnected()
-                            except (OSError, RuntimeError, ValueError, TypeError) as e:
-                                logger.error("Error during transport disconnect cleanup", error=str(e))
+                        await self.service.on_serial_connected()
+
+                    if (
+                        not is_network
+                        and self.config.serial_baud != connect_baud
+                        and not await self.negotiate_baudrate(self.config.serial_baud)
+                    ):
+                        raise ConnectionError("Baudrate negotiation failed")
+
+                    await asyncio.wait(
+                        (read_task, stop_task),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    read_task.cancel()
+                    stop_task.cancel()
+
+                if not self.stop_event.is_set():
+                    if is_network:
+                        raise ConnectionError("Wireless network connection lost")
+                    raise ConnectionError("Serial connection lost")
+            except BaseExceptionGroup as eg:
+                if len(eg.exceptions) == 1:
+                    raise eg.exceptions[0] from None
+                raise
+            finally:
+                if self.service:
+                    with anyio.CancelScope(shield=True):
+                        try:
+                            await self.service.on_serial_disconnected()
+                        except (OSError, RuntimeError, ValueError, TypeError) as e:
+                            logger.error("Error during transport disconnect cleanup", error=str(e))
         finally:
             self.state.serial_writer = None
-            self.serial = None
+            if self.serial:
+                try:
+                    self.serial.cancel_read()
+                    self.serial.cancel_write()
+                except (AttributeError, OSError) as exc:
+                    logger.debug("Failed to cancel pending serial I/O during cleanup", error=str(exc))
+                try:
+                    await asyncio.to_thread(self.serial.close)
+                except (AttributeError, OSError) as exc:
+                    logger.error("Failed to close serial port during cleanup", error=str(exc))
+                self.serial = None
 
     async def toggle_dtr(self) -> None:
         try:
             if self.serial:
-                await self.serial.set_modem_pins(dtr=False)
-                await asyncio.sleep(0.1)
-                await self.serial.set_modem_pins(dtr=True)
-                await asyncio.sleep(1.8)
-        except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
+
+                def _dtr_pulse() -> None:
+                    if self.serial:
+                        self.serial.dtr = False
+                        time.sleep(0.1)
+                        self.serial.dtr = True
+                        time.sleep(1.8)
+
+                await asyncio.to_thread(_dtr_pulse)
+        except (AttributeError, OSError, ValueError, RuntimeError) as exc:
             logger.error("Unable to toggle DTR", port=self.config.serial_port, error=str(exc))
 
     async def stop(self) -> None:
         self.stop_event.set()
         if self.serial:
-            await self.serial.close()
+            try:
+                self.serial.cancel_read()
+                self.serial.cancel_write()
+            except (AttributeError, OSError) as exc:
+                logger.debug("Failed to cancel pending serial I/O on stop", error=str(exc))
+            try:
+                await asyncio.to_thread(self.serial.close)
+            except (AttributeError, OSError) as exc:
+                logger.error("Failed to close serial port on stop", error=str(exc))
 
     async def feed_data(self, data: bytes | memoryview) -> None:
         """Feed incoming serial bytes into the HDLC frame decoder and dispatch valid frames."""
@@ -285,19 +273,15 @@ class SerialTransport:
                 continue
             await self.process_hdlc_frame(frame)
 
-    async def read_loop(self, serial: serialx.AsyncSerial) -> None:
+    async def read_loop(self, ser: serial.Serial) -> None:
         while not self.stop_event.is_set():
             try:
-                packet_with_sep = await serial.readuntil(protocol.FRAME_DELIMITER)
+                packet_with_sep = await asyncio.to_thread(
+                    ser.read_until, protocol.FRAME_DELIMITER, protocol.MAX_SERIAL_FRAME_BYTES
+                )
                 if packet_with_sep:
                     await self.feed_data(packet_with_sep)
-            except asyncio.LimitOverrunError:
-                self.state.serial_decode_errors += 1
-                await serial.read(protocol.MAX_SERIAL_FRAME_BYTES)
-            except asyncio.IncompleteReadError as exc:
-                logger.info("Serial stream closed or EOF reached", error=str(exc))
-                break
-            except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
+            except (OSError, RuntimeError, ValueError, TypeError) as exc:
                 if self.stop_event.is_set():
                     logger.debug("Serial connection closed during shutdown", error=str(exc))
                 else:
@@ -309,36 +293,74 @@ class SerialTransport:
         raw_len = len(frame.raw_encoded) if hasattr(frame, "raw_encoded") else len(frame.data)
         self.state.metrics.serial_bytes_received.inc(raw_len)
         self.state.metrics.serial_frames_received.inc()
+        frame_data = bytes(frame.data)
+
+        if self.config.serial_shared_secret:
+            cipher = self.state.link_cipher
+            if cipher is None:
+                if frame.address != protocol.HDLC_ADDRESS_RPC:
+                    logger.debug("Dropping unprotected pre-handshake HDLC frame", address=frame.address)
+                    return
+            else:
+                try:
+                    frame_data = cipher.decrypt(frame.address, frame_data)
+                except ValueError as exc:
+                    self.state.serial_decode_errors += 1
+                    logger.error("Rejected unauthenticated or replayed HDLC frame", error=str(exc))
+                    return
 
         if frame.address == protocol.HDLC_ADDRESS_LOG:
-            decoded_log = str(self.detokenizer.detokenize(frame.data))
-            logger.info("MCU log", log=decoded_log, raw=frame.data)
+            decoded_log = str(self.detokenizer.detokenize(frame_data))
+            logger.info("MCU log", log=decoded_log, raw=frame_data)
             return
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
-                await self.service.handle_mcu_frame(protocol.Command.CMD_CONSOLE_WRITE.value, 0, frame.data)
+                await self.service.handle_mcu_frame(
+                    protocol.Command.CMD_CONSOLE_WRITE.value, 0, pb.ConsoleWrite(data=frame_data)
+                )
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
-            pkt = RpcPacket()
             try:
-                pkt.ParseFromString(frame.data)
+                pkt = pw_packets.decode(frame_data)
             except (ProtobufDecodeError, ValueError) as exc:
                 self.state.serial_decode_errors += 1
-                logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame.data.hex())
+                logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame_data.hex())
                 return
-
-            spec = protocol.RPC_METHOD_TO_SPEC.get((pkt.service_id, pkt.method_id))
-            cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
+            spec = protocol.get_operation((pkt.service_id, pkt.method_id))
+            cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
 
+            if self.config.serial_shared_secret and self.state.link_cipher is None:
+                link_sync = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+                is_link_sync_response = (
+                    link_sync is not None
+                    and pkt.service_id == link_sync.service_id
+                    and pkt.method_id == link_sync.method_id
+                    and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
+                )
+                if not is_link_sync_response:
+                    self.state.serial_decode_errors += 1
+                    logger.error("Dropping unprotected pre-handshake RPC frame")
+                    return
+
+            # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
+            # successful responses map onto the operation's canonical response id.
+            if pkt.type == PacketType.SERVER_ERROR or (pkt.type == PacketType.RESPONSE and pkt.status != 0):
+                cmd_id = Status.ERROR.value
+            elif pkt.type == PacketType.RESPONSE and spec and spec.expected_responses:
+                cmd_id = min(spec.expected_responses)
+
             payload: ProtobufMessage | bytes = pkt.payload
-            if spec and spec.response_type and pkt.payload:
+            if (
+                spec
+                and spec.response_type
+                and (not pw_packets.for_server(pkt) or spec.pb_class is None)
+                and pkt.payload
+            ):
                 try:
-                    resp_msg = spec.response_type()
-                    resp_msg.ParseFromString(pkt.payload)
-                    payload = resp_msg
+                    payload = cast(ProtobufMessage, cast(Any, pw_packets).decode_payload(pkt, spec.response_type))
                 except (ProtobufDecodeError, ValueError) as exc:
                     logger.warning(
                         "Unable to parse RPC response payload",
@@ -360,9 +382,10 @@ class SerialTransport:
                 self.state.connection_fsm.negotiating_baud.is_active
                 and self.negotiation_future
                 and not self.negotiation_future.done()
+                and self.negotiation_target_baudrate is not None
                 and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
             ):
-                self.switch_local_baudrate(self.config.serial_baud)
+                self.switch_local_baudrate(self.negotiation_target_baudrate)
                 self.negotiation_future.set_result(True)
                 return
 
@@ -374,7 +397,17 @@ class SerialTransport:
 
             # Correlation and Service dispatch
             self.correlate_frame(cmd_id, payload, seq_id)
-            if self.service:
+            # In pw_rpc, PacketType.RESPONSE is only dispatched to service handlers when the
+            # resolved operation is an explicit response/status handler (paired_request_id != None
+            # or status code), never re-triggering bidirectional request handlers like MailboxPush.
+            resolved_spec = protocol.get_operation(cmd_id)
+            is_response_handler = (resolved_spec is not None and resolved_spec.paired_request_id is not None) or (
+                cmd_id in SERIAL_FAILURE_STATUS_CODES or cmd_id in SERIAL_SUCCESS_STATUS_CODES
+            )
+            if self.service and (
+                pkt.type != PacketType.RESPONSE
+                or (is_response_handler and cmd_id in getattr(self.service, "mcu_registry", {}))
+            ):
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
     def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:
@@ -406,7 +439,7 @@ class SerialTransport:
                     command_id=command_id,
                 )
             return
-        spec = REGISTRY.get(command_id)
+        spec = get_operation(command_id)
         paired_req_id = spec.paired_request_id if spec else None
         if command_id == pending.command_id or (paired_req_id is not None and paired_req_id == pending.command_id):
             pending.mark_success(payload)
@@ -435,7 +468,7 @@ class SerialTransport:
         if not self.serial or not self.serial.is_open:
             return False
 
-        spec = REGISTRY.get(command_id)
+        spec = get_operation(command_id)
         is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
 
@@ -477,7 +510,7 @@ class SerialTransport:
                         async with asyncio.timeout(effective_timeout):
                             await pending.completion.wait()
                             if pending.success:
-                                return pending.response_payload if pending.response_payload is not None else True
+                                return pending.response_payload or True
                     except TimeoutError as exc:
                         raise self._RetryableSerialError() from exc
 
@@ -501,7 +534,11 @@ class SerialTransport:
         if not self.serial:
             return False
 
-        if not self.state.serial_tx_allowed.is_set():
+        is_baudrate_negotiation = (
+            command_id == protocol.Command.CMD_SET_BAUDRATE.value
+            and self.state.connection_fsm.negotiating_baud.is_active
+        )
+        if not self.state.serial_tx_allowed.is_set() and not is_baudrate_negotiation:
             try:
                 async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
@@ -517,44 +554,88 @@ class SerialTransport:
             self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
             seq_id = self.tx_sequence_id
 
-        if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
-            data = payload.data if hasattr(payload, "data") else (payload if isinstance(payload, bytes) else b"")
-            encoded = protocol.encode_hdlc_console(data)
-        else:
-            encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id)
+        async with self._serial_write_lock:
+            serial_port = self.serial
+            if not serial_port:
+                return False
 
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "[SERIAL -> MCU] [CMD:0x%02X] [HDLC]: [%s]",
-                command_id,
-                encoded.hex().upper(),
-            )
+            cipher = self.state.link_cipher
+            is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
+            is_link_sync = command_id == protocol.Command.CMD_LINK_SYNC.value
 
-        try:
-            await self.serial.write(encoded)
-            await self.serial.drain()
-            self.state.metrics.serial_bytes_sent.inc(len(encoded))
-            self.state.metrics.serial_frames_sent.inc()
-            return True
-        except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
-            logger.error("Serial write failed", error=str(exc))
-            return False
+            if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
+                if isinstance(payload, bytes):
+                    data = payload
+                elif hasattr(payload, "data"):
+                    data = cast(bytes, getattr(payload, "data", b""))
+                else:
+                    data = b""
+                if self.config.serial_shared_secret and cipher is None:
+                    return False
+                if cipher is None:
+                    encoded = protocol.encode_hdlc_console(data)
+                else:
+                    from pw_hdlc.encode import ui_frame
+
+                    envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
+                    encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
+            else:
+                if self.config.serial_shared_secret:
+                    if cipher is None and not (is_link_reset or is_link_sync):
+                        return False
+                    if cipher is not None and is_link_sync:
+                        return False
+                if cipher is not None and not is_link_reset:
+                    from pw_hdlc.encode import ui_frame
+
+                    packet = protocol.encode_rpc_packet(command_id, payload, call_id=seq_id or 1)
+                    envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
+                    encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
+                else:
+                    encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id or 1)
+
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "[SERIAL -> MCU] [CMD:0x%02X] [HDLC]: [%s]",
+                    command_id,
+                    encoded.hex().upper(),
+                )
+
+            try:
+
+                def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
+                    ser.write(data)
+                    ser.flush()
+
+                await asyncio.to_thread(_write_and_flush, serial_port, encoded)
+                self.state.metrics.serial_bytes_sent.inc(len(encoded))
+                self.state.metrics.serial_frames_sent.inc()
+                return True
+            except (AttributeError, OSError, RuntimeError, ValueError) as exc:
+                logger.error("Serial write failed", error=str(exc))
+                return False
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)
+        was_synchronized = self.state.is_synchronized
         self.state.connection_fsm.start_negotiating()
+        self.negotiation_target_baudrate = target_baud
         try:
             self.negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
             async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
                 await self.negotiation_future
+            await asyncio.sleep(protocol.BAUDRATE_CHANGE_DELAY_MS / 1000)
+            if was_synchronized:
+                self.state.connection_fsm.synchronize()
             return True
-        except (TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
+        except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
+            self.negotiation_future = None
+            self.negotiation_target_baudrate = None
             with anyio.CancelScope(shield=True):
                 if self.state.connection_fsm.negotiating_baud.is_active:
                     self.state.connection_fsm.connect()
-

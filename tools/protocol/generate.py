@@ -31,8 +31,19 @@ from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
+from pw_rpc.descriptors import Service
 
-REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb", "mypy_protobuf", "grpclib", "black", "typer", "packaging"]
+REQUIRED_DEPS = [
+    "jinja2",
+    "google.protobuf",
+    "nanopb",
+    "mypy_protobuf",
+    "grpclib",
+    "black",
+    "typer",
+    "packaging",
+    "pw_rpc",
+]
 MISSING_DEPS: list[str] = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep.split(".")[0]) is None]
 HAS_BUF: bool = shutil.which("buf") is not None
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -65,11 +76,46 @@ def run_buf_generate(proto_dir: Path) -> None:
     env["PATH"] = f"{py_bin_dir}:{env.get('PATH', '')}"
     nanopb_dir = _resolve_nanopb_protoc_dir()
     if nanopb_dir:
-        env["PATH"] = f"{nanopb_dir}:{env['PATH']}"
+        env["PATH"] = f"{env['PATH']}:{nanopb_dir}"
     try:
         subprocess.run(["buf", "generate"], check=True, capture_output=True, text=True, cwd=str(proto_dir), env=env)
     except subprocess.CalledProcessError as e:
         sys.stderr.write(f"Error: buf generate failed:\n{e.stderr}\n")
+        sys.exit(1)
+
+
+def run_pw_rpc_packet_generate(repo_root: Path) -> None:
+    """Generate pw_rpc's internal packet type with Pigweed's PWPB compiler."""
+    pw_root = repo_root / "third_party" / "avr_pigweed_port" / "third_party" / "pigweed"
+    proto_path = pw_root / "pw_rpc" / "internal" / "packet.proto"
+    plugin_path = pw_root / "pw_protobuf" / "py" / "pw_protobuf" / "plugin.py"
+    output_dir = repo_root / "mcubridge-library-arduino" / "src"
+    if not proto_path.is_file() or not plugin_path.is_file():
+        raise FileNotFoundError("Pigweed pw_rpc PWPB generator sources are missing")
+
+    env = os.environ.copy()
+    python_paths = (
+        pw_root / "pw_protobuf" / "py",
+        pw_root / "pw_rpc" / "py",
+        pw_root / "pw_codegen" / "py",
+        pw_root / "pw_cli" / "py",
+    )
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(
+        [*(str(path) for path in python_paths), *([existing_pythonpath] if existing_pythonpath else [])]
+    )
+
+    command = [
+        "protoc",
+        f"-I{pw_root}",
+        f"--plugin=protoc-gen-pwpb={plugin_path}",
+        f"--pwpb_out={output_dir}",
+        "pw_rpc/internal/packet.proto",
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, cwd=pw_root, env=env)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: pw_rpc packet generation failed:\n{e.stderr}\n")
         sys.exit(1)
 
 
@@ -157,7 +203,10 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
         cfg_default, config_default_ref = _resolve_field_default(field_desc, opts, pb_module, default_sources)
-        if field_desc.is_repeated:
+        if (
+            getattr(field_desc, "is_repeated", False)
+            or getattr(field_desc, "label", None) == FieldDescriptor.LABEL_REPEATED
+        ):
             py_type, typed_val = "list", []
         elif field_desc.type in _FIELD_CONVERTERS:
             py_type, converter = _FIELD_CONVERTERS[field_desc.type]
@@ -241,7 +290,12 @@ def _extract_constants_and_handshake(
 
     hs_cpp, hs_py, _ = _extract_pb_obj_consts(hs_opt, pb_module)
     handshake_dict: dict[str, Any] = {}
-    for key in ("hkdf_salt", "hkdf_info_auth", "hkdf_info_session"):
+    for key in (
+        "hkdf_salt",
+        "hkdf_info_auth",
+        "hkdf_info_session",
+        "hkdf_info_response",
+    ):
         raw_str: str = getattr(hs_opt, key)
         handshake_dict[key] = raw_str
         handshake_dict[f"{key}_bytes"] = ", ".join(f"0x{ord(c):02X}" for c in raw_str)
@@ -273,8 +327,6 @@ def _extract_commands_and_statuses(
         command["name"] = value.name
         command["value"] = value.number
         command["expects_direct_response"] = bool(command_options.response_command)
-        if command_options.HasField("mcu_dispatch"):
-            command["mcu_dispatch"] = _message_to_dict(command_options.mcu_dispatch)
         commands.append(command)
 
     request_by_response = {cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")}
@@ -292,144 +344,11 @@ def _extract_commands_and_statuses(
             "value": value.number,
             "description": status_options.description,
         }
-        if status_options.HasField("mcu_dispatch"):
-            status["mcu_dispatch"] = _message_to_dict(status_options.mcu_dispatch)
         statuses.append(status)
     return commands, statuses
 
 
-_MCU_DISPATCH_TEMPLATES: Final[dict[str, str]] = {
-    "member_no_payload": "&BridgeClass::_dispatchMemberNoPayload<{handler_ptr}, {flags}>",
-    "member_with_msg": "&BridgeClass::_dispatchMemberWithMsg<{handler_ptr}, {payload_type}, {flags}>",
-    "member_with_ctx_msg": "&BridgeClass::_dispatchMemberWithCtxMsg<{handler_ptr}, {payload_type}, {flags}>",
-    "static_with_msg": "&BridgeClass::_dispatchStaticWithMsg<{handler_ptr}, {payload_type}, {flags}>",
-    "target_with_msg": (
-        "&BridgeClass::_dispatchTargetWithMsg<{target_instance}, {handler_ptr}, {payload_type}, {flags}>"
-    ),
-    "target_action": "&BridgeClass::_dispatchTargetAction<{target_instance}, {handler_ptr}, {flags}>",
-}
-_FEATURE_PREFIX_MACROS: Final[dict[str, str]] = {
-    "CMD_CONSOLE_": "BRIDGE_ENABLE_CONSOLE",
-    "CMD_DATASTORE_": "BRIDGE_ENABLE_DATASTORE",
-    "CMD_MAILBOX_": "BRIDGE_ENABLE_MAILBOX",
-    "CMD_FILE_": "BRIDGE_ENABLE_FILESYSTEM",
-    "CMD_PROCESS_": "BRIDGE_ENABLE_PROCESS",
-    "CMD_SPI_": "BRIDGE_ENABLE_SPI",
-}
-_QUERY_HANDLERS: Final[frozenset[str]] = frozenset({"_handleSimpleQuery", "_handlePinRead", "_handleSpiTransfer"})
-_IDENTIFIER_RE: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
-def _require_identifier(value: object, error_msg: str) -> str:
-    if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
-        raise ValueError(error_msg)
-    return value
-
-
-def format_mcu_dispatch_expression(dispatch: dict[str, Any], name: str) -> str:
-    """Render a fixed-allocation MCU dispatch adapter instantiation."""
-    adapter = str(dispatch.get("adapter", ""))
-    template = _MCU_DISPATCH_TEMPLATES.get(adapter)
-    if template is None:
-        raise ValueError(f"Unknown MCU dispatch adapter {adapter!r} for {name}")
-
-    handler = _require_identifier(dispatch.get("handler", ""), f"Invalid MCU dispatch handler for {name}")
-    default_cls = f"{dispatch['target_instance']}Class" if dispatch.get("target_instance") else "BridgeClass"
-    handler_class = _require_identifier(
-        dispatch.get("handler_class") or default_cls, f"Invalid MCU dispatch handler class for {name}"
-    )
-    handler_args = dispatch.get("handler_template_args", "")
-    if not isinstance(handler_args, str):
-        raise ValueError(f"Invalid handler template arguments for {name}")
-    handler_ptr = f"&{handler_class}::{handler}<{handler_args}>" if handler_args else f"&{handler_class}::{handler}"
-
-    payload_type = (
-        _require_identifier(dispatch.get("payload_type", ""), f"Missing or invalid payload type for {name}")
-        if "{payload_type}" in template
-        else ""
-    )
-    target_instance = (
-        _require_identifier(dispatch.get("target_instance", ""), f"Missing or invalid target instance for {name}")
-        if "{target_instance}" in template
-        else ""
-    )
-    is_query = handler in _QUERY_HANDLERS
-    flag_vals = (
-        dispatch.get("needs_ack", not is_query),
-        dispatch.get("retransmit_on_dup", is_query),
-        dispatch.get("check_dup", True),
-    )
-    if not all(isinstance(v, bool) for v in flag_vals):
-        raise ValueError(f"Invalid MCU dispatch boolean metadata for {name}")
-    flags_str = ", ".join("true" if v else "false" for v in flag_vals)
-    return template.format(
-        handler_ptr=handler_ptr, payload_type=payload_type, target_instance=target_instance, flags=flags_str
-    )
-
-
-def _build_mcu_dispatch_entries(commands: list[dict[str, Any]], statuses: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build the static C++ dispatch table from Protobuf command/status options."""
-    entries: list[dict[str, Any]] = []
-    adapter_prefix = "MCU_DISPATCH_ADAPTER_"
-
-    for kind, items in (("command", commands), ("status", statuses)):
-        for item in items:
-            raw_dispatch = item.get("mcu_dispatch")
-            if not raw_dispatch:
-                continue
-            if not isinstance(raw_dispatch, dict):
-                raise ValueError(f"Invalid MCU dispatch metadata for {item['name']}")
-            dispatch: dict[str, Any] = dict(cast(dict[str, Any], raw_dispatch))
-            adapter = dispatch.get("adapter", "")
-            if not isinstance(adapter, str) or not adapter.startswith(adapter_prefix):
-                raise ValueError(f"Missing or invalid MCU dispatch adapter for {item['name']}")
-            dispatch["adapter"] = adapter.removeprefix(adapter_prefix).lower()
-            if item.get("pb_message") and not dispatch.get("payload_type"):
-                dispatch["payload_type"] = f"rpc_pb_{item['pb_message']}"
-
-            expression = format_mcu_dispatch_expression(dispatch, item["name"])
-            inferred_macro = next(
-                (m for pfx, m in _FEATURE_PREFIX_MACROS.items() if str(item["name"]).startswith(pfx)), ""
-            )
-            feature_macro = dispatch.get("feature_macro") or inferred_macro
-            if feature_macro and (
-                not isinstance(feature_macro, str) or re.fullmatch(r"BRIDGE_ENABLE_[A-Z0-9_]+", feature_macro) is None
-            ):
-                raise ValueError(f"Invalid MCU dispatch feature macro for {item['name']}")
-            key = f"rpc::StatusCode::STATUS_{item['name']}" if kind == "status" else f"rpc::CommandId::{item['name']}"
-            entries.append(
-                {
-                    "name": item["name"],
-                    "value": item["value"],
-                    "key": key,
-                    "expression": expression,
-                    "feature_macro": feature_macro,
-                }
-            )
-
-    entries.sort(key=lambda entry: entry["value"])
-    if len(entries) != len({entry["value"] for entry in entries}):
-        raise ValueError("MCU dispatch table contains duplicate command/status IDs")
-    return entries
-
-
-def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any, env_desc: Any) -> dict[str, Any]:
-    if env_desc is not None and "payload_type" in env_desc.oneofs_by_name:
-        payload_fields = [
-            {"name": f.message_type.name, "field": f.name}
-            for f in env_desc.oneofs_by_name["payload_type"].fields
-            if f.message_type
-        ]
-        payload_structs = [item for item in payload_fields if item["name"] != "DaemonMetrics"]
-        payload_names = [p["name"] for p in payload_structs]
-        mcu_names = set(payload_names) | {"RpcEnvelope"}
-        all_structs = [{"name": n} for d in all_descs for n in d.message_types_by_name if n in mcu_names]
-    else:
-        payload_fields = []
-        payload_structs = []
-        payload_names = []
-        all_structs = []
-
+def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any) -> dict[str, Any]:
     action_items: dict[str, list[dict[str, Any]]] = {}
     for a in opts.Extensions[pb_module.actions]:
         if "_" in a.name:
@@ -463,10 +382,6 @@ def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: An
         for t in opts.Extensions[pb_module.daemon_tasks]
     ]
     return {
-        "payload_fields": payload_fields,
-        "payload_structs": payload_structs,
-        "payload_names": payload_names,
-        "all_structs": all_structs,
         "grouped_actions": grouped_actions,
         "topics": topics,
         "ubus_methods": ubus_methods,
@@ -474,22 +389,12 @@ def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: An
     }
 
 
-def _extract_rpc_specs(
-    pb_module: Any, svc_desc: Any
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
     rpc_specs: list[dict[str, Any]] = []
-    streaming_rpc_specs: list[dict[str, Any]] = []
     rpc_aliases: dict[str, str] = {}
     for m in svc_desc.methods:
-        if m.client_streaming and m.server_streaming:
-            cardinality, is_streaming = "Cardinality.STREAM_STREAM", True
-        elif m.client_streaming:
-            cardinality, is_streaming = "Cardinality.STREAM_UNARY", True
-        elif m.server_streaming:
-            cardinality, is_streaming = "Cardinality.UNARY_STREAM", True
-        else:
-            cardinality, is_streaming = "Cardinality.UNARY_UNARY", False
-
+        if m.client_streaming or m.server_streaming:
+            continue
         mo = m.output_type.GetOptions()
         err_init = _opt_ext(mo, pb_module.msg_error_init, "")
         m_opts = m.GetOptions()
@@ -500,34 +405,40 @@ def _extract_rpc_specs(
             rpc_aliases[a] = m.name
         rpc_cmd = _opt_ext(m_opts, pb_module.rpc_command, f"CMD_{_snake_case(m.name).upper()}")
         is_custom = bool(_opt_ext(m_opts, pb_module.is_custom_handler, False))
-        factory = f"lambda: pb.{m.output_type.name}({err_init})" if err_init else f"pb.{m.output_type.name}"
-        item = {
+        item: dict[str, Any] = {
             "name": m.name,
-            "req_cls": m.input_type.name,
-            "resp_cls": m.output_type.name,
-            "default_factory": factory,
+            "default_factory": f"lambda: pb.{m.output_type.name}({err_init})" if err_init else None,
             "handler_name": _snake_case(m.name),
             "rpc_topic": rt,
             "rpc_command": rpc_cmd,
-            "cardinality": cardinality,
             "is_custom_handler": is_custom,
         }
-        (streaming_rpc_specs if is_streaming else rpc_specs).append(item)
-    return rpc_specs, streaming_rpc_specs, rpc_aliases
+        rpc_specs.append(item)
+    return rpc_specs, rpc_aliases
 
 
 def _build_command_operation(
-    cmd: dict[str, Any], pb_module: Any, rpc_by_cmd: dict[str, Any], p_fields_map: dict[str, str]
+    cmd: dict[str, Any],
+    pb_module: Any,
+    rpc_by_cmd: dict[str, Any],
+    p_fields_map: dict[str, str],
+    mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     c_name = cmd["name"]
     pb_msg = cmd.get("pb_message")
     matched_rpc = rpc_by_cmd.get(c_name)
+    mcu_rpc = (mcu_rpc_by_cmd or {}).get(c_name)
     op: dict[str, Any] = {"name": c_name, "command_id": f"Command.{c_name}.value"}
+    if mcu_rpc:
+        op["service_name"] = mcu_rpc["service_name"]
+        op["method_name"] = mcu_rpc["method_name"]
+        if mcu_rpc.get("resp_cls"):
+            op["response_type"] = f"pb.{mcu_rpc['resp_cls']}"
     if pb_msg and hasattr(pb_module, pb_msg):
         op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
         op["payload_field"] = p_fields_map[pb_msg]
-    for str_key in ("cloud_topic", "auth_field"):
+    for str_key in ("cloud_topic", "auth_field", "mcu_handler", "mcu_unsupported_reason"):
         if cmd.get(str_key):
             op[str_key] = cmd[str_key]
     if cmd.get("response_command"):
@@ -538,16 +449,10 @@ def _build_command_operation(
         if cmd.get(bool_key):
             op[bool_key] = True
     if matched_rpc:
-        op.update(
-            {
-                "rpc_name": matched_rpc["name"],
-                "request_type": f"pb.{matched_rpc['req_cls']}",
-                "response_type": f"pb.{matched_rpc['resp_cls']}",
-                "default_factory": matched_rpc["default_factory"],
-                "handler_name": matched_rpc["handler_name"],
-                "cardinality": matched_rpc["cardinality"],
-            }
-        )
+        op["rpc_name"] = matched_rpc["name"]
+        op["handler_name"] = matched_rpc["handler_name"]
+        if matched_rpc.get("default_factory"):
+            op["default_factory"] = matched_rpc["default_factory"]
         if matched_rpc.get("rpc_topic"):
             op["rpc_topic"] = matched_rpc["rpc_topic"]
         if matched_rpc.get("is_custom_handler"):
@@ -583,21 +488,19 @@ def _build_operations_catalog(
     msg_topics: dict[str, str],
     telem_map: dict[str, str],
     pb_module: Any,
+    mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     operations: list[dict[str, Any]] = [
-        _build_command_operation(cmd, pb_module, rpc_by_cmd, p_fields_map) for cmd in commands
+        _build_command_operation(cmd, pb_module, rpc_by_cmd, p_fields_map, mcu_rpc_by_cmd) for cmd in commands
     ]
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
     operations.extend(
         {
             "name": rpc["name"],
             "rpc_name": rpc["name"],
-            "request_type": f"pb.{rpc['req_cls']}",
-            "response_type": f"pb.{rpc['resp_cls']}",
             "default_factory": rpc["default_factory"],
             "handler_name": rpc["handler_name"],
             "rpc_topic": rpc.get("rpc_topic"),
-            "cardinality": rpc["cardinality"],
             "is_custom_handler": rpc.get("is_custom_handler", False),
         }
         for rpc in rpc_specs
@@ -701,14 +604,12 @@ def _extract_operations_context(
     all_descs: list[Any],
     opts: Any,
     commands: list[dict[str, Any]],
-    env_desc: Any,
     svc_desc: Any,
 ) -> dict[str, Any]:
-    payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts, env_desc)
-    payload_fields = payload_ctx["payload_fields"]
-    p_fields_map = {p["name"]: p["field"] for p in payload_fields}
+    payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts)
+    p_fields_map: dict[str, str] = {}
 
-    rpc_specs, streaming_rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
+    rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
     cmd_by_name = {c["name"]: c for c in commands}
     rpc_by_cmd = {r["rpc_command"]: r for r in rpc_specs if r["rpc_command"] in cmd_by_name}
 
@@ -736,16 +637,41 @@ def _extract_operations_context(
         }
     )
 
+    mcu_services = [
+        s for d in all_descs for s in d.services_by_name.values() if s.name not in ("CloudBridge", "LocalBridge")
+    ]
+    mcu_rpc_by_cmd: dict[str, dict[str, Any]] = {}
+    for s_desc in mcu_services:
+        svc = Service.from_descriptor(s_desc)
+        s_prefix = svc.name.removesuffix("Service")
+        for m in svc.methods:
+            candidates = [
+                f"CMD_{_snake_case(m.name).upper()}",
+                f"CMD_{s_prefix.upper()}_{_snake_case(m.name).upper()}",
+                f"CMD_{_snake_case(s_prefix).upper()}_{_snake_case(m.name).upper()}",
+                f"CMD_PIN_{_snake_case(m.name.removesuffix('Pins')).upper()}",
+            ]
+            if s_prefix == "FileSystem":
+                candidates.insert(0, f"CMD_FILE_{_snake_case(m.name).upper()}")
+            matched = next((c for c in candidates if c in cmd_by_name), None)
+            if matched:
+                mcu_rpc_by_cmd[matched] = {
+                    "service_name": svc.full_name,
+                    "method_name": m.name,
+                }
+    mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
+        "service_name": "rpc.pb.GpioService",
+        "method_name": "SubscribePins",
+        "resp_cls": "PinUpdateEvent",
+    }
+
     operations = _build_operations_catalog(
-        commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module
+        commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module, mcu_rpc_by_cmd
     )
     return {
         "grouped_actions": payload_ctx["grouped_actions"],
-        "all_structs": payload_ctx["all_structs"],
-        "payload_fields": payload_fields,
-        "payload_structs": payload_ctx["payload_structs"],
-        "payload_names": payload_ctx["payload_names"],
         "operations": operations,
+        "payload_fields": [],
         "metrics": _extract_metric_specs(pb_module, all_descs),
         "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
         "rpc_aliases": rpc_aliases,
@@ -758,7 +684,6 @@ def _extract_operations_context(
         "telemetry_default_field": default_telem,
         "ubus_methods": payload_ctx["ubus_methods"],
         "daemon_tasks": payload_ctx["daemon_tasks"],
-        "streaming_rpc_specs": streaming_rpc_specs,
     }
 
 
@@ -827,15 +752,11 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     opts: Any = next(d.GetOptions() for d in all_descs if d.GetOptions().HasExtension(pb_module.constants))
     cmd_enum: Any = next(d.enum_types_by_name["Command"] for d in all_descs if "Command" in d.enum_types_by_name)
     status_enum: Any = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
-    env_desc: Any = next(
-        (d.message_types_by_name["RpcEnvelope"] for d in all_descs if "RpcEnvelope" in d.message_types_by_name),
-        None,
-    )
     svc_desc: Any = next(d.services_by_name["LocalBridge"] for d in all_descs if "LocalBridge" in d.services_by_name)
 
     consts_ctx = _extract_constants_and_handshake(pb_module, opts, parsed.major, parsed.minor, parsed.micro)
     commands, statuses = _extract_commands_and_statuses(pb_module, cmd_enum, status_enum)
-    ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, env_desc, svc_desc)
+    ops_ctx = _extract_operations_context(pb_module, all_descs, opts, commands, svc_desc)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
 
     return (
@@ -845,7 +766,6 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
         | {
             "commands": commands,
             "statuses": statuses,
-            "mcu_dispatch_entries": _build_mcu_dispatch_entries(commands, statuses),
         }
     )
 
@@ -943,6 +863,8 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
     if args.cpp:
         for stem in ("config_schema", "mcu_wire"):
             outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
+        outputs.append(repo_root / "mcubridge-library-arduino/src/protocol/mcu_wire.rpc.pb.h")
+        outputs.append(repo_root / "mcubridge-library-arduino/src/pw_rpc/internal/packet.pwpb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
         for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
@@ -974,8 +896,15 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
         proto_path.parent / "buf.yaml",
         proto_path.parent / "buf.gen.yaml",
         repo_root / ".github/actions/setup-protoc/action.yml",
+        repo_root / "tools/protocol/protoc_gen_mcu_rpc.py",
         *template_paths,
     ]
+    pw_root = repo_root / "third_party" / "avr_pigweed_port" / "third_party" / "pigweed"
+    packet_proto = pw_root / "pw_rpc" / "internal" / "packet.proto"
+    if packet_proto.is_file():
+        input_paths.append(packet_proto)
+        for package in ("pw_protobuf/py/pw_protobuf", "pw_rpc/py/pw_rpc", "pw_codegen/py/pw_codegen"):
+            input_paths.extend(sorted((pw_root / package).rglob("*.py")))
     version_path = repo_root / "VERSION"
     if version_path.is_file():
         input_paths.append(version_path)
@@ -1037,7 +966,6 @@ def _dispatch_generated_file(
 class GenerationArgs:
     spec: Path
     cpp: Path | None
-    cpp_structs: Path | None
     py: Path | None
     py_client: Path | None
 
@@ -1076,11 +1004,10 @@ cli = typer.Typer(help="Protocol binding generator for MCU Bridge v2.", add_comp
 def main(
     spec_file: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")],
     cpp: Annotated[Path | None, typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[Path | None, typer.Option("--cpp-structs", help="C++ structs output")] = None,
     py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
-    args = GenerationArgs(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
+    args = GenerationArgs(spec=spec_file, cpp=cpp, py=py, py_client=py_client)
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":
@@ -1097,6 +1024,8 @@ def main(
 
     sys.stderr.write(f"Generating protocol bindings from {proto_path} via buf...\n")
     run_buf_generate(proto_path.parent)
+    if args.cpp:
+        run_pw_rpc_packet_generate(REPO_ROOT)
 
     proto_spec = load_spec_from_proto(proto_path)
     context = build_protocol_context(proto_spec, version)
@@ -1160,7 +1089,7 @@ def main(
         "python": py_context,
         "client": context | {"constants": context["client_constants"]},
     }
-    explicit_outputs = (args.cpp, args.cpp_structs, args.py, args.py_client)
+    explicit_outputs = (args.cpp, args.py, args.py_client)
     for template_name, context_name, target_path, executable, is_py in _template_target_specs(args, REPO_ROOT):
         if target_path and (
             target_path.parent.exists()

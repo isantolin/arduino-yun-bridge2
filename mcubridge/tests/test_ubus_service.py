@@ -128,6 +128,31 @@ def test_ubus_service_start_with_mock_ubus_success(mock_runtime: MockRuntimeFaca
     mock_ubus.disconnect.assert_called_once_with()
 
 
+def test_ubus_service_start_rejects_missing_api(mock_runtime: MockRuntimeFacade) -> None:
+    mock_ubus: Any = MagicMock(spec=["connect"])
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+
+    assert service.start() is False
+    assert not service.is_active
+
+
+def test_ubus_service_start_preloads_ubox_when_available(
+    mock_runtime: MockRuntimeFacade, mocker: MockerFixture
+) -> None:
+    import ctypes
+
+    mock_ubus: Any = MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_library = MagicMock()
+    mocker.patch("ctypes.util.find_library", return_value="libubox.so")
+    mocker.patch.object(ctypes, "CDLL", return_value=mock_library)
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+
+    assert service.start()
+    mock_library.uloop_init.assert_called_once_with()
+    service.stop()
+
+
 def test_ubus_service_start_with_connection_error(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
@@ -580,6 +605,16 @@ def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade) -> None:
     service_no_send.is_active = True
     assert service_no_send.notify("sync", {"status": "ok"}) is False
 
+    inactive_service = UbusService(mock_runtime, ubus_module=mock_backend)
+    inactive_service.connection = True
+    assert inactive_service.notify("sync", {"status": "ok"}) is False
+
+    no_backend_service = UbusService(mock_runtime, ubus_module=None)
+    no_backend_service.ubus_backend = None
+    no_backend_service.connection = True
+    no_backend_service.is_active = True
+    assert no_backend_service.notify("sync", {"status": "ok"}) is False
+
 
 def test_ubus_service_register_methods_requires_module_api(mock_runtime: MockRuntimeFacade) -> None:
     mock_ubus: Any = MagicMock(spec=[])
@@ -998,4 +1033,4 @@ async def test_ubus_service_run_cancelled_stops_service(mock_runtime: MockRuntim
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert service.is_active is False
+    assert not service.is_active

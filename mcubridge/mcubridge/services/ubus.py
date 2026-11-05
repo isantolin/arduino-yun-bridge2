@@ -20,7 +20,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol import protocol
-from ..protocol.protocol import REGISTRY, Command
+from ..protocol.protocol import Command, build_ubus_methods
 
 logger = structlog.get_logger("mcubridge.service.ubus")
 
@@ -133,7 +133,7 @@ class UbusService:
 
             return _cb
 
-        methods = REGISTRY.build_ubus_methods(
+        methods = build_ubus_methods(
             self,
             self.ubus_backend,
             handler_factory=_make_handler,

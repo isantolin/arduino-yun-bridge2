@@ -27,6 +27,7 @@ import tenacity
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.handshake import (
     HandshakeEvent,
@@ -592,6 +593,20 @@ async def test_wait_for_link_sync_confirmation_timeout(
     assert res is False
 
 
+@pytest.mark.timeout(1)
+async def test_wait_for_link_sync_confirmation_uses_retry_timeout(
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
+) -> None:
+    manager, state, _, config, timing, _ack = handshake_setup
+    timing.response_timeout_ms = 60_000
+    config.serial_retry_timeout = 0.02
+    state.connection_fsm.disconnect()
+
+    assert await manager.wait_for_link_sync_confirmation(b"test_nonce") is False
+
+
 async def test_handshake_attempt_link_sync_timeout(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -606,11 +621,32 @@ async def test_handshake_attempt_link_sync_timeout(
 
 
 def test_handshake_calculate_tag_empty_secret() -> None:
-    assert SerialHandshakeManager.calculate_handshake_tag(None, b"test_nonce") == b""
-    assert SerialHandshakeManager.calculate_handshake_tag(b"", b"test_nonce") == b""
+    nonce = b"\x00" * protocol.HANDSHAKE_NONCE_LENGTH
+    assert SerialHandshakeManager.calculate_handshake_tag(None, nonce) == b""
+    assert SerialHandshakeManager.calculate_handshake_tag(b"", nonce) == b""
 
 
-@given(secret=st.binary(min_size=16, max_size=32), nonce=st.binary(min_size=12, max_size=12))
+def test_handshake_calculate_tag_rejects_invalid_nonce_length() -> None:
+    with pytest.raises(ValueError, match="nonce has an invalid length"):
+        SerialHandshakeManager.calculate_handshake_tag(b"secret", b"short")
+
+
+def test_handshake_calculate_tag_matches_wire_vector() -> None:
+    secret = b"shared-key"
+    nonce = b"\xab" * protocol.HANDSHAKE_NONCE_LENGTH
+    expected_tag = bytes.fromhex("f07a5aa13405715b8b54efde57ac8130")
+    assert SerialHandshakeManager.calculate_handshake_tag(secret, nonce) == expected_tag
+    expected_response_tag = bytes.fromhex("468299fac4fb82de1391f8a9a84bafd5")
+    assert SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce) == expected_response_tag
+
+
+@given(
+    secret=st.binary(min_size=16, max_size=32),
+    nonce=st.binary(
+        min_size=protocol.HANDSHAKE_NONCE_LENGTH,
+        max_size=protocol.HANDSHAKE_NONCE_LENGTH,
+    ),
+)
 def test_handshake_calculate_tag_deterministic_property(secret: bytes, nonce: bytes) -> None:
     tag1 = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     tag2 = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
@@ -687,23 +723,32 @@ async def test_handshake_resp_rate_limit_and_secret_none(
         enqueue_cloud=AsyncMock(),
     )
 
-    runtime_state.link_handshake_nonce = b"expected_nonce_12b"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    runtime_state.link_handshake_nonce = nonce
     runtime_state.handshake_rate_until = time.monotonic() + 10.0
-    pkt = pb.LinkSync(nonce=b"expected_nonce_12b", tag=b"tag")
+    pkt = pb.LinkSync(nonce=nonce, tag=b"tag")
     assert await hs.handle_link_sync_resp(1, pkt) is False
 
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+    )
+    hs.transition(HandshakeEvent.START_SYNC)
+    hs.transition(HandshakeEvent.RESET_SENT)
+    hs.transition(HandshakeEvent.SYNC_SENT)
     runtime_config.serial_handshake_min_interval = 0.0
     runtime_config.serial_shared_secret = b""
     runtime_state.handshake_rate_until = 0.0
-    nonce = b"expected_12b_nonce"
     runtime_state.link_handshake_nonce = nonce
-    tag = hs.calculate_handshake_tag(b"", nonce)
+    tag = hs.calculate_handshake_response_tag(b"", nonce)
     runtime_state.link_expected_tag = tag
     pkt_matching = pb.LinkSync(nonce=nonce, tag=tag)
     hs.capabilities_delay = 100.0
     assert await hs.handle_link_sync_resp(2, pkt_matching) is True
     assert runtime_state.is_synchronized is True
-    assert runtime_state.link_session_key is None
 
 
 async def test_handshake_capabilities_resp_future_none(
@@ -791,3 +836,48 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     res_mismatch = await sync_fn()
     assert res_mismatch is False
+
+
+async def test_handshake_send_failures_and_capabilities_branches(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    send_mock = AsyncMock(return_value=False)
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(response_timeout_ms=10),
+        send_frame=send_mock,
+        enqueue_cloud=AsyncMock(),
+    )
+    hs.retry_backoff_base = 0.001
+    hs.retry_backoff_max = 0.002
+
+    # 1. synchronize_attempt fails when CMD_LINK_RESET send fails
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
+    assert not await hs.synchronize_attempt()
+    assert runtime_state.last_handshake_error == "link_reset_send_failed"
+
+    # 2. synchronize_attempt fails when CMD_LINK_SYNC send fails
+    send_mock.side_effect = [True, False]
+    hs.fsm_state = HandshakeState.UNSYNCHRONIZED
+    assert not await hs.synchronize_attempt()
+    assert runtime_state.last_handshake_error == "link_sync_send_failed"
+
+    # 3. handle_link_sync_resp with rate_limit > 0 and allowed=True, plus capabilities_delay == 0
+    send_mock.side_effect = None
+    send_mock.return_value = False
+    runtime_config.serial_handshake_min_interval = 0.5
+    runtime_state.handshake_rate_until = 0.0
+    nonce = b"1234567890123456"
+    runtime_state.link_handshake_nonce = nonce
+    tag = hs.calculate_handshake_response_tag(runtime_config.serial_shared_secret, nonce)
+    runtime_state.link_expected_tag = tag
+    hs.capabilities_delay = 0.0
+    hs.fsm_state = HandshakeState.CONFIRMING
+    assert await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=tag))
+    assert runtime_state.handshake_rate_until > 0.0
+
+    # 4. Let background capabilities discovery task (scheduled by handle_link_sync_resp) run
+    await asyncio.sleep(0.02)
+    assert await hs.handle_link_reset_resp(1, b"\xaa\xbb")

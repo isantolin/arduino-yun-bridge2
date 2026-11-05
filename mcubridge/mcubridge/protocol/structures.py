@@ -106,7 +106,10 @@ def _validate_metadata_bounds(cfg: pb.RuntimeConfig) -> None:
         minimum, maximum = metadata.get("min"), metadata.get("max")
         if minimum is None and maximum is None:
             continue
-        if field.is_repeated or field.type not in _NUMERIC_FIELD_TYPES:
+        is_repeated = (
+            getattr(field, "is_repeated", False) or getattr(field, "label", None) == FieldDescriptor.LABEL_REPEATED
+        )
+        if is_repeated or field.type not in _NUMERIC_FIELD_TYPES:
             raise RuntimeError(f"Numeric bounds declared for non-scalar numeric field: {field_name}")
 
         value = getattr(cfg, field_name)

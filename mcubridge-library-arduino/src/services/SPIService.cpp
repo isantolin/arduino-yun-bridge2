@@ -26,12 +26,12 @@ void SPIServiceClass::setConfig(const rpc_pb_SpiConfig& config) {
   const auto data_mode = (mode_idx < sizeof(SPI_MODES) / sizeof(SPI_MODES[0]))
                              ? SPI_MODES[mode_idx]
                              : SPI_MODE0;
-  _settings =
-      SPISettings(config.frequency,
-                  (config.bit_order == rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST)
-                      ? LSBFIRST
-                      : MSBFIRST,
-                  data_mode);
+  _settings = SPISettings(
+      config.frequency,
+      (config.bit_order == rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST)
+          ? LSBFIRST
+          : MSBFIRST,
+      data_mode);
 }
 
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {

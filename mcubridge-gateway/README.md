@@ -52,7 +52,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 │  - Executes local_bridge_service.execute_rpc()         │
 │  - Pure Telemetry Push                                 │
 └───────────────────────────┬────────────────────────────┘
-                            │ Serial Link (COBS/R + CRC32)
+                            │ Serial Link (pw_hdlc + pw_rpc, CRC32 FCS)
                             ▼
 ┌────────────────────────────────────────────────────────┐
 │                 MCU Firmware (Arduino AVR)             │
@@ -111,7 +111,7 @@ Where:
   - `evt`: Asynchronous telemetry reports and spontaneous event broadcasts (e.g. `status_online`, `pin_event`).
 - `{method}`: Canonical operation or event name matching `tools/protocol/mcubridge.proto` (e.g. `gpio.write`, `gpio.set_mode`, `file.read`, `system.version`, `datastore.put`, `mailbox.push`).
 
-All routing is resolved declaratively via the protocol Single Source of Truth (`REGISTRY.get_topic_for_message` and `REGISTRY.parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
+All routing is resolved declaratively via the protocol Single Source of Truth (`get_topic_for_message` and `parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
 
 ---
 

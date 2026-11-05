@@ -33,7 +33,7 @@ Todos los clientes se comunican **exclusivamente con el Cloud Gateway** mediante
 │  - Delegated RPC execution (local_bridge_service)           │
 │  - Local IPC via OpenWrt UBUS (ubus call mcubridge)         │
 └──────────────────┬──────────────────────────────────────────┘
-                   │ Serial RPC (COBS/R + CRC32)
+                   │ Serial HDLC + pw_rpc (pw_hdlc + CRC32 FCS)
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 MCU Firmware (Arduino AVR)                  │
@@ -85,7 +85,7 @@ pip install \
     "typer>=0.12.5"
 ```
 
-> **Nota:** No se requieren librerías de enlace serie (`pyserial`/`serialx`) ni utilidades de bajo nivel (`cobs`) en el cliente, ya que el empaquetado binario y el transporte físico son gestionados íntegramente por el daemon de borde.
+> **Nota:** No se requieren librerías de enlace serie (`pyserial`) ni utilidades de bajo nivel en el cliente, ya que el empaquetado binario y el transporte físico son gestionados íntegramente por el daemon de borde.
 
 ---
 

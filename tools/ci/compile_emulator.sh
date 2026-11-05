@@ -17,32 +17,8 @@ METADATA_DIR="${ROOT_DIR}/build/emulation"
 ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
 mkdir -p "${ARDUINO_LIBS}"
 
-echo "[emulator] Installing library dependencies..."
-"${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
-
-ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
-if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
-if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH/src"
-else
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH"
-fi
-PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
-
 # Use system Python
 GEN_PYTHON=$(command -v python3 || command -v python)
-mkdir -p "${METADATA_DIR}"
-"${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
-    --host-test \
-    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h" \
-    --json-output "${METADATA_DIR}/arduino_core_metadata.json"
-
-echo "[emulator] Verifying library paths..."
-ls -la "${PIGWEED_PATH}" || echo "PIGWEED_PATH not found"
-ls -la "${PIGWEED_PATH}/src" || echo "PIGWEED_PATH/src not found"
 
 echo "[emulator] Generating protocol bindings..."
 if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
@@ -54,18 +30,34 @@ if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
     exit 1
 fi
 
-WOLF_SOURCES=(
-    "$WOLFCRYPT_SRC/sha256.c"
-    "$WOLFCRYPT_SRC/hmac.c"
-    "$WOLFCRYPT_SRC/hash.c"
-    "$WOLFCRYPT_SRC/kdf.c"
-    "$WOLFCRYPT_SRC/error.c"
-    "$WOLFCRYPT_SRC/logging.c"
-    "$WOLFCRYPT_SRC/wc_port.c"
-    "$WOLFCRYPT_SRC/memory.c"
-    "$WOLFCRYPT_SRC/chacha.c"
-    "$WOLFCRYPT_SRC/poly1305.c"
-    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
+echo "[emulator] Installing library dependencies..."
+"${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
+
+ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
+PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
+MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
+mapfile -t MBEDTLS_SOURCES < <(find "$MBEDTLS_PATH/tf-psa-crypto" -type f -name '*.c' -print | sort)
+if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
+    echo "[emulator] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
+    exit 1
+fi
+
+mkdir -p "${METADATA_DIR}"
+"${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+    --host-test \
+    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h" \
+    --json-output "${METADATA_DIR}/arduino_core_metadata.json"
+
+echo "[emulator] Verifying library paths..."
+ls -la "${PIGWEED_PATH}" || echo "PIGWEED_PATH not found"
+ls -la "${PIGWEED_PATH}/src" || echo "PIGWEED_PATH/src not found"
+
+mapfile -t PIGWEED_RPC_SOURCES < <(
+    find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
+        \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
+           -o -name 'pw_stream_interval_reader.cc' \
+           -o -name 'pw_varint_stream.cc' \
+           -o -name 'pw_containers_intrusive_item.cc' \) -print | sort
 )
 
 NANOPB_SOURCES=(
@@ -76,9 +68,24 @@ NANOPB_SOURCES=(
     "${SRC_DIR}/protocol/mcu_wire.pb.c"
 )
 
+MBEDTLS_OBJ_DIR="${METADATA_DIR}/mbedtls"
+mkdir -p "$MBEDTLS_OBJ_DIR"
+MBEDTLS_OBJECTS=()
+for source in "${MBEDTLS_SOURCES[@]}"; do
+    object_name="${source#"$MBEDTLS_PATH/"}"
+    object_name="${object_name//\//_}"
+    object="${MBEDTLS_OBJ_DIR}/${object_name%.c}.o"
+    gcc -std=c99 -O2 -g -Wall -Wextra -Werror \
+        -DBRIDGE_HOST_TEST=1 -DARDUINO=100 \
+        -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
+        -I"${MBEDTLS_PATH}" \
+        -c "$source" -o "$object"
+    MBEDTLS_OBJECTS+=("$object")
+done
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
+    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -88,22 +95,25 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    -I"${WOLFSSL_PATH}" \
-    -I"${WOLFSSL_INC}" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
-    "${WOLF_SOURCES[@]}" \
+    -I"${MBEDTLS_PATH}" \
     "${NANOPB_SOURCES[@]}" \
+    "${MBEDTLS_OBJECTS[@]}" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
     "$PIGWEED_PATH/src/log_avr.cpp" \
     "$PIGWEED_PATH/src/rpc_server.cpp" \
+    "${PIGWEED_RPC_SOURCES[@]}" \
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
     "$PIGWEED_PATH/src/pw_varint_varint.cc" \
     "$PIGWEED_PATH/src/pw_status_status.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
+    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -123,7 +133,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
+    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -133,22 +143,25 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    -I"${WOLFSSL_PATH}" \
-    -I"${WOLFSSL_INC}" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
-    "${WOLF_SOURCES[@]}" \
+    -I"${MBEDTLS_PATH}" \
     "${NANOPB_SOURCES[@]}" \
+    "${MBEDTLS_OBJECTS[@]}" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
     "$PIGWEED_PATH/src/log_avr.cpp" \
     "$PIGWEED_PATH/src/rpc_server.cpp" \
+    "${PIGWEED_RPC_SOURCES[@]}" \
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
     "$PIGWEED_PATH/src/pw_varint_varint.cc" \
     "$PIGWEED_PATH/src/pw_status_status.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
+    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
+    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

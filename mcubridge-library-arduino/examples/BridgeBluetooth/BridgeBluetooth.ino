@@ -21,8 +21,6 @@ BluetoothSerial SerialBT;
 #define BT_STREAM Serial
 #endif
 #include <Bridge.h>
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/settings.h>
 
 #ifndef BRIDGE_SERIAL_SHARED_SECRET
 #define BRIDGE_SERIAL_SHARED_SECRET \

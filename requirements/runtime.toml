@@ -11,7 +11,7 @@ rationale = "Base interpreter shipped on the target image"
 [[dependency]]
 name = "pigweed"
 openwrt = "python3-pigweed"
-pip = ""
+pip = "pigweed==0.0.24"
 rationale = "Google Pigweed RPC, HDLC framing, and tokenizer for MCU-MPU transport"
 
 
@@ -25,9 +25,10 @@ rationale = "Template engine for professional and auditable code generation [BUI
 [[dependency]]
 name = "protobuf"
 openwrt = "python3-protobuf"
-pip = "protobuf==7.36.2"
+pip = "protobuf==5.28.3"
+check_latest = false
 gateway = true
-rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [v36.2 final: Edition 2026 naming & UPB performance features]"
+rationale = "Pinned to protobuf 5.28.3 commanded by Google Pigweed priority (pigweed 0.0.24 requires protobuf~=5.28.2)"
 
 
 [[dependency]]
@@ -39,10 +40,12 @@ edge = false
 rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client on mcubridge-gateway"
 
 [[dependency]]
-name = "serialx"
-openwrt = "python3-serialx"
-pip = "serialx==1.15.1"
-rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
+name = "pyserial"
+openwrt = "python3-pyserial"
+pip = "pyserial==3.5"
+check_latest = false
+rationale = "Cross-platform serial communication engine commanded by Google Pigweed"
+
 
 [[dependency]]
 name = "tenacity"
@@ -62,7 +65,7 @@ rationale = "Ultra-fast asyncio event loop implementation (libuv)"
 name = "cryptography"
 openwrt = "python3-cryptography"
 pip = "cryptography==50.0.2"
-rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
+rationale = "ChaCha20-Poly1305 frame protection and HKDF/HMAC handshake security"
 
 [[dependency]]
 name = "structlog"
@@ -87,7 +90,7 @@ rationale = "Deterministic finite state machine (FSM) implementation matching SI
 [[dependency]]
 name = "anyio"
 openwrt = "python3-anyio"
-pip = "anyio==4.15.1"
+pip = "anyio==4.16.0"
 gateway = true
 rationale = "Asynchronous file I/O (anyio.Path), structured concurrency, and typed memory streams"
 
@@ -196,13 +199,6 @@ check_file = "include/etl/algorithm.h"
 rationale = "Zero-heap, STL-free deterministic C++ template library for SIL-2 MCU algorithms"
 
 [[cpp_dependency]]
-name = "wolfSSL"
-github = "wolfSSL/wolfssl"
-ref_type = "tags"
-version = "v5.9.4-stable"
-check_file = "wolfssl/wolfcrypt/settings.h"
-rationale = "FIPS 140-3 / SIL-2 compliant cryptography engine (ChaCha20-Poly1305, HKDF, SHA-256)"
-[[cpp_dependency]]
 name = "Unity"
 github = "ThrowTheSwitch/Unity"
 ref_type = "tags"
@@ -228,6 +224,25 @@ files = [
 ]
 rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded MCUs"
 
+[[cpp_dependency]]
+name = "MbedTLS"
+github = "Mbed-TLS/mbedtls"
+ref_type = "tags"
+version = "mbedtls-4.2.0"
+check_file = "tf-psa-crypto/include/psa/crypto.h"
+sha256 = "2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
+rationale = "Pinned Mbed TLS 4 PSA provider for AVR/SAMD link crypto; ESP32 uses core PSA for SHA-256/HMAC and WolfCrypt for HKDF/AEAD"
+
+[[cpp_dependency]]
+name = "wolfssl"
+github = "wolfSSL/Arduino-wolfSSL"
+ref_type = "tags"
+version = "5.8.4"
+check_file = "library.properties"
+check_latest = false
+sha256 = "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
+rationale = "GPL-3.0-or-later wolfCrypt HKDF-SHA256 and ChaCha20-Poly1305 provider for ESP32; PSA remains the SHA-256/HMAC provider"
+
 
 # =============================================================================
 # Development, Linting and Verification Tooling (CI/Dev SSOT)
@@ -235,7 +250,7 @@ rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.0"
+pip = "coverage==7.17.2"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
@@ -250,8 +265,9 @@ rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]
 name = "mypy-protobuf"
-pip = "mypy-protobuf==5.1.0"
-rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions"
+pip = "mypy-protobuf==3.5.0"
+check_latest = false
+rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions [commanded by Pigweed]"
 
 [[dev_dependency]]
 name = "pexpect"
@@ -265,13 +281,14 @@ rationale = "Static dead code scanner detecting unused functions, classes, and p
 
 [[dev_dependency]]
 name = "pyrefly"
-pip = "pyrefly==1.4.0"
+pip = "pyrefly==1.4.1"
 rationale = "Fast Python type checker and LSP language server for strict type safety"
 
 [[dev_dependency]]
 name = "types-protobuf"
-pip = "types-protobuf==7.35.1.20260906"
-rationale = "Type stubs for google.protobuf required by pyrefly"
+pip = "types-protobuf==5.28.3.20241030"
+check_latest = false
+rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pigweed]"
 
 [[dev_dependency]]
 name = "types-psutil"
@@ -282,6 +299,13 @@ rationale = "Type stubs for psutil required by pyrefly"
 name = "types-pexpect"
 pip = "types-pexpect==4.9.0.20260518"
 rationale = "Type stubs for pexpect required by pyrefly"
+
+[[dev_dependency]]
+name = "types-pyserial"
+pip = "types-pyserial==3.5.0.20261030"
+check_latest = false
+rationale = "Type stubs for pyserial static analysis validation commanded by Google Pigweed"
+
 
 [[dev_dependency]]
 name = "flake8"
@@ -300,7 +324,7 @@ rationale = "Primary testing framework and test runner"
 
 [[dev_dependency]]
 name = "pytest-asyncio"
-pip = "pytest-asyncio==1.4.1"
+pip = "pytest-asyncio==1.4.1.post1"
 rationale = "Asyncio integration for pytest managing event loop lifecycles"
 
 [[dev_dependency]]
@@ -360,7 +384,7 @@ rationale = "Formal YAML parser for workflow frontmatter and configuration audit
 
 [[dev_dependency]]
 name = "types-pyyaml"
-pip = "types-PyYAML==6.0.12.20261030"
+pip = "types-PyYAML==6.0.12.20261103"
 rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
 
 [[dev_dependency]]

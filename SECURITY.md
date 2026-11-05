@@ -25,17 +25,18 @@ If you discover a potential security vulnerability in this project, please repor
 
 Arduino MCU Bridge 2 implements a Safety-Hardened Embedded Architecture designed for high-reliability embedded environments using deterministic FSMs, Zero-Heap memory management, and boot-time Known-Answer Tests.
 
-### 1. Handshake & Encryption
-All communication (physical UART, wireless WiFi TCP, or Bluetooth SPP) requires a successful mutual handshake using a pre-shared secret.
-- **Mutual Authentication:** HMAC-SHA256 used to authenticate the link during synchronization.
-- **AEAD (ChaCha20-Poly1305):** All functional data is encrypted and authenticated using mission-critical ChaCha20-Poly1305.
-- **Anti-Replay:** Monotonic nonces with counter validation prevent replay attacks on both the handshake and functional frames.
-- **Cryptographic references:** HKDF-SHA256 (RFC 5869) is used for session-key derivation with boot-time Known-Answer Tests (KATs) for algorithmic self-validation.
-- **TLS 1.3 0-RTT:** Cloud Gateway connections support secure 0-RTT session ticket resumption with single-use anti-replay enforcement.
+### 1. Link Authentication and Encryption
+- When `serial_shared_secret` is configured, `LinkSync` authenticates the host with HMAC-SHA256 and the MCU returns a domain-separated HMAC proof. Both tags cover the 16-byte host nonce.
+- The handshake derives separate 256-bit host-to-MCU and MCU-to-host keys with HKDF-SHA256. After synchronization, RPC, console, and log HDLC payloads use ChaCha20-Poly1305. The envelope is an 8-byte big-endian counter followed by ciphertext and a 16-byte tag; the HDLC address and counter are authenticated as AAD.
+- Each direction uses one strictly increasing counter across the protected HDLC channels. Receivers reject zero, repeated, and older counters. This replay defense is scoped to the current session; because the MCU has no demonstrated cross-platform cryptographic random source or persistent boot epoch, previously captured handshakes and frames are not guaranteed to be rejected after an MCU restart.
+- `LinkReset` is an explicit plaintext control operation used to recover synchronization. This is not a plaintext fallback for data frames; a reset can force a new handshake.
+- An empty shared secret explicitly disables link authentication. It is not a fallback for a failed tag, and unauthenticated mode must not be used over an untrusted transport.
+- Pigweed remains responsible for MCU HDLC/RPC framing. Mbed TLS provides the MCU's ChaCha20-Poly1305, HKDF, HMAC, SHA-256, constant-time comparison, and secure-zeroization APIs; Python uses `cryptography`.
+- No project-specific TLS 1.3 0-RTT or session-ticket anti-replay behavior is claimed.
 
 ### 2. Integrity
-- **CRC32 (IEEE 802.3):** Every frame includes a mandatory 32-bit CRC.
-- **Poly1305 MAC:** Every encrypted frame includes a 128-bit authentication tag protecting the header and payload.
+- **CRC32 (IEEE 802.3):** HDLC frames include a 32-bit error-detection checksum. CRC is not cryptographic authentication.
+- With a configured shared secret, every post-handshake RPC, console, and log payload is authenticated with a Poly1305 tag. The handshake response and explicit `LinkReset` control request are not AEAD-protected.
 
 ### 3. Flash & Resource Protection
 - **RAM-only storage:** The daemon enforces that frequent writes (like cloud payload spooling and file operations) occur in `/tmp` (volatile memory).
@@ -43,9 +44,10 @@ All communication (physical UART, wireless WiFi TCP, or Bluetooth SPP) requires 
 
 ### 4. Cryptographic Self-Validation
 
-- **Power-On Self-Tests (POST):** The system implements Known Answer Tests (KAT) for SHA256, HMAC-SHA256, and ChaCha20-Poly1305 based on NIST and RFC vectors.
+- **MCU POST:** Project KATs cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
+- **Python self-test:** The daemon checks a ChaCha20-Poly1305 library vector. Link-frame encryption is also exercised by transport tests.
 
-- **Fail-Secure:** Initialization aborts if the cryptographic engine fails the startup tests, ensuring no communication happens over an untrustworthy link.
+- These tests are functional checks, not independent validation or certification. They do not establish protection against replay across MCU restarts.
 
 
 

@@ -13,7 +13,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 - `src/`
   - Public headers available to sketches (`Bridge.h`, `Console.h`, `Mailbox.h`, etc.).
   - `services/`: implementation files and classes that depend on the Arduino core (e.g. `Bridge.cpp`).
-  - `protocol/`: protocol helpers shared with the Linux daemon (COBS encoder, CRC, frame builder, nanopb/protobuf payload structs).
+  - `protocol/`: generated protocol constants (`rpc_protocol.h`, `rpc_hw_config.h`) and Nanopb payload bindings (`mcu_wire.pb.h`/`.c`, `config_schema.pb.h`/`.c`).
 - `examples/`
   - Arduino sketches demonstrating usage of the library:
     - `BridgeControl`: Standard UART/TTY wired bridge setup with GPIO, mailbox and process control.
@@ -24,7 +24,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
   - Additional documentation and diagrams describing the protocol and library design (`../docs/PROTOCOL.md`).
 - `tools/`
   - Maintenance scripts such as `install.sh` to deploy the library into an Arduino environment.
-  - The protocol generator lives in `tools/protocol/mcubridge.proto` (see repository root); running `python3 tools/protocol/generate.py` refreshes the shared headers in `src/protocol/` alongside the Python daemon bindings.
+  - The protocol schemas live in `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto`); running `python3 tools/protocol/generate.py` refreshes the shared headers in `src/protocol/` alongside the Python daemon bindings.
 
 ## Installation
 
@@ -34,24 +34,24 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 ### External dependencies
 
-- **wolfSSL**: The library utilizes wolfSSL for AEAD (ChaCha20-Poly1305) and HMAC operations, ensuring MIL-SPEC cryptographic integrity.
-- **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` for zero-copy parsing without redundant `memset` sweeps on statically allocated memory.
-- **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`). This ensures SIL-2 compliance by avoiding dynamic heap allocation.
-- **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3).
+- **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, `pw_rpc` server/service dispatch, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log_avr` tokenized diagnostics, and `pw_chrono_avr` atomic millisecond timekeeping).
+- **Cryptographic providers**: PSA supplies SHA-256/HMAC-SHA256 and Mbed TLS platform zeroization. HKDF-SHA256 and ChaCha20-Poly1305 use Mbed TLS 4 on AVR/SAMD and wolfCrypt 5.8.4 on ESP32.
+- **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
+- **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`, `span`) with strict Zero-STL (`-DETL_NO_STL`) compliance.
 
-## SIL-2 & MIL-SPEC Compliance
+## SIL-2 & MIL-SPEC Design Principles
 
-This library follows IEC 61508 (SIL-2) and FIPS 140-3 (MIL-SPEC) guidelines:
-- **No Dynamic Memory:** All buffers are statically allocated using ETL. No `malloc`/`new` after initialization.
-- **Deterministic Switch Dispatch:** Command handling uses an optimized switch structure over member function pointers, ensuring constant-time dispatch, minimal stack depth, and reduced RAM usage.
-- **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (Unsynchronized, Idle, AwaitingAck, Fault).
-- **Cryptographic Self-Tests (POST):** Performs Known Answer Tests (KAT) for SHA256 and HMAC-SHA256 at startup.
-- **Fail-Secure:** Initialization aborts and the system enters a safe state (StateFault) if cryptographic integrity checks fail.
-- **Key Isolation:** Uses **HKDF-SHA256** for key derivation, ensuring the shared secret is never used directly for authentication tags.
-- **No Recursion:** Deterministic stack usage.
-- **Integrity:** All RPC frames are protected by CRC32.
-- **Flash Optimization**: Repetitive Nanopb instantiations are consolidated into non-template implementation helpers in .cpp files, significantly reducing binary size for 8-bit MCUs.
-- **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 to eliminate initialization overhead on static memory structures.
+This library describes safety- and security-oriented design goals; it does not claim IEC 61508 SIL-2 certification or FIPS 140-3 validation:
+- **No Dynamic Memory & Zero STL (`-DETL_NO_STL`):** All buffers are statically allocated using ETL and PigweedAVR static containers. No `malloc`/`new` or `<std::*>` headers in production firmware.
+- **Modular `pw_rpc` Service Dispatch (`pw::rpc_avr::RpcServer`):** Command handling is organized into 8 static `pw::rpc_avr::RpcService` implementations (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) using compile-time `pw::tokenizer::Hash("rpc.pb.<Service>")` identifiers.
+- **Multi-Channel HDLC Framing (`pw_hdlc`):** Multiplexes `pw_rpc` packets (`HDLC_ADDRESS_RPC = 1`), tokenized logs (`HDLC_ADDRESS_LOG = 2`), and console streams (`HDLC_ADDRESS_CONSOLE = 3`) with IEEE 802.3 CRC-32 FCS integrity.
+- **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (`STARTUP`, `UNSYNCHRONIZED`, `HANDSHAKE`, `SYNCHRONIZED`, `AWAITING_ACK`, `FAULT`).
+- **Cryptographic Self-Tests (POST):** MCU Known-Answer Tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The daemon tests its AEAD library and encrypted transport behavior.
+- **Encrypted link:** With a configured shared secret, RPC, console, and log HDLC payloads are encrypted after `LinkSync`. Empty-secret mode is explicitly unauthenticated and unencrypted. Per-session counters reject replay within a session; replay across MCU restarts is not ruled out.
+- **Fail-Secure:** Initialization aborts and the system enters a safe state (`FAULT`) if cryptographic or SRAM March integrity checks fail.
+- **Handshake Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs. No session encryption keys are derived.
+- **Atomic Timekeeping (`pw_chrono_avr`):** Uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for deterministic timeout and interval tracking.
+- **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 (`rpc::decode_pb`) to eliminate initialization overhead on static memory structures.
 - **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, SPI, WiFi, and Bluetooth.
 
 ## Best Practices
@@ -83,10 +83,10 @@ void loop() {
 
 ## Building From Source
 
-- The library targets AVR-based Arduino MCU boards. Ensure the Arduino AVR core is installed.
+- The library targets AVR, SAMD21, and ESP32 Arduino MCU boards alongside a host C++17 test/emulation target.
 - The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/protocol`.
-- All payload serialization uses **nanopb/protobuf** via generated `rpc_pb_*` structs serialised and deserialised via `rpc::Payload::serialize` and `rpc::Payload::parse`.
-- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via Cloud/IPC requests (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
+- All payload serialization uses **nanopb/protobuf** via generated `rpc_pb_*` structs in `mcu_wire.pb.h` / `config_schema.pb.h` encoded and decoded via `rpc::encode_pb` and `rpc::decode_pb`.
+- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via Cloud/IPC requests (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`), while asynchronous pin events are streamed via `Bridge.sendPinEvent` (`GpioService/SubscribePins`).
 
 ## Contributing
 

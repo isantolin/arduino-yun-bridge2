@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-import pytest
 from google.protobuf import descriptor_pb2
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -46,31 +45,60 @@ EXPECTED_DISPATCH_NAMES: Final[set[str]] = {
 }
 
 
-def test_dispatch_table_is_derived_from_protobuf_and_sorted() -> None:
+def test_commands_are_derived_from_protobuf_and_sorted() -> None:
     context = generate.build_protocol_context(pb, "2.8.8")
-    entries: list[dict[str, Any]] = context["mcu_dispatch_entries"]
+    commands: list[dict[str, Any]] = context["commands"]
 
-    assert {str(entry["name"]) for entry in entries} == EXPECTED_DISPATCH_NAMES
-    values: list[int] = [int(entry["value"]) for entry in entries]
+    command_names = {str(c["name"]) for c in commands}
+    assert EXPECTED_DISPATCH_NAMES.issubset(command_names)
+
+    values: list[int] = [int(c["value"]) for c in commands]
     assert values == sorted(set(values))
 
-    by_name: dict[str, dict[str, Any]] = {str(entry["name"]): entry for entry in entries}
-    assert by_name["CMD_GET_VERSION"]["key"] == "rpc::CommandId::CMD_GET_VERSION"
-    assert by_name["CMD_GET_VERSION"]["expression"] == (
-        "&BridgeClass::_dispatchMemberNoPayload<"
-        "&BridgeClass::_handleSimpleQuery<rpc_pb_VersionResponse, "
-        "rpc::CommandId::CMD_GET_VERSION_RESP, BridgeClass::_fillVersion>, "
-        "false, true, true>"
-    )
-    assert by_name["CMD_MAILBOX_READ_RESP"]["feature_macro"] == "BRIDGE_ENABLE_MAILBOX"
-    assert str(by_name["CMD_SPI_TRANSFER"]["expression"]).endswith("rpc_pb_SpiTransfer, false, true, true>")
+    by_name: dict[str, dict[str, Any]] = {str(c["name"]): c for c in commands}
+    assert by_name["CMD_GET_VERSION"]["response_command"] == "CMD_GET_VERSION_RESP"
+    assert by_name["CMD_GET_VERSION"]["auth_field"] == "system_version"
+    assert by_name["CMD_MAILBOX_READ_RESP"]["pb_message"] == "MailboxReadResponse"
+    assert by_name["CMD_MAILBOX_READ_RESP"]["request_command"] == "CMD_MAILBOX_READ"
 
 
-def test_dispatch_expression_rejects_unknown_adapters_and_missing_payloads() -> None:
-    with pytest.raises(ValueError, match="Unknown MCU dispatch adapter"):
-        generate.format_mcu_dispatch_expression({"adapter": "unknown", "handler": "_h"}, "CMD_INVALID")
-    with pytest.raises(ValueError, match="payload type"):
-        generate.format_mcu_dispatch_expression({"adapter": "member_with_msg", "handler": "_h"}, "CMD_INVALID")
+def test_pigweed_rpc_method_mappings() -> None:
+    from mcubridge.protocol import protocol
+
+    assert len(protocol.BY_RPC) > 0
+    assert len(protocol.BY_COMMAND_ID) > 0
+    assert len(protocol.PW_SERVICES) >= 8
+
+    for (srv_id, meth_id), spec in protocol.BY_RPC.items():
+        assert isinstance(srv_id, int)
+        assert srv_id > 0
+        assert isinstance(meth_id, int)
+        assert meth_id > 0
+        assert isinstance(spec.service_name, str)
+        assert len(spec.service_name) > 0
+        assert isinstance(spec.method_name, str)
+        assert len(spec.method_name) > 0
+
+        assert protocol.get_operation((srv_id, meth_id)) is spec
+        assert spec.service_id == srv_id
+        assert spec.method_id == meth_id
+        assert protocol.PW_SERVICES[srv_id].methods[meth_id].id == meth_id
+
+    # Verify key Pigweed RPC service and method mappings via PW_SERVICES and get_operation
+    gpio_write = protocol.get_operation(protocol.Command.CMD_DIGITAL_WRITE.value)
+    assert gpio_write is not None
+    assert gpio_write.service_name == "rpc.pb.GpioService"
+    assert gpio_write.method_name == "DigitalWrite"
+
+    sys_ver = protocol.get_operation(protocol.Command.CMD_GET_VERSION.value)
+    assert sys_ver is not None
+    assert sys_ver.service_name == "rpc.pb.SystemService"
+    assert sys_ver.method_name == "GetVersion"
+
+    ds_put = protocol.get_operation(protocol.Command.CMD_DATASTORE_PUT.value)
+    assert ds_put is not None
+    assert ds_put.service_name == "rpc.pb.DataStoreService"
+    assert ds_put.method_name == "Put"
 
 
 def test_removed_command_metadata_is_absent_not_reserved() -> None:

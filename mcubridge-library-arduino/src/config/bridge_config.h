@@ -85,7 +85,7 @@ inline constexpr bool ENABLE_FILESYSTEM = BRIDGE_ENABLE_FILESYSTEM;
 inline constexpr bool ENABLE_PROCESS = BRIDGE_ENABLE_PROCESS;
 inline constexpr bool ENABLE_SPI = BRIDGE_ENABLE_SPI;
 
-// [SIL-2/AVR] Cryptographic Power-On Self-Tests (KAT for SHA256, HMAC, AEAD).
+// Cryptographic Power-On Self-Tests for SHA-256, HMAC, and AEAD.
 // Enabled by default. Set to 0 for flash-constrained targets (e.g. ATmega328P).
 #ifndef BRIDGE_ENABLE_POST_TESTS
 #define BRIDGE_ENABLE_POST_TESTS 1

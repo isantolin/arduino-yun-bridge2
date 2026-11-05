@@ -6,17 +6,16 @@
                 "${workspaceFolder}/mcubridge-library-arduino/src",
                 "${workspaceFolder}/mcubridge-library-arduino/src/**",
                 "${workspaceFolder}/mcubridge-library-arduino/tests",
+                "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
                 "${workspaceFolder}/tools/arduino_stub/include",
                 "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
                 "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
-                "${workspaceFolder}/.dummy_libs/wolfSSL",
-                "${workspaceFolder}/.dummy_libs/PacketSerial/src",
-                "${workspaceFolder}/.dummy_libs/PacketSerial",
+                "${workspaceFolder}/third_party/avr_pigweed_port/dist/PigweedAVR/src",
                 "${workspaceFolder}/.dummy_libs/Unity/src",
+                "${env:HOME}/Arduino/libraries/MbedTLS/src",
                 "/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include",
                 "/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/arduino",
-                "/home/ignaciosantolin/Arduino/libraries/wolfSSL",
-                "/home/ignaciosantolin/Arduino/libraries/PacketSerial/src"
+                "/home/ignaciosantolin/Arduino/libraries/PigweedAVR/src"
             ],
             "defines": [
                 "ARDUINO=10800",
@@ -29,7 +28,6 @@
                 "BRIDGE_ENABLE_POST_TESTS=1",
                 "BRIDGE_ENABLE_TEST_INTERFACE=1",
                 "BRIDGE_FAULT_INJECTION=1",
-                "WOLFSSL_USER_SETTINGS",
                 "ETL_NO_STL"
             ],
             "compilerPath": "/usr/bin/g++",

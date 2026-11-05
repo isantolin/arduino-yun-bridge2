@@ -48,6 +48,7 @@ configure_logging(console=True)
 logger = structlog.get_logger("simavr_runner")
 
 _PTY_PARSER = parse.compile("[SIMAVR] UART{id:w} PTY ready on: {pty}")
+SIMAVR_STARTUP_SETTLE_SECONDS = 5.0
 
 
 def _read_pty_from_stream(proc_stdout: Any, state: EmulationState) -> str:
@@ -245,6 +246,8 @@ def run_simavr_emulation(
         _teardown_simavr(None, simavr_proc, gateway_proc, master_fd, None, None)
         return False
 
+    # Allow AVR cryptographic POST to finish before the daemon opens the UART.
+    time.sleep(SIMAVR_STARTUP_SETTLE_SECONDS)
     fake_uci_dir, storage_path, daemon_env = setup_fake_uci(slave_name, device_id="yun-01", label="simavr runner")
 
     daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]

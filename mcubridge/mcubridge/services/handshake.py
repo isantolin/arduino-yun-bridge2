@@ -1,11 +1,4 @@
-"""Serial handshake coordination utilities for BridgeService.
-
-[MIL-SPEC COMPLIANCE]
-This module implements secure handshake with:
-- HMAC-SHA256 authentication (timing-safe comparison)
-- Nonce with monotonic counter (anti-replay protection)
-- Secure memory zeroization after use
-"""
+"""Serial link handshake and authenticated session setup."""
 
 from __future__ import annotations
 
@@ -36,11 +29,12 @@ from google.protobuf.message import (
 
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol
+from ..security.security import LinkCipher
 from ..protocol.protocol import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     Command,
-    REGISTRY,
+    get_topic_for_message,
 )
 from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from ..state.context import RuntimeState
@@ -177,7 +171,7 @@ class SerialHandshakeManager:
             sync_waiter if sync_waiter is not None else self.wait_for_link_sync_confirmation
         )
         self.topic_resolver: Callable[[str, Any], str | None] = (
-            topic_resolver if topic_resolver is not None else REGISTRY.get_topic_for_message
+            topic_resolver if topic_resolver is not None else get_topic_for_message
         )
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
@@ -210,6 +204,7 @@ class SerialHandshakeManager:
     def on_enter_synchronized(self) -> None:
         """[SIL-2] Native hook executed on entering synchronized state."""
         self._state.connection_fsm.synchronize()
+        self._state.link_sync_event.set()
 
     def on_exit_synchronized(self) -> None:
         """[SIL-2] Native hook executed on exiting synchronized state."""
@@ -277,7 +272,8 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
+        self._state.link_expected_tag = self.calculate_handshake_response_tag(self._config.serial_shared_secret, nonce)
+        self._state.link_cipher = None
 
         reset_ok = await self.send_frame(
             Command.CMD_LINK_RESET.value,
@@ -296,7 +292,7 @@ class SerialHandshakeManager:
         self.transition(HandshakeEvent.RESET_SENT)
         await asyncio.sleep(0.05)
 
-        # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
+        # Authenticate the host request with the host-specific handshake key.
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Serialize LINK_SYNC as protobuf.
         sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag)
@@ -373,11 +369,10 @@ class SerialHandshakeManager:
             return False
 
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
-        tag_mismatch = not bytes_eq(tag_bytes, recalculated_tag)
+        tag_mismatch = expected_tag is None or not bytes_eq(tag_bytes, expected_tag)
 
         if nonce_mismatch:
             self._logger.debug(
@@ -401,14 +396,26 @@ class SerialHandshakeManager:
             )
             return False
 
-        # [SIL-2] Ensure session key is derived on successful sync
+        session_cipher: LinkCipher | None = None
         if self._config.serial_shared_secret:
-            self._state.link_session_key = self.calculate_session_key(self._config.serial_shared_secret, nonce)
+            try:
+                session_cipher = LinkCipher.for_host(self._config.serial_shared_secret, nonce)
+            except ValueError as exc:
+                self._logger.error("Unable to derive serial AEAD session keys", error=str(exc))
+                self.clear_handshake_expectations()
+                await self.handle_handshake_failure("session_key_derivation_failed")
+                return False
+
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
         self.transition(HandshakeEvent.SYNC_CONFIRMED)
+        if self.fsm_state != HandshakeState.SYNCHRONIZED:
+            self.clear_handshake_expectations()
+            await self.handle_handshake_failure("sync_state_transition_failed")
+            return False
 
+        self._state.link_cipher = session_cipher
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised", nonce=payload.hex())
@@ -521,7 +528,12 @@ class SerialHandshakeManager:
         )
 
     async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = (self.timing.response_timeout_ms / 1000.0) * 2 if self.timing.response_timeout_ms > 0 else 5.0
+        timeout = 5.0
+        if self.timing.response_timeout_ms > 0:
+            timeout = (self.timing.response_timeout_ms / 1000.0) * 2
+        if self._config.serial_retry_timeout > 0:
+            # Retry sooner if the MCU was still running its startup self-tests.
+            timeout = min(timeout, self._config.serial_retry_timeout)
         try:
             async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:
@@ -578,8 +590,8 @@ class SerialHandshakeManager:
         self._state.last_handshake_error = None
         self._state.last_handshake_unix = time.time()
         self._state.handshake_last_duration = self._state.handshake_duration_since_start()
-        self._state.link_last_nonce_counter = 0
         self._state.connection_fsm.synchronize()
+        self._state.link_sync_event.set()
         self._state.handshake_successes += 1
         await self.publish_handshake_event("success")
 
@@ -599,34 +611,30 @@ class SerialHandshakeManager:
 
     @staticmethod
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
+        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_AUTH)
+
+    @staticmethod
+    def calculate_handshake_response_tag(secret: bytes | None, nonce: bytes) -> bytes:
+        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE)
+
+    @staticmethod
+    def _calculate_handshake_tag(secret: bytes | None, nonce: bytes, info: bytes) -> bytes:
+        if len(nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
+            raise ValueError("handshake nonce has an invalid length")
         if not secret:
             return b""
 
-        # [MIL-SPEC] Use HKDF derived key for handshake authentication
-        # Eradicated derive_handshake_key wrapper (Llamada directa a cryptography)
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
-            length=protocol.AEAD_KEY_SIZE,
+            length=protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
             salt=protocol.HANDSHAKE_HKDF_SALT,
-            info=protocol.HANDSHAKE_HKDF_INFO_AUTH,
+            info=info,
         )
         auth_key = hkdf.derive(secret)
 
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
-        return h.finalize()[: protocol.AEAD_TAG_SIZE]
-
-    @staticmethod
-    def calculate_session_key(secret: bytes, nonce: bytes) -> bytes:
-        """[MIL-SPEC] Derive a 32-byte session key from shared secret and nonce."""
-
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=protocol.AEAD_KEY_SIZE,
-            salt=nonce,
-            info=protocol.HANDSHAKE_HKDF_INFO_SESSION,
-        )
-        return hkdf.derive(secret)
+        return h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         return (

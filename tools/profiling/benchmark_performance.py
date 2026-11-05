@@ -2,7 +2,7 @@
 """Unified Performance Benchmark and Memory Profiler for MCU Bridge 2 (SIL-2 / MIL-SPEC).
 
 Measures:
-- Framing throughput (COBS/R + CRC32)
+- Framing throughput (Pigweed HDLC + FCS CRC32)
 - AEAD Cryptographic performance (ChaCha20-Poly1305)
 - Protobuf wire serialization latency
 - Memory usage (RSS, peak allocations, LMDB footprint)
@@ -26,7 +26,7 @@ import typer
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_rpc import packets as pw_packets
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
@@ -227,8 +227,7 @@ def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
         decoder = FrameDecoder()
         for frame in decoder.process(sample):
             if frame.ok():
-                pkt = RpcPacket()
-                pkt.ParseFromString(frame.data)
+                pw_packets.decode(frame.data)
     dur_parse = time.perf_counter() - start
     parse_metric = BenchmarkMetric(
         name="decode_hdlc_rpc() Frame",

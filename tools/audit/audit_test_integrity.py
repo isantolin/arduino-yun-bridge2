@@ -216,7 +216,7 @@ def audit_test_only_hooks() -> list[str]:
                 file_count = len(re.findall(pattern, file_content))
                 test_count = len(re.findall(pattern, py_test_text))
 
-                if prod_count == file_count and file_count <= 2 and test_count > 0:
+                if prod_count == file_count and file_count == 1 and test_count > 0:
                     findings.append(
                         f"[{pfile.relative_to(ROOT)}:{node.lineno}] Rule 5 Violation: "
                         f"Production function/method '{name}' is only invoked from test suites."

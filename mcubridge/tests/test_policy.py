@@ -43,25 +43,25 @@ class TestAllowedCommandPolicy:
 
 
 class TestMethodAuthorization:
-    @given(spec=st.sampled_from([s for s in protocol.REGISTRY.operations if s.auth_field]))
+    @given(spec=st.sampled_from([s for s in protocol.OPERATIONS if s.auth_field]))
     def test_default_policy_allows_all_tracked_actions(self, spec: protocol.OperationSpec) -> None:
         """Property: Default permissive policy allows all tracked service operations."""
-        assert protocol.REGISTRY.allows_method(_make_auth(), spec)
+        assert protocol.allows_method(_make_auth(), spec)
 
-    @given(spec=st.sampled_from([s for s in protocol.REGISTRY.operations if s.auth_field]))
+    @given(spec=st.sampled_from([s for s in protocol.OPERATIONS if s.auth_field]))
     def test_selective_action_denial(self, spec: protocol.OperationSpec) -> None:
         """Property: Disabling a specific permission flag rejects the operation."""
         auth_field: str = str(spec.auth_field)
         auth = _make_auth(**{auth_field: False})
-        assert not protocol.REGISTRY.allows_method(auth, spec)
+        assert not protocol.allows_method(auth, spec)
 
     def test_unregistered_or_empty_auth_field_denied_without_allow_all(self) -> None:
         """Property: Any operation without an auth_field defaults to deny unless allow_all is set."""
         spec_unprotected = protocol.OperationSpec(command_id=999, name="unprotected")
         auth = _make_auth()
-        assert not protocol.REGISTRY.allows_method(auth, spec_unprotected)
+        assert not protocol.allows_method(auth, spec_unprotected)
 
         class AllowAllAuth:
             allow_all = True
 
-        assert protocol.REGISTRY.allows_method(AllowAllAuth(), spec_unprotected)
+        assert protocol.allows_method(AllowAllAuth(), spec_unprotected)

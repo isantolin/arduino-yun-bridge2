@@ -200,6 +200,7 @@ option (rpc.pb.constants) = {
   aead_nonce_size: 12
   aead_tag_size: 16
   aead_key_size: 32
+  aead_counter_size: 8
   protocol_version: 2
   default_baudrate: 115200
   default_safe_baudrate: 115200
@@ -304,8 +305,9 @@ option (rpc.pb.handshake) = {
   hkdf_info_auth: "handshake-auth"
   hkdf_info_session: "session-key"
   hkdf_output_length: 32
-  nonce_random_bytes: 8
-  nonce_counter_bytes: 8
+  hkdf_info_response: "handshake-response"
+  nonce_random_bytes: 16
+  nonce_counter_bytes: 0
 };
 option (rpc.pb.hardware) = {
   max_observers_avr: 4
@@ -590,6 +592,7 @@ option (rpc.pb.ubus_methods) = {
 message Constants {
   reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68;
   reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask";
+  // ChaCha20-Poly1305 protects all HDLC channels after an authenticated handshake.
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
     (cpp_type) = "size_t",
@@ -846,6 +849,12 @@ message Constants {
     (py_type) = "int",
     (client_constant) = true
   ];
+  uint32 aead_counter_size = 90 [
+    (cpp_name) = "RPC_AEAD_COUNTER_SIZE",
+    (cpp_type) = "size_t",
+    (py_name) = "AEAD_COUNTER_SIZE",
+    (py_type) = "int"
+  ];
 }
 
 message Hardware {
@@ -870,7 +879,10 @@ message Hardware {
   uint32 startup_drain_per_tick = 17;
   uint32 startup_drain_final = 18;
   uint32 startup_stabilization_ms = 19;
-  uint32 baudrate_change_delay_ms = 20;
+  uint32 baudrate_change_delay_ms = 20 [
+    (py_name) = "BAUDRATE_CHANGE_DELAY_MS",
+    (py_type) = "int"
+  ];
   uint32 max_consecutive_crc_errors = 21;
   uint32 flow_control_xoff_threshold = 23 [
     (py_name) = "FLOW_CONTROL_XOFF_THRESHOLD",
@@ -987,6 +999,7 @@ message Handshake {
     (py_name) = "HANDSHAKE_HKDF_INFO_AUTH",
     (py_type) = "bytes"
   ];
+  // HKDF info used to derive independent host-to-MCU and MCU-to-host keys.
   string hkdf_info_session = 14 [
     (py_name) = "HANDSHAKE_HKDF_INFO_SESSION",
     (py_type) = "bytes"
@@ -1008,6 +1021,10 @@ message Handshake {
     (cpp_type) = "unsigned int",
     (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES",
     (py_type) = "int"
+  ];
+  string hkdf_info_response = 18 [
+    (py_name) = "HANDSHAKE_HKDF_INFO_RESPONSE",
+    (py_type) = "bytes"
   ];
 }
 
@@ -1085,29 +1102,6 @@ message UbusMethodConfig {
   string description = 3;
 }
 
-enum McuDispatchAdapter {
-  MCU_DISPATCH_ADAPTER_UNSPECIFIED = 0;
-  MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD = 1;
-  MCU_DISPATCH_ADAPTER_MEMBER_WITH_MSG = 2;
-  MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG = 3;
-  MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG = 4;
-  MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG = 5;
-  MCU_DISPATCH_ADAPTER_TARGET_ACTION = 6;
-}
-
-message McuDispatchOptions {
-  McuDispatchAdapter adapter = 1;
-  string handler = 2;
-  string handler_class = 3;
-  string handler_template_args = 4;
-  string payload_type = 5;
-  string target_instance = 6;
-  optional bool needs_ack = 7;
-  optional bool retransmit_on_dup = 8;
-  optional bool check_dup = 9;
-  string feature_macro = 10;
-}
-
 message CommandOptions {
   reserved 2, 4, 10, 12, 13;
   reserved "directions", "expects_direct_response", "request_command", "rpc_method", "action_routes";
@@ -1120,7 +1114,6 @@ message CommandOptions {
   string auth_field = 11;
   string mcu_handler = 14;
   string mcu_unsupported_reason = 15;
-  McuDispatchOptions mcu_dispatch = 17;
 }
 
 extend google.protobuf.MessageOptions {
@@ -1143,7 +1136,6 @@ message StatusOptions {
   reserved 2;
   reserved "mcu_handler";
   string description = 1;
-  McuDispatchOptions mcu_dispatch = 3;
 }
 
 message DaemonTaskConfig {
@@ -1243,11 +1235,6 @@ enum Command {
   CMD_GET_VERSION = 64 [(cmd_opts) = {
     response_command: "CMD_GET_VERSION_RESP"
     auth_field: "system_version"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
-      handler: "_handleSimpleQuery"
-      handler_template_args: "rpc_pb_VersionResponse, rpc::CommandId::CMD_GET_VERSION_RESP, BridgeClass::_fillVersion"
-    }
   }];
   CMD_GET_VERSION_RESP = 65 [(cmd_opts) = {
     cloud_topic: "system/version/value"
@@ -1256,11 +1243,6 @@ enum Command {
   CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {
     response_command: "CMD_GET_FREE_MEMORY_RESP"
     auth_field: "system_free_memory"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
-      handler: "_handleSimpleQuery"
-      handler_template_args: "rpc_pb_FreeMemoryResponse, rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, BridgeClass::_fillFreeMemory"
-    }
   }];
   CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = {
     cloud_topic: "system/free_memory/value"
@@ -1270,10 +1252,6 @@ enum Command {
     description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
     pb_message: "LinkSync"
     response_command: "CMD_LINK_SYNC_RESP"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
-      handler: "_handleLinkSync"
-    }
   }];
   CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = {
     pre_sync_allowed: true
@@ -1283,23 +1261,12 @@ enum Command {
   CMD_LINK_RESET = 70 [(cmd_opts) = {
     description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
     response_command: "CMD_LINK_RESET_RESP"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
-      handler: "_handleLinkReset"
-    }
   }];
   CMD_LINK_RESET_RESP = 71 [(cmd_opts) = {
     pre_sync_allowed: true
     mcu_handler: "handshake.handle_link_reset_resp"
   }];
-  CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {
-    response_command: "CMD_GET_CAPABILITIES_RESP"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
-      handler: "_handleSimpleQuery"
-      handler_template_args: "rpc_pb_Capabilities, rpc::CommandId::CMD_GET_CAPABILITIES_RESP, bridge::hal::fillCapabilities"
-    }
-  }];
+  CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {response_command: "CMD_GET_CAPABILITIES_RESP"}];
   CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
     cloud_topic: "system/capabilities/value"
     pb_message: "Capabilities"
@@ -1309,93 +1276,51 @@ enum Command {
     requires_ack: true
     pb_message: "SetBaudratePacket"
     response_command: "CMD_SET_BAUDRATE_RESP"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_MSG
-      handler: "_handleSetBaudrate"
-    }
   }];
   CMD_SET_BAUDRATE_RESP = 75;
   CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {
     requires_ack: true
     pb_message: "EnterBootloader"
     auth_field: "system_bootloader"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_MSG
-      handler: "_handleEnterBootloader"
-    }
   }];
   CMD_XOFF = 78 [(cmd_opts) = {
     pre_sync_allowed: true
     requires_ack: false
     description: "Pause transmission (Flow Control)"
     mcu_handler: "mcu_xoff"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
-      handler: "_handleFlowControl"
-      handler_template_args: "false"
-    }
   }];
   CMD_XON = 79 [(cmd_opts) = {
     pre_sync_allowed: true
     requires_ack: false
     description: "Resume transmission (Flow Control)"
     mcu_handler: "mcu_xon"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_NO_PAYLOAD
-      handler: "_handleFlowControl"
-      handler_template_args: "true"
-    }
   }];
   CMD_SET_PIN_MODE = 80 [(cmd_opts) = {
     requires_ack: true
     pb_message: "PinMode"
     auth_field: "digital_mode"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_handleSetPinMode"
-    }
   }];
   CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {
     requires_ack: true
     pb_message: "DigitalWrite"
     auth_field: "digital_write"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_handlePinWrite"
-      handler_template_args: "rpc_pb_DigitalWrite, false"
-    }
   }];
   CMD_ANALOG_WRITE = 82 [(cmd_opts) = {
     requires_ack: true
     pb_message: "AnalogWrite"
     auth_field: "analog_write"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_handlePinWrite"
-      handler_template_args: "rpc_pb_AnalogWrite, true"
-    }
   }];
   CMD_DIGITAL_READ = 83 [(cmd_opts) = {
     pb_message: "PinRead"
     response_command: "CMD_DIGITAL_READ_RESP"
     auth_field: "digital_read"
     mcu_unsupported_reason: "unsupported_digital_read"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
-      handler: "_handlePinRead"
-      handler_template_args: "rpc_pb_DigitalReadResponse, rpc::CommandId::CMD_DIGITAL_READ_RESP, NUM_DIGITAL_PINS, ::digitalRead"
-    }
   }];
   CMD_ANALOG_READ = 84 [(cmd_opts) = {
     pb_message: "PinRead"
     response_command: "CMD_ANALOG_READ_RESP"
     auth_field: "analog_read"
     mcu_unsupported_reason: "unsupported_analog_read"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
-      handler: "_handlePinRead"
-      handler_template_args: "rpc_pb_AnalogReadResponse, rpc::CommandId::CMD_ANALOG_READ_RESP, NUM_ANALOG_INPUTS, ::analogRead"
-    }
   }];
   CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = {
     pb_message: "DigitalReadResponse"
@@ -1410,10 +1335,6 @@ enum Command {
     pb_message: "PinSubscribeRequest"
     response_command: "CMD_PIN_SUBSCRIBE_RESP"
     auth_field: "gpio_subscribe"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
-      handler: "_handlePinSubscribe"
-    }
   }];
   CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
     pb_message: "PinSubscribeResponse"
@@ -1430,11 +1351,6 @@ enum Command {
     cloud_topic: "console/out"
     auth_field: "console_input"
     mcu_handler: "console_write"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
-      handler: "_push"
-      target_instance: "Console"
-    }
   }];
   CMD_DATASTORE_PUT = 112 [(cmd_opts) = {
     requires_ack: true
@@ -1448,14 +1364,7 @@ enum Command {
     auth_field: "datastore_get"
     mcu_handler: "datastore_get"
   }];
-  CMD_DATASTORE_GET_RESP = 114 [(cmd_opts) = {
-    pb_message: "DatastoreGetResponse"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
-      handler: "_onResponse"
-      target_instance: "DataStore"
-    }
-  }];
+  CMD_DATASTORE_GET_RESP = 114 [(cmd_opts) = {pb_message: "DatastoreGetResponse"}];
   CMD_MAILBOX_READ = 128 [(cmd_opts) = {
     response_command: "CMD_MAILBOX_READ_RESP"
     auth_field: "mailbox_read"
@@ -1476,74 +1385,29 @@ enum Command {
     pb_message: "MailboxPush"
     auth_field: "mailbox_write"
     mcu_handler: "mailbox_push"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_onEnqueuePayload"
-      handler_class: "MailboxClass"
-      handler_template_args: "rpc_pb_MailboxPush, &rpc_pb_MailboxPush::data"
-    }
   }];
-  CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {
-    pb_message: "MailboxReadResponse"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_onEnqueuePayload"
-      handler_class: "MailboxClass"
-      handler_template_args: "rpc_pb_MailboxReadResponse, &rpc_pb_MailboxReadResponse::content"
-      needs_ack: false
-      check_dup: false
-    }
-  }];
-  CMD_MAILBOX_AVAILABLE_RESP = 133 [(cmd_opts) = {
-    pb_message: "MailboxAvailableResponse"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_onAvailableResponse"
-      handler_class: "MailboxClass"
-      needs_ack: false
-      check_dup: false
-    }
-  }];
+  CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {pb_message: "MailboxReadResponse"}];
+  CMD_MAILBOX_AVAILABLE_RESP = 133 [(cmd_opts) = {pb_message: "MailboxAvailableResponse"}];
   CMD_FILE_WRITE = 144 [(cmd_opts) = {
     requires_ack: true
     pb_message: "FileWrite"
     auth_field: "file_write"
     mcu_handler: "file_write"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_onWrite"
-      handler_class: "FileSystemClass"
-    }
   }];
   CMD_FILE_READ = 145 [(cmd_opts) = {
     pb_message: "FileRead"
     response_command: "CMD_FILE_READ_RESP"
     auth_field: "file_read"
     mcu_handler: "file_read"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_onRead"
-      handler_class: "FileSystemClass"
-    }
   }];
   CMD_FILE_REMOVE = 146 [(cmd_opts) = {
     pb_message: "FileRemove"
     auth_field: "file_remove"
     mcu_handler: "file_remove"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_STATIC_WITH_MSG
-      handler: "_onRemove"
-      handler_class: "FileSystemClass"
-    }
   }];
   CMD_FILE_READ_RESP = 147 [(cmd_opts) = {
     pb_message: "FileReadResponse"
     mcu_handler: "file_read"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
-      handler: "_onResponse"
-      target_instance: "FileSystem"
-    }
   }];
   CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
     pb_message: "ProcessRunAsync"
@@ -1561,45 +1425,17 @@ enum Command {
     pb_message: "ProcessKill"
     auth_field: "shell_kill"
     mcu_handler: "process_kill"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_ACTION
-      handler: "reset"
-      target_instance: "Process"
-    }
   }];
-  CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = {
-    pb_message: "ProcessRunAsyncResponse"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
-      handler: "_onRunAsyncResponse"
-      target_instance: "Process"
-    }
-  }];
-  CMD_PROCESS_POLL_RESP = 166 [(cmd_opts) = {
-    pb_message: "ProcessPollResponse"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
-      handler: "_onPollResponse"
-      target_instance: "Process"
-    }
-  }];
+  CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = {pb_message: "ProcessRunAsyncResponse"}];
+  CMD_PROCESS_POLL_RESP = 166 [(cmd_opts) = {pb_message: "ProcessPollResponse"}];
   CMD_SPI_BEGIN = 176 [(cmd_opts) = {
     requires_ack: true
     auth_field: "spi_begin"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_ACTION
-      handler: "begin"
-      target_instance: "SPIService"
-    }
   }];
   CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
     pb_message: "SpiTransfer"
     response_command: "CMD_SPI_TRANSFER_RESP"
     auth_field: "spi_transfer"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
-      handler: "_handleSpiTransfer"
-    }
   }];
   CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = {
     cloud_topic: "spi/transfer/resp"
@@ -1609,47 +1445,21 @@ enum Command {
   CMD_SPI_END = 179 [(cmd_opts) = {
     requires_ack: true
     auth_field: "spi_end"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_ACTION
-      handler: "end"
-      target_instance: "SPIService"
-    }
   }];
   CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {
     requires_ack: true
     pb_message: "SpiConfig"
     auth_field: "spi_config"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_TARGET_WITH_MSG
-      handler: "setConfig"
-      target_instance: "SPIService"
-    }
   }];
   CMD_CLOCK_SYNC = 192 [(cmd_opts) = {
     pb_message: "ClockSyncRequest"
     response_command: "CMD_CLOCK_SYNC_RESP"
     auth_field: "clock_sync"
-    mcu_dispatch: {
-      adapter: MCU_DISPATCH_ADAPTER_MEMBER_WITH_CTX_MSG
-      handler: "_handleClockSync"
-    }
   }];
   CMD_CLOCK_SYNC_RESP = 193 [(cmd_opts) = {
     pb_message: "ClockSyncResponse"
     mcu_handler: "clock_sync.record_sync"
   }];
-}
-
-enum ChannelId {
-  reserved 1, 3;
-  reserved "CHANNEL_CONSOLE", "CHANNEL_DATA";
-  CHANNEL_CONTROL = 0;
-  CHANNEL_TELEMETRY = 2;
-}
-
-enum QosProfile {
-  QOS_RELIABLE = 0;
-  QOS_BEST_EFFORT = 1;
 }
 
 enum SafetyPinState {
@@ -1865,7 +1675,7 @@ message RuntimeConfig {
   ];
   bytes serial_shared_secret = 36 [
     (config_default) = "failsafe_secret_mode",
-    (config_desc) = "ChaCha20-Poly1305 AEAD shared secret",
+    (config_desc) = "Shared secret for LinkSync authentication and HDLC AEAD; empty disables authentication and encryption",
     (uci_option) = "serial_shared_secret"
   ];
   string cloud_spool_dir = 37 [

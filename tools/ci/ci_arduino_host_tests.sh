@@ -33,7 +33,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     ARDUINO_COVERAGE_MIN_FUNCTION="${ARDUINO_COVERAGE_MIN_FUNCTION:-95}"
     rm -rf "${BUILD_DIR}"
 else
-    BUILD_DIR="${LIB_DIR}/build-host-local"
+    BUILD_DIR="${ARDUINO_HOST_BUILD_DIR:-${LIB_DIR}/build-host-local}"
     OUTPUT_ROOT=""
 fi
 
@@ -64,16 +64,20 @@ mkdir -p "${ARDUINO_LIBS}"
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
-if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
-if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH/src"
-else
-    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
-    WOLFSSL_INC="$WOLFSSL_PATH"
-fi
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
+MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
+mapfile -t MBEDTLS_SOURCES < <(find "$MBEDTLS_PATH/tf-psa-crypto" -type f -name '*.c' -print | sort)
+if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
+    echo "[host-cpp] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
+    exit 1
+fi
+mapfile -t PIGWEED_RPC_SOURCES < <(
+    find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
+        \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
+           -o -name 'pw_stream_interval_reader.cc' \
+           -o -name 'pw_varint_stream.cc' \
+           -o -name 'pw_containers_intrusive_item.cc' \) -print | sort
+)
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -82,17 +86,7 @@ fi
 
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
-    "$WOLFCRYPT_SRC/sha256.c"
-    "$WOLFCRYPT_SRC/hmac.c"
-    "$WOLFCRYPT_SRC/hash.c"
-    "$WOLFCRYPT_SRC/kdf.c"
-    "$WOLFCRYPT_SRC/error.c"
-    "$WOLFCRYPT_SRC/logging.c"
-    "$WOLFCRYPT_SRC/wc_port.c"
-    "$WOLFCRYPT_SRC/memory.c"
-    "$WOLFCRYPT_SRC/chacha.c"
-    "$WOLFCRYPT_SRC/poly1305.c"
-    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
+    "${MBEDTLS_SOURCES[@]}"
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
@@ -116,6 +110,7 @@ SOURCES=(
     "$PIGWEED_PATH/src/system_clock_avr.cpp"
     "$PIGWEED_PATH/src/log_avr.cpp"
     "$PIGWEED_PATH/src/rpc_server.cpp"
+    "${PIGWEED_RPC_SOURCES[@]}"
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc"
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc"
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc"
@@ -137,10 +132,9 @@ INC_FLAGS=(
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
-    -I"$WOLFSSL_PATH"
-    -I"$WOLFSSL_INC"
     -I"$PIGWEED_PATH"
     -I"$PIGWEED_PATH/src"
+    -I"$MBEDTLS_PATH"
 )
 
 COMMON_DEFS=(
@@ -150,7 +144,6 @@ COMMON_DEFS=(
     -Wno-unused-parameter
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
-    -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
@@ -168,7 +161,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     )
     TP_FLAGS=(
         -O2 -g -fPIC
-        -DARDUINO=100 -DBRIDGE_HOST_TEST=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL
+        -DARDUINO=100 -DBRIDGE_HOST_TEST=1 -DETL_NO_STL
         "${COMMON_DEFS[@]}"
         "${INC_FLAGS[@]}"
     )
@@ -195,11 +188,19 @@ echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
 for src in "${SOURCES[@]}"; do
     obj_name=$(basename "${src}").o
+    if [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
+        obj_name="${src#"$MBEDTLS_PATH/"}"
+        obj_name="${obj_name//\//_}.o"
+    fi
     obj="${OBJ_DIR}/${obj_name}"
     OBJECTS+=("${obj}")
 
-    if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *wolfcrypt* || "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
+    if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
         g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}" &
+    elif [[ "${src}" == */tf-psa-crypto/utilities/constant_time.c ]]; then
+        gcc -std=c99 "${BASE_FLAGS[@]}" -D__AVR__ -c "${src}" -o "${obj}" &
+    elif [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
+        gcc -std=c99 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     elif [[ "${src}" == *.c ]]; then
         g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     else
@@ -248,7 +249,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     fi
 
     ${PYTHON_CMD} -m gcovr --root "${SRC_DIR}" "${BUILD_DIR}" --filter "${SRC_DIR}" \
-        -e ".*\\.h$" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" \
+        -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" \
         --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max \
         --sort uncovered-percent \
         --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" \

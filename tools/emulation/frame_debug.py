@@ -1,6 +1,9 @@
 """Command line tool to debug and generate MCU Bridge Pigweed HDLC frames."""
 
 from __future__ import annotations
+from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
+from mcubridge.protocol import protocol
+from google.protobuf.message import Message as ProtobufMessage
 
 import asyncio
 import binascii
@@ -8,15 +11,17 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Annotated
-
-import serialx
+import serial
+import serial.tools.list_ports
+from serial.urlhandler import protocol_socket
 import typer
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_rpc import packets as pw_packets
 
-from google.protobuf.message import Message as ProtobufMessage
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
+from mcubridge.transport.serial import resolve_serial_url
+
+sys.modules.setdefault("serial.urlhandler.protocol_wifi", protocol_socket)
+sys.modules.setdefault("serial.urlhandler.protocol_tcp", protocol_socket)
 
 
 @dataclass(frozen=True)
@@ -111,19 +116,16 @@ def _decode_frame(encoded_packet: bytes) -> tuple[int, int, bytes]:
     decoder = FrameDecoder()
     for frame in decoder.process(encoded_packet):
         if frame.ok() and frame.address == protocol.HDLC_ADDRESS_RPC:
-            pkt = RpcPacket()
-            pkt.ParseFromString(frame.data)
-            cmd_id = protocol.RPC_TO_COMMAND.get((pkt.service_id, pkt.method_id)) or pkt.method_id
+            pkt = pw_packets.decode(frame.data)
+            op = protocol.get_operation((pkt.service_id, pkt.method_id))
+            cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
             return cmd_id, pkt.call_id, pkt.payload
     raise ValueError("No valid HDLC RPC frame found")
 
 
 def _print_response(cmd_id: int, call_id: int, payload: bytes) -> None:
     sys.stdout.write(
-        f"[FrameDebug] --- MCU Response ---\n"
-        f"cmd_id=0x{cmd_id:02X}\n"
-        f"call_id={call_id}\n"
-        f"payload_len={len(payload)}\n"
+        f"[FrameDebug] --- MCU Response ---\ncmd_id=0x{cmd_id:02X}\ncall_id={call_id}\npayload_len={len(payload)}\n"
     )
 
 
@@ -156,27 +158,37 @@ async def run_debug_loop(
     sys.stdout.write(f"[FrameDebug] Initialized transport on {port} ({baudrate} bps)\n{snapshot.render()}\n\n")
 
     try:
-        reader, writer = await serialx.open_serial_connection(url=port, baudrate=baudrate)
-        for i in _iter_counts(count):
-            sys.stdout.write(f"[FrameDebug] [{i}] Sending frame...\n")
-            writer.write(snapshot.encoded_packet)
-            await writer.drain()
+        url = resolve_serial_url(port)
+        ser = await asyncio.to_thread(
+            serial.serial_for_url,
+            url,
+            baudrate=baudrate,
+            timeout=interval,
+            write_timeout=2.0,
+        )
+        try:
+            for i in _iter_counts(count):
+                sys.stdout.write(f"[FrameDebug] [{i}] Sending frame...\n")
+                await asyncio.to_thread(ser.write, snapshot.encoded_packet)
+                await asyncio.to_thread(ser.flush)
 
-            try:
-                # Wait for response with timeout
-                async with asyncio.timeout(interval):
-                    packet = await reader.readuntil(FRAME_DELIMITER)
+                try:
+                    packet = await asyncio.to_thread(ser.read_until, FRAME_DELIMITER)
                     if packet:
                         try:
                             cmd_id, call_id, resp_payload = _decode_frame(packet)
                             _print_response(cmd_id, call_id, resp_payload)
                         except (OSError, ValueError, RuntimeError, TypeError) as e:
                             sys.stderr.write(f"Error decoding response: {e}\n")
-            except TimeoutError:
-                sys.stdout.write("[FrameDebug] Timeout waiting for response\n")
+                    else:
+                        sys.stdout.write("[FrameDebug] Timeout waiting for response\n")
+                except TimeoutError:
+                    sys.stdout.write("[FrameDebug] Timeout waiting for response\n")
 
-            if count == 0 or i < count - 1:
-                await asyncio.sleep(interval)
+                if count == 0 or i < count - 1:
+                    await asyncio.sleep(interval)
+        finally:
+            await asyncio.to_thread(ser.close)
 
     except (OSError, ValueError, RuntimeError, TypeError) as e:
         sys.stderr.write(f"Serial Error: {e}\n")
@@ -229,7 +241,7 @@ def send(
 @cli.command()
 def list_ports() -> None:
     """List available serial ports and exit."""
-    ports = serialx.list_serial_ports()
+    ports = serial.tools.list_ports.comports()
     if not ports:
         sys.stdout.write("No serial ports detected.\n")
         return

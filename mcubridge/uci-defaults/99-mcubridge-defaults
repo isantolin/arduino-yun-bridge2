@@ -4,7 +4,7 @@
 
 [ -f /usr/share/mcubridge/defaults.sh ] && . /usr/share/mcubridge/defaults.sh
 
-# 1. Silence kernel printk on serial console to prevent COBS frame corruption
+# 1. Silence kernel printk on serial console to prevent HDLC frame corruption
 SYSCTL_CONF="/etc/sysctl.d/99-mcubridge-no-console.conf"
 if [ ! -f "$SYSCTL_CONF" ]; then
     mkdir -p /etc/sysctl.d

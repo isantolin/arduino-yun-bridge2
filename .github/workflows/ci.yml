@@ -32,6 +32,8 @@ jobs:
         env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, agent-parity, codebase-auditor, py, arduino]
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -42,10 +44,10 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
           sudo npm install -g --allow-scripts=@bufbuild/buf @bufbuild/buf
-          python -m pip install semgrep protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff pyelftools
+          python -m pip install semgrep vulture pytest pyrefly types-psutil types-pexpect flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
-        run: sudo apt-get update && sudo apt-get install -y g++ make
+        run: sudo apt-get update && sudo apt-get install -y g++ make gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
         run: |
@@ -95,9 +97,12 @@ jobs:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - name: Setup Arduino CLI
         run: |
+          sudo apt-get update && sudo apt-get install -y gcc-avr avr-libc
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores and Dependencies
@@ -138,13 +143,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: coverage
       - name: Install Build Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y g++ make
+          sudo apt-get update && sudo apt-get install -y g++ make gcc-avr avr-libc
       - name: Setup Arduino CLI
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
@@ -205,16 +212,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: emulation
       - name: Install Python Dependencies
-        run: pip install -r requirements/runtime.txt -r mcubridge-gateway/requirements.txt nanopb black
+        run: |
+          pip install -r requirements/runtime.txt
+          pip install -r mcubridge-gateway/requirements.txt nanopb black
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ socat
+          sudo apt-get install -y g++ socat gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -223,6 +234,13 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
+      - name: Generate Protocol Bindings
+        run: |
+          python tools/protocol/generate.py \
+            --spec tools/protocol/cloud_gateway.proto \
+            --py mcubridge/mcubridge/protocol/protocol.py \
+            --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h \
+            --py-client mcubridge-client-examples/mcubridge_client/protocol.py
       - name: Install Arduino Dependencies
         run: |
           ./mcubridge-library-arduino/tools/install.sh
@@ -240,6 +258,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -247,7 +267,7 @@ jobs:
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ socat
+          sudo apt-get install -y g++ socat gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -269,20 +289,21 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: simavr
       - name: Setup Arduino CLI & Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat
+          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat gcc-avr avr-libc
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino AVR Core & Libraries
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
-          arduino-cli lib install wolfSSL
       - name: Run simavr E2E Test Suite
         run: |
           mkdir -p simavr-logs
@@ -305,6 +326,8 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -318,7 +341,7 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:samd
-          arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
       - name: Install Renode
         uses: ./.github/actions/setup-renode
       - name: Run Renode E2E Test Suite
@@ -343,6 +366,8 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
@@ -356,7 +381,6 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:esp32
-          arduino-cli lib install wolfSSL
           python -m pip install pyserial esptool
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
@@ -401,13 +425,15 @@ jobs:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: fleet-mesh
       - name: Setup System Packages & Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores & Libraries
@@ -416,7 +442,7 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli core install arduino:samd
           arduino-cli core install arduino:esp32
-          arduino-cli lib install wolfSSL WiFiNINA "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
           python -m pip install pyserial esptool
       - name: Install Renode
         uses: ./.github/actions/setup-renode
@@ -457,6 +483,8 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: recursive
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:

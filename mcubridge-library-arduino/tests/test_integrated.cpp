@@ -22,7 +22,7 @@ static BiStream g_test_stream;
 
 void integrated_test_bridge_core() {
   g_test_stream.clear();
-  reset_bridge_core(Bridge, g_test_stream);
+  reset_bridge_core(Bridge, g_test_stream, 0, "top-secret");
   auto& accessor = bridge::test::TestAccessor::create(Bridge);
 
   rpc_pb_LinkSync sync_req = rpc_pb_LinkSync_init_default;
@@ -39,7 +39,7 @@ void integrated_test_bridge_core() {
   etl::array<uint8_t, 256> frame_buf;
   size_t frame_len = build_hdlc_rpc_frame(
       1, pw::rpc_avr::PacketType::kRequest,
-      pw::tokenizer::Hash("bridge.SystemService"),
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
       1, 1);

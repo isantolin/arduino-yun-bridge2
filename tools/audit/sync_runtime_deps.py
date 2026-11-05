@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import re
 import sys
 import tomllib
@@ -67,7 +68,9 @@ class _CppDepEntry(TypedDict):
     github: str
     ref_type: str
     version: str
+    check_latest: bool
     check_file: str
+    sha256: str
     rationale: str
     target_dir: str
     files: list[str]
@@ -128,12 +131,16 @@ def load_manifest() -> ManifestData:
                 github=entry.get("github", "").strip(),
                 ref_type=entry.get("ref_type", "tags").strip(),
                 version=entry.get("version", "").strip(),
+                check_latest=bool(entry.get("check_latest", True)),
                 check_file=entry.get("check_file", "").strip(),
+                sha256=entry.get("sha256", "").strip().lower(),
                 rationale=entry.get("rationale", "").strip(),
                 target_dir=entry.get("target_dir", "").strip(),
                 files=files,
             )
         )
+        if normalized_cpp[-1]["sha256"] and not re.fullmatch(r"[0-9a-f]{64}", normalized_cpp[-1]["sha256"]):
+            raise ManifestError(f"Invalid SHA-256 digest for C++ dependency: {normalized_cpp[-1]['name']}")
 
     normalized_dev = [
         DevDepEntry(
@@ -267,9 +274,10 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
 
     var_map = {
         "Embedded_Template_Library": "ETL_VERSION",
-        "wolfSSL": "WOLFSSL_VERSION",
         "Unity": "UNITY_VERSION",
         "nanopb_core": "NANOPB_VERSION",
+        "MbedTLS": "MBEDTLS_VERSION",
+        "wolfssl": "WOLFSSL_VERSION",
     }
     lines: list[str] = []
     for dep in cpp_deps:
@@ -283,6 +291,14 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
                 raise ManifestError("nanopb_core must list its runtime files")
             quoted_files = " ".join(f'"{file_name}"' for file_name in dep["files"])
             lines.append(f"NANOPB_CORE_FILES=({quoted_files})")
+        elif dep["name"] == "MbedTLS":
+            if not dep["sha256"]:
+                raise ManifestError("MbedTLS must have a pinned SHA-256 archive digest")
+            lines.append(f'MBEDTLS_SHA256="{dep["sha256"]}"')
+        elif dep["name"] == "wolfssl":
+            if not dep["sha256"]:
+                raise ManifestError("wolfssl must have a pinned SHA-256 archive digest")
+            lines.append(f'WOLFSSL_SHA256="{dep["sha256"]}"')
 
     new_content = _replace_marked_block(content, CPP_BLOCK_START, CPP_BLOCK_END, "\n".join(lines))
     return _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)
@@ -331,8 +347,43 @@ def fetch_url_with_retry(
     return retryer(httpx.get, url, headers=headers, timeout=timeout)
 
 
-def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
-    """Query PyPI JSON API for the latest release version using packaging.Version."""
+def get_pigweed_constraints(pigweed_version: str = "") -> dict[str, Requirement]:
+    """Extract authoritative package requirements dynamically from Pigweed metadata without hardcoding."""
+    constraints: dict[str, Requirement] = {}
+    req_list: list[str] | None = None
+
+    try:
+        req_list = importlib.metadata.requires("pigweed")
+    except (importlib.metadata.PackageNotFoundError, ValueError, OSError):
+        req_list = None
+
+    if not req_list and pigweed_version:
+        try:
+            resp = fetch_url_with_retry(f"https://pypi.org/pypi/pigweed/{pigweed_version}/json")
+            req_list = resp.json().get("info", {}).get("requires_dist")
+        except (httpx.HTTPError, ValueError, KeyError, OSError, tenacity.RetryError) as exc:
+            sys.stderr.write(f"[WARN] Failed fetching PyPI metadata for pigweed=={pigweed_version}: {exc}\n")
+
+    if req_list:
+        for req_str in req_list:
+            try:
+                req = Requirement(req_str)
+                if req.marker and not req.marker.evaluate():
+                    continue
+                if req.specifier:
+                    constraints[req.name.lower()] = req
+            except (InvalidRequirement, ValueError):
+                continue
+    return constraints
+
+
+def _fetch_latest_version(
+    package_name: str,
+    *,
+    include_prerelease: bool = False,
+    specifier: Any | None = None,
+) -> str | None:
+    """Query PyPI JSON API for the latest release version, optionally constrained by specifier."""
     try:
         resp = fetch_url_with_retry(f"https://pypi.org/pypi/{package_name}/json", headers={"User-Agent": USER_AGENT})
         data = resp.json()
@@ -341,13 +392,15 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
             for v_str in data["releases"]:
                 try:
                     v = Version(v_str)
-                    if include_prerelease or not v.is_prerelease:
+                    if (include_prerelease or not v.is_prerelease) and (specifier is None or specifier.contains(v)):
                         parsed.append(v)
                 except (InvalidVersion, ValueError) as exc:
                     sys.stderr.write(f"[DEBUG] Skipping unparseable version string '{v_str}': {exc}\n")
             if parsed:
                 return str(max(parsed))
-        return str(data["info"]["version"])
+        if specifier is None:
+            return str(data["info"]["version"])
+        return None
     except (httpx.HTTPError, ValueError, KeyError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[WARN] Failed fetching latest version for {package_name}: {exc}\n")
         return None
@@ -401,24 +454,50 @@ def check_latest_versions(
     cpp_deps: Sequence[_CppDepEntry] = (),
     dev_deps: Sequence[DevDepEntry] = (),
 ) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages."""
+    """Return list of (package, pinned, latest) for outdated packages, respecting Pigweed authority."""
     outdated: list[tuple[str, str, str]] = []
+    pw_entry = next((d for d in deps if d.get("name") == "pigweed"), None)
+    _, pw_version = _parse_pip_spec(pw_entry.get("pip", "") if pw_entry else "")
+    pw_constraints = get_pigweed_constraints(pigweed_version=pw_version)
+
     for entry in (*deps, *dev_deps):
         if not entry.get("check_latest", True) or not entry.get("pip"):
             continue
         name, pinned = _parse_pip_spec(entry["pip"])
         if not pinned:
             continue
+
+        pw_req = pw_constraints.get(name.lower())
+        if pw_req:
+            try:
+                parsed_pinned = Version(pinned)
+                if not pw_req.specifier.contains(parsed_pinned):
+                    outdated.append(
+                        (
+                            f"{name} (violates authoritative Pigweed requirement {pw_req.specifier})",
+                            pinned,
+                            str(pw_req.specifier),
+                        )
+                    )
+                    continue
+            except (InvalidVersion, TypeError) as exc:
+                sys.stderr.write(
+                    f"[DEBUG] Skipping Pigweed specifier check for unparseable version '{pinned}': {exc}\n"
+                )
+
         try:
             is_pre = Version(pinned).is_prerelease
-        except (InvalidVersion, TypeError):
+        except (InvalidVersion, TypeError) as exc:
+            sys.stderr.write(f"[DEBUG] Falling back to tag heuristic for unparseable version '{pinned}': {exc}\n")
             is_pre = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
-        latest_str = _fetch_latest_version(name, include_prerelease=is_pre)
+        latest_str = _fetch_latest_version(
+            name, include_prerelease=is_pre, specifier=pw_req.specifier if pw_req else None
+        )
         if latest_str and _is_version_newer(pinned, latest_str):
             outdated.append((name, pinned, latest_str))
 
     for cpp_dep in cpp_deps:
-        if cpp_dep["ref_type"] == "heads":
+        if cpp_dep["ref_type"] == "heads" or not cpp_dep["check_latest"]:
             continue
         pinned = cpp_dep["version"]
         gh_latest = _fetch_github_latest_version(cpp_dep["github"])
@@ -511,6 +590,8 @@ def update_workflows(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool
         content = wf.read_text(encoding="utf-8")
         new_content = re.sub(r"""PROTOC_VERSION=(?!["']?\$\{\{)[^\n]+""", f"PROTOC_VERSION={protoc_version}", content)
         new_content = re.sub(r"protobuf==\d+\.\d+(\.\d+)?", f"protobuf=={protobuf_pip_version}", new_content)
+        if "setup-protoc" in str(wf):
+            new_content = re.sub(r"(default:\s*['\"])\d+\.\d+(['\"])", rf"\g<1>{protoc_version}\g<2>", new_content)
         if _write_if_changed(wf, new_content, dry_run=dry_run):
             any_updated = True
             if not dry_run:

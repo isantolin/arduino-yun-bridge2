@@ -47,7 +47,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
       p.command, sizeof(p.command),
       etl::string_view(command_buffer.data(), command_buffer.size()));
 
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.ProcessService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("RunAsync");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
                              rpc_pb_ProcessRunAsync_fields, p)) {
@@ -69,7 +69,7 @@ void ProcessClass::poll(int32_t pid,
   rpc_pb_ProcessPoll p = rpc_pb_ProcessPoll_init_default;
   p.pid = static_cast<uint32_t>(pid);
 
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.ProcessService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Poll");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_ProcessPoll_fields,
                              p)) {
@@ -86,7 +86,7 @@ void ProcessClass::kill(int32_t pid) {
   rpc_pb_ProcessKill p = rpc_pb_ProcessKill_init_default;
   p.pid = static_cast<uint32_t>(pid);
 
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("bridge.ProcessService");
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.ProcessService");
   constexpr uint32_t kMethodId = pw::tokenizer::Hash("Kill");
   if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_ProcessKill_fields,
                              p)) {
@@ -99,24 +99,18 @@ void ProcessClass::_onRunAsyncResponse(
   if (!_pending_run_async.empty()) {
     auto handler = _pending_run_async.front();
     _pending_run_async.pop();
-    if (handler.is_valid()) {
-      handler(static_cast<int32_t>(msg.pid));
-    }
+    handler(static_cast<int32_t>(msg.pid));
   }
 }
 
-void ProcessClass::_onPollResponse(
-    const rpc_pb_ProcessPollResponse& msg) {
+void ProcessClass::_onPollResponse(const rpc_pb_ProcessPollResponse& msg) {
   if (!_pending_polls.empty()) {
     auto pending = _pending_polls.front();
     _pending_polls.pop();
-    if (pending.second.is_valid()) {
-      pending.second(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-                     etl::span<const uint8_t>(msg.stdout_data.bytes,
-                                              msg.stdout_data.size),
-                     etl::span<const uint8_t>(msg.stderr_data.bytes,
-                                              msg.stderr_data.size));
-    }
+    pending.second(
+        static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+        etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
+        etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }
 }
 

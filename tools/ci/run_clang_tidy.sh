@@ -13,15 +13,15 @@ python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
     --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
 
 # Ensure Arduino libraries are present
-if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ]; then
+if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
+   [ ! -f "$ARDUINO_LIBS/MbedTLS/src/psa/crypto.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
-WOLFSSL_DIR="$ARDUINO_LIBS/wolfSSL"
-if [ ! -d "$WOLFSSL_DIR" ]; then WOLFSSL_DIR="$ARDUINO_LIBS/wolfssl"; fi
 PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
+MBEDTLS_INC="$ARDUINO_LIBS/MbedTLS/src"
 
 INCLUDES=(
     "-I${SRC_DIR}"
@@ -30,18 +30,17 @@ INCLUDES=(
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
     "-I${ETL_INC}"
-    "-I${WOLFSSL_DIR}"
-    "-I${WOLFSSL_DIR}/src"
     "-I${PIGWEED_INC}"
     "-I${ARDUINO_LIBS}/PigweedAVR"
+    "-I${MBEDTLS_INC}"
 )
 
 COMPILE_FLAGS=(
     "-std=c++17"
     "-DPROGMEM="
     "-DPB_PROTO_HEADER_VERSION=40"
-    "-DWOLFSSL_USER_SETTINGS"
     "-DETL_NO_STL"
+    "-DETL_FORCE_STD_INITIALIZER_LIST"
     "${INCLUDES[@]}"
 )
 

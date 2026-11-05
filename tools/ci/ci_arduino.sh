@@ -40,22 +40,7 @@ arduino-cli core install arduino:avr arduino:samd arduino:esp32 || {
 
 # Install official dependencies
 echo "Installing official libraries..."
-arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
 arduino-cli lib install WiFiNINA || { echo "Failed to install WiFiNINA"; exit 1; }
-
-# Find actual wolfSSL installation path (casing varies)
-WOLF_ROOT=""
-if [ -d "$USER_LIB_DIR/wolfSSL" ]; then
-    WOLF_ROOT="$USER_LIB_DIR/wolfSSL"
-elif [ -d "$USER_LIB_DIR/wolfssl" ]; then
-    WOLF_ROOT="$USER_LIB_DIR/wolfssl"
-fi
-
-if [ -z "$WOLF_ROOT" ]; then
-    echo "Error: wolfSSL library not found after installation."
-    exit 1
-fi
-WOLF_INC="$WOLF_ROOT/src"
 
 # Install dependencies
 echo "Generating protocol bindings..."
@@ -120,10 +105,30 @@ compile_sketch() {
     BOARD_NAME="${FQBN//:/-}"
     LOG_FILE="${_LOG_DIR}/${BOARD_NAME}__${sketch_name}.log"
 
-    local COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    local COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     local LINK_FLAGS=()
+    local AVR_PROPS=()
+    local AVR_STDCPP_INC=""
     if [[ "$FQBN" == arduino:avr:* ]]; then
-        COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch"
+        COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+        if command -v avr-gcc >/dev/null 2>&1; then
+            local SYS_AVR_GCC_VER="$(avr-gcc -dumpversion | cut -d. -f1)"
+            if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then
+                local SYS_AVR_GCC_PATH="$(dirname "$(dirname "$(command -v avr-gcc)")")"
+                AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${SYS_AVR_GCC_PATH}")
+                if [ "$SYS_AVR_GCC_VER" -ge 16 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc16/include" ]; then
+                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc16/include"
+                elif [ "$SYS_AVR_GCC_VER" -ge 14 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
+                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc15/include"
+                elif [ "$SYS_AVR_GCC_VER" -ge 13 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc13/include" ]; then
+                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc13/include"
+                elif [ "$SYS_AVR_GCC_VER" -ge 11 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc12/include" ]; then
+                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc12/include"
+                elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc10/include" ]; then
+                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc10/include"
+                fi
+            fi
+        fi
         LINK_FLAGS=(
             "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
             "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
@@ -135,8 +140,9 @@ compile_sketch() {
         "--library" "$LIB_PATH"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
+        "${AVR_PROPS[@]}"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
     )
     BUILD_FLAGS+=("${LINK_FLAGS[@]}")
 

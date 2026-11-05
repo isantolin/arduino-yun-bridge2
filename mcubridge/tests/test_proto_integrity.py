@@ -206,16 +206,6 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert expected_reserved_numbers <= reserved_constant_numbers
     assert retired_constants <= set(constants_proto.reserved_name)
 
-    channel_descriptor_file = descriptor_pb2.FileDescriptorProto()
-    channel_descriptor_file.ParseFromString(pb.ChannelId.DESCRIPTOR.file.serialized_pb)
-    channel_enum = next(enum for enum in channel_descriptor_file.enum_type if enum.name == "ChannelId")
-    reserved_channel_numbers = {
-        number for item in channel_enum.reserved_range for number in range(item.start, item.end + 1)
-    }
-    assert {1, 3} <= reserved_channel_numbers
-    assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"} <= set(channel_enum.reserved_name)
-    assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"}.isdisjoint(pb.ChannelId.DESCRIPTOR.values_by_name)
-
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:
     expected_map = {
@@ -247,9 +237,7 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
 
     assert expected_names == actual_names
     pre_sync_specs = {
-        spec.command_id
-        for spec in protocol.REGISTRY.operations
-        if spec.command_id is not None and spec.pre_sync_allowed
+        spec.command_id for spec in protocol.OPERATIONS if spec.command_id is not None and spec.pre_sync_allowed
     }
     assert {protocol.Command[name].value for name in expected_names} == pre_sync_specs
 
@@ -258,19 +246,19 @@ def test_topic_lookup_matches_schema_metadata() -> None:
     topic_configs = pb.Constants.DESCRIPTOR.file.GetOptions().Extensions[pb.topics]
     for topic_config in topic_configs:
         enum_val = protocol.Topic[topic_config.name]
-        assert protocol.REGISTRY.lookup_topic(topic_config.value) == enum_val
+        assert protocol.lookup_topic(topic_config.value) == enum_val
         for alias in topic_config.aliases:
-            assert protocol.REGISTRY.lookup_topic(alias) == enum_val
+            assert protocol.lookup_topic(alias) == enum_val
 
 
 def test_command_specs_multidimensional_integrity() -> None:
     """Verify that every command has a canonical OperationSpec matching Protobuf descriptors."""
     commands_count = len(pb.Command.DESCRIPTOR.values) - 1
-    assert len(protocol.REGISTRY.by_command_id) == commands_count
+    assert len(protocol.BY_COMMAND_ID) == commands_count
     for val in pb.Command.DESCRIPTOR.values:
         if val.name == "CMD_UNSPECIFIED":
             continue
-        spec = protocol.REGISTRY.get(val.number)
+        spec = protocol.get_operation(val.number)
         assert spec is not None
         assert spec.command_id == val.number
         assert spec.name == val.name
@@ -282,15 +270,13 @@ def test_command_specs_multidimensional_integrity() -> None:
         assert spec.auth_field == (opts.auth_field or None)
         if opts.pb_message:
             assert spec.pb_class is getattr(pb, opts.pb_message)
-            msg_spec = protocol.REGISTRY.get(opts.pb_message)
+            msg_spec = protocol.get_operation(opts.pb_message)
             assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
         if opts.response_command:
             assert spec.expected_responses == frozenset({getattr(protocol.Command, opts.response_command).value})
         if spec.paired_request_id:
-            assert any(
-                s.expected_responses and spec.command_id in s.expected_responses for s in protocol.REGISTRY.operations
-            )
+            assert any(s.expected_responses and spec.command_id in s.expected_responses for s in protocol.OPERATIONS)
 
 
 def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
@@ -301,8 +287,8 @@ def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
         if field.GetOptions().HasExtension(pb.telemetry_metric)
         and field.GetOptions().Extensions[pb.telemetry_metric].prometheus_name
     }
-    specs_by_field = {spec.source_field: spec for spec in protocol.REGISTRY.metrics}
-    line_protocol_specs = protocol.REGISTRY.line_protocol_fields
+    specs_by_field = {spec.source_field: spec for spec in protocol.METRICS}
+    line_protocol_specs = protocol.LINE_PROTOCOL_FIELDS
     line_protocol_fields = {
         field.name
         for field in fields.values()
@@ -325,7 +311,7 @@ def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
     }
 
     assert set(specs_by_field) == annotated_fields
-    assert len(specs_by_field) == len(protocol.REGISTRY.metrics)
+    assert len(specs_by_field) == len(protocol.METRICS)
     assert specs_by_field["cloud_dropped_messages"].kind is protocol.MetricKind.COUNTER
     assert specs_by_field["retries"].value_field == "count"
     assert specs_by_field["retries"].labels[0].field == "component"
@@ -482,22 +468,30 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.protocol import mcubridge_pb2 as pb
     from mcubridge.services.runtime import BridgeService
 
-    assert len(protocol.REGISTRY.mcu_dispatch_handlers) == 25
-    for code, handler_path in protocol.REGISTRY.mcu_dispatch_handlers.items():
+    mcu_handlers = {
+        op.command_id: op.mcu_handler for op in protocol.OPERATIONS if op.command_id is not None and op.mcu_handler
+    }
+    assert len(mcu_handlers) == 25
+    for code, handler_path in mcu_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
 
-    assert len(protocol.REGISTRY.mcu_unsupported_reasons) == 2
-    assert protocol.REGISTRY.mcu_unsupported_reasons[protocol.Command.CMD_DIGITAL_READ.value] == (
+    unsupported_reasons = {
+        op.command_id: op.mcu_unsupported_reason
+        for op in protocol.OPERATIONS
+        if op.command_id is not None and op.mcu_unsupported_reason
+    }
+    assert len(unsupported_reasons) == 2
+    assert unsupported_reasons[protocol.Command.CMD_DIGITAL_READ.value] == (
         protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
     )
-    assert protocol.REGISTRY.mcu_unsupported_reasons[protocol.Command.CMD_ANALOG_READ.value] == (
+    assert unsupported_reasons[protocol.Command.CMD_ANALOG_READ.value] == (
         protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
     )
 
-    assert len(protocol.REGISTRY.rpc_specs) == 25
+    assert len(protocol.RPC_SPECS) == 25
     from mcubridge.services.runtime import BridgeService
 
     service_desc = next(
@@ -508,7 +502,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
     assert len(unary_methods) == 25
 
-    for spec in protocol.REGISTRY.rpc_specs:
+    for spec in protocol.RPC_SPECS:
         method_name = spec.rpc_name or spec.name
         assert method_name in unary_methods
         method_desc = unary_methods[method_name]

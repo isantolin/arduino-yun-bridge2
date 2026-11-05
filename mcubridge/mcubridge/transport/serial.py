@@ -408,7 +408,8 @@ class SerialTransport:
                 pkt.type != PacketType.RESPONSE
                 or (is_response_handler and cmd_id in getattr(self.service, "mcu_registry", {}))
             ):
-                await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
+                dispatch_key = (pkt.service_id, pkt.method_id) if pkt.type == PacketType.REQUEST else cmd_id
+                await self.service.handle_mcu_frame(dispatch_key, seq_id, payload)
 
     def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:
         pending = self.current_command

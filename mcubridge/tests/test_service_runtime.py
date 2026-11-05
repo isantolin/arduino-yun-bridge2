@@ -87,6 +87,33 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
             state.cleanup()
 
 
+
+async def test_handle_mcu_frame_dispatches_by_pigweed_service_and_method() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    service = None
+    try:
+        mock_serial = AsyncMock(spec=SerialTransport)
+        service = BridgeService(config, state, mock_serial)
+        state.state = "synchronized"
+
+        spec = protocol.get_operation(Command.CMD_DATASTORE_PUT.value)
+        assert spec is not None and spec.service_id is not None and spec.method_id is not None
+        handler = AsyncMock()
+        service.mcu_registry[(spec.service_id, spec.method_id)] = handler
+        payload = pb.DatastorePut(key="sample", value=b"value")
+
+        await service.handle_mcu_frame((spec.service_id, spec.method_id), 17, payload)
+
+        handler.assert_awaited_once_with(17, payload)
+        mock_serial.send.assert_not_called()
+    finally:
+        if service is not None:
+            service.cleanup()
+        else:
+            state.cleanup()
+
+
 async def test_handle_mcu_xon_xoff() -> None:
     service = None
     config = _make_config()

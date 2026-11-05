@@ -144,8 +144,9 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
                     )
     if bool(cfg.cloud_certfile) != bool(cfg.cloud_keyfile):
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
-    if not cfg.serial_shared_secret:
-        raise ValueError("serial_shared_secret: value length must be at least 1")
+    # An empty secret is the explicitly supported, unauthenticated compatibility
+    # mode. The firmware accepts only an empty handshake tag in that mode;
+    # configured secrets continue to require mutual HMAC authentication.
 
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]

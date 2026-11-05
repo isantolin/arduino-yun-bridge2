@@ -137,7 +137,7 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
 
 
 def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
-    """Wait for a valid authenticated LinkSync response before starting the daemon."""
+    """Wait for one authenticated LinkSync response without queuing overlapping probes."""
     sync_operation = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
     if sync_operation is None or sync_operation.service_id is None or sync_operation.method_id is None:
         raise RuntimeError("LinkSync is missing generated RPC metadata")
@@ -156,7 +156,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
     )
     decoder = FrameDecoder()
     secret = DEFAULT_SHARED_SECRET.encode("utf-8")
-    pending_syncs: dict[int, tuple[bytes, bytes]] = {}
+    pending_sync: tuple[int, bytes, bytes] | None = None
     call_id = 0
     next_probe = 0.0
     deadline = time.monotonic() + timeout
@@ -166,7 +166,10 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
         ser.open()
         while time.monotonic() < deadline:
             now = time.monotonic()
-            if now >= next_probe:
+            # Keep exactly one authenticated request in flight. On slower AVR
+            # targets the MCU may queue UART responses until POST completes;
+            # overlapping probes leave stale nonce responses for the daemon.
+            if pending_sync is None and now >= next_probe:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
                 reset_request = protocol.encode_hdlc_rpc(
                     protocol.Command.CMD_LINK_RESET.value,
@@ -186,11 +189,11 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 )
                 if ser.write(sync_request) != len(sync_request):
                     raise OSError("Partial write while probing MCU UART readiness")
-                pending_syncs[call_id] = (
+                pending_sync = (
+                    call_id,
                     nonce,
                     SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce),
                 )
-                next_probe = now + UART_READY_PROBE_INTERVAL_SECONDS
 
             for frame in decoder.process(ser.read(512)):
                 if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
@@ -200,11 +203,21 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                     response.ParseFromString(frame.data)
                 except DecodeError:
                     continue
-                expected = pending_syncs.get(response.call_id)
                 if (
-                    expected is None
+                    pending_sync is None
+                    or response.call_id != pending_sync[0]
                     or response.type != PacketType.RESPONSE
-                    or response.status != 0
+                ):
+                    continue
+
+                expected_nonce, expected_tag = pending_sync[1], pending_sync[2]
+                # This response completes the only outstanding probe, even if
+                # authentication or RPC metadata is invalid. A fresh request
+                # may be sent afterwards, but never while the previous one is pending.
+                pending_sync = None
+                next_probe = time.monotonic() + UART_READY_PROBE_INTERVAL_SECONDS
+                if (
+                    response.status != 0
                     or response.service_id != sync_operation.service_id
                     or response.method_id != sync_operation.method_id
                 ):
@@ -213,7 +226,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                     sync_response = mcu_wire_pb2.LinkSync.FromString(response.payload)
                 except DecodeError:
                     continue
-                if sync_response.nonce == expected[0] and hmac.compare_digest(sync_response.tag, expected[1]):
+                if sync_response.nonce == expected_nonce and hmac.compare_digest(sync_response.tag, expected_tag):
                     logger.info("Firmware UART authenticated after POST", port=port)
                     return True
     finally:

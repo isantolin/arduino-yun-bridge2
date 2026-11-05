@@ -188,7 +188,10 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
         return fake_serial
 
     monkeypatch.setattr(fleet_mesh.serial, "serial_for_url", open_serial)
-    monkeypatch.setattr(fleet_mesh.secrets, "token_bytes", lambda size: bytes([2]) * size)
+    def fixed_nonce(size: int) -> bytes:
+        return bytes([2]) * size
+
+    monkeypatch.setattr(fleet_mesh.secrets, "token_bytes", fixed_nonce)
     monkeypatch.setattr(fleet_mesh, "UART_READY_PROBE_INTERVAL_SECONDS", 0.05)
 
     assert fleet_mesh.wait_for_firmware_uart_ready("/dev/fake-uart", timeout=1.0)

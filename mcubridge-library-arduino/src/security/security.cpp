@@ -12,11 +12,13 @@
 #include <mbedtls/platform_util.h>
 #include <psa/crypto.h>
 #include <psa/crypto_extra.h>
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 #include <wolfssl/wolfcrypt/settings.h>
 #endif
 #if defined(ARDUINO_ARCH_ESP32)
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
+#endif
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 #include <wolfssl/wolfcrypt/hmac.h>
 #endif
 
@@ -46,15 +48,17 @@ namespace {
 constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);
 constexpr psa_algorithm_t kHandshakeMac = PSA_ALG_TRUNCATED_MAC(
     kHmacSha256, static_cast<psa_algorithm_t>(RPC_HANDSHAKE_TAG_LENGTH));
-#if !defined(ARDUINO_ARCH_ESP32)
+#if !defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ARCH_AVR)
 constexpr psa_algorithm_t kHkdfSha256 = PSA_ALG_HKDF(PSA_ALG_SHA_256);
+#endif
+#if !defined(ARDUINO_ARCH_ESP32)
 constexpr psa_algorithm_t kChaCha20Poly1305 = PSA_ALG_CHACHA20_POLY1305;
 #endif
 static_assert(PSA_MAC_LENGTH(PSA_KEY_TYPE_HMAC, 256U, kHandshakeMac) ==
               RPC_HANDSHAKE_TAG_LENGTH);
 static uint8_t kEmptyBuffer = 0U;
 
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 bool fits_wolfssl_length(size_t length) {
   return length <= static_cast<size_t>(UINT32_MAX);
 }
@@ -93,7 +97,7 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> salt,
                         etl::span<const uint8_t> info,
                         etl::span<uint8_t> output) {
-#if defined(ARDUINO_ARCH_ESP32)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
   if (secret.empty() || output.empty() ||
       output.size() > 255U * RPC_SHA256_DIGEST_SIZE ||
       !fits_wolfssl_length(secret.size()) ||

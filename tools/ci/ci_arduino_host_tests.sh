@@ -71,6 +71,13 @@ if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
     echo "[host-cpp] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
     exit 1
 fi
+mapfile -t PIGWEED_RPC_SOURCES < <(
+    find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
+        \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
+           -o -name 'pw_stream_interval_reader.cc' \
+           -o -name 'pw_varint_stream.cc' \
+           -o -name 'pw_containers_intrusive_item.cc' \) -print | sort
+)
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -103,6 +110,7 @@ SOURCES=(
     "$PIGWEED_PATH/src/system_clock_avr.cpp"
     "$PIGWEED_PATH/src/log_avr.cpp"
     "$PIGWEED_PATH/src/rpc_server.cpp"
+    "${PIGWEED_RPC_SOURCES[@]}"
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc"
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc"
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc"

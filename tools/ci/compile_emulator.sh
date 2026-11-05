@@ -17,6 +17,19 @@ METADATA_DIR="${ROOT_DIR}/build/emulation"
 ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
 mkdir -p "${ARDUINO_LIBS}"
 
+# Use system Python
+GEN_PYTHON=$(command -v python3 || command -v python)
+
+echo "[emulator] Generating protocol bindings..."
+if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
+    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
+    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
+    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
+    echo "ERROR: Protocol generation failed. See above for missing dependencies."
+    exit 1
+fi
+
 echo "[emulator] Installing library dependencies..."
 "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
@@ -29,8 +42,6 @@ if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
     exit 1
 fi
 
-# Use system Python
-GEN_PYTHON=$(command -v python3 || command -v python)
 mkdir -p "${METADATA_DIR}"
 "${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
     --host-test \
@@ -41,15 +52,13 @@ echo "[emulator] Verifying library paths..."
 ls -la "${PIGWEED_PATH}" || echo "PIGWEED_PATH not found"
 ls -la "${PIGWEED_PATH}/src" || echo "PIGWEED_PATH/src not found"
 
-echo "[emulator] Generating protocol bindings..."
-if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
-    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-    --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"; then
-    echo "ERROR: Protocol generation failed. See above for missing dependencies."
-    exit 1
-fi
+mapfile -t PIGWEED_RPC_SOURCES < <(
+    find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
+        \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
+           -o -name 'pw_stream_interval_reader.cc' \
+           -o -name 'pw_varint_stream.cc' \
+           -o -name 'pw_containers_intrusive_item.cc' \) -print | sort
+)
 
 NANOPB_SOURCES=(
     "${SRC_DIR}/pb_encode.c"
@@ -96,6 +105,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
     "$PIGWEED_PATH/src/log_avr.cpp" \
     "$PIGWEED_PATH/src/rpc_server.cpp" \
+    "${PIGWEED_RPC_SOURCES[@]}" \
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
@@ -103,6 +113,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "$PIGWEED_PATH/src/pw_status_status.cc" \
     "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
     "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
+    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -142,6 +153,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
     "$PIGWEED_PATH/src/log_avr.cpp" \
     "$PIGWEED_PATH/src/rpc_server.cpp" \
+    "${PIGWEED_RPC_SOURCES[@]}" \
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
@@ -149,6 +161,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "$PIGWEED_PATH/src/pw_status_status.cc" \
     "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
     "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
+    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

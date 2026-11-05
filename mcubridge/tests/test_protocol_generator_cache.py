@@ -7,14 +7,20 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
     proto_dir = tmp_path / "tools" / "protocol"
     template_dir = proto_dir / "templates"
     template_dir.mkdir(parents=True)
+    pigweed_root = tmp_path / "third_party" / "avr_pigweed_port" / "third_party" / "pigweed"
     input_files = {
         proto_dir / "mcubridge.proto": 'syntax = "proto3";\n',
         proto_dir / "buf.yaml": "version: v2\n",
         proto_dir / "buf.gen.yaml": "version: v2\n",
+        proto_dir / "protoc_gen_mcu_rpc.py": "from pw_rpc import codegen_nanopb\n",
         proto_dir / "mcubridge.options": "mcubridge.Message max_size:64\n",
         tmp_path / ".github" / "actions" / "setup-protoc" / "action.yml": "name: setup-protoc\n",
         template_dir / "protocol.py.j2": "{{ protocol_version }}\n",
         tmp_path / "VERSION": "2.1.0\n",
+        pigweed_root / "pw_rpc" / "internal" / "packet.proto": 'syntax = "proto3";\n',
+        pigweed_root / "pw_protobuf" / "py" / "pw_protobuf" / "plugin.py": "def main(): ...\n",
+        pigweed_root / "pw_rpc" / "py" / "pw_rpc" / "codegen_pwpb.py": "class Generator: ...\n",
+        pigweed_root / "pw_codegen" / "py" / "pw_codegen" / "output.py": "class Output: ...\n",
     }
     for path, content in input_files.items():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,6 +53,7 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
         proto_dir / "mcubridge.options",
         proto_dir / "buf.gen.yaml",
         template_dir / "protocol.py.j2",
+        pigweed_root / "pw_rpc" / "internal" / "packet.proto",
     ):
         original_content = changed_input.read_text(encoding="utf-8")
         changed_input.write_text(original_content + "# changed\n", encoding="utf-8")

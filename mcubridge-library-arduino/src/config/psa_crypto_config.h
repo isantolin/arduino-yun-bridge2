@@ -19,5 +19,7 @@
 #define MBEDTLS_PSA_STATIC_KEY_SLOTS
 #define MBEDTLS_PSA_KEY_SLOT_COUNT 1
 #define MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE 64
+// PSA callers own buffers for each synchronous operation on these targets.
+#define MBEDTLS_PSA_ASSUME_EXCLUSIVE_BUFFERS
 
 #endif

@@ -108,7 +108,20 @@ jobs:
       - name: Install Arduino Cores and Dependencies
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
-          arduino-cli core install arduino:avr arduino:samd arduino:esp32
+          # Arduino package mirrors intermittently return HTTP 5xx for large toolchains.
+          # Retry the idempotent core installation; do not skip a missing platform.
+          for attempt in 1 2 3 4 5; do
+            if arduino-cli core install arduino:avr arduino:samd arduino:esp32; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::Arduino core installation failed after $attempt attempts"
+              exit 1
+            fi
+            delay=$((attempt * 15))
+            echo "Arduino core installation failed (attempt $attempt/5); retrying in ${delay}s"
+            sleep "$delay"
+          done
           arduino-cli lib install "Embedded Template Library ETL"
           arduino-cli lib install WiFiNINA
       - uses: ./.github/actions/setup-python-tox
@@ -124,7 +137,7 @@ jobs:
         if: always()
         run: |
           mkdir -p arduino-logs
-          PYTHONPATH=. python tools/profiling/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
+          tox -e arduino-profile -- arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7

@@ -19,7 +19,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Control de Flujo (Backpressure) en la Nube:** Regulación mediante colas de telemetría y buffer backpressure en el stream gRPC.
 - **Respuestas correladas sobre gRPC:** El flujo bidireccional gRPC correlaciona de forma nativa peticiones y respuestas mediante identificadores estables (`sequence_id`).
 - **Diseño orientado a seguridad funcional:** Librería MCU escrita en C++17 con ETL y almacenamiento estático en las configuraciones documentadas; esto no constituye una certificación SIL-2.
-- **Autenticación del enlace:** `LinkSync` usa HKDF-SHA256/HMAC-SHA256 cuando se configura un secreto compartido; el MCU responde con una prueba HMAC separada. Las tramas RPC no se cifran ni tienen protección anti-replay por trama. El KAT ChaCha20-Poly1305 del daemon solo prueba la biblioteca Python.
+- **Protección del enlace:** Con un secreto compartido configurado, `LinkSync` autentica ambos extremos con HMAC-SHA256 y deriva claves direccionales mediante HKDF-SHA256. Tras la sincronización, los payloads HDLC de RPC, consola y logs usan ChaCha20-Poly1305 con contadores monotónicos por dirección y sesión. Esto rechaza repetición y reordenamiento dentro de una sesión; no garantiza protección frente a replay después de reiniciar el MCU. `LinkReset` es un control plaintext explícito, no un fallback para datos.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
 ### Novedades (noviembre 2026 — v2.8.9 Pigweed Migration)

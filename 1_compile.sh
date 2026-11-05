@@ -298,6 +298,22 @@ PYTHON_BIN="${PYTHON_EXE:-python3}"
 echo "[INFO] Synchronizing runtime dependency manifests..."
 "$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" || exit 1
 
+# Pigweed is the source of pw_rpc; resolve its exact host pin from the runtime
+# manifest rather than duplicating a version in this bootstrap script.
+if ! "$PYTHON_BIN" -c "from pw_rpc.descriptors import Service" >/dev/null 2>&1; then
+    PIGWEED_REQUIREMENT="$("$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-pip | grep -m1 '^pigweed==')"
+    if [ -z "$PIGWEED_REQUIREMENT" ]; then
+        echo "[ERROR] Pigweed is missing from requirements/runtime.toml." >&2
+        exit 1
+    fi
+    echo "[INFO] Installing host protocol generator from manifest: $PIGWEED_REQUIREMENT"
+    "$PYTHON_BIN" -m pip install "$PIGWEED_REQUIREMENT"
+fi
+"$PYTHON_BIN" -c "from pw_rpc.descriptors import Service" || {
+    echo "[ERROR] Pigweed pw_rpc is unavailable after host dependency installation." >&2
+    exit 1
+}
+
 echo "[INFO] Regenerating protocol files from spec..."
 "$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
     --spec "$REPO_ROOT/tools/protocol/cloud_gateway.proto" \

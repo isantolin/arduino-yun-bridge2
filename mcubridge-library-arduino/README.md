@@ -49,7 +49,7 @@ This library describes safety- and security-oriented design goals; it does not c
 - **Cryptographic Self-Tests (POST):** MCU Known-Answer Tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The daemon tests its AEAD library and encrypted transport behavior.
 - **Encrypted link:** With a configured shared secret, RPC, console, and log HDLC payloads are encrypted after `LinkSync`. Empty-secret mode is explicitly unauthenticated and unencrypted. Per-session counters reject replay within a session; replay across MCU restarts is not ruled out.
 - **Fail-Secure:** Initialization aborts and the system enters a safe state (`FAULT`) if cryptographic or SRAM March integrity checks fail.
-- **Handshake Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs. No session encryption keys are derived.
+- **Handshake and Session Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs, then derives independent directional ChaCha20-Poly1305 session keys using the handshake nonce and the `session-key` context.
 - **Atomic Timekeeping (`pw_chrono_avr`):** Uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for deterministic timeout and interval tracking.
 - **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 (`rpc::decode_pb`) to eliminate initialization overhead on static memory structures.
 - **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, SPI, WiFi, and Bluetooth.

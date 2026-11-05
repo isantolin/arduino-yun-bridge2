@@ -124,7 +124,6 @@ define Package/$(PKG_NAME)/install
 			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd" || exit $$?; \
 		done; \
 	fi
-		done || true
 	ln -sf /usr/bin/pin-rest-cgi $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge
 endef
 

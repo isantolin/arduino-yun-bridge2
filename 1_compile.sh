@@ -301,7 +301,7 @@ echo "[INFO] Synchronizing runtime dependency manifests..."
 # Pigweed is the source of pw_rpc; resolve its exact host pin from the runtime
 # manifest rather than duplicating a version in this bootstrap script.
 if ! "$PYTHON_BIN" -c "from pw_rpc.descriptors import Service" >/dev/null 2>&1; then
-    PIGWEED_REQUIREMENT="$("$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-pip | grep -m1 '^pigweed==')"
+    PIGWEED_REQUIREMENT="$("$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-pip | grep -m1 '^pigweed==' || true)"
     if [ -z "$PIGWEED_REQUIREMENT" ]; then
         echo "[ERROR] Pigweed is missing from requirements/runtime.toml." >&2
         exit 1

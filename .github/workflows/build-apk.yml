@@ -83,6 +83,13 @@ jobs:
         run: |
           python3 tools/audit/sync_runtime_deps.py
 
+      - name: Install Pigweed host protocol generator
+        run: |
+          PIGWEED_REQUIREMENT="$(python3 tools/audit/sync_runtime_deps.py --print-pip | grep '^pigweed==')"
+          test -n "$PIGWEED_REQUIREMENT"
+          python3 -m pip install "$PIGWEED_REQUIREMENT"
+          python3 -c "from pw_rpc.descriptors import Service; import google.protobuf; print('Pigweed pw_rpc host generator ready')"
+
       - name: Pre-download Python feed dependencies to bypass PyPI mirror issues
         run: |
           mkdir -p dl

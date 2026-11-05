@@ -6,6 +6,17 @@ on:
       - main
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '1_compile.sh'
+      - 'mcubridge/Makefile'
+      - 'feeds/**'
+      - 'requirements/runtime.toml'
+      - 'tools/audit/sync_runtime_deps.py'
+      - 'tools/protocol/**'
+      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
 concurrency:

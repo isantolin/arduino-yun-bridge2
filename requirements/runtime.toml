@@ -250,7 +250,7 @@ rationale = "GPL-3.0-or-later wolfCrypt HKDF-SHA256 and ChaCha20-Poly1305 provid
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.1"
+pip = "coverage==7.17.2"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
@@ -281,7 +281,7 @@ rationale = "Static dead code scanner detecting unused functions, classes, and p
 
 [[dev_dependency]]
 name = "pyrefly"
-pip = "pyrefly==1.4.0"
+pip = "pyrefly==1.4.1"
 rationale = "Fast Python type checker and LSP language server for strict type safety"
 
 [[dev_dependency]]

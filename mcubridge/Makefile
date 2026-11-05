@@ -76,16 +76,17 @@ define Package/$(PKG_NAME)/config
 endef
 
 define Build/Compile
-	[ -d $(PKG_BUILD_DIR)/mcubridge ] && python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge || true
+	test -d $(PKG_BUILD_DIR)/mcubridge
+	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
 	[ ! -d $(PKG_BUILD_DIR)/scripts ] || python3 -m compileall -j 0 -q -b $(PKG_BUILD_DIR)/scripts
-	[ -d $(PKG_BUILD_DIR) ] && find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
+	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
 endef
 
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
-	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} +
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/99-mcubridge-defaults $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/ || true
@@ -102,7 +103,7 @@ define Package/$(PKG_NAME)/install
 	# Daemon
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/* $(1)/usr/libexec/mcubridge/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.init $(1)/etc/init.d/mcubridge
-	$(PYTHON3) -m compileall -o 2 -q $(1)/usr/libexec/mcubridge || true
+	$(PYTHON3) -m compileall -o 2 -q $(1)/usr/libexec/mcubridge
 	
 	# Core config files
 	$(INSTALL_DIR) $(1)/usr/share/mcubridge
@@ -117,10 +118,12 @@ define Package/$(PKG_NAME)/install
 	chmod 0755 $(1)/etc/profile.d/99-mcubridge-crypto.sh
 
 	# Core scripts (install stripping .py extension and ensuring hyphenated command names)
-	[ -d $(PKG_BUILD_DIR)/scripts ] && \
+	if [ -d $(PKG_BUILD_DIR)/scripts ]; then \
 		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py' ! -name '__init__.py'); do \
 			cmd=$$(basename $$f .py | tr '_' '-'); \
-			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd"; \
+			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd" || exit $$?; \
+		done; \
+	fi
 		done || true
 	ln -sf /usr/bin/pin-rest-cgi $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge
 endef

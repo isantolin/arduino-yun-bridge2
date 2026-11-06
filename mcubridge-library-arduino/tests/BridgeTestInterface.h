@@ -86,16 +86,7 @@ class TestAccessor : public BridgeClass {
   }
 
   void invokeRpcResponse(const pw::rpc_avr::RpcPacket& pkt) {
-    pw::rpc_avr::RpcPacket copy = pkt;
-    if (copy.channel_id == 0) {
-      copy.channel_id = 1;
-    }
-    uint8_t buf[bridge::config::RX_BUFFER_SIZE];
-    auto res = copy.Encode(pw::as_writable_bytes(pw::span(buf)));
-    if (res.ok()) {
-      (void)_rpc_client_server.ProcessPacket(
-          pw::as_bytes(pw::span(buf, res.size())));
-    }
+    _dispatchRpcResponse(pkt);
   }
 
   void setPendingBaudrate(uint32_t b) { _pending_baudrate = b; }

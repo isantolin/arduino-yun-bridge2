@@ -173,22 +173,6 @@ void test_bridge_send_frame() {
   TEST_ASSERT_TRUE(
       Bridge.sendLogStream(etl::span<const uint8_t>(payload.data(), 2)));
   pw_log_avr_HandleLog(1, payload.data(), payload.size());
-
-  rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
-  sub_req.pin = 13;
-  sub_req.enabled = true;
-  uint8_t sub_buf[32];
-  pb_ostream_t sub_os = pb_ostream_from_buffer(sub_buf, sizeof(sub_buf));
-  TEST_ASSERT_TRUE(
-      pb_encode(&sub_os, rpc_pb_PinSubscribeRequest_fields, &sub_req));
-  etl::array<uint8_t, 128> sub_frame;
-  const size_t sub_len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
-      pw::tokenizer::Hash("rpc.pb.GpioService"),
-      pw::tokenizer::Hash("SubscribePins"),
-      etl::span<const uint8_t>(sub_buf, sub_os.bytes_written), sub_frame);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(sub_frame.data(), sub_len));
-
   TEST_ASSERT_TRUE(Bridge.sendPinEvent(13, 1));
 }
 

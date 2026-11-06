@@ -1043,7 +1043,7 @@ Esto previene que pines no inicializados o en estado de alta impedancia (tri-sta
 
 ## 11. Topología Canónica de Tópicos Cloud y Enrutamiento Simplificado
 
-Bajo la estricta **regla de cero backward compatibility** (cero shims, cero compatibilidad hacia atrás y cero ramas legacy), el ecosistema erradica la proliferación histórica de prefijos y subárbs heterogéneos (`action/`, `command/`, etc.). Todos los mensajes intercambiados a través del Cloud Gateway se estructuran bajo una convención unívoca, determinista y fuertemente tipada.
+Bajo la estricta **regla de cero backward compatibility** (cero shims, cero compatibilidad hacia atrás y cero ramas legacy), el ecosistema erradica la proliferación histórica de prefijos y subárboles heterogéneos (`action/`, `command/`, etc.). Todos los mensajes intercambiados a través del Cloud Gateway se estructuran bajo una convención unívoca, determinista y fuertemente tipada.
 
 ### 11.1 Estructura Canónica de Tópicos
 

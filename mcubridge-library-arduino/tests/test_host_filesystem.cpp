@@ -129,8 +129,11 @@ void test_filesystem_on_read() {
                        .has_value());
 
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
+  rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
-  FileSystem._onRead(msg);
+  TEST_ASSERT_TRUE(FileSystem._onRead(msg, resp).ok());
+  TEST_ASSERT_EQUAL_UINT32(1U, resp.content.size);
+  TEST_ASSERT_EQUAL_UINT8(0xAA, resp.content.bytes[0]);
   TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
@@ -145,8 +148,11 @@ void test_filesystem_on_read_multichunk() {
                        .has_value());
 
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
+  rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
-  FileSystem._onRead(msg);
+  TEST_ASSERT_EQUAL(pw::Status::ResourceExhausted().code(),
+                    FileSystem._onRead(msg, resp).code());
+  TEST_ASSERT_EQUAL_UINT32(0U, resp.content.size);
   TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
@@ -156,8 +162,10 @@ void test_filesystem_on_read_error() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
+  rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), "non_existent_file.bin");
-  FileSystem._onRead(msg);
+  TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
+                    FileSystem._onRead(msg, resp).code());
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 

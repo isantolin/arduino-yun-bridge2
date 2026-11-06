@@ -36,6 +36,7 @@ namespace {
 
 void on_fs_read(etl::span<const uint8_t>) {}
 void on_datastore_get(etl::string_view, etl::span<const uint8_t>) {}
+void on_process_run(int32_t) {}
 void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                      etl::span<const uint8_t>) {}
 
@@ -167,6 +168,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                        rpc_pb_SpiTransfer_fields, st_msg);
 
   // 13. DataStoreGet response
+  DataStore.get("edge_key",
+                DataStoreType::GetHandler::create<on_datastore_get>());
   rpc_pb_DatastoreGetResponse ds_resp =
       rpc_pb_DatastoreGetResponse_init_default;
   ds_resp.value.size = 4;
@@ -178,6 +181,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                   rpc_pb_DatastoreGetResponse_fields, ds_resp);
 
   // 14. FileRead response
+  FileSystem.read("edge.bin",
+                  FileSystemType::FileSystemReadHandler::create<on_fs_read>());
   rpc_pb_FileReadResponse fr_resp = rpc_pb_FileReadResponse_init_default;
   fr_resp.content.size = 4;
   fr_resp.content.bytes[0] = 1;
@@ -188,6 +193,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                   rpc_pb_FileReadResponse_fields, fr_resp);
 
   // 15. ProcessRunAsync response
+  Process.runAsync("ls", etl::span<const etl::string_view>(),
+                   ProcessType::ProcessRunHandler::create<on_process_run>());
   rpc_pb_ProcessRunAsyncResponse pr_resp =
       rpc_pb_ProcessRunAsyncResponse_init_default;
   pr_resp.pid = 123;
@@ -195,6 +202,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                   rpc_pb_ProcessRunAsyncResponse_fields, pr_resp);
 
   // 16. ProcessPoll response
+  Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
   rpc_pb_ProcessPollResponse pp_resp = rpc_pb_ProcessPollResponse_init_default;
   pp_resp.status = 0;
   pp_resp.exit_code = 0;
@@ -243,6 +251,13 @@ void test_dispatch_malformed_payload_paths() {
   feed_rpc_request(ba, kClkSvc, pw::tokenizer::Hash("ClockSync"), bad_pl);
 
   // Malformed responses
+  DataStore.get("edge_key",
+                DataStoreType::GetHandler::create<on_datastore_get>());
+  FileSystem.read("edge.bin",
+                  FileSystemType::FileSystemReadHandler::create<on_fs_read>());
+  Process.runAsync("ls", etl::span<const etl::string_view>(),
+                   ProcessType::ProcessRunHandler::create<on_process_run>());
+  Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
   pw::rpc_avr::RpcPacket bad_pkt;
   bad_pkt.type = pw::rpc_avr::PacketType::kResponse;
   bad_pkt.channel_id = 1;
@@ -726,6 +741,8 @@ void test_architectural_extensions_edge_paths() {
   sub_overflow.enabled = true;
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
                        rpc_pb_PinSubscribeRequest_fields, sub_overflow);
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub_req);
 
   // Subscription task execution paths
   ba.clearSynchronized();

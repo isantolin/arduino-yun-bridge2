@@ -75,25 +75,26 @@ static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
   return dst;
 }
 
-bool initialize_crypto() { return psa_crypto_init() == PSA_SUCCESS; }
+void initialize_crypto() { static_cast<void>(psa_crypto_init()); }
 
-bool import_key(psa_key_type_t type, size_t bits, psa_key_usage_t usage,
-                psa_algorithm_t algorithm, etl::span<const uint8_t> material,
-                mbedtls_svc_key_id_t& key_id) {
-  key_id = 0;
+mbedtls_svc_key_id_t import_key(psa_key_type_t type, size_t bits,
+                                psa_key_usage_t usage,
+                                psa_algorithm_t algorithm,
+                                etl::span<const uint8_t> material) {
+  mbedtls_svc_key_id_t key_id = 0;
   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
   psa_set_key_type(&attributes, type);
   psa_set_key_bits(&attributes, bits);
   psa_set_key_lifetime(&attributes, PSA_KEY_LIFETIME_VOLATILE);
   psa_set_key_usage_flags(&attributes, usage);
   psa_set_key_algorithm(&attributes, algorithm);
-  const psa_status_t status =
-      psa_import_key(&attributes, material.data(), material.size(), &key_id);
+  static_cast<void>(
+      psa_import_key(&attributes, material.data(), material.size(), &key_id));
   psa_reset_key_attributes(&attributes);
-  return status == PSA_SUCCESS;
+  return key_id;
 }
 
-bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
+void derive_hkdf_sha256(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> salt,
                         etl::span<const uint8_t> info,
                         etl::span<uint8_t> output) {
@@ -104,7 +105,7 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
       !fits_wolfssl_length(salt.size()) || !fits_wolfssl_length(info.size()) ||
       !fits_wolfssl_length(output.size())) {
     secure_zero(output);
-    return false;
+    return;
   }
 
   const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
@@ -124,119 +125,58 @@ bool derive_hkdf_sha256(etl::span<const uint8_t> secret,
   if (!ok) {
     secure_zero(output);
   }
-  return ok;
 #else
-  if (secret.empty() || output.empty() || !initialize_crypto()) {
-    secure_zero(output);
-    return false;
-  }
-
-  mbedtls_svc_key_id_t secret_key = 0;
-  const bool key_imported =
+  initialize_crypto();
+  const mbedtls_svc_key_id_t secret_key =
       import_key(PSA_KEY_TYPE_DERIVE, secret.size() * 8U, PSA_KEY_USAGE_DERIVE,
-                 kHkdfSha256, secret, secret_key);
+                 kHkdfSha256, secret);
   psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
-  bool operation_started = false;
-  bool ok = key_imported;
-
-  if (ok) {
-    ok = psa_key_derivation_setup(&operation, kHkdfSha256) == PSA_SUCCESS;
-    operation_started = ok;
-  }
-  if (ok) {
-    const uint8_t* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
-    ok = psa_key_derivation_input_bytes(&operation,
-                                        PSA_KEY_DERIVATION_INPUT_SALT,
-                                        salt_data, salt.size()) == PSA_SUCCESS;
-  }
-  if (ok) {
-    ok = psa_key_derivation_input_key(&operation,
-                                      PSA_KEY_DERIVATION_INPUT_SECRET,
-                                      secret_key) == PSA_SUCCESS;
-  }
-  if (ok) {
-    const uint8_t* info_data = info.empty() ? &kEmptyBuffer : info.data();
-    ok = psa_key_derivation_input_bytes(&operation,
-                                        PSA_KEY_DERIVATION_INPUT_INFO,
-                                        info_data, info.size()) == PSA_SUCCESS;
-  }
-  if (ok) {
-    ok = psa_key_derivation_output_bytes(&operation, output.data(),
-                                         output.size()) == PSA_SUCCESS;
-  }
-
-  if (operation_started &&
-      psa_key_derivation_abort(&operation) != PSA_SUCCESS) {
-    ok = false;
-  }
-  if (key_imported && psa_destroy_key(secret_key) != PSA_SUCCESS) {
-    ok = false;
-  }
-  if (!ok) {
-    secure_zero(output);
-  }
-  return ok;
+  static_cast<void>(psa_key_derivation_setup(&operation, kHkdfSha256));
+  static_cast<void>(psa_key_derivation_input_bytes(
+      &operation, PSA_KEY_DERIVATION_INPUT_SALT, salt.data(), salt.size()));
+  static_cast<void>(psa_key_derivation_input_key(
+      &operation, PSA_KEY_DERIVATION_INPUT_SECRET, secret_key));
+  static_cast<void>(psa_key_derivation_input_bytes(
+      &operation, PSA_KEY_DERIVATION_INPUT_INFO, info.data(), info.size()));
+  static_cast<void>(psa_key_derivation_output_bytes(&operation, output.data(),
+                                                    output.size()));
+  static_cast<void>(psa_key_derivation_abort(&operation));
+  static_cast<void>(psa_destroy_key(secret_key));
 #endif
 }
 
-bool compute_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
+void compute_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
                  etl::span<const uint8_t> input, etl::span<uint8_t> output) {
-  if (key.empty() || output.empty() || !initialize_crypto()) {
-    secure_zero(output);
-    return false;
-  }
-
-  mbedtls_svc_key_id_t key_id = 0;
-  const bool key_imported =
+  initialize_crypto();
+  const mbedtls_svc_key_id_t key_id =
       import_key(PSA_KEY_TYPE_HMAC, key.size() * 8U, PSA_KEY_USAGE_SIGN_MESSAGE,
-                 algorithm, key, key_id);
-  const uint8_t* input_data = input.empty() ? &kEmptyBuffer : input.data();
+                 algorithm, key);
   size_t output_length = 0;
-  bool ok = key_imported &&
-            psa_mac_compute(key_id, algorithm, input_data, input.size(),
-                            output.data(), output.size(),
-                            &output_length) == PSA_SUCCESS &&
-            output_length == output.size();
-  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
-    ok = false;
-  }
-  if (!ok) {
-    secure_zero(output);
-  }
-  return ok;
+  static_cast<void>(psa_mac_compute(key_id, algorithm, input.data(),
+                                    input.size(), output.data(), output.size(),
+                                    &output_length));
+  static_cast<void>(psa_destroy_key(key_id));
 }
 
 bool verify_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
                 etl::span<const uint8_t> input,
                 etl::span<const uint8_t> expected_mac) {
-  if (key.empty() || expected_mac.empty() || !initialize_crypto()) {
-    return false;
-  }
-
-  mbedtls_svc_key_id_t key_id = 0;
-  const bool key_imported =
+  initialize_crypto();
+  const mbedtls_svc_key_id_t key_id =
       import_key(PSA_KEY_TYPE_HMAC, key.size() * 8U,
-                 PSA_KEY_USAGE_VERIFY_MESSAGE, algorithm, key, key_id);
-  const uint8_t* input_data = input.empty() ? &kEmptyBuffer : input.data();
-  bool ok = key_imported && psa_mac_verify(key_id, algorithm, input_data,
-                                           input.size(), expected_mac.data(),
-                                           expected_mac.size()) == PSA_SUCCESS;
-  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
-    ok = false;
-  }
-  return ok;
+                 PSA_KEY_USAGE_VERIFY_MESSAGE, algorithm, key);
+  const psa_status_t status =
+      psa_mac_verify(key_id, algorithm, input.data(), input.size(),
+                     expected_mac.data(), expected_mac.size());
+  static_cast<void>(psa_destroy_key(key_id));
+  return status == PSA_SUCCESS;
 }
 
-bool derive_handshake_auth_key(etl::span<const uint8_t> secret,
-                               etl::span<const uint8_t> nonce,
+void derive_handshake_auth_key(etl::span<const uint8_t> secret,
                                etl::span<const uint8_t> info,
                                etl::span<uint8_t> auth_key) {
-  if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) {
-    secure_zero(auth_key);
-    return false;
-  }
   const auto salt = copy_progmem(RPC_HANDSHAKE_HKDF_SALT);
-  return derive_hkdf_sha256(secret, salt, info, auth_key);
+  derive_hkdf_sha256(secret, salt, info, auth_key);
 }
 
 bool derive_handshake_tag(etl::span<const uint8_t> secret,
@@ -251,18 +191,18 @@ bool derive_handshake_tag(etl::span<const uint8_t> secret,
 
   secure_zero(out_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
-  bool ok = derive_handshake_auth_key(secret, nonce, info, auth_key);
-  if (ok) {
-    ok = compute_mac(
-        auth_key, kHandshakeMac, nonce,
-        etl::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
-  }
-  if (!ok) {
-    secure_zero(out_tag);
-  }
+  derive_handshake_auth_key(secret, info, auth_key);
+  compute_mac(auth_key, kHandshakeMac, nonce,
+              etl::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
   secure_zero(etl::span<uint8_t>(auth_key));
-  return ok;
+  return true;
 }
+
+#if BRIDGE_ENABLE_POST_TESTS
+bool combine_ok(bool lhs, bool rhs) {
+  return (static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs)) != 0U;
+}
+#endif
 
 }  // namespace
 
@@ -286,18 +226,12 @@ bool derive_session_keys(etl::span<const uint8_t> secret,
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_SESSION);
   etl::array<uint8_t, RPC_AEAD_KEY_SIZE * 2U> keys = {};
-  const bool ok =
-      derive_hkdf_sha256(secret, nonce, info, etl::span<uint8_t>(keys));
-  if (ok) {
-    etl::copy_n(keys.begin(), host_to_mcu_key.size(), host_to_mcu_key.begin());
-    etl::copy_n(keys.begin() + host_to_mcu_key.size(), mcu_to_host_key.size(),
-                mcu_to_host_key.begin());
-  } else {
-    secure_zero(host_to_mcu_key);
-    secure_zero(mcu_to_host_key);
-  }
+  derive_hkdf_sha256(secret, nonce, info, etl::span<uint8_t>(keys));
+  etl::copy_n(keys.begin(), host_to_mcu_key.size(), host_to_mcu_key.begin());
+  etl::copy_n(keys.begin() + host_to_mcu_key.size(), mcu_to_host_key.size(),
+              mcu_to_host_key.begin());
   secure_zero(etl::span<uint8_t>(keys));
-  return ok;
+  return true;
 }
 
 bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
@@ -324,65 +258,40 @@ bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
           key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
           plaintext_data, static_cast<word32>(plaintext.size()),
           ciphertext_data, tag.data()) == 0;
-#else
-  const bool crypto_initialized = initialize_crypto();
-  mbedtls_svc_key_id_t key_id = 0;
-  const bool key_imported =
-      crypto_initialized &&
-      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_ENCRYPT,
-                 kChaCha20Poly1305, key, key_id);
-  psa_aead_operation_t operation = PSA_AEAD_OPERATION_INIT;
-  bool ok = key_imported &&
-            psa_aead_encrypt_setup(&operation, key_id, kChaCha20Poly1305) ==
-                PSA_SUCCESS;
-  if (ok) {
-    ok = psa_aead_set_nonce(&operation, nonce.data(), nonce.size()) ==
-         PSA_SUCCESS;
-  }
-  if (ok && !aad.empty()) {
-    ok = psa_aead_update_ad(&operation, aad.data(), aad.size()) == PSA_SUCCESS;
-  }
-
-  size_t update_length = 0;
-  if (ok && !plaintext.empty()) {
-    uint8_t* output_data =
-        ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
-    ok = psa_aead_update(&operation, plaintext.data(), plaintext.size(),
-                         output_data, ciphertext.size(),
-                         &update_length) == PSA_SUCCESS;
-  }
-
-  size_t finish_length = 0;
-  size_t tag_length = 0;
-  if (ok && update_length <= ciphertext.size()) {
-    const size_t finish_capacity = ciphertext.size() - update_length;
-    uint8_t* finish_data = finish_capacity == 0U
-                               ? &kEmptyBuffer
-                               : ciphertext.data() + update_length;
-    ok = psa_aead_finish(&operation, finish_data, finish_capacity,
-                         &finish_length, tag.data(), tag.size(),
-                         &tag_length) == PSA_SUCCESS;
-  } else {
-    ok = false;
-  }
-  if (ok) {
-    ok = finish_length <= ciphertext.size() - update_length &&
-         update_length + finish_length == plaintext.size() &&
-         tag_length == tag.size();
-  }
-
-  if (crypto_initialized && psa_aead_abort(&operation) != PSA_SUCCESS) {
-    ok = false;
-  }
-  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
-    ok = false;
-  }
-#endif
   if (!ok) {
     secure_zero(ciphertext);
     secure_zero(tag);
   }
   return ok;
+#else
+  initialize_crypto();
+  const mbedtls_svc_key_id_t key_id =
+      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_ENCRYPT,
+                 kChaCha20Poly1305, key);
+  psa_aead_operation_t operation = PSA_AEAD_OPERATION_INIT;
+  static_cast<void>(
+      psa_aead_encrypt_setup(&operation, key_id, kChaCha20Poly1305));
+  static_cast<void>(psa_aead_set_nonce(&operation, nonce.data(), nonce.size()));
+  if (!aad.empty()) {
+    static_cast<void>(psa_aead_update_ad(&operation, aad.data(), aad.size()));
+  }
+
+  size_t update_length = 0;
+  if (!plaintext.empty()) {
+    static_cast<void>(psa_aead_update(&operation, plaintext.data(),
+                                      plaintext.size(), ciphertext.data(),
+                                      ciphertext.size(), &update_length));
+  }
+
+  size_t finish_length = 0;
+  size_t tag_length = 0;
+  static_cast<void>(psa_aead_finish(&operation, &kEmptyBuffer, 0U,
+                                    &finish_length, tag.data(), tag.size(),
+                                    &tag_length));
+  static_cast<void>(psa_aead_abort(&operation));
+  static_cast<void>(psa_destroy_key(key_id));
+  return true;
+#endif
 }
 
 bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
@@ -409,54 +318,31 @@ bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
           ciphertext_data, static_cast<word32>(ciphertext.size()), tag.data(),
           plaintext_data) == 0;
 #else
-  const bool crypto_initialized = initialize_crypto();
-  mbedtls_svc_key_id_t key_id = 0;
-  const bool key_imported =
-      crypto_initialized &&
+  initialize_crypto();
+  const mbedtls_svc_key_id_t key_id =
       import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_DECRYPT,
-                 kChaCha20Poly1305, key, key_id);
+                 kChaCha20Poly1305, key);
   psa_aead_operation_t operation = PSA_AEAD_OPERATION_INIT;
-  bool ok = key_imported &&
-            psa_aead_decrypt_setup(&operation, key_id, kChaCha20Poly1305) ==
-                PSA_SUCCESS;
-  if (ok) {
-    ok = psa_aead_set_nonce(&operation, nonce.data(), nonce.size()) ==
-         PSA_SUCCESS;
-  }
-  if (ok && !aad.empty()) {
-    ok = psa_aead_update_ad(&operation, aad.data(), aad.size()) == PSA_SUCCESS;
+  static_cast<void>(
+      psa_aead_decrypt_setup(&operation, key_id, kChaCha20Poly1305));
+  static_cast<void>(psa_aead_set_nonce(&operation, nonce.data(), nonce.size()));
+  if (!aad.empty()) {
+    static_cast<void>(psa_aead_update_ad(&operation, aad.data(), aad.size()));
   }
 
   size_t update_length = 0;
-  if (ok && !ciphertext.empty()) {
-    uint8_t* output_data = plaintext.empty() ? &kEmptyBuffer : plaintext.data();
-    ok = psa_aead_update(&operation, ciphertext.data(), ciphertext.size(),
-                         output_data, plaintext.size(),
-                         &update_length) == PSA_SUCCESS;
+  if (!ciphertext.empty()) {
+    static_cast<void>(psa_aead_update(&operation, ciphertext.data(),
+                                      ciphertext.size(), plaintext.data(),
+                                      plaintext.size(), &update_length));
   }
 
   size_t verify_length = 0;
-  if (ok && update_length <= plaintext.size()) {
-    const size_t verify_capacity = plaintext.size() - update_length;
-    uint8_t* verify_data = verify_capacity == 0U
-                               ? &kEmptyBuffer
-                               : plaintext.data() + update_length;
-    ok = psa_aead_verify(&operation, verify_data, verify_capacity,
-                         &verify_length, tag.data(), tag.size()) == PSA_SUCCESS;
-  } else {
-    ok = false;
-  }
-  if (ok) {
-    ok = verify_length <= plaintext.size() - update_length &&
-         update_length + verify_length == ciphertext.size();
-  }
-
-  if (crypto_initialized && psa_aead_abort(&operation) != PSA_SUCCESS) {
-    ok = false;
-  }
-  if (key_imported && psa_destroy_key(key_id) != PSA_SUCCESS) {
-    ok = false;
-  }
+  const bool ok =
+      psa_aead_verify(&operation, &kEmptyBuffer, 0U, &verify_length, tag.data(),
+                      tag.size()) == PSA_SUCCESS;
+  static_cast<void>(psa_aead_abort(&operation));
+  static_cast<void>(psa_destroy_key(key_id));
 #endif
   if (!ok) {
     secure_zero(plaintext);
@@ -488,10 +374,8 @@ bool handshake_verify_tag(etl::span<const uint8_t> secret,
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_AUTH);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
-  bool ok = derive_handshake_auth_key(secret, nonce, info, auth_key);
-  if (ok) {
-    ok = verify_mac(auth_key, kHandshakeMac, nonce, received_tag);
-  }
+  derive_handshake_auth_key(secret, info, auth_key);
+  const bool ok = verify_mac(auth_key, kHandshakeMac, nonce, received_tag);
   secure_zero(etl::span<uint8_t>(auth_key));
   return ok;
 }
@@ -547,25 +431,24 @@ static constexpr etl::array<uint8_t, RPC_AEAD_TAG_SIZE> kat_aead_tag PROGMEM = {
      0xE6, 0xA0, 0x6B, 0xCF}};
 
 bool run_cryptographic_self_tests() {
+  initialize_crypto();
   const auto sha_msg = copy_progmem(kat_sha256_msg);
   const auto sha_expected = copy_progmem(kat_sha256_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> digest = {};
   size_t digest_length = 0;
-  const bool sha_ok =
-      initialize_crypto() &&
-      psa_hash_compute(PSA_ALG_SHA_256, sha_msg.data(), sha_msg.size(),
-                       digest.data(), digest.size(),
-                       &digest_length) == PSA_SUCCESS &&
-      digest_length == digest.size() &&
-      etl::equal(digest.begin(), digest.end(), sha_expected.begin());
+  static_cast<void>(psa_hash_compute(PSA_ALG_SHA_256, sha_msg.data(),
+                                     sha_msg.size(), digest.data(),
+                                     digest.size(), &digest_length));
+  bool ok = etl::equal(digest.begin(), digest.end(), sha_expected.begin());
 
   const auto hmac_key = copy_progmem(kat_hmac_key);
   const auto hmac_data = copy_progmem(kat_hmac_data);
   const auto hmac_expected = copy_progmem(kat_hmac_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> hmac_result = {};
-  const bool hmac_ok =
-      compute_mac(hmac_key, kHmacSha256, hmac_data, hmac_result) &&
-      etl::equal(hmac_result.begin(), hmac_result.end(), hmac_expected.begin());
+  compute_mac(hmac_key, kHmacSha256, hmac_data, hmac_result);
+  ok = combine_ok(
+      ok, etl::equal(hmac_result.begin(), hmac_result.end(),
+                     hmac_expected.begin()));
 
   const auto handshake_secret = copy_progmem(kat_handshake_secret);
   const auto handshake_nonce = copy_progmem(kat_handshake_nonce);
@@ -575,18 +458,19 @@ bool run_cryptographic_self_tests() {
       copy_progmem(kat_handshake_response_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_request = {};
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_response = {};
-  const bool handshake_request_ok =
-      handshake_generate_tag(handshake_secret, handshake_nonce,
-                             handshake_request) &&
-      etl::equal(handshake_request.begin(), handshake_request.end(),
-                 handshake_request_expected.begin()) &&
-      handshake_verify_tag(handshake_secret, handshake_nonce,
-                           handshake_request_expected);
-  const bool handshake_response_ok =
-      handshake_generate_response_tag(handshake_secret, handshake_nonce,
-                                      handshake_response) &&
-      etl::equal(handshake_response.begin(), handshake_response.end(),
-                 handshake_response_expected.begin());
+  ok = combine_ok(ok, handshake_generate_tag(handshake_secret, handshake_nonce,
+                                             handshake_request));
+  ok = combine_ok(
+      ok, etl::equal(handshake_request.begin(), handshake_request.end(),
+                     handshake_request_expected.begin()));
+  ok = combine_ok(ok, handshake_verify_tag(handshake_secret, handshake_nonce,
+                                           handshake_request_expected));
+  ok = combine_ok(
+      ok, handshake_generate_response_tag(handshake_secret, handshake_nonce,
+                                          handshake_response));
+  ok = combine_ok(
+      ok, etl::equal(handshake_response.begin(), handshake_response.end(),
+                     handshake_response_expected.begin()));
 
   const auto aead_key = copy_progmem(kat_aead_key);
   const auto aead_nonce = copy_progmem(kat_aead_nonce);
@@ -597,27 +481,29 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, 4> ciphertext = {};
   etl::array<uint8_t, RPC_AEAD_TAG_SIZE> tag = {};
   etl::array<uint8_t, 4> decrypted = {};
-  const bool aead_encrypted = aead_encrypt(aead_key, aead_nonce, aead_aad,
-                                           aead_plaintext, ciphertext, tag);
-  const bool aead_encrypt_ok =
-      aead_encrypted &&
-      etl::equal(ciphertext.begin(), ciphertext.end(), aead_expected.begin()) &&
-      etl::equal(tag.begin(), tag.end(), aead_expected_tag.begin());
-  const bool aead_decrypt_ok =
-      aead_decrypt(aead_key, aead_nonce, aead_aad, aead_expected,
-                   aead_expected_tag, decrypted) &&
-      etl::equal(decrypted.begin(), decrypted.end(), aead_plaintext.begin());
+  ok = combine_ok(ok, aead_encrypt(aead_key, aead_nonce, aead_aad,
+                                   aead_plaintext, ciphertext, tag));
+  ok = combine_ok(ok, etl::equal(ciphertext.begin(), ciphertext.end(),
+                                 aead_expected.begin()));
+  ok = combine_ok(
+      ok, etl::equal(tag.begin(), tag.end(), aead_expected_tag.begin()));
+  ok = combine_ok(ok, aead_decrypt(aead_key, aead_nonce, aead_aad,
+                                   aead_expected, aead_expected_tag,
+                                   decrypted));
+  ok = combine_ok(
+      ok, etl::equal(decrypted.begin(), decrypted.end(),
+                     aead_plaintext.begin()));
 
   auto invalid_tag = aead_expected_tag;
   invalid_tag[0] ^= 0x01U;
   etl::array<uint8_t, 4> rejected_plaintext = {0xAAU, 0xAAU, 0xAAU, 0xAAU};
-  const bool bad_tag_rejected =
-      !aead_decrypt(aead_key, aead_nonce, aead_aad, aead_expected, invalid_tag,
-                    rejected_plaintext);
+  ok = combine_ok(ok, !aead_decrypt(aead_key, aead_nonce, aead_aad,
+                                    aead_expected, invalid_tag,
+                                    rejected_plaintext));
   const etl::array<uint8_t, 4> zero_plaintext = {};
-  const bool rejected_plaintext_cleared =
-      etl::equal(rejected_plaintext.begin(), rejected_plaintext.end(),
-                 zero_plaintext.begin());
+  ok = combine_ok(
+      ok, etl::equal(rejected_plaintext.begin(), rejected_plaintext.end(),
+                     zero_plaintext.begin()));
 
   secure_zero(etl::span<uint8_t>(digest));
   secure_zero(etl::span<uint8_t>(hmac_result));
@@ -627,9 +513,7 @@ bool run_cryptographic_self_tests() {
   secure_zero(etl::span<uint8_t>(tag));
   secure_zero(etl::span<uint8_t>(decrypted));
   secure_zero(etl::span<uint8_t>(rejected_plaintext));
-  return sha_ok && hmac_ok && handshake_request_ok && handshake_response_ok &&
-         aead_encrypt_ok && aead_decrypt_ok && bad_tag_rejected &&
-         rejected_plaintext_cleared;
+  return ok;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

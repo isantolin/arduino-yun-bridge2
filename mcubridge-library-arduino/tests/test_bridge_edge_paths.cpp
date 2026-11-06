@@ -154,9 +154,13 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   feed_rpc_request_msg(ba, kSpiSvc, pw::tokenizer::Hash("SetConfig"),
                        rpc_pb_SpiConfig_fields, sc_msg);
 
-  // 10. SpiBegin & SpiEnd
+  // 10. SpiBegin & SpiEnd + Mailbox unimplemented server methods
+  constexpr uint32_t kMailboxSvc = pw::tokenizer::Hash("rpc.pb.MailboxService");
   feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("Begin"));
   feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("End"));
+  feed_rpc_request(ba, kMailboxSvc, pw::tokenizer::Hash("Read"));
+  feed_rpc_request(ba, kMailboxSvc, pw::tokenizer::Hash("Available"));
+  feed_rpc_request(ba, kMailboxSvc, pw::tokenizer::Hash("Processed"));
 
   // 11. GetCapabilities
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("GetCapabilities"));
@@ -820,6 +824,160 @@ void test_bootloader_timer_and_hal_coverage() {
   TEST_ASSERT_EQUAL_INT(0, WEXITSTATUS(status));
 }
 
+template <size_t N>
+size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
+                                  uint64_t counter,
+                                  etl::span<const uint8_t> plaintext,
+                                  etl::array<uint8_t, N>& out_hdlc,
+                                  bool corrupt_tag = false) {
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
+  etl::array<uint8_t, 256> envelope = {};
+  aad[0] = static_cast<uint8_t>(address);
+  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
+    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - i) * 8U;
+    const uint8_t b = static_cast<uint8_t>(counter >> shift);
+    envelope[i] = b;
+    nonce[4U + i] = b;
+    aad[1U + i] = b;
+  }
+  auto ct = etl::span<uint8_t>(envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE,
+                               plaintext.size());
+  auto tag = etl::span<uint8_t>(
+      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + plaintext.size(),
+      rpc::RPC_AEAD_TAG_SIZE);
+  (void)rpc::security::aead_encrypt(ba.rxAeadKey(), nonce, aad, plaintext, ct,
+                                    tag);
+  if (corrupt_tag) {
+    tag[0] ^= 0xFFU;
+  }
+  const size_t env_len =
+      rpc::RPC_AEAD_COUNTER_SIZE + plaintext.size() + rpc::RPC_AEAD_TAG_SIZE;
+  return TestHdlc::encodeUIFrame(
+      address, etl::span<const uint8_t>(envelope.data(), env_len), out_hdlc);
+}
+
+void test_encrypted_hdlc_and_session_edge_paths() {
+  BiStream stream;
+  const char* long_secret =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefX";
+  Bridge.setStream(stream);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, long_secret);
+  auto& ba = TestAccessor::create(Bridge);
+  TEST_ASSERT_FALSE(ba.isTxEnabled());
+
+  reset_bridge_core(Bridge, stream, 0U, "shared-key");
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  memset(sync.nonce.bytes, 0xCD, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size, sync.tag.bytes);
+  sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSynchronized());
+  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+
+  const uint8_t msg_bytes[] = {'O', 'K'};
+  const bool console_sent = Bridge.sendConsoleStream(
+      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
+  const bool log_sent = Bridge.sendLogStream(
+      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
+  TEST_ASSERT_TRUE(console_sent);
+  TEST_ASSERT_TRUE(log_sent);
+
+  Console.begin();
+  etl::array<uint8_t, 256> hdlc_buf = {};
+  size_t hdlc_len = build_encrypted_hdlc_frame(
+      ba, rpc::RPC_HDLC_ADDRESS_CONSOLE, 1U,
+      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+  TEST_ASSERT_EQUAL('O', Console.read());
+  TEST_ASSERT_EQUAL('K', Console.read());
+
+  hdlc_len = build_encrypted_hdlc_frame(
+      ba, rpc::RPC_HDLC_ADDRESS_CONSOLE, 2U,
+      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf, true);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+
+  ba.setSessionKeysReady(false);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+  ba.setSessionKeysReady(true);
+
+  const uint8_t bad_rpc_inner[] = {0xFF, 0xFF};
+  hdlc_len = build_encrypted_hdlc_frame(
+      ba, rpc::RPC_HDLC_ADDRESS_RPC, 2U,
+      etl::span<const uint8_t>(bad_rpc_inner, sizeof(bad_rpc_inner)), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+
+  pw::rpc_avr::RpcPacket sync_pkt;
+  sync_pkt.type = pw::rpc_avr::PacketType::kRequest;
+  sync_pkt.channel_id = 1;
+  sync_pkt.service_id = kSysSvc;
+  sync_pkt.method_id = pw::tokenizer::Hash("LinkSync");
+  uint8_t pkt_buf[64];
+  auto enc_sync = sync_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
+  hdlc_len = build_encrypted_hdlc_frame(
+      ba, rpc::RPC_HDLC_ADDRESS_RPC, 3U,
+      etl::span<const uint8_t>(pkt_buf, enc_sync.size()), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+
+  ba.clearSynchronized();
+  ba.setSessionKeysReady(true);
+  pw::rpc_avr::RpcPacket ver_pkt;
+  ver_pkt.type = pw::rpc_avr::PacketType::kRequest;
+  ver_pkt.channel_id = 1;
+  ver_pkt.service_id = kSysSvc;
+  ver_pkt.method_id = pw::tokenizer::Hash("GetVersion");
+  auto enc_ver = ver_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
+  hdlc_len = build_encrypted_hdlc_frame(
+      ba, rpc::RPC_HDLC_ADDRESS_RPC, 4U,
+      etl::span<const uint8_t>(pkt_buf, enc_ver.size()), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+  TEST_ASSERT_FALSE(ba.isSynchronized());
+
+  ba.setSynchronized();
+  ba.setSessionKeysReady(true);
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
+  TEST_ASSERT_FALSE(ba.isSessionKeysReady());
+
+  ba.setSessionKeysReady(true);
+  etl::array<uint8_t, 10> small_env = {};
+  etl::array<uint8_t, 24> exact_env = {};
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
+      256U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
+      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), small_env));
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
+      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
+  ba.setTxAeadCounter(UINT64_MAX);
+  etl::array<uint8_t, 64> normal_env = {};
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
+      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
+  ba.setTxAeadCounter(0U);
+  ba.setSessionKeysReady(false);
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
+      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
+
+  etl::span<const uint8_t> plain_out;
+  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
+  ba.setSessionKeysReady(true);
+  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(256U, exact_env, plain_out));
+  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, small_env, plain_out));
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE + 32U> huge_env = {};
+  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, huge_env, plain_out));
+  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
+  exact_env[7] = 2U;
+  ba.setRxAeadCounter(5U);
+  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
+
+  ba.setNullStream();
+  const pw::byte dummy_byte{0x01};
+  const pw::Status send_status =
+      ba.invokeChannelSend(pw::ConstByteSpan(&dummy_byte, 1U));
+  TEST_ASSERT_FALSE(send_status.ok());
+}
+
 }  // namespace
 
 int main() {
@@ -838,5 +996,6 @@ int main() {
   RUN_TEST(test_force_safe_state_uses_core_bus_pin_map);
   RUN_TEST(test_all_timers_and_etl_error_coverage);
   RUN_TEST(test_bootloader_timer_and_hal_coverage);
+  RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
   return UNITY_END();
 }

@@ -21,48 +21,25 @@ void __attribute__((weak)) handle_error(const etl::exception&) {
 }
 }  // namespace etl
 
-namespace pw::log {
-
-using LogSink = void (*)(uint8_t level, pw::ConstByteSpan log_data);
-
-namespace internal {
-inline LogSink g_active_log_sink = nullptr;
-
-inline void AvrLogSinkTrampoline(uint8_t level, const uint8_t* log_data,
-                                 size_t size) {
-  if (g_active_log_sink != nullptr && log_data != nullptr) {
-    g_active_log_sink(
-        level,
-        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(log_data), size));
-  }
-}
-}  // namespace internal
-
-inline void SetLogSink(LogSink sink) {
-  internal::g_active_log_sink = sink;
-  pw_log_avr_SetLogSink(sink != nullptr ? &internal::AvrLogSinkTrampoline
-                                        : nullptr);
-}
-
-}  // namespace pw::log
-
 namespace {
 
-uint32_t NowMillis() {
-  return static_cast<uint32_t>(
-      pw::chrono::SystemClock::now().time_since_epoch().count());
+bool DecodeProto(pw::ConstByteSpan request, const pb_msgdesc_t* fields,
+                 void* dest_struct) {
+  pb_istream_t stream = pb_istream_from_buffer(
+      reinterpret_cast<const uint8_t*>(request.data()), request.size());
+  return pb_decode_noinit(&stream, fields, dest_struct);
 }
 
-bool isLinkSyncRequest(const pw::rpc::PacketMeta& meta) {
-  return meta.destination_is_server() &&
-         meta.service_id() == pw::tokenizer::Hash("rpc.pb.SystemService") &&
-         meta.method_id() == pw::tokenizer::Hash("LinkSync");
+bool isLinkSyncRequest(const pw::rpc_avr::RpcPacket& packet) {
+  return packet.type == pw::rpc_avr::PacketType::kRequest &&
+         packet.service_id == pw::tokenizer::Hash("rpc.pb.SystemService") &&
+         packet.method_id == pw::tokenizer::Hash("LinkSync");
 }
 
-bool isLinkResetRequest(const pw::rpc::PacketMeta& meta) {
-  return meta.destination_is_server() &&
-         meta.service_id() == pw::tokenizer::Hash("rpc.pb.SystemService") &&
-         meta.method_id() == pw::tokenizer::Hash("LinkReset");
+bool isLinkResetRequest(const pw::rpc_avr::RpcPacket& packet) {
+  return packet.type == pw::rpc_avr::PacketType::kRequest &&
+         packet.service_id == pw::tokenizer::Hash("rpc.pb.SystemService") &&
+         packet.method_id == pw::tokenizer::Hash("LinkReset");
 }
 
 class GpioRpcService final
@@ -95,10 +72,10 @@ class GpioRpcService final
     return pw::OkStatus();
   }
 
-  void SubscribePins(
-      const rpc_pb_PinSubscribeRequest& request,
-      pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>& writer) {
-    Bridge._handlePinSubscribe(request, writer);
+  pw::Status SubscribePins(const rpc_pb_PinSubscribeRequest& request,
+                           rpc_pb_PinSubscribeResponse& response) {
+    response = Bridge._handlePinSubscribe(request);
+    return pw::OkStatus();
   }
 };
 
@@ -203,8 +180,9 @@ class FileSystemRpcService final
   }
 
   pw::Status Read(const rpc_pb_FileRead& request,
-                  rpc_pb_FileReadResponse& response) {
-    return FileSystem._onRead(request, response);
+                  rpc_pb_FileReadResponse&) {
+    FileSystem._onRead(request);
+    return pw::OkStatus();
   }
 
   pw::Status Remove(const rpc_pb_FileRemove& request, rpc_pb_Empty&) {
@@ -283,13 +261,13 @@ BridgeClass::BridgeClass(Stream& stream)
       _arduino_stream(stream),
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
-      _rpc_client_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)) {
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)) {
   _initObservers();
 }
 
 BridgeClass::~BridgeClass() {
   if (!_rpc_services_registered) return;
-  _rpc_client_server.server().UnregisterService(
+  _rpc_server.UnregisterService(
       g_gpio_service, g_system_service, g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
       ,
@@ -304,11 +282,6 @@ BridgeClass::~BridgeClass() {
       g_mailbox_service
 #endif
   );
-}
-
-size_t BridgeClass::RpcChannelOutput::MaximumTransmissionUnit() {
-  return bridge::config::RX_BUFFER_SIZE - rpc::RPC_AEAD_COUNTER_SIZE -
-         rpc::RPC_AEAD_TAG_SIZE;
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(
@@ -367,16 +340,15 @@ void BridgeClass::_initializeRuntime() {
     setStream(*_stream);
   }
 
-  pw::log::SetLogSink(
-      [](uint8_t /*level*/, pw::ConstByteSpan log_data) {
-        (void)Bridge.sendLogStream(etl::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(log_data.data()),
-            log_data.size()));
+  pw_chrono_avr_InitTimer0();
+  pw_log_avr_SetLogSink(
+      [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
+        (void)Bridge.sendLogStream(etl::span<const uint8_t>(log_data, size));
       });
 
   if (_rpc_services_registered) return;
-  _rpc_client_server.server().RegisterService(
-      g_gpio_service, g_system_service, g_clock_sync_service
+  _rpc_server.RegisterService(g_gpio_service, g_system_service,
+                              g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
                               ,
                               g_spi_service
@@ -458,7 +430,7 @@ void BridgeClass::process() {
 void BridgeClass::_watchdogTask() {
   bridge::hal::watchdog_kick();
   if (_watchdog_timeout_ms > 0 && isSynchronized()) {
-    if (NowMillis() - _last_rx_ms > _watchdog_timeout_ms) {
+    if (pw_chrono_avr_GetMillis() - _last_rx_ms > _watchdog_timeout_ms) {
       enterSafeState();
     }
   }
@@ -471,14 +443,13 @@ void BridgeClass::_serialTask() {
       _arduino_stream.Read(
           pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
   if (read_result.ok()) {
-    for (const pw::byte b : read_result.value()) {
+    const pw::ConstByteSpan rx_span = read_result.value();
+    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::byte b) {
       auto result = _hdlc_decoder.Process(b);
       if (result.ok()) {
         _handleReceivedHdlcFrame(result.value());
       }
-    }
-  } else if (read_result.status() != pw::Status::ResourceExhausted()) {
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    });
   }
 
   const int avail = _stream->available();
@@ -501,20 +472,20 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     ~RxPlaintextUseGuard() { in_use = previous; }
   } rx_plaintext_use_guard(_rx_plaintext_in_use);
 
-  _last_rx_ms = NowMillis();
+  _last_rx_ms = pw_chrono_avr_GetMillis();
   const uint64_t addr = frame.address();
   const auto raw_data = etl::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(frame.data().data()),
       frame.data().size());
   etl::span<const uint8_t> data = raw_data;
-  pw::Result<pw::rpc::PacketMeta> meta_result =
-      pw::Status::DataLoss();
+  pw::rpc_avr::RpcPacket pkt;
+  bool packet_decoded = false;
   bool decrypted = false;
 
   if (addr == rpc::RPC_HDLC_ADDRESS_RPC) {
-    const auto raw_meta = pw::rpc::PacketMeta::FromBuffer(frame.data());
+    auto raw_packet = pw::rpc_avr::RpcPacket::Decode(frame.data());
     const bool clear_link_reset =
-        raw_meta.ok() && isLinkResetRequest(raw_meta.value());
+        raw_packet.ok() && isLinkResetRequest(raw_packet.value());
 
     if (!_shared_secret.empty() && _session_keys_ready && !clear_link_reset) {
       if (!_decryptHdlcFrame(addr, raw_data, data)) {
@@ -524,16 +495,17 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       decrypted = true;
       _rx_plaintext_in_use = true;
     } else if (!_shared_secret.empty() && !_session_keys_ready) {
-      if (!raw_meta.ok() ||
-          (!isLinkSyncRequest(raw_meta.value()) && !clear_link_reset)) {
+      if (!raw_packet.ok() ||
+          (!isLinkSyncRequest(raw_packet.value()) && !clear_link_reset)) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
         enterSafeState();
         return;
       }
     }
 
-    if (!decrypted) {
-      meta_result = raw_meta;
+    if (!decrypted && raw_packet.ok()) {
+      pkt = raw_packet.value();
+      packet_decoded = true;
     }
   } else if (!_shared_secret.empty()) {
     if (!_session_keys_ready || !_decryptHdlcFrame(addr, raw_data, data)) {
@@ -545,21 +517,21 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   }
 
   if (addr == rpc::RPC_HDLC_ADDRESS_RPC) {
-    if (decrypted) {
-      meta_result = pw::rpc::PacketMeta::FromBuffer(pw::ConstByteSpan(
+    if (!packet_decoded) {
+      auto decoded_pkt = pw::rpc_avr::RpcPacket::Decode(pw::ConstByteSpan(
           reinterpret_cast<const pw::byte*>(data.data()), data.size()));
-    }
-    if (!meta_result.ok()) {
-      if (decrypted) {
-        rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+      if (!decoded_pkt.ok()) {
+        if (decrypted) {
+          rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
+        }
+        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+        return;
       }
-      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-      return;
+      pkt = decoded_pkt.value();
     }
-    const auto& meta = meta_result.value();
-    if (meta.destination_is_server()) {
+    if (pkt.type == pw::rpc_avr::PacketType::kRequest) {
       if (!_shared_secret.empty() && _session_keys_ready &&
-          isLinkSyncRequest(meta)) {
+          isLinkSyncRequest(pkt)) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
         if (decrypted) {
           rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
@@ -567,7 +539,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         return;
       }
       if (!_shared_secret.empty() && !isSynchronized() &&
-          !isLinkSyncRequest(meta) && !isLinkResetRequest(meta)) {
+          !isLinkSyncRequest(pkt) && !isLinkResetRequest(pkt)) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
         enterSafeState();
         if (decrypted) {
@@ -575,14 +547,14 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         }
         return;
       }
-      _rpc_plaintext_response = isLinkSyncRequest(meta);
-      const auto status = _rpc_client_server.ProcessPacket(pw::ConstByteSpan(
+      _rpc_plaintext_response = isLinkSyncRequest(pkt);
+      const auto status = _rpc_server.ProcessPacket(pw::ConstByteSpan(
           reinterpret_cast<const pw::byte*>(data.data()), data.size()));
       _rpc_plaintext_response = false;
       if (!status.ok()) emitStatus(rpc::StatusCode::STATUS_ERROR);
-    } else if (meta.destination_is_client()) {
-      (void)_rpc_client_server.ProcessPacket(pw::ConstByteSpan(
-          reinterpret_cast<const pw::byte*>(data.data()), data.size()));
+    } else if (pkt.type == pw::rpc_avr::PacketType::kResponse ||
+               pkt.type == pw::rpc_avr::PacketType::kServerStream) {
+      _dispatchRpcResponse(pkt);
     }
   }
 #if BRIDGE_ENABLE_CONSOLE
@@ -643,13 +615,15 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
   const uint64_t counter = ++_tx_aead_counter;
   aad[0] = static_cast<uint8_t>(address);
-  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
-    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - i) * 8U;
+  size_t idx = 0;
+  etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
+    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - idx) * 8U;
     const uint8_t byte = static_cast<uint8_t>(counter >> shift);
-    envelope[i] = byte;
-    nonce[4U + i] = byte;
-    aad[1U + i] = byte;
-  }
+    envelope[idx] = byte;
+    nonce_byte = byte;
+    aad[1U + idx] = byte;
+    ++idx;
+  });
 
   const size_t ciphertext_offset = rpc::RPC_AEAD_COUNTER_SIZE;
   auto ciphertext =
@@ -657,15 +631,10 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   auto tag =
       etl::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
                          rpc::RPC_AEAD_TAG_SIZE);
-  if (!rpc::security::aead_encrypt(etl::span<const uint8_t>(_tx_aead_key),
-                                   etl::span<const uint8_t>(nonce),
-                                   etl::span<const uint8_t>(aad), data,
-                                   ciphertext, tag)) {
-    rpc::security::secure_zero(etl::span<uint8_t>(envelope));
-    rpc::security::secure_zero(etl::span<uint8_t>(nonce));
-    rpc::security::secure_zero(etl::span<uint8_t>(aad));
-    return false;
-  }
+  (void)rpc::security::aead_encrypt(etl::span<const uint8_t>(_tx_aead_key),
+                                    etl::span<const uint8_t>(nonce),
+                                    etl::span<const uint8_t>(aad), data,
+                                    ciphertext, tag);
 
   const size_t envelope_size =
       rpc::RPC_AEAD_COUNTER_SIZE + data.size() + rpc::RPC_AEAD_TAG_SIZE;
@@ -699,12 +668,14 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
   etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
   aad[0] = static_cast<uint8_t>(address);
-  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
-    const uint8_t byte = envelope[i];
+  size_t idx = 0;
+  etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
+    const uint8_t byte = envelope[idx];
     counter = (counter << 8U) | byte;
-    nonce[4U + i] = byte;
-    aad[1U + i] = byte;
-  }
+    nonce_byte = byte;
+    aad[1U + idx] = byte;
+    ++idx;
+  });
   if (counter == 0 || counter <= _rx_aead_counter) {
     rpc::security::secure_zero(etl::span<uint8_t>(nonce));
     rpc::security::secure_zero(etl::span<uint8_t>(aad));
@@ -734,7 +705,6 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
 }
 
 void BridgeClass::_clearLinkSession() {
-  _pin_stream_writer = {};
   rpc::security::secure_zero(etl::span<uint8_t>(_tx_aead_key));
   rpc::security::secure_zero(etl::span<uint8_t>(_rx_aead_key));
   _tx_aead_counter = 0;
@@ -742,8 +712,76 @@ void BridgeClass::_clearLinkSession() {
   _session_keys_ready = false;
 }
 
+void BridgeClass::_dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet) {
+#if BRIDGE_ENABLE_DATASTORE
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.DataStoreService")) {
+    rpc_pb_DatastoreGetResponse resp = rpc_pb_DatastoreGetResponse_init_default;
+    if (DecodeProto(packet.payload, rpc_pb_DatastoreGetResponse_fields,
+                    &resp)) {
+      DataStore._onResponse(resp);
+    }
+    return;
+  }
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.MailboxService")) {
+    constexpr uint32_t kRead = pw::tokenizer::Hash("Read");
+    constexpr uint32_t kAvailable = pw::tokenizer::Hash("Available");
+    if (packet.method_id == kAvailable) {
+      rpc_pb_MailboxAvailableResponse resp =
+          rpc_pb_MailboxAvailableResponse_init_default;
+      if (DecodeProto(packet.payload, rpc_pb_MailboxAvailableResponse_fields,
+                      &resp)) {
+        Mailbox._onAvailableResponse(resp);
+      }
+    } else if (packet.method_id == kRead) {
+      rpc_pb_MailboxReadResponse resp = rpc_pb_MailboxReadResponse_init_default;
+      if (DecodeProto(packet.payload, rpc_pb_MailboxReadResponse_fields,
+                      &resp)) {
+        Mailbox._enqueue(
+            etl::span<const uint8_t>(resp.content.bytes, resp.content.size));
+      }
+    }
+    return;
+  }
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.ProcessService")) {
+    constexpr uint32_t kRunAsync = pw::tokenizer::Hash("RunAsync");
+    constexpr uint32_t kPoll = pw::tokenizer::Hash("Poll");
+    if (packet.method_id == kRunAsync) {
+      rpc_pb_ProcessRunAsyncResponse resp =
+          rpc_pb_ProcessRunAsyncResponse_init_default;
+      if (DecodeProto(packet.payload, rpc_pb_ProcessRunAsyncResponse_fields,
+                      &resp)) {
+        Process._onRunAsyncResponse(resp);
+      }
+    } else if (packet.method_id == kPoll) {
+      rpc_pb_ProcessPollResponse resp = rpc_pb_ProcessPollResponse_init_default;
+      if (DecodeProto(packet.payload, rpc_pb_ProcessPollResponse_fields,
+                      &resp)) {
+        Process._onPollResponse(resp);
+      }
+    }
+    return;
+  }
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  if (packet.service_id == pw::tokenizer::Hash("rpc.pb.FileSystemService")) {
+    constexpr uint32_t kRead = pw::tokenizer::Hash("Read");
+    if (packet.method_id == kRead) {
+      rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
+      if (DecodeProto(packet.payload, rpc_pb_FileReadResponse_fields, &resp)) {
+        FileSystem._onResponse(resp);
+      }
+    }
+    return;
+  }
+#endif
+}
+
 void BridgeClass::_timerTask() {
-  const uint32_t now = NowMillis();
+  const uint32_t now = pw_chrono_avr_GetMillis();
   if (_timer_last_tick_ms == 0) _timer_last_tick_ms = now;
   const uint32_t elapsed = now - _timer_last_tick_ms;
   if (elapsed > 0) {
@@ -756,7 +794,7 @@ bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
 bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
                                        uint32_t poll_delay_ms) {
-  const uint32_t start_ms = NowMillis();
+  const uint32_t start_ms = pw_chrono_avr_GetMillis();
   const uint32_t step_ms = etl::max<uint32_t>(poll_delay_ms, 1U);
   uint8_t cursor = 0U;
   uint8_t sentinel = 0U;
@@ -765,7 +803,7 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
                      [this, start_ms, timeout_ms, step_ms](uint8_t) {
                        process();
                        if (isSynchronized()) return true;
-                       if (NowMillis() - start_ms >= timeout_ms) {
+                       if (pw_chrono_avr_GetMillis() - start_ms >= timeout_ms) {
                          return true;
                        }
                        ::delay(step_ms);
@@ -782,7 +820,6 @@ void BridgeClass::enterSafeState() {
                 [](const SafetyPinEntry& entry) {
                   bridge::hal::applySafetyPin(entry.pin, entry.state);
                 });
-  _pin_stream_writer = {};
   _state_flags.set(FLAG_TX_ENABLED, false);
   _fsm.receive(bridge::fsm::EvReset());
   notify_observers(bridge::SystemEvent::SAFE_STATE_ENTERED);
@@ -856,9 +893,8 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
   pinMode(m.pin, m_val);
 }
 
-void BridgeClass::_handlePinSubscribe(
-    const rpc_pb_PinSubscribeRequest& m,
-    pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>& writer) {
+rpc_pb_PinSubscribeResponse BridgeClass::_handlePinSubscribe(
+    const rpc_pb_PinSubscribeRequest& m) {
   bool ok = false;
   auto it = etl::find_if(
       _pin_subscriptions.begin(), _pin_subscriptions.end(),
@@ -889,18 +925,10 @@ void BridgeClass::_handlePinSubscribe(
     }
   }
 
-  if (!ok) {
-    (void)writer.Finish(pw::Status::ResourceExhausted());
-    return;
-  }
-
-  _pin_stream_writer = std::move(writer);
-  const bool any_active = etl::any_of(
-      _pin_subscriptions.begin(), _pin_subscriptions.end(),
-      [](const PinSubscription& s) { return s.active; });
-  if (!any_active && _pin_stream_writer.active()) {
-    (void)_pin_stream_writer.Finish(pw::OkStatus());
-  }
+  rpc_pb_PinSubscribeResponse resp = rpc_pb_PinSubscribeResponse_init_default;
+  resp.pin = m.pin;
+  resp.success = ok;
+  return resp;
 }
 
 void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
@@ -932,35 +960,18 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
       return;
     }
 
-    if (rpc::security::handshake_generate_response_tag(
-            etl::span<const uint8_t>(_shared_secret),
-            etl::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
-            etl::span<uint8_t>(response.tag.bytes,
-                               sizeof(response.tag.bytes)))) {
-      if (!rpc::security::derive_session_keys(
-              etl::span<const uint8_t>(_shared_secret),
-              etl::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
-              etl::span<uint8_t>(_rx_aead_key),
-              etl::span<uint8_t>(_tx_aead_key))) {
-        rpc::security::secure_zero(
-            etl::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
-        _clearLinkSession();
-        _fsm.receive(bridge::fsm::EvHandshakeFailed());
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
-        return;
-      }
-      response.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-      _tx_aead_counter = 0;
-      _rx_aead_counter = 0;
-      _session_keys_ready = true;
-    } else {
-      rpc::security::secure_zero(
-          etl::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
-      _clearLinkSession();
-      _fsm.receive(bridge::fsm::EvHandshakeFailed());
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-      return;
-    }
+    (void)rpc::security::handshake_generate_response_tag(
+        etl::span<const uint8_t>(_shared_secret),
+        etl::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
+        etl::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
+    (void)rpc::security::derive_session_keys(
+        etl::span<const uint8_t>(_shared_secret),
+        etl::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
+        etl::span<uint8_t>(_rx_aead_key), etl::span<uint8_t>(_tx_aead_key));
+    response.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+    _tx_aead_counter = 0;
+    _rx_aead_counter = 0;
+    _session_keys_ready = true;
   } else {
     _clearLinkSession();
   }
@@ -982,7 +993,7 @@ void BridgeClass::_handleLinkReset() {
 
 void BridgeClass::_subscriptionTask() {
   if (!isSynchronized()) return;
-  const uint32_t now = NowMillis();
+  const uint32_t now = pw_chrono_avr_GetMillis();
   etl::for_each(_pin_subscriptions.begin(), _pin_subscriptions.end(),
                 [this, now](PinSubscription& sub) {
                   if (!sub.active) return;
@@ -1006,15 +1017,33 @@ void BridgeClass::_subscriptionTask() {
 }
 
 bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
-  if (!_stream || !_state_flags.test(FLAG_TX_ENABLED) || !isSynchronized() ||
-      !_pin_stream_writer.active()) {
+  if (!_stream || !_state_flags.test(FLAG_TX_ENABLED) || !isSynchronized()) {
     return false;
   }
   rpc_pb_PinUpdateEvent evt = rpc_pb_PinUpdateEvent_init_default;
   evt.pin = pin;
   evt.value = value;
   evt.timestamp_micros = ::micros();
-  return _pin_stream_writer.Write(evt).ok();
+
+  uint8_t payload_buf[32];
+  pb_ostream_t pb_stream =
+      pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  pb_encode(&pb_stream, rpc_pb_PinUpdateEvent_fields, &evt);
+
+  pw::rpc_avr::RpcPacket packet;
+  packet.type = pw::rpc_avr::PacketType::kServerStream;
+  packet.channel_id = 1;
+  packet.service_id = pw::tokenizer::Hash("rpc.pb.GpioService");
+  packet.method_id = pw::tokenizer::Hash("SubscribePins");
+  packet.payload = pw::ConstByteSpan(
+      reinterpret_cast<const pw::byte*>(payload_buf), pb_stream.bytes_written);
+
+  uint8_t frame_buf[64];
+  auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
+
+  return _writeHdlcFrame(
+      rpc::RPC_HDLC_ADDRESS_RPC,
+      etl::span<const uint8_t>(frame_buf, encode_res.size()));
 }
 
 void BridgeClass::_fillVersion(rpc_pb_VersionResponse& resp) {

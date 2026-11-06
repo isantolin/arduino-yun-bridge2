@@ -47,10 +47,16 @@ void ProcessClass::runAsync(etl::string_view cmd,
       p.command, sizeof(p.command),
       etl::string_view(command_buffer.data(), command_buffer.size()));
 
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.ProcessService");
-  constexpr uint32_t kMethodId = pw::tokenizer::Hash("RunAsync");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
-                             rpc_pb_ProcessRunAsync_fields, p)) {
+  if (!Bridge.isRpcTxReady()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    if (handler.is_valid()) handler(kProcessInvalidPid);
+    return;
+  }
+  Process._run_call = Bridge.processClient().RunAsync(
+      p, [](const rpc_pb_ProcessRunAsyncResponse& resp, pw::Status status) {
+        if (status.ok()) Process._onRunAsyncResponse(resp);
+      });
+  if (!Process._run_call.active()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
@@ -66,13 +72,19 @@ void ProcessClass::poll(int32_t pid,
     return;
   }
 
+  if (!Bridge.isRpcTxReady()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
+
   rpc_pb_ProcessPoll p = rpc_pb_ProcessPoll_init_default;
   p.pid = static_cast<uint32_t>(pid);
 
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.ProcessService");
-  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Poll");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_ProcessPoll_fields,
-                             p)) {
+  _poll_call = Bridge.processClient().Poll(
+      p, [](const rpc_pb_ProcessPollResponse& resp, pw::Status status) {
+        if (status.ok()) Process._onPollResponse(resp);
+      });
+  if (!_poll_call.active()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
   }
@@ -83,13 +95,15 @@ void ProcessClass::poll(int32_t pid,
 }
 
 void ProcessClass::kill(int32_t pid) {
+  if (!Bridge.isRpcTxReady()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
   rpc_pb_ProcessKill p = rpc_pb_ProcessKill_init_default;
   p.pid = static_cast<uint32_t>(pid);
 
-  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.ProcessService");
-  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Kill");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_ProcessKill_fields,
-                             p)) {
+  auto call = Bridge.processClient().Kill(p);
+  if (!call.active()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
@@ -115,6 +129,8 @@ void ProcessClass::_onPollResponse(const rpc_pb_ProcessPollResponse& msg) {
 }
 
 void ProcessClass::reset() {
+  _run_call = {};
+  _poll_call = {};
   _pending_run_async.clear();
   _pending_polls.clear();
 }

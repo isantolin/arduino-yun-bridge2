@@ -495,7 +495,8 @@ def get_operation(key: Any) -> OperationSpec | None:
         srv = getattr(key, "service_id", None)
         meth = getattr(key, "method_id", None)
         if isinstance(srv, int) and isinstance(meth, int):
-            return BY_RPC.get((srv, meth))\n    if hasattr(key, "value"):
+            return BY_RPC.get((srv, meth))
+    if hasattr(key, "value"):
         val = getattr(key, "value", None)
         if isinstance(val, int):
             return BY_COMMAND_ID.get(val)

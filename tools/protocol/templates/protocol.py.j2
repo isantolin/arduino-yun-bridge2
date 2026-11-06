@@ -38,7 +38,7 @@ _PW_TO_GRPCLIB_CARDINALITY: Final[dict[PwRpcMethod.Type, Cardinality]] = {
     PwRpcMethod.Type.BIDIRECTIONAL_STREAMING: Cardinality.STREAM_STREAM,
 }
 
-type McuDispatchTable = dict[int, Callable[..., Any]]
+type McuDispatchTable = dict[int | tuple[int, int], Callable[..., Any]]
 
 logger = structlog.get_logger(__name__)
 
@@ -580,7 +580,7 @@ def build_mcu_dispatch(
     """Build O(1) MCU dispatch table from Protocol SSOT. [SIL-2]"""
     status_fn = status_handler or getattr(target, "handle_mcu_status", None)
     unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
-    dispatch: dict[Any, Callable[..., Any]] = {}
+    dispatch: McuDispatchTable = {}
     if status_fn is not None:
         for s in Status:
             dispatch[s.value] = functools.partial(status_fn, s)

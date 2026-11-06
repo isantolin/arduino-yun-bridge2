@@ -60,7 +60,9 @@ class SerialBridgeService(Protocol):
 
     async def on_serial_disconnected(self) -> None: ...
 
-    async def handle_mcu_frame(self, cmd_id: int, seq_id: int, payload: bytes | ProtobufMessage, /) -> Any: ...
+    async def handle_mcu_frame(
+        self, operation_key: int | tuple[int, int], seq_id: int, payload: bytes | ProtobufMessage, /
+    ) -> Any: ...
 
 
 def resolve_serial_url(port_str: str) -> str:
@@ -214,13 +216,14 @@ class SerialTransport:
                 if len(eg.exceptions) == 1:
                     raise eg.exceptions[0] from None
                 raise
+            finally:
+                if self.service:
+                    with anyio.CancelScope(shield=True):
+                        try:
+                            await self.service.on_serial_disconnected()
+                        except (OSError, RuntimeError, ValueError, TypeError) as e:
+                            logger.error("Error during transport disconnect cleanup", error=str(e))
         finally:
-            if self.service:
-                with anyio.CancelScope(shield=True):
-                    try:
-                        await self.service.on_serial_disconnected()
-                    except (OSError, RuntimeError, ValueError, TypeError) as e:
-                        logger.error("Error during transport disconnect cleanup", error=str(e))
             self.state.serial_writer = None
             if self.serial:
                 try:

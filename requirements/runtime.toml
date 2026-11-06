@@ -163,7 +163,7 @@ rationale = "Shell environment detection runtime required by Typer"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer==0.27.3"
+pip = "typer==0.28.0"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
@@ -344,7 +344,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.14"
+pip = "hypothesis==6.170.15"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]

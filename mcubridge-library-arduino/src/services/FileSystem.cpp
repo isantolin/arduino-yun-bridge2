@@ -1,8 +1,7 @@
 #include "services/FileSystem.h"
 
-#include <etl/algorithm.h>
-#include <etl/fixed_iterator.h>
-#include <etl/numeric.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
 
 #include "Bridge.h"
 
@@ -10,47 +9,45 @@
 
 void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
+  if (!Bridge.isRpcTxReady()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
   rpc_pb_FileWrite p = rpc_pb_FileWrite_init_default;
   bridge::pb::copy_string(p.path, sizeof(p.path), path);
   bridge::pb::copy_bytes(p.data, data);
 
-  constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("rpc.pb.FileSystemService");
-  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Write");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_FileWrite_fields,
-                             p)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
-  }
+  (void)Bridge.fileSystemClient().Write(p);
 }
 
 void FileSystemClass::read(
     etl::string_view path,
     typename FileSystemClass::FileSystemReadHandler handler) {
   _pending_reads.clear();
+  if (!Bridge.isRpcTxReady()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
   rpc_pb_FileRead p = rpc_pb_FileRead_init_default;
   bridge::pb::copy_string(p.path, sizeof(p.path), path);
 
-  constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("rpc.pb.FileSystemService");
-  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
-  if (Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_FileRead_fields, p)) {
-    _pending_reads.push(handler);
-  } else {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
-  }
+  _read_call = Bridge.fileSystemClient().Read(
+      p, [](const rpc_pb_FileReadResponse& resp, pw::Status status) {
+        static_cast<void>(status);
+        FileSystem._onResponse(resp);
+      });
+  _pending_reads.push(handler);
 }
 
 void FileSystemClass::remove(etl::string_view path) {
+  if (!Bridge.isRpcTxReady()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
   rpc_pb_FileRemove p = rpc_pb_FileRemove_init_default;
   bridge::pb::copy_string(p.path, sizeof(p.path), path);
 
-  constexpr uint32_t kServiceId =
-      pw::tokenizer::Hash("rpc.pb.FileSystemService");
-  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Remove");
-  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_FileRemove_fields,
-                             p)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
-  }
+  (void)Bridge.fileSystemClient().Remove(p);
 }
 
 void FileSystemClass::_onWrite(const rpc_pb_FileWrite& msg) {
@@ -59,52 +56,22 @@ void FileSystemClass::_onWrite(const rpc_pb_FileWrite& msg) {
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
 }
 
-void FileSystemClass::_onRead(const rpc_pb_FileRead& msg) {
-  const etl::string_view path(msg.path);
-  size_t offset = 0U;
-  const uint32_t start_ms = millis();
-
-  uint16_t chunk_count = 0U;
-  uint8_t cursor = 0U;
-  uint8_t sentinel = 0U;
-  const auto it = etl::find_if(
-      etl::fixed_iterator<uint8_t*>(&cursor),
-      etl::fixed_iterator<uint8_t*>(&sentinel), [&](uint8_t) {
-        if (++chunk_count > bridge::config::FILE_MAX_READ_CHUNKS) {
-          return true;
-        }
-        if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-          return true;
-        }
-        rpc_pb_FileReadResponse p = rpc_pb_FileReadResponse_init_default;
-        const etl::span<uint8_t> chunk_buf(p.content.bytes,
-                                           sizeof(p.content.bytes));
-        auto res = bridge::hal::readFileChunk(path, offset, chunk_buf);
-        if (!res) {
-          return true;
-        }
-
-        p.content.size = static_cast<pb_size_t>(res->bytes_read);
-        constexpr uint32_t kServiceId =
-            pw::tokenizer::Hash("rpc.pb.FileSystemService");
-        constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
-        if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
-                                   rpc_pb_FileReadResponse_fields, p)) {
-          return true;
-        }
-
-        if (!res->has_more) {
-          rpc_pb_FileReadResponse empty_p =
-              rpc_pb_FileReadResponse_init_default;
-          (void)Bridge.sendRpcRequest(kServiceId, kMethodId,
-                                      rpc_pb_FileReadResponse_fields, empty_p);
-          return true;
-        }
-
-        offset += res->bytes_read;
-        return false;
-      });
-  (void)it;
+pw::Status FileSystemClass::_onRead(const rpc_pb_FileRead& msg,
+                                    rpc_pb_FileReadResponse& response) {
+  response = rpc_pb_FileReadResponse_init_default;
+  const etl::span<uint8_t> chunk_buf(response.content.bytes,
+                                     sizeof(response.content.bytes));
+  const auto res =
+      bridge::hal::readFileChunk(etl::string_view(msg.path), 0U, chunk_buf);
+  if (!res) {
+    return pw::Status::NotFound();
+  }
+  if (res->has_more) {
+    response.content.size = 0U;
+    return pw::Status::ResourceExhausted();
+  }
+  response.content.size = static_cast<pb_size_t>(res->bytes_read);
+  return pw::OkStatus();
 }
 
 void FileSystemClass::_onRemove(const rpc_pb_FileRemove& msg) {

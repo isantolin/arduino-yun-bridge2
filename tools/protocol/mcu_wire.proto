@@ -449,7 +449,7 @@ service GpioService {
   rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse) {
     option (rpc_command) = "CMD_ANALOG_READ";
   }
-  rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse) {
+  rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (stream rpc.pb.PinUpdateEvent) {
     option (rpc_command) = "CMD_PIN_SUBSCRIBE";
   }
 }

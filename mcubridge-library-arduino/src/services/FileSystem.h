@@ -7,6 +7,7 @@
 #include <etl/delegate.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+#include <pw_status/status.h>
 
 #include "Bridge.h"
 #include "protocol/mcu_wire.pb.h"
@@ -21,13 +22,18 @@ class FileSystemClass : public bridge::BridgeObserver {
   static void remove(etl::string_view path);
 
   static void _onWrite(const rpc_pb_FileWrite& msg);
-  static void _onRead(const rpc_pb_FileRead& msg);
+  static pw::Status _onRead(const rpc_pb_FileRead& msg,
+                            rpc_pb_FileReadResponse& response);
   static void _onRemove(const rpc_pb_FileRemove& msg);
   void _onResponse(const rpc_pb_FileReadResponse& msg);
 
-  void onLost() override { _pending_reads.clear(); }
+  void onLost() override {
+    _read_call = {};
+    _pending_reads.clear();
+  }
 
  private:
+  pw::rpc::NanopbUnaryReceiver<rpc_pb_FileReadResponse> _read_call{};
   etl::circular_buffer<FileSystemReadHandler, 1> _pending_reads;
 };
 

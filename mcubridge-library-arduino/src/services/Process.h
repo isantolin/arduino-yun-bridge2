@@ -35,8 +35,6 @@ class ProcessClass : public bridge::BridgeObserver {
   void onLost() override { reset(); }
 
  private:
-  pw::rpc::NanopbUnaryReceiver<rpc_pb_ProcessRunAsyncResponse> _run_call{};
-  pw::rpc::NanopbUnaryReceiver<rpc_pb_ProcessPollResponse> _poll_call{};
   etl::circular_buffer<ProcessRunHandler,
                        bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_run_async;

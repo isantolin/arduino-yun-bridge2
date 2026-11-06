@@ -8,62 +8,41 @@
 
 MailboxClass::MailboxClass() {}
 
-pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxReadResponse>
-    MailboxClass::_read_call;
-pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxAvailableResponse>
-    MailboxClass::_avail_call;
 typename MailboxClass::MessageCallback MailboxClass::_message_callback;
 typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 etl::circular_buffer<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
     MailboxClass::_queue;
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
-  if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
-    return;
-  }
   rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
   bridge::pb::copy_bytes(p.data, data);
-  auto call = Bridge.mailboxClient().Push(p);
-  if (!call.active()) {
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Push");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId, rpc_pb_MailboxPush_fields,
+                             p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
 
 bool MailboxClass::requestRead() {
-  if (!Bridge.isRpcTxReady()) return false;
-  rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
-  _read_call = Bridge.mailboxClient().Read(
-      req, [](const rpc_pb_MailboxReadResponse& resp, pw::Status status) {
-        if (status.ok()) {
-          Mailbox._enqueue(
-              etl::span<const uint8_t>(resp.content.bytes, resp.content.size));
-        }
-      });
-  return _read_call.active();
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Read");
+  return Bridge.sendRpcRequestNoPayload(kServiceId, kMethodId);
 }
 
 bool MailboxClass::requestAvailable() {
-  if (!Bridge.isRpcTxReady()) return false;
-  rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
-  _avail_call = Bridge.mailboxClient().Available(
-      req, [](const rpc_pb_MailboxAvailableResponse& resp, pw::Status status) {
-        if (status.ok()) {
-          Mailbox._onAvailableResponse(resp);
-        }
-      });
-  return _avail_call.active();
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Available");
+  return Bridge.sendRpcRequestNoPayload(kServiceId, kMethodId);
 }
 
 void MailboxClass::signalProcessed(uint32_t message_id) {
-  if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
-    return;
-  }
   rpc_pb_MailboxProcessed p = rpc_pb_MailboxProcessed_init_default;
   p.message_id = message_id;
-  auto call = Bridge.mailboxClient().Processed(p);
-  if (!call.active()) {
+  constexpr uint32_t kServiceId = pw::tokenizer::Hash("rpc.pb.MailboxService");
+  constexpr uint32_t kMethodId = pw::tokenizer::Hash("Processed");
+  if (!Bridge.sendRpcRequest(kServiceId, kMethodId,
+                             rpc_pb_MailboxProcessed_fields, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
@@ -92,11 +71,7 @@ void MailboxClass::process() {
   }
 }
 
-void MailboxClass::onLost() {
-  _read_call = {};
-  _avail_call = {};
-  _queue.clear();
-}
+void MailboxClass::onLost() { _queue.clear(); }
 
 MailboxType Mailbox;
 

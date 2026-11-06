@@ -21,7 +21,6 @@ from pw_rpc.descriptors import (
     Service as PwRpcService,
     Services as PwRpcServices,
 )
-from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 import structlog
 
 from . import mcu_wire_pb2, mcubridge_pb2 as pb
@@ -39,8 +38,7 @@ _PW_TO_GRPCLIB_CARDINALITY: Final[dict[PwRpcMethod.Type, Cardinality]] = {
     PwRpcMethod.Type.BIDIRECTIONAL_STREAMING: Cardinality.STREAM_STREAM,
 }
 
-type McuDispatchKey = int | tuple[int, int]
-type McuDispatchTable = dict[McuDispatchKey, Callable[..., Any]]
+type McuDispatchTable = dict[int, Callable[..., Any]]
 
 logger = structlog.get_logger(__name__)
 
@@ -242,8 +240,6 @@ class OperationSpec:
                 object.__setattr__(self, "response_type", pw_m.response_type)
             if self.request_type is None and self.pb_class in (None, pw_m.request_type):
                 object.__setattr__(self, "request_type", pw_m.request_type)
-        elif self.response_type is None and self.paired_request_id is not None and self.pb_class is not None:
-            object.__setattr__(self, "response_type", self.pb_class)
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,24 +417,7 @@ BY_COMMAND_ID: Final[dict[int, OperationSpec]] = {
 BY_RPC: Final[dict[tuple[int, int], OperationSpec]] = {
     (op.service_id, op.method_id): op
     for op in OPERATIONS
-    if op.service_id is not None
-    and op.method_id is not None
-    and op.command_id != Command.CMD_PIN_UPDATE_EVENT.value
-}
-BY_SERVER_STREAM: Final[dict[tuple[int, int], OperationSpec]] = {
-    (op.service_id, op.method_id): op
-    for op in OPERATIONS
-    if op.service_id is not None
-    and op.method_id is not None
-    and op.command_id == Command.CMD_PIN_UPDATE_EVENT.value
-}
-BY_RPC_RESPONSE: Final[dict[tuple[int, int], OperationSpec]] = {
-    (req_op.service_id, req_op.method_id): op
-    for op in OPERATIONS
-    if op.paired_request_id is not None
-    and (req_op := BY_COMMAND_ID.get(op.paired_request_id)) is not None
-    and req_op.service_id is not None
-    and req_op.method_id is not None
+    if op.service_id is not None and op.method_id is not None
 }
 BY_NAME: Final[dict[str, OperationSpec]] = {op.name: op for op in OPERATIONS}
 BY_TYPE: Final[dict[type[ProtobufMessage], OperationSpec]] = {}
@@ -503,8 +482,7 @@ def allows_method(auth: Any, spec: OperationSpec) -> bool:
 def get_operation(key: Any) -> OperationSpec | None:
     """Polymorphic O(1) operation lookup. [SIL-2]"""
     if isinstance(key, tuple):
-        rpc_key = cast(tuple[int, int], key)
-        return BY_RPC.get(rpc_key) or BY_SERVER_STREAM.get(rpc_key)
+        return BY_RPC.get(cast(tuple[int, int], key))
     if isinstance(key, int):
         return BY_COMMAND_ID.get(key)
     if isinstance(key, str):
@@ -516,10 +494,7 @@ def get_operation(key: Any) -> OperationSpec | None:
     if hasattr(key, "service_id") and hasattr(key, "method_id"):
         srv = getattr(key, "service_id", None)
         meth = getattr(key, "method_id", None)
-        pkt_type = getattr(key, "type", None)
         if isinstance(srv, int) and isinstance(meth, int):
-            if pkt_type == PacketType.SERVER_STREAM:
-                return BY_SERVER_STREAM.get((srv, meth)) or BY_RPC.get((srv, meth))
             return BY_RPC.get((srv, meth))
     if hasattr(key, "value"):
         val = getattr(key, "value", None)
@@ -602,28 +577,26 @@ def build_mcu_dispatch(
     status_handler: Callable[..., Any] | None = None,
     unsupported_handler: Callable[..., Any] | None = None,
 ) -> McuDispatchTable:
-    """Build O(1) MCU dispatch table from PW_SERVICES descriptors and Protocol SSOT. [SIL-2]"""
+    """Build O(1) MCU dispatch table from Protocol SSOT. [SIL-2]"""
     status_fn = status_handler or getattr(target, "handle_mcu_status", None)
     unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
-    dispatch: McuDispatchTable = {}
+    dispatch: dict[Any, Callable[..., Any]] = {}
     if status_fn is not None:
         for s in Status:
             dispatch[s.value] = functools.partial(status_fn, s)
     for op in OPERATIONS:
         if op.mcu_handler:
             fn = operator.attrgetter(op.mcu_handler)(target)
+            if op.command_id is not None:
+                dispatch[op.command_id] = fn
+            if op.service_id is not None and op.method_id is not None:
+                dispatch[(op.service_id, op.method_id)] = fn
         elif op.mcu_unsupported_reason and unsupp_fn is not None:
             fn = functools.partial(unsupp_fn, msg=op.mcu_unsupported_reason)
-        else:
-            continue
-        if op.service_name and op.method_name:
-            svc = PW_SERVICES[op.service_name]
-            meth = svc.methods[op.method_name]
-            dispatch[(svc.id, meth.id)] = fn
-        elif op.service_id is not None and op.method_id is not None:
-            dispatch[(op.service_id, op.method_id)] = fn
-        if op.command_id is not None:
-            dispatch[op.command_id] = fn
+            if op.command_id is not None:
+                dispatch[op.command_id] = fn
+            if op.service_id is not None and op.method_id is not None:
+                dispatch[(op.service_id, op.method_id)] = fn
     return dispatch
 
 
@@ -729,7 +702,7 @@ def encode_rpc_packet(
     method_id: int | None = None,
     call_id: int = 1,
     payload: Any = b"",
-    packet_type: int = int(PacketType.REQUEST),
+    packet_type: int = 0,
     status: int = 0,
 ) -> bytes:
     """Serialize a Pigweed RpcPacket without applying HDLC framing.
@@ -738,6 +711,9 @@ def encode_rpc_packet(
     1. Direct RPC: encode_rpc_packet(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
     2. Operation/Command: encode_rpc_packet(command_or_op, payload=b"", call_id=1)
     """
+    from google.protobuf.message import Message as ProtobufMessage
+    from pw_rpc.internal.packet_pb2 import RpcPacket
+
     if method_id is None:
         target = channel_id_or_command
         spec = get_operation(target)
@@ -746,8 +722,8 @@ def encode_rpc_packet(
             paired = get_operation(spec.paired_request_id)
             if paired is not None:
                 spec = paired
-                if actual_type == int(PacketType.REQUEST):
-                    actual_type = int(PacketType.RESPONSE)
+                if actual_type == 0:
+                    actual_type = 1
         if spec is not None and spec.service_id is not None and spec.method_id is not None:
             srv_id = spec.service_id
             meth_id = spec.method_id
@@ -759,29 +735,40 @@ def encode_rpc_packet(
             meth_id = val
         raw_payload = payload_or_service
         actual_call_id = call_id
-        channel_id = 1
+        actual_payload = (
+            raw_payload.SerializeToString()
+            if isinstance(raw_payload, ProtobufMessage)
+            else (raw_payload if isinstance(raw_payload, bytes) else b"")
+        )
+        pkt = RpcPacket(
+            type=cast(Any, actual_type),
+            channel_id=1,
+            service_id=srv_id,
+            method_id=meth_id,
+            call_id=actual_call_id,
+            status=status,
+            payload=actual_payload,
+        )
     else:
         channel_id = int(channel_id_or_command) if isinstance(channel_id_or_command, int) else 1
         srv_id = int(payload_or_service)
         meth_id = method_id
-        raw_payload = payload
-        actual_call_id = call_id
-        actual_type = packet_type
+        actual_payload = (
+            payload.SerializeToString()
+            if isinstance(payload, ProtobufMessage)
+            else (payload if isinstance(payload, bytes) else b"")
+        )
+        pkt = RpcPacket(
+            type=cast(Any, packet_type),
+            channel_id=channel_id,
+            service_id=srv_id,
+            method_id=meth_id,
+            call_id=call_id,
+            status=status,
+            payload=actual_payload,
+        )
 
-    actual_payload = (
-        raw_payload.SerializeToString()
-        if isinstance(raw_payload, ProtobufMessage)
-        else (raw_payload if isinstance(raw_payload, bytes) else b"")
-    )
-    return RpcPacket(
-        type=cast(Any, actual_type),
-        channel_id=channel_id,
-        service_id=srv_id,
-        method_id=meth_id,
-        call_id=actual_call_id,
-        status=status,
-        payload=actual_payload,
-    ).SerializeToString()
+    return pkt.SerializeToString()
 
 
 def encode_hdlc_rpc(

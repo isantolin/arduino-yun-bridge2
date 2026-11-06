@@ -251,10 +251,12 @@ void test_psa_random_fails_without_entropy_source(void) {
   TEST_ASSERT_EQUAL_INT(PSA_SUCCESS, psa_crypto_init());
   TEST_ASSERT_EQUAL_INT(PSA_ERROR_INSUFFICIENT_ENTROPY,
                         psa_generate_random(&random_byte, sizeof(random_byte)));
+#if defined(MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG)
   TEST_ASSERT_EQUAL_INT(
       PSA_ERROR_INVALID_ARGUMENT,
       mbedtls_psa_external_get_random(nullptr, &random_byte,
                                       sizeof(random_byte), nullptr));
+#endif
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> key{};
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce{};
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag{};

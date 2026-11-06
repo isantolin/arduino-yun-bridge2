@@ -155,7 +155,7 @@ class TestAccessor : public BridgeClass {
                               etl::span<const uint8_t>& plaintext) {
     return _decryptHdlcFrame(address, envelope, plaintext);
   }
-  pw::Status invokeChannelSend(pw::span<const std::byte> packet) {
+  pw::Status invokeChannelSend(pw::ConstByteSpan packet) {
     return _rpc_channel_output.Send(packet);
   }
 };

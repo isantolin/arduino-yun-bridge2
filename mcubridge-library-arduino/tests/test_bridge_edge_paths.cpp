@@ -824,10 +824,11 @@ void test_bootloader_timer_and_hal_coverage() {
   TEST_ASSERT_EQUAL_INT(0, WEXITSTATUS(status));
 }
 
+template <size_t N>
 size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
                                   uint64_t counter,
                                   etl::span<const uint8_t> plaintext,
-                                  etl::span<uint8_t> out_hdlc,
+                                  etl::array<uint8_t, N>& out_hdlc,
                                   bool corrupt_tag = false) {
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
   etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
@@ -845,7 +846,8 @@ size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
   auto tag = etl::span<uint8_t>(
       envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + plaintext.size(),
       rpc::RPC_AEAD_TAG_SIZE);
-  rpc::security::aead_encrypt(ba.rxAeadKey(), nonce, aad, plaintext, ct, tag);
+  (void)rpc::security::aead_encrypt(ba.rxAeadKey(), nonce, aad, plaintext, ct,
+                                    tag);
   if (corrupt_tag) {
     tag[0] ^= 0xFFU;
   }
@@ -970,9 +972,9 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
 
   ba.setNullStream();
-  const std::byte dummy_byte{0x01};
+  const pw::byte dummy_byte{0x01};
   const pw::Status send_status =
-      ba.invokeChannelSend(pw::span<const std::byte>(&dummy_byte, 1U));
+      ba.invokeChannelSend(pw::ConstByteSpan(&dummy_byte, 1U));
   TEST_ASSERT_FALSE(send_status.ok());
 }
 

@@ -49,18 +49,18 @@ from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.serial")
 
-_SYSTEM_SERVICE: Final = protocol.PW_SERVICES["rpc.pb.SystemService"]
+_SYSTEM_SERVICE: Final[Any] = protocol.PW_SERVICES["rpc.pb.SystemService"]
 _LINK_SYNC_RPC: Final[tuple[int, int]] = (
-    _SYSTEM_SERVICE.id,
-    _SYSTEM_SERVICE.methods["LinkSync"].id,
+    int(_SYSTEM_SERVICE.id),
+    int(_SYSTEM_SERVICE.methods["LinkSync"].id),
 )
 _LINK_RESET_RPC: Final[tuple[int, int]] = (
-    _SYSTEM_SERVICE.id,
-    _SYSTEM_SERVICE.methods["LinkReset"].id,
+    int(_SYSTEM_SERVICE.id),
+    int(_SYSTEM_SERVICE.methods["LinkReset"].id),
 )
 _SET_BAUDRATE_RPC: Final[tuple[int, int]] = (
-    _SYSTEM_SERVICE.id,
-    _SYSTEM_SERVICE.methods["SetBaudrate"].id,
+    int(_SYSTEM_SERVICE.id),
+    int(_SYSTEM_SERVICE.methods["SetBaudrate"].id),
 )
 _HANDSHAKE_RPCS: Final[frozenset[tuple[int, int]]] = frozenset({
     _LINK_SYNC_RPC,
@@ -435,25 +435,63 @@ class SerialTransport:
                 self.state.serial_decode_errors += 1
                 return
 
-            # Native pw_rpc call correlation by (service_id, method_id, call_id)
-            if pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR):
-                self.correlate_frame(pkt, payload, seq_id)
+            await self._correlate_and_dispatch_rpc(pkt, spec, rpc_key, seq_id, payload, is_error_packet)
 
-            if not self.service:
-                return
+    async def _correlate_and_dispatch_rpc(
+        self,
+        pkt: RpcPacket,
+        spec: OperationSpec | None,
+        rpc_key: tuple[int, int],
+        seq_id: int,
+        payload: bytes | ProtobufMessage,
+        is_error_packet: bool,
+    ) -> None:
+        is_raw_status = (
+            spec is None
+            and pkt.service_id == pkt.method_id
+            and (pkt.method_id in SERIAL_SUCCESS_STATUS_CODES or pkt.method_id in SERIAL_FAILURE_STATUS_CODES)
+        )
+        if pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR) or is_raw_status:
+            self.correlate_frame(pkt, payload, seq_id)
 
-            if is_error_packet:
-                await self.service.handle_mcu_frame(Status.ERROR.value, seq_id, payload)
-            elif pw_packets.for_server(pkt) or pkt.type == PacketType.SERVER_STREAM:
-                await self.service.handle_mcu_frame(rpc_key, seq_id, payload)
-            elif pkt.type == PacketType.RESPONSE:
-                resp_spec = protocol.BY_RPC_RESPONSE.get(rpc_key)
-                if (
-                    resp_spec is not None
-                    and resp_spec.command_id is not None
-                    and resp_spec.command_id in getattr(self.service, "mcu_registry", {})
-                ):
-                    await self.service.handle_mcu_frame(resp_spec.command_id, seq_id, payload)
+        if not self.service:
+            return
+
+        if is_error_packet:
+            await self.service.handle_mcu_frame(Status.ERROR.value, seq_id, payload)
+        elif is_raw_status:
+            if pkt.method_id in getattr(self.service, "mcu_registry", {}):
+                await self.service.handle_mcu_frame(pkt.method_id, seq_id, payload)
+        elif pw_packets.for_server(pkt) or pkt.type == PacketType.SERVER_STREAM:
+            await self.service.handle_mcu_frame(rpc_key, seq_id, payload)
+        elif pkt.type == PacketType.RESPONSE:
+            resp_spec = protocol.BY_RPC_RESPONSE.get(rpc_key)
+            if (
+                resp_spec is not None
+                and resp_spec.command_id is not None
+                and resp_spec.command_id in getattr(self.service, "mcu_registry", {})
+            ):
+                await self.service.handle_mcu_frame(resp_spec.command_id, seq_id, payload)
+
+    def _unpack_correlation_frame(
+        self,
+        frame_or_key: RpcPacket | tuple[int, int] | int,
+        seq_id: int | None,
+        status: int,
+        packet_type: int,
+    ) -> tuple[tuple[int, int] | None, int | None, int, int, int | None]:
+        if isinstance(frame_or_key, RpcPacket):
+            key: tuple[int, int] = (frame_or_key.service_id, frame_or_key.method_id)
+            raw_status = (
+                frame_or_key.method_id
+                if frame_or_key.service_id == frame_or_key.method_id and key not in protocol.BY_RPC
+                else None
+            )
+            return key, frame_or_key.call_id, frame_or_key.status, int(frame_or_key.type), raw_status
+        if isinstance(frame_or_key, tuple):
+            return frame_or_key, seq_id, status, packet_type, None
+        _, resolved_key = _resolve_rpc_target(frame_or_key)
+        return resolved_key, seq_id, status, packet_type, frame_or_key
 
     def correlate_frame(
         self,
@@ -465,22 +503,9 @@ class SerialTransport:
         packet_type: int = int(PacketType.RESPONSE),
     ) -> None:
         pending = self.current_command
-        if isinstance(frame_or_key, RpcPacket):
-            rpc_key: tuple[int, int] | None = (frame_or_key.service_id, frame_or_key.method_id)
-            actual_call_id: int | None = frame_or_key.call_id
-            actual_status = frame_or_key.status
-            actual_type = int(frame_or_key.type)
-        elif isinstance(frame_or_key, tuple):
-            rpc_key = frame_or_key
-            actual_call_id = seq_id
-            actual_status = status
-            actual_type = packet_type
-        else:
-            _, rpc_key = _resolve_rpc_target(frame_or_key)
-            actual_call_id = seq_id
-            actual_status = status
-            actual_type = packet_type
-
+        rpc_key, actual_call_id, actual_status, actual_type, raw_status = self._unpack_correlation_frame(
+            frame_or_key, seq_id, status, packet_type
+        )
         expected_call = self.current_rpc_call
         if expected_call is None and pending is not None:
             _, pending_rpc = _resolve_rpc_target(pending.command_id)
@@ -515,11 +540,11 @@ class SerialTransport:
                 )
             return
 
-        if isinstance(frame_or_key, int):
-            if frame_or_key in SERIAL_FAILURE_STATUS_CODES:
-                pending.mark_failure(frame_or_key)
+        if raw_status is not None:
+            if raw_status in SERIAL_FAILURE_STATUS_CODES:
+                pending.mark_failure(raw_status)
                 return
-            if frame_or_key in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
+            if raw_status in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
                 pending.mark_success(payload)
                 return
 
@@ -530,9 +555,13 @@ class SerialTransport:
                 pending.mark_failure(Status.ERROR.value)
             return
 
-        if actual_type == int(PacketType.RESPONSE) and rpc_key is not None and expected_call is not None:
-            if rpc_key == (expected_call[0], expected_call[1]):
-                pending.mark_success(payload)
+        if (
+            actual_type == int(PacketType.RESPONSE)
+            and rpc_key is not None
+            and expected_call is not None
+            and rpc_key == (expected_call[0], expected_call[1])
+        ):
+            pending.mark_success(payload)
 
     async def check_baudrate_fallback(self) -> None:
         self.consecutive_crc_errors += 1
@@ -713,18 +742,24 @@ class SerialTransport:
                         else int(PacketType.REQUEST)
                     )
                 )
-                packet = protocol.encode_rpc_packet(
-                    target_for_encode,
-                    payload,
-                    call_id=call_id,
-                    packet_type=eff_type,
-                    status=status,
-                )
                 if cipher is not None and not is_link_reset:
+                    packet = protocol.encode_rpc_packet(
+                        target_for_encode,
+                        payload,
+                        call_id=call_id,
+                        packet_type=eff_type,
+                        status=status,
+                    )
                     envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
                     encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
                 else:
-                    encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, packet)
+                    encoded = protocol.encode_hdlc_rpc(
+                        target_for_encode,
+                        payload,
+                        call_id=call_id,
+                        packet_type=eff_type,
+                        status=status,
+                    )
 
             if logger.is_enabled_for(logging.DEBUG):
                 logger.debug(

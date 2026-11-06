@@ -16,7 +16,6 @@ from typing import Any, Final, cast
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
 import parse
-from pw_rpc import packets as pw_packets
 from pw_rpc.descriptors import (
     Method as PwRpcMethod,
     Service as PwRpcService,
@@ -504,14 +503,8 @@ def allows_method(auth: Any, spec: OperationSpec) -> bool:
 def get_operation(key: Any) -> OperationSpec | None:
     """Polymorphic O(1) operation lookup. [SIL-2]"""
     if isinstance(key, tuple):
-        if len(key) == 3:
-            srv_id, meth_id, pkt_type = key
-            if pkt_type == PacketType.SERVER_STREAM:
-                return BY_SERVER_STREAM.get((srv_id, meth_id)) or BY_RPC.get((srv_id, meth_id))
-            if pkt_type == PacketType.RESPONSE:
-                return BY_RPC_RESPONSE.get((srv_id, meth_id)) or BY_RPC.get((srv_id, meth_id))
-            return BY_RPC.get((srv_id, meth_id))
-        return BY_RPC.get(cast(tuple[int, int], key)) or BY_SERVER_STREAM.get(cast(tuple[int, int], key))
+        rpc_key = cast(tuple[int, int], key)
+        return BY_RPC.get(rpc_key) or BY_SERVER_STREAM.get(rpc_key)
     if isinstance(key, int):
         return BY_COMMAND_ID.get(key)
     if isinstance(key, str):
@@ -739,7 +732,7 @@ def encode_rpc_packet(
     packet_type: int = int(PacketType.REQUEST),
     status: int = 0,
 ) -> bytes:
-    """Serialize a Pigweed RpcPacket via pw_rpc.packets without applying HDLC framing.
+    """Serialize a Pigweed RpcPacket without applying HDLC framing.
 
     Supports two calling conventions:
     1. Direct RPC: encode_rpc_packet(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
@@ -758,7 +751,7 @@ def encode_rpc_packet(
         if spec is not None and spec.service_id is not None and spec.method_id is not None:
             srv_id = spec.service_id
             meth_id = spec.method_id
-        elif isinstance(target, tuple) and len(target) == 2:
+        elif isinstance(target, tuple):
             srv_id, meth_id = target
         else:
             val = target if isinstance(target, int) else 0
@@ -774,17 +767,6 @@ def encode_rpc_packet(
         raw_payload = payload
         actual_call_id = call_id
         actual_type = packet_type
-
-    if (
-        actual_type == int(PacketType.REQUEST)
-        and status == 0
-        and isinstance(raw_payload, ProtobufMessage)
-    ):
-        return pw_packets.encode_request(
-            (channel_id, srv_id, meth_id),
-            request=raw_payload,
-            call_id=actual_call_id,
-        )
 
     actual_payload = (
         raw_payload.SerializeToString()

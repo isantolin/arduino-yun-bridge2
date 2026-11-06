@@ -471,12 +471,13 @@ void BridgeClass::_serialTask() {
       _arduino_stream.Read(
           pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
   if (read_result.ok()) {
-    for (const pw::byte b : read_result.value()) {
+    const pw::ConstByteSpan rx_span = read_result.value();
+    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::byte b) {
       auto result = _hdlc_decoder.Process(b);
       if (result.ok()) {
         _handleReceivedHdlcFrame(result.value());
       }
-    }
+    });
   } else if (read_result.status() != pw::Status::ResourceExhausted()) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
@@ -643,13 +644,15 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
   const uint64_t counter = ++_tx_aead_counter;
   aad[0] = static_cast<uint8_t>(address);
-  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
-    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - i) * 8U;
+  size_t idx = 0;
+  etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
+    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - idx) * 8U;
     const uint8_t byte = static_cast<uint8_t>(counter >> shift);
-    envelope[i] = byte;
-    nonce[4U + i] = byte;
-    aad[1U + i] = byte;
-  }
+    envelope[idx] = byte;
+    nonce_byte = byte;
+    aad[1U + idx] = byte;
+    ++idx;
+  });
 
   const size_t ciphertext_offset = rpc::RPC_AEAD_COUNTER_SIZE;
   auto ciphertext =
@@ -699,12 +702,14 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
   etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
   aad[0] = static_cast<uint8_t>(address);
-  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
-    const uint8_t byte = envelope[i];
+  size_t idx = 0;
+  etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
+    const uint8_t byte = envelope[idx];
     counter = (counter << 8U) | byte;
-    nonce[4U + i] = byte;
-    aad[1U + i] = byte;
-  }
+    nonce_byte = byte;
+    aad[1U + idx] = byte;
+    ++idx;
+  });
   if (counter == 0 || counter <= _rx_aead_counter) {
     rpc::security::secure_zero(etl::span<uint8_t>(nonce));
     rpc::security::secure_zero(etl::span<uint8_t>(aad));
@@ -894,7 +899,7 @@ void BridgeClass::_handlePinSubscribe(
     return;
   }
 
-  _pin_stream_writer = std::move(writer);
+  _pin_stream_writer = etl::move(writer);
   const bool any_active = etl::any_of(
       _pin_subscriptions.begin(), _pin_subscriptions.end(),
       [](const PinSubscription& s) { return s.active; });

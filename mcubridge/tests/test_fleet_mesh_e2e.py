@@ -125,6 +125,82 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
     assert fake_serial.closed is True
 
 
+def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    sync_operation = fleet_mesh.protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+    assert sync_operation is not None
+    assert sync_operation.method_id is not None
+
+    class DelayedSerial:
+        def __init__(self) -> None:
+            self.dtr = True
+            self.incoming = bytearray()
+            self.decoder = FrameDecoder()
+            self.pending: list[tuple[float, int, bytes, bytes]] = []
+            self.sync_attempts = 0
+            self.max_inflight = 0
+            self.closed = False
+
+        def open(self) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+        def write(self, data: bytes) -> int:
+            for frame in self.decoder.process(data):
+                request = RpcPacket.FromString(frame.data)
+                if request.method_id != sync_operation.method_id:
+                    continue
+                self.sync_attempts += 1
+                sync_request = mcu_wire_pb2.LinkSync.FromString(request.payload)
+                secret = fleet_mesh.DEFAULT_SHARED_SECRET.encode("utf-8")
+                response_tag = fleet_mesh.SerialHandshakeManager.calculate_handshake_response_tag(
+                    secret, sync_request.nonce
+                )
+                self.pending.append(
+                    (time.monotonic() + 0.55, request.call_id, sync_request.nonce, response_tag)
+                )
+                self.max_inflight = max(self.max_inflight, len(self.pending))
+            return len(data)
+
+        def read(self, size: int) -> bytes:
+            now = time.monotonic()
+            ready = [item for item in self.pending if item[0] <= now]
+            self.pending = [item for item in self.pending if item[0] > now]
+            for _, call_id, nonce, tag in ready:
+                self.incoming.extend(
+                    fleet_mesh.protocol.encode_hdlc_rpc(
+                        protocol.Command.CMD_LINK_SYNC_RESP.value,
+                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
+                        call_id=call_id,
+                    )
+                )
+            if not self.incoming:
+                time.sleep(0.001)
+                return b""
+            data = bytes(self.incoming[:size])
+            del self.incoming[:size]
+            return data
+
+    fake_serial = DelayedSerial()
+
+    def open_serial(*_args: object, **_kwargs: object) -> DelayedSerial:
+        return fake_serial
+
+    monkeypatch.setattr(fleet_mesh.serial, "serial_for_url", open_serial)
+    def fixed_nonce(size: int) -> bytes:
+        return bytes([2]) * size
+
+    monkeypatch.setattr(fleet_mesh.secrets, "token_bytes", fixed_nonce)
+    monkeypatch.setattr(fleet_mesh, "UART_READY_PROBE_INTERVAL_SECONDS", 0.05)
+
+    assert fleet_mesh.wait_for_firmware_uart_ready("/dev/fake-uart", timeout=1.0)
+    assert fake_serial.sync_attempts == 1
+    assert fake_serial.max_inflight == 1
+    assert fake_serial.pending == []
+    assert fake_serial.closed is True
+
+
 class MeshNodeContext:
     """Encapsulates the state, services, and mocked serial link for a single mesh node."""
 

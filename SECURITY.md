@@ -26,7 +26,8 @@ If you discover a potential security vulnerability in this project, please repor
 Arduino MCU Bridge 2 implements a Safety-Hardened Embedded Architecture designed for high-reliability embedded environments using deterministic FSMs, Zero-Heap memory management, and boot-time Known-Answer Tests.
 
 ### 1. Link Authentication and Encryption
-- When `serial_shared_secret` is configured, `LinkSync` authenticates the host with HMAC-SHA256 and the MCU returns a domain-separated HMAC proof. Both tags cover the 16-byte host nonce.
+- With a non-empty `serial_shared_secret`, `LinkSync` authenticates the host with HMAC-SHA256 and the MCU returns a domain-separated HMAC proof. Both tags cover the 16-byte host nonce.
+- An empty `serial_shared_secret` explicitly selects the compatibility mode without link authentication or HDLC payload encryption. This mode must be limited to isolated development/testing links; it must not be used on an untrusted physical or network path.
 - The handshake derives separate 256-bit host-to-MCU and MCU-to-host keys with HKDF-SHA256. After synchronization, RPC, console, and log HDLC payloads use ChaCha20-Poly1305. The envelope is an 8-byte big-endian counter followed by ciphertext and a 16-byte tag; the HDLC address and counter are authenticated as AAD.
 - Each direction uses one strictly increasing counter across the protected HDLC channels. Receivers reject zero, repeated, and older counters. This replay defense is scoped to the current session; because the MCU has no demonstrated cross-platform cryptographic random source or persistent boot epoch, previously captured handshakes and frames are not guaranteed to be rejected after an MCU restart.
 - `LinkReset` is an explicit plaintext control operation used to recover synchronization. This is not a plaintext fallback for data frames; a reset can force a new handshake.

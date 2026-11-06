@@ -286,8 +286,8 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
         configure_logging(debug=True, console=True)
 
 
-def test_load_runtime_config_without_secret_fails_validation() -> None:
-    with pytest.raises(ValueError, match="serial_shared_secret"):
-        settings.load_runtime_config(
-            raw_loader=lambda: ({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test")
-        )
+def test_load_runtime_config_without_secret_uses_compatibility_mode() -> None:
+    config = settings.load_runtime_config(
+        raw_loader=lambda: ({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test")
+    )
+    assert config.serial_shared_secret == b""

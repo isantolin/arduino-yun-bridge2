@@ -808,7 +808,7 @@ async def test_server_error_packet_maps_to_status_error() -> None:
         state.cleanup()
 
 
-async def test_mcu_request_is_dispatched_with_request_command_id() -> None:
+async def test_mcu_request_is_dispatched_by_pigweed_service_and_method() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
@@ -827,7 +827,9 @@ async def test_mcu_request_is_dispatched_with_request_command_id() -> None:
 
         handle_mock.assert_awaited_once()
         assert handle_mock.await_args is not None
-        assert handle_mock.await_args.args[:2] == (Command.CMD_DATASTORE_GET.value, 4)
+        spec = protocol.get_operation(Command.CMD_DATASTORE_GET.value)
+        assert spec is not None and spec.service_id is not None and spec.method_id is not None
+        assert handle_mock.await_args.args[:2] == ((spec.service_id, spec.method_id), 4)
     finally:
         state.cleanup()
 

@@ -38,6 +38,13 @@ def test_runtime_config_topic_and_paths() -> None:
     assert config.file_system_root == "/tmp/tests/bridge"
 
 
+def test_runtime_config_allows_explicit_empty_serial_secret() -> None:
+    cfg = _valid_base_config()
+    cfg.serial_shared_secret = b""
+    validate_config(cfg)
+    assert cfg.serial_shared_secret == b""
+
+
 def test_runtime_config_rejects_empty_topic() -> None:
     raw = {
         "serial_port": "/dev/null",

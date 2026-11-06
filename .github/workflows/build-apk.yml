@@ -6,6 +6,17 @@ on:
       - main
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '1_compile.sh'
+      - 'mcubridge/Makefile'
+      - 'feeds/**'
+      - 'requirements/runtime.toml'
+      - 'tools/audit/sync_runtime_deps.py'
+      - 'tools/protocol/**'
+      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
 concurrency:
@@ -27,6 +38,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       - name: Setup Python 3.14 with Pip Cache
         uses: actions/setup-python@v7
@@ -82,6 +95,13 @@ jobs:
       - name: Generate runtime dependency lockfiles
         run: |
           python3 tools/audit/sync_runtime_deps.py
+
+      - name: Install Pigweed host protocol generator
+        run: |
+          PIGWEED_REQUIREMENT="$(python3 tools/audit/sync_runtime_deps.py --print-pip | grep '^pigweed==')"
+          test -n "$PIGWEED_REQUIREMENT"
+          python3 -m pip install "$PIGWEED_REQUIREMENT"
+          python3 -c "from pw_rpc.descriptors import Service; import google.protobuf; print('Pigweed pw_rpc host generator ready')"
 
       - name: Pre-download Python feed dependencies to bypass PyPI mirror issues
         run: |

@@ -432,8 +432,6 @@ def _build_command_operation(
     if mcu_rpc:
         op["service_name"] = mcu_rpc["service_name"]
         op["method_name"] = mcu_rpc["method_name"]
-        if mcu_rpc.get("resp_cls"):
-            op["response_type"] = f"pb.{mcu_rpc['resp_cls']}"
     if pb_msg and hasattr(pb_module, pb_msg):
         op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
@@ -643,26 +641,31 @@ def _extract_operations_context(
     mcu_rpc_by_cmd: dict[str, dict[str, Any]] = {}
     for s_desc in mcu_services:
         svc = Service.from_descriptor(s_desc)
-        s_prefix = svc.name.removesuffix("Service")
-        for m in svc.methods:
-            candidates = [
-                f"CMD_{_snake_case(m.name).upper()}",
-                f"CMD_{s_prefix.upper()}_{_snake_case(m.name).upper()}",
-                f"CMD_{_snake_case(s_prefix).upper()}_{_snake_case(m.name).upper()}",
-                f"CMD_PIN_{_snake_case(m.name.removesuffix('Pins')).upper()}",
-            ]
-            if s_prefix == "FileSystem":
-                candidates.insert(0, f"CMD_FILE_{_snake_case(m.name).upper()}")
-            matched = next((c for c in candidates if c in cmd_by_name), None)
-            if matched:
-                mcu_rpc_by_cmd[matched] = {
-                    "service_name": svc.full_name,
-                    "method_name": m.name,
-                }
+        for method_desc in s_desc.methods:
+            method_options = method_desc.GetOptions()
+            if not method_options.HasExtension(pb_module.rpc_command):
+                raise ValueError(
+                    f"{s_desc.full_name}.{method_desc.name} is missing its explicit (rpc_command) binding"
+                )
+            matched = method_options.Extensions[pb_module.rpc_command]
+            if matched not in cmd_by_name:
+                raise ValueError(
+                    f"{s_desc.full_name}.{method_desc.name} references unknown command {matched!r}"
+                )
+            if matched in mcu_rpc_by_cmd:
+                previous = mcu_rpc_by_cmd[matched]
+                raise ValueError(
+                    f"Command {matched} is bound to multiple MCU RPC methods: "
+                    f"{previous['service_name']}.{previous['method_name']} and "
+                    f"{s_desc.full_name}.{method_desc.name}"
+                )
+            mcu_rpc_by_cmd[matched] = {
+                "service_name": svc.full_name,
+                "method_name": method_desc.name,
+            }
     mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
         "service_name": "rpc.pb.GpioService",
         "method_name": "SubscribePins",
-        "resp_cls": "PinUpdateEvent",
     }
 
     operations = _build_operations_catalog(

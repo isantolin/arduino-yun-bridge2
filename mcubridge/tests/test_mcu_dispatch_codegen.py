@@ -101,6 +101,38 @@ def test_pigweed_rpc_method_mappings() -> None:
     assert ds_put.method_name == "Put"
 
 
+
+def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
+    """Every MCU-facing Pigweed RPC method must be bound to exactly one CMD_* ID."""
+    from mcubridge.protocol import protocol
+
+    descriptors = [pb.DESCRIPTOR, *pb.DESCRIPTOR.dependencies]
+    command_names = {value.name for value in pb.Command.DESCRIPTOR.values}
+    operations = {str(op["name"]): op for op in generate.build_protocol_context(pb, "2.8.8")["operations"]}
+
+    seen_commands: set[str] = set()
+    for file_descriptor in descriptors:
+        for service in file_descriptor.services_by_name.values():
+            if service.name in {"CloudBridge", "LocalBridge"}:
+                continue
+            for method in service.methods:
+                options = method.GetOptions()
+                assert options.HasExtension(pb.rpc_command), f"{service.full_name}.{method.name}"
+                command_name = options.Extensions[pb.rpc_command]
+                assert command_name in command_names
+                assert command_name not in seen_commands, f"duplicate binding for {command_name}"
+                seen_commands.add(command_name)
+
+                operation = operations[command_name]
+                assert operation["service_name"] == service.full_name
+                assert operation["method_name"] == method.name
+                resolved = protocol.get_operation(protocol.Command[command_name].value)
+                assert resolved is not None
+                assert resolved.service_name == service.full_name
+                assert resolved.method_name == method.name
+
+    assert seen_commands, "no MCU-facing Pigweed RPC methods were audited"
+
 def test_removed_command_metadata_is_absent_not_reserved() -> None:
     descriptor_file = descriptor_pb2.FileDescriptorProto()
     descriptor_file.ParseFromString(pb.Command.DESCRIPTOR.file.serialized_pb)

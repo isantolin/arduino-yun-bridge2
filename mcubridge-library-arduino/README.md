@@ -13,7 +13,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 - `src/`
   - Public headers available to sketches (`Bridge.h`, `Console.h`, `Mailbox.h`, etc.).
   - `services/`: implementation files and classes that depend on the Arduino core (e.g. `Bridge.cpp`).
-  - `protocol/`: generated protocol constants (`rpc_protocol.h`, `rpc_hw_config.h`) and Nanopb payload bindings (`mcu_wire.pb.h`/`.c`, `config_schema.pb.h`/`.c`).
+  - `protocol/`: generated protocol constants (`rpc_protocol.h`, `rpc_hw_config.h`), Nanopb payload bindings (`mcu_wire.pb.h`/`.c`, `config_schema.pb.h`/`.c`), and upstream Pigweed Nanopb RPC service/client stubs (`mcu_wire.rpc.pb.h` generated via `tools/protocol/protoc_gen_mcu_rpc.py`).
 - `examples/`
   - Arduino sketches demonstrating usage of the library:
     - `BridgeControl`: Standard UART/TTY wired bridge setup with GPIO, mailbox and process control.
@@ -34,7 +34,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 ### External dependencies
 
-- **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, `pw_rpc` server/service dispatch, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log_avr` tokenized diagnostics, and `pw_chrono_avr` atomic millisecond timekeeping).
+- **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, upstream `pw_rpc` `pw::rpc::Server` / `pw::rpc::ClientServer` and `pw::rpc::Channel` with `pw_rpc/nanopb` codegen, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log` tokenized diagnostics via `pw::log::SetLogSink`, and `pw_chrono` atomic millisecond timekeeping via `pw::chrono::SystemClock`).
 - **Cryptographic providers**: PSA supplies SHA-256/HMAC-SHA256 and Mbed TLS platform zeroization. HKDF-SHA256 and ChaCha20-Poly1305 use Mbed TLS 4 on AVR/SAMD and wolfCrypt 5.8.4 on ESP32.
 - **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`, `span`) with strict Zero-STL (`-DETL_NO_STL`) compliance.
@@ -43,14 +43,14 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 This library describes safety- and security-oriented design goals; it does not claim IEC 61508 SIL-2 certification or FIPS 140-3 validation:
 - **No Dynamic Memory & Zero STL (`-DETL_NO_STL`):** All buffers are statically allocated using ETL and PigweedAVR static containers. No `malloc`/`new` or `<std::*>` headers in production firmware.
-- **Modular `pw_rpc` Service Dispatch (`pw::rpc_avr::RpcServer`):** Command handling is organized into 8 static `pw::rpc_avr::RpcService` implementations (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) using compile-time `pw::tokenizer::Hash("rpc.pb.<Service>")` identifiers.
+- **Modular `pw_rpc` Service Dispatch (`pw::rpc::Server` / `pw::rpc::ClientServer` & `protoc_gen_mcu_rpc.py`):** The MCU registers 6 static Nanopb server services (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, and `MailboxRpcService` deriving from `rpc::pb::pw_rpc::nanopb::<Service>::Service<Impl>`) over `pw::rpc::Channel` (`BridgeClass::RpcChannelOutput`) and `pw::rpc::Server` using compile-time `pw::tokenizer::Hash("rpc.pb.<Service>")` identifiers and `pw::rpc::NanopbServerWriter` for server streams. `ProcessService` and `DataStoreService` generate `rpc::pb::pw_rpc::nanopb::<Service>::Client` stubs for MCU-initiated requests to the Linux daemon; they are not registered as MCU server services.
 - **Multi-Channel HDLC Framing (`pw_hdlc`):** Multiplexes `pw_rpc` packets (`HDLC_ADDRESS_RPC = 1`), tokenized logs (`HDLC_ADDRESS_LOG = 2`), and console streams (`HDLC_ADDRESS_CONSOLE = 3`) with IEEE 802.3 CRC-32 FCS integrity.
 - **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (`STARTUP`, `UNSYNCHRONIZED`, `HANDSHAKE`, `SYNCHRONIZED`, `AWAITING_ACK`, `FAULT`).
 - **Cryptographic Self-Tests (POST):** MCU Known-Answer Tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305. The daemon tests its AEAD library and encrypted transport behavior.
 - **Encrypted link:** With a configured shared secret, RPC, console, and log HDLC payloads are encrypted after `LinkSync`. Empty-secret mode is explicitly unauthenticated and unencrypted. Per-session counters reject replay within a session; replay across MCU restarts is not ruled out.
 - **Fail-Secure:** Initialization aborts and the system enters a safe state (`FAULT`) if cryptographic or SRAM March integrity checks fail.
-- **Handshake Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs. No session encryption keys are derived.
-- **Atomic Timekeeping (`pw_chrono_avr`):** Uses `pw_chrono_avr_InitTimer0()` and `pw_chrono_avr_GetMillis()` for deterministic timeout and interval tracking.
+- **Handshake and Session Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs, then derives independent directional ChaCha20-Poly1305 session keys using the handshake nonce and the `session-key` context.
+- **Atomic Timekeeping (`pw::chrono::SystemClock`):** Uses `pw::chrono::SystemClock::now()` (backed by `pw_chrono_avr` with 1 ms tick resolution) for deterministic timeout and interval tracking.
 - **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 (`rpc::decode_pb`) to eliminate initialization overhead on static memory structures.
 - **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, SPI, WiFi, and Bluetooth.
 

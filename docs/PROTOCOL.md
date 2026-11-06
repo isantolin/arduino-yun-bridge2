@@ -42,7 +42,7 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                                ▼
                       ┌────────────────────────────────────────────────────────┐
                       │                 MCU firmware (Arduino)                 │
-                      │  - Pigweed AVR (pw_hdlc, pw_rpc, pw_log_avr, pw_chrono)│
+                      │  - Pigweed (pw_hdlc, pw_rpc, pw_log, pw_chrono)        │
                       │  - SIL-2 Zero-Heap, static Nanopb (pb_decode_noinit)   │
                       │  - Server-Stream Telemetry Push (Bridge.sendPinEvent)  │
                       │  - Handshake HMAC-auth & Deterministic etl::fsm        │
@@ -64,10 +64,10 @@ La **fuente de verdad machine-readable** del protocolo vive modularizada en `too
 Todos los servicios y payloads del protocolo se definen en los schemas bajo `tools/protocol/` y se transportan dentro de sobres **`pw.rpc.internal.RpcPacket`** sobre tramas **`pw_hdlc`**.
 
 - **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`, `mcu_wire_pb2.py`) y los módulos oficiales de Google Pigweed (`pw_hdlc`, `pw_rpc.packets`, `pw_rpc.descriptors.Services`, `pw_tokenizer.Detokenizer`), orquestados por `PW_SERVICES` y las tablas modulares de `protocol.py`.
-- **C++ (MCU):** usa Nanopb (`mcu_wire.pb.h` / `config_schema.pb.h`) para codificar/decodificar payloads sin heap dinámico en runtime mediante `rpc::encode_pb` (`pb_encode`) y `rpc::decode_pb` (`pb_decode_noinit`), manteniendo las restricciones estáticas de tamaño definidas en `mcu_wire.options` y `config_schema.options`.
+- **C++ (MCU):** usa Nanopb (`mcu_wire.pb.h` / `config_schema.pb.h`) junto con los stubs generados por `tools/protocol/protoc_gen_mcu_rpc.py` (`mcu_wire.rpc.pb.h`, `pw_rpc.codegen_nanopb`) para codificar/decodificar payloads sin heap dinámico en runtime (`pb_encode` / `pb_decode_noinit`), manteniendo las restricciones estáticas de tamaño definidas en `mcu_wire.options` y `config_schema.options`.
 
 ### Despacho de Servicios `pw_rpc` (MCU y MPU)
-- **MCU (`pw::rpc_avr::RpcServer`):** El firmware registra 8 servicios modulares derivados de `pw::rpc_avr::RpcService` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`, `ProcessRpcService`, `DataStoreRpcService`) identificados en tiempo de compilación mediante hashes FNV-1a de 32 bits (`pw::tokenizer::Hash("rpc.pb.<Service>")` y `pw::tokenizer::Hash("<Method>")`).
+- **MCU (`pw::rpc::Server` / `pw::rpc::ClientServer` + `pw::rpc::Channel`):** El firmware registra 6 servicios servidor generados por `protoc_gen_mcu_rpc.py` derivados de `rpc::pb::pw_rpc::nanopb::<Service>::Service<Impl>` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`) sobre `pw::rpc::Channel` (`BridgeClass::RpcChannelOutput`). `ProcessService` y `DataStoreService` exponen clientes generados `rpc::pb::pw_rpc::nanopb::<Service>::Client` para solicitudes iniciadas por el MCU hacia Linux. Todos los servicios y métodos se identifican en tiempo de compilación mediante hashes FNV-1a de 32 bits (`pw::tokenizer::Hash("rpc.pb.<Service>")` y `pw::tokenizer::Hash("<Method>")`).
 - **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
 - **Catálogo Centralizado de Servicios y Operaciones (`PW_SERVICES` + `OPERATIONS` SSOT)**: En Python, `protocol.py` expone `PW_SERVICES` (`pw_rpc.descriptors.Services`) y tablas modulares inmutables (`OPERATIONS`, `RPC_SPECS`, `BY_COMMAND_ID`, `BY_RPC`, `BY_NAME`), resolviendo `service_id`, `method_id`, `request_type`, `response_type`, `cardinality` y `default_factory` directamente desde los descriptores de Pigweed/Protobuf en $O(1)$.
 
@@ -144,7 +144,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 1. **TLS recomendado**: `cloud_tls=1` por defecto y se exige `cloud_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
 2. **Derivación de Claves (HKDF)**: Se utiliza **HKDF-SHA256 (RFC 5869)** para derivar la clave de autenticación del handshake a partir del `serial_shared_secret`. Esto evita el uso directo del secreto en el bus y proporciona aislamiento criptográfico.
-3. **Secreto serie fuerte**: handshake MCU↔Linux con nonce de 16 bytes y `HMAC-SHA256(derived_key, nonce)` truncado a 16 bytes. El daemon rechaza el placeholder `changeme123`.
+3. **Secreto serie fuerte**: con `serial_shared_secret` no vacío, handshake MCU↔Linux con nonce de 16 bytes y `HMAC-SHA256(derived_key, nonce)` truncado a 16 bytes. El daemon rechaza el placeholder `changeme123`. Un secreto vacío selecciona explícitamente el modo de compatibilidad sin autenticación ni cifrado del enlace; debe limitarse a pruebas aisladas y nunca utilizarse sobre un enlace no confiable.
 4. **Auto-Validación (KAT)**: Tanto el MCU como el daemon realizan **Known Answer Tests (KAT)** para SHA256 y HMAC-SHA256 en cada arranque. Si la validación falla, el sistema entra en modo **Fail-Secure** y aborta la operación.
 5. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se aplica al ejecutar procesos/shell.
 6. **Namespaces sensibles**: `TopicAuthorization` gobierna toggles `cloud_allow_*` (consola, archivos, datastore, mailbox, shell, GPIO, etc.).
@@ -459,7 +459,7 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | Dirección HDLC | Constante | Uso |
 | :--- | :--- | :--- |
 | `1` | `HDLC_ADDRESS_RPC` | Paquetes `pw_rpc` (`pw.rpc.internal.RpcPacket`): llamadas unarias, respuestas, errores y streams (`SubscribePins`). |
-| `2` | `HDLC_ADDRESS_LOG` | Diagnósticos y logs tokenizados del MCU (`pw_log_avr` / `pw_tokenizer`), decodificados en el MPU con `pw_tokenizer.Detokenizer`. |
+| `2` | `HDLC_ADDRESS_LOG` | Diagnósticos y logs tokenizados del MCU (`pw::log` / `pw_tokenizer`), decodificados en el MPU con `pw_tokenizer.Detokenizer`. |
 | `3` | `HDLC_ADDRESS_CONSOLE` | Stream bidireccional transparente de bytes de consola (`Console`). |
 
 ## 3. Formato de trama (`pw_hdlc` + `RpcPacket`)
@@ -499,10 +499,10 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | :--- | :--- | :--- | :--- |
 | **Autenticación del handshake** | HKDF-SHA256 + HMAC-SHA256 | **Mbed TLS PSA** para HMAC; Mbed TLS 4 para HKDF en AVR/SAMD y **wolfCrypt 5.8.4** en ESP32. | **`cryptography`** para HKDF/HMAC y comparación constante. |
 | **Protección del enlace** | ChaCha20-Poly1305 con claves direccionales y contadores monotónicos por sesión | **Mbed TLS 4** en AVR/SAMD y **wolfCrypt 5.8.4** en ESP32. | **`cryptography`** (`ChaCha20Poly1305`); envuelve/desenvuelve los payloads HDLC. |
-| **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Pigweed AVR**: `pw::hdlc_avr::Encoder` / `Decoder`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
-| **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Pigweed AVR**: `pw::rpc_avr::RpcServer` + 8 `RpcService`. | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`). |
-| **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Pigweed AVR**: `pw_log_avr` + `pw_tokenizer`. | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
-| **Reloj Monótono MCU** | Timekeeping atómico determinista | **Pigweed AVR**: `pw_chrono_avr_GetMillis()`. | Reloj monótono `time.monotonic()`. |
+| **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Google Pigweed**: `pw::hdlc::WriteUIFrame` / `pw::hdlc::DecoderBuffer`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
+| **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Google Pigweed**: `pw::rpc::Server` / `pw::rpc::ClientServer`, `pw::rpc::Channel` y `protoc_gen_mcu_rpc.py` (`rpc::pb::pw_rpc::nanopb::<Service>::Service` para 6 servicios servidor registrados y `Client` para `ProcessService` y `DataStoreService`). | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`) para los 8 contratos Protobuf. |
+| **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Google Pigweed**: fachada `pw::log::SetLogSink` (`pw_log_avr` + `pw_tokenizer`). | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
+| **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono_avr`). | Reloj monótono `time.monotonic()`. |
 | **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `PW_SERVICES`). |
 
 ## 4. Códigos de estado (`Status`)

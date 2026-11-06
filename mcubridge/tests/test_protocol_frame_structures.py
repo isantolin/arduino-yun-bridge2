@@ -125,10 +125,11 @@ def test_validate_config_discrete_boundaries() -> None:
     with pytest.raises(ValueError, match="cloud_certfile"):
         structures.validate_config(cfg)
 
+    # Empty secret explicitly selects the protocol's unauthenticated mode.
     cfg = _valid_runtime_config()
     cfg.serial_shared_secret = b""
-    with pytest.raises(ValueError, match="serial_shared_secret"):
-        structures.validate_config(cfg)
+    structures.validate_config(cfg)
+    assert cfg.serial_shared_secret == b""
 
 
 @given(invalid_port=st.integers(65536, 100000))

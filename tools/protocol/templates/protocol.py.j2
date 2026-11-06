@@ -21,6 +21,7 @@ from pw_rpc.descriptors import (
     Service as PwRpcService,
     Services as PwRpcServices,
 )
+from pw_rpc.internal.packet_pb2 import PacketType
 import structlog
 
 from . import mcu_wire_pb2, mcubridge_pb2 as pb
@@ -417,7 +418,16 @@ BY_COMMAND_ID: Final[dict[int, OperationSpec]] = {
 BY_RPC: Final[dict[tuple[int, int], OperationSpec]] = {
     (op.service_id, op.method_id): op
     for op in OPERATIONS
-    if op.service_id is not None and op.method_id is not None
+    if op.service_id is not None
+    and op.method_id is not None
+    and op.command_id != Command.CMD_PIN_UPDATE_EVENT.value
+}
+BY_SERVER_STREAM: Final[dict[tuple[int, int], OperationSpec]] = {
+    (op.service_id, op.method_id): op
+    for op in OPERATIONS
+    if op.service_id is not None
+    and op.method_id is not None
+    and op.command_id == Command.CMD_PIN_UPDATE_EVENT.value
 }
 BY_NAME: Final[dict[str, OperationSpec]] = {op.name: op for op in OPERATIONS}
 BY_TYPE: Final[dict[type[ProtobufMessage], OperationSpec]] = {}
@@ -495,6 +505,8 @@ def get_operation(key: Any) -> OperationSpec | None:
         srv = getattr(key, "service_id", None)
         meth = getattr(key, "method_id", None)
         if isinstance(srv, int) and isinstance(meth, int):
+            if getattr(key, "type", None) == PacketType.SERVER_STREAM:
+                return BY_SERVER_STREAM.get((srv, meth))
             return BY_RPC.get((srv, meth))
     if hasattr(key, "value"):
         val = getattr(key, "value", None)

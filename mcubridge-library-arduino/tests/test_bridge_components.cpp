@@ -227,6 +227,24 @@ void test_mailbox_api() {
 void test_send_pin_event_api() {
   BiStream stream;
   reset_bridge_comp(stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1023));
+
+  rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
+  sub_req.pin = 13;
+  sub_req.enabled = true;
+  uint8_t pl_buf[64];
+  pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
+  TEST_ASSERT_TRUE(
+      pb_encode(&pbos, rpc_pb_PinSubscribeRequest_fields, &sub_req));
+  etl::array<uint8_t, 128> hdlc_buf;
+  const size_t sz = build_hdlc_rpc_frame(
+      1, pw::rpc_avr::PacketType::kRequest,
+      pw::tokenizer::Hash("rpc.pb.GpioService"),
+      pw::tokenizer::Hash("SubscribePins"),
+      etl::span<const uint8_t>(pl_buf, pbos.bytes_written), hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
 
   const size_t initial_bytes = stream.tx_buf.len;
   const bool result = Bridge.sendPinEvent(13, 1023);
@@ -618,7 +636,8 @@ void test_filesystem_edges() {
   rpc_pb_FileRead fread_nonexistent = {};
   const char* non_path = "non_existent_file.xyz";
   etl::copy_n(non_path, strlen(non_path), fread_nonexistent.path);
-  FileSystem._onRead(fread_nonexistent);
+  TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
+                    FileSystem._onRead(fread_nonexistent, rresp).code());
 
   // 7. _onRead timeout via fault injection
   bridge::test::fault::enable(
@@ -626,7 +645,8 @@ void test_filesystem_edges() {
   rpc_pb_FileRead fread_valid = {};
   const char* val_path = "test.txt";
   etl::copy_n(val_path, strlen(val_path), fread_valid.path);
-  FileSystem._onRead(fread_valid);
+  TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
+                    FileSystem._onRead(fread_valid, rresp).code());
   bridge::test::fault::disable(
       bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
 
@@ -637,7 +657,8 @@ void test_filesystem_edges() {
   TEST_ASSERT_TRUE(res_w1.has_value());
   rpc_pb_FileRead req_large = {};
   strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
-  FileSystem._onRead(req_large);
+  TEST_ASSERT_EQUAL(pw::Status::ResourceExhausted().code(),
+                    FileSystem._onRead(req_large, rresp).code());
 
   // 9. Send-fail branches when tx disabled
   ba.clearSharedSecret();
@@ -645,7 +666,8 @@ void test_filesystem_edges() {
   uint8_t fsdata[] = {1, 2};
   FileSystem.write("send_fail.txt", etl::span<const uint8_t>(fsdata, 2));
   FileSystem.remove("send_fail.txt");
-  FileSystem._onRead(req_large);
+  TEST_ASSERT_EQUAL(pw::Status::ResourceExhausted().code(),
+                    FileSystem._onRead(req_large, rresp).code());
   ba.setTxEnabled(true);
 
   // 10. Empty file (to_copy == 0)
@@ -654,7 +676,7 @@ void test_filesystem_edges() {
   rpc_pb_FileRead fread_empty = {};
   const char* empty_path = "empty.txt";
   etl::copy_n(empty_path, strlen(empty_path), fread_empty.path);
-  FileSystem._onRead(fread_empty);
+  TEST_ASSERT_TRUE(FileSystem._onRead(fread_empty, rresp).ok());
 
   // 11. Observer onLost
   FileSystem.onLost();
@@ -763,6 +785,8 @@ void test_mailbox_edges() {
   ba.clearSharedSecret();
   ba.setTxEnabled(false);
   Mailbox.push(etl::span<const uint8_t>(payload_bytes, 5));
+  TEST_ASSERT_FALSE(Mailbox.requestRead());
+  TEST_ASSERT_FALSE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(789U);
   ba.setTxEnabled(true);
 
@@ -813,6 +837,15 @@ void test_mailbox_edges() {
            pw::tokenizer::Hash("rpc.pb.FileSystemService"), kUnknownMethod);
   send_rpc(pw::rpc_avr::PacketType::kRequest,
            pw::tokenizer::Hash("rpc.pb.MailboxService"), kUnknownMethod);
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("rpc.pb.MailboxService"),
+           pw::tokenizer::Hash("Read"));
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("rpc.pb.MailboxService"),
+           pw::tokenizer::Hash("Available"));
+  send_rpc(pw::rpc_avr::PacketType::kRequest,
+           pw::tokenizer::Hash("rpc.pb.MailboxService"),
+           pw::tokenizer::Hash("Processed"));
 
   send_rpc(pw::rpc_avr::PacketType::kResponse,
            pw::tokenizer::Hash("rpc.pb.MailboxService"), kUnknownMethod);

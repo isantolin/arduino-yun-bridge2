@@ -330,7 +330,7 @@ class SerialTransport:
                 self.state.serial_decode_errors += 1
                 logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame_data.hex())
                 return
-            spec = protocol.get_operation((pkt.service_id, pkt.method_id))
+            spec = protocol.get_operation(pkt)
             cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
 

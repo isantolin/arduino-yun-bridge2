@@ -464,16 +464,12 @@ class BridgeService:
     async def handle_mcu_frame(
         self, operation_key: int | tuple[int, int], sequence_id: int, payload: bytes | ProtobufMessage
     ) -> None:
-        """Dispatch an inbound frame by Pigweed (service_id, method_id) or non-RPC control ID."""
+        """Dispatch an inbound frame by Pigweed service/method, or a control command ID."""
         serial = self.serial
         if not serial:
             return
 
-        spec = (
-            protocol.BY_SERVER_STREAM.get(operation_key) or protocol.get_operation(operation_key)
-            if isinstance(operation_key, tuple)
-            else protocol.get_operation(operation_key)
-        )
+        spec = protocol.get_operation(operation_key)
         command_id = (
             spec.command_id
             if spec is not None and spec.command_id is not None
@@ -487,6 +483,7 @@ class BridgeService:
         with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):
             handler = self.mcu_registry.get(operation_key)
             if handler is None and isinstance(operation_key, tuple):
+                # Keep command-ID aliases for status/control and older generated handlers.
                 handler = self.mcu_registry.get(command_id)
             if handler is not None:
                 p = payload

@@ -495,8 +495,7 @@ def get_operation(key: Any) -> OperationSpec | None:
         srv = getattr(key, "service_id", None)
         meth = getattr(key, "method_id", None)
         if isinstance(srv, int) and isinstance(meth, int):
-            return BY_RPC.get((srv, meth))
-    if hasattr(key, "value"):
+            return BY_RPC.get((srv, meth))\n    if hasattr(key, "value"):
         val = getattr(key, "value", None)
         if isinstance(val, int):
             return BY_COMMAND_ID.get(val)
@@ -585,16 +584,17 @@ def build_mcu_dispatch(
         for s in Status:
             dispatch[s.value] = functools.partial(status_fn, s)
     for op in OPERATIONS:
-        if op.mcu_handler:
-            fn = operator.attrgetter(op.mcu_handler)(target)
-            if op.command_id is not None:
-                dispatch[op.command_id] = fn
-            if op.service_id is not None and op.method_id is not None:
-                dispatch[(op.service_id, op.method_id)] = fn
-        elif op.mcu_unsupported_reason and unsupp_fn is not None:
-            fn = functools.partial(unsupp_fn, msg=op.mcu_unsupported_reason)
-            if op.command_id is not None:
-                dispatch[op.command_id] = fn
+        fn = (
+            operator.attrgetter(op.mcu_handler)(target)
+            if op.mcu_handler
+            else (
+                functools.partial(unsupp_fn, msg=op.mcu_unsupported_reason)
+                if op.mcu_unsupported_reason and unsupp_fn is not None
+                else None
+            )
+        )
+        if fn is not None and op.command_id is not None:
+            dispatch[op.command_id] = fn
             if op.service_id is not None and op.method_id is not None:
                 dispatch[(op.service_id, op.method_id)] = fn
     return dispatch

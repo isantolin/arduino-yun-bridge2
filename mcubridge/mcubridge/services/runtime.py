@@ -481,10 +481,7 @@ class BridgeService:
             return
 
         with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):
-            handler = self.mcu_registry.get(operation_key)
-            if handler is None and isinstance(operation_key, tuple):
-                # Keep command-ID aliases for status/control and older generated handlers.
-                handler = self.mcu_registry.get(command_id)
+            handler = self.mcu_registry.get(operation_key) or self.mcu_registry.get(command_id)
             if handler is not None:
                 p = payload
                 if not isinstance(p, ProtobufMessage) and spec is not None and spec.pb_class is not None:

@@ -137,6 +137,27 @@ class TestAccessor : public BridgeClass {
     if (!_fsm.is_started()) _fsm.start();
     _fsm.receive(bridge::fsm::EvReset());
   }
+
+  bool isSessionKeysReady() const { return _session_keys_ready; }
+  void setSessionKeysReady(bool ready) { _session_keys_ready = ready; }
+  void setTxAeadCounter(uint64_t c) { _tx_aead_counter = c; }
+  void setRxAeadCounter(uint64_t c) { _rx_aead_counter = c; }
+  etl::span<const uint8_t> rxAeadKey() const {
+    return etl::span<const uint8_t>(_rx_aead_key);
+  }
+  bool invokeWriteEncryptedHdlcFrameWithBuffer(uint64_t address,
+                                               etl::span<const uint8_t> data,
+                                               etl::span<uint8_t> envelope) {
+    return _writeEncryptedHdlcFrameWithBuffer(address, data, envelope);
+  }
+  bool invokeDecryptHdlcFrame(uint64_t address,
+                              etl::span<const uint8_t> envelope,
+                              etl::span<const uint8_t>& plaintext) {
+    return _decryptHdlcFrame(address, envelope, plaintext);
+  }
+  pw::Status invokeChannelSend(pw::span<const std::byte> packet) {
+    return _rpc_channel_output.Send(packet);
+  }
 };
 
 }  // namespace bridge::test

@@ -130,7 +130,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     explicit RpcChannelOutput(BridgeClass& bridge)
         : pw::rpc::ChannelOutput("mcu-serial"), bridge_(bridge) {}
 
-    size_t MaximumTransmissionUnit() override;
+    size_t MaximumTransmissionUnit() override {
+      return bridge::config::RX_BUFFER_SIZE - rpc::RPC_AEAD_COUNTER_SIZE -
+             rpc::RPC_AEAD_TAG_SIZE;
+    }
     pw::Status Send(pw::span<const std::byte> packet) override;
 
    private:

@@ -26,7 +26,7 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_rpc import callback_client, packets as pw_packets
-from pw_rpc.client import Client as PwRpcClient, Error as PwRpcError
+from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
@@ -730,7 +730,7 @@ class SerialTransport:
                 if call is not None:
                     try:
                         call.cancel()
-                    except (KeyError, PwRpcError, RuntimeError, ValueError) as exc:
+                    except (KeyError, RuntimeError, ValueError) as exc:
                         logger.debug("Pigweed RPC cancellation raced with completion", method=method_name, error=str(exc))
                 if attempt + 1 >= self.max_attempts:
                     logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)

@@ -1090,7 +1090,7 @@ def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None and spec.service_id is not None and spec.method_id is not None
     return RpcPacket(
-        type=packet_type,
+        type=cast(Any, packet_type),
         channel_id=protocol.HDLC_ADDRESS_RPC,
         service_id=spec.service_id,
         method_id=spec.method_id,
@@ -1127,7 +1127,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     # A response packet is written but must not be registered as a new active call.
     response = _make_rpc_packet(PacketType.RESPONSE)
     transport.queue_rpc_packet(response)
-    assert request_key not in getattr(transport, "_active_rpc_packet_ids")
+    assert request_key not in transport.__dict__["_active_rpc_packet_ids"]
 
     for _ in range(100):
         if mock_serial.write.call_count == 3:
@@ -1141,7 +1141,7 @@ def test_queue_rpc_packet_ignores_malformed_packet(
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     transport.queue_rpc_packet(b"\\xff")
-    assert getattr(transport, "_active_rpc_packet_ids") == set()
+    assert transport.__dict__["_active_rpc_packet_ids"] == set()
 
 
 def test_queue_rpc_packet_rejects_calls_outside_event_loop(
@@ -1155,7 +1155,7 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
     with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
         transport.queue_rpc_packet(packet)
 
-    assert key in getattr(transport, "_active_rpc_packet_ids")
+    assert key in transport.__dict__["_active_rpc_packet_ids"]
 
 
 async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout(

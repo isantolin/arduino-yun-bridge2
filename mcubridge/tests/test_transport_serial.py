@@ -13,7 +13,7 @@ from pw_hdlc.encode import ui_frame
 from pw_rpc import callback_client, packets as pw_packets
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
-from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket, ValueType
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
@@ -1086,7 +1086,7 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         state.cleanup()
 
 
-def _make_rpc_packet(packet_type: ValueType, call_id: int = 41) -> bytes:
+def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None and spec.service_id is not None and spec.method_id is not None
     return RpcPacket(
@@ -1118,7 +1118,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     )
 
     transport.queue_rpc_packet(request)
-    assert request_key in getattr(transport, "_active_rpc_packet_ids")
+    assert request_key in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_rpc_packet_ids"])
 
     client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
     transport.queue_rpc_packet(client_error)

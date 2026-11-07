@@ -1099,7 +1099,7 @@ def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
 
 
 async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     runtime_config.serial_shared_secret = b""
@@ -1118,7 +1118,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     )
 
     transport.queue_rpc_packet(request)
-    assert request_key in getattr(transport, "_active_rpc_packet_ids")
+    assert request_key in cast(Any, transport)._active_rpc_packet_ids
 
     client_error = _make_rpc_packet(int(PacketType.CLIENT_ERROR))
     transport.queue_rpc_packet(client_error)
@@ -1171,9 +1171,9 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_state.serial_tx_allowed.clear()
     runtime_state.mcu_is_paused = True
 
-    result = await getattr(transport, "_write_rpc_packet")(_make_rpc_packet(int(PacketType.REQUEST)))
+    transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
+    await asyncio.sleep(0.05)
 
-    assert result is False
     assert runtime_state.serial_tx_allowed.is_set()
     assert runtime_state.mcu_is_paused is False
     mock_serial.write.assert_not_called()

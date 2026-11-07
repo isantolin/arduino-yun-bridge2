@@ -32,27 +32,6 @@ def _make_mcu_cipher(secret: bytes, nonce: bytes) -> LinkCipher:
     return LinkCipher(mcu_to_host, host_to_mcu)
 
 
-def _encode_mcu_rpc_frame(
-    command_id: int,
-    payload: bytes | ProtobufMessage,
-    call_id: int,
-    cipher: LinkCipher | None,
-) -> bytes:
-    encoded = protocol.encode_hdlc_rpc(
-        command_id,
-        payload,
-        call_id=call_id,
-        packet_type=PacketType.RESPONSE,
-    )
-    if cipher is None:
-        return encoded
-    frame = next(iter(FrameDecoder().process(encoded)))
-    return ui_frame(
-        protocol.HDLC_ADDRESS_RPC,
-        cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
-    )
-
-
 def _encode_mcu_rpc_response(
     request: RpcPacket,
     payload: bytes | ProtobufMessage,

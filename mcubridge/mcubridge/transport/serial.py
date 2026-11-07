@@ -128,7 +128,7 @@ class SerialTransport:
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: list[Any] = []
         self.rpc_client = PwRpcClient(
-            callback_client.Impl(),
+            cast(Any, callback_client).Impl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self._queue_rpc_packet)],
             protocol.PW_SERVICES,
         )
@@ -631,7 +631,7 @@ class SerialTransport:
         encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
         async with self._serial_write_lock:
             serial_port = self.serial
-            if serial_port is None or not serial_port.is_open:
+            if not serial_port.is_open:
                 return False
 
             def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
@@ -657,18 +657,19 @@ class SerialTransport:
         if spec.request_type is None:
             logger.error("Pigweed RPC descriptor has no request type", operation=spec.name)
             return False
-        if isinstance(payload, spec.request_type):
-            request = payload
+        request_type = cast(Any, spec.request_type)
+        if isinstance(payload, request_type):
+            request = cast(ProtobufMessage, payload)
         elif isinstance(payload, bytes):
             try:
-                request = spec.request_type.FromString(payload)
+                request = cast(ProtobufMessage, request_type.FromString(payload))
             except ProtobufDecodeError as exc:
                 logger.error("Unable to decode Pigweed RPC request payload", operation=spec.name, error=str(exc))
                 return False
         else:
             logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
             return False
-        if not request.IsInitialized():
+        if not cast(Any, request).IsInitialized():
             logger.error("Pigweed RPC request is not initialized", operation=spec.name)
             return False
 

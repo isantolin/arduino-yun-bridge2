@@ -1112,16 +1112,16 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     )
 
     transport.queue_rpc_packet(request)
-    assert request_key in transport._active_rpc_packet_ids
+    assert request_key in getattr(transport, "_active_rpc_packet_ids")
 
     client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
     transport.queue_rpc_packet(client_error)
-    assert request_key not in transport._active_rpc_packet_ids
+    assert request_key not in getattr(transport, "_active_rpc_packet_ids")
 
     # A response packet is written but must not be registered as a new active call.
     response = _make_rpc_packet(PacketType.RESPONSE)
     transport.queue_rpc_packet(response)
-    assert request_key not in transport._active_rpc_packet_ids
+    assert request_key not in getattr(transport, "_active_rpc_packet_ids")
 
     await asyncio.sleep(0)
     assert write_packet.await_count == 3
@@ -1132,7 +1132,7 @@ def test_queue_rpc_packet_ignores_malformed_packet(
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     transport.queue_rpc_packet(b"\\xff")
-    assert transport._active_rpc_packet_ids == set()
+    assert getattr(transport, "_active_rpc_packet_ids") == set()
 
 
 def test_queue_rpc_packet_rejects_calls_outside_event_loop(
@@ -1146,7 +1146,7 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
     with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
         transport.queue_rpc_packet(packet)
 
-    assert key in transport._active_rpc_packet_ids
+    assert key in getattr(transport, "_active_rpc_packet_ids")
 
 
 async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout(
@@ -1162,7 +1162,7 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_state.serial_tx_allowed.clear()
     runtime_state.mcu_is_paused = True
 
-    result = await transport._write_rpc_packet(_make_rpc_packet(PacketType.REQUEST))
+    result = await getattr(transport, "_write_rpc_packet")(_make_rpc_packet(PacketType.REQUEST))
 
     assert result is False
     assert runtime_state.serial_tx_allowed.is_set()

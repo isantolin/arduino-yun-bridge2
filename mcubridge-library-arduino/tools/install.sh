@@ -265,7 +265,10 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
     fi
     if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ]; then
         python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
-        for rpc_src in client.cc client_call.cc client_server.cc; do
+        # ClientServer is a convenience wrapper not used by McuBridge. Its constexpr
+        # constructor is incompatible with the legacy SAMD GCC 7.2 toolchain;
+        # do not export/compile this unused translation unit.
+        for rpc_src in client.cc client_call.cc; do
             if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/third_party/pigweed/pw_rpc/${rpc_src}" ]; then
                 cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/third_party/pigweed/pw_rpc/${rpc_src}" \
                     "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_${rpc_src}"
@@ -318,27 +321,7 @@ for rel in (
         ("                    set_nanopb_on_next_locked(std::move(restored));\n", "                    this->set_nanopb_on_next_locked(std::move(restored));\n"),
     ):
         c = c.replace(old, new)
-    if rel == "pw_rpc/client_server.h":
-        # Match optional explicit and namespace-qualified constructor forms;
-        # the exact textual replacement above misses some Pigweed revisions.
-        c, replacements = re.subn(
-            r"\bconstexpr(?=\s+(?:explicit\s+)?(?:pw::rpc::)?ClientServer\b)",
-            "",
-            c,
-        )
-        if replacements == 0 and re.search(r"\bconstexpr\s+(?:explicit\s+)?ClientServer\b", c):
-            raise RuntimeError("SAMD compatibility patch did not remove ClientServer constexpr")
     hdr.write_text(c, encoding="utf-8")
-
-client_server_source = src_dir / "pw_rpc_client_server.cc"
-if client_server_source.is_file():
-    c = client_server_source.read_text(encoding="utf-8")
-    c = re.sub(
-        r"\bconstexpr(?=\s+(?:pw::rpc::)?ClientServer\b)",
-        "",
-        c,
-    )
-    client_server_source.write_text(c, encoding="utf-8")
 
 for rel in (
     "pw_rpc/raw/client_reader_writer.h",

@@ -1189,9 +1189,13 @@ def test_decode_rpc_request_rejects_invalid_payloads(
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None
 
-    assert transport._decode_rpc_request(spec, cast(Any, object())) is None
-    assert transport._decode_rpc_request(spec, b"\\x0a\\xff") is None
-    assert transport._decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
+    decode_rpc_request = cast(
+        Callable[[Any, Any], Any],
+        getattr(transport, "_decode_rpc_request"),
+    )
+    assert decode_rpc_request(spec, cast(Any, object())) is None
+    assert decode_rpc_request(spec, b"\\x0a\\xff") is None
+    assert decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
 
 
 def test_get_rpc_method_returns_none_when_descriptor_is_missing(
@@ -1204,7 +1208,8 @@ def test_get_rpc_method_returns_none_when_descriptor_is_missing(
 
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None
-    assert transport._get_rpc_method(spec) is None
+    get_rpc_method = cast(Callable[[Any], Any], getattr(transport, "_get_rpc_method"))
+    assert get_rpc_method(spec) is None
 
 
 async def test_invoke_rpc_completion_without_response_and_error_callback(
@@ -1221,11 +1226,16 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
         return call
 
     rpc_method.invoke.side_effect = complete_without_payload
-    result = await transport._invoke_rpc_with_retries(
+    invoke_rpc_with_retries = cast(
+        Callable[[Any, Any, str, float], Awaitable[Any]],
+        getattr(transport, "_invoke_rpc_with_retries"),
+    )
+    active_rpc_calls = cast(list[Any], getattr(transport, "_active_rpc_calls"))
+    result = await invoke_rpc_with_retries(
         rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
     )
-    assert result is True
-    assert call not in transport._active_rpc_calls
+    assert result
+    assert call not in active_rpc_calls
 
     def fail_callback(
         _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
@@ -1234,8 +1244,8 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
         return call
 
     rpc_method.invoke.side_effect = fail_callback
-    result = await transport._invoke_rpc_with_retries(
+    result = await invoke_rpc_with_retries(
         rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
     )
-    assert result is False
-    assert call not in transport._active_rpc_calls
+    assert not result
+    assert call not in active_rpc_calls

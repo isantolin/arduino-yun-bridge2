@@ -1084,3 +1084,87 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         handle_mock.assert_not_awaited()
     finally:
         state.cleanup()
+
+
+def _make_rpc_packet(packet_type: PacketType, call_id: int = 41) -> bytes:
+    spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
+    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    return RpcPacket(
+        type=packet_type,
+        channel_id=protocol.HDLC_ADDRESS_RPC,
+        service_id=spec.service_id,
+        method_id=spec.method_id,
+        call_id=call_id,
+    ).SerializeToString()
+
+
+async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    write_packet = mocker.patch.object(transport, "_write_rpc_packet", new=AsyncMock(return_value=True))
+    request = _make_rpc_packet(PacketType.REQUEST)
+    request_key = (
+        protocol.HDLC_ADDRESS_RPC,
+        pw_packets.decode(request).service_id,
+        pw_packets.decode(request).method_id,
+        pw_packets.decode(request).call_id,
+    )
+
+    transport.queue_rpc_packet(request)
+    assert request_key in transport._active_rpc_packet_ids
+
+    client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
+    transport.queue_rpc_packet(client_error)
+    assert request_key not in transport._active_rpc_packet_ids
+
+    # A response packet is written but must not be registered as a new active call.
+    response = _make_rpc_packet(PacketType.RESPONSE)
+    transport.queue_rpc_packet(response)
+    assert request_key not in transport._active_rpc_packet_ids
+
+    await asyncio.sleep(0)
+    assert write_packet.await_count == 3
+
+
+def test_queue_rpc_packet_ignores_malformed_packet(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    transport.queue_rpc_packet(b"\\xff")
+    assert transport._active_rpc_packet_ids == set()
+
+
+def test_queue_rpc_packet_rejects_calls_outside_event_loop(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    packet = _make_rpc_packet(PacketType.REQUEST)
+    decoded = pw_packets.decode(packet)
+    key = (decoded.channel_id, decoded.service_id, decoded.method_id, decoded.call_id)
+
+    with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
+        transport.queue_rpc_packet(packet)
+
+    assert key in transport._active_rpc_packet_ids
+
+
+async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: Any
+) -> None:
+    import mcubridge.transport.serial as serial_mod
+
+    monkeypatch.setattr(serial_mod, "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.0)
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+    runtime_state.serial_tx_allowed.clear()
+    runtime_state.mcu_is_paused = True
+
+    result = await transport._write_rpc_packet(_make_rpc_packet(PacketType.REQUEST))
+
+    assert result is False
+    assert runtime_state.serial_tx_allowed.is_set()
+    assert runtime_state.mcu_is_paused is False
+    mock_serial.write.assert_not_called()

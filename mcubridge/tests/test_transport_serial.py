@@ -335,6 +335,45 @@ async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(
     assert second_result.host_time_us == 222
 
 
+async def test_unary_rpc_decodes_empty_request_payload(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    outgoing: list[bytes] = []
+    transport.rpc_client = PwRpcClient(
+        callback_client.Impl(),
+        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+        protocol.PW_SERVICES,
+    )
+
+    send_task = asyncio.create_task(transport.send(Command.CMD_GET_VERSION.value, b""))
+    for _ in range(100):
+        if outgoing:
+            break
+        await asyncio.sleep(0)
+    assert len(outgoing) == 1
+
+    request = pw_packets.decode(outgoing[0])
+    assert request.type == PacketType.REQUEST
+    assert request.payload == b""
+    response = pb.VersionResponse(major=2, minor=8, patch=9)
+    packet = RpcPacket(
+        type=PacketType.RESPONSE,
+        channel_id=request.channel_id,
+        service_id=request.service_id,
+        method_id=request.method_id,
+        call_id=request.call_id,
+        payload=response.SerializeToString(),
+        status=0,
+    )
+    assert transport.rpc_client.process_packet(packet.SerializeToString()).ok()
+    assert await send_task == response
+
+
 async def test_serial_transport_methods_with_none_serial(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:

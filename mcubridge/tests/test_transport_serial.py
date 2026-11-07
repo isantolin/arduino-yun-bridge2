@@ -294,7 +294,7 @@ async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(
 
     outgoing: list[bytes] = []
     transport.rpc_client = PwRpcClient(
-        callback_client.Impl(),
+        cast(Any, callback_client).Impl(),
         [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
         protocol.PW_SERVICES,
     )
@@ -345,7 +345,7 @@ async def test_unary_rpc_decodes_empty_request_payload(
 
     outgoing: list[bytes] = []
     transport.rpc_client = PwRpcClient(
-        callback_client.Impl(),
+        cast(Any, callback_client).Impl(),
         [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
         protocol.PW_SERVICES,
     )

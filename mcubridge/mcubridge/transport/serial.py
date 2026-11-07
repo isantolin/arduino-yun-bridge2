@@ -612,7 +612,7 @@ class SerialTransport:
                         rpc_packet.call_id,
                     )
                 )
-            elif rpc_packet.type in (PacketType.CANCEL, PacketType.CLIENT_ERROR):
+            elif rpc_packet.type == PacketType.CLIENT_ERROR:
                 self._active_rpc_packet_ids.discard(
                     (
                         rpc_packet.channel_id,

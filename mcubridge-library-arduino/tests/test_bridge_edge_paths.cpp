@@ -44,8 +44,9 @@ inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
                              etl::span<const uint8_t> payload = {}) {
   etl::array<uint8_t, 256> frame_raw;
-  size_t len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                                    service_id, method_id, payload, frame_raw);
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST, service_id, method_id,
+      payload, frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 }
 
@@ -67,14 +68,9 @@ inline void invoke_response(TestAccessor& ba, uint32_t service_id,
   uint8_t payload_buf[128];
   pb_ostream_t pbos = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
   pb_encode(&pbos, fields, &msg);
-  pw::rpc_avr::RpcPacket pkt;
-  pkt.type = pw::rpc_avr::PacketType::kResponse;
-  pkt.channel_id = 1;
-  pkt.service_id = service_id;
-  pkt.method_id = method_id;
-  pkt.call_id = call_id;
-  pkt.payload = pw::ConstByteSpan(
-      reinterpret_cast<const pw::byte*>(payload_buf), pbos.bytes_written);
+  pw::rpc::internal::Packet pkt(
+      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1, service_id, method_id,
+      call_id, pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
   ba.invokeRpcResponse(pkt);
 }
 
@@ -262,34 +258,30 @@ void test_dispatch_malformed_payload_paths() {
   Process.runAsync("ls", etl::span<const etl::string_view>(),
                    ProcessType::ProcessRunHandler::create<on_process_run>());
   Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
-  pw::rpc_avr::RpcPacket bad_pkt;
-  bad_pkt.type = pw::rpc_avr::PacketType::kResponse;
-  bad_pkt.channel_id = 1;
-  bad_pkt.payload = pw::ConstByteSpan(
-      reinterpret_cast<const pw::byte*>(bad_pl.data()), bad_pl.size());
-
-  bad_pkt.service_id = kDsSvc;
-  bad_pkt.method_id = pw::tokenizer::Hash("Get");
+  pw::rpc::internal::Packet bad_pkt(
+      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1, kDsSvc,
+      pw::tokenizer::Hash("Get"), 0,
+      pw::as_bytes(pw::span(bad_pl.data(), bad_pl.size())));
   ba.invokeRpcResponse(bad_pkt);
 
-  bad_pkt.service_id = kMailboxSvc;
-  bad_pkt.method_id = pw::tokenizer::Hash("Read");
+  bad_pkt.set_service_id(kMailboxSvc);
+  bad_pkt.set_method_id(pw::tokenizer::Hash("Read"));
   ba.invokeRpcResponse(bad_pkt);
 
-  bad_pkt.service_id = kMailboxSvc;
-  bad_pkt.method_id = pw::tokenizer::Hash("Available");
+  bad_pkt.set_service_id(kMailboxSvc);
+  bad_pkt.set_method_id(pw::tokenizer::Hash("Available"));
   ba.invokeRpcResponse(bad_pkt);
 
-  bad_pkt.service_id = kFsSvc;
-  bad_pkt.method_id = pw::tokenizer::Hash("Read");
+  bad_pkt.set_service_id(kFsSvc);
+  bad_pkt.set_method_id(pw::tokenizer::Hash("Read"));
   ba.invokeRpcResponse(bad_pkt);
 
-  bad_pkt.service_id = kProcSvc;
-  bad_pkt.method_id = pw::tokenizer::Hash("RunAsync");
+  bad_pkt.set_service_id(kProcSvc);
+  bad_pkt.set_method_id(pw::tokenizer::Hash("RunAsync"));
   ba.invokeRpcResponse(bad_pkt);
 
-  bad_pkt.service_id = kProcSvc;
-  bad_pkt.method_id = pw::tokenizer::Hash("Poll");
+  bad_pkt.set_service_id(kProcSvc);
+  bad_pkt.set_method_id(pw::tokenizer::Hash("Poll"));
   ba.invokeRpcResponse(bad_pkt);
 
   Bridge.process();
@@ -316,10 +308,10 @@ void test_packet_received_security_paths() {
 
   // 2. Corrupt FCS frame is dropped by decoder
   etl::array<uint8_t, 128> corrupt_frame;
-  size_t len =
-      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest, kGpioSvc,
-                           pw::tokenizer::Hash("DigitalWrite"),
-                           etl::span<const uint8_t>(), corrupt_frame);
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST, kGpioSvc,
+      pw::tokenizer::Hash("DigitalWrite"), etl::span<const uint8_t>(),
+      corrupt_frame);
   TEST_ASSERT_GREATER_THAN(2, len);
   if (len >= 2) {
     corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC
@@ -926,29 +918,25 @@ void test_encrypted_hdlc_and_session_edge_paths() {
       etl::span<const uint8_t>(bad_rpc_inner, sizeof(bad_rpc_inner)), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
 
-  pw::rpc_avr::RpcPacket sync_pkt;
-  sync_pkt.type = pw::rpc_avr::PacketType::kRequest;
-  sync_pkt.channel_id = 1;
-  sync_pkt.service_id = kSysSvc;
-  sync_pkt.method_id = pw::tokenizer::Hash("LinkSync");
+  pw::rpc::internal::Packet sync_pkt(
+      pw::rpc::internal::pwpb::PacketType::REQUEST, 1, kSysSvc,
+      pw::tokenizer::Hash("LinkSync"));
   uint8_t pkt_buf[64];
   auto enc_sync = sync_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 3U,
-      etl::span<const uint8_t>(pkt_buf, enc_sync.size()), hdlc_buf);
+      etl::span<const uint8_t>(pkt_buf, enc_sync.value().size()), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
 
   ba.clearSynchronized();
   ba.setSessionKeysReady(true);
-  pw::rpc_avr::RpcPacket ver_pkt;
-  ver_pkt.type = pw::rpc_avr::PacketType::kRequest;
-  ver_pkt.channel_id = 1;
-  ver_pkt.service_id = kSysSvc;
-  ver_pkt.method_id = pw::tokenizer::Hash("GetVersion");
+  pw::rpc::internal::Packet ver_pkt(
+      pw::rpc::internal::pwpb::PacketType::REQUEST, 1, kSysSvc,
+      pw::tokenizer::Hash("GetVersion"));
   auto enc_ver = ver_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 4U,
-      etl::span<const uint8_t>(pkt_buf, enc_ver.size()), hdlc_buf);
+      etl::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
@@ -956,7 +944,7 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   ba.setSessionKeysReady(true);
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 5U,
-      etl::span<const uint8_t>(pkt_buf, enc_ver.size()), hdlc_buf);
+      etl::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
   TEST_ASSERT_FALSE(ba.isSessionKeysReady());

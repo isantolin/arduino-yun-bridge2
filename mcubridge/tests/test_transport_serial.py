@@ -1180,6 +1180,10 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
 
 
 
+def _private_attribute(instance: object, name: str) -> Any:
+    return getattr(instance, name)
+
+
 def test_decode_rpc_request_rejects_invalid_payloads(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -1191,7 +1195,7 @@ def test_decode_rpc_request_rejects_invalid_payloads(
 
     decode_rpc_request = cast(
         Callable[[Any, Any], Any],
-        getattr(transport, "_decode_rpc_request"),
+        _private_attribute(transport, "_decode_rpc_request"),
     )
     assert decode_rpc_request(spec, cast(Any, object())) is None
     assert decode_rpc_request(spec, b"\\x0a\\xff") is None
@@ -1208,7 +1212,7 @@ def test_get_rpc_method_returns_none_when_descriptor_is_missing(
 
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None
-    get_rpc_method = cast(Callable[[Any], Any], getattr(transport, "_get_rpc_method"))
+    get_rpc_method = cast(Callable[[Any], Any], _private_attribute(transport, "_get_rpc_method"))
     assert get_rpc_method(spec) is None
 
 
@@ -1228,9 +1232,9 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     rpc_method.invoke.side_effect = complete_without_payload
     invoke_rpc_with_retries = cast(
         Callable[[Any, Any, str, float], Awaitable[Any]],
-        getattr(transport, "_invoke_rpc_with_retries"),
+        _private_attribute(transport, "_invoke_rpc_with_retries"),
     )
-    active_rpc_calls = cast(list[Any], getattr(transport, "_active_rpc_calls"))
+    active_rpc_calls = _private_attribute(transport, "_active_rpc_calls")
     result = await invoke_rpc_with_retries(
         rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
     )

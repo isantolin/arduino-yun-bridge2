@@ -379,21 +379,20 @@ class SerialTransport:
                 and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
                 and spec.command_id not in _LEGACY_RAW_REQUESTS
             )
-            has_active_rpc_call = any(
-                getattr(getattr(call, "rpc", None), "call_id", None) == pkt.call_id
-                for call in self._active_rpc_calls
-            )
-            if not pw_packets.for_server(pkt) and is_unary_rpc_response and has_active_rpc_call:
+            if not pw_packets.for_server(pkt) and is_unary_rpc_response:
+                # Let Pigweed perform the authoritative call-ID lookup. The public
+                # callback-call wrapper does not expose a stable PendingRpc shape,
+                # so introspecting call.rpc here can incorrectly reject live replies.
                 rpc_status = self.rpc_client.process_packet(frame_data)
-                if not rpc_status.ok():
-                    logger.warning(
-                        "Pigweed RPC client rejected incoming packet",
-                        status=str(rpc_status),
-                        service_id=pkt.service_id,
-                        method_id=pkt.method_id,
-                        call_id=pkt.call_id,
-                    )
-                return
+                if rpc_status.ok():
+                    return
+                logger.debug(
+                    "Pigweed RPC client did not consume incoming packet; checking legacy correlation",
+                    status=str(rpc_status),
+                    service_id=pkt.service_id,
+                    method_id=pkt.method_id,
+                    call_id=pkt.call_id,
+                )
 
             # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
             # successful responses map onto the operation's canonical response id.

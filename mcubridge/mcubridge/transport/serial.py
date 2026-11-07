@@ -52,6 +52,7 @@ logger = structlog.get_logger("mcubridge.serial")
 
 _LEGACY_RAW_REQUESTS: Final[frozenset[int]] = frozenset(
     {
+        protocol.Command.CMD_LINK_SYNC.value,
         protocol.Command.CMD_LINK_RESET.value,
         protocol.Command.CMD_SET_BAUDRATE.value,
         protocol.Command.CMD_FILE_READ.value,
@@ -621,20 +622,8 @@ class SerialTransport:
 
         cipher = self.state.link_cipher
         if self.config.serial_shared_secret and cipher is None:
-            link_sync = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
-            try:
-                meta = pw_packets.decode(packet)
-            except (ProtobufDecodeError, ValueError) as exc:
-                logger.error("Refusing malformed pre-authentication Pigweed RPC packet", error=str(exc))
-                return False
-            if (
-                link_sync is None
-                or meta.type != PacketType.REQUEST
-                or meta.service_id != link_sync.service_id
-                or meta.method_id != link_sync.method_id
-            ):
-                logger.error("Refusing non-handshake Pigweed RPC output before link authentication")
-                return False
+            logger.error("Refusing Pigweed RPC output before link authentication")
+            return False
 
         from pw_hdlc.encode import ui_frame
 

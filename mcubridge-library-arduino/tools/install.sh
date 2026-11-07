@@ -52,14 +52,25 @@ download_zip() {
         if curl --version 2>&1 | grep -qi "HTTP3"; then
             h3_flag="--http3"
         fi
-        curl $h3_flag -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$url" -o "$dest"
-        return $?
-    elif command -v wget >/dev/null 2>&1; then
-        wget --tries=5 --waitretry=2 --timeout=20 -qO "$dest" "$url"
-    else
-        echo "[ERROR] 'curl' or 'wget' is required." >&2
-        return 1
+        # Release hosting can intermittently return gateway errors in CI.
+        # Retry transient failures, then fall back to wget rather than
+        # failing immediately; the caller still verifies the pinned digest.
+        if curl $h3_flag -fsSL --retry 8 --retry-all-errors --retry-delay 5 \
+            --retry-max-time 600 --connect-timeout 30 --max-time 300 "$url" -o "$dest"; then
+            return 0
+        fi
+        rm -f "$dest"
     fi
+
+    if command -v wget >/dev/null 2>&1; then
+        if wget --tries=8 --waitretry=5 --timeout=30 --read-timeout=300 -qO "$dest" "$url"; then
+            return 0
+        fi
+        rm -f "$dest"
+    fi
+
+    echo "[ERROR] Unable to download $name with curl or wget." >&2
+    return 1
 }
 
 # Marker file written only after a dependency has been fully staged and
@@ -264,6 +275,50 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
             sed -i "s/call == nullptr || call->id() != packet.call_id()/call == nullptr/g" \
                 "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_client.cc"
         fi
+        python3 - "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src" <<'PYEOF'
+import sys
+from pathlib import Path
+
+src_dir = Path(sys.argv[1])
+
+for rel in (
+    "pw_rpc/nanopb/client_reader_writer.h",
+    "pw_rpc/nanopb/server_reader_writer.h",
+    "pw_rpc/internal/client_call.h",
+    "pw_rpc/internal/server_call.h",
+    "pw_rpc/internal/call.h",
+):
+    hdr = src_dir / rel
+    if not hdr.is_file():
+        continue
+    c = hdr.read_text(encoding="utf-8")
+    for old, new in (
+        (": private internal::", ": public internal::"),
+        ("private:", "public:"),
+        ("protected:", "public:"),
+        ("constexpr NanopbUnaryResponseClientCall()", "NanopbUnaryResponseClientCall()"),
+        ("constexpr NanopbStreamResponseClientCall()", "NanopbStreamResponseClientCall()"),
+        ("constexpr NanopbClientReaderWriter() = default;", "NanopbClientReaderWriter() = default;"),
+        ("constexpr NanopbClientReader() = default;", "NanopbClientReader() = default;"),
+        ("constexpr NanopbClientWriter() = default;", "NanopbClientWriter() = default;"),
+        ("constexpr NanopbUnaryReceiver() = default;", "NanopbUnaryReceiver() = default;"),
+        ("constexpr NanopbServerCall()", "NanopbServerCall()"),
+        ("constexpr BaseNanopbServerReader() = default;", "BaseNanopbServerReader() = default;"),
+        ("constexpr NanopbServerReaderWriter() = default;", "NanopbServerReaderWriter() = default;"),
+        ("constexpr NanopbServerReader() = default;", "NanopbServerReader() = default;"),
+        ("constexpr NanopbServerWriter() = default;", "NanopbServerWriter() = default;"),
+        ("constexpr NanopbUnaryResponder() = default;", "NanopbUnaryResponder() = default;"),
+        ("constexpr ClientCall() = default;", "ClientCall() = default;"),
+        ("constexpr UnaryResponseClientCall() = default;", "UnaryResponseClientCall() = default;"),
+        ("constexpr StreamResponseClientCall() = default;", "StreamResponseClientCall() = default;"),
+        ("constexpr ServerCall() = default;", "ServerCall() = default;"),
+        ("DecodeToStructAndInvokeOnCompleted(", "this->DecodeToStructAndInvokeOnCompleted("),
+        ("DecodeToStructAndInvokeOnNext(", "this->DecodeToStructAndInvokeOnNext("),
+        ("set_nanopb_on_next_locked(std::move(restored));", "this->set_nanopb_on_next_locked(std::move(restored));"),
+    ):
+        c = c.replace(old, new)
+    hdr.write_text(c, encoding="utf-8")
+PYEOF
         if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
             mkdir -p "$LIB_DIR"
             rm -rf "$LIB_DIR/PigweedAVR"

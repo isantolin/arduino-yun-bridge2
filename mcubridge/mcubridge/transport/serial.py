@@ -721,6 +721,13 @@ class SerialTransport:
                     logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
                     return False
                 await asyncio.sleep(min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2**attempt), SERIAL_HANDSHAKE_BACKOFF_MAX))
+            except asyncio.CancelledError:
+                if call is not None:
+                    try:
+                        call.cancel()
+                    except (KeyError, RuntimeError, ValueError) as exc:
+                        logger.debug("Pigweed RPC cancellation raced with task cancellation", method=method_name, error=str(exc))
+                raise
             except Exception as exc:
                 logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
                 return False

@@ -648,8 +648,22 @@ class SerialTransport:
         timeout: float | None,
     ) -> bool | ProtobufMessage:
         """Invoke one unary method through pw_rpc.Client and await its callbacks."""
-        if spec.request_type is None or not isinstance(payload, spec.request_type):
+        if spec.request_type is None:
+            logger.error("Pigweed RPC descriptor has no request type", operation=spec.name)
+            return False
+        if isinstance(payload, spec.request_type):
+            request = payload
+        elif isinstance(payload, bytes):
+            try:
+                request = spec.request_type.FromString(payload)
+            except ProtobufDecodeError as exc:
+                logger.error("Unable to decode Pigweed RPC request payload", operation=spec.name, error=str(exc))
+                return False
+        else:
             logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
+            return False
+        if not request.IsInitialized():
+            logger.error("Pigweed RPC request is not initialized", operation=spec.name)
             return False
 
         method_name = f"{spec.service_name}/{spec.method_name}"
@@ -685,7 +699,7 @@ class SerialTransport:
             call: Any = None
             try:
                 call = rpc_method.invoke(
-                    payload,
+                    request,
                     on_next=_on_next,
                     on_completed=_on_completed,
                     on_error=_on_error,
@@ -703,7 +717,7 @@ class SerialTransport:
                     logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
                     return False
                 await asyncio.sleep(min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2**attempt), SERIAL_HANDSHAKE_BACKOFF_MAX))
-            except (RuntimeError, ValueError, TypeError) as exc:
+            except Exception as exc:
                 logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
                 return False
             finally:

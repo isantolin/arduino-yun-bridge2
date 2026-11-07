@@ -212,15 +212,15 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   rpc::pb::pw_rpc::nanopb::ProcessService::Client processClient() {
-    return {_rpc_client_server.client(), 1};
+    return {_rpc_client, 1};
   }
 
   rpc::pb::pw_rpc::nanopb::MailboxService::Client mailboxClient() {
-    return {_rpc_client_server.client(), 1};
+    return {_rpc_client, 1};
   }
 
   rpc::pb::pw_rpc::nanopb::FileSystemService::Client fileSystemClient() {
-    return {_rpc_client_server.client(), 1};
+    return {_rpc_client, 1};
   }
 
   void _onBaudrateChange();

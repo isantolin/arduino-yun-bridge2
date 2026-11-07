@@ -16,7 +16,7 @@ import asyncio
 import logging
 import sys
 import time
-from typing import Any, Protocol, cast
+from typing import Any, Final, Protocol, cast
 
 import anyio
 import serial
@@ -49,6 +49,14 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.serial")
+
+_LEGACY_RAW_REQUESTS: Final[frozenset[int]] = frozenset(
+    {
+        protocol.Command.CMD_LINK_RESET.value,
+        protocol.Command.CMD_SET_BAUDRATE.value,
+        protocol.Command.CMD_FILE_READ.value,
+    }
+)
 
 # Register wifi:// and tcp:// scheme aliases in pyserial
 sys.modules["serial.urlhandler.protocol_wifi"] = protocol_socket
@@ -365,15 +373,10 @@ class SerialTransport:
             # Pigweed's native client owns responses to Linux-initiated RPCs, including
             # call-ID correlation, payload decoding, stream events, and completion status.
             # Requests initiated by the MCU are handled below by the application service.
-            legacy_raw_requests = {
-                protocol.Command.CMD_LINK_RESET.value,
-                protocol.Command.CMD_SET_BAUDRATE.value,
-                protocol.Command.CMD_FILE_READ.value,
-            }
             is_unary_rpc_response = (
                 spec is not None
                 and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
-                and spec.command_id not in legacy_raw_requests
+                and spec.command_id not in _LEGACY_RAW_REQUESTS
             )
             if not pw_packets.for_server(pkt) and is_unary_rpc_response:
                 rpc_status = self.rpc_client.process_packet(frame_data)

@@ -53,6 +53,26 @@ def _encode_mcu_rpc_frame(
     )
 
 
+def _encode_mcu_rpc_response(
+    request: RpcPacket,
+    payload: bytes | ProtobufMessage,
+    cipher: LinkCipher | None,
+) -> bytes:
+    response = RpcPacket(
+        type=PacketType.RESPONSE,
+        channel_id=request.channel_id,
+        service_id=request.service_id,
+        method_id=request.method_id,
+        call_id=request.call_id,
+        payload=payload if isinstance(payload, bytes) else payload.SerializeToString(),
+        status=0,
+    )
+    response_data = response.SerializeToString()
+    if cipher is not None:
+        response_data = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response_data)
+    return ui_frame(protocol.HDLC_ADDRESS_RPC, response_data)
+
+
 def _decode_host_rpc_packet(packet_data: bytes, cipher: LinkCipher | None) -> tuple[RpcPacket, LinkCipher | None]:
     if cipher is not None:
         try:
@@ -124,22 +144,12 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
                     elif cmd_id == protocol.Command.CMD_GET_VERSION.value:
                         resp_pb = pb.VersionResponse(major=2, minor=8, patch=5)
-                        resp_frame = _encode_mcu_rpc_frame(
-                            protocol.Command.CMD_GET_VERSION_RESP.value,
-                            resp_pb,
-                            rx_seq,
-                            mcu_cipher,
-                        )
+                        resp_frame = _encode_mcu_rpc_response(pkt, resp_pb, mcu_cipher)
                         writer.write(resp_frame)
                         await writer.drain()
 
                     elif cmd_id == protocol.Command.CMD_DIGITAL_WRITE.value:
-                        resp_frame = _encode_mcu_rpc_frame(
-                            protocol.Status.OK.value,
-                            b"",
-                            rx_seq,
-                            mcu_cipher,
-                        )
+                        resp_frame = _encode_mcu_rpc_response(pkt, b"", mcu_cipher)
                         writer.write(resp_frame)
                         await writer.drain()
 

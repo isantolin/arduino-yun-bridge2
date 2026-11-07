@@ -234,14 +234,19 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                         await writer.drain()
 
                     elif cmd_id == protocol.Command.CMD_ANALOG_READ.value:
-                        resp_pb = pb.AnalogReadResponse(value=742)
-                        resp_frame = _encode_mcu_rpc_frame(
-                            protocol.Command.CMD_ANALOG_READ_RESP.value,
-                            resp_pb,
-                            rx_seq,
-                            mcu_cipher,
+                        response = RpcPacket(
+                            type=PacketType.RESPONSE,
+                            channel_id=pkt.channel_id,
+                            service_id=pkt.service_id,
+                            method_id=pkt.method_id,
+                            call_id=pkt.call_id,
+                            payload=pb.AnalogReadResponse(value=742).SerializeToString(),
+                            status=0,
                         )
-                        writer.write(resp_frame)
+                        response_data = response.SerializeToString()
+                        if mcu_cipher is not None:
+                            response_data = mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response_data)
+                        writer.write(ui_frame(protocol.HDLC_ADDRESS_RPC, response_data))
                         await writer.drain()
 
         except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:

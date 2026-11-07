@@ -523,6 +523,7 @@ class SerialTransport:
             and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name
+            and spec.command_id not in _LEGACY_RAW_REQUESTS
             and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
         ):
             return await self._send_rpc(spec, payload, timeout)

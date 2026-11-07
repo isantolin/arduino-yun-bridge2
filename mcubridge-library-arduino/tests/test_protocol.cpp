@@ -83,8 +83,8 @@ void test_rpc_packet_encoding_and_decoding() {
       pw::tokenizer::Hash("GetVersion"), 42,
       pw::as_bytes(pw::span(payload, sizeof(payload))));
 
-  std::byte encoded_buf[128];
-  auto enc_res = packet.Encode(pw::span(encoded_buf));
+  uint8_t encoded_buf[128];
+  auto enc_res = packet.Encode(pw::as_writable_bytes(pw::span(encoded_buf)));
   TEST_ASSERT_TRUE(enc_res.ok());
   TEST_ASSERT_TRUE(enc_res.value().size() > 0);
 

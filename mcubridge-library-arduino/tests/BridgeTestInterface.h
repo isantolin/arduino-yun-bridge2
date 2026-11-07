@@ -91,8 +91,8 @@ class TestAccessor : public BridgeClass {
     if (copy.channel_id() == 0) {
       copy.set_channel_id(1);
     }
-    std::byte buf[bridge::config::RX_BUFFER_SIZE];
-    auto res = copy.Encode(pw::span(buf));
+    uint8_t buf[bridge::config::RX_BUFFER_SIZE];
+    auto res = copy.Encode(pw::as_writable_bytes(pw::span(buf)));
     if (res.ok()) {
       (void)_rpc_client_server.ProcessPacket(res.value());
     }
@@ -131,7 +131,7 @@ class TestAccessor : public BridgeClass {
       _pin_subscriptions[idx].last_value = val;
     }
   }
-  void setSubscriptionLastReportMs(size_t idx, uint32_t ms) {
+  void setSubscriptionLastReportMs(size_t idx, uint16_t ms) {
     if (idx < _pin_subscriptions.size()) {
       _pin_subscriptions[idx].last_report_ms = ms;
     }

@@ -285,26 +285,16 @@ src_dir = Path(sys.argv[1])
 for rel in (
     "pw_rpc/nanopb/client_reader_writer.h",
     "pw_rpc/nanopb/server_reader_writer.h",
-    "pw_rpc/raw/client_reader_writer.h",
-    "pw_rpc/raw/server_reader_writer.h",
-    "pw_rpc/internal/client_call.h",
-    "pw_rpc/internal/server_call.h",
-    "pw_rpc/internal/call.h",
 ):
     hdr = src_dir / rel
     if not hdr.is_file():
         continue
     c = hdr.read_text(encoding="utf-8")
     for old, new in (
-        (": private internal::", ": public internal::"),
-        (": private rpc::Writer", ": public rpc::Writer"),
-        ("\n private:\n", "\n public:\n"),
-        ("\n protected:\n", "\n public:\n"),
-        ("constexpr Call()", "Call()"),
-        ("constexpr ClientCall() = default;", "ClientCall() = default;"),
-        ("constexpr UnaryResponseClientCall() = default;", "UnaryResponseClientCall() = default;"),
-        ("constexpr StreamResponseClientCall() = default;", "StreamResponseClientCall() = default;"),
-        ("constexpr ServerCall() = default;", "ServerCall() = default;"),
+        (": private internal::NanopbUnaryResponseClientCall<", ": public internal::NanopbUnaryResponseClientCall<"),
+        (": private internal::NanopbStreamResponseClientCall<", ": public internal::NanopbStreamResponseClientCall<"),
+        (": private internal::NanopbServerCall", ": public internal::NanopbServerCall"),
+        (": private internal::BaseNanopbServerReader<", ": public internal::BaseNanopbServerReader<"),
         ("constexpr NanopbUnaryResponseClientCall()", "NanopbUnaryResponseClientCall()"),
         ("constexpr NanopbStreamResponseClientCall()", "NanopbStreamResponseClientCall()"),
         ("constexpr NanopbClientReaderWriter() = default;", "NanopbClientReaderWriter() = default;"),
@@ -317,6 +307,30 @@ for rel in (
         ("constexpr NanopbServerReader() = default;", "NanopbServerReader() = default;"),
         ("constexpr NanopbServerWriter() = default;", "NanopbServerWriter() = default;"),
         ("constexpr NanopbUnaryResponder() = default;", "NanopbUnaryResponder() = default;"),
+        ("              DecodeToStructAndInvokeOnCompleted(\n", "              this->DecodeToStructAndInvokeOnCompleted(\n"),
+        ("          DecodeToStructAndInvokeOnNext(\n", "          this->DecodeToStructAndInvokeOnNext(\n"),
+        ("                    set_nanopb_on_next_locked(std::move(restored));\n", "                    this->set_nanopb_on_next_locked(std::move(restored));\n"),
+    ):
+        c = c.replace(old, new)
+    hdr.write_text(c, encoding="utf-8")
+
+for rel in (
+    "pw_rpc/raw/client_reader_writer.h",
+    "pw_rpc/raw/server_reader_writer.h",
+    "pw_rpc/internal/client_call.h",
+    "pw_rpc/internal/server_call.h",
+    "pw_rpc/internal/call.h",
+):
+    hdr = src_dir / rel
+    if not hdr.is_file():
+        continue
+    c = hdr.read_text(encoding="utf-8")
+    for old, new in (
+        ("constexpr Call()", "Call()"),
+        ("constexpr ClientCall() = default;", "ClientCall() = default;"),
+        ("constexpr UnaryResponseClientCall() = default;", "UnaryResponseClientCall() = default;"),
+        ("constexpr StreamResponseClientCall() = default;", "StreamResponseClientCall() = default;"),
+        ("constexpr ServerCall() = default;", "ServerCall() = default;"),
         ("constexpr RawClientReaderWriter() = default;", "RawClientReaderWriter() = default;"),
         ("constexpr RawClientReader() = default;", "RawClientReader() = default;"),
         ("constexpr RawClientWriter() = default;", "RawClientWriter() = default;"),
@@ -325,9 +339,6 @@ for rel in (
         ("constexpr RawServerReader() = default;", "RawServerReader() = default;"),
         ("constexpr RawServerWriter() = default;", "RawServerWriter() = default;"),
         ("constexpr RawUnaryResponder() = default;", "RawUnaryResponder() = default;"),
-        ("              DecodeToStructAndInvokeOnCompleted(\n", "              this->DecodeToStructAndInvokeOnCompleted(\n"),
-        ("          DecodeToStructAndInvokeOnNext(\n", "          this->DecodeToStructAndInvokeOnNext(\n"),
-        ("                    set_nanopb_on_next_locked(std::move(restored));\n", "                    this->set_nanopb_on_next_locked(std::move(restored));\n"),
     ):
         c = c.replace(old, new)
     hdr.write_text(c, encoding="utf-8")

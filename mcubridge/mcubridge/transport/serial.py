@@ -373,7 +373,7 @@ class SerialTransport:
                 and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
             )
             is_unary_rpc_response = spec is not None and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
-            if not pw_packets.for_server(pkt) and is_unary_rpc_response and not is_link_sync_response:
+            if not pw_packets.for_server(pkt) and is_unary_rpc_response:
                 rpc_status = self.rpc_client.process_packet(frame_data)
                 if not rpc_status.ok():
                     logger.warning(
@@ -510,9 +510,10 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
+        is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
         is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         if (
-            not is_handshake
+            not is_link_reset
             and spec is not None
             and spec.paired_request_id is None
             and spec.service_name
@@ -614,14 +615,24 @@ class SerialTransport:
 
         cipher = self.state.link_cipher
         if self.config.serial_shared_secret and cipher is None:
-            logger.error("Refusing Pigweed RPC output before link authentication")
-            return False
+            link_sync = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+            try:
+                meta = pw_packets.decode(packet)
+            except (ProtobufDecodeError, ValueError) as exc:
+                logger.error("Refusing malformed pre-authentication Pigweed RPC packet", error=str(exc))
+                return False
+            if (
+                link_sync is None
+                or meta.type != PacketType.REQUEST
+                or meta.service_id != link_sync.service_id
+                or meta.method_id != link_sync.method_id
+            ):
+                logger.error("Refusing non-handshake Pigweed RPC output before link authentication")
+                return False
 
         from pw_hdlc.encode import ui_frame
 
-        frame_payload = (
-            cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
-        )
+        frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
         encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
         async with self._serial_write_lock:
             serial_port = self.serial

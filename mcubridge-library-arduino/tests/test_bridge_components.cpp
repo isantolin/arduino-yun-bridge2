@@ -464,6 +464,7 @@ void test_process_edges() {
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
 
   // 13. Send failure with valid and invalid handler (covers line 64)
+  Process.reset();
   ba.setSynchronized();
   ba.setTxEnabled(false);
   Process.runAsync(
@@ -471,7 +472,8 @@ void test_process_edges() {
   Process.runAsync("ls", {}, ProcessType::ProcessRunHandler{});
   ba.setTxEnabled(true);
 
-  // Large cmd triggering pb_encode failure when encrypted
+  // Unready session keys and ready session keys branches
+  Process.reset();
   const char* secret_str =
       "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
   ba.setSharedSecret(etl::span<const uint8_t>(
@@ -482,6 +484,9 @@ void test_process_edges() {
   Process.runAsync(
       etl::string_view(large_cmd_buf.data(), 59), {},
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  ba.setSessionKeysReady(true);
+  Process.kill(1);
+  ba.setSessionKeysReady(false);
   ba.clearSharedSecret();
 
   // 14. Poll with invalid handler

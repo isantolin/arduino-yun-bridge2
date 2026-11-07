@@ -52,14 +52,18 @@ uint32_t NowMillis() {
 
 bool isLinkSyncRequest(const pw::rpc::PacketMeta& meta) {
   return meta.destination_is_server() &&
-         meta.service_id() == pw::tokenizer::Hash("rpc.pb.SystemService") &&
-         meta.method_id() == pw::tokenizer::Hash("LinkSync");
+         pw::rpc::internal::UnwrapServiceId(meta.service_id()) ==
+             pw::tokenizer::Hash("rpc.pb.SystemService") &&
+         pw::rpc::internal::UnwrapMethodId(meta.method_id()) ==
+             pw::tokenizer::Hash("LinkSync");
 }
 
 bool isLinkResetRequest(const pw::rpc::PacketMeta& meta) {
   return meta.destination_is_server() &&
-         meta.service_id() == pw::tokenizer::Hash("rpc.pb.SystemService") &&
-         meta.method_id() == pw::tokenizer::Hash("LinkReset");
+         pw::rpc::internal::UnwrapServiceId(meta.service_id()) ==
+             pw::tokenizer::Hash("rpc.pb.SystemService") &&
+         pw::rpc::internal::UnwrapMethodId(meta.method_id()) ==
+             pw::tokenizer::Hash("LinkReset");
 }
 
 class GpioRpcService final
@@ -1004,3 +1008,12 @@ void BridgeClass::_fillFreeMemory(rpc_pb_FreeMemoryResponse& resp) {
 void BridgeClass::_fillCapabilities(rpc_pb_Capabilities& resp) {
   bridge::hal::fillCapabilities(resp);
 }
+
+HardwareSerial fallbackSerial;
+#if defined(SERIAL_PORT_LINUXBRIDGE)
+BridgeClass Bridge(SERIAL_PORT_LINUXBRIDGE);
+#elif defined(SERIAL_PORT_HARDWARE)
+BridgeClass Bridge(SERIAL_PORT_HARDWARE);
+#else
+BridgeClass Bridge(fallbackSerial);
+#endif

@@ -242,7 +242,7 @@ void test_bridge_status_ack() {
   pw::rpc::internal::Packet pkt(
       pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
-      pw::tokenizer::Hash("GetVersion"));
+      pw::tokenizer::Hash("GetVersion"), 0, pw::ConstByteSpan());
   ba.invokeRpcResponse(pkt);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }

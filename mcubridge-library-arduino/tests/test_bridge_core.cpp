@@ -76,7 +76,7 @@ void test_bridge_handshake() {
   // 2. Build LinkSync HDLC RPC frame
   etl::array<uint8_t, 128> frame_raw;
   size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(pl_buf, pbos.bytes_written), frame_raw);
@@ -118,7 +118,7 @@ void test_bridge_handshake_response_uses_tag_length() {
 
   etl::array<uint8_t, 128> frame = {};
   const size_t frame_size = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(payload, output.bytes_written), frame);
@@ -135,14 +135,14 @@ void test_bridge_handshake_response_uses_tag_length() {
     }
 
     const auto response_packet =
-        pw::rpc_avr::RpcPacket::Decode(decoded_frame.value().data());
+        pw::rpc::internal::Packet::FromBuffer(decoded_frame.value().data());
     TEST_ASSERT_TRUE(response_packet.ok());
     TEST_ASSERT_EQUAL_UINT8(
-        static_cast<uint8_t>(pw::rpc_avr::PacketType::kResponse),
-        static_cast<uint8_t>(response_packet.value().type));
+        static_cast<uint8_t>(pw::rpc::internal::pwpb::PacketType::RESPONSE),
+        static_cast<uint8_t>(response_packet.value().type()));
 
     rpc_pb_LinkSync response = rpc_pb_LinkSync_init_default;
-    const auto response_payload = response_packet.value().payload;
+    const auto response_payload = response_packet.value().payload();
     pb_istream_t input = pb_istream_from_buffer(
         reinterpret_cast<const uint8_t*>(response_payload.data()),
         response_payload.size());
@@ -183,7 +183,7 @@ void test_bridge_send_frame() {
       pb_encode(&sub_os, rpc_pb_PinSubscribeRequest_fields, &sub_req));
   etl::array<uint8_t, 128> sub_frame;
   const size_t sub_len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("SubscribePins"),
       etl::span<const uint8_t>(sub_buf, sub_os.bytes_written), sub_frame);
@@ -207,7 +207,7 @@ void test_bridge_process_rx() {
 
   etl::array<uint8_t, 128> frame_raw;
   size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalWrite"),
       etl::span<const uint8_t>(pl_buf, pbos.bytes_written), frame_raw);
@@ -239,10 +239,10 @@ void test_bridge_status_ack() {
   ba.setSynchronized();
 
   // Verify RpcPacket response routing
-  pw::rpc_avr::RpcPacket pkt;
-  pkt.type = pw::rpc_avr::PacketType::kResponse;
-  pkt.service_id = pw::tokenizer::Hash("rpc.pb.SystemService");
-  pkt.method_id = pw::tokenizer::Hash("GetVersion");
+  pw::rpc::internal::Packet pkt(
+      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("GetVersion"));
   ba.invokeRpcResponse(pkt);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
@@ -363,21 +363,21 @@ void test_bridge_send_responses_table() {
   size_t len = 0;
 
   // GetVersion
-  len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+  len = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                              pw::tokenizer::Hash("rpc.pb.SystemService"),
                              pw::tokenizer::Hash("GetVersion"),
                              etl::span<const uint8_t>(), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 
   // GetFreeMemory
-  len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+  len = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                              pw::tokenizer::Hash("rpc.pb.SystemService"),
                              pw::tokenizer::Hash("GetFreeMemory"),
                              etl::span<const uint8_t>(), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 
   // GetCapabilities
-  len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+  len = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                              pw::tokenizer::Hash("rpc.pb.SystemService"),
                              pw::tokenizer::Hash("GetCapabilities"),
                              etl::span<const uint8_t>(), frame_raw);
@@ -390,7 +390,7 @@ void test_bridge_send_responses_table() {
   pb_ostream_t dros = pb_ostream_from_buffer(dr_buf, sizeof(dr_buf));
   pb_encode(&dros, rpc_pb_PinRead_fields, &dr);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalRead"),
       etl::span<const uint8_t>(dr_buf, dros.bytes_written), frame_raw);
@@ -398,7 +398,7 @@ void test_bridge_send_responses_table() {
 
   // AnalogRead
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("AnalogRead"),
       etl::span<const uint8_t>(dr_buf, dros.bytes_written), frame_raw);
@@ -413,9 +413,9 @@ void test_bridge_dispatch_status_and_unknown() {
   ba.setSynchronized();
 
   etl::array<uint8_t, 128> frame_raw;
-  size_t len =
-      build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest, 99999, 88888,
-                           etl::span<const uint8_t>(), frame_raw);
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST, 99999, 88888,
+      etl::span<const uint8_t>(), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
@@ -440,10 +440,10 @@ void test_bridge_frame_errors_and_zero_spi() {
 
   // 2. Corrupt CRC frame
   etl::array<uint8_t, 128> frame_raw;
-  size_t len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                                    pw::tokenizer::Hash("rpc.pb.SystemService"),
-                                    pw::tokenizer::Hash("GetVersion"),
-                                    etl::span<const uint8_t>(), frame_raw);
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("GetVersion"), etl::span<const uint8_t>(), frame_raw);
   if (len > 4) {
     frame_raw[len - 2] ^= 0xFF;
     ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
@@ -457,7 +457,7 @@ void test_bridge_frame_errors_and_zero_spi() {
   pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
   pb_encode(&pos, rpc_pb_SpiTransfer_fields, &spi_req);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SpiService"), pw::tokenizer::Hash("Transfer"),
       etl::span<const uint8_t>(req_buf, pos.bytes_written), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
@@ -542,10 +542,10 @@ void test_bridge_fsm_resets_and_link_reset() {
   // LinkReset via RPC
   ba.setSynchronized();
   etl::array<uint8_t, 64> frame_raw;
-  size_t len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                                    pw::tokenizer::Hash("rpc.pb.SystemService"),
-                                    pw::tokenizer::Hash("LinkReset"),
-                                    etl::span<const uint8_t>(), frame_raw);
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("LinkReset"), etl::span<const uint8_t>(), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
@@ -567,7 +567,7 @@ void test_bridge_dispatch_extra_branches() {
   pb_ostream_t bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_SetBaudratePacket_fields, &baud_msg);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("SetBaudrate"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -577,7 +577,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_SetBaudratePacket_fields, &baud_msg);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("SetBaudrate"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -587,7 +587,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_SetBaudratePacket_fields, &baud_msg);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("SetBaudrate"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -599,7 +599,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_EnterBootloader_fields, &bl_msg);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("EnterBootloader"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -609,7 +609,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_EnterBootloader_fields, &bl_msg);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("EnterBootloader"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -622,7 +622,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_DigitalWrite_fields, &dw);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalWrite"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -634,7 +634,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_AnalogWrite_fields, &aw);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("AnalogWrite"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -646,7 +646,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_PinMode_fields, &pm);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("SetPinMode"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -658,20 +658,20 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_PinMode_fields, &pm);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("SetPinMode"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 
   // SPI Service Begin, End
-  len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+  len = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                              pw::tokenizer::Hash("rpc.pb.SpiService"),
                              pw::tokenizer::Hash("Begin"),
                              etl::span<const uint8_t>(), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 
-  len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+  len = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                              pw::tokenizer::Hash("rpc.pb.SpiService"),
                              pw::tokenizer::Hash("End"),
                              etl::span<const uint8_t>(), frame_raw);
@@ -683,7 +683,7 @@ void test_bridge_dispatch_extra_branches() {
   bos = pb_ostream_from_buffer(baud_buf, sizeof(baud_buf));
   pb_encode(&bos, rpc_pb_ClockSyncRequest_fields, &cs_req);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.ClockSyncService"),
       pw::tokenizer::Hash("ClockSync"),
       etl::span<const uint8_t>(baud_buf, bos.bytes_written), frame_raw);
@@ -719,7 +719,7 @@ void test_bridge_authenticated_digital_write_frame() {
   TEST_ASSERT_TRUE(pb_encode(&sync_stream, rpc_pb_LinkSync_fields, &sync));
   etl::array<uint8_t, 128> sync_frame;
   size_t sync_frame_len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(sync_payload, sync_stream.bytes_written),
@@ -739,7 +739,7 @@ void test_bridge_authenticated_digital_write_frame() {
 
   uint8_t rpc_packet[128];
   const size_t rpc_packet_size = build_rpc_packet(
-      pw::rpc_avr::PacketType::kRequest,
+      pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalWrite"),
       etl::span<const uint8_t>(payload, payload_stream.bytes_written),
@@ -822,7 +822,7 @@ void test_bridge_receive_security_gate_variants() {
 
   etl::array<uint8_t, 128> hdlc_buf;
   size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalWrite"),
       etl::span<const uint8_t>(payload, pbos.bytes_written), hdlc_buf);
@@ -844,7 +844,7 @@ void test_bridge_receive_security_gate_variants() {
   pbos = pb_ostream_from_buffer(payload, sizeof(payload));
   pb_encode(&pbos, rpc_pb_DigitalWrite_fields, &write_req);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.GpioService"),
       pw::tokenizer::Hash("DigitalWrite"),
       etl::span<const uint8_t>(payload, pbos.bytes_written), hdlc_buf);
@@ -855,7 +855,7 @@ void test_bridge_receive_security_gate_variants() {
 
   // 3. LinkReset resets synchronized state
   secret_bridge.setSynchronized();
-  len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
+  len = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                              pw::tokenizer::Hash("rpc.pb.SystemService"),
                              pw::tokenizer::Hash("LinkReset"),
                              etl::span<const uint8_t>(), hdlc_buf);
@@ -881,10 +881,11 @@ void test_bridge_fault_injection_kat_and_post() {
   // 2. Unknown RPC method
   ba.setSynchronized();
   etl::array<uint8_t, 128> hdlc_buf;
-  size_t len = build_hdlc_rpc_frame(1, pw::rpc_avr::PacketType::kRequest,
-                                    pw::tokenizer::Hash("rpc.pb.SystemService"),
-                                    pw::tokenizer::Hash("UnknownMethod"),
-                                    etl::span<const uint8_t>(), hdlc_buf);
+  size_t len = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("UnknownMethod"), etl::span<const uint8_t>(),
+      hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), len));
 
   // 3. Status malformed with status handler
@@ -912,7 +913,7 @@ void test_bridge_fault_injection_kat_and_post() {
   pb_ostream_t spos = pb_ostream_from_buffer(spi_raw, sizeof(spi_raw));
   pb_encode(&spos, rpc_pb_SpiTransfer_fields, &spi_req_data);
   len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SpiService"), pw::tokenizer::Hash("Transfer"),
       etl::span<const uint8_t>(spi_raw, spos.bytes_written), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), len));

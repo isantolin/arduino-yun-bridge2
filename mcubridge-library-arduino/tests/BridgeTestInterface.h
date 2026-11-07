@@ -6,6 +6,7 @@
 #endif
 
 #include <etl/span.h>
+#include <pw_rpc/internal/packet.h>
 
 #include "Bridge.h"
 #include "security/security.h"
@@ -85,16 +86,15 @@ class TestAccessor : public BridgeClass {
     }
   }
 
-  void invokeRpcResponse(const pw::rpc_avr::RpcPacket& pkt) {
-    pw::rpc_avr::RpcPacket copy = pkt;
-    if (copy.channel_id == 0) {
-      copy.channel_id = 1;
+  void invokeRpcResponse(const pw::rpc::internal::Packet& pkt) {
+    pw::rpc::internal::Packet copy = pkt;
+    if (copy.channel_id() == 0) {
+      copy.set_channel_id(1);
     }
-    uint8_t buf[bridge::config::RX_BUFFER_SIZE];
-    auto res = copy.Encode(pw::as_writable_bytes(pw::span(buf)));
+    std::byte buf[bridge::config::RX_BUFFER_SIZE];
+    auto res = copy.Encode(pw::span(buf));
     if (res.ok()) {
-      (void)_rpc_client_server.ProcessPacket(
-          pw::as_bytes(pw::span(buf, res.size())));
+      (void)_rpc_client_server.ProcessPacket(res.value());
     }
   }
 

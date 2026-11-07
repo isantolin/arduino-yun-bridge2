@@ -76,34 +76,30 @@ void test_hdlc_address_demux() {
 }
 
 void test_rpc_packet_encoding_and_decoding() {
-  pw::rpc_avr::RpcPacket packet;
-  packet.type = pw::rpc_avr::PacketType::kRequest;
-  packet.channel_id = 1;
-  packet.service_id = pw::tokenizer::Hash("rpc.pb.SystemService");
-  packet.method_id = pw::tokenizer::Hash("GetVersion");
-  packet.call_id = 42;
-
   const uint8_t payload[] = {0x10, 0x20, 0x30};
-  packet.payload = pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(payload),
-                                     sizeof(payload));
+  pw::rpc::internal::Packet packet(
+      pw::rpc::internal::pwpb::PacketType::REQUEST, 1,
+      pw::tokenizer::Hash("rpc.pb.SystemService"),
+      pw::tokenizer::Hash("GetVersion"), 42,
+      pw::as_bytes(pw::span(payload, sizeof(payload))));
 
-  uint8_t encoded_buf[128];
-  auto enc_res = packet.Encode(pw::as_writable_bytes(pw::span(encoded_buf)));
+  std::byte encoded_buf[128];
+  auto enc_res = packet.Encode(pw::span(encoded_buf));
   TEST_ASSERT_TRUE(enc_res.ok());
-  TEST_ASSERT_TRUE(enc_res.size() > 0);
+  TEST_ASSERT_TRUE(enc_res.value().size() > 0);
 
-  auto dec_res = pw::rpc_avr::RpcPacket::Decode(
-      pw::as_bytes(pw::span(encoded_buf, enc_res.size())));
+  auto dec_res = pw::rpc::internal::Packet::FromBuffer(enc_res.value());
   TEST_ASSERT_TRUE(dec_res.ok());
 
   const auto& decoded = dec_res.value();
-  TEST_ASSERT_TRUE(decoded.type == pw::rpc_avr::PacketType::kRequest);
-  TEST_ASSERT_EQUAL_UINT32(1, decoded.channel_id);
-  TEST_ASSERT_EQUAL_UINT32(packet.service_id, decoded.service_id);
-  TEST_ASSERT_EQUAL_UINT32(packet.method_id, decoded.method_id);
-  TEST_ASSERT_EQUAL_UINT32(42, decoded.call_id);
-  TEST_ASSERT_EQUAL(sizeof(payload), decoded.payload.size());
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, decoded.payload.data(),
+  TEST_ASSERT_TRUE(decoded.type() ==
+                   pw::rpc::internal::pwpb::PacketType::REQUEST);
+  TEST_ASSERT_EQUAL_UINT32(1, decoded.channel_id());
+  TEST_ASSERT_EQUAL_UINT32(packet.service_id(), decoded.service_id());
+  TEST_ASSERT_EQUAL_UINT32(packet.method_id(), decoded.method_id());
+  TEST_ASSERT_EQUAL_UINT32(42, decoded.call_id());
+  TEST_ASSERT_EQUAL(sizeof(payload), decoded.payload().size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, decoded.payload().data(),
                                 sizeof(payload));
 }
 

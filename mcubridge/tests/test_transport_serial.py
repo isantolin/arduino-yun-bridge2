@@ -1046,9 +1046,14 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         transport.serial = mock_serial
 
         outgoing: list[bytes] = []
+
+        def queue_rpc_packet(packet: bytes) -> None:
+            outgoing.append(packet)
+            transport._queue_rpc_packet(packet)
+
         transport.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
-            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, queue_rpc_packet)],
             protocol.PW_SERVICES,
         )
         send_task = asyncio.create_task(transport.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=b"PING")))

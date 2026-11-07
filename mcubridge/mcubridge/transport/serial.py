@@ -647,17 +647,11 @@ class SerialTransport:
         self.state.metrics.serial_frames_sent.inc()
         return True
 
-    async def _send_rpc(
-        self,
-        spec: Any,
-        payload: bytes | ProtobufMessage,
-        timeout: float | None,
-    ) -> bool | ProtobufMessage:
-        """Invoke one unary method through pw_rpc.Client and await its callbacks."""
+    def _decode_rpc_request(self, spec: Any, payload: bytes | ProtobufMessage) -> ProtobufMessage | None:
         if spec.request_type is None:
             logger.error("Pigweed RPC descriptor has no request type", operation=spec.name)
-            return False
-        request_type = cast(Any, spec.request_type)
+            return None
+        request_type = spec.request_type
         if isinstance(payload, request_type):
             request = cast(ProtobufMessage, payload)
         elif isinstance(payload, bytes):
@@ -665,22 +659,34 @@ class SerialTransport:
                 request = cast(ProtobufMessage, request_type.FromString(payload))
             except ProtobufDecodeError as exc:
                 logger.error("Unable to decode Pigweed RPC request payload", operation=spec.name, error=str(exc))
-                return False
+                return None
         else:
             logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
-            return False
-        if not cast(Any, request).IsInitialized():
+            return None
+        if not request.IsInitialized():
             logger.error("Pigweed RPC request is not initialized", operation=spec.name)
-            return False
+            return None
+        return request
 
+    def _get_rpc_method(self, spec: Any) -> Any | None:
         method_name = f"{spec.service_name}/{spec.method_name}"
         try:
-            rpc_method = self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(method_name)
+            return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(method_name)
         except (KeyError, ValueError) as exc:
-            logger.error("Pigweed RPC method is not present in generated descriptors", method=method_name, error=str(exc))
-            return False
+            logger.error(
+                "Pigweed RPC method is not present in generated descriptors",
+                method=method_name,
+                error=str(exc),
+            )
+            return None
 
-        effective_timeout = timeout if timeout is not None else self._response_timeout
+    async def _invoke_rpc_with_retries(
+        self,
+        rpc_method: Any,
+        request: ProtobufMessage,
+        method_name: str,
+        timeout: float,
+    ) -> bool | ProtobufMessage:
         for attempt in range(self.max_attempts):
             loop = asyncio.get_running_loop()
             completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
@@ -725,14 +731,18 @@ class SerialTransport:
                     on_error=_on_error,
                 )
                 self._active_rpc_calls.append(call)
-                async with asyncio.timeout(effective_timeout):
+                async with asyncio.timeout(timeout):
                     return await completion
             except TimeoutError:
                 if call is not None:
                     try:
                         call.cancel()
                     except (KeyError, RuntimeError, ValueError) as exc:
-                        logger.debug("Pigweed RPC cancellation raced with completion", method=method_name, error=str(exc))
+                        logger.debug(
+                            "Pigweed RPC cancellation raced with completion",
+                            method=method_name,
+                            error=str(exc),
+                        )
                 if attempt + 1 >= self.max_attempts:
                     logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
                     return False
@@ -742,7 +752,11 @@ class SerialTransport:
                     try:
                         call.cancel()
                     except (KeyError, RuntimeError, ValueError) as exc:
-                        logger.debug("Pigweed RPC cancellation raced with task cancellation", method=method_name, error=str(exc))
+                        logger.debug(
+                            "Pigweed RPC cancellation raced with task cancellation",
+                            method=method_name,
+                            error=str(exc),
+                        )
                 raise
             except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                 logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
@@ -751,6 +765,23 @@ class SerialTransport:
                 if call is not None and call in self._active_rpc_calls:
                     self._active_rpc_calls.remove(call)
         return False
+
+    async def _send_rpc(
+        self,
+        spec: Any,
+        payload: bytes | ProtobufMessage,
+        timeout: float | None,
+    ) -> bool | ProtobufMessage:
+        """Invoke one unary method through pw_rpc.Client and await its callbacks."""
+        request = self._decode_rpc_request(spec, payload)
+        if request is None:
+            return False
+        rpc_method = self._get_rpc_method(spec)
+        if rpc_method is None:
+            return False
+        method_name = f"{spec.service_name}/{spec.method_name}"
+        effective_timeout = timeout if timeout is not None else self._response_timeout
+        return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 
     async def send_raw(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""

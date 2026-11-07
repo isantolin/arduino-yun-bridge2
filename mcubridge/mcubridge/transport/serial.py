@@ -372,7 +372,8 @@ class SerialTransport:
                 and pkt.method_id == link_sync.method_id
                 and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
             )
-            if not pw_packets.for_server(pkt) and not is_link_sync_response:
+            is_unary_rpc_response = spec is not None and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
+            if not pw_packets.for_server(pkt) and is_unary_rpc_response and not is_link_sync_response:
                 rpc_status = self.rpc_client.process_packet(frame_data)
                 if not rpc_status.ok():
                     logger.warning(
@@ -593,7 +594,7 @@ class SerialTransport:
             try:
                 if not completed.result():
                     logger.error("Pigweed RPC packet could not be written to serial")
-            except (OSError, RuntimeError, ValueError) as exc:
+            except (asyncio.CancelledError, OSError, RuntimeError, ValueError) as exc:
                 logger.error("Pigweed RPC packet write task failed", error=str(exc))
 
         task.add_done_callback(_finish)
@@ -694,7 +695,10 @@ class SerialTransport:
                     return await completion
             except TimeoutError:
                 if call is not None:
-                    call.cancel()
+                    try:
+                        call.cancel()
+                    except (KeyError, RuntimeError, ValueError) as exc:
+                        logger.debug("Pigweed RPC cancellation raced with completion", method=method_name, error=str(exc))
                 if attempt + 1 >= self.max_attempts:
                     logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
                     return False

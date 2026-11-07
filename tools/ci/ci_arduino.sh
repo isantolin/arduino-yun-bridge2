@@ -23,24 +23,29 @@ if [ ! -d "$USER_LIB_DIR" ]; then
     USER_LIB_DIR="$HOME/Documents/Arduino/libraries"
 fi
 
-# Update core index
-echo "Updating core index..."
-if ! arduino-cli core update-index; then
-    echo "[WARN] arduino-cli core update-index failed; bootstrapping package_index.tar.bz2 directly..."
-    mkdir -p "$HOME/.arduino15"
-    curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"
+# Update core index and install cores only if not already installed by CI workflow
+if [ ! -d "$HOME/.arduino15/packages/arduino/hardware/avr" ] || \
+   [ ! -d "$HOME/.arduino15/packages/arduino/hardware/samd" ] || \
+   [ ! -d "$HOME/.arduino15/packages/arduino/hardware/esp32" ]; then
+    echo "Updating core index..."
+    if ! arduino-cli core update-index; then
+        echo "[WARN] arduino-cli core update-index failed; bootstrapping package_index.tar.bz2 directly..."
+        mkdir -p "$HOME/.arduino15"
+        curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"
+    fi
+
+    echo "Installing Arduino AVR, SAMD, and ESP32 cores..."
+    arduino-cli core install arduino:avr arduino:samd arduino:esp32 || {
+        echo "Failed to install required Arduino board cores" >&2
+        exit 1
+    }
 fi
 
-# Install the supported board cores used by the compile matrix.
-echo "Installing Arduino AVR, SAMD, and ESP32 cores..."
-arduino-cli core install arduino:avr arduino:samd arduino:esp32 || {
-    echo "Failed to install required Arduino board cores" >&2
-    exit 1
-}
-
-# Install official dependencies
-echo "Installing official libraries..."
-arduino-cli lib install WiFiNINA || { echo "Failed to install WiFiNINA"; exit 1; }
+# Install official dependencies if missing
+if [ ! -d "$USER_LIB_DIR/WiFiNINA" ]; then
+    echo "Installing official libraries..."
+    arduino-cli lib install WiFiNINA || { echo "Failed to install WiFiNINA"; exit 1; }
+fi
 
 # Install dependencies
 echo "Generating protocol bindings..."
@@ -160,7 +165,11 @@ compile_sketch() {
         BUILD_FLAGS+=("--build-path" "$ISOLATED_BUILD_DIR")
     fi
 
-    if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
+    local BOARD_CACHE_DIR="${_LOG_DIR}/cache/${BOARD_NAME}"
+    mkdir -p "$BOARD_CACHE_DIR"
+    BUILD_FLAGS+=("--build-cache-path" "$BOARD_CACHE_DIR")
+
+    if arduino-cli compile "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
         echo "✓ $sketch_name ($FQBN)"
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"

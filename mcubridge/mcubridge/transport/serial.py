@@ -163,6 +163,9 @@ class SerialTransport:
             if self.current_command:
                 self.current_command.mark_failure(Status.TIMEOUT.value)
             self.current_command = None
+        for task in tuple(self._rpc_write_tasks):
+            task.cancel()
+        self._rpc_write_tasks.clear()
         for call in tuple(self._active_rpc_calls):
             try:
                 call.cancel()
@@ -743,7 +746,13 @@ class SerialTransport:
                     return
                 if status.ok():
                     response_message = state["response"]
-                    future.set_result(response_message if response_message is not None else True)
+                    if (
+                        isinstance(response_message, pb.StatusPacket)
+                        and response_message.status not in SERIAL_SUCCESS_STATUS_CODES
+                    ):
+                        future.set_result(False)
+                    else:
+                        future.set_result(response_message if response_message is not None else True)
                 else:
                     future.set_result(False)
 

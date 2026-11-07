@@ -583,7 +583,7 @@ async def test_serial_transport_edge_branches(
         return len(_data)
 
     mock_serial2.write = MagicMock(side_effect=_resolve_pending_without_status)
-    res_fail_status = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"test")
+    res_fail_status = await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test"))
     assert res_fail_status is False
 
 
@@ -1140,7 +1140,7 @@ def test_queue_rpc_packet_ignores_malformed_packet(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
-    transport.queue_rpc_packet(b"\\xff")
+    transport.queue_rpc_packet(b"\xff")
     assert transport.__dict__["_active_rpc_packet_ids"] == set()
 
 
@@ -1179,7 +1179,6 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     mock_serial.write.assert_not_called()
 
 
-
 def _private_attribute(instance: object, name: str) -> Any:
     return getattr(instance, name)
 
@@ -1198,7 +1197,7 @@ def test_decode_rpc_request_rejects_invalid_payloads(
         _private_attribute(transport, "_decode_rpc_request"),
     )
     assert decode_rpc_request(spec, cast(Any, object())) is None
-    assert decode_rpc_request(spec, b"\\x0a\\xff") is None
+    assert decode_rpc_request(spec, b"\x0a\xff") is None
     assert decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
 
 
@@ -1252,4 +1251,18 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
         rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
     )
     assert not result
+    assert call not in active_rpc_calls
+
+    def complete_with_error_status_packet(
+        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
+    ) -> Any:
+        on_next(call, pb.StatusPacket(status=Status.MALFORMED.value))
+        on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
+        return call
+
+    rpc_method.invoke.side_effect = complete_with_error_status_packet
+    result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert result is False
     assert call not in active_rpc_calls

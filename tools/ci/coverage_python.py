@@ -60,7 +60,7 @@ def main(
         "pytest_asyncio",
         "-p",
         "no:platformdirs",
-        "--timeout=300",
+        "--timeout=60",
         "--timeout-method=thread",
         f"--cov={ROOT_DIR / 'mcubridge' / 'mcubridge'}",
         f"--cov={ROOT_DIR / 'mcubridge-client-examples' / 'mcubridge_client'}",
@@ -76,7 +76,7 @@ def main(
 
     has_n = any(arg == "-n" or arg.startswith("-n=") for arg in targets)
     if not has_n and importlib.util.find_spec("xdist") is not None:
-        args.extend(["-n", "5"])
+        args.extend(["-n", "3", "--max-worker-restart=0"])
 
     args.extend(targets)
 

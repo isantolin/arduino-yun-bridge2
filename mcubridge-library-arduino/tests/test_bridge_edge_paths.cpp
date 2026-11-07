@@ -920,7 +920,7 @@ void test_encrypted_hdlc_and_session_edge_paths() {
 
   pw::rpc::internal::Packet sync_pkt(
       pw::rpc::internal::pwpb::PacketType::REQUEST, 1, kSysSvc,
-      pw::tokenizer::Hash("LinkSync"));
+      pw::tokenizer::Hash("LinkSync"), 1, pw::ConstByteSpan());
   uint8_t pkt_buf[64];
   auto enc_sync = sync_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
   hdlc_len = build_encrypted_hdlc_frame(
@@ -932,7 +932,7 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   ba.setSessionKeysReady(true);
   pw::rpc::internal::Packet ver_pkt(
       pw::rpc::internal::pwpb::PacketType::REQUEST, 1, kSysSvc,
-      pw::tokenizer::Hash("GetVersion"));
+      pw::tokenizer::Hash("GetVersion"), 1, pw::ConstByteSpan());
   auto enc_ver = ver_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 4U,

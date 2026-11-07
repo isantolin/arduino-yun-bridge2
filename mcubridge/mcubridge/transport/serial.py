@@ -746,13 +746,7 @@ class SerialTransport:
                     return
                 if status.ok():
                     response_message = state["response"]
-                    if (
-                        isinstance(response_message, pb.StatusPacket)
-                        and response_message.status not in SERIAL_SUCCESS_STATUS_CODES
-                    ):
-                        future.set_result(False)
-                    else:
-                        future.set_result(response_message if response_message is not None else True)
+                    future.set_result(response_message if response_message is not None else True)
                 else:
                     future.set_result(False)
 

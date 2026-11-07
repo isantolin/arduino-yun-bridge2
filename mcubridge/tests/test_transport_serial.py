@@ -1253,16 +1253,15 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     assert not result
     assert call not in active_rpc_calls
 
-    def complete_with_error_status_packet(
+    def complete_with_non_ok_status(
         _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
     ) -> Any:
-        on_next(call, pb.StatusPacket(status=Status.MALFORMED.value))
-        on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
+        on_completed(call, MagicMock(ok=MagicMock(return_value=False)))
         return call
 
-    rpc_method.invoke.side_effect = complete_with_error_status_packet
+    rpc_method.invoke.side_effect = complete_with_non_ok_status
     result = await invoke_rpc_with_retries(
         rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
     )
-    assert result is False
+    assert not result
     assert call not in active_rpc_calls

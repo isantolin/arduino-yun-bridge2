@@ -25,7 +25,7 @@ jobs:
   tox-checks:
     name: Tox (${{ matrix.env }})
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

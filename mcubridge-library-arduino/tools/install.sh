@@ -265,7 +265,10 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
     fi
     if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ]; then
         python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
-        for rpc_src in client.cc client_call.cc client_server.cc; do
+        # ClientServer is a convenience wrapper not used by McuBridge. Its constexpr
+        # constructor is incompatible with the legacy SAMD GCC 7.2 toolchain;
+        # do not export/compile this unused translation unit.
+        for rpc_src in client.cc client_call.cc; do
             if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/third_party/pigweed/pw_rpc/${rpc_src}" ]; then
                 cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/third_party/pigweed/pw_rpc/${rpc_src}" \
                     "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_${rpc_src}"
@@ -291,6 +294,7 @@ for rel in (
         continue
     c = hdr.read_text(encoding="utf-8")
     for old, new in (
+        ("constexpr ClientServer(", "ClientServer("),
         (": private internal::NanopbUnaryResponseClientCall<", ": public internal::NanopbUnaryResponseClientCall<"),
         (": private internal::NanopbStreamResponseClientCall<", ": public internal::NanopbStreamResponseClientCall<"),
         (": private internal::NanopbServerCall", ": public internal::NanopbServerCall"),

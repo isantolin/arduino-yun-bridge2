@@ -94,7 +94,7 @@ class TestAccessor : public BridgeClass {
     uint8_t buf[bridge::config::RX_BUFFER_SIZE];
     auto res = copy.Encode(pw::as_writable_bytes(pw::span(buf)));
     if (res.ok()) {
-      (void)_rpc_client_server.ProcessPacket(res.value());
+      (void)_rpc_client.ProcessPacket(res.value());
     }
   }
 

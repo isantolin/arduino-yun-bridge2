@@ -1189,7 +1189,7 @@ def test_decode_rpc_request_rejects_invalid_payloads(
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None
 
-    assert transport._decode_rpc_request(spec, object()) is None
+    assert transport._decode_rpc_request(spec, cast(Any, object())) is None
     assert transport._decode_rpc_request(spec, b"\\x0a\\xff") is None
     assert transport._decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
 

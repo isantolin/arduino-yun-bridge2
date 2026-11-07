@@ -625,12 +625,15 @@ class SerialTransport:
             raise RuntimeError("Pigweed RPC output invoked outside the asyncio event loop") from exc
         task = loop.create_task(self._write_rpc_packet(packet), name="mcubridge-pw-rpc-write")
         self._rpc_write_tasks.add(task)
-        task.add_done_callback(self._rpc_write_tasks.discard)
+
+        def _finish(completed: asyncio.Task[bool]) -> None:
+            self._rpc_write_tasks.discard(completed)
+
+        task.add_done_callback(_finish)
 
     async def _write_rpc_packet(self, packet: bytes) -> bool:
         """Apply link security and HDLC framing to a packet produced by pw_rpc.Client."""
-        serial_port = self.serial
-        if not serial_port or not serial_port.is_open:
+        if not self.serial or not self.serial.is_open:
             return False
         if not self.state.serial_tx_allowed.is_set():
             try:
@@ -651,6 +654,9 @@ class SerialTransport:
         frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
         encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
         async with self._serial_write_lock:
+            serial_port = self.serial
+            assert serial_port is not None
+
             def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
                 ser.write(data)
                 ser.flush()
@@ -699,7 +705,7 @@ class SerialTransport:
         method_name: str,
         timeout: float,
     ) -> bool | ProtobufMessage:
-        for attempt in range(1, self.max_attempts + 1):
+        for attempt in range(self.max_attempts):
             loop = asyncio.get_running_loop()
             completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
             callback_state: dict[str, ProtobufMessage | None] = {"response": None}
@@ -734,6 +740,7 @@ class SerialTransport:
                     logger.warning("Pigweed unary RPC failed", method=method_name, error=str(error))
                     future.set_result(False)
 
+            call: Any = None
             try:
                 call = rpc_method.invoke(
                     request,
@@ -741,12 +748,7 @@ class SerialTransport:
                     on_completed=_on_completed,
                     on_error=_on_error,
                 )
-            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-                logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
-                return False
-
-            self._active_rpc_calls.append(call)
-            try:
+                self._active_rpc_calls.append(call)
                 async with asyncio.timeout(timeout):
                     return await completion
             except TimeoutError:
@@ -758,10 +760,8 @@ class SerialTransport:
                         method=method_name,
                         error=str(exc),
                     )
-                if attempt < self.max_attempts:
-                    await asyncio.sleep(
-                        min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (attempt - 1)), SERIAL_HANDSHAKE_BACKOFF_MAX)
-                    )
+                if attempt + 1 < self.max_attempts:
+                    await asyncio.sleep(min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2**attempt), SERIAL_HANDSHAKE_BACKOFF_MAX))
             except asyncio.CancelledError:
                 try:
                     call.cancel()
@@ -772,6 +772,9 @@ class SerialTransport:
                         error=str(exc),
                     )
                 raise
+            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+                logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
+                return False
             finally:
                 if call in self._active_rpc_calls:
                     self._active_rpc_calls.remove(call)

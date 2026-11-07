@@ -285,12 +285,17 @@ src_dir = Path(sys.argv[1])
 for rel in (
     "pw_rpc/nanopb/client_reader_writer.h",
     "pw_rpc/nanopb/server_reader_writer.h",
+    # Pigweed's ClientServer wrapper is not C++17-constexpr compatible with
+    # the SAMD GCC 7.2 toolchain. Bridge uses Client and Server directly, but
+    # Arduino compiles every exported .cc file, including client_server.cc.
+    "pw_rpc/client_server.h",
 ):
     hdr = src_dir / rel
     if not hdr.is_file():
         continue
     c = hdr.read_text(encoding="utf-8")
     for old, new in (
+        ("constexpr ClientServer(", "ClientServer("),
         (": private internal::NanopbUnaryResponseClientCall<", ": public internal::NanopbUnaryResponseClientCall<"),
         (": private internal::NanopbStreamResponseClientCall<", ": public internal::NanopbStreamResponseClientCall<"),
         (": private internal::NanopbServerCall", ": public internal::NanopbServerCall"),

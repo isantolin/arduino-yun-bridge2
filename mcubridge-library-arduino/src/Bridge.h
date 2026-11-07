@@ -65,7 +65,8 @@
 // clang-format on
 
 #include <pw_rpc/channel.h>
-#include <pw_rpc/client_server.h>
+#include <pw_rpc/client.h>
+#include <pw_rpc/server.h>
 #include <pw_rpc/nanopb/client_reader_writer.h>
 #include <pw_rpc/nanopb/server_reader_writer.h>
 #include <pw_rpc/packet_meta.h>
@@ -207,7 +208,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   rpc::pb::pw_rpc::nanopb::DataStoreService::Client dataStoreClient() {
-    return {_rpc_client_server.client(), 1};
+    return {_rpc_client, 1};
   }
 
   rpc::pb::pw_rpc::nanopb::ProcessService::Client processClient() {
@@ -279,7 +280,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::hdlc::DecoderBuffer<bridge::config::RX_BUFFER_SIZE> _hdlc_decoder;
   RpcChannelOutput _rpc_channel_output;
   pw::rpc::Channel _rpc_channel;
-  pw::rpc::ClientServer _rpc_client_server;
+  pw::rpc::Client _rpc_client;
+  pw::rpc::Server _rpc_server;
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
   bool _rpc_plaintext_response{false};

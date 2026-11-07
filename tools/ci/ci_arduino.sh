@@ -187,31 +187,32 @@ compile_sketch() {
     fi
 }
 
-# Collect all board×sketch combinations, then run in parallel
-echo "Compiling examples in parallel (max $MAX_JOBS jobs)..."
+# Collect all sketches, then compile each board in its own parallel worker
+# so sketches for the same board reuse BOARD_CACHE_DIR sequentially without core.a races.
+echo "Compiling examples in parallel across ${#TARGET_BOARDS[@]} target boards..."
 pids=()
 CRITICAL_FAIL=0
 
-# Collect all sketches
 SKETCHES=()
 while IFS= read -r s; do
     [ -n "$s" ] && SKETCHES+=("$s")
-done < <(find "$EXAMPLES_DIR" -name "*.ino")
+done < <(find "$EXAMPLES_DIR" -name "*.ino" | sort)
+
+compile_board() {
+    local FQBN="$1"
+    local board_fail=0
+    for sketch in "${SKETCHES[@]}"; do
+        compile_sketch "$FQBN" "$sketch" || board_fail=1
+    done
+    return $board_fail
+}
 
 for FQBN in "${TARGET_BOARDS[@]}"; do
-    for sketch in "${SKETCHES[@]}"; do
-        compile_sketch "$FQBN" "$sketch" &
-        pids+=($!)
-
-        # Throttle to MAX_JOBS
-        if [[ ${#pids[@]} -ge $MAX_JOBS ]]; then
-            wait "${pids[0]}" || CRITICAL_FAIL=1
-            pids=("${pids[@]:1}")
-        fi
-    done
+    compile_board "$FQBN" &
+    pids+=($!)
 done
 
-# Wait for remaining jobs
+# Wait for all board workers
 for pid in "${pids[@]}"; do
     wait "$pid" || CRITICAL_FAIL=1
 done

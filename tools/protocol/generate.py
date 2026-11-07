@@ -1011,6 +1011,9 @@ def main(
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
     args = GenerationArgs(spec=spec_file, cpp=cpp, py=py, py_client=py_client)
+    install_sh = REPO_ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
+    if install_sh.is_file():
+        install_sh.chmod(0o755)
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":

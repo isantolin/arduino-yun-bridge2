@@ -1049,7 +1049,7 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
 
         def queue_rpc_packet(packet: bytes) -> None:
             outgoing.append(packet)
-            getattr(transport, "_queue_rpc_packet")(packet)
+            transport.queue_rpc_packet(packet)
 
         transport.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),

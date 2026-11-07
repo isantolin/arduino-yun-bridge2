@@ -1086,11 +1086,11 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         state.cleanup()
 
 
-def _make_rpc_packet(packet_type: PacketType, call_id: int = 41) -> bytes:
+def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None and spec.service_id is not None and spec.method_id is not None
     return RpcPacket(
-        type=packet_type,
+        type=int(packet_type),
         channel_id=protocol.HDLC_ADDRESS_RPC,
         service_id=spec.service_id,
         method_id=spec.method_id,
@@ -1102,8 +1102,14 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
-    write_packet = mocker.patch.object(transport, "_write_rpc_packet", new=AsyncMock(return_value=True))
-    request = _make_rpc_packet(PacketType.REQUEST)
+    runtime_config.serial_shared_secret = b""
+    runtime_state.serial_tx_allowed.set()
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=16)
+    mock_serial.flush = MagicMock()
+    transport.serial = mock_serial
+    request = _make_rpc_packet(int(PacketType.REQUEST))
     request_key = (
         protocol.HDLC_ADDRESS_RPC,
         pw_packets.decode(request).service_id,
@@ -1114,17 +1120,20 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     transport.queue_rpc_packet(request)
     assert request_key in getattr(transport, "_active_rpc_packet_ids")
 
-    client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
+    client_error = _make_rpc_packet(int(PacketType.CLIENT_ERROR))
     transport.queue_rpc_packet(client_error)
     assert request_key not in getattr(transport, "_active_rpc_packet_ids")
 
     # A response packet is written but must not be registered as a new active call.
-    response = _make_rpc_packet(PacketType.RESPONSE)
+    response = _make_rpc_packet(int(PacketType.RESPONSE))
     transport.queue_rpc_packet(response)
     assert request_key not in getattr(transport, "_active_rpc_packet_ids")
 
-    await asyncio.sleep(0)
-    assert write_packet.await_count == 3
+    for _ in range(100):
+        if mock_serial.write.call_count == 3:
+            break
+        await asyncio.sleep(0.01)
+    assert mock_serial.write.call_count == 3
 
 
 def test_queue_rpc_packet_ignores_malformed_packet(
@@ -1139,7 +1148,7 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
-    packet = _make_rpc_packet(PacketType.REQUEST)
+    packet = _make_rpc_packet(int(PacketType.REQUEST))
     decoded = pw_packets.decode(packet)
     key = (decoded.channel_id, decoded.service_id, decoded.method_id, decoded.call_id)
 
@@ -1162,7 +1171,7 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_state.serial_tx_allowed.clear()
     runtime_state.mcu_is_paused = True
 
-    result = await getattr(transport, "_write_rpc_packet")(_make_rpc_packet(PacketType.REQUEST))
+    result = await getattr(transport, "_write_rpc_packet")(_make_rpc_packet(int(PacketType.REQUEST)))
 
     assert result is False
     assert runtime_state.serial_tx_allowed.is_set()

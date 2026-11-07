@@ -741,10 +741,10 @@ class SerialTransport:
                 if call is not None:
                     try:
                         call.cancel()
-                    except (KeyError, PwRpcError, RuntimeError, ValueError) as exc:
+                    except (KeyError, RuntimeError, ValueError) as exc:
                         logger.debug("Pigweed RPC cancellation raced with task cancellation", method=method_name, error=str(exc))
                 raise
-            except (KeyError, PwRpcError, RuntimeError, TypeError, ValueError) as exc:
+            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                 logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
                 return False
             finally:

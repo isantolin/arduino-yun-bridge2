@@ -275,6 +275,7 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
             sed -i "s/call == nullptr || call->id() != packet.call_id()/call == nullptr/g" \
                 "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_client.cc"
         fi
+        # Patch pw_rpc Call hierarchy headers for ARM SAMD GCC 7.2.1 (C++17) compatibility
         python3 - "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src" <<'PYEOF'
 import sys
 from pathlib import Path

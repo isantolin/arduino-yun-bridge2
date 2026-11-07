@@ -499,8 +499,6 @@ def get_operation(key: Any) -> OperationSpec | None:
         return BY_NAME.get(key)
     if isinstance(key, type):
         return BY_TYPE.get(key)
-    if isinstance(key, ProtobufMessage):
-        return BY_TYPE.get(type(key)) or BY_NAME.get(key.DESCRIPTOR.name)
     if hasattr(key, "service_id") and hasattr(key, "method_id"):
         srv = getattr(key, "service_id", None)
         meth = getattr(key, "method_id", None)
@@ -508,6 +506,8 @@ def get_operation(key: Any) -> OperationSpec | None:
             if getattr(key, "type", None) == PacketType.SERVER_STREAM:
                 return BY_SERVER_STREAM.get((srv, meth))
             return BY_RPC.get((srv, meth))
+    if isinstance(key, ProtobufMessage):
+        return BY_TYPE.get(type(key)) or BY_NAME.get(key.DESCRIPTOR.name)
     if hasattr(key, "value"):
         val = getattr(key, "value", None)
         if isinstance(val, int):

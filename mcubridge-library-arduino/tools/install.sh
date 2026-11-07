@@ -52,25 +52,14 @@ download_zip() {
         if curl --version 2>&1 | grep -qi "HTTP3"; then
             h3_flag="--http3"
         fi
-        # Release hosting can intermittently return gateway errors in CI.
-        # Retry transient failures, then fall back to wget rather than
-        # failing immediately; the caller still verifies the pinned digest.
-        if curl $h3_flag -fsSL --retry 8 --retry-all-errors --retry-delay 5 \
-            --retry-max-time 600 --connect-timeout 30 --max-time 300 "$url" -o "$dest"; then
-            return 0
-        fi
-        rm -f "$dest"
+        curl $h3_flag -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$url" -o "$dest"
+        return $?
+    elif command -v wget >/dev/null 2>&1; then
+        wget --tries=5 --waitretry=2 --timeout=20 -qO "$dest" "$url"
+    else
+        echo "[ERROR] 'curl' or 'wget' is required." >&2
+        return 1
     fi
-
-    if command -v wget >/dev/null 2>&1; then
-        if wget --tries=8 --waitretry=5 --timeout=30 --read-timeout=300 -qO "$dest" "$url"; then
-            return 0
-        fi
-        rm -f "$dest"
-    fi
-
-    echo "[ERROR] Unable to download $name with curl or wget." >&2
-    return 1
 }
 
 # Marker file written only after a dependency has been fully staged and
@@ -265,6 +254,16 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
     fi
     if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" ]; then
         python3 "${ROOT_DIR}/third_party/avr_pigweed_port/tools/export_arduino_library.py" "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR"
+        for rpc_src in client.cc client_call.cc client_server.cc; do
+            if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/third_party/pigweed/pw_rpc/${rpc_src}" ]; then
+                cp -a "${ROOT_DIR}/third_party/avr_pigweed_port/third_party/pigweed/pw_rpc/${rpc_src}" \
+                    "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_${rpc_src}"
+            fi
+        done
+        if [ -f "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_client.cc" ]; then
+            sed -i "s/call == nullptr || call->id() != packet.call_id()/call == nullptr/g" \
+                "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src/pw_rpc_client.cc"
+        fi
         if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR" ]; then
             mkdir -p "$LIB_DIR"
             rm -rf "$LIB_DIR/PigweedAVR"

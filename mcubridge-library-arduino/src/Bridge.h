@@ -121,7 +121,7 @@ inline void copy_bytes(PbBytesField& dst, const uint8_t* src, size_t size) {
   etl::copy_n(src, len, dst.bytes);
   dst.size = static_cast<pb_size_t>(len);
 }
-}  // namespace bridge
+}  // namespace pb
 
 }  // namespace bridge
 
@@ -202,7 +202,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   [[nodiscard]] bool sendLogStream(etl::span<const uint8_t> data);
 
   [[nodiscard]] bool isRpcTxReady() const {
-    return _stream != nullptr && _state_flags.test(FLAG_TX_ENABLED) &&
+    return _state_flags.test(FLAG_TX_ENABLED) &&
            (_shared_secret.empty() || _session_keys_ready);
   }
 

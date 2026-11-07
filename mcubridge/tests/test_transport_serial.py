@@ -1044,27 +1044,38 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
         transport.serial = mock_serial
-        loop = asyncio.get_running_loop()
 
-        def _on_write(data: bytes) -> int:
-            call_id = transport.current_command.sequence_id if transport.current_command else 1
-            loop.call_soon_threadsafe(
-                loop.create_task,
-                transport.feed_data(
-                    _rpc_frame(
-                        Command.CMD_MAILBOX_PUSH,
-                        packet_type=_PKT_RESPONSE,
-                        call_id=call_id or 1,
-                        payload=b"",
-                        cipher=mcu_cipher,
-                    )
-                ),
-            )
-            return len(data)
+        outgoing: list[bytes] = []
+        transport.rpc_client = PwRpcClient(
+            cast(Any, callback_client).Impl(),
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+            protocol.PW_SERVICES,
+        )
+        send_task = asyncio.create_task(transport.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=b"PING")))
+        for _ in range(100):
+            if outgoing:
+                break
+            await asyncio.sleep(0)
+        assert len(outgoing) == 1
 
-        mock_serial.write = MagicMock(side_effect=_on_write)
-        res = await transport.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=b"PING"))
-        assert res is True
+        request = pw_packets.decode(outgoing[0])
+        assert request.type == PacketType.REQUEST
+        response = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=request.channel_id,
+            service_id=request.service_id,
+            method_id=request.method_id,
+            call_id=request.call_id,
+            payload=b"",
+            status=0,
+        )
+        response_frame = ui_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response.SerializeToString()),
+        )
+        await transport.feed_data(response_frame)
+
+        assert await send_task == pb.Empty()
         handle_mock.assert_not_awaited()
     finally:
         state.cleanup()

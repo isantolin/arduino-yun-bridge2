@@ -782,7 +782,7 @@ def _rpc_frame(
         spec.method_id,
         call_id,
         payload=payload,
-        packet_type=packet_type,
+        packet_type=cast(Any, packet_type),
         status=status,
     )
     if cipher is not None:
@@ -1122,7 +1122,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
 
     client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
     transport.queue_rpc_packet(client_error)
-    assert request_key not in getattr(transport, "_active_rpc_packet_ids")
+    assert request_key not in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_rpc_packet_ids"])
 
     # A response packet is written but must not be registered as a new active call.
     response = _make_rpc_packet(PacketType.RESPONSE)

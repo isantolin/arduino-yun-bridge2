@@ -484,12 +484,12 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | `call_id` | `7` | `uint32` | Identificador de correlación de llamada para emparejar peticiones, respuestas y reintentos. |
 
 ### 3.2 Integridad y Autenticación
-- **Detección de errores (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc_avr::Decoder` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon. CRC detecta errores accidentales; no autentica frames.
+- **Detección de errores (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc::DecoderBuffer` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon. CRC detecta errores accidentales; no autentica frames.
 - **Autenticación de `LinkSync`:** Con secreto compartido configurado, el host envía un HMAC-SHA256 de 16 bytes y el MCU verifica el tag antes de habilitar métodos fuera de `pre_sync_allowed`. El MCU responde con un HMAC bajo un `HKDF info` distinto para que el host compruebe la identidad compartida del MCU. Ambos tags cubren un nonce host de 16 bytes.
 - Si el secreto está vacío, el protocolo requiere tags vacíos y el enlace queda **sin autenticación**. No existe fallback desde un tag inválido.
 - **Cifrado de enlace:** Tras un `LinkSync` autenticado, los payloads HDLC de RPC (`1`), logs (`2`) y consola (`3`) se cifran y autentican con ChaCha20-Poly1305. El envelope es `contador[8 bytes BE] || ciphertext || tag[16 bytes]`; el nonce es `00 00 00 00 || contador` y el AAD es `dirección HDLC[1 byte] || contador`.
 - Las claves host→MCU y MCU→host se derivan como dos bloques de 32 bytes mediante HKDF-SHA256 (`IKM=secreto`, `salt=nonce del handshake`, `info="session-key"`). Cada dirección mantiene un contador común a todos los canales protegidos; el receptor rechaza contadores cero o no crecientes.
-- `LinkSync` y su respuesta autenticada ocurren antes de activar AEAD. `LinkReset` también es un control plaintext explícito de recuperación; no habilita tráfico de datos plaintext y puede forzar una nueva sincronización.
+- `LinkSync` y su respuesta autenticada ocurren antes de activar AEAD. `LinkReset` también es un control plaintext explícito de recuperación; no habilita tráfico de datos plaintext y puede polarizar una nueva sincronización.
 - La protección anti-replay de contadores solo dura lo que la sesión. No se garantiza el rechazo de handshakes o frames previamente capturados tras un reinicio del MCU, porque no hay una fuente de frescura criptográfica del MCU compartida y persistente entre las placas soportadas.
 - Los peers deben actualizarse juntos: los tags de respuesta usan un dominio distinto y no hay negociación ni modo de compatibilidad para la semántica anterior.
 
@@ -501,8 +501,8 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | **Protección del enlace** | ChaCha20-Poly1305 con claves direccionales y contadores monotónicos por sesión | **Mbed TLS 4** en AVR/SAMD y **wolfCrypt 5.8.4** en ESP32. | **`cryptography`** (`ChaCha20Poly1305`); envuelve/desenvuelve los payloads HDLC. |
 | **HDLC Framing & Multiplexing** | Framing (`0x7E`) + CRC-32 FCS | **Google Pigweed**: `pw::hdlc::WriteUIFrame` / `pw::hdlc::DecoderBuffer`. | **Google Pigweed**: `pw_hdlc.encode` / `pw_hdlc.decode.FrameDecoder`. |
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Google Pigweed**: `pw::rpc::Server` / `pw::rpc::ClientServer`, `pw::rpc::Channel` y `protoc_gen_mcu_rpc.py` (`rpc::pb::pw_rpc::nanopb::<Service>::Service` para 6 servicios servidor registrados y `Client` para `ProcessService` y `DataStoreService`). | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`) para los 8 contratos Protobuf. |
-| **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Google Pigweed**: fachada `pw::log::SetLogSink` (`pw_log_avr` + `pw_tokenizer`). | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
-| **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono_avr`). | Reloj monótono `time.monotonic()`. |
+| **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Google Pigweed**: fachada `pw::log::SetLogSink` (`pw_log` + `pw_tokenizer`). | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
+| **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono`). | Reloj monótono `time.monotonic()`. |
 | **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `PW_SERVICES`). |
 
 ## 4. Códigos de estado (`Status`)

@@ -38,7 +38,7 @@ void integrated_test_bridge_core() {
 
   etl::array<uint8_t, 256> frame_buf;
   size_t frame_len = build_hdlc_rpc_frame(
-      1, pw::rpc_avr::PacketType::kRequest,
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
       etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,

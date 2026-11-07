@@ -432,8 +432,6 @@ def _build_command_operation(
     if mcu_rpc:
         op["service_name"] = mcu_rpc["service_name"]
         op["method_name"] = mcu_rpc["method_name"]
-        if mcu_rpc.get("resp_cls"):
-            op["response_type"] = f"pb.{mcu_rpc['resp_cls']}"
     if pb_msg and hasattr(pb_module, pb_msg):
         op["pb_class"] = f"pb.{pb_msg}"
     if pb_msg and pb_msg in p_fields_map:
@@ -668,7 +666,6 @@ def _extract_operations_context(
     mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
         "service_name": "rpc.pb.GpioService",
         "method_name": "SubscribePins",
-        "resp_cls": "PinUpdateEvent",
     }
 
     operations = _build_operations_catalog(
@@ -1014,6 +1011,9 @@ def main(
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
 ) -> None:
     args = GenerationArgs(spec=spec_file, cpp=cpp, py=py, py_client=py_client)
+    install_sh = REPO_ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
+    if install_sh.is_file():
+        install_sh.chmod(0o755)
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":

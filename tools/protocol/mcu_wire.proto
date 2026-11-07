@@ -449,7 +449,7 @@ service GpioService {
   rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse) {
     option (rpc_command) = "CMD_ANALOG_READ";
   }
-  rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse) {
+  rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (stream rpc.pb.PinUpdateEvent) {
     option (rpc_command) = "CMD_PIN_SUBSCRIBE";
   }
 }
@@ -530,7 +530,7 @@ service ProcessService {
   rpc RunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse) {
     option (rpc_command) = "CMD_PROCESS_RUN_ASYNC";
   }
-  rpc Poll(rpc.pb.SubscribeRequest) returns (rpc.pb.ProcessPollResponse) {
+  rpc Poll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse) {
     option (rpc_command) = "CMD_PROCESS_POLL";
   }
   rpc Kill(rpc.pb.ProcessKill) returns (rpc.pb.Empty) {

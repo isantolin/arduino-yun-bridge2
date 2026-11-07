@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pytest_mock import MockerFixture
 
 from mcubridge.config.settings import RuntimeConfig
@@ -287,3 +288,24 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     runtime_config.serial_shared_secret = b""
     runtime_state.link_cipher = None
     assert await transport.send_raw(protocol.Command.CMD_CONSOLE_WRITE.value, pb.Empty())
+
+
+def test_get_operation_resolves_server_stream_packet() -> None:
+    pin_op = protocol.get_operation(protocol.Command.CMD_PIN_SUBSCRIBE.value)
+    assert pin_op is not None
+    assert pin_op.service_id is not None
+    assert pin_op.method_id is not None
+    req_pkt = RpcPacket(
+        type=PacketType.REQUEST,
+        service_id=pin_op.service_id,
+        method_id=pin_op.method_id,
+    )
+    stream_pkt = RpcPacket(
+        type=PacketType.SERVER_STREAM,
+        service_id=pin_op.service_id,
+        method_id=pin_op.method_id,
+    )
+    assert protocol.get_operation(req_pkt) == pin_op
+    stream_op = protocol.get_operation(stream_pkt)
+    assert stream_op is not None
+    assert stream_op.command_id == protocol.Command.CMD_PIN_UPDATE_EVENT.value

@@ -22,9 +22,13 @@ class DataStoreClass : public bridge::BridgeObserver {
 
   void _onResponse(const rpc_pb_DatastoreGetResponse& msg);
 
-  void onLost() override { _pending_gets.clear(); }
+  void onLost() override {
+    _get_call = {};
+    _pending_gets.clear();
+  }
 
  private:
+  pw::rpc::NanopbUnaryReceiver<rpc_pb_DatastoreGetResponse> _get_call{};
   etl::circular_buffer<GetHandler, bridge::config::MAX_PENDING_DATASTORE>
       _pending_gets;
 };

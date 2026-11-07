@@ -65,7 +65,10 @@
 // clang-format on
 
 #include <pw_rpc/channel.h>
-#include <pw_rpc/server.h>
+#include <pw_rpc/client_server.h>
+#include <pw_rpc/nanopb/client_reader_writer.h>
+#include <pw_rpc/nanopb/server_reader_writer.h>
+#include <pw_rpc/packet_meta.h>
 
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
@@ -198,57 +201,25 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   [[nodiscard]] bool sendConsoleStream(etl::span<const uint8_t> data);
   [[nodiscard]] bool sendLogStream(etl::span<const uint8_t> data);
 
-  template <typename ProtoMsg>
-  [[nodiscard]] bool sendRpcRequest(uint32_t service_id, uint32_t method_id,
-                                    const pb_msgdesc_t* fields,
-                                    const ProtoMsg& msg, uint32_t call_id = 0) {
-    if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
-    if (!_shared_secret.empty() && !_session_keys_ready) return false;
-    uint8_t payload_buf[rpc::MAX_PAYLOAD_SIZE];
-    pb_ostream_t pb_stream =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    if (fields != nullptr && !pb_encode(&pb_stream, fields, &msg)) {
-      return false;
-    }
-
-    pw::rpc_avr::RpcPacket packet;
-    packet.type = pw::rpc_avr::PacketType::kRequest;
-    packet.channel_id = 1;
-    packet.service_id = service_id;
-    packet.method_id = method_id;
-    packet.call_id = call_id;
-    packet.payload =
-        pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(payload_buf),
-                          pb_stream.bytes_written);
-
-    uint8_t frame_buf[kMaxRpcRequestPacketSize];
-    auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
-    if (!encode_res.ok()) return false;
-
-    return _writeHdlcFrame(
-        rpc::RPC_HDLC_ADDRESS_RPC,
-        etl::span<const uint8_t>(frame_buf, encode_res.size()));
+  [[nodiscard]] bool isRpcTxReady() const {
+    return _state_flags.test(FLAG_TX_ENABLED) &&
+           (_shared_secret.empty() || _session_keys_ready);
   }
 
-  [[nodiscard]] bool sendRpcRequestNoPayload(uint32_t service_id,
-                                             uint32_t method_id,
-                                             uint32_t call_id = 0) {
-    if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
-    if (!_shared_secret.empty() && !_session_keys_ready) return false;
-    pw::rpc_avr::RpcPacket packet;
-    packet.type = pw::rpc_avr::PacketType::kRequest;
-    packet.channel_id = 1;
-    packet.service_id = service_id;
-    packet.method_id = method_id;
-    packet.call_id = call_id;
+  rpc::pb::pw_rpc::nanopb::DataStoreService::Client dataStoreClient() {
+    return {_rpc_client_server.client(), 1};
+  }
 
-    uint8_t frame_buf[kMaxRpcRequestPacketSize];
-    auto encode_res = packet.Encode(pw::as_writable_bytes(pw::span(frame_buf)));
-    if (!encode_res.ok()) return false;
+  rpc::pb::pw_rpc::nanopb::ProcessService::Client processClient() {
+    return {_rpc_client_server.client(), 1};
+  }
 
-    return _writeHdlcFrame(
-        rpc::RPC_HDLC_ADDRESS_RPC,
-        etl::span<const uint8_t>(frame_buf, encode_res.size()));
+  rpc::pb::pw_rpc::nanopb::MailboxService::Client mailboxClient() {
+    return {_rpc_client_server.client(), 1};
+  }
+
+  rpc::pb::pw_rpc::nanopb::FileSystemService::Client fileSystemClient() {
+    return {_rpc_client_server.client(), 1};
   }
 
   void _onBaudrateChange();
@@ -269,8 +240,9 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     }
   }
 
-  rpc_pb_PinSubscribeResponse _handlePinSubscribe(
-      const rpc_pb_PinSubscribeRequest& m);
+  void _handlePinSubscribe(
+      const rpc_pb_PinSubscribeRequest& m,
+      pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>& writer);
   void _handleLinkSync(const rpc_pb_LinkSync& request,
                        rpc_pb_LinkSync& response);
   void _handleLinkReset();
@@ -285,7 +257,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _initializeRuntime();
   void _initObservers();
   void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
-  void _dispatchRpcResponse(const pw::rpc_avr::RpcPacket& packet);
   bool _writeHdlcFrame(uint64_t address, etl::span<const uint8_t> data,
                        bool plaintext = false);
   bool _writeEncryptedHdlcFrame(uint64_t address,
@@ -308,7 +279,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::hdlc::DecoderBuffer<bridge::config::RX_BUFFER_SIZE> _hdlc_decoder;
   RpcChannelOutput _rpc_channel_output;
   pw::rpc::Channel _rpc_channel;
-  pw::rpc::Server _rpc_server;
+  pw::rpc::ClientServer _rpc_client_server;
+  pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
   bool _rpc_plaintext_response{false};
 

@@ -301,7 +301,10 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
             lines.append(f'WOLFSSL_SHA256="{dep["sha256"]}"')
 
     new_content = _replace_marked_block(content, CPP_BLOCK_START, CPP_BLOCK_END, "\n".join(lines))
-    return _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)
+    changed = _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)
+    if not dry_run:
+        ARDUINO_INSTALL_SCRIPT_PATH.chmod(0o755)
+    return changed
 
 
 def update_tox_dev_deps(
@@ -516,8 +519,8 @@ def _to_apk_version(version: str) -> str:
     except (InvalidVersion, TypeError) as exc:
         sys.stderr.write(f"[DEBUG] Failed to parse version string '{version}': {exc}\n")
     converted = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
-    converted = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", converted)
-    converted = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", converted)
+    converted = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
+    converted = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
     return re.sub(r"\.dev(\d+)$", r"_pre\1", converted)
 
 

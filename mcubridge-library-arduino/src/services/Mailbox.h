@@ -43,6 +43,9 @@ class MailboxClass : public bridge::BridgeObserver {
   void onLost() override;
 
  private:
+  static pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxReadResponse> _read_call;
+  static pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxAvailableResponse>
+      _avail_call;
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
   static etl::circular_buffer<MailboxBuffer, MAILBOX_QUEUE_CAPACITY> _queue;

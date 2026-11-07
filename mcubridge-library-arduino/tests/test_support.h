@@ -5,6 +5,7 @@
 #include <etl/array.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+#include <pw_rpc/internal/packet.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -155,26 +156,21 @@ inline bool extract_next_valid_hdlc_frame(
   return false;
 }
 
-inline size_t build_rpc_packet(pw::rpc_avr::PacketType type,
+inline size_t build_rpc_packet(pw::rpc::internal::pwpb::PacketType type,
                                uint32_t service_id, uint32_t method_id,
                                etl::span<const uint8_t> payload,
                                uint8_t* out_buf, size_t out_max,
                                uint32_t call_id = 0, uint32_t channel_id = 1) {
-  pw::rpc_avr::RpcPacket packet;
-  packet.type = type;
-  packet.channel_id = channel_id;
-  packet.service_id = service_id;
-  packet.method_id = method_id;
-  packet.call_id = call_id;
-  packet.payload = pw::ConstByteSpan(
-      reinterpret_cast<const pw::byte*>(payload.data()), payload.size());
+  pw::rpc::internal::Packet packet(
+      type, channel_id, service_id, method_id, call_id,
+      pw::as_bytes(pw::span(payload.data(), payload.size())));
   auto res = packet.Encode(pw::as_writable_bytes(pw::span(out_buf, out_max)));
-  return res.ok() ? res.size() : 0;
+  return res.ok() ? res.value().size() : 0;
 }
 
 template <size_t N>
 inline size_t build_hdlc_rpc_frame(uint64_t address,
-                                   pw::rpc_avr::PacketType type,
+                                   pw::rpc::internal::pwpb::PacketType type,
                                    uint32_t service_id, uint32_t method_id,
                                    etl::span<const uint8_t> payload,
                                    etl::array<uint8_t, N>& out_frame_buf,

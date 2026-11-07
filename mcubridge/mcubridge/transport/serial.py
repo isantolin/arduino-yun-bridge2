@@ -379,7 +379,11 @@ class SerialTransport:
                 and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
                 and spec.command_id not in _LEGACY_RAW_REQUESTS
             )
-            if not pw_packets.for_server(pkt) and is_unary_rpc_response:
+            has_active_rpc_call = any(
+                getattr(getattr(call, "rpc", None), "call_id", None) == pkt.call_id
+                for call in self._active_rpc_calls
+            )
+            if not pw_packets.for_server(pkt) and is_unary_rpc_response and has_active_rpc_call:
                 rpc_status = self.rpc_client.process_packet(frame_data)
                 if not rpc_status.ok():
                     logger.warning(

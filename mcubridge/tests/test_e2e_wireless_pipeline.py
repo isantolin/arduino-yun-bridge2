@@ -14,7 +14,7 @@ from google.protobuf.message import Message as ProtobufMessage
 from pw_hdlc.encode import ui_frame
 import structlog
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -38,7 +38,12 @@ def _encode_mcu_rpc_frame(
     call_id: int,
     cipher: LinkCipher | None,
 ) -> bytes:
-    encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=call_id)
+    encoded = protocol.encode_hdlc_rpc(
+        command_id,
+        payload,
+        call_id=call_id,
+        packet_type=PacketType.RESPONSE,
+    )
     if cipher is None:
         return encoded
     frame = next(iter(FrameDecoder().process(encoded)))

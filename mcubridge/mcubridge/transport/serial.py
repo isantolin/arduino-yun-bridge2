@@ -127,6 +127,7 @@ class SerialTransport:
         self._serial_write_lock = asyncio.Lock()
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: list[Any] = []
+        self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self._queue_rpc_packet)],
@@ -168,6 +169,7 @@ class SerialTransport:
             except (AttributeError, RuntimeError, ValueError) as exc:
                 logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))
         self._active_rpc_calls.clear()
+        self._active_rpc_packet_ids.clear()
 
     async def run(self) -> None:
         """Main lifecycle loop of the serial transport."""
@@ -379,15 +381,21 @@ class SerialTransport:
                 and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
                 and spec.command_id not in _LEGACY_RAW_REQUESTS
             )
-            if not pw_packets.for_server(pkt) and is_unary_rpc_response:
-                # Let Pigweed perform the authoritative call-ID lookup. The public
-                # callback-call wrapper does not expose a stable PendingRpc shape,
-                # so introspecting call.rpc here can incorrectly reject live replies.
+            rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
+            is_rpc_client_response = (
+                pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
+                and rpc_packet_key in self._active_rpc_packet_ids
+            )
+            if not pw_packets.for_server(pkt) and is_unary_rpc_response and is_rpc_client_response:
+                # Only feed responses for requests actually emitted by this client.
+                # Other MCU responses (including legacy PendingCommand replies) can
+                # share service/method IDs and must remain on the legacy path.
+                self._active_rpc_packet_ids.discard(rpc_packet_key)
                 rpc_status = self.rpc_client.process_packet(frame_data)
                 if rpc_status.ok():
                     return
                 logger.debug(
-                    "Pigweed RPC client did not consume incoming packet; checking legacy correlation",
+                    "Pigweed RPC client did not consume an active response packet",
                     status=str(rpc_status),
                     service_id=pkt.service_id,
                     method_id=pkt.method_id,
@@ -593,6 +601,29 @@ class SerialTransport:
 
     def _queue_rpc_packet(self, packet: bytes) -> None:
         """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
+        try:
+            rpc_packet = pw_packets.decode(packet)
+            if rpc_packet.type == PacketType.REQUEST:
+                self._active_rpc_packet_ids.add(
+                    (
+                        rpc_packet.channel_id,
+                        rpc_packet.service_id,
+                        rpc_packet.method_id,
+                        rpc_packet.call_id,
+                    )
+                )
+            elif rpc_packet.type in (PacketType.CANCEL, PacketType.CLIENT_ERROR):
+                self._active_rpc_packet_ids.discard(
+                    (
+                        rpc_packet.channel_id,
+                        rpc_packet.service_id,
+                        rpc_packet.method_id,
+                        rpc_packet.call_id,
+                    )
+                )
+        except (ProtobufDecodeError, ValueError) as exc:
+            logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
+            return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError as exc:

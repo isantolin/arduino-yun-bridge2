@@ -13,7 +13,7 @@ from pw_hdlc.encode import ui_frame
 from pw_rpc import callback_client, packets as pw_packets
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
-from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket, ValueType
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
@@ -1086,11 +1086,11 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         state.cleanup()
 
 
-def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
+def _make_rpc_packet(packet_type: ValueType, call_id: int = 41) -> bytes:
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None and spec.service_id is not None and spec.method_id is not None
     return RpcPacket(
-        type=int(packet_type),
+        type=packet_type,
         channel_id=protocol.HDLC_ADDRESS_RPC,
         service_id=spec.service_id,
         method_id=spec.method_id,
@@ -1109,7 +1109,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     mock_serial.write = MagicMock(return_value=16)
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
-    request = _make_rpc_packet(int(PacketType.REQUEST))
+    request = _make_rpc_packet(PacketType.REQUEST)
     request_key = (
         protocol.HDLC_ADDRESS_RPC,
         pw_packets.decode(request).service_id,
@@ -1118,14 +1118,14 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     )
 
     transport.queue_rpc_packet(request)
-    assert request_key in cast(Any, transport)._active_rpc_packet_ids
+    assert request_key in getattr(transport, "_active_rpc_packet_ids")
 
-    client_error = _make_rpc_packet(int(PacketType.CLIENT_ERROR))
+    client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
     transport.queue_rpc_packet(client_error)
     assert request_key not in getattr(transport, "_active_rpc_packet_ids")
 
     # A response packet is written but must not be registered as a new active call.
-    response = _make_rpc_packet(int(PacketType.RESPONSE))
+    response = _make_rpc_packet(PacketType.RESPONSE)
     transport.queue_rpc_packet(response)
     assert request_key not in getattr(transport, "_active_rpc_packet_ids")
 

@@ -130,7 +130,7 @@ class SerialTransport:
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
-            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self._queue_rpc_packet)],
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self.queue_rpc_packet)],
             protocol.PW_SERVICES,
         )
 
@@ -599,7 +599,7 @@ class SerialTransport:
             finally:
                 self.current_command = None
 
-    def _queue_rpc_packet(self, packet: bytes) -> None:
+    def queue_rpc_packet(self, packet: bytes) -> None:
         """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
         try:
             rpc_packet = pw_packets.decode(packet)

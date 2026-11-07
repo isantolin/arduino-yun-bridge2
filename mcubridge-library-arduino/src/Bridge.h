@@ -207,23 +207,19 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   rpc::pb::pw_rpc::nanopb::DataStoreService::Client dataStoreClient() {
-    return rpc::pb::pw_rpc::nanopb::DataStoreService::Client(
-        _rpc_client_server.client(), 1);
+    return {_rpc_client_server.client(), 1};
   }
 
   rpc::pb::pw_rpc::nanopb::ProcessService::Client processClient() {
-    return rpc::pb::pw_rpc::nanopb::ProcessService::Client(
-        _rpc_client_server.client(), 1);
+    return {_rpc_client_server.client(), 1};
   }
 
   rpc::pb::pw_rpc::nanopb::MailboxService::Client mailboxClient() {
-    return rpc::pb::pw_rpc::nanopb::MailboxService::Client(
-        _rpc_client_server.client(), 1);
+    return {_rpc_client_server.client(), 1};
   }
 
   rpc::pb::pw_rpc::nanopb::FileSystemService::Client fileSystemClient() {
-    return rpc::pb::pw_rpc::nanopb::FileSystemService::Client(
-        _rpc_client_server.client(), 1);
+    return {_rpc_client_server.client(), 1};
   }
 
   void _onBaudrateChange();

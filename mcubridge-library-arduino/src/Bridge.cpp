@@ -219,7 +219,7 @@ class FileSystemRpcService final
 #if BRIDGE_ENABLE_MAILBOX
 class MailboxRpcService final
     : public rpc::pb::pw_rpc::nanopb::MailboxService::Service<
-           MailboxRpcService> {
+          MailboxRpcService> {
  public:
   pw::Status Push(const rpc_pb_MailboxPush& request, rpc_pb_Empty&) {
     Mailbox._enqueue(
@@ -1008,12 +1008,3 @@ void BridgeClass::_fillFreeMemory(rpc_pb_FreeMemoryResponse& resp) {
 void BridgeClass::_fillCapabilities(rpc_pb_Capabilities& resp) {
   bridge::hal::fillCapabilities(resp);
 }
-
-HardwareSerial fallbackSerial;
-#if defined(SERIAL_PORT_LINUXBRIDGE)
-BridgeClass Bridge(SERIAL_PORT_LINUXBRIDGE);
-#elif defined(SERIAL_PORT_HARDWARE)
-BridgeClass Bridge(SERIAL_PORT_HARDWARE);
-#else
-BridgeClass Bridge(fallbackSerial);
-#endif

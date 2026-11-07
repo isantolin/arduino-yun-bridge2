@@ -1177,3 +1177,65 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     assert runtime_state.serial_tx_allowed.is_set()
     assert runtime_state.mcu_is_paused is False
     mock_serial.write.assert_not_called()
+
+
+
+def test_decode_rpc_request_rejects_invalid_payloads(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    from types import SimpleNamespace
+
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
+    assert spec is not None
+
+    assert transport._decode_rpc_request(spec, object()) is None
+    assert transport._decode_rpc_request(spec, b"\\x0a\\xff") is None
+    assert transport._decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
+
+
+def test_get_rpc_method_returns_none_when_descriptor_is_missing(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    rpc_client = MagicMock()
+    rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
+    transport.rpc_client = rpc_client
+
+    spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
+    assert spec is not None
+    assert transport._get_rpc_method(spec) is None
+
+
+async def test_invoke_rpc_completion_without_response_and_error_callback(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    rpc_method = MagicMock()
+    call = MagicMock()
+
+    def complete_without_payload(
+        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
+    ) -> Any:
+        on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
+        return call
+
+    rpc_method.invoke.side_effect = complete_without_payload
+    result = await transport._invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert result is True
+    assert call not in transport._active_rpc_calls
+
+    def fail_callback(
+        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
+    ) -> Any:
+        on_error(call, RuntimeError("remote failure"))
+        return call
+
+    rpc_method.invoke.side_effect = fail_callback
+    result = await transport._invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert result is False
+    assert call not in transport._active_rpc_calls

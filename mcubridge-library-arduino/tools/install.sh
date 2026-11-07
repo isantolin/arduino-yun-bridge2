@@ -280,7 +280,6 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
         fi
         # Patch pw_rpc Call hierarchy headers for ARM SAMD GCC 7.2.1 (C++17) compatibility
         python3 - "${ROOT_DIR}/third_party/avr_pigweed_port/dist/PigweedAVR/src" <<'PYEOF'
-import re
 import sys
 from pathlib import Path
 
@@ -289,10 +288,6 @@ src_dir = Path(sys.argv[1])
 for rel in (
     "pw_rpc/nanopb/client_reader_writer.h",
     "pw_rpc/nanopb/server_reader_writer.h",
-    # Pigweed's ClientServer wrapper is not C++17-constexpr compatible with
-    # the SAMD GCC 7.2 toolchain. Bridge uses Client and Server directly, but
-    # Arduino compiles every exported .cc file, including client_server.cc.
-    "pw_rpc/client_server.h",
 ):
     hdr = src_dir / rel
     if not hdr.is_file():

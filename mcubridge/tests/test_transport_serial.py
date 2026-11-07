@@ -10,6 +10,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
+from pw_rpc import callback_client, packets as pw_packets
+from pw_rpc.client import Client as PwRpcClient
+from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
@@ -265,8 +269,6 @@ def test_serial_transport_switch_local_baudrate_error(
 async def test_serial_transport_send_failure_status_code(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    from mcubridge.protocol.protocol import Status
-
     transport = SerialTransport(runtime_config, runtime_state, None)
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
@@ -274,12 +276,63 @@ async def test_serial_transport_send_failure_status_code(
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
 
-    send_task = asyncio.create_task(transport.send(Command.CMD_GET_VERSION.value, b""))
+    send_task = asyncio.create_task(
+        transport.send(Command.CMD_PIN_SUBSCRIBE.value, pb.PinSubscribeRequest(pin=7, enabled=True))
+    )
     await asyncio.sleep(0.01)
-    correlate_fn: Callable[[int, bytes], None] = transport.correlate_frame
-    correlate_fn(Status.ERROR.value, b"")
-    res = await send_task
-    assert res is False
+    transport.correlate_frame(Status.ERROR.value, b"")
+    assert await send_task is False
+
+
+async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    outgoing: list[bytes] = []
+    transport.rpc_client = PwRpcClient(
+        callback_client.Impl(),
+        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+        protocol.PW_SERVICES,
+    )
+
+    first_request = pb.ClockSyncRequest(host_time_us=111)
+    second_request = pb.ClockSyncRequest(host_time_us=222)
+    first = asyncio.create_task(transport.send(Command.CMD_CLOCK_SYNC.value, first_request))
+    second = asyncio.create_task(transport.send(Command.CMD_CLOCK_SYNC.value, second_request))
+
+    for _ in range(100):
+        if len(outgoing) == 2:
+            break
+        await asyncio.sleep(0)
+    assert len(outgoing) == 2
+
+    requests = [pw_packets.decode(packet) for packet in outgoing]
+    assert requests[0].call_id != requests[1].call_id
+    assert all(request.type == PacketType.REQUEST for request in requests)
+
+    for request in reversed(requests):
+        host_time_us = 111 if request.payload == first_request.SerializeToString() else 222
+        response = pb.ClockSyncResponse(host_time_us=host_time_us, mcu_time_us=987)
+        packet = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=request.channel_id,
+            service_id=request.service_id,
+            method_id=request.method_id,
+            call_id=request.call_id,
+            payload=response.SerializeToString(),
+            status=0,
+        )
+        assert transport.rpc_client.process_packet(packet.SerializeToString()).ok()
+
+    first_result, second_result = await asyncio.gather(first, second)
+    assert isinstance(first_result, pb.ClockSyncResponse)
+    assert isinstance(second_result, pb.ClockSyncResponse)
+    assert first_result.host_time_us == 111
+    assert second_result.host_time_us == 222
 
 
 async def test_serial_transport_methods_with_none_serial(

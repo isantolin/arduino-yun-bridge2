@@ -365,13 +365,6 @@ class SerialTransport:
             # Pigweed's native client owns responses to Linux-initiated RPCs, including
             # call-ID correlation, payload decoding, stream events, and completion status.
             # Requests initiated by the MCU are handled below by the application service.
-            link_sync = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
-            is_link_sync_response = (
-                link_sync is not None
-                and pkt.service_id == link_sync.service_id
-                and pkt.method_id == link_sync.method_id
-                and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
-            )
             is_unary_rpc_response = spec is not None and getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
             if not pw_packets.for_server(pkt) and is_unary_rpc_response:
                 rpc_status = self.rpc_client.process_packet(frame_data)

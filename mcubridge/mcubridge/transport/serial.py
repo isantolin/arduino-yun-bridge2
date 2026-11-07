@@ -26,7 +26,7 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_rpc import callback_client, packets as pw_packets
-from pw_rpc.client import Client as PwRpcClient
+from pw_rpc.client import Client as PwRpcClient, Error as PwRpcError
 from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
@@ -683,24 +683,37 @@ class SerialTransport:
         for attempt in range(self.max_attempts):
             loop = asyncio.get_running_loop()
             completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
-            response: ProtobufMessage | None = None
+            callback_state: dict[str, ProtobufMessage | None] = {"response": None}
 
-            def _on_next(_call: Any, message: ProtobufMessage) -> None:
-                nonlocal response
-                response = message
+            def _on_next(
+                _call: Any,
+                message: ProtobufMessage,
+                state: dict[str, ProtobufMessage | None] = callback_state,
+            ) -> None:
+                state["response"] = message
 
-            def _on_completed(_call: Any, status: Any) -> None:
-                if completion.done():
+            def _on_completed(
+                _call: Any,
+                status: Any,
+                future: asyncio.Future[bool | ProtobufMessage] = completion,
+                state: dict[str, ProtobufMessage | None] = callback_state,
+            ) -> None:
+                if future.done():
                     return
                 if status.ok():
-                    completion.set_result(response if response is not None else True)
+                    response_message = state["response"]
+                    future.set_result(response_message if response_message is not None else True)
                 else:
-                    completion.set_result(False)
+                    future.set_result(False)
 
-            def _on_error(_call: Any, error: Any) -> None:
-                if not completion.done():
+            def _on_error(
+                _call: Any,
+                error: Any,
+                future: asyncio.Future[bool | ProtobufMessage] = completion,
+            ) -> None:
+                if not future.done():
                     logger.warning("Pigweed unary RPC failed", method=method_name, error=str(error))
-                    completion.set_result(False)
+                    future.set_result(False)
 
             call: Any = None
             try:
@@ -717,7 +730,7 @@ class SerialTransport:
                 if call is not None:
                     try:
                         call.cancel()
-                    except (KeyError, RuntimeError, ValueError) as exc:
+                    except (KeyError, PwRpcError, RuntimeError, ValueError) as exc:
                         logger.debug("Pigweed RPC cancellation raced with completion", method=method_name, error=str(exc))
                 if attempt + 1 >= self.max_attempts:
                     logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
@@ -727,10 +740,10 @@ class SerialTransport:
                 if call is not None:
                     try:
                         call.cancel()
-                    except (KeyError, RuntimeError, ValueError) as exc:
+                    except (KeyError, PwRpcError, RuntimeError, ValueError) as exc:
                         logger.debug("Pigweed RPC cancellation raced with task cancellation", method=method_name, error=str(exc))
                 raise
-            except Exception as exc:
+            except (KeyError, PwRpcError, RuntimeError, TypeError, ValueError) as exc:
                 logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
                 return False
             finally:

@@ -285,13 +285,14 @@ BridgeClass::BridgeClass(Stream& stream)
       _arduino_stream(stream),
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
-      _rpc_client_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)) {
+      _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)) {
   _initObservers();
 }
 
 BridgeClass::~BridgeClass() {
   if (!_rpc_services_registered) return;
-  _rpc_client_server.server().UnregisterService(
+  _rpc_server.UnregisterService(
       g_gpio_service, g_system_service, g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
       ,
@@ -372,7 +373,7 @@ void BridgeClass::_initializeRuntime() {
       });
 
   if (_rpc_services_registered) return;
-  _rpc_client_server.server().RegisterService(
+  _rpc_server.RegisterService(
       g_gpio_service, g_system_service, g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
                               ,
@@ -572,12 +573,12 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         return;
       }
       _rpc_plaintext_response = isLinkSyncRequest(meta);
-      const auto status = _rpc_client_server.ProcessPacket(pw::ConstByteSpan(
+      const auto status = _rpc_server.ProcessPacket(pw::ConstByteSpan(
           reinterpret_cast<const pw::byte*>(data.data()), data.size()));
       _rpc_plaintext_response = false;
       if (!status.ok()) emitStatus(rpc::StatusCode::STATUS_ERROR);
     } else if (meta.destination_is_client()) {
-      (void)_rpc_client_server.ProcessPacket(pw::ConstByteSpan(
+      (void)_rpc_client.ProcessPacket(pw::ConstByteSpan(
           reinterpret_cast<const pw::byte*>(data.data()), data.size()));
     }
   }

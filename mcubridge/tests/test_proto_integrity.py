@@ -471,7 +471,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     mcu_handlers = {
         op.command_id: op.mcu_handler for op in protocol.OPERATIONS if op.command_id is not None and op.mcu_handler
     }
-    assert len(mcu_handlers) == 25
+    assert len(mcu_handlers) == 23
     for code, handler_path in mcu_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]

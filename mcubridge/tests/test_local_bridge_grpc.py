@@ -152,7 +152,7 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
 
     # 6. PinSubscribe (valid mode)
     service.state.connection_fsm.connect()
-    mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=True)
+    mock_serial.send.return_value = True
     stream = _make_mock_stream(
         pb.PinSubscribeRequest(
             pin=13,

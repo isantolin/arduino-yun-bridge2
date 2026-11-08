@@ -30,16 +30,16 @@ Reglas obligatorias:
 |---|---|---|
 | HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log y consola | Eliminar rutas manuales redundantes y probar los límites de cada canal |
 | RPC MCU | Servicios Nanopb generados y registrados en firmware; `pw::rpc::Server` y `pw::rpc::Client` presentes | Simplificar registro, lifecycle y dispatch sin wrappers duplicados |
-| Esquema Protobuf | Servicios `GpioService`, `SystemService`, `ClockSyncService`, `SpiService`, `FileSystemService`, `MailboxService`, `ProcessService` y `DataStoreService` declarados | Limpiar metadatos/IDs legacy una vez migrados todos los consumidores |
-| Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` deriva tipos e IDs | Retirar empaquetado manual residual tras migrar streaming y comandos restantes |
-| Cliente RPC Python | `serial.py` invoca métodos unary con `pw_rpc.Client` y descriptores oficiales (PR #68); mantiene camino raw/`PendingCommand` solo para handshake, baudrate, consola y `CMD_FILE_READ` | Completar migración de streaming y retirar `PendingCommand` tras migrar consumidores restantes |
-| GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` | El daemon todavía trata la suscripción como request/response `CMD_PIN_SUBSCRIBE`; consumir stream nativo |
+| Esquema Protobuf | Servicios `GpioService`, `SystemService`, `ClockSyncService`, `SpiService`, `FileSystemService`, `MailboxService`, `ProcessService` y `DataStoreService` declarados; `CMD_PIN_SUBSCRIBE_RESP` y `CMD_PIN_UPDATE_EVENT` eliminados del wire MCU | Limpiar metadatos/IDs legacy restantes tras migrar la API de aplicación |
+| Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` deriva tipos e IDs; `BY_SERVER_STREAM` eliminado | Retirar empaquetado manual residual tras migrar los comandos restantes |
+| Cliente RPC Python | `serial.py` invoca métodos unary (PR #68) y server-streaming (`GpioService.SubscribePins`) con `pw_rpc.Client` y descriptores oficiales; mantiene camino raw/`PendingCommand` solo para handshake, baudrate, consola y `CMD_FILE_READ` | Retirar `PendingCommand` tras migrar consumidores restantes |
+| GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con cancelación, cierre, reconexión y backpressure | Completado |
 | API de aplicación | UBUS y servicios internos usan operaciones/Command IDs como compatibilidad de aplicación | Desacoplar la API de aplicación de los IDs de transporte |
 | Generación | Buf/Nanopb y generador propio producen bindings y metadatos | Reducir generación manual a partir de descriptores y eliminar salidas/tablas redundantes |
 | Transferencia de archivos | Servicio FileSystem RPC unary existente | Evaluar `pw_transfer` con límites, memoria y reanudación; no adoptarlo sin beneficio medido |
 | Estructura C++ | Servicios Pigweed están en `Bridge.cpp`; HAL y servicios de dominio conservados | Separar responsabilidades y retirar glue manual innecesario |
 | Contenedores | Estructuras fijas ETL/arrays/span usadas en MCU | Revisar cada buffer/copia y justificar el tamaño por arquitectura |
-| CI y validación | PR #67 integrado en main; CI de estabilización aceptada por el mantenedor | Mantener matriz completa verde en cada cambio y verificar OpenWrt APK cuando corresponda |
+| CI y validación | PR #67 y PR #68 integrados en `main`; CI de estabilización aceptada por el mantenedor | Mantener matriz completa verde en cada cambio y verificar OpenWrt APK cuando corresponda |
 
 ## Orden de ejecución
 
@@ -47,9 +47,9 @@ Reglas obligatorias:
 |---:|---|---|---|
 | 0 | Estabilización de CI | Matriz de CI verde en `main`; PR #67 integrado | **Completada** |
 | 1 | Inventario y ADR | Contrastar implementación con ADR-0002; identificar rutas Pigweed reales y restos legacy. Este documento consolida el orden actualizado | **Completada como baseline; revisar durante cada etapa** |
-| 2 | Cliente RPC Python | Sustituir construcción/decodificación manual de `RpcPacket`, IDs/call IDs y `PendingCommand` por `pw_rpc.Client`; mantener adaptadores mínimos para HDLC, AEAD y escritura serial asíncrona. Cubrir unary, error, timeout, cancelación, reconexión y concurrencia | **En curso (PR #68)** |
-| 3 | Streaming GPIO | Consumir `GpioService.SubscribePins` como server-streaming Pigweed; eliminar polling/confirmación y demultiplexación manual solo cuando el ciclo de vida del stream esté cubierto. Probar cancelación, cierre, reconexión y backpressure | **Siguiente** |
-| 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, no por `CMD_*`; mantener UBUS y contratos públicos. Separar cualquier ID legado que siga siendo necesario solo en migración/diagnóstico | Pendiente |
+| 2 | Cliente RPC Python | Sustituir construcción/decodificación manual de `RpcPacket`, IDs/call IDs y `PendingCommand` por `pw_rpc.Client`; mantener adaptadores mínimos para HDLC, AEAD y escritura serial asíncrona. Cubrir unary, error, timeout, cancelación, reconexión y concurrencia | **Completada (PR #68)** |
+| 3 | Streaming GPIO | Consumir `GpioService.SubscribePins` como server-streaming Pigweed; eliminar polling/confirmación y demultiplexación manual solo cuando el ciclo de vida del stream esté cubierto. Probar cancelación, cierre, reconexión y backpressure | **En curso** |
+| 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, no por `CMD_*`; mantener UBUS y contratos públicos. Separar cualquier ID legado que siga siendo necesario solo en migración/diagnóstico | **Siguiente** |
 | 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y plantillas que repliquen metadatos. Regeneración reproducible y sin diff espurio | Pendiente |
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual que ya no aporten valor. Mantener HAL, servicios de hardware, AEAD y restricciones AVR | Pendiente |
 | 7 | Transferencias | Evaluar `pw_transfer` frente a FileSystem unary RPC: tamaño máximo, streaming, RAM/Flash, throughput, cancelación, reanudación y seguridad. Adoptar solo si reduce complejidad y cumple límites | Pendiente |
@@ -75,6 +75,17 @@ Criterios de aceptación:
 5. Handshake, LinkReset, cambio de baudrate y consola siguen funcionando, con excepciones explícitas si necesitan un flujo de control previo o fuera de RPC.
 6. Las pruebas demuestran equivalencia funcional y no dependen de mocks que reimplementen internamente Pigweed.
 7. El código manual retirado y el código nuevo se cuantifican; no se acepta una capa adicional que aumente la complejidad sin reemplazar lógica.
+
+## Detalle de la etapa 3: streaming GPIO
+
+El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) ya expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos.
+
+Cambios en el daemon y el contrato:
+
+1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` como método `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
+2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo del stream se entregan a `rpc_client.process_packet`, encolando `PinUpdateEvent` en una cola acotada (`_stream_event_queue`) con política de backpressure (descarta el evento más antiguo si la cola se llena) antes de despachar a `GpioService.handle_pin_update_event`.
+3. Se eliminan `CMD_PIN_SUBSCRIBE_RESP`, `CMD_PIN_UPDATE_EVENT`, `BY_SERVER_STREAM` y `GpioService.on_subscribe_resp`.
+4. `GpioService` cancela explícitamente el stream (`cancel_pin_stream`) al deshabilitar la última suscripción activa y restaura las suscripciones activas (`resubscribe_pins`) tras reconectar y sincronizar el enlace serie.
 
 ## Medición y reporte por etapa
 

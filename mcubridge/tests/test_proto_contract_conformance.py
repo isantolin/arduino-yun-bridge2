@@ -358,7 +358,7 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
 
     # Corrupt Protobuf payload
     initial_errors = state.serial_decode_errors
-    await service.handle_mcu_frame(Command.CMD_PIN_UPDATE_EVENT.value, 10, b"\xff\xff\xff\xff")
+    await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
     mock_serial.send.assert_awaited_with(Status.MALFORMED.value, b"")

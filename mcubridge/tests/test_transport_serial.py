@@ -1336,3 +1336,179 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     with pytest.raises(asyncio.CancelledError):
         await cancel_task
     call.cancel.assert_called_once()
+
+
+async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
+        transport = SerialTransport(config, state, service)
+        service.serial = transport
+        mcu_cipher = _install_link_cipher(config, state)
+        state.connection_fsm.connect()
+        mock_serial = MagicMock(spec=serial.Serial)
+        mock_serial.is_open = True
+        mock_serial.write = MagicMock(return_value=16)
+        mock_serial.flush = MagicMock()
+        transport.serial = mock_serial
+
+        outgoing: list[bytes] = []
+
+        def capture_rpc_packet(packet: bytes) -> None:
+            outgoing.append(packet)
+            transport.queue_rpc_packet(packet)
+
+        transport.rpc_client = PwRpcClient(
+            cast(Any, callback_client).Impl(),
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, capture_rpc_packet)],
+            protocol.PW_SERVICES,
+        )
+
+        mock_enqueue = AsyncMock()
+        service.cloud_publisher = mock_enqueue
+
+        # 1. Open server-streaming subscription via GpioService.subscribe_pin
+        sub_res = await service.gpio.subscribe_pin(13, mode="INPUT_PULLUP", interval_ms=50, hysteresis=1)
+        assert sub_res["status"] == "ok"
+        assert len(outgoing) == 1
+        req_pkt = pw_packets.decode(outgoing[-1])
+        assert req_pkt.type == PacketType.REQUEST
+
+        # 2. Emit 66 SERVER_STREAM PinUpdateEvent packets to exercise bounded queue + backpressure drop
+        stream_queue = cast(asyncio.Queue[Any], _private_attribute(transport, "_stream_event_queue"))
+        enqueue_fn = cast(Callable[[Any], None], _private_attribute(transport, "_enqueue_stream_event"))
+        for idx in range(66):
+            enqueue_fn(pb.PinUpdateEvent(pin=13, value=idx, timestamp_micros=1000 + idx))
+        assert stream_queue.qsize() == 64
+        assert _private_attribute(transport, "_stream_backpressure_drops") == 2
+
+        drain_fn = cast(Callable[[], Coroutine[Any, Any, None]], _private_attribute(transport, "_drain_stream_events"))
+        await drain_fn()
+        assert stream_queue.empty()
+        assert state.pin_events_count == 64
+
+        # 3. Feed a live encrypted PacketType.SERVER_STREAM frame over HDLC
+        evt_payload = pb.PinUpdateEvent(pin=13, value=1, timestamp_micros=777777).SerializeToString()
+        stream_pkt = RpcPacket(
+            type=PacketType.SERVER_STREAM,
+            channel_id=req_pkt.channel_id,
+            service_id=req_pkt.service_id,
+            method_id=req_pkt.method_id,
+            call_id=req_pkt.call_id,
+            payload=evt_payload,
+        )
+        await transport.feed_data(
+            ui_frame(
+                protocol.HDLC_ADDRESS_RPC,
+                mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, stream_pkt.SerializeToString()),
+            )
+        )
+        assert state.pin_events_count == 65
+
+        # 4. Feed PacketType.RESPONSE (status=OK) when MCU closes the stream cleanly
+        close_pkt = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=req_pkt.channel_id,
+            service_id=req_pkt.service_id,
+            method_id=req_pkt.method_id,
+            call_id=req_pkt.call_id,
+            status=0,
+        )
+        await transport.feed_data(
+            ui_frame(
+                protocol.HDLC_ADDRESS_RPC,
+                mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, close_pkt.SerializeToString()),
+            )
+        )
+        assert _private_attribute(transport, "_stream_rpc_calls") == {}
+
+        # 5. Reconnect and resubscribe active pin, then cancel stream explicitly
+        restored = await service.gpio.resubscribe_pins()
+        assert restored == 1
+        assert transport.cancel_pin_stream() is True
+        assert transport.cancel_pin_stream() is False
+
+        # 6. Immediate MCU rejection (RESOURCE_EXHAUSTED = 8) fails subscribe_pin
+        def reject_immediately(packet: bytes) -> None:
+            outgoing.append(packet)
+            transport.queue_rpc_packet(packet)
+            pkt = pw_packets.decode(packet)
+            if pkt.type == PacketType.REQUEST:
+                rej = RpcPacket(
+                    type=PacketType.RESPONSE,
+                    channel_id=pkt.channel_id,
+                    service_id=pkt.service_id,
+                    method_id=pkt.method_id,
+                    call_id=pkt.call_id,
+                    status=8,
+                ).SerializeToString()
+                asyncio.get_running_loop().call_soon(
+                    asyncio.create_task,
+                    transport.feed_data(
+                        ui_frame(
+                            protocol.HDLC_ADDRESS_RPC,
+                            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, rej),
+                        )
+                    ),
+                )
+
+        transport.rpc_client = PwRpcClient(
+            cast(Any, callback_client).Impl(),
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, reject_immediately)],
+            protocol.PW_SERVICES,
+        )
+        rej_res = await service.gpio.subscribe_pin(99, enabled=True)
+        assert rej_res["status"] == "error"
+    finally:
+        state.cleanup()
+
+
+async def test_server_stream_error_and_reset_cleanup_branches(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    enqueue_fn = cast(Callable[[Any], None], _private_attribute(transport, "_enqueue_stream_event"))
+    uninit_msg = MagicMock()
+    uninit_msg.IsInitialized.return_value = False
+    enqueue_fn(uninit_msg)
+    assert runtime_state.serial_decode_errors == 1
+
+    # Exercise stream invoke failure and on_error callback branches
+    spec = protocol.get_operation(Command.CMD_PIN_SUBSCRIBE.value)
+    assert spec is not None
+    rpc_method = MagicMock()
+    rpc_method.invoke.side_effect = RuntimeError("stream invoke error")
+    invoke_stream = cast(
+        Callable[[Any, Any, Any, str], Coroutine[Any, Any, bool]],
+        _private_attribute(transport, "_invoke_server_stream_rpc"),
+    )
+    assert not await invoke_stream(
+        rpc_method,
+        pb.PinSubscribeRequest(pin=13, enabled=True),
+        spec,
+        "rpc.pb.GpioService/SubscribePins",
+    )
+
+    call = MagicMock()
+    call.call_id = None
+    call.cancel.side_effect = RuntimeError("cancel error")
+
+    def trigger_on_error(_req: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
+        on_error(call, RuntimeError("stream aborted"))
+        return call
+
+    rpc_method.invoke.side_effect = trigger_on_error
+    assert not await invoke_stream(
+        rpc_method,
+        pb.PinSubscribeRequest(pin=13, enabled=True),
+        spec,
+        "rpc.pb.GpioService/SubscribePins",
+    )
+
+    # Exercise reset() draining non-empty _stream_event_queue and cancel_pin_stream error handling
+    stream_calls = cast(dict[tuple[int, int, int], Any], _private_attribute(transport, "_stream_rpc_calls"))
+    stream_calls[(1, 2, 3)] = call
+    enqueue_fn(pb.PinUpdateEvent(pin=1, value=1, timestamp_micros=1))
+    await transport.reset()
+    assert stream_calls == {}

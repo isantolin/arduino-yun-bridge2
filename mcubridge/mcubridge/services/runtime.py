@@ -435,6 +435,7 @@ class BridgeService:
         if self.state.is_synchronized:
             await self.request_mcu_version()
             await self.flush_console_queue()
+            await self.gpio.resubscribe_pins()
             self.ubus_service.notify("sync", {"synchronized": True, "version": self.state.mcu_version_str})
         else:
             raise ConnectionError("MCU serial link handshake synchronization failed")

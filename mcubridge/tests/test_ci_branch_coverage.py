@@ -307,5 +307,4 @@ def test_get_operation_resolves_server_stream_packet() -> None:
     )
     assert protocol.get_operation(req_pkt) == pin_op
     stream_op = protocol.get_operation(stream_pkt)
-    assert stream_op is not None
-    assert stream_op.command_id == protocol.Command.CMD_PIN_UPDATE_EVENT.value
+    assert stream_op == pin_op

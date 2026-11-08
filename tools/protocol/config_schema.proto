@@ -1333,17 +1333,7 @@ enum Command {
   CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {
     requires_ack: true
     pb_message: "PinSubscribeRequest"
-    response_command: "CMD_PIN_SUBSCRIBE_RESP"
     auth_field: "gpio_subscribe"
-  }];
-  CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
-    pb_message: "PinSubscribeResponse"
-    mcu_handler: "gpio.on_subscribe_resp"
-  }];
-  CMD_PIN_UPDATE_EVENT = 89 [(cmd_opts) = {
-    cloud_topic: "gpio/pin_update"
-    pb_message: "PinUpdateEvent"
-    mcu_handler: "gpio.handle_pin_update_event"
   }];
   CMD_CONSOLE_WRITE = 96 [(cmd_opts) = {
     requires_ack: true

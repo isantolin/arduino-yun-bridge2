@@ -63,8 +63,7 @@ class GpioService:
             enabled=enabled,
         )
 
-        res = await serial.send(Command.CMD_PIN_SUBSCRIBE.value, req)
-        if isinstance(res, pb.PinSubscribeResponse) and res.success:
+        if await serial.send(Command.CMD_PIN_SUBSCRIBE.value, req):
             state = self._runtime.state
             if enabled:
                 state.pin_subscriptions[pin] = {
@@ -76,49 +75,62 @@ class GpioService:
                 }
             else:
                 state.pin_subscriptions.pop(pin, None)
+                if not state.pin_subscriptions:
+                    cancel_stream = getattr(serial, "cancel_pin_stream", None)
+                    if callable(cancel_stream):
+                        cancel_stream()
             return {"status": "ok", "pin": pin, "enabled": enabled}
 
         return {"status": "error", "message": "MCU rejected pin subscription"}
 
-    async def on_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
-        """Handle MCU pin subscription confirmation frame."""
+    async def resubscribe_pins(self) -> int:
+        """Re-register active pin subscriptions on the MCU after serial reconnection."""
+        serial = self._runtime.serial
         state = self._runtime.state
-        sub = state.pin_subscriptions.setdefault(
-            p.pin,
-            {
-                "mode": "INPUT",
-                "interval_ms": DEFAULT_PIN_INTERVAL_MS,
-                "hysteresis": DEFAULT_PIN_HYSTERESIS,
-                "subscribed_at": time.time(),
-            },
-        )
-        sub["active"] = p.success
-        logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)
+        if serial is None or not state.is_connected or not state.pin_subscriptions:
+            return 0
 
-    async def handle_pin_update_event(
-        self, _seq_or_event: int | pb.PinUpdateEvent, event: pb.PinUpdateEvent | None = None
-    ) -> None:
+        restored = 0
+        for pin, sub in tuple(state.pin_subscriptions.items()):
+            if not sub.get("active", True):
+                continue
+            mode_str = str(sub.get("mode", "INPUT")).upper()
+            pb_mode = getattr(pb.PinModeType, f"PIN_{mode_str}", pb.PinModeType.PIN_INPUT)
+            req = pb.PinSubscribeRequest(
+                pin=pin,
+                mode=pb_mode,
+                interval_ms=int(sub.get("interval_ms", DEFAULT_PIN_INTERVAL_MS)),
+                hysteresis=int(sub.get("hysteresis", DEFAULT_PIN_HYSTERESIS)),
+                enabled=True,
+            )
+            if await serial.send(Command.CMD_PIN_SUBSCRIBE.value, req):
+                sub["active"] = True
+                restored += 1
+            else:
+                sub["active"] = False
+        return restored
+
+    async def handle_pin_update_event(self, event: pb.PinUpdateEvent) -> None:
         """Handle streaming pin value change events from the MCU.
 
         [SIL-2] Routes through enqueue_cloud() for proper LMDB spool persistence,
         IPC correlation, console fanout, drop metrics, and topic_authorization.
         """
-        actual_event = _seq_or_event if isinstance(_seq_or_event, pb.PinUpdateEvent) else (event or pb.PinUpdateEvent())
         state = self._runtime.state
         state.pin_events_count += 1
 
         logger.debug(
             "Pin update event received",
-            pin=actual_event.pin,
-            value=actual_event.value,
-            timestamp_micros=actual_event.timestamp_micros,
+            pin=event.pin,
+            value=event.value,
+            timestamp_micros=event.timestamp_micros,
         )
 
         # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(actual_event.pin), "update"),
-                str(actual_event.value).encode("utf-8"),
+                topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(event.pin), "update"),
+                str(event.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )
         )

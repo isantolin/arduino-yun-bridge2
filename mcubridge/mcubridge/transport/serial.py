@@ -163,9 +163,6 @@ class SerialTransport:
             if self.current_command:
                 self.current_command.mark_failure(Status.TIMEOUT.value)
             self.current_command = None
-        for task in tuple(self._rpc_write_tasks):
-            task.cancel()
-        self._rpc_write_tasks.clear()
         for call in tuple(self._active_rpc_calls):
             try:
                 call.cancel()
@@ -628,6 +625,8 @@ class SerialTransport:
 
         def _finish(completed: asyncio.Task[bool]) -> None:
             self._rpc_write_tasks.discard(completed)
+            if not completed.result():
+                logger.error("Pigweed RPC packet could not be written to serial")
 
         task.add_done_callback(_finish)
 

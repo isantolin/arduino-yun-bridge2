@@ -384,8 +384,6 @@ async def test_serial_transport_methods_with_none_serial(
     switch_baud(115200)
 
     transport.current_command = None
-    pending_write = asyncio.create_task(asyncio.sleep(10))
-    cast(set[asyncio.Task[Any]], transport.__dict__["_rpc_write_tasks"]).add(pending_write)
     ok_call = MagicMock()
     failing_call = MagicMock(cancel=MagicMock(side_effect=RuntimeError("cancel failed")))
     cast(list[Any], transport.__dict__["_active_rpc_calls"]).extend([ok_call, failing_call])
@@ -1089,6 +1087,10 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
 
         assert await send_task == pb.Empty()
         handle_mock.assert_not_awaited()
+        for _ in range(100):
+            if not transport.__dict__["_rpc_write_tasks"]:
+                break
+            await asyncio.sleep(0.01)
     finally:
         state.cleanup()
 
@@ -1137,7 +1139,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     assert request_key not in transport.__dict__["_active_rpc_packet_ids"]
 
     for _ in range(100):
-        if mock_serial.write.call_count == 3:
+        if mock_serial.write.call_count == 3 and not transport.__dict__["_rpc_write_tasks"]:
             break
         await asyncio.sleep(0.01)
     assert mock_serial.write.call_count == 3
@@ -1174,7 +1176,10 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     transport = SerialTransport(runtime_config, runtime_state, None)
     transport.serial = None
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    await asyncio.sleep(0.01)
+    for _ in range(100):
+        if not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
 
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
@@ -1183,7 +1188,10 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_state.mcu_is_paused = True
 
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    await asyncio.sleep(0.05)
+    for _ in range(100):
+        if not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
 
     assert runtime_state.serial_tx_allowed.is_set()
     assert runtime_state.mcu_is_paused is False
@@ -1192,7 +1200,10 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_config.serial_shared_secret = b""
     mock_serial.write = MagicMock(side_effect=OSError("serial write failed"))
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    await asyncio.sleep(0.05)
+    for _ in range(100):
+        if not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
     mock_serial.write.assert_called_once()
 
 
@@ -1316,7 +1327,11 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     cancel_task = asyncio.create_task(
         invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 10.0)
     )
-    await asyncio.sleep(0)
+    for _ in range(100):
+        if active_rpc_calls:
+            break
+        await asyncio.sleep(0)
+    active_rpc_calls.clear()
     cancel_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await cancel_task

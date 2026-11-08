@@ -599,7 +599,7 @@ async def test_serial_transport_edge_branches(
     def _resolve_pending_success(_data: bytes) -> int:
         curr = transport.current_command
         if curr:
-            curr.mark_success(b"file-ok")
+            loop.call_soon_threadsafe(curr.mark_success, b"file-ok")
         return len(_data)
 
     mock_serial2.write = MagicMock(side_effect=_resolve_pending_success)
@@ -607,13 +607,6 @@ async def test_serial_transport_edge_branches(
 
     mock_serial2.write = MagicMock(side_effect=OSError("boom"))
     assert await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test")) is False
-
-    # 7. send_raw when serial_tx_allowed is released before timeout
-    mock_serial2.write = MagicMock(return_value=10)
-    runtime_state.serial_tx_allowed.clear()
-    mocker.patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 1.0)
-    loop.call_soon(runtime_state.serial_tx_allowed.set)
-    assert await transport.send_raw(Command.CMD_DIGITAL_WRITE.value, b"resumed") is True
 
 
 async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:

@@ -522,10 +522,8 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
-        is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         if (
-            not is_handshake
-            and spec is not None
+            spec is not None
             and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name
@@ -534,6 +532,7 @@ class SerialTransport:
         ):
             return await self._send_rpc(spec, payload, timeout)
 
+        is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
 
         if not is_tracked:

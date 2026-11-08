@@ -158,19 +158,16 @@ class SerialTransport:
         except (AttributeError, OSError, ValueError) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
-    def _cancel_rpc_call(self, call: Any) -> None:
-        try:
-            call.cancel()
-        except (AttributeError, KeyError, RuntimeError, ValueError) as exc:
-            logger.debug("Unable to cancel pending Pigweed RPC", error=str(exc))
-
     async def reset(self) -> None:
         async with self._flow_lock:
             if self.current_command:
                 self.current_command.mark_failure(Status.TIMEOUT.value)
             self.current_command = None
         for call in tuple(self._active_rpc_calls):
-            self._cancel_rpc_call(call)
+            try:
+                call.cancel()
+            except (AttributeError, RuntimeError, ValueError) as exc:
+                logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
 
@@ -522,8 +519,11 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
+        is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
+        is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         if (
-            spec is not None
+            not is_link_reset
+            and spec is not None
             and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name
@@ -532,7 +532,6 @@ class SerialTransport:
         ):
             return await self._send_rpc(spec, payload, timeout)
 
-        is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
 
         if not is_tracked:
@@ -637,7 +636,13 @@ class SerialTransport:
         if not serial_port or not serial_port.is_open:
             return False
         if not self.state.serial_tx_allowed.is_set():
-            await self._wait_for_tx_allowed()
+            try:
+                async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
+                    await self.state.serial_tx_allowed.wait()
+            except TimeoutError:
+                logger.warning("Timed out waiting for serial TX flow control before RPC write")
+                self.state.mcu_is_paused = False
+                self.state.serial_tx_allowed.set()
 
         from pw_hdlc.encode import ui_frame
 
@@ -716,11 +721,13 @@ class SerialTransport:
                 future: asyncio.Future[bool | ProtobufMessage] = completion,
                 state: dict[str, ProtobufMessage | None] = callback_state,
             ) -> None:
-                if not future.done():
+                if future.done():
+                    return
+                if status.ok():
                     response_message = state["response"]
-                    future.set_result(
-                        (response_message if response_message is not None else True) if status.ok() else False
-                    )
+                    future.set_result(response_message if response_message is not None else True)
+                else:
+                    future.set_result(False)
 
             def _on_error(
                 _call: Any,
@@ -747,13 +754,27 @@ class SerialTransport:
                 async with asyncio.timeout(timeout):
                     return await completion
             except TimeoutError:
-                self._cancel_rpc_call(call)
+                try:
+                    call.cancel()
+                except (KeyError, RuntimeError, ValueError) as exc:
+                    logger.debug(
+                        "Pigweed RPC cancellation raced with completion",
+                        method=method_name,
+                        error=str(exc),
+                    )
                 if attempt < self.max_attempts:
                     await asyncio.sleep(
                         min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (attempt - 1)), SERIAL_HANDSHAKE_BACKOFF_MAX)
                     )
             except asyncio.CancelledError:
-                self._cancel_rpc_call(call)
+                try:
+                    call.cancel()
+                except (KeyError, RuntimeError, ValueError) as exc:
+                    logger.debug(
+                        "Pigweed RPC cancellation raced with task cancellation",
+                        method=method_name,
+                        error=str(exc),
+                    )
                 raise
             finally:
                 if call in self._active_rpc_calls:
@@ -778,18 +799,6 @@ class SerialTransport:
         effective_timeout = timeout if timeout is not None else self._response_timeout
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 
-    async def _wait_for_tx_allowed(self) -> None:
-        try:
-            async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
-                await self.state.serial_tx_allowed.wait()
-        except TimeoutError:
-            logger.warning(
-                "Timed out waiting for serial TX flow control, auto-resuming TX",
-                timeout=FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
-            )
-            self.state.mcu_is_paused = False
-            self.state.serial_tx_allowed.set()
-
     async def send_raw(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""
         if not self.serial:
@@ -800,7 +809,16 @@ class SerialTransport:
             and self.state.connection_fsm.negotiating_baud.is_active
         )
         if not self.state.serial_tx_allowed.is_set() and not is_baudrate_negotiation:
-            await self._wait_for_tx_allowed()
+            try:
+                async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
+                    await self.state.serial_tx_allowed.wait()
+            except TimeoutError:
+                logger.warning(
+                    "Timed out waiting for serial TX flow control, auto-resuming TX",
+                    timeout=FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
+                )
+                self.state.mcu_is_paused = False
+                self.state.serial_tx_allowed.set()
 
         if seq_id is None:
             self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX

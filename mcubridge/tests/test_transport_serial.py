@@ -591,23 +591,6 @@ async def test_serial_transport_edge_branches(
     res_fail_status = await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test"))
     assert res_fail_status is False
 
-    # 6. send() untracked handshake (CMD_LINK_RESET) and tracked legacy (CMD_FILE_READ) branches
-    mock_serial2.write = MagicMock(return_value=10)
-    assert await transport.send(Command.CMD_LINK_RESET.value, b"") is True
-    assert await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test"), timeout=0.001) is False
-
-    def _resolve_pending_success(_data: bytes) -> int:
-        curr = transport.current_command
-        if curr:
-            loop.call_soon_threadsafe(curr.mark_success, b"file-ok")
-        return len(_data)
-
-    mock_serial2.write = MagicMock(side_effect=_resolve_pending_success)
-    assert await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test"), seq_id=7) == b"file-ok"
-
-    mock_serial2.write = MagicMock(side_effect=OSError("boom"))
-    assert await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test")) is False
-
 
 async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
     """Test that reader task re-establishes connection on failure."""

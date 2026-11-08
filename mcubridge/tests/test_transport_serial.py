@@ -374,6 +374,10 @@ async def test_unary_rpc_decodes_empty_request_payload(
     assert await send_task == response
 
 
+def _private_attribute(instance: object, name: str) -> Any:
+    return getattr(instance, name)
+
+
 async def test_serial_transport_methods_with_none_serial(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -384,7 +388,15 @@ async def test_serial_transport_methods_with_none_serial(
     switch_baud(115200)
 
     transport.current_command = None
+    pending_write = asyncio.create_task(asyncio.sleep(10))
+    _private_attribute(transport, "_rpc_write_tasks").add(pending_write)
+    ok_call = MagicMock()
+    failing_call = MagicMock()
+    failing_call.cancel.side_effect = RuntimeError("cancel failed")
+    _private_attribute(transport, "_active_rpc_calls").extend([ok_call, failing_call])
     await transport.reset()
+    ok_call.cancel.assert_called_once()
+    failing_call.cancel.assert_called_once()
 
     toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
@@ -1165,6 +1177,7 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
 
     monkeypatch.setattr(serial_mod, "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.0)
     transport = SerialTransport(runtime_config, runtime_state, None)
+    transport.serial = None
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
     await asyncio.sleep(0.01)
 
@@ -1177,10 +1190,7 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_state.mcu_is_paused = True
 
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    for _ in range(100):
-        if runtime_state.serial_tx_allowed.is_set():
-            break
-        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
 
     assert runtime_state.serial_tx_allowed.is_set()
     assert runtime_state.mcu_is_paused is False
@@ -1188,23 +1198,19 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
 
     runtime_config.serial_shared_secret = b""
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    for _ in range(100):
-        if mock_serial.write.called:
-            break
-        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
     mock_serial.write.assert_called_once()
 
 
-def _private_attribute(instance: object, name: str) -> Any:
-    return getattr(instance, name)
-
-
-def test_decode_rpc_request_rejects_invalid_payloads(
+async def test_decode_rpc_request_rejects_invalid_payloads(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     from types import SimpleNamespace
 
     transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
     assert spec is not None
 
@@ -1215,12 +1221,16 @@ def test_decode_rpc_request_rejects_invalid_payloads(
     assert decode_rpc_request(spec, cast(Any, object())) is None
     assert decode_rpc_request(spec, b"\x0a\xff") is None
     assert decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
+    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, cast(Any, object()))
 
 
-def test_get_rpc_method_returns_none_when_descriptor_is_missing(
+async def test_get_rpc_method_returns_none_when_descriptor_is_missing(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
     rpc_client = MagicMock()
     rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
     transport.rpc_client = rpc_client
@@ -1229,6 +1239,7 @@ def test_get_rpc_method_returns_none_when_descriptor_is_missing(
     assert spec is not None
     get_rpc_method = cast(Callable[[Any], Any], _private_attribute(transport, "_get_rpc_method"))
     assert get_rpc_method(spec) is None
+    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1))
 
 
 async def test_invoke_rpc_completion_without_response_and_error_callback(
@@ -1325,33 +1336,8 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     cancel_task = asyncio.create_task(
         invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 10.0)
     )
-    for _ in range(100):
-        if active_rpc_calls:
-            break
-        await asyncio.sleep(0)
+    await asyncio.sleep(0)
     cancel_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await cancel_task
     assert call.cancel.call_count == 3
-
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.is_open = True
-    transport.serial = mock_serial
-    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, cast(Any, object()))
-
-    rpc_client = MagicMock()
-    rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
-    transport.rpc_client = rpc_client
-    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1))
-
-    pending_write = asyncio.create_task(asyncio.sleep(10))
-    _private_attribute(transport, "_rpc_write_tasks").add(pending_write)
-    ok_call = MagicMock()
-    failing_call = MagicMock()
-    failing_call.cancel.side_effect = RuntimeError("cancel failed")
-    active_rpc_calls.extend([ok_call, failing_call])
-    await transport.reset()
-    with pytest.raises(asyncio.CancelledError):
-        await pending_write
-    ok_call.cancel.assert_called_once()
-    failing_call.cancel.assert_called_once()

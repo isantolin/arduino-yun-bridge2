@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
@@ -1177,7 +1177,10 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     runtime_state.mcu_is_paused = True
 
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    await asyncio.sleep(0.05)
+    for _ in range(100):
+        if runtime_state.serial_tx_allowed.is_set():
+            break
+        await asyncio.sleep(0.01)
 
     assert runtime_state.serial_tx_allowed.is_set()
     assert runtime_state.mcu_is_paused is False
@@ -1185,7 +1188,10 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
 
     runtime_config.serial_shared_secret = b""
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
-    await asyncio.sleep(0.05)
+    for _ in range(100):
+        if mock_serial.write.called:
+            break
+        await asyncio.sleep(0.01)
     mock_serial.write.assert_called_once()
 
 
@@ -1253,7 +1259,7 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
 
     rpc_method.invoke.side_effect = complete_without_payload
     invoke_rpc_with_retries = cast(
-        Callable[[Any, Any, str, float], Awaitable[Any]],
+        Callable[[Any, Any, str, float], Coroutine[Any, Any, Any]],
         _private_attribute(transport, "_invoke_rpc_with_retries"),
     )
     active_rpc_calls = _private_attribute(transport, "_active_rpc_calls")
@@ -1316,24 +1322,26 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     assert not result
     assert call.cancel.call_count == 2
 
+    cancel_task = asyncio.create_task(
+        invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 10.0)
+    )
+    for _ in range(100):
+        if active_rpc_calls:
+            break
+        await asyncio.sleep(0)
+    cancel_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancel_task
+    assert call.cancel.call_count == 3
+
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
     transport.serial = mock_serial
     assert not await transport.send(Command.CMD_CLOCK_SYNC.value, cast(Any, object()))
 
     rpc_client = MagicMock()
-    rpc_client.channel.return_value.method.return_value = rpc_method
-    transport.rpc_client = rpc_client
-    cancel_task = asyncio.create_task(
-        transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1), timeout=10.0)
-    )
-    await asyncio.sleep(0)
-    cancel_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await cancel_task
-    assert call.cancel.call_count == 3
-
     rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
+    transport.rpc_client = rpc_client
     assert not await transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1))
 
     pending_write = asyncio.create_task(asyncio.sleep(10))

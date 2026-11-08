@@ -645,16 +645,16 @@ class SerialTransport:
                 self.state.mcu_is_paused = False
                 self.state.serial_tx_allowed.set()
 
-        cipher = self.state.link_cipher
-        if self.config.serial_shared_secret and cipher is None:
-            logger.error("Refusing Pigweed RPC output before link authentication")
-            return False
-
         from pw_hdlc.encode import ui_frame
 
-        frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
-        encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
         async with self._serial_write_lock:
+            cipher = self.state.link_cipher
+            if self.config.serial_shared_secret and cipher is None:
+                logger.error("Refusing Pigweed RPC output before link authentication")
+                return False
+
+            frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
+            encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
 
             def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
                 ser.write(data)
@@ -790,8 +790,7 @@ class SerialTransport:
         timeout: float | None,
     ) -> bool | ProtobufMessage:
         """Invoke one unary method through pw_rpc.Client and await its callbacks."""
-        request = self._decode_rpc_request(spec, payload)
-        if request is None:
+        request = self._decode_rpc_request(spec, payload)\n        if request is None:
             return False
         rpc_method = self._get_rpc_method(spec)
         if rpc_method is None:

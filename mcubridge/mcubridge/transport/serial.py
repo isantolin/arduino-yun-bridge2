@@ -170,7 +170,8 @@ class SerialTransport:
             try:
                 call.cancel()
             except (AttributeError, RuntimeError, ValueError) as exc:
-                logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))\n        self._active_rpc_calls.clear()
+                logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))
+        self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
 
     async def run(self) -> None:

@@ -165,11 +165,7 @@ compile_sketch() {
         BUILD_FLAGS+=("--build-path" "$ISOLATED_BUILD_DIR")
     fi
 
-    local BOARD_CACHE_DIR="${_LOG_DIR}/cache/${BOARD_NAME}"
-    mkdir -p "$BOARD_CACHE_DIR"
-    BUILD_FLAGS+=("--build-cache-path" "$BOARD_CACHE_DIR")
-
-    if arduino-cli compile "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
+    if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
         echo "✓ $sketch_name ($FQBN)"
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
@@ -187,32 +183,31 @@ compile_sketch() {
     fi
 }
 
-# Collect all sketches, then compile each board in its own parallel worker
-# so sketches for the same board reuse BOARD_CACHE_DIR sequentially without core.a races.
-echo "Compiling examples in parallel across ${#TARGET_BOARDS[@]} target boards..."
+# Collect all board×sketch combinations, then run in parallel
+echo "Compiling examples in parallel (max $MAX_JOBS jobs)..."
 pids=()
 CRITICAL_FAIL=0
 
+# Collect all sketches
 SKETCHES=()
 while IFS= read -r s; do
     [ -n "$s" ] && SKETCHES+=("$s")
-done < <(find "$EXAMPLES_DIR" -name "*.ino" | sort)
-
-compile_board() {
-    local FQBN="$1"
-    local board_fail=0
-    for sketch in "${SKETCHES[@]}"; do
-        compile_sketch "$FQBN" "$sketch" || board_fail=1
-    done
-    return $board_fail
-}
+done < <(find "$EXAMPLES_DIR" -name "*.ino")
 
 for FQBN in "${TARGET_BOARDS[@]}"; do
-    compile_board "$FQBN" &
-    pids+=($!)
+    for sketch in "${SKETCHES[@]}"; do
+        compile_sketch "$FQBN" "$sketch" &
+        pids+=($!)
+
+        # Throttle to MAX_JOBS
+        if [[ ${#pids[@]} -ge $MAX_JOBS ]]; then
+            wait "${pids[0]}" || CRITICAL_FAIL=1
+            pids=("${pids[@]:1}")
+        fi
+    done
 done
 
-# Wait for all board workers
+# Wait for remaining jobs
 for pid in "${pids[@]}"; do
     wait "$pid" || CRITICAL_FAIL=1
 done

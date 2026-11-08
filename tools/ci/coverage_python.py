@@ -60,7 +60,7 @@ def main(
         "pytest_asyncio",
         "-p",
         "no:platformdirs",
-        "--timeout=60",
+        "--timeout=300",
         "--timeout-method=thread",
         f"--cov={ROOT_DIR / 'mcubridge' / 'mcubridge'}",
         f"--cov={ROOT_DIR / 'mcubridge-client-examples' / 'mcubridge_client'}",

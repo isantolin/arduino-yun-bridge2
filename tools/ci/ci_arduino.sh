@@ -47,19 +47,21 @@ if [ ! -d "$USER_LIB_DIR/WiFiNINA" ]; then
     arduino-cli lib install WiFiNINA || { echo "Failed to install WiFiNINA"; exit 1; }
 fi
 
-# Install dependencies
-echo "Generating protocol bindings..."
-python3 ./tools/protocol/generate.py \
-    --spec ./tools/protocol/cloud_gateway.proto \
-    --py ./mcubridge/mcubridge/protocol/protocol.py \
-    --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
-    --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+# Install dependencies if not already generated/installed by CI workflow
+if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ]; then
+    echo "Generating protocol bindings..."
+    python3 ./tools/protocol/generate.py \
+        --spec ./tools/protocol/cloud_gateway.proto \
+        --py ./mcubridge/mcubridge/protocol/protocol.py \
+        --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
+        --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+fi
 
-echo "Installing libraries..."
-# We pass USER_LIB_DIR to install.sh to ensure it installs there
-./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
-
-
+if [ ! -d "$USER_LIB_DIR/PigweedAVR" ] || [ ! -d "$USER_LIB_DIR/Embedded_Template_Library" ]; then
+    echo "Installing libraries..."
+    # We pass USER_LIB_DIR to install.sh to ensure it installs there
+    ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
+fi
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
@@ -165,7 +167,11 @@ compile_sketch() {
         BUILD_FLAGS+=("--build-path" "$ISOLATED_BUILD_DIR")
     fi
 
-    if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
+    local BOARD_CACHE_DIR="${_LOG_DIR}/cache/${BOARD_NAME}"
+    mkdir -p "$BOARD_CACHE_DIR"
+    BUILD_FLAGS+=("--build-cache-path" "$BOARD_CACHE_DIR")
+
+    if arduino-cli compile "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
         echo "✓ $sketch_name ($FQBN)"
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
@@ -183,31 +189,32 @@ compile_sketch() {
     fi
 }
 
-# Collect all board×sketch combinations, then run in parallel
-echo "Compiling examples in parallel (max $MAX_JOBS jobs)..."
+# Collect all sketches, then compile each board in its own parallel worker
+# so sketches for the same board reuse BOARD_CACHE_DIR sequentially without core.a races.
+echo "Compiling examples in parallel across ${#TARGET_BOARDS[@]} target boards..."
 pids=()
 CRITICAL_FAIL=0
 
-# Collect all sketches
 SKETCHES=()
 while IFS= read -r s; do
     [ -n "$s" ] && SKETCHES+=("$s")
-done < <(find "$EXAMPLES_DIR" -name "*.ino")
+done < <(find "$EXAMPLES_DIR" -name "*.ino" | sort)
+
+compile_board() {
+    local FQBN="$1"
+    local board_fail=0
+    for sketch in "${SKETCHES[@]}"; do
+        compile_sketch "$FQBN" "$sketch" || board_fail=1
+    done
+    return $board_fail
+}
 
 for FQBN in "${TARGET_BOARDS[@]}"; do
-    for sketch in "${SKETCHES[@]}"; do
-        compile_sketch "$FQBN" "$sketch" &
-        pids+=($!)
-
-        # Throttle to MAX_JOBS
-        if [[ ${#pids[@]} -ge $MAX_JOBS ]]; then
-            wait "${pids[0]}" || CRITICAL_FAIL=1
-            pids=("${pids[@]:1}")
-        fi
-    done
+    compile_board "$FQBN" &
+    pids+=($!)
 done
 
-# Wait for remaining jobs
+# Wait for all board workers
 for pid in "${pids[@]}"; do
     wait "$pid" || CRITICAL_FAIL=1
 done

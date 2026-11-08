@@ -1343,5 +1343,7 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     failing_call.cancel.side_effect = RuntimeError("cancel failed")
     active_rpc_calls.extend([ok_call, failing_call])
     await transport.reset()
+    with pytest.raises(asyncio.CancelledError):
+        await pending_write
     ok_call.cancel.assert_called_once()
     failing_call.cancel.assert_called_once()

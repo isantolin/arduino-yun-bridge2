@@ -183,28 +183,46 @@ async def test_serial_transport_feed_data_hdlc_rpc(tmp_path: Path) -> None:
     state.cleanup()
 
 
-async def test_serial_transport_send_with_retries(tmp_path: Path) -> None:
+async def test_serial_transport_send_uses_pigweed_rpc(tmp_path: Path) -> None:
+    from typing import cast
+
+    from pw_rpc import callback_client
+    from pw_rpc.client import Client as PwRpcClient
+    from pw_rpc.descriptors import Channel as PwRpcChannel
+    from pw_rpc.internal.packet_pb2 import RpcPacket
+
     transport, state, _ = _make_transport(tmp_path)
-
-    # When send is called without expected response (fire and forget / untracked), it sends raw and returns True
-    res = await transport.send(Command.CMD_LINK_RESET.value, pb.GenericResponse(message="reset"))
-    assert res is True
-
-    # When send is called with expected response (CMD_DIGITAL_READ expects CMD_DIGITAL_READ_RESP)
-    send_task = asyncio.create_task(
-        transport.send(
-            Command.CMD_DIGITAL_READ.value,
-            pb.PinRead(pin=13),
+    try:
+        outgoing: list[bytes] = []
+        transport.rpc_client = PwRpcClient(
+            cast(Any, callback_client).Impl(),
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+            protocol.PW_SERVICES,
         )
-    )
+        send_task = asyncio.create_task(
+            transport.send(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13))
+        )
+        for _ in range(100):
+            if outgoing:
+                break
+            await asyncio.sleep(0)
+        assert len(outgoing) == 1
 
-    await asyncio.sleep(0.01)
-    # Correlate response
-    current = transport.current_command
-    if current is not None:
-        current.mark_success(pb.DigitalReadResponse(value=1))
+        request = pw_packets.decode(outgoing[0])
+        assert request.type == PacketType.REQUEST
+        assert pb.PinRead.FromString(request.payload) == pb.PinRead(pin=13)
 
-    resp = await send_task
-    assert isinstance(resp, pb.DigitalReadResponse)
-
-    state.cleanup()
+        response = pb.DigitalReadResponse(value=1)
+        packet = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=request.channel_id,
+            service_id=request.service_id,
+            method_id=request.method_id,
+            call_id=request.call_id,
+            payload=response.SerializeToString(),
+            status=0,
+        )
+        assert transport.rpc_client.process_packet(packet.SerializeToString()).ok()
+        assert await send_task == response
+    finally:
+        state.cleanup()

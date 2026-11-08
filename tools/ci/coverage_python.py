@@ -76,7 +76,7 @@ def main(
 
     has_n = any(arg == "-n" or arg.startswith("-n=") for arg in targets)
     if not has_n and importlib.util.find_spec("xdist") is not None:
-        args.extend(["-n", "5"])
+        args.extend(["-n", "3", "--max-worker-restart=0"])
 
     args.extend(targets)
 

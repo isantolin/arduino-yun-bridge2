@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
@@ -10,6 +10,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
+from pw_rpc import callback_client, packets as pw_packets
+from pw_rpc.client import Client as PwRpcClient
+from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
@@ -265,8 +269,6 @@ def test_serial_transport_switch_local_baudrate_error(
 async def test_serial_transport_send_failure_status_code(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    from mcubridge.protocol.protocol import Status
-
     transport = SerialTransport(runtime_config, runtime_state, None)
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
@@ -274,12 +276,102 @@ async def test_serial_transport_send_failure_status_code(
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
 
-    send_task = asyncio.create_task(transport.send(Command.CMD_GET_VERSION.value, b""))
+    send_task = asyncio.create_task(
+        transport.send(Command.CMD_PIN_SUBSCRIBE.value, pb.PinSubscribeRequest(pin=7, enabled=True))
+    )
     await asyncio.sleep(0.01)
-    correlate_fn: Callable[[int, bytes], None] = transport.correlate_frame
-    correlate_fn(Status.ERROR.value, b"")
-    res = await send_task
-    assert res is False
+    transport.correlate_frame(Status.ERROR.value, b"")
+    assert await send_task is False
+
+
+async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    outgoing: list[bytes] = []
+    transport.rpc_client = PwRpcClient(
+        cast(Any, callback_client).Impl(),
+        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+        protocol.PW_SERVICES,
+    )
+
+    first_request = pb.ClockSyncRequest(host_time_us=111)
+    second_request = pb.ClockSyncRequest(host_time_us=222)
+    first = asyncio.create_task(transport.send(Command.CMD_CLOCK_SYNC.value, first_request))
+    second = asyncio.create_task(transport.send(Command.CMD_CLOCK_SYNC.value, second_request))
+
+    for _ in range(100):
+        if len(outgoing) == 2:
+            break
+        await asyncio.sleep(0)
+    assert len(outgoing) == 2
+
+    requests = [pw_packets.decode(packet) for packet in outgoing]
+    assert requests[0].call_id != requests[1].call_id
+    assert all(request.type == PacketType.REQUEST for request in requests)
+
+    for request in reversed(requests):
+        host_time_us = 111 if request.payload == first_request.SerializeToString() else 222
+        response = pb.ClockSyncResponse(host_time_us=host_time_us, mcu_time_us=987)
+        packet = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=request.channel_id,
+            service_id=request.service_id,
+            method_id=request.method_id,
+            call_id=request.call_id,
+            payload=response.SerializeToString(),
+            status=0,
+        )
+        assert transport.rpc_client.process_packet(packet.SerializeToString()).ok()
+
+    first_result, second_result = await asyncio.gather(first, second)
+    assert isinstance(first_result, pb.ClockSyncResponse)
+    assert isinstance(second_result, pb.ClockSyncResponse)
+    assert first_result.host_time_us == 111
+    assert second_result.host_time_us == 222
+
+
+async def test_unary_rpc_decodes_empty_request_payload(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    outgoing: list[bytes] = []
+    transport.rpc_client = PwRpcClient(
+        cast(Any, callback_client).Impl(),
+        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
+        protocol.PW_SERVICES,
+    )
+
+    send_task = asyncio.create_task(transport.send(Command.CMD_GET_VERSION.value, b""))
+    for _ in range(100):
+        if outgoing:
+            break
+        await asyncio.sleep(0)
+    assert len(outgoing) == 1
+
+    request = pw_packets.decode(outgoing[0])
+    assert request.type == PacketType.REQUEST
+    assert request.payload == b""
+    response = pb.VersionResponse(major=2, minor=8, patch=9)
+    packet = RpcPacket(
+        type=PacketType.RESPONSE,
+        channel_id=request.channel_id,
+        service_id=request.service_id,
+        method_id=request.method_id,
+        call_id=request.call_id,
+        payload=response.SerializeToString(),
+        status=0,
+    )
+    assert transport.rpc_client.process_packet(packet.SerializeToString()).ok()
+    assert await send_task == response
 
 
 async def test_serial_transport_methods_with_none_serial(
@@ -292,7 +384,12 @@ async def test_serial_transport_methods_with_none_serial(
     switch_baud(115200)
 
     transport.current_command = None
+    ok_call = MagicMock()
+    failing_call = MagicMock(cancel=MagicMock(side_effect=RuntimeError("cancel failed")))
+    cast(list[Any], transport.__dict__["_active_rpc_calls"]).extend([ok_call, failing_call])
     await transport.reset()
+    ok_call.cancel.assert_called_once()
+    failing_call.cancel.assert_called_once()
 
     toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
@@ -491,7 +588,7 @@ async def test_serial_transport_edge_branches(
         return len(_data)
 
     mock_serial2.write = MagicMock(side_effect=_resolve_pending_without_status)
-    res_fail_status = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"test")
+    res_fail_status = await transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test"))
     assert res_fail_status is False
 
 
@@ -690,7 +787,7 @@ def _rpc_frame(
         spec.method_id,
         call_id,
         payload=payload,
-        packet_type=packet_type,
+        packet_type=cast(Any, packet_type),
         status=status,
     )
     if cipher is not None:
@@ -952,27 +1049,290 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
         transport.serial = mock_serial
-        loop = asyncio.get_running_loop()
 
-        def _on_write(data: bytes) -> int:
-            call_id = transport.current_command.sequence_id if transport.current_command else 1
-            loop.call_soon_threadsafe(
-                loop.create_task,
-                transport.feed_data(
-                    _rpc_frame(
-                        Command.CMD_MAILBOX_PUSH,
-                        packet_type=_PKT_RESPONSE,
-                        call_id=call_id or 1,
-                        payload=b"",
-                        cipher=mcu_cipher,
-                    )
-                ),
-            )
-            return len(data)
+        outgoing: list[bytes] = []
 
-        mock_serial.write = MagicMock(side_effect=_on_write)
-        res = await transport.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=b"PING"))
-        assert res is True
+        def queue_rpc_packet(packet: bytes) -> None:
+            outgoing.append(packet)
+            transport.queue_rpc_packet(packet)
+
+        transport.rpc_client = PwRpcClient(
+            cast(Any, callback_client).Impl(),
+            [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, queue_rpc_packet)],
+            protocol.PW_SERVICES,
+        )
+        send_task = asyncio.create_task(transport.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=b"PING")))
+        for _ in range(100):
+            if outgoing:
+                break
+            await asyncio.sleep(0)
+        assert len(outgoing) == 1
+
+        request = pw_packets.decode(outgoing[0])
+        assert request.type == PacketType.REQUEST
+        response = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=request.channel_id,
+            service_id=request.service_id,
+            method_id=request.method_id,
+            call_id=request.call_id,
+            payload=b"",
+            status=0,
+        )
+        response_frame = ui_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response.SerializeToString()),
+        )
+        await transport.feed_data(response_frame)
+
+        assert await send_task == pb.Empty()
         handle_mock.assert_not_awaited()
+        for _ in range(100):
+            if not transport.__dict__["_rpc_write_tasks"]:
+                break
+            await asyncio.sleep(0.01)
     finally:
         state.cleanup()
+
+
+def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
+    spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
+    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    return RpcPacket(
+        type=cast(Any, packet_type),
+        channel_id=protocol.HDLC_ADDRESS_RPC,
+        service_id=spec.service_id,
+        method_id=spec.method_id,
+        call_id=call_id,
+    ).SerializeToString()
+
+
+async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    runtime_config.serial_shared_secret = b""
+    runtime_state.serial_tx_allowed.set()
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=16)
+    mock_serial.flush = MagicMock()
+    transport.serial = mock_serial
+    request = _make_rpc_packet(PacketType.REQUEST)
+    request_key = (
+        protocol.HDLC_ADDRESS_RPC,
+        pw_packets.decode(request).service_id,
+        pw_packets.decode(request).method_id,
+        pw_packets.decode(request).call_id,
+    )
+
+    transport.queue_rpc_packet(request)
+    assert request_key in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_rpc_packet_ids"])
+
+    client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
+    transport.queue_rpc_packet(client_error)
+    assert request_key not in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_rpc_packet_ids"])
+
+    # A response packet is written but must not be registered as a new active call.
+    response = _make_rpc_packet(PacketType.RESPONSE)
+    transport.queue_rpc_packet(response)
+    assert request_key not in transport.__dict__["_active_rpc_packet_ids"]
+
+    for _ in range(100):
+        if mock_serial.write.call_count == 3 and not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
+    assert mock_serial.write.call_count == 3
+
+
+def test_queue_rpc_packet_ignores_malformed_packet(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    transport.queue_rpc_packet(b"\xff")
+    assert transport.__dict__["_active_rpc_packet_ids"] == set()
+
+
+def test_queue_rpc_packet_rejects_calls_outside_event_loop(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    packet = _make_rpc_packet(int(PacketType.REQUEST))
+    decoded = pw_packets.decode(packet)
+    key = (decoded.channel_id, decoded.service_id, decoded.method_id, decoded.call_id)
+
+    with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
+        transport.queue_rpc_packet(packet)
+
+    assert key in transport.__dict__["_active_rpc_packet_ids"]
+
+
+async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: Any
+) -> None:
+    import mcubridge.transport.serial as serial_mod
+
+    monkeypatch.setattr(serial_mod, "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.0)
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    transport.serial = None
+    transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
+    for _ in range(100):
+        if not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
+
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+    runtime_state.serial_tx_allowed.clear()
+    runtime_state.mcu_is_paused = True
+
+    transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
+    for _ in range(100):
+        if not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
+
+    assert runtime_state.serial_tx_allowed.is_set()
+    assert runtime_state.mcu_is_paused is False
+    mock_serial.write.assert_not_called()
+
+    runtime_config.serial_shared_secret = b""
+    mock_serial.write = MagicMock(side_effect=OSError("serial write failed"))
+    transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
+    for _ in range(100):
+        if not transport.__dict__["_rpc_write_tasks"]:
+            break
+        await asyncio.sleep(0.01)
+    mock_serial.write.assert_called_once()
+
+
+def _private_attribute(instance: object, name: str) -> Any:
+    return getattr(instance, name)
+
+
+async def test_decode_rpc_request_rejects_invalid_payloads(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    from types import SimpleNamespace
+
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+    spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
+    assert spec is not None
+
+    decode_rpc_request = cast(
+        Callable[[Any, Any], Any],
+        _private_attribute(transport, "_decode_rpc_request"),
+    )
+    assert decode_rpc_request(spec, cast(Any, object())) is None
+    assert decode_rpc_request(spec, b"\x0a\xff") is None
+    assert decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
+    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, cast(Any, object()))
+
+
+async def test_get_rpc_method_returns_none_when_descriptor_is_missing(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+    rpc_client = MagicMock()
+    rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
+    transport.rpc_client = rpc_client
+
+    spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
+    assert spec is not None
+    get_rpc_method = cast(Callable[[Any], Any], _private_attribute(transport, "_get_rpc_method"))
+    assert get_rpc_method(spec) is None
+    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1))
+
+
+async def test_invoke_rpc_completion_without_response_and_error_callback(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: Any
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    rpc_method = MagicMock()
+    call = MagicMock()
+
+    def complete_without_payload(
+        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
+    ) -> Any:
+        on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
+        on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
+        return call
+
+    rpc_method.invoke.side_effect = complete_without_payload
+    invoke_rpc_with_retries = cast(
+        Callable[[Any, Any, str, float], Coroutine[Any, Any, Any]],
+        _private_attribute(transport, "_invoke_rpc_with_retries"),
+    )
+    active_rpc_calls = _private_attribute(transport, "_active_rpc_calls")
+    result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert result
+    assert call not in active_rpc_calls
+
+    def fail_callback(
+        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
+    ) -> Any:
+        active_rpc_calls.clear()
+        on_error(call, RuntimeError("remote failure"))
+        on_error(call, RuntimeError("duplicate failure"))
+        return call
+
+    rpc_method.invoke.side_effect = fail_callback
+    result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert not result
+    assert call not in active_rpc_calls
+
+    def complete_with_non_ok_status(
+        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
+    ) -> Any:
+        on_completed(call, MagicMock(ok=MagicMock(return_value=False)))
+        return call
+
+    rpc_method.invoke.side_effect = complete_with_non_ok_status
+    result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert not result
+    assert call not in active_rpc_calls
+
+    rpc_method.invoke.side_effect = RuntimeError("invoke error")
+    result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert not result
+
+    transport.max_attempts = 2
+    call.cancel.side_effect = [RuntimeError("cancel race"), None]
+    rpc_method.invoke.side_effect = None
+    rpc_method.invoke.return_value = call
+    monkeypatch.setattr("mcubridge.transport.serial.SERIAL_HANDSHAKE_BACKOFF_BASE", 0.0)
+    result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 0.001
+    )
+    assert not result
+    assert call.cancel.call_count == 2
+
+    call.cancel.reset_mock()
+    call.cancel.side_effect = ValueError("cancel on task abort")
+    cancel_task = asyncio.create_task(
+        invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 10.0)
+    )
+    for _ in range(100):
+        if active_rpc_calls:
+            break
+        await asyncio.sleep(0)
+    active_rpc_calls.clear()
+    cancel_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancel_task
+    call.cancel.assert_called_once()

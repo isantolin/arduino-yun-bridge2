@@ -170,8 +170,7 @@ class SerialTransport:
             try:
                 call.cancel()
             except (AttributeError, RuntimeError, ValueError) as exc:
-                logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))
-        self._active_rpc_calls.clear()
+                logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))\n        self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
 
     async def run(self) -> None:
@@ -790,7 +789,8 @@ class SerialTransport:
         timeout: float | None,
     ) -> bool | ProtobufMessage:
         """Invoke one unary method through pw_rpc.Client and await its callbacks."""
-        request = self._decode_rpc_request(spec, payload)\n        if request is None:
+        request = self._decode_rpc_request(spec, payload)
+        if request is None:
             return False
         rpc_method = self._get_rpc_method(spec)
         if rpc_method is None:

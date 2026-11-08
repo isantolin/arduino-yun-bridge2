@@ -1190,7 +1190,7 @@ async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout
     mock_serial.write.assert_not_called()
 
     runtime_config.serial_shared_secret = b""
-    mock_serial.write.side_effect = OSError("serial write failed")
+    mock_serial.write = MagicMock(side_effect=OSError("serial write failed"))
     transport.queue_rpc_packet(_make_rpc_packet(int(PacketType.REQUEST)))
     await asyncio.sleep(0.05)
     mock_serial.write.assert_called_once()

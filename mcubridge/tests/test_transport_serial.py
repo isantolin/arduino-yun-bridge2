@@ -1316,14 +1316,25 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     assert not result
     assert call.cancel.call_count == 2
 
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, cast(Any, object()))
+
+    rpc_client = MagicMock()
+    rpc_client.channel.return_value.method.return_value = rpc_method
+    transport.rpc_client = rpc_client
     cancel_task = asyncio.create_task(
-        invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 10.0)
+        transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1), timeout=10.0)
     )
     await asyncio.sleep(0)
     cancel_task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await cancel_task
     assert call.cancel.call_count == 3
+
+    rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
+    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1))
 
     pending_write = asyncio.create_task(asyncio.sleep(10))
     _private_attribute(transport, "_rpc_write_tasks").add(pending_write)
@@ -1334,12 +1345,3 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     await transport.reset()
     ok_call.cancel.assert_called_once()
     failing_call.cancel.assert_called_once()
-
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.is_open = True
-    transport.serial = mock_serial
-    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, cast(Any, object()))
-    rpc_client = MagicMock()
-    rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
-    transport.rpc_client = rpc_client
-    assert not await transport.send(Command.CMD_CLOCK_SYNC.value, pb.ClockSyncRequest(host_time_us=1))

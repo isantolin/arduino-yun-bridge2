@@ -655,7 +655,8 @@ class SerialTransport:
         encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
         async with self._serial_write_lock:
             serial_port = self.serial
-            assert serial_port is not None
+            if not serial_port.is_open:
+                return False
 
             def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
                 ser.write(data)

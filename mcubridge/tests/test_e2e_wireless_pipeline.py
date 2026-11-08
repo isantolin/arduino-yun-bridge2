@@ -157,30 +157,34 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
     runtime_state.link_sync_event.clear()
     transport_task = asyncio.create_task(transport.run())
-    await asyncio.wait_for(runtime_state.link_sync_event.wait(), timeout=5.0)
-    assert runtime_state.is_synchronized is True
+    try:
+        await asyncio.wait_for(runtime_state.link_sync_event.wait(), timeout=5.0)
+        assert runtime_state.is_synchronized is True
 
-    ver_ok = await service.request_mcu_version()
-    assert ver_ok is True
-    assert runtime_state.mcu_version == (2, 8, 5)
+        for _ in range(100):
+            if runtime_state.mcu_version == (2, 8, 5):
+                break
+            await asyncio.sleep(0.02)
 
-    # 2. Execute RPC digital write command over Wireless TCP
-    dw_req = pb.DigitalWrite(pin=13, value=1)
-    res = await transport.send(protocol.Command.CMD_DIGITAL_WRITE.value, dw_req)
-    assert res is not None
+        ver_ok = await service.request_mcu_version()
+        assert ver_ok is True
+        assert runtime_state.mcu_version == (2, 8, 5)
 
-    # 3. Assert frames were delivered over TCP wire
-    assert len(frames_received_by_mcu) >= 2
-    cmd_ids = [f[0] for f in frames_received_by_mcu]
-    assert protocol.Command.CMD_LINK_SYNC.value in cmd_ids
-    assert protocol.Command.CMD_DIGITAL_WRITE.value in cmd_ids
+        # 2. Execute RPC digital write command over Wireless TCP
+        dw_req = pb.DigitalWrite(pin=13, value=1)
+        res = await transport.send(protocol.Command.CMD_DIGITAL_WRITE.value, dw_req)
+        assert res is not None
 
-    # 4. Cleanup
-    await transport.stop()
-    await transport_task
-
-    server.close()
-    await server.wait_closed()
+        # 3. Assert frames were delivered over TCP wire
+        assert len(frames_received_by_mcu) >= 2
+        cmd_ids = [f[0] for f in frames_received_by_mcu]
+        assert protocol.Command.CMD_LINK_SYNC.value in cmd_ids
+        assert protocol.Command.CMD_DIGITAL_WRITE.value in cmd_ids
+    finally:
+        await transport.stop()
+        await transport_task
+        server.close()
+        await server.wait_closed()
 
 
 async def test_e2e_wireless_tcp_analog_read_and_datastore(
@@ -222,6 +226,11 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                         writer.write(resp_frame)
                         await writer.drain()
 
+                    elif cmd_id == protocol.Command.CMD_GET_VERSION.value:
+                        resp_pb = pb.VersionResponse(major=2, minor=8, patch=5)
+                        writer.write(_encode_mcu_rpc_response(pkt, resp_pb, mcu_cipher))
+                        await writer.drain()
+
                     elif cmd_id == protocol.Command.CMD_ANALOG_READ.value:
                         response = RpcPacket(
                             type=PacketType.RESPONSE,
@@ -252,28 +261,35 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
     tcp_port = server.sockets[0].getsockname()[1]
 
     runtime_config.serial_port = f"wifi://127.0.0.1:{tcp_port}"
+    runtime_config.serial_retry_timeout = 0.5
+    runtime_config.serial_response_timeout = 1.0
     transport = SerialTransport(runtime_config, runtime_state, None)
     service = BridgeService(runtime_config, runtime_state, transport)
     transport.service = service
 
     runtime_state.link_sync_event.clear()
     transport_task = asyncio.create_task(transport.run())
-    await asyncio.wait_for(runtime_state.link_sync_event.wait(), timeout=5.0)
-    assert runtime_state.is_synchronized is True
+    try:
+        await asyncio.wait_for(runtime_state.link_sync_event.wait(), timeout=5.0)
+        assert runtime_state.is_synchronized is True
 
-    ar_req = pb.PinRead(pin=0)
-    raw_res = await transport.send(protocol.Command.CMD_ANALOG_READ.value, ar_req)
-    assert raw_res is not None
-    if isinstance(raw_res, pb.AnalogReadResponse):
-        ar_resp = raw_res
-    elif isinstance(raw_res, bytes):
-        ar_resp = pb.AnalogReadResponse.FromString(raw_res)
-    else:
-        raise AssertionError(f"Unexpected response type: {type(raw_res)}")
-    assert ar_resp.value == 742
+        for _ in range(100):
+            if runtime_state.mcu_version == (2, 8, 5):
+                break
+            await asyncio.sleep(0.02)
 
-    await transport.stop()
-    await transport_task
-
-    server.close()
-    await server.wait_closed()
+        ar_req = pb.PinRead(pin=0)
+        raw_res = await transport.send(protocol.Command.CMD_ANALOG_READ.value, ar_req)
+        assert raw_res is not None
+        if isinstance(raw_res, pb.AnalogReadResponse):
+            ar_resp = raw_res
+        elif isinstance(raw_res, bytes):
+            ar_resp = pb.AnalogReadResponse.FromString(raw_res)
+        else:
+            raise AssertionError(f"Unexpected response type: {type(raw_res)}")
+        assert ar_resp.value == 742
+    finally:
+        await transport.stop()
+        await transport_task
+        server.close()
+        await server.wait_closed()

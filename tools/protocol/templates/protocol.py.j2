@@ -207,8 +207,6 @@ class OperationSpec:
     pb_class: type[Any] | None = None
     payload_field: str | None = None
     cloud_topic: str | None = None
-    expected_responses: frozenset[int] = frozenset()
-    paired_request_id: int | None = None
     auth_field: str | None = None
     requires_ack: bool = False
     pre_sync_allowed: bool = False
@@ -278,12 +276,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- endif %}
         {%- if op.cloud_topic %}
         cloud_topic={{ op.cloud_topic|tojson }},
-        {%- endif %}
-        {%- if op.expected_responses %}
-        expected_responses=frozenset({ {%- for r in op.expected_responses %}{{ r }},{%- endfor %} }),
-        {%- endif %}
-        {%- if op.paired_request_id %}
-        paired_request_id={{ op.paired_request_id }},
         {%- endif %}
         {%- if op.auth_field %}
         auth_field={{ op.auth_field|tojson }},
@@ -641,7 +633,7 @@ def build_supervised_tasks(
 ) -> list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]]:
     """Build supervised daemon tasks list from Protocol SSOT. [SIL-2]"""
     fatals_map = fatal_exception_map or {}
-    tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]] = []
+    tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]]= []
     for task in DAEMON_TASKS:
         if task.condition_property and not operator.attrgetter(task.condition_property)(service):
             continue
@@ -719,13 +711,7 @@ def encode_rpc_packet(
         target = channel_id_or_command
         spec = get_operation(target)
         actual_type = packet_type
-        if spec is not None and spec.paired_request_id is not None:
-            paired = get_operation(spec.paired_request_id)
-            if paired is not None:
-                spec = paired
-                if actual_type == 0:
-                    actual_type = 1
-        elif (
+        if (
             actual_type == 0
             and spec is not None
             and spec.response_type is not None

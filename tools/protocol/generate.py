@@ -328,11 +328,6 @@ def _extract_commands_and_statuses(
         command["value"] = value.number
         commands.append(command)
 
-    request_by_response = {cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")}
-    for command in commands:
-        if not command.get("request_command") and command["name"] in request_by_response:
-            command["request_command"] = request_by_response[command["name"]]
-
     statuses: list[dict[str, Any]] = []
     for value in status_enum.values:
         if value.name == "STATUS_UNSPECIFIED":
@@ -438,10 +433,6 @@ def _build_command_operation(
     for str_key in ("cloud_topic", "auth_field", "mcu_handler", "mcu_unsupported_reason"):
         if cmd.get(str_key):
             op[str_key] = cmd[str_key]
-    if cmd.get("response_command"):
-        op["expected_responses"] = [f"Command.{cmd['response_command']}.value"]
-    if cmd.get("request_command"):
-        op["paired_request_id"] = f"Command.{cmd['request_command']}.value"
     for bool_key in ("requires_ack", "pre_sync_allowed"):
         if cmd.get(bool_key):
             op[bool_key] = True

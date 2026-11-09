@@ -1103,14 +1103,13 @@ message UbusMethodConfig {
 }
 
 message CommandOptions {
-  reserved 2, 4, 10, 12, 13;
-  reserved "directions", "expects_direct_response", "request_command", "rpc_method", "action_routes";
+  reserved 2, 4, 9, 10, 12, 13;
+  reserved "directions", "expects_direct_response", "response_command", "request_command", "rpc_method", "action_routes";
   bool requires_ack = 3;
   string description = 5;
   string cloud_topic = 6;
   bool pre_sync_allowed = 7;
   string pb_message = 8;
-  string response_command = 9;
   string auth_field = 11;
   string mcu_handler = 14;
   string mcu_unsupported_reason = 15;
@@ -1236,10 +1235,6 @@ enum Command {
   CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {auth_field: "system_free_memory"}];
   CMD_LINK_SYNC = 68 [(cmd_opts) = {
     description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
-    pb_message: "LinkSync"
-    response_command: "CMD_LINK_SYNC_RESP"
-  }];
-  CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = {
     pre_sync_allowed: true
     pb_message: "LinkSync"
     mcu_handler: "handshake.handle_link_sync_resp"

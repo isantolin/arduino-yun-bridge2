@@ -76,9 +76,7 @@ class GpioService:
             else:
                 state.pin_subscriptions.pop(pin, None)
                 if not state.pin_subscriptions:
-                    cancel_stream = getattr(serial, "cancel_pin_stream", None)
-                    if callable(cancel_stream):
-                        cancel_stream()
+                    serial.cancel_pin_stream()
             return {"status": "ok", "pin": pin, "enabled": enabled}
 
         return {"status": "error", "message": "MCU rejected pin subscription"}

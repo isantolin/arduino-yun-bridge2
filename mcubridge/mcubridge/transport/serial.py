@@ -134,7 +134,7 @@ class SerialTransport:
         self._stream_rpc_calls: dict[tuple[int, int, int], Any] = {}
         self._stream_rpc_packet_ids: dict[tuple[int, int, int], int] = {}
         self._stream_event_queue: asyncio.Queue[ProtobufMessage] = asyncio.Queue(maxsize=_STREAM_EVENT_QUEUE_MAX)
-        self._stream_backpressure_drops = 0
+        self._stream_backpressure_drops: int = 0
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self.queue_rpc_packet)],
@@ -916,13 +916,12 @@ class SerialTransport:
             logger.error("Unable to invoke Pigweed server-streaming RPC", method=method_name, error=str(exc))
             return None
 
-        call_id = getattr(call, "call_id", None)
-        if not isinstance(call_id, int):
-            call_id = self._last_rpc_call_id
+        raw_call_id: Any = getattr(call, "call_id", None)
+        call_id: int | None = raw_call_id if isinstance(raw_call_id, int) else self._last_rpc_call_id
         call_ref["call"] = call
         call_ref["call_id"] = call_id
         self._stream_rpc_calls[stream_key] = call
-        if isinstance(call_id, int):
+        if call_id is not None:
             self._stream_rpc_packet_ids[stream_key] = call_id
         return call, call_id
 

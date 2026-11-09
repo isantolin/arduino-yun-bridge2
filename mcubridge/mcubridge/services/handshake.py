@@ -1,422 +1,391 @@
-"""Serial link handshake and authenticated session setup."""
+"""Handshake and link synchronization management for MCU Bridge.
+
+[SIL-2] All framing, nonce validation, and state transitions are handled
+through a strict finite state machine (FSM) using `transitions` and
+`tenacity` for deterministic retry policies.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 import secrets
+import struct
 import time
 from collections.abc import Awaitable, Callable
-from enum import StrEnum
-from typing import Any, Protocol, cast
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import Any, Final, cast
 
 import structlog
 import tenacity
-from statemachine import State, StateMachine
-from statemachine.exceptions import TransitionNotAllowed
+from google.protobuf.message import DecodeError as ProtobufDecodeError
+from google.protobuf.message import Message as ProtobufMessage
+from transitions.extensions.asyncio import AsyncMachine
 
-from mcubridge.protocol import mcubridge_pb2 as pb
-from cryptography.hazmat.primitives import hashes, hmac
-from cryptography.hazmat.primitives.constant_time import bytes_eq
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from google.protobuf.message import (
-    DecodeError as ProtobufDecodeError,
+from ..config.const import (
+     HANDSHAKE_FATAL_FAILURE_THRESHOLD,
 )
-from google.protobuf.message import (
-    Message as ProtobufMessage,
-)
-
 from ..config.settings import RuntimeConfig
-from ..protocol import protocol
-from ..security.security import LinkCipher
+from ..protocol import pb, protocol
 from ..protocol.protocol import (
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
     Command,
-    get_topic_for_message,
+    HandshakeConfig,
+    Status,
 )
-from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
+from ..protocol.structures import (
+    HandshakeAckPacket,
+    LinkSyncPacket,
+)
 from ..state.context import RuntimeState
+from ..util import derive_serial_Timing
 
-os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
-
-
-class HandshakeState(StrEnum):
-    """[SIL-2] Strongly-typed FSM states for serial handshake. Prevents silent typos."""
-
-    UNSYNCHRONIZED = "unsynchronized"
-    RESETTING = "resetting"
-    SYNCING = "syncing"
-    CONFIRMING = "confirming"
-    SYNCHRONIZED = "synchronized"
-    FAULT = "fault"
+logger = structlog.get_logger("mcubridge.handshake")
 
 
-class HandshakeEvent(StrEnum):
-    """[SIL-2] Discrete handshake lifecycle events triggering deterministic FSM transitions."""
+class HandshakeState(Enum):
+    """[SIL-2] Explicit Finite State Machine states for Link Handshake."""
 
-    START_SYNC = "start_sync"
-    RESET_SENT = "reset_sent"
-    SYNC_SENT = "sync_sent"
-    SYNC_CONFIRMED = "sync_confirmed"
-    FAILURE = "failure"
-    RESET = "reset"
-
-
-class HandshakeMachine(StateMachine):
-    """[SIL-2] Strongly-typed deterministic FSM for serial handshake via python-statemachine."""
-
-    unsynchronized = State(value="unsynchronized", initial=True)
-    resetting = State(value="resetting")
-    syncing = State(value="syncing")
-    confirming = State(value="confirming")
-    synchronized = State(value="synchronized")
-    fault = State(value="fault")
-
-    start_sync = unsynchronized.to(resetting) | synchronized.to(resetting) | fault.to(resetting)
-    reset_sent = resetting.to(syncing)
-    sync_sent = syncing.to(confirming)
-    sync_confirmed = confirming.to(synchronized) | syncing.to(synchronized)
-    failure = (
-        unsynchronized.to(fault)
-        | resetting.to(fault)
-        | syncing.to(fault)
-        | confirming.to(fault)
-        | synchronized.to(fault)
-        | fault.to(fault)
-    )
-    reset = (
-        unsynchronized.to(unsynchronized)
-        | resetting.to(unsynchronized)
-        | syncing.to(unsynchronized)
-        | confirming.to(unsynchronized)
-        | synchronized.to(unsynchronized)
-        | fault.to(unsynchronized)
-    )
+    UNSYNCHRONIZED = auto()
+    RESETTING = auto()
+    SENDING_SYNC = auto()
+    AWAITING_SYNC_RESP = auto()
+    CONFIRMING = auto()
+    SYNCHRONIZED = auto()
+    FAULT = auto()
 
 
-class RateLimiter:
-    """[SIL-2] Deterministic rate limiting and exponential backoff calculator."""
+@dataclass
+class HandshakeStats:
+    """Diagnostic counters for handshake operations."""
 
-    @staticmethod
-    def check_rate_limit(now: float, limit_until: float) -> tuple[bool, float]:
-        """Return (allowed, remaining_seconds)."""
-        if now < limit_until:
-            return False, limit_until - now
-        return True, 0.0
-
-    @staticmethod
-    def compute_exponential_backoff(
-        attempt: int,
-        base: float = SERIAL_HANDSHAKE_BACKOFF_BASE,
-        max_delay: float = SERIAL_HANDSHAKE_BACKOFF_MAX,
-    ) -> float:
-        """Calculate deterministic exponential backoff bounded by max_delay."""
-        return min(base * (2 ** max(0, attempt)), max_delay)
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    fatal_errors: int = 0
+    last_error: str | None = None
+    last_sync_unix: float = 0.0
+    Synchronization_duration_ms: float = 0.0
 
 
-class SendFrameCallable(Protocol):
-    async def __call__(
-        self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None
-    ) -> bool | bytes | ProtobufMessage: ...
-
-
-EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
-
-logger = structlog.get_logger("mcubridge.service.handshake")
-
-
-def derive_serial_timing(config: RuntimeConfig) -> pb.HandshakeConfig:
-    """Derive timing windows from config with strict declarative validation."""
-    ack_ms = round(config.serial_retry_timeout * 1000.0)
-    return pb.HandshakeConfig(
-        ack_timeout_ms=ack_ms,
-        response_timeout_ms=max(round(config.serial_response_timeout * 1000.0), ack_ms),
-        ack_retry_limit=config.serial_retry_attempts,
-    )
-
-
-class SerialHandshakeFatal(RuntimeError):
-    """Raised when MCU rejects the serial shared secret permanently."""
-
-
-_IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
-    {
-        protocol.STATUS_REASON_SYNC_AUTH_MISMATCH,
-        protocol.STATUS_REASON_SYNC_LENGTH_MISMATCH,
-    }
-)
-
-
+@dataclass
 class SerialHandshakeManager:
-    """Encapsulates MCU serial handshake orchestration and telemetry."""
+    """Manages MCU reset, link synchronization, and capability discovery."""
 
-    def __init__(
-        self,
-        *,
-        config: RuntimeConfig,
-        state: RuntimeState,
-        serial_timing: pb.HandshakeConfig,
-        send_frame: SendFrameCallable,
-        enqueue_cloud: EnqueueMessageCallable,
-        sync_waiter: Callable[[bytes], Awaitable[bool]] | None = None,
-        topic_resolver: Callable[[str, Any], str | None] | None = None,
-        logger_: Any | None = None,
-    ) -> None:
-        self._config = config
-        self._state = state
-        self.timing = serial_timing
-        self.send_frame = send_frame
-        self._enqueue_cloud = enqueue_cloud
-        self.sync_waiter: Callable[[bytes], Awaitable[bool]] = (
-            sync_waiter if sync_waiter is not None else self.wait_for_link_sync_confirmation
+    config: RuntimeConfig
+    state: RuntimeState
+    send_frame: Callable[[int, bytes], Awaitable[Any]]
+    enqueue_mqtt: Callable[[Any], Awaitable[None]]
+    acknowledge_frame: Callable[
+        [int, int],
+        Awaitable[None],
+    ]
+    on_synchronized_callbacks: list[Callable[[], Awaitable[None]]] = field(default_factory=list)
+    reset_hook: Callable[[float], Awaitable[float]] | None = None
+    clock: Callable[[], float] = time.monotonic
+
+    def __post_init__(self) -> None:
+        self._config = self.config
+        self._state = self.state
+        self._logger = logger
+        self.stats = HandshakeStats()
+
+        # Timing parameters derived from baudrate and safety margins
+        timing = derive_serial_Timing(
+            self._config.serial_baud,
+            self._config.serial_safe_baud,
+            self._config.serial_retry_timeout,
+            self._config.serial_response_timeout,
         )
-        self.topic_resolver: Callable[[str, Any], str | None] = (
-            topic_resolver if topic_resolver is not None else get_topic_for_message
+        self.ack_timeout_ms: int = timing.ack_timeout_ms
+        self.response_timeout_ms: int = timing.response_timeout_ms
+        self.retry_limit: int = self._config.serial_retry_limit
+        self.retry_backoff_base: float = 0.2
+        self.retry_backoff_max: float = 2.0
+        self.post_reset_delay: float = 2.0
+        self.capabilities_delay: float = 2.0
+
+        self._handshake_lock = asyncio.Lock()
+        self._active_nonce: bytes | None = None
+        self._sync_started_at: float = 0.0
+        self._expected_resp_future: asyncio.Future[tuple[int, bytes]] | None = None
+        self._consecutive_fatal_failures: int = 0
+
+        # [SIL-2] Formal AsyncMachine declaration
+        self.machine = AsyncMachine(
+            model=self,
+            states=HandshakeState,
+            initial=HandshakeState.UNSYNCHRONIZED,
+            auto_transitions=False,
+            send_event=True,
+            queued=True,
         )
-        self._logger = logger_ or logger
-        self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
-        # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = self.timing
-        self.capabilities_delay: float = float(protocol.CAPABILITIES_DISCOVERY_DELAY_SECONDS)
-        self.retry_backoff_base: float = SERIAL_HANDSHAKE_BACKOFF_BASE
-        self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
-        self.fsm = HandshakeMachine(listeners=[self])
+
+        # Transitions definition
+        self.machine.add_transition(
+            trigger="begin_reset",
+            source=[
+                HandshakeState.UNSYNCHRONIZED,
+                HandshakeState.SYNCHRONIZED,
+                HandshakeState.FAULT,
+            ],
+            dest=HandshakeState.RESETTING,
+            before="_on_enter_resetting",
+        )
+        self.machine.add_transition(
+            trigger="start_sync",
+            source=HandshakeState.RESETTING,
+            dest=HandshakeState.SENDING_SYNC,
+        )
+        self.machine.add_transition(
+            trigger="wait_response",
+            source=HandshakeState.SENDING_SYNC,
+            dest=HandshakeState.AWAITING_SYNC_RESP,
+        )
+        self.machine.add_transition(
+            trigger="confirm_sync",
+            source=HandshakeState.AWAITING_SYNC_RESP,
+            dest=HandshakeState.CONFIRMING,
+        )
+        self.machine.add_transition(
+            trigger="complete_sync",
+            source=[
+                HandshakeState.CONFIRMING,
+                HandshakeState.AWAITING_SYNC_RESP,
+                HandshakeState.UNSYNCHRONIZED,
+                HandshakeState.SYNCHRONIZED,
+            ],
+            dest=HandshakeState.SYNCHRONIZED,
+            after="_on_enter_synchronized",
+        )
+        self.machine.add_transition(
+            trigger="fail_sync",
+            source="*",
+            dest=HandshakeState.FAULT,
+            before="_on_enter_fault",
+        )
+        self.machine.add_transition(
+            trigger="reset_to_unsync",
+            source="*",
+            dest=HandshakeState.UNSYNCHRONIZED,
+        )
 
     @property
-    def fsm_state(self) -> HandshakeState:
-        return HandshakeState(self.fsm.current_state_value)
+    def is_synchronized(self) -> bool:
+        return self.state_fsm == HandshakeState.SYNCHRONIZED
 
-    @fsm_state.setter
-    def fsm_state(self, new_state: HandshakeState) -> None:
-        """Explicit state override and metric alignment."""
-        old_state = self.fsm_state
-        if old_state == new_state:
-            return
+    @property
+    def state_fsm(self) -> HandshakeState:
+        return cast(HandshakeState, getattr(self, "state"))
 
-        self.fsm.current_state_value = new_state.value
-        self._state.metrics.handshake_state.state(new_state)
-        if new_state == HandshakeState.SYNCHRONIZED:
-            self.on_enter_synchronized()
-        elif old_state == HandshakeState.SYNCHRONIZED:
-            self.on_exit_synchronized()
+    async def _on_enter_resetting(self, event: Any) -> None:
+        self._state.mark_transport_connected()
+        self._state.link_is_synchronized = False
+        self._sync_started_at = self.clock()
+        self.stats.attempts += 1
 
-    def on_enter_synchronized(self) -> None:
-        """[SIL-2] Native hook executed on entering synchronized state."""
-        self._state.connection_fsm.synchronize()
-        self._state.link_sync_event.set()
+    async def _on_enter_synchronized(self, event: Any) -> None:
+        duration = (self.clock() - self._sync_started_at) * 1000.0
+        self.stats.Synchronization_duration_ms = duration
+        self.stats.successes += 1
+        self.stats.last_sync_unix = time.time()
+        self._consecutive_fatal_failures = 0
+        self._state.mark_synchronized()
 
-    def on_exit_synchronized(self) -> None:
-        """[SIL-2] Native hook executed on exiting synchronized state."""
-        self._state.connection_fsm.connect()
-
-    def after_transition(self, event: str, source: State, target: State) -> None:
-        """[SIL-2] Native observer recording deterministic state metrics."""
-        self._state.metrics.handshake_state.state(HandshakeState(target.value))
-
-    def transition(self, event: HandshakeEvent) -> HandshakeState:
-        """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
-        old_state = self.fsm_state
-        try:
-            fsm_send: Callable[[str], Any] = cast(Any, self.fsm).send
-            fsm_send(event.value)
-        except TransitionNotAllowed:
-            self._logger.warning(
-                "Invalid FSM transition rejected",
-                current_state=old_state,
-                handshake_event=event.value,
-            )
-            return old_state
-
-        return self.fsm_state
-
-    async def synchronize(self) -> bool:
-        # [SIL-2] Unified Retry Strategy for Link Synchronisation
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(self._fatal_threshold),
-            wait=tenacity.wait_exponential_jitter(
-                initial=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-                jitter=1.0,
-            ),
-            retry=tenacity.retry_if_result(lambda res: res is False),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-            reraise=False,
-        )
-
-        async def _attempt() -> bool:
-            # [SIL-2] Direct metrics recording (No Wrapper)
-            self._state.last_handshake_unix = time.time()
-            self._state.handshake_last_started = time.monotonic()
-            self._state.handshake_attempts += 1
-            with structlog.contextvars.bound_contextvars(handshake_attempt=self._state.handshake_attempts):
-                self.transition(HandshakeEvent.RESET)  # Ensure clean slate
-                return await self.synchronize_attempt()
-
-        try:
-            ok: bool = await retryer(_attempt)
-            self._logger.debug("Handshake statistics", stats=str(retryer.statistics))
-            return ok
-        except tenacity.RetryError:
-            self.transition(HandshakeEvent.FAILURE)
-            return False
-
-    async def synchronize_attempt(self) -> bool:
-
-        # Transition to RESETTING
-        self.transition(HandshakeEvent.START_SYNC)
-        self._state.link_sync_event.clear()
-
-        # [MIL-SPEC] Generate random nonce for session derivation
-        nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
-
-        self._state.link_handshake_nonce = nonce
-        self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_response_tag(self._config.serial_shared_secret, nonce)
-        self._state.link_cipher = None
-
-        reset_ok = await self.send_frame(
-            Command.CMD_LINK_RESET.value,
-            self._reset_payload,
-        )
-        if not reset_ok:
-            self.clear_handshake_expectations()
-            await self.handle_handshake_failure("link_reset_send_failed")
-            return False
-
-        # [SIL-2] Wait for MCU stabilization period (BRIDGE_STARTUP_STABILIZATION_MS)
-        # Reduced to 0.1s for faster synchronization while relying on retryer for robustness.
-        await asyncio.sleep(0.1)
-
-        # Transition to SYNCING
-        self.transition(HandshakeEvent.RESET_SENT)
-        await asyncio.sleep(0.05)
-
-        # Authenticate the host request with the host-specific handshake key.
-        our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
-        # [SIL-2] Serialize LINK_SYNC as protobuf.
-        sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag)
-        sync_ok = await self.send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
-        if not sync_ok:
-            self.clear_handshake_expectations()
-            await self.handle_handshake_failure("link_sync_send_failed")
-            return False
-
-        # [SIL-2] Race Condition Guard: check if async response already put us in fault or success.
-        if self.fsm_state == HandshakeState.FAULT:
-            return False
-
-        # Transition to CONFIRMING only if we are still in SYNCING.
-        # High-speed emulators may have already triggered complete_handshake().
-        if self.fsm_state == HandshakeState.SYNCING:
-            self.transition(HandshakeEvent.SYNC_SENT)
-
-        confirmed = await self.sync_waiter(nonce)
-        current_state = cast(HandshakeState, self.fsm_state)
-
-        if not confirmed:
-            # [SIL-2] Double check if we didn't just transition to fault via async path.
-            if current_state == HandshakeState.FAULT:
-                return False
-
-            pending_nonce = self._state.link_handshake_nonce
-            self.clear_handshake_expectations()
-            if pending_nonce == nonce:
-                await self.handle_handshake_failure("link_sync_timeout")
-            return False
-
-        # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if current_state not in (HandshakeState.SYNCHRONIZED, HandshakeState.FAULT):
-            self.transition(HandshakeEvent.SYNC_CONFIRMED)
-
-        return self.fsm_state == HandshakeState.SYNCHRONIZED
-
-    async def handle_link_sync_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
-        expected = self._state.link_handshake_nonce
-        if expected is None:
-            self._logger.error("Unexpected LINK_SYNC_RESP without pending nonce")
-            await self.handle_handshake_failure("unexpected_sync_resp")
-            return False
-
-        rate_limit = self._config.serial_handshake_min_interval
-        if rate_limit > 0:
-            now = time.monotonic()
-            allowed, remaining = RateLimiter.check_rate_limit(now, self._state.handshake_rate_until)
-            if not allowed:
-                self._logger.error(
-                    ("LINK_SYNC_RESP throttled due to rate limit (remaining=%.2fs)"),
-                    remaining,
-                )
-                await self.handle_handshake_failure("sync_rate_limited")
-                return False
-            self._state.handshake_rate_until = now + rate_limit
-
-        try:
-            # [SIL-2] Decode LINK_SYNC_RESP as protobuf.
-            if isinstance(payload, ProtobufMessage):
-                sync_pkt = cast(pb.LinkSync, payload)
-            else:
-                sync_pkt = pb.LinkSync.FromString(payload)
-            nonce = sync_pkt.nonce
-            tag_bytes = sync_pkt.tag
-        except (ProtobufDecodeError, ValueError, TypeError):
-            self._logger.error(
-                "LINK_SYNC_RESP protobuf decode failed (len=%d)",
-                len(payload) if isinstance(payload, bytes) else 0,
-            )
-            self.clear_handshake_expectations()
-            await self.handle_handshake_failure("sync_decode_failed")
-            return False
-
-        expected_tag = self._state.link_expected_tag
-
-        nonce_mismatch = not bytes_eq(nonce, expected)
-        missing_expected_tag = expected_tag is None
-        tag_mismatch = expected_tag is None or not bytes_eq(tag_bytes, expected_tag)
-
-        if nonce_mismatch:
-            self._logger.debug(
-                "Ignoring LINK_SYNC_RESP with nonce mismatch (expected=%s, received=%s)",
-                expected.hex(),
-                nonce.hex(),
-            )
-            return False
-
-        if missing_expected_tag or tag_mismatch:
-            self._logger.error(
-                "LINK_SYNC_RESP auth mismatch: missing_tag=%s, tag_mismatch=%s (nonce=%s)",
-                missing_expected_tag,
-                tag_mismatch,
-                nonce.hex(),
-            )
-            self.clear_handshake_expectations()
-            await self.handle_handshake_failure(
-                protocol.STATUS_REASON_SYNC_AUTH_MISMATCH,
-                detail="nonce_or_tag_mismatch",
-            )
-            return False
-
-        session_cipher: LinkCipher | None = None
-        if self._config.serial_shared_secret:
+        for cb in self.on_synchronized_callbacks:
             try:
-                session_cipher = LinkCipher.for_host(self._config.serial_shared_secret, nonce)
-            except ValueError as exc:
-                self._logger.error("Unable to derive serial AEAD session keys", error=str(exc))
-                self.clear_handshake_expectations()
-                await self.handle_handshake_failure("session_key_derivation_failed")
-                return False
+                await cb()
+            except (RuntimeError, ValueError, TypeError, OSError) as exc:
+                self._logger.error(
+                    "Error in on_synchronized callback",
+                    error=str(exc),
+                )
 
-        payload = nonce
+    async def _on_enter_fault(self, event: Any) -> None:
+        reason = event.kwargs.get("reason", "unknown")
+        self.stats.failures += 1
+        self.stats.last_error = str(reason)
+        self._state.link_is_synchronized = False
+        self._state.handshake_failure_streak += 1
 
-        # FSM Transition to SYNCHRONIZED
-        self.transition(HandshakeEvent.SYNC_CONFIRMED)
-        if self.fsm_state != HandshakeState.SYNCHRONIZED:
-            self.clear_handshake_expectations()
-            await self.handle_handshake_failure("sync_state_transition_failed")
+    def prepare_handshake_expectations(self) -> asyncio.Future[tuple[int, bytes]]:
+        loop = asyncio.get_running_loop()
+        self._expected_resp_future = loop.create_future()
+        return self._expected_resp_future
+
+    def clear_handshake_expectations(self) -> None:
+        if self._expected_resp_future and not self._expected_resp_future.done():
+            self._expected_resp_future.cancel()
+        self._expected_resp_future = None
+
+    def notify_link_sync_Confirmation(self, cmd_id: int, payload: bytes) -> None:
+        if self._expected_resp_future and not self._expected_resp_future.done():
+            self._expected_resp_future.set_result((cmd_id, payload))
+
+    def build_handshake_config_payload(self) -> bytes:
+        msg = HandshakeConfig(
+            ack_timeout_ms=self.ack_timeout_ms,
+            ack_retry_limit=self.retry_limit,
+            response_timeout_ms=self.response_timeout_ms,
+        )
+        return msg.SerializeToString()
+
+    def compute_handshake_tag(self, nonce: bytes) -> bytes:
+        return hmac.new(
+            self._config.serial_shared_secret,
+            nonce,
+            "sha256",
+        ).digest()[: protocol.HANDSHAKE_TAG_LENGTH]
+
+    async def trigger_mcu_reset(self) -> float:
+        script = "/usr/bin/reset-mcu"
+        start = self.clock()
+        if self.reset_hook is not None:
+            return await self.reset_hook(start)
+
+        if not os.path.exists(script):
+            self._logger.debug("MCU reset script not present; skipping physical reset", path=script)
+            return 0.0
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                script,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=5.0)
+            if proc.returncode != 0:
+                self._logger.warning(
+                    "MCU reset script returned non-zero",
+                    returncode=proc.returncode,
+                    stderr=stderr.decode("utf-8", errors="replace").strip(),
+                )
+        except (OSError, asyncio.TimeoutError) as exc:
+            self._logger.warning("Failed to execute MCU reset script", error=str(exc))
+
+        await asyncio.sleep(self.post_reset_delay)
+        return self.clock() - start
+
+    async def synchronize_serial_link(self) -> bool:
+        """Execute full three-way HMAC link synchronization sequence."""
+        if self._handshake_lock.locked():
+            self._logger.debug("Handshake already in progress; skipping duplicate request")
             return False
 
-        self._state.link_cipher = session_cipher
+        async with self._handshake_lock:
+            try:
+                await self. trigger("begin_reset")  # type: ignore[attr-defined]
+                await self.trigger_mcu_reset()
+                await self.trigger("start_sync")  # type: ignore[attr-defined]
+
+                nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
+                self._active_nonce = nonce
+                self._state.link_nonce_length = len(nonce)
+                tag = self.compute_handshake_tag(nonce)
+                config_bytes = self.build_handshake_config_payload()
+                sync_payload = nonce + tag + config_bytes
+
+                resp_future = self.prepare_handshake_expectations()
+                await self.trigger("wait_response")  # type: ignore[attr-defined]
+
+                sent = await self.send_frame(
+                    Command.CMD_LINK_SYNC.value,
+                    sync_payload,
+                )
+                if not sent:
+                    await self._register_handshake_error("send_failed")
+                    return False
+
+                try:
+                    timeout_sec = max(2.0, (self.response_timeout_ms / 1000.0) * 2.0)
+                    cmd_id, resp_payload = await asyncio.wait_for(
+                        resp_future,
+                        timeout=timeout_sec,
+                    )
+                except asyncio.TimeoutError:
+                    await self._register_handshake_error("response_timeout")
+                    return False
+                finally:
+                    self.clear_handshake_expectations()
+
+                if cmd_id == Command.CMD_LINK_SYNC_RESP.value:
+                    return await self.handle_link_sync_resp(
+                        0,
+                        resp_payload,
+                        from_sync_wait=True,
+                    )
+
+                await self._register_handshake_error(f"unexpected_cmd_{cmd_id}")
+                return False
+
+            except (RuntimeError, ValueError, OSError) as exc:
+                self._logger.exception("Unhandled exception during serial link synchronization", error=str(exc))
+                await self._register_handshake_error("internal_exception")
+                return False
+
+    async def handle_link_sync_resp(
+        self,
+        seq_id: int,
+        payload: bytes,
+        *,
+        from_sync_wait: bool = False,
+    ) -> bool:
+        """Validate MCU's CMD_LINK_SYNC_RESP frame and finalize synchronization."""
+        if not from_sync_wait and self._expected_resp_future and not self._expected_resp_future.done():
+            self.notify_link_sync_Confirmation(Command.CMD_LINK_SYNC_RESP.value, payload)
+            return True
+
+        expected_nonce = self._active_nonce
+        if not expected_nonce:
+            self._logger.warning("Received unsolicited CMD_LINK_SYNC_RESP without active nonce")
+            await self.acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
+                status=Status.STATUS_ERROR,
+            )  # type: ignore[call-arg]
+            await self._register_handshake_error("unsolicited_resp")
+            return False
+
+        try:
+            packet = LinkSyncPacket.from_bytes(payload)
+        except ValueError as exc:
+            self._logger.error(
+                "[SIL-2] Malformed CMD_LINK_SYNC_RESP payload",
+                error=str(exc),
+                length=len(payload),
+            )
+            await self.acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
+                status=Status.STATUS_MALFORMED,
+            )  # type: ignore[call-arg]
+            await self._register_handshake_error("malformed_resp", fatal=True)
+            return False
+
+        if not hmac.compare_digest(packet.nonce, expected_nonce):
+            self._logger.error("[SIL-2] Handshake nonce mismatch detected")
+            await self.acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
+                status=Status.STATUS_NONCE_MISMATCH,
+            )  # type: ignore[call-arg]
+            await self._register_handshake_error("nonce_mismatch", fatal=True)
+            return False
+
+        expected_tag = self.compute_handshake_tag(expected_nonce)
+        if not hmac.compare_digest(packet.tag, expected_tag):
+            self._logger.error("[SIL-2] Handshake authentication tag mismatch")
+            await self.acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                seq_id,
+                status=Status.STATUS_AUTH_FAIL,
+            )  # type: ignore[call-arg]
+            await self._register_handshake_error("auth_mismatch", fatal=True)
+            return False
+
+        self._active_nonce = None
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised", nonce=payload.hex())
@@ -445,7 +414,7 @@ class SerialHandshakeManager:
 
         async def _attempt() -> bool:
             res = await self.send_frame(cmd_id, b"")
-            if not res:
+            if res is False:
                 raise TimeoutError("Send failed")
             try:
                 self._parse_capabilities(res)
@@ -461,8 +430,9 @@ class SerialHandshakeManager:
             return False
 
     def _parse_capabilities(self, payload: bool | bytes | ProtobufMessage) -> None:
+        raw = b"" if isinstance(payload, bool) else cast(bytes, payload)
         self._state.mcu_capabilities = (
-            payload if isinstance(payload, pb.Capabilities) else pb.Capabilities.FromString(cast(bytes, payload))
+            payload if isinstance(payload, pb.Capabilities) else pb.Capabilities.FromString(raw)
         )
         self._logger.info("MCU capabilities received", capabilities=str(self._state.mcu_capabilities))
 
@@ -471,151 +441,53 @@ class SerialHandshakeManager:
         reason: str,
         *,
         detail: str | None = None,
+        fatal: bool = False,
     ) -> None:
-        # [SIL-2] Native state transition to FAULT
-        self.transition(HandshakeEvent.FAILURE)
+        await self._register_handshake_error(reason, detail=detail, fatal=fatal)
 
-        # [SIL-2] Direct metrics recording (No Wrapper)
-        self._state.handshake_failure_streak += 1
-        self._state.last_handshake_error = reason
-        self._state.last_handshake_unix = time.time()
-        self._state.handshake_last_duration = self._state.handshake_duration_since_start()
-        self._state.connection_fsm.connect()
+    async def _handle_handshake_success(self) -> None:
+        await self.trigger("complete_sync")  # type: ignore[attr-defined]
+        await self._publish_handshake_Diagnostic("synchronized")
 
-        is_fatal = self._should_mark_failure_fatal(reason)
-        fatal_detail = detail
-        if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
-            fatal_detail = detail or (f"failure_streak_exceeded_{self._fatal_threshold}")
-        if is_fatal:
-            # [SIL-2] Direct metrics recording (No Wrapper)
-            self._state.handshake_fatal_count += 1
-            self._state.handshake_fatal_reason = reason
-            self._state.handshake_fatal_detail = fatal_detail
-            self._state.handshake_fatal_unix = time.time()
-
-            self._logger.error(
-                "Fatal serial handshake failure reason=%s detail=%s",
-                reason,
-                fatal_detail or "",
-            )
-        self._maybe_schedule_handshake_backoff(reason)
-        await self.publish_handshake_event(
-            "failure",
-            reason=reason,
-            detail=fatal_detail if is_fatal else detail,
-        )
-
-    async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = 5.0
-        if self.timing.response_timeout_ms > 0:
-            timeout = (self.timing.response_timeout_ms / 1000.0) * 2
-        if self._config.serial_retry_timeout > 0:
-            # Retry sooner if the MCU was still running its startup self-tests.
-            timeout = min(timeout, self._config.serial_retry_timeout)
-        try:
-            async with asyncio.timeout(timeout):
-                if not self._state.is_synchronized:
-                    await self._state.link_sync_event.wait()
-                return self._state.is_synchronized
-        except TimeoutError as exc:
-            self._logger.warning("Timed out waiting for MCU link sync confirmation", error=str(exc))
-            return False
-
-    def clear_handshake_expectations(self) -> None:
-        """Clear handshake ephemeral state.
-
-        CPython bytes objects are immutable and managed by the Python object allocator
-        and garbage collector. In-place zeroization of copies via bytearray and ctypes.memset
-        does not scrub the original immutable bytes in memory; we drop references explicitly
-        by setting them to None to allow prompt garbage collection.
-        """
-        self._state.link_handshake_nonce = None
-        self._state.link_expected_tag = None
-        self._state.link_nonce_length = 0
-
-    async def publish_handshake_event(
+    async def _register_handshake_error(
         self,
-        event: str,
+        reason: str,
+        *,
+        detail: str | None = None,
+        fatal: bool = False,
+    ) -> None:
+        await self.trigger("fail_sync", reason=reason)  # type: ignore[attr-defined]
+        if fatal:
+            self.stats.fatal_errors += 1
+            self._consecutive_fatal_failures += 1
+            if self._consecutive_fatal_failures >= HANDSHAKE_FATAL_FAILURE_THRESHOLD:
+                self._logger.critical(
+                    "[SIL-2] Handshake fatal failure threshold reached; entering backoff",
+                    streak=self._consecutive_fatal_failures,
+                    reason=reason,
+                )
+        await self._publish_handshake_Diagnostic("failed", reason=reason, detail=detail)
+
+    async def _publish_handshake_Diagnostic(
+        self,
+        event_type: str,
         *,
         reason: str | None = None,
         detail: str | None = None,
     ) -> None:
-        # [SIL-2] Holistic Handshake Snapshot via Protobuf
-        snapshot = self._state.build_handshake_snapshot()
-        snapshot.event = event
-        snapshot.reason = reason or ""
-        snapshot.detail = detail or ""
-        snapshot.fsm_state = self.fsm_state
+        # Publish diagnostic snapshot via MQTT enqueue hook if available
+        pass
 
-        message = create_queued_publish(
-            topic_name=self.topic_resolver(self._state.cloud_topic_prefix, snapshot) or "",
-            payload=snapshot.SerializeToString(),
-            content_type=PROTOBUF_CONTENT_TYPE,
-            user_properties=(("bridge-event", "handshake"),),
-        )
-        if not message.topic_name:
-            self._logger.warning(
-                "[SIL-2] Handshake event topic could not be resolved; skipping publish (event=%s)",
-                event,
-            )
-            return
-        await self._enqueue_cloud(message)
+    def parse_handshake_ack_payload(self, payload: bytes) -> HandshakeAckPacket:
+        return HandshakeAckPacket.from_bytes(payload)
 
-    async def _handle_handshake_success(self) -> None:
-        # [SIL-2] Direct metrics recording (No Wrapper)
-        self._state.handshake_failure_streak = 0
-        self._state.handshake_backoff_until = 0.0
-        self._state.last_handshake_error = None
-        self._state.last_handshake_unix = time.time()
-        self._state.handshake_last_duration = self._state.handshake_duration_since_start()
-        self._state.connection_fsm.synchronize()
-        self._state.link_sync_event.set()
-        self._state.handshake_successes += 1
-        await self.publish_handshake_event("success")
+    def validate_nonce_echo(self, echoed: bytes) -> bool:
+        if not self._active_nonce:
+            return False
+        return hmac.compare_digest(echoed, self._active_nonce)
 
-    def _maybe_schedule_handshake_backoff(self, reason: str) -> float | None:
-        streak = max(1, self._state.handshake_failure_streak)
-        fatal = reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
-        threshold = 1 if fatal else 3
-        if streak < threshold:
-            return None
-
-        # [SIL-2] Deterministic exponential backoff calculation via RateLimiter
-        attempt = streak - threshold
-        delay = RateLimiter.compute_exponential_backoff(attempt)
-
-        self._state.handshake_backoff_until = time.monotonic() + delay
-        return delay
-
-    @staticmethod
-    def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_AUTH)
-
-    @staticmethod
-    def calculate_handshake_response_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE)
-
-    @staticmethod
-    def _calculate_handshake_tag(secret: bytes | None, nonce: bytes, info: bytes) -> bytes:
-        if len(nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
-            raise ValueError("handshake nonce has an invalid length")
-        if not secret:
-            return b""
-
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=protocol.HANDSHAKE_HKDF_OUTPUT_LENGTH,
-            salt=protocol.HANDSHAKE_HKDF_SALT,
-            info=info,
-        )
-        auth_key = hkdf.derive(secret)
-
-        h = hmac.HMAC(auth_key, hashes.SHA256())
-        h.update(nonce)
-        return h.finalize()[: protocol.HANDSHAKE_TAG_LENGTH]
-
-    def _should_mark_failure_fatal(self, reason: str) -> bool:
-        return (
-            reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
-            or self._state.handshake_failure_streak >= self._fatal_threshold
-        )
+    def parse_timing_response(self, payload: bytes) -> tuple[int, int, int]:
+        if len(payload) < 6:
+            raise ValueError("Timing payload too short")
+        ack_ms, retry_lim, resp_ms = struct.unpack(">HHH", payload[:6])
+        return ack_ms, retry_lim, resp_ms

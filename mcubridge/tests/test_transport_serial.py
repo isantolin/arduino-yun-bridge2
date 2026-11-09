@@ -768,7 +768,9 @@ async def test_mcu_request_is_dispatched_by_pigweed_service_and_method() -> None
         handle_mock.assert_awaited_once()
         assert handle_mock.await_args is not None
         spec = protocol.get_operation(Command.CMD_DATASTORE_GET.value)
-        assert spec is not None and spec.service_id is not None and spec.method_id is not None
+        assert spec is not None
+        assert spec.service_id is not None
+        assert spec.method_id is not None
         assert handle_mock.await_args.args[:2] == ((spec.service_id, spec.method_id), 4)
     finally:
         state.cleanup()
@@ -916,7 +918,9 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
 
 def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
     spec = protocol.get_operation(Command.CMD_CLOCK_SYNC.value)
-    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    assert spec is not None
+    assert spec.service_id is not None
+    assert spec.method_id is not None
     return RpcPacket(
         type=cast(Any, packet_type),
         channel_id=protocol.HDLC_ADDRESS_RPC,
@@ -964,9 +968,7 @@ async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
     assert mock_serial.write.call_count == 3
 
 
-def test_queue_rpc_packet_ignores_malformed_packet(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
+def test_queue_rpc_packet_ignores_malformed_packet(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     transport.queue_rpc_packet(b"\xff")
     assert transport.__dict__["_active_rpc_packet_ids"] == set()
@@ -1077,9 +1079,7 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     rpc_method = MagicMock()
     call = MagicMock()
 
-    def complete_without_payload(
-        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
-    ) -> Any:
+    def complete_without_payload(_request: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
         on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
         on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
         return call
@@ -1090,44 +1090,32 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
         _private_attribute(transport, "_invoke_rpc_with_retries"),
     )
     active_rpc_calls = _private_attribute(transport, "_active_rpc_calls")
-    result = await invoke_rpc_with_retries(
-        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
-    )
+    result = await invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0)
     assert result
     assert call not in active_rpc_calls
 
-    def fail_callback(
-        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
-    ) -> Any:
+    def fail_callback(_request: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
         active_rpc_calls.clear()
         on_error(call, RuntimeError("remote failure"))
         on_error(call, RuntimeError("duplicate failure"))
         return call
 
     rpc_method.invoke.side_effect = fail_callback
-    result = await invoke_rpc_with_retries(
-        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
-    )
+    result = await invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0)
     assert not result
     assert call not in active_rpc_calls
 
-    def complete_with_non_ok_status(
-        _request: Any, *, on_next: Any, on_completed: Any, on_error: Any
-    ) -> Any:
+    def complete_with_non_ok_status(_request: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
         on_completed(call, MagicMock(ok=MagicMock(return_value=False)))
         return call
 
     rpc_method.invoke.side_effect = complete_with_non_ok_status
-    result = await invoke_rpc_with_retries(
-        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
-    )
+    result = await invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0)
     assert not result
     assert call not in active_rpc_calls
 
     rpc_method.invoke.side_effect = RuntimeError("invoke error")
-    result = await invoke_rpc_with_retries(
-        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
-    )
+    result = await invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0)
     assert not result
 
     transport.max_attempts = 2
@@ -1135,9 +1123,7 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     rpc_method.invoke.side_effect = None
     rpc_method.invoke.return_value = call
     monkeypatch.setattr("mcubridge.transport.serial.SERIAL_HANDSHAKE_BACKOFF_BASE", 0.0)
-    result = await invoke_rpc_with_retries(
-        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 0.001
-    )
+    result = await invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 0.001)
     assert not result
     assert call.cancel.call_count == 2
 

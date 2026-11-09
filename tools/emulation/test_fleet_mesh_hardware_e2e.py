@@ -203,11 +203,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                     response.ParseFromString(frame.data)
                 except DecodeError:
                     continue
-                if (
-                    pending_sync is None
-                    or response.call_id != pending_sync[0]
-                    or response.type != PacketType.RESPONSE
-                ):
+                if pending_sync is None or response.call_id != pending_sync[0] or response.type != PacketType.RESPONSE:
                     continue
 
                 expected_nonce, expected_tag = pending_sync[1], pending_sync[2]

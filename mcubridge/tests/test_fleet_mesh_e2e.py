@@ -158,9 +158,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
                 response_tag = fleet_mesh.SerialHandshakeManager.calculate_handshake_response_tag(
                     secret, sync_request.nonce
                 )
-                self.pending.append(
-                    (time.monotonic() + 0.55, request.call_id, sync_request.nonce, response_tag)
-                )
+                self.pending.append((time.monotonic() + 0.55, request.call_id, sync_request.nonce, response_tag))
                 self.max_inflight = max(self.max_inflight, len(self.pending))
             return len(data)
 
@@ -190,6 +188,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
         return fake_serial
 
     monkeypatch.setattr(fleet_mesh.serial, "serial_for_url", open_serial)
+
     def fixed_nonce(size: int) -> bytes:
         return bytes([2]) * size
 

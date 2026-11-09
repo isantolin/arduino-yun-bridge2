@@ -466,9 +466,7 @@ def _build_operations_catalog(
     pb_module: Any,
     mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    operations: list[dict[str, Any]] = [
-        _build_command_operation(cmd, rpc_by_cmd, mcu_rpc_by_cmd) for cmd in commands
-    ]
+    operations: list[dict[str, Any]] = [_build_command_operation(cmd, rpc_by_cmd, mcu_rpc_by_cmd) for cmd in commands]
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
     operations.extend(
         {
@@ -493,9 +491,7 @@ def _build_operations_catalog(
         blob_field = next((bf for tm, bf in telem_map.items() if tm in topic), None) or (
             "system_status_blob" if "status" in topic else None
         )
-        operations.append(
-            _build_topic_or_payload_op(act_name, pb_module, cloud_topic=topic, blob_field=blob_field)
-        )
+        operations.append(_build_topic_or_payload_op(act_name, pb_module, cloud_topic=topic, blob_field=blob_field))
         seen_names.add(act_name)
 
     return operations
@@ -606,14 +602,10 @@ def _extract_operations_context(
         for method_desc in s_desc.methods:
             method_options = method_desc.GetOptions()
             if not method_options.HasExtension(pb_module.rpc_command):
-                raise ValueError(
-                    f"{s_desc.full_name}.{method_desc.name} is missing its explicit (rpc_command) binding"
-                )
+                raise ValueError(f"{s_desc.full_name}.{method_desc.name} is missing its explicit (rpc_command) binding")
             matched = method_options.Extensions[pb_module.rpc_command]
             if matched not in cmd_by_name:
-                raise ValueError(
-                    f"{s_desc.full_name}.{method_desc.name} references unknown command {matched!r}"
-                )
+                raise ValueError(f"{s_desc.full_name}.{method_desc.name} references unknown command {matched!r}")
             if matched in mcu_rpc_by_cmd:
                 previous = mcu_rpc_by_cmd[matched]
                 raise ValueError(

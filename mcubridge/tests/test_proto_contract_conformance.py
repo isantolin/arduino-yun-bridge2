@@ -58,7 +58,7 @@ def test_protocol_dispatch_coverage(svc: tuple[BridgeService, RuntimeState, Asyn
     service, _state, _serial = svc
     dispatch = build_mcu_dispatch(service)
     for cmd in Command:
-        assert cmd.value in dispatch or callable(service.unsupported_mcu_request)
+        assert cmd.value in dispatch or callable(service.handle_mcu_frame)
 
 
 # -----------------------------------------------------------------------------
@@ -66,23 +66,23 @@ def test_protocol_dispatch_coverage(svc: tuple[BridgeService, RuntimeState, Asyn
 # -----------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("has_serial", "expected_result"), [(False, False), (True, True)])
+@pytest.mark.parametrize(("has_serial", "expected_calls"), [(False, 0), (True, 1)])
 async def test_unsupported_mcu_request(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
     has_serial: bool,
-    expected_result: bool,
+    expected_calls: int,
 ) -> None:
-    service, _state, serial = svc
+    service, state, serial = svc
     if not has_serial:
         service.serial = None
     else:
         serial.send.return_value = True
 
-    fn: Callable[[int, int], Awaitable[bool]] = service.unsupported_mcu_request
-    res = await fn(1, 0xFF)
-    assert res is expected_result
+    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ.value, 1, b"")
+    assert serial.send.await_count == expected_calls
     if has_serial:
-        serial.send.assert_called_once()
+        assert state.unknown_command_count == 1
+        assert state.unknown_command_last_id == Command.CMD_DIGITAL_READ.value
         assert serial.send.call_args[0][0] == Status.NOT_IMPLEMENTED.value
 
 

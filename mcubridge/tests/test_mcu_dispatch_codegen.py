@@ -97,7 +97,9 @@ def test_pigweed_rpc_method_mappings() -> None:
     assert ds_put is not None
     assert ds_put.service_name == "rpc.pb.DataStoreService"
     assert ds_put.method_name == "Put"
-
+    assert protocol.get_operation(ds_put) is ds_put
+    assert protocol.get_operation("rpc.pb.DataStoreService.Put") is ds_put
+    assert protocol.get_operation("rpc.pb.DataStoreService/Put") is ds_put
 
 
 def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
@@ -130,6 +132,7 @@ def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
                 assert resolved.method_name == method.name
 
     assert seen_commands, "no MCU-facing Pigweed RPC methods were audited"
+
 
 def test_removed_command_metadata_is_absent_not_reserved() -> None:
     descriptor_file = descriptor_pb2.FileDescriptorProto()

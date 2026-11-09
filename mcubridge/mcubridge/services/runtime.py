@@ -168,13 +168,6 @@ class BridgeService:
     async def _send_mcu_status(self, ok: bool, error_message: str = "") -> bool:
         return await (self.send_mcu_ok() if ok else self.send_mcu_error(error_message))
 
-    async def unsupported_mcu_request(
-        self, _seq: int, _payload: Any, msg: str = protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED
-    ) -> Any:
-        if not self.serial:
-            return False
-        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"")
-
     # --- External Interface ---
 
     async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:

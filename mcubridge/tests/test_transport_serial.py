@@ -1325,9 +1325,28 @@ async def test_server_stream_error_and_reset_cleanup_branches(
 
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
-    mock_serial.write = MagicMock(return_value=16)
+    written_frames: list[bytes] = []
+    mock_serial.write = MagicMock(side_effect=lambda data: written_frames.append(data) or len(data))
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
     runtime_config.serial_shared_secret = b""
     runtime_state.link_cipher = None
-    assert await transport.send(Command.CMD_DATASTORE_GET.value, pb.DatastoreGetResponse(value=b"val")) is True
+    ds_get_spec = protocol.get_operation(Command.CMD_DATASTORE_GET.value)
+    assert ds_get_spec is not None
+    assert ds_get_spec.service_id is not None
+    assert ds_get_spec.method_id is not None
+    mcu_req_frame = protocol.encode_hdlc_rpc(
+        1,
+        ds_get_spec.service_id,
+        ds_get_spec.method_id,
+        call_id=77,
+        payload=pb.DatastoreGet(key="k"),
+        packet_type=int(PacketType.REQUEST),
+    )
+    await transport.feed_data(mcu_req_frame)
+    assert await transport.send("rpc.pb.DataStoreService/Get", pb.DatastoreGetResponse(value=b"val"))
+    decoded_frames = list(FrameDecoder().process(written_frames[-1]))
+    assert len(decoded_frames) == 1
+    out_pkt = pw_packets.decode(bytes(decoded_frames[0].data))
+    assert out_pkt.type == PacketType.RESPONSE
+    assert out_pkt.call_id == 77

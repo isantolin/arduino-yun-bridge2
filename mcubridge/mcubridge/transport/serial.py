@@ -123,6 +123,7 @@ class SerialTransport:
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: list[Any] = []
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
+        self._active_server_call_ids: dict[tuple[int, int], int] = {}
         self._stream_call: Any | None = None
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
@@ -155,6 +156,7 @@ class SerialTransport:
         self.cancel_pin_stream()
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
+        self._active_server_call_ids.clear()
         self._stream_event_queue.clear()
 
     def cancel_pin_stream(self) -> bool:
@@ -455,6 +457,8 @@ class SerialTransport:
                 or cmd_id in SERIAL_FAILURE_STATUS_CODES
                 or cmd_id in SERIAL_SUCCESS_STATUS_CODES
             )
+            if pkt.type == PacketType.REQUEST:
+                self._active_server_call_ids[(pkt.service_id, pkt.method_id)] = pkt.call_id
             if self.service and (
                 pkt.type != PacketType.RESPONSE
                 or (is_response_handler and cmd_id in getattr(self.service, "mcu_registry", {}))
@@ -472,7 +476,7 @@ class SerialTransport:
 
     async def send(
         self,
-        command_id: int,
+        command_id: int | str | protocol.OperationSpec | tuple[int, int],
         payload: bytes | ProtobufMessage,
         seq_id: int | None = None,
         timeout: float | None = None,
@@ -482,6 +486,11 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
+        raw_cmd_id = (
+            spec.command_id
+            if spec is not None and spec.command_id is not None
+            else (command_id if isinstance(command_id, int) else 0)
+        )
         is_server_response = (
             spec is not None
             and spec.response_type is not None
@@ -497,7 +506,7 @@ class SerialTransport:
         ):
             return await self._send_rpc(spec, payload, timeout)
 
-        return await self.send_raw(command_id, payload, seq_id)
+        return await self.send_raw(raw_cmd_id, payload, seq_id)
 
     def queue_rpc_packet(self, packet: bytes) -> None:
         """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
@@ -775,8 +784,20 @@ class SerialTransport:
                 self.state.serial_tx_allowed.set()
 
         if seq_id is None:
-            self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
-            seq_id = self.tx_sequence_id
+            spec = get_operation(command_id)
+            if (
+                spec is not None
+                and spec.service_id is not None
+                and spec.method_id is not None
+                and spec.response_type is not None
+                and spec.response_type is not spec.request_type
+                and isinstance(payload, spec.response_type)
+                and (spec.service_id, spec.method_id) in self._active_server_call_ids
+            ):
+                seq_id = self._active_server_call_ids[(spec.service_id, spec.method_id)]
+            else:
+                self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
+                seq_id = self.tx_sequence_id
 
         async with self._serial_write_lock:
             serial_port = self.serial

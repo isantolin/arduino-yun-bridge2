@@ -403,6 +403,9 @@ BY_TYPE: Final[dict[type[ProtobufMessage], OperationSpec]] = {}
 for _op in OPERATIONS:
     if _op.rpc_name:
         BY_NAME[_op.rpc_name] = _op
+    if _op.service_name and _op.method_name:
+        BY_NAME[f"{_op.service_name}.{_op.method_name}"] = _op
+        BY_NAME[f"{_op.service_name}/{_op.method_name}"] = _op
     if _op.pb_class is not None:
         BY_TYPE.setdefault(_op.pb_class, _op)
         BY_NAME.setdefault(_op.pb_class.DESCRIPTOR.name, _op)
@@ -463,6 +466,8 @@ def allows_method(auth: Any, spec: OperationSpec) -> bool:
 
 def get_operation(key: Any) -> OperationSpec | None:
     """Polymorphic O(1) operation lookup. [SIL-2]"""
+    if isinstance(key, OperationSpec):
+        return key
     if isinstance(key, tuple):
         return BY_RPC.get(cast(tuple[int, int], key))
     if isinstance(key, int):

@@ -263,15 +263,17 @@ def test_command_specs_multidimensional_integrity() -> None:
         assert spec.command_id == val.number
         assert spec.name == val.name
         opts = val.GetOptions().Extensions[pb.cmd_opts]
-        assert spec.requires_ack == opts.requires_ack
         assert spec.pre_sync_allowed == opts.pre_sync_allowed
         assert spec.cloud_topic == (opts.cloud_topic or None)
         assert spec.auth_field == (opts.auth_field or None)
-        if opts.pb_message:
-            assert spec.pb_class is getattr(pb, opts.pb_message)
-            msg_spec = protocol.get_operation(opts.pb_message)
+        if spec.request_type not in (None, pb.SubscribeRequest):
+            assert spec.pb_class is not None
+            assert spec.pb_class is spec.request_type
+            msg_spec = protocol.get_operation(spec.pb_class.DESCRIPTOR.name)
             assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
+        else:
+            assert spec.pb_class is None
 
 
 def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
@@ -472,19 +474,6 @@ def test_proto_dispatch_handlers_ssot() -> None:
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
-
-    unsupported_reasons = {
-        op.command_id: op.mcu_unsupported_reason
-        for op in protocol.OPERATIONS
-        if op.command_id is not None and op.mcu_unsupported_reason
-    }
-    assert len(unsupported_reasons) == 2
-    assert unsupported_reasons[protocol.Command.CMD_DIGITAL_READ.value] == (
-        protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
-    )
-    assert unsupported_reasons[protocol.Command.CMD_ANALOG_READ.value] == (
-        protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
-    )
 
     assert len(protocol.RPC_SPECS) == 25
     from mcubridge.services.runtime import BridgeService

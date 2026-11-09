@@ -56,7 +56,6 @@ def test_commands_are_derived_from_protobuf_and_sorted() -> None:
 
     by_name: dict[str, dict[str, Any]] = {str(c["name"]): c for c in commands}
     assert by_name["CMD_LINK_SYNC"]["pre_sync_allowed"] is True
-    assert by_name["CMD_LINK_SYNC"]["pb_message"] == "LinkSync"
     assert by_name["CMD_LINK_SYNC"]["mcu_handler"] == "handshake.handle_link_sync_resp"
     assert by_name["CMD_GET_VERSION"]["auth_field"] == "system_version"
 

@@ -413,29 +413,21 @@ def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, An
 
 def _build_command_operation(
     cmd: dict[str, Any],
-    pb_module: Any,
     rpc_by_cmd: dict[str, Any],
-    p_fields_map: dict[str, str],
     mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     c_name = cmd["name"]
-    pb_msg = cmd.get("pb_message")
     matched_rpc = rpc_by_cmd.get(c_name)
     mcu_rpc = (mcu_rpc_by_cmd or {}).get(c_name)
     op: dict[str, Any] = {"name": c_name, "command_id": f"Command.{c_name}.value"}
     if mcu_rpc:
         op["service_name"] = mcu_rpc["service_name"]
         op["method_name"] = mcu_rpc["method_name"]
-    if pb_msg and hasattr(pb_module, pb_msg):
-        op["pb_class"] = f"pb.{pb_msg}"
-    if pb_msg and pb_msg in p_fields_map:
-        op["payload_field"] = p_fields_map[pb_msg]
-    for str_key in ("cloud_topic", "auth_field", "mcu_handler", "mcu_unsupported_reason"):
+    for str_key in ("cloud_topic", "auth_field", "mcu_handler"):
         if cmd.get(str_key):
             op[str_key] = cmd[str_key]
-    for bool_key in ("requires_ack", "pre_sync_allowed"):
-        if cmd.get(bool_key):
-            op[bool_key] = True
+    if cmd.get("pre_sync_allowed"):
+        op["pre_sync_allowed"] = True
     if matched_rpc:
         op["rpc_name"] = matched_rpc["name"]
         op["handler_name"] = matched_rpc["handler_name"]
@@ -453,7 +445,6 @@ def _build_topic_or_payload_op(
     pb_module: Any,
     *,
     cloud_topic: str | None,
-    payload_field: str | None,
     blob_field: str | None,
 ) -> dict[str, Any]:
     op: dict[str, Any] = {"name": name}
@@ -461,8 +452,6 @@ def _build_topic_or_payload_op(
         op["cloud_topic"] = cloud_topic
     if hasattr(pb_module, name):
         op["pb_class"] = f"pb.{name}"
-    if payload_field:
-        op["payload_field"] = payload_field
     if blob_field:
         op["metrics_blob_field"] = blob_field
     return op
@@ -472,14 +461,13 @@ def _build_operations_catalog(
     commands: list[dict[str, Any]],
     rpc_specs: list[dict[str, Any]],
     rpc_by_cmd: dict[str, Any],
-    p_fields_map: dict[str, str],
     msg_topics: dict[str, str],
     telem_map: dict[str, str],
     pb_module: Any,
     mcu_rpc_by_cmd: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     operations: list[dict[str, Any]] = [
-        _build_command_operation(cmd, pb_module, rpc_by_cmd, p_fields_map, mcu_rpc_by_cmd) for cmd in commands
+        _build_command_operation(cmd, rpc_by_cmd, mcu_rpc_by_cmd) for cmd in commands
     ]
     matched_rpc_names = {r["name"] for r in rpc_by_cmd.values()}
     operations.extend(
@@ -497,7 +485,6 @@ def _build_operations_catalog(
 
     seen_names = {op["name"] for op in operations}
     seen_names.update(op["rpc_name"] for op in operations if "rpc_name" in op)
-    seen_names.update(op["pb_class"].removeprefix("pb.") for op in operations if "pb_class" in op)
 
     for msg_name, topic in msg_topics.items():
         act_name = msg_name.removesuffix("_ENUM")
@@ -507,22 +494,9 @@ def _build_operations_catalog(
             "system_status_blob" if "status" in topic else None
         )
         operations.append(
-            _build_topic_or_payload_op(
-                act_name, pb_module, cloud_topic=topic, payload_field=p_fields_map.get(act_name), blob_field=blob_field
-            )
+            _build_topic_or_payload_op(act_name, pb_module, cloud_topic=topic, blob_field=blob_field)
         )
         seen_names.add(act_name)
-
-    for msg_name, f_name in p_fields_map.items():
-        if msg_name in seen_names:
-            continue
-        blob_field = next((bf for tm, bf in telem_map.items() if tm in msg_name.lower()), None)
-        operations.append(
-            _build_topic_or_payload_op(
-                msg_name, pb_module, cloud_topic=msg_topics.get(msg_name), payload_field=f_name, blob_field=blob_field
-            )
-        )
-        seen_names.add(msg_name)
 
     return operations
 
@@ -595,8 +569,6 @@ def _extract_operations_context(
     svc_desc: Any,
 ) -> dict[str, Any]:
     payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts)
-    p_fields_map: dict[str, str] = {}
-
     rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
     cmd_by_name = {c["name"]: c for c in commands}
     rpc_by_cmd = {r["rpc_command"]: r for r in rpc_specs if r["rpc_command"] in cmd_by_name}
@@ -655,12 +627,11 @@ def _extract_operations_context(
             }
 
     operations = _build_operations_catalog(
-        commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module, mcu_rpc_by_cmd
+        commands, rpc_specs, rpc_by_cmd, msg_topics, telem_map, pb_module, mcu_rpc_by_cmd
     )
     return {
         "grouped_actions": payload_ctx["grouped_actions"],
         "operations": operations,
-        "payload_fields": [],
         "metrics": _extract_metric_specs(pb_module, all_descs),
         "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
         "rpc_aliases": rpc_aliases,

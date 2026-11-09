@@ -26,17 +26,16 @@ EXPECTED_DISPATCH_NAMES: Final[set[str]] = {
     "CMD_ANALOG_READ",
     "CMD_PIN_SUBSCRIBE",
     "CMD_CONSOLE_WRITE",
-    "CMD_DATASTORE_GET_RESP",
+    "CMD_DATASTORE_GET",
     "CMD_MAILBOX_PUSH",
-    "CMD_MAILBOX_READ_RESP",
-    "CMD_MAILBOX_AVAILABLE_RESP",
+    "CMD_MAILBOX_READ",
+    "CMD_MAILBOX_AVAILABLE",
     "CMD_FILE_WRITE",
     "CMD_FILE_READ",
     "CMD_FILE_REMOVE",
-    "CMD_FILE_READ_RESP",
     "CMD_PROCESS_KILL",
-    "CMD_PROCESS_RUN_ASYNC_RESP",
-    "CMD_PROCESS_POLL_RESP",
+    "CMD_PROCESS_RUN_ASYNC",
+    "CMD_PROCESS_POLL",
     "CMD_SPI_BEGIN",
     "CMD_SPI_TRANSFER",
     "CMD_SPI_END",
@@ -58,8 +57,8 @@ def test_commands_are_derived_from_protobuf_and_sorted() -> None:
     by_name: dict[str, dict[str, Any]] = {str(c["name"]): c for c in commands}
     assert by_name["CMD_LINK_SYNC"]["response_command"] == "CMD_LINK_SYNC_RESP"
     assert by_name["CMD_GET_VERSION"]["auth_field"] == "system_version"
-    assert by_name["CMD_MAILBOX_READ_RESP"]["pb_message"] == "MailboxReadResponse"
-    assert by_name["CMD_MAILBOX_READ_RESP"]["request_command"] == "CMD_MAILBOX_READ"
+    assert by_name["CMD_LINK_SYNC_RESP"]["pb_message"] == "LinkSync"
+    assert by_name["CMD_LINK_SYNC_RESP"]["request_command"] == "CMD_LINK_SYNC"
 
 
 def test_pigweed_rpc_method_mappings() -> None:
@@ -101,7 +100,6 @@ def test_pigweed_rpc_method_mappings() -> None:
     assert ds_put.method_name == "Put"
 
 
-
 def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
     """Every MCU-facing Pigweed RPC method must be bound to exactly one CMD_* ID."""
     from mcubridge.protocol import protocol
@@ -132,6 +130,7 @@ def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
                 assert resolved.method_name == method.name
 
     assert seen_commands, "no MCU-facing Pigweed RPC methods were audited"
+
 
 def test_removed_command_metadata_is_absent_not_reserved() -> None:
     descriptor_file = descriptor_pb2.FileDescriptorProto()

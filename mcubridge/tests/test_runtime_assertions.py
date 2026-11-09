@@ -78,7 +78,7 @@ async def test_mcu_file_read_handler_asserts_state(
     await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 1, payload)
     mock_serial.send.assert_awaited()
     responses = [
-        call.args[1] for call in mock_serial.send.await_args_list if call.args[0] == Command.CMD_FILE_READ_RESP.value
+        call.args[1] for call in mock_serial.send.await_args_list if call.args[0] == Command.CMD_FILE_READ.value
     ]
     assert len(responses) == 2
     assert all(isinstance(response, pb.FileReadResponse) for response in responses)
@@ -201,7 +201,7 @@ async def test_mcu_process_run_asserts_exec(
 
     serial.send.assert_awaited()
     args = serial.send.call_args[0]
-    assert args[0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
+    assert args[0] == Command.CMD_PROCESS_RUN_ASYNC.value
     assert isinstance(args[1], pb.ProcessRunAsyncResponse)
     pid = args[1].pid
     assert pid > 0

@@ -103,7 +103,7 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
     service.serial = serial
     serial.send.return_value = True
     assert await on_avail(1, None) is True
-    serial.send.assert_called_with(Command.CMD_MAILBOX_AVAILABLE_RESP.value, pb.MailboxAvailableResponse(count=0))
+    serial.send.assert_called_with(Command.CMD_MAILBOX_AVAILABLE.value, pb.MailboxAvailableResponse(count=0))
 
     # With items in queue
     await state.mailbox_queue.append(b"item1")
@@ -124,7 +124,7 @@ async def test_mailbox_read_scenarios(svc: tuple[BridgeService, RuntimeState, As
     service.serial = serial
     serial.send.return_value = True
     assert (await on_read(1, None)).content == b""
-    assert serial.send.call_args[0][0] == Command.CMD_MAILBOX_READ_RESP.value
+    assert serial.send.call_args[0][0] == Command.CMD_MAILBOX_READ.value
     assert serial.send.call_args[0][1].content == b""
 
     # With queue items
@@ -195,8 +195,8 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     assert (await on_read(2, pb.FileRead(path="exists.txt"))).content == b""
     sent = serial.send.await_args_list
     assert [call.args[0] for call in sent] == [
-        Command.CMD_FILE_READ_RESP.value,
-        Command.CMD_FILE_READ_RESP.value,
+        Command.CMD_FILE_READ.value,
+        Command.CMD_FILE_READ.value,
     ]
     assert sent[0].args[1].content == b"chunk-data"
     assert sent[1].args[1].content == b""
@@ -206,7 +206,7 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     serial.send.reset_mock()
     assert (await on_read(3, pb.FileRead(path="empty.txt"))).content == b""
     serial.send.assert_awaited_once()
-    assert serial.send.await_args.args[0] == Command.CMD_FILE_READ_RESP.value
+    assert serial.send.await_args.args[0] == Command.CMD_FILE_READ.value
     assert serial.send.await_args.args[1].content == b""
 
     # Remove without serial
@@ -247,13 +247,13 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
     # Allowed command
     assert (await on_run(2, pb.ProcessRunAsync(command="echo test_exec"))).pid == IsPositiveInt
     args = serial.send.call_args[0]
-    assert args[0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
+    assert args[0] == Command.CMD_PROCESS_RUN_ASYNC.value
     pid = args[1].pid
     assert pid == IsPositiveInt
 
     # Poll process
     assert (await on_poll(3, pb.ProcessPoll(pid=pid))).status == Status.OK.value
-    assert serial.send.call_args[0][0] == Command.CMD_PROCESS_POLL_RESP.value
+    assert serial.send.call_args[0][0] == Command.CMD_PROCESS_POLL.value
     await service.process_kill(pid)
 
     # Disallowed command name fallback

@@ -326,7 +326,6 @@ def _extract_commands_and_statuses(
         command = _message_to_dict(command_options)
         command["name"] = value.name
         command["value"] = value.number
-        command["expects_direct_response"] = bool(command_options.response_command)
         commands.append(command)
 
     request_by_response = {cmd["response_command"]: cmd["name"] for cmd in commands if cmd.get("response_command")}
@@ -443,7 +442,7 @@ def _build_command_operation(
         op["expected_responses"] = [f"Command.{cmd['response_command']}.value"]
     if cmd.get("request_command"):
         op["paired_request_id"] = f"Command.{cmd['request_command']}.value"
-    for bool_key in ("requires_ack", "expects_direct_response", "pre_sync_allowed"):
+    for bool_key in ("requires_ack", "pre_sync_allowed"):
         if cmd.get(bool_key):
             op[bool_key] = True
     if matched_rpc:
@@ -674,9 +673,6 @@ def _extract_operations_context(
         "metrics": _extract_metric_specs(pb_module, all_descs),
         "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
         "rpc_aliases": rpc_aliases,
-        "ack_commands": [c for c in commands if c["requires_ack"]],
-        "pre_sync_allowed_commands": [c for c in commands if c["pre_sync_allowed"]],
-        "response_only_commands": [c for c in commands if c["expects_direct_response"]],
         "topics": payload_ctx["topics"],
         "message_topics": msg_topics,
         "telemetry_topic_field_map": telem_map,

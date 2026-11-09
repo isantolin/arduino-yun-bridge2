@@ -101,9 +101,10 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
         def _queue_response(self, call_id: int, nonce: bytes, tag: bytes) -> None:
             self.incoming.extend(
                 fleet_mesh.protocol.encode_hdlc_rpc(
-                    protocol.Command.CMD_LINK_SYNC_RESP.value,
+                    protocol.Command.CMD_LINK_SYNC.value,
                     mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
                     call_id=call_id,
+                    packet_type=1,
                 )
             )
 
@@ -170,9 +171,10 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
             for _, call_id, nonce, tag in ready:
                 self.incoming.extend(
                     fleet_mesh.protocol.encode_hdlc_rpc(
-                        protocol.Command.CMD_LINK_SYNC_RESP.value,
+                        protocol.Command.CMD_LINK_SYNC.value,
                         mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
                         call_id=call_id,
+                        packet_type=1,
                     )
                 )
             if not self.incoming:

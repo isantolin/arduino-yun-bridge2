@@ -114,9 +114,10 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                             tag=tag,
                         )
                         resp_frame = protocol.encode_hdlc_rpc(
-                            protocol.Command.CMD_LINK_SYNC_RESP.value,
+                            protocol.Command.CMD_LINK_SYNC.value,
                             resp_pb,
                             call_id=rx_seq,
+                            packet_type=1,
                         )
                         writer.write(resp_frame)
                         await writer.drain()
@@ -219,9 +220,10 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                         )
                         resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag)
                         resp_frame = protocol.encode_hdlc_rpc(
-                            protocol.Command.CMD_LINK_SYNC_RESP.value,
+                            protocol.Command.CMD_LINK_SYNC.value,
                             resp_pb,
                             call_id=rx_seq,
+                            packet_type=1,
                         )
                         writer.write(resp_frame)
                         await writer.drain()

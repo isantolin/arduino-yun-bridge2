@@ -414,8 +414,6 @@ class SerialTransport:
             # successful responses map onto the operation's canonical response id.
             if pkt.type == PacketType.SERVER_ERROR or (pkt.type == PacketType.RESPONSE and pkt.status != 0):
                 cmd_id = Status.ERROR.value
-            elif pkt.type == PacketType.RESPONSE and spec and spec.expected_responses:
-                cmd_id = min(spec.expected_responses)
 
             payload: ProtobufMessage | bytes = pkt.payload
             if (
@@ -450,11 +448,12 @@ class SerialTransport:
                 return
 
             # In pw_rpc, PacketType.RESPONSE is only dispatched to service handlers when the
-            # resolved operation is an explicit response/status handler (paired_request_id != None
-            # or status code), never re-triggering bidirectional request handlers like MailboxPush.
-            resolved_spec = protocol.get_operation(cmd_id)
-            is_response_handler = (resolved_spec is not None and resolved_spec.paired_request_id is not None) or (
-                cmd_id in SERIAL_FAILURE_STATUS_CODES or cmd_id in SERIAL_SUCCESS_STATUS_CODES
+            # resolved operation is an explicit raw handshake or status handler, never
+            # re-triggering bidirectional request handlers like MailboxPush.
+            is_response_handler = (
+                cmd_id in _HANDSHAKE_RAW_REQUESTS
+                or cmd_id in SERIAL_FAILURE_STATUS_CODES
+                or cmd_id in SERIAL_SUCCESS_STATUS_CODES
             )
             if self.service and (
                 pkt.type != PacketType.RESPONSE
@@ -492,7 +491,6 @@ class SerialTransport:
         if (
             spec is not None
             and not is_server_response
-            and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name
             and spec.command_id not in _HANDSHAKE_RAW_REQUESTS

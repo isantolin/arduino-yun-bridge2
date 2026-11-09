@@ -673,7 +673,7 @@ async def test_link_sync_response_maps_to_resp_id_and_dispatches() -> None:
         handle_mock.assert_awaited_once()
         assert handle_mock.await_args is not None
         cmd_id, seq_id, payload = handle_mock.await_args.args
-        assert cmd_id == Command.CMD_LINK_SYNC_RESP.value
+        assert cmd_id == Command.CMD_LINK_SYNC.value
         assert seq_id == 7
         assert isinstance(payload, pb.LinkSync)
         assert payload.nonce == reply.nonce
@@ -789,7 +789,7 @@ async def test_unparseable_response_payload_is_forwarded_as_bytes() -> None:
         handle_mock.assert_awaited_once()
         assert handle_mock.await_args is not None
         cmd_id, _seq, payload = handle_mock.await_args.args
-        assert cmd_id == Command.CMD_LINK_SYNC_RESP.value
+        assert cmd_id == Command.CMD_LINK_SYNC.value
         assert payload == garbage
     finally:
         state.cleanup()

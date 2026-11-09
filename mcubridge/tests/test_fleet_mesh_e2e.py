@@ -359,7 +359,7 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
     # -------------------------------------------------------------------------
     # SERVICIO 8: Reactividad GPIO & Suscripciones de Pines con Histéresis
     # -------------------------------------------------------------------------
-    mesh_mega.serial_mock.send.return_value = pb.PinSubscribeResponse(pin=7, success=True)
+    mesh_mega.serial_mock.send.return_value = True
     sub_res = await mesh_mega.service.gpio.subscribe_pin(
         pin=7,
         mode="INPUT_PULLUP",

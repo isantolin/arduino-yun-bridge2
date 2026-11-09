@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
 from unittest.mock import AsyncMock
 
 from mcubridge.config.settings import RuntimeConfig
@@ -86,70 +84,19 @@ def test_watchdog_keepalive_fsm_integration(runtime_config: RuntimeConfig) -> No
     assert len(written_bytes) == 2  # No new pulse
 
 
-async def test_runtime_mcu_file_read_fsm_success(
+async def test_runtime_mcu_file_read_unary_rpc(
     service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
 ) -> None:
-    """Validate MCU file read handler driving FileTransferMachine on success."""
+    """Validate MCU file read delegates directly to unary RPC."""
     service, _, _ = service_stack
 
     serial_mock = AsyncMock()
-    serial_mock.send_raw.return_value = True
+    serial_mock.send.return_value = pb.FileReadResponse(content=b"part1 part2")
     service.serial = serial_mock
 
-    async def _simulate_mcu_responses() -> None:
-        while service.pending_mcu_read is None:
-            await asyncio.sleep(0.01)
+    resp = await service.file_read("/mcu/test.bin")
+    assert resp.content == b"part1 part2"
 
-        pending = service.pending_mcu_read
-        assert pending is not None
-        assert pending.fsm.transferring.is_active
-
-        on_resp_fn: Any = service.file_read
-        # Send chunk 1
-        await on_resp_fn(1, pb.FileReadResponse(content=b"part1 "))
-        assert pending.fsm.transferring.is_active
-
-        # Send chunk 2
-        await on_resp_fn(2, pb.FileReadResponse(content=b"part2"))
-        assert pending.fsm.transferring.is_active
-
-        # Send EOF
-        await on_resp_fn(3, pb.FileReadResponse(content=b""))
-        assert pending.fsm.completed.is_active
-
-    async with asyncio.TaskGroup() as tg:
-        tg.create_task(_simulate_mcu_responses())
-        tg.create_task(service.file_read("/mcu/test.bin"))
-
-    assert service.pending_mcu_read is None
-
-
-async def test_runtime_mcu_file_read_fsm_dispatch_fail(
-    service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
-) -> None:
-    """Validate FileTransferMachine abort on dispatch failure."""
-    service, _, _ = service_stack
-
-    serial_mock = AsyncMock()
-    serial_mock.send_raw.return_value = False
-    service.serial = serial_mock
-
-    await service.file_read("/mcu/missing.bin")
-
-    assert service.pending_mcu_read is None
-
-
-async def test_runtime_mcu_file_read_fsm_timeout(
-    service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
-) -> None:
-    """Validate FileTransferMachine timeout on MCU unresponsive."""
-    service, state, _ = service_stack
-    state.serial_response_timeout_ms = 50
-
-    serial_mock = AsyncMock()
-    serial_mock.send_raw.return_value = True
-    service.serial = serial_mock
-
-    await service.file_read("/mcu/unresponsive.bin")
-
-    assert service.pending_mcu_read is None
+    serial_mock.send.return_value = False
+    resp_fail = await service.file_read("/mcu/missing.bin")
+    assert resp_fail.content == b""

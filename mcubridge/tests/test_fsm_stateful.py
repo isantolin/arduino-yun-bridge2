@@ -4,7 +4,6 @@ Formally tests state invariants across:
 1. LinkConnectionMachine (serial physical connection & synchronization)
 2. ProcessMachine (asynchronous subprocess lifecycle)
 3. CloudLinkMachine (cloud gateway transport & degradation)
-4. FileTransferMachine (chunk streaming protocol transfer)
 5. HandshakeMachine (serial link handshake & synchronization state)
 """
 
@@ -40,7 +39,6 @@ from mcubridge.services.handshake import (
 from mcubridge.state.context import (
     CloudLinkMachine,
     CloudLinkState,
-    FileTransferMachine,
     ProcessContext,
     ProcessState,
     RuntimeState,
@@ -244,74 +242,6 @@ class CloudLinkStateMachine(RuleBasedStateMachine):
         )
 
 
-class FileTransferStateMachine(RuleBasedStateMachine):
-    """Formal model verification for chunk streaming file transfer machine."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.fsm = FileTransferMachine()
-
-    @rule()
-    def start_transfer(self) -> None:
-        self.fsm.start_transfer()
-        assert self.fsm.transferring.is_active
-
-    @rule()
-    def receive_chunk(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active
-        self.fsm.receive_chunk()
-        if can_trans:
-            assert self.fsm.transferring.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def complete(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active or self.fsm.completed.is_active
-        self.fsm.complete()
-        if can_trans:
-            assert self.fsm.completed.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def timeout(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active or self.fsm.timed_out.is_active
-        self.fsm.timeout()
-        if can_trans:
-            assert self.fsm.timed_out.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def abort(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active or self.fsm.idle.is_active or self.fsm.aborted.is_active
-        self.fsm.abort()
-        if can_trans:
-            assert self.fsm.aborted.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def reset(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = not self.fsm.transferring.is_active
-        self.fsm.reset()
-        if can_trans:
-            assert self.fsm.idle.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @invariant()
-    def verify_transfer_invariants(self) -> None:
-        current: str = str(self.fsm.current_state_value)
-        assert current in ("idle", "transferring", "completed", "timed_out", "aborted")
-
-
 class HandshakeStateMachine(RuleBasedStateMachine):
     """Formal model verification for serial HandshakeMachine invariants."""
 
@@ -379,11 +309,6 @@ def test_process_lifecycle_state_machine() -> None:
 def test_cloud_link_state_machine() -> None:
     """Execute Hypothesis RuleBasedStateMachine on CloudLinkMachine."""
     run_state_machine_as_test(CloudLinkStateMachine)
-
-
-def test_file_transfer_state_machine() -> None:
-    """Execute Hypothesis RuleBasedStateMachine on FileTransferMachine."""
-    run_state_machine_as_test(FileTransferStateMachine)
 
 
 def test_handshake_state_machine() -> None:
@@ -521,17 +446,12 @@ async def test_handshake_capabilities_retry(
 
     attempts = 0
 
-    async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
+    async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool | bytes:
         nonlocal attempts
         attempts += 1
-        fut: Any = manager.capabilities_future
         if attempts < 3:
-            if fut is not None and not fut.done():
-                fut.set_exception(TimeoutError("mock timeout"))
-        elif attempts == 3:
-            # [SIL-2] Use valid empty Capabilities payload (serialized empty protobuf)
-            asyncio.create_task(manager.handle_capabilities_resp(1, pb.Capabilities().SerializeToString()))
-        return True
+            return False
+        return pb.Capabilities().SerializeToString()
 
     send_frame.side_effect = mock_send_frame
 
@@ -552,11 +472,8 @@ async def test_handshake_capabilities_corrupt_payload(
 
     timing.response_timeout_ms = 200
 
-    async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bool:
-        fut: Any = manager.capabilities_future
-        if fut is not None and not fut.done():
-            asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
-        return True
+    async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bytes:
+        return b"\x80"
 
     send_frame.side_effect = mock_send_frame_corrupt
 
@@ -751,18 +668,19 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     assert runtime_state.is_synchronized is True
 
 
-async def test_handshake_capabilities_resp_future_none(
+async def test_handshake_capabilities_protobuf_message(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
+    caps = pb.Capabilities(ver=2, watchdog=True)
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
         serial_timing=pb.HandshakeConfig(),
-        send_frame=AsyncMock(return_value=True),
+        send_frame=AsyncMock(return_value=caps),
         enqueue_cloud=AsyncMock(),
     )
-    hs.capabilities_future = None
-    assert await hs.handle_capabilities_resp(1, b"") is True
+    assert await hs.fetch_capabilities() is True
+    assert runtime_state.mcu_capabilities == caps
 
 
 async def test_handshake_fsm_state_override_and_unexpected_resp(
@@ -880,4 +798,3 @@ async def test_handshake_send_failures_and_capabilities_branches(
 
     # 4. Let background capabilities discovery task (scheduled by handle_link_sync_resp) run
     await asyncio.sleep(0.02)
-    assert await hs.handle_link_reset_resp(1, b"\xaa\xbb")

@@ -117,7 +117,9 @@ class RateLimiter:
 
 
 class SendFrameCallable(Protocol):
-    async def __call__(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool: ...
+    async def __call__(
+        self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None
+    ) -> bool | bytes | ProtobufMessage: ...
 
 
 EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
@@ -180,7 +182,6 @@ class SerialHandshakeManager:
         self.capabilities_delay: float = float(protocol.CAPABILITIES_DISCOVERY_DELAY_SECONDS)
         self.retry_backoff_base: float = SERIAL_HANDSHAKE_BACKOFF_BASE
         self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
-        self.capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
         self.fsm = HandshakeMachine(listeners=[self])
 
     @property
@@ -428,7 +429,6 @@ class SerialHandshakeManager:
         await self.fetch_capabilities()
 
     async def fetch_capabilities(self) -> bool:
-        loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug("Starting capabilities discovery", command_id=f"0x{cmd_id:02X}")
 
@@ -444,25 +444,15 @@ class SerialHandshakeManager:
         )
 
         async def _attempt() -> bool:
-            self.capabilities_future = loop.create_future()
-            ok = await self.send_frame(cmd_id, b"")
-            if not ok:
-                self.capabilities_future = None
+            res = await self.send_frame(cmd_id, b"")
+            if res is False:
                 raise TimeoutError("Send failed")
-
             try:
-                timeout = (self.timing.response_timeout_ms / 1000.0) if self.timing.response_timeout_ms > 0 else 5.0
-                async with asyncio.timeout(timeout):
-                    payload = await self.capabilities_future
-                self._parse_capabilities(payload)
+                self._parse_capabilities(res)
                 return True
-            except TimeoutError:
-                raise
             except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
                 self._logger.error("[SIL-2] Capabilities payload corrupt; aborting", error=str(exc))
                 return False
-            finally:
-                self.capabilities_future = None
 
         try:
             return await retryer(_attempt)
@@ -470,23 +460,12 @@ class SerialHandshakeManager:
             self._logger.error("Capabilities exchange retries exhausted", error=str(exc))
             return False
 
-    async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
-        if self.capabilities_future and not self.capabilities_future.done():
-            self.capabilities_future.set_result(payload)
-        return True
-
-    def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
+    def _parse_capabilities(self, payload: bool | bytes | ProtobufMessage) -> None:
+        raw = b"" if isinstance(payload, bool) else cast(bytes, payload)
         self._state.mcu_capabilities = (
-            payload if isinstance(payload, pb.Capabilities) else pb.Capabilities.FromString(cast(bytes, payload))
+            payload if isinstance(payload, pb.Capabilities) else pb.Capabilities.FromString(raw)
         )
         self._logger.info("MCU capabilities received", capabilities=str(self._state.mcu_capabilities))
-
-    async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
-        self._logger.info(
-            "MCU link reset acknowledged",
-            payload=(payload.hex() if isinstance(payload, bytes) else str(payload)),
-        )
-        return True
 
     async def handle_handshake_failure(
         self,

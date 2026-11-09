@@ -1232,22 +1232,8 @@ enum Status {
 
 enum Command {
   CMD_UNSPECIFIED = 0;
-  CMD_GET_VERSION = 64 [(cmd_opts) = {
-    response_command: "CMD_GET_VERSION_RESP"
-    auth_field: "system_version"
-  }];
-  CMD_GET_VERSION_RESP = 65 [(cmd_opts) = {
-    cloud_topic: "system/version/value"
-    pb_message: "VersionResponse"
-  }];
-  CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {
-    response_command: "CMD_GET_FREE_MEMORY_RESP"
-    auth_field: "system_free_memory"
-  }];
-  CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = {
-    cloud_topic: "system/free_memory/value"
-    pb_message: "FreeMemoryResponse"
-  }];
+  CMD_GET_VERSION = 64 [(cmd_opts) = {auth_field: "system_version"}];
+  CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {auth_field: "system_free_memory"}];
   CMD_LINK_SYNC = 68 [(cmd_opts) = {
     description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
     pb_message: "LinkSync"
@@ -1258,26 +1244,12 @@ enum Command {
     pb_message: "LinkSync"
     mcu_handler: "handshake.handle_link_sync_resp"
   }];
-  CMD_LINK_RESET = 70 [(cmd_opts) = {
-    description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
-    response_command: "CMD_LINK_RESET_RESP"
-  }];
-  CMD_LINK_RESET_RESP = 71 [(cmd_opts) = {
-    pre_sync_allowed: true
-    mcu_handler: "handshake.handle_link_reset_resp"
-  }];
-  CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {response_command: "CMD_GET_CAPABILITIES_RESP"}];
-  CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
-    cloud_topic: "system/capabilities/value"
-    pb_message: "Capabilities"
-    mcu_handler: "handshake.handle_capabilities_resp"
-  }];
+  CMD_LINK_RESET = 70 [(cmd_opts) = {description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."}];
+  CMD_GET_CAPABILITIES = 72;
   CMD_SET_BAUDRATE = 74 [(cmd_opts) = {
     requires_ack: true
     pb_message: "SetBaudratePacket"
-    response_command: "CMD_SET_BAUDRATE_RESP"
   }];
-  CMD_SET_BAUDRATE_RESP = 75;
   CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {
     requires_ack: true
     pb_message: "EnterBootloader"
@@ -1312,38 +1284,18 @@ enum Command {
   }];
   CMD_DIGITAL_READ = 83 [(cmd_opts) = {
     pb_message: "PinRead"
-    response_command: "CMD_DIGITAL_READ_RESP"
     auth_field: "digital_read"
     mcu_unsupported_reason: "unsupported_digital_read"
   }];
   CMD_ANALOG_READ = 84 [(cmd_opts) = {
     pb_message: "PinRead"
-    response_command: "CMD_ANALOG_READ_RESP"
     auth_field: "analog_read"
     mcu_unsupported_reason: "unsupported_analog_read"
-  }];
-  CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = {
-    pb_message: "DigitalReadResponse"
-    mcu_handler: "gpio.handle_pin_read_resp"
-  }];
-  CMD_ANALOG_READ_RESP = 86 [(cmd_opts) = {
-    pb_message: "AnalogReadResponse"
-    mcu_handler: "gpio.handle_pin_read_resp"
   }];
   CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {
     requires_ack: true
     pb_message: "PinSubscribeRequest"
-    response_command: "CMD_PIN_SUBSCRIBE_RESP"
     auth_field: "gpio_subscribe"
-  }];
-  CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = {
-    pb_message: "PinSubscribeResponse"
-    mcu_handler: "gpio.on_subscribe_resp"
-  }];
-  CMD_PIN_UPDATE_EVENT = 89 [(cmd_opts) = {
-    cloud_topic: "gpio/pin_update"
-    pb_message: "PinUpdateEvent"
-    mcu_handler: "gpio.handle_pin_update_event"
   }];
   CMD_CONSOLE_WRITE = 96 [(cmd_opts) = {
     requires_ack: true
@@ -1405,10 +1357,7 @@ enum Command {
     auth_field: "file_remove"
     mcu_handler: "file_remove"
   }];
-  CMD_FILE_READ_RESP = 147 [(cmd_opts) = {
-    pb_message: "FileReadResponse"
-    mcu_handler: "file_read"
-  }];
+  CMD_FILE_READ_RESP = 147 [(cmd_opts) = {pb_message: "FileReadResponse"}];
   CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
     pb_message: "ProcessRunAsync"
     response_command: "CMD_PROCESS_RUN_ASYNC_RESP"
@@ -1434,13 +1383,7 @@ enum Command {
   }];
   CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
     pb_message: "SpiTransfer"
-    response_command: "CMD_SPI_TRANSFER_RESP"
     auth_field: "spi_transfer"
-  }];
-  CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = {
-    cloud_topic: "spi/transfer/resp"
-    pb_message: "SpiTransferResponse"
-    mcu_handler: "publish_mcu_message"
   }];
   CMD_SPI_END = 179 [(cmd_opts) = {
     requires_ack: true
@@ -1453,12 +1396,7 @@ enum Command {
   }];
   CMD_CLOCK_SYNC = 192 [(cmd_opts) = {
     pb_message: "ClockSyncRequest"
-    response_command: "CMD_CLOCK_SYNC_RESP"
     auth_field: "clock_sync"
-  }];
-  CMD_CLOCK_SYNC_RESP = 193 [(cmd_opts) = {
-    pb_message: "ClockSyncResponse"
-    mcu_handler: "clock_sync.record_sync"
   }];
 }
 

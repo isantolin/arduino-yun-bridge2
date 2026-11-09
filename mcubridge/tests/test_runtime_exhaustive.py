@@ -103,10 +103,10 @@ async def test_handle_mcu_frame_rpc_handlers(
     assert await state.datastore_cache.get("temp") == b"25.5"
     mock_cache.set.assert_awaited_once_with("temp", b"25.5")
 
-    # 3. SPI Transfer Response
+    # 3. MCU Mailbox Processed
     mock_pub.reset_mock()
-    spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
-    await service.handle_mcu_frame(Command.CMD_SPI_TRANSFER_RESP.value, 12, spi_resp.SerializeToString())
+    mb_proc = pb.MailboxProcessed(message_id=12)
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PROCESSED.value, 12, mb_proc.SerializeToString())
     mock_pub.assert_awaited()
 
 

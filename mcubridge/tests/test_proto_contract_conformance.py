@@ -6,7 +6,6 @@ verification across all MCU Bridge protocol commands and runtime dispatch routes
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock
@@ -17,8 +16,7 @@ import pytest
 from dirty_equals import IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status, build_mcu_dispatch
-from mcubridge.protocol.structures import PendingPinRequest
-from mcubridge.services.runtime import BridgeService, PendingMcuRead
+from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
@@ -225,32 +223,6 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
-async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
-    service, _state, _serial = svc
-    on_read_resp: Callable[..., Awaitable[pb.FileReadResponse]] = service.file_read
-
-    # No pending read
-    assert (await on_read_resp(1, pb.FileReadResponse(content=b"orphan"))).content == b""
-
-    # Accumulate chunk then EOF
-    fut: asyncio.Future[bytes] = asyncio.Future()
-    pending = PendingMcuRead(future=fut, buffer=bytearray())
-    service.pending_mcu_read = pending
-
-    assert (await on_read_resp(1, pb.FileReadResponse(content=b"chunk1"))).content == b"chunk1"
-    assert not fut.done()
-    assert pending.buffer == b"chunk1"
-
-    assert (await on_read_resp(2, pb.FileReadResponse(content=b""))).content == b""
-    assert fut.done()
-    assert fut.result() == b"chunk1"
-    assert pending.buffer == b""
-
-    # Future already completed
-    assert (await on_read_resp(3, pb.FileReadResponse(content=b""))).content == b""
-    assert fut.result() == b"chunk1"
-
-
 # -----------------------------------------------------------------------------
 # 5. Process Execution Conformance Suite
 # -----------------------------------------------------------------------------
@@ -331,19 +303,6 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
 
     service.cloud_publisher = _cap
 
-    # Digital read response
-    state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
-    on_pin_resp: Callable[..., Awaitable[None]] = service.gpio.handle_pin_read_resp
-    await on_pin_resp(1, pb.DigitalReadResponse(value=1))
-    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/d/13/value"
-    assert captured[-1].payload == b"1"
-
-    # Analog read response
-    state.pending_analog_reads.append(PendingPinRequest(pin=2, reply_context=None))
-    await on_pin_resp(2, pb.AnalogReadResponse(value=1023))
-    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/a/2/value"
-    assert captured[-1].payload == b"1023"
-
     # SPI transfer response
     on_spi: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_spi(3, pb.SpiTransferResponse(data=b"\xaa\x55"))
@@ -358,7 +317,7 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
 
     # Corrupt Protobuf payload
     initial_errors = state.serial_decode_errors
-    await service.handle_mcu_frame(Command.CMD_PIN_UPDATE_EVENT.value, 10, b"\xff\xff\xff\xff")
+    await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
     mock_serial.send.assert_awaited_with(Status.MALFORMED.value, b"")

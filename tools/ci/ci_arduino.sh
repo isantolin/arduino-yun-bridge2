@@ -101,16 +101,20 @@ _LOG_DIR=$(mktemp -d)
 trap 'rm -rf "$_LOG_DIR"' EXIT
 
 # Compile a single sketch for a given board.
-# Runs as a subshell so it can be backgrounded.
+# Runs sequentially per board inside compile_board() so it can reuse the
+# per-board compiled core.a and libraries (MbedTLS, wolfssl, PigweedAVR, McuBridge).
 compile_sketch() {
     local FQBN="$1"
     local sketch="$2"
-    local sketch_dir sketch_name BOARD_NAME LOG_FILE
+    local sketch_dir sketch_name BOARD_NAME LOG_FILE BOARD_WORK_DIR
 
-    sketch_dir=$(dirname "$sketch")
+    sketch_dir=$(cd "$(dirname "$sketch")" && pwd)
     sketch_name=$(basename "$sketch_dir")
+    sketch="$sketch_dir/$(basename "$sketch")"
     BOARD_NAME="${FQBN//:/-}"
     LOG_FILE="${_LOG_DIR}/${BOARD_NAME}__${sketch_name}.log"
+    BOARD_WORK_DIR="${_LOG_DIR}/build/${BOARD_NAME}"
+    mkdir -p "$BOARD_WORK_DIR"
 
     local COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     local LINK_FLAGS=()
@@ -152,27 +156,35 @@ compile_sketch() {
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
     )
     BUILD_FLAGS+=("${LINK_FLAGS[@]}")
-
     BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
-
-    if [ -n "$BUILD_OUTPUT_DIR" ]; then
-        local SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${BOARD_NAME}/$sketch_name"
-        mkdir -p "$SKETCH_BUILD_DIR"
-        BUILD_FLAGS+=("--build-path" "$SKETCH_BUILD_DIR")
-    else
-        # Use a unique build path per board×sketch to avoid cache races
-        # when multiple arduino-cli instances run in parallel.
-        local ISOLATED_BUILD_DIR="${_LOG_DIR}/build/${BOARD_NAME}/${sketch_name}"
-        mkdir -p "$ISOLATED_BUILD_DIR"
-        BUILD_FLAGS+=("--build-path" "$ISOLATED_BUILD_DIR")
-    fi
+    BUILD_FLAGS+=("--build-path" "$BOARD_WORK_DIR")
 
     local BOARD_CACHE_DIR="${_LOG_DIR}/cache/${BOARD_NAME}"
     mkdir -p "$BOARD_CACHE_DIR"
     BUILD_FLAGS+=("--build-cache-path" "$BOARD_CACHE_DIR")
 
+    if [ -f "$BOARD_WORK_DIR/build.options.json" ]; then
+        python3 -c '
+import json, os, sys
+opts_path, sketch_file, sketch_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(opts_path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+loc = data.get("sketchLocation", "")
+data["sketchLocation"] = sketch_file if loc.endswith(".ino") else sketch_dir
+with open(opts_path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+' "$BOARD_WORK_DIR/build.options.json" "$sketch" "$sketch_dir"
+        rm -rf "$BOARD_WORK_DIR/sketch" "$BOARD_WORK_DIR"/*.elf "$BOARD_WORK_DIR"/*.bin "$BOARD_WORK_DIR"/*.hex "$BOARD_WORK_DIR"/*.eep "$BOARD_WORK_DIR"/*.map
+    fi
+
     if arduino-cli compile "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
         echo "✓ $sketch_name ($FQBN)"
+        if [ -n "$BUILD_OUTPUT_DIR" ]; then
+            local SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${BOARD_NAME}/$sketch_name"
+            mkdir -p "$SKETCH_BUILD_DIR"
+            cp -f "$BOARD_WORK_DIR/${sketch_name}.ino.elf" "$SKETCH_BUILD_DIR/" 2>/dev/null || \
+                cp -f "$BOARD_WORK_DIR"/*.elf "$SKETCH_BUILD_DIR/" 2>/dev/null || true
+        fi
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
             cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}__${sketch_name}.log"
@@ -190,7 +202,7 @@ compile_sketch() {
 }
 
 # Collect all sketches, then compile each board in its own parallel worker
-# so sketches for the same board reuse BOARD_CACHE_DIR sequentially without core.a races.
+# so sketches for the same board reuse BOARD_WORK_DIR sequentially without core.a races.
 echo "Compiling examples in parallel across ${#TARGET_BOARDS[@]} target boards..."
 pids=()
 CRITICAL_FAIL=0

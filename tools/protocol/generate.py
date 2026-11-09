@@ -663,10 +663,6 @@ def _extract_operations_context(
                 "service_name": svc.full_name,
                 "method_name": method_desc.name,
             }
-    mcu_rpc_by_cmd["CMD_PIN_UPDATE_EVENT"] = {
-        "service_name": "rpc.pb.GpioService",
-        "method_name": "SubscribePins",
-    }
 
     operations = _build_operations_catalog(
         commands, rpc_specs, rpc_by_cmd, p_fields_map, msg_topics, telem_map, pb_module, mcu_rpc_by_cmd

@@ -6,26 +6,21 @@ Binary parsing uses stdlib struct; high-level schemas use Protobuf (SIL-2) [TEST
 
 from __future__ import annotations
 
-import asyncio
 import fnmatch
 import re
 import ssl
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
     Final,
     Protocol,
-    overload,
 )
 
 import anyio
 from anyio.streams.memory import MemoryObjectSendStream
 import structlog
 from google.protobuf.descriptor import FieldDescriptor
-from google.protobuf.message import DecodeError as ProtobufDecodeError
-from google.protobuf.message import Message as ProtobufMessage
 
 from ssl import TLSVersion
 
@@ -190,15 +185,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
 # =============================================================================
 
 
-# --- High-Level Structure ---
-
-
-@dataclass(slots=True)
-class PendingPinRequest:
-    pin: int
-    reply_context: Any | None = None
-
-
 # --- CLOUD Spool Helpers ---
 
 
@@ -263,33 +249,6 @@ def create_queued_publish(
 # --- Serial Flow Structures ---
 
 
-@dataclass(slots=True)
-class PendingCommand:
-    """Book-keeping for a tracked command in flight. [SIL-2]"""
-
-    command_id: int
-    sequence_id: int | None = None
-    expected_resp_ids: list[int] = field(default_factory=list[int])
-    reply_topic: str | None = None
-    correlation_data: bytes | None = None
-    attempts: int = 0
-    success: bool | None = None
-    failure_status: int | None = None
-    completion: asyncio.Event = field(default_factory=asyncio.Event)
-    response_payload: bytes | ProtobufMessage | None = None
-
-    def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
-        self.response_payload = payload
-        self.success = True
-        self.completion.set()
-
-    def mark_failure(self, status: int | None) -> None:
-        self.success = False
-        if status is not None:
-            self.failure_status = status
-        self.completion.set()
-
-
 class ConsoleQueueTarget(Protocol):
     def put_nowait(self, item: pb.CloudQueuedPublish) -> None: ...
     async def put(self, item: pb.CloudQueuedPublish) -> None: ...
@@ -320,28 +279,3 @@ class MemoryQueueAdapter:
 
     def close(self) -> None:
         self._send_stream.close()
-
-
-@overload
-def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T) -> T: ...
-
-
-@overload
-def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: None = None) -> T | None: ...
-
-
-def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T | None = None) -> T | None:
-    """Safely decode serial response payload to target Protobuf message type. [SIL-2]"""
-    if isinstance(res, target_type):
-        return res
-    if isinstance(res, (bytes, bytearray)):
-        try:
-            return target_type.FromString(bytes(res))
-        except (ProtobufDecodeError, TypeError, ValueError) as exc:
-            logger.warning(
-                "Failed to decode serial response into protobuf",
-                target=target_type.__name__,
-                error=str(exc),
-            )
-            return default
-    return default

@@ -189,27 +189,16 @@ async def test_handle_file_mcu_read_success_and_timeout(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState
 ) -> None:
     mock_serial = AsyncMock()
-    mock_serial.send_raw.return_value = True
+    mock_serial.send.return_value = pb.FileReadResponse(content=b"hello-world")
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     mock_enqueue = AsyncMock()
     svc.cloud_publisher = mock_enqueue
 
-    # Success Path: MCU sends chunks then empty chunk
     inbound = pb.CloudQueuedPublish(
         topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/file.read",
         payload=pb.FileRead(path="/mcu/etc/config").SerializeToString(),
     )
-    read_task: asyncio.Task[None] = asyncio.create_task(svc.handle_request(inbound))
-    await asyncio.sleep(0.01)
-
-    assert svc.pending_mcu_read is not None
-    # Simulate MCU returning chunks via file_read
-    on_read_resp: Callable[..., Awaitable[pb.FileReadResponse]] = svc.file_read
-    await on_read_resp(1, pb.FileReadResponse(content=b"hello-"))
-    await on_read_resp(2, pb.FileReadResponse(content=b"world"))
-    await on_read_resp(3, pb.FileReadResponse(content=b""))  # Completion
-
-    await read_task
+    await svc.handle_request(inbound)
     mock_enqueue.assert_awaited()
     assert mock_enqueue.await_args is not None
     resp_msg: pb.CloudQueuedPublish = mock_enqueue.await_args[0][0]
@@ -259,7 +248,7 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     from mcubridge.protocol import protocol
 
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
+    mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     mock_publisher = AsyncMock()
     svc.cloud_publisher = mock_publisher
@@ -450,9 +439,6 @@ async def test_on_mcu_process_kill_and_subscribe_resp(
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     res_kill = await svc.process_kill(pb.ProcessKill(pid=42))
     assert res_kill.status == "error"
-
-    await svc.gpio.on_subscribe_resp(1, pb.PinSubscribeResponse(pin=13, success=True))
-    assert mock_bridge_state.pin_subscriptions[13]["active"] is True
 
 
 async def test_enqueue_cloud_queue_empty_in_finally(

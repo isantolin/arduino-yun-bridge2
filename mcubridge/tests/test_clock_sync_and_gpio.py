@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import os
 import time
 from typing import cast
@@ -64,18 +63,6 @@ async def test_clock_sync_service() -> None:
         assert res["is_synchronized"] is True
         assert state.clock_sync_count == 1
 
-        # Test MCU response handler via dispatch registry
-        handler = service.mcu_registry[pb.Command.CMD_CLOCK_SYNC_RESP]
-        res_sync = handler(
-            1,
-            pb.ClockSyncResponse(
-                host_time_us=now_us - 2000,
-                mcu_time_us=400000,
-            ),
-        )
-        if inspect.isawaitable(res_sync):
-            await res_sync
-        assert state.clock_sync_count == 2
     finally:
         service.cleanup()
 
@@ -137,13 +124,15 @@ async def test_gpio_service() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     mock_serial = AsyncMock(spec=SerialTransport)
+    cancel_pin_stream = MagicMock(return_value=True)
+    mock_serial.cancel_pin_stream = cancel_pin_stream
     service = BridgeService(config, state, mock_serial)
 
     try:
         gpio = service.gpio
         state.connection_fsm.connect()
 
-        mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=True)
+        mock_serial.send.return_value = True
 
         res = await gpio.subscribe_pin(13, mode="INPUT_PULLUP", interval_ms=100, hysteresis=2)
         assert res["status"] == "ok"
@@ -152,14 +141,13 @@ async def test_gpio_service() -> None:
         assert 13 in state.pin_subscriptions
         assert state.pin_subscriptions[13]["mode"] == "INPUT_PULLUP"
 
-        # Receive streaming pin event via dispatch registry
+        # Receive streaming pin event via GpioService handler
         evt = pb.PinUpdateEvent(pin=13, value=1, timestamp_micros=999999)
-        evt_handler = service.mcu_registry[pb.Command.CMD_PIN_UPDATE_EVENT]
 
         mock_enqueue: AsyncMock = AsyncMock()
         service.cloud_publisher = mock_enqueue
 
-        await evt_handler(0, evt)
+        await gpio.handle_pin_update_event(evt)
         assert state.pin_events_count == 1
 
         # Verify enqueue_cloud was called with canonical topic path (br/d/13/update)
@@ -169,19 +157,49 @@ async def test_gpio_service() -> None:
         assert cloud_msg.payload == b"1"
         assert cloud_msg.message_expiry_interval == 5
 
-        # Disable subscription
+        # Add a second pin subscription so disabling one does not cancel the stream yet
+        res_second = await gpio.subscribe_pin(14, mode="INPUT", interval_ms=50, hysteresis=1)
+        assert res_second["status"] == "ok"
+        res_dis_first = await gpio.subscribe_pin(14, enabled=False)
+        assert res_dis_first["status"] == "ok"
+        cancel_pin_stream.assert_not_called()
+
+        # Disable last remaining subscription -> explicitly cancels pin stream
         res_dis = await gpio.subscribe_pin(13, enabled=False)
         assert res_dis["status"] == "ok"
         assert 13 not in state.pin_subscriptions
+        cancel_pin_stream.assert_called_once()
+
+        # Test resubscribe_pins on reconnection
+        state.pin_subscriptions[5] = {
+            "mode": "INPUT_PULLUP",
+            "interval_ms": 75,
+            "hysteresis": 3,
+            "subscribed_at": time.time(),
+            "active": True,
+        }
+        state.pin_subscriptions[6] = {
+            "mode": "INPUT",
+            "interval_ms": 50,
+            "hysteresis": 1,
+            "subscribed_at": time.time(),
+            "active": False,
+        }
+        assert await gpio.resubscribe_pins() == 1
+        assert state.pin_subscriptions[5]["active"]
+        mock_serial.send.return_value = False
+        assert await gpio.resubscribe_pins() == 0
+        assert not state.pin_subscriptions[5]["active"]
 
         # Test rejection by MCU
-        mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=False)
+        mock_serial.send.return_value = False
         res_rej = await gpio.subscribe_pin(13, enabled=True)
         assert res_rej["status"] == "error"
         assert res_rej["message"] == "MCU rejected pin subscription"
 
         # Test disconnected error
         state.connection_fsm.disconnect()
+        assert await gpio.resubscribe_pins() == 0
         res_disc = await gpio.subscribe_pin(13)
         assert res_disc["status"] == "error"
         assert res_disc["message"] == "Serial transport is not connected"
@@ -200,7 +218,7 @@ async def test_ubus_clock_and_gpio_handlers() -> None:
         ubus.loop = asyncio.get_running_loop()
         state.connection_fsm.connect()
 
-        mock_serial.send.return_value = pb.PinSubscribeResponse(pin=7, success=True)
+        mock_serial.send.return_value = True
 
         # Native UBUS invokes synchronous handlers from its polling worker thread.
         sub_reply = await asyncio.to_thread(
@@ -328,10 +346,10 @@ async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
         state.connection_fsm.connect()
         state.mcu_capabilities = {"clock_sync": True}
 
-        # 1. Return raw serialized bytes from mock_serial
+        # 1. Return ClockSyncResponse from mock_serial
         t1 = time.time_ns() // 1000 - 500
         resp_pb = pb.ClockSyncResponse(host_time_us=t1, mcu_time_us=123456)
-        mock_serial.send.return_value = resp_pb.SerializeToString()
+        mock_serial.send.return_value = resp_pb
 
         res1 = await clock.sync_now()
         assert res1["is_synchronized"] is True
@@ -430,7 +448,7 @@ async def test_local_bridge_pin_subscribe() -> None:
 
     try:
         state.connection_fsm.connect()
-        mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=True)
+        mock_serial.send.return_value = True
 
         req = pb.PinSubscribeRequest(
             pin=13,

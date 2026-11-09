@@ -5,16 +5,19 @@ package rpc.pb;
 import "config_schema.proto";
 
 message VersionResponse {
+  option (msg_cloud_topic) = "system/version/value";
   uint32 major = 1;
   uint32 minor = 2;
   uint32 patch = 3;
 }
 
 message FreeMemoryResponse {
+  option (msg_cloud_topic) = "system/free_memory/value";
   uint32 value = 1;
 }
 
 message Capabilities {
+  option (msg_cloud_topic) = "system/capabilities/value";
   uint32 ver = 1;
   uint32 arch = 2;
   uint32 dig = 3;
@@ -200,6 +203,7 @@ message SpiTransfer {
 }
 
 message SpiTransferResponse {
+  option (msg_cloud_topic) = "spi/transfer/resp";
   bytes data = 1;
 }
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
@@ -17,7 +16,7 @@ from google.protobuf.message import Message as ProtobufMessage
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Command
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -92,46 +91,6 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     mock_serial.read_until.assert_called_once_with(protocol.FRAME_DELIMITER, protocol.MAX_SERIAL_FRAME_BYTES)
 
 
-async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.baudrate = 9600
-    transport.serial = mock_serial
-    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(mock_config.serial_shared_secret, nonce)
-    transport.state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
-    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
-    transport.state.connection_fsm.start_negotiating()
-    fut: asyncio.Future[bool] = asyncio.Future()
-    transport.negotiation_future = fut
-    transport.negotiation_target_baudrate = mock_config.serial_baud
-
-    cleartext = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
-    frame = next(iter(FrameDecoder().process(cleartext)))
-    raw = ui_frame(
-        protocol.HDLC_ADDRESS_RPC,
-        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
-    )
-    await transport.feed_data(raw)
-    assert fut.done()
-    assert fut.result() is True
-    assert mock_serial.baudrate == 115200
-
-
-async def test_correlate_frame_success_status(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    transport = SerialTransport(mock_config, mock_state, None)
-    pending = MagicMock()
-    pending.command_id = Command.CMD_FILE_WRITE.value
-    pending.expected_resp_ids = set()
-    pending.success = None
-    transport.current_command = pending
-
-    correlate_frame: Callable[..., None] = transport.correlate_frame
-    correlate_frame(Status.OK.value, b"ok_payload")
-
-    pending.mark_success.assert_called_once_with(b"ok_payload")
-
-
 async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_serial = MagicMock(spec=serial.Serial)
@@ -142,17 +101,6 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
     stop_event = transport.stop_event
     assert stop_event.is_set()
     mock_serial.close.assert_called_once()
-
-
-async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    transport = SerialTransport(mock_config, mock_state, None)
-    pending = MagicMock()
-    transport.current_command = pending
-
-    await transport.reset()
-
-    pending.mark_failure.assert_called_once_with(Status.TIMEOUT.value)
-    assert transport.current_command is None
 
 
 async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
@@ -169,23 +117,6 @@ async def test_check_baudrate_fallback_triggers(mock_config: RuntimeConfig, mock
     check_fallback: Callable[[], Awaitable[None]] = transport.check_baudrate_fallback
     await check_fallback()
     assert transport.consecutive_crc_errors == 0
-
-
-async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    from mcubridge.protocol.structures import PendingCommand
-
-    transport = SerialTransport(mock_config, mock_state, None)
-    pending = PendingCommand(
-        command_id=Command.CMD_FILE_READ.value, expected_resp_ids=[Command.CMD_FILE_READ_RESP.value]
-    )
-    transport.current_command = pending
-
-    # Response to request matching
-    correlate_frame: Callable[..., None] = transport.correlate_frame
-    correlate_frame(Command.CMD_FILE_READ_RESP.value, b"content")
-    assert pending.completion.is_set()
-    assert pending.success is True
-    assert pending.response_payload == b"content"
 
 
 async def test_logging_not_debug_branches(
@@ -209,7 +140,7 @@ async def test_logging_not_debug_branches(
 
     # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
-    cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION_RESP.value, payload, call_id=1)
+    cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION.value, payload, call_id=1)
     frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,

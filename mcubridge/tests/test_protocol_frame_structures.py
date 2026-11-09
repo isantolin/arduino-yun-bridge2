@@ -204,26 +204,6 @@ def test_resolve_cloud_context() -> None:
     assert structures.resolve_cloud_context(msg, ContextNoProps()).topic_name == "initial"
 
 
-def test_pending_command_methods() -> None:
-    cmd = structures.PendingCommand(command_id=1)
-    assert cmd.completion.is_set() is False
-
-    cmd.mark_success(b"response")
-    assert cmd.success
-    assert cmd.response_payload == b"response"
-    assert cmd.completion.is_set()
-
-    # Calling mark_success when completion is already set
-    cmd.mark_success(b"repeat")
-    assert cmd.success
-
-    cmd2 = structures.PendingCommand(command_id=2)
-    cmd2.mark_failure(status=404)
-    assert not cmd2.success
-    assert cmd2.failure_status == 404
-    assert cmd2.completion.is_set()
-
-
 def test_get_ssl_context_insecure() -> None:
 
     cfg_insecure = pb.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)

@@ -31,7 +31,6 @@ from ..protocol.protocol import (
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..protocol.structures import (
-    PendingPinRequest,
     create_allowed_policy,
 )
 from ..security.security import LinkCipher
@@ -255,31 +254,6 @@ class CloudLinkMachine(StateMachine):
     )
 
 
-class FileTransferMachine(StateMachine):
-    """[SIL-2] Strongly-typed deterministic FSM for file streaming transfer."""
-
-    allow_event_without_transition = True
-
-    idle = State(value="idle", initial=True)
-    transferring = State(value="transferring")
-    completed = State(value="completed")
-    timed_out = State(value="timed_out")
-    aborted = State(value="aborted")
-
-    start_transfer = (
-        idle.to(transferring)
-        | completed.to(transferring)
-        | timed_out.to(transferring)
-        | aborted.to(transferring)
-        | transferring.to(transferring)
-    )
-    receive_chunk = transferring.to(transferring)
-    complete = transferring.to(completed) | completed.to(completed)
-    timeout = transferring.to(timed_out) | timed_out.to(timed_out)
-    abort = transferring.to(aborted) | idle.to(aborted) | aborted.to(aborted)
-    reset = completed.to(idle) | timed_out.to(idle) | aborted.to(idle) | idle.to(idle)
-
-
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers. [SIL-2]"""
 
@@ -313,8 +287,6 @@ class RuntimeState:
     watchdog_enabled: bool
     watchdog_interval: float
     last_watchdog_beat: float
-    pending_digital_reads: collections.deque[PendingPinRequest]
-    pending_analog_reads: collections.deque[PendingPinRequest]
     mailbox_queue_limit: int
     mcu_version: tuple[int, int, int] | None
     _mcu_capabilities: pb.Capabilities | None
@@ -391,13 +363,6 @@ class RuntimeState:
         self.watchdog_enabled: bool = kwargs.get("watchdog_enabled", False)
         self.watchdog_interval: float = kwargs.get("watchdog_interval", DEFAULT_WATCHDOG_INTERVAL)
         self.last_watchdog_beat: float = kwargs.get("last_watchdog_beat", 0.0)
-
-        self.pending_digital_reads: collections.deque[PendingPinRequest] = (
-            kwargs.get("pending_digital_reads") or collections.deque()
-        )
-        self.pending_analog_reads: collections.deque[PendingPinRequest] = (
-            kwargs.get("pending_analog_reads") or collections.deque()
-        )
 
         self.mailbox_queue_limit: int = kwargs.get("mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT)
 
@@ -936,8 +901,6 @@ class RuntimeState:
         try:
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
-            self.pending_digital_reads.clear()
-            self.pending_analog_reads.clear()
         except (OSError, RuntimeError, AttributeError) as e:
             logger.debug("State indicators cleanup notice", error=e)
 

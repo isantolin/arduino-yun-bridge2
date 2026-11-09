@@ -408,7 +408,7 @@ def test_runtime_request_mcu_version_and_system_version(
         mock_serial = AsyncMock(spec=SerialTransport)
         service = BridgeService(cfg, state, mock_serial)
 
-        v_resp = pb.VersionResponse(major=major, minor=minor, patch=patch_ver).SerializeToString()
+        v_resp = pb.VersionResponse(major=major, minor=minor, patch=patch_ver)
         mock_serial.send = AsyncMock(return_value=v_resp)
         inbound = pb.CloudQueuedPublish(topic_name=f"{cfg.topic_prefix}/req/system.version", payload=b"")
 
@@ -658,7 +658,9 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
 
     svc.serial = mock_serial
     svc.state.connection_fsm.synchronize()
-    await svc.handle_mcu_frame(Command.CMD_GET_VERSION_RESP.value, 1, pb.VersionResponse().SerializeToString())
+    await svc.handle_mcu_frame(
+        Command.CMD_DATASTORE_GET_RESP.value, 1, pb.DatastoreGetResponse().SerializeToString()
+    )
     assert not mock_serial.send.called
 
     await svc.handle_mcu_frame(9999, 1, b"")
@@ -671,8 +673,8 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
         called_sync.append(_seq)
         return {"status": "ok"}
 
-    svc.mcu_registry[Command.CMD_CLOCK_SYNC_RESP.value] = _sync_handler
-    await svc.handle_mcu_frame(Command.CMD_CLOCK_SYNC_RESP.value, 2, b"")
+    svc.mcu_registry[Command.CMD_DATASTORE_GET_RESP.value] = _sync_handler
+    await svc.handle_mcu_frame(Command.CMD_DATASTORE_GET_RESP.value, 2, b"")
     assert called_sync == [2]
 
     # Test handler returning False
@@ -843,7 +845,7 @@ async def test_runtime_handle_system_free_memory_non_bytes(
     )
     assert mock_serial.send.called
 
-    mock_serial.send = AsyncMock(return_value=pb.FreeMemoryResponse(value=1024).SerializeToString())
+    mock_serial.send = AsyncMock(return_value=pb.FreeMemoryResponse(value=1024))
     await svc.handle_request(
         pb.CloudQueuedPublish(
             topic_name=f"{svc.state.cloud_topic_prefix}/req/system.free_memory",
@@ -1054,7 +1056,7 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     assert mock_serial.send.called
     assert res_spi_xfer.data == b""
 
-    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"resp").SerializeToString()
+    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"resp")
     res_spi_xfer_ok = pb.SpiTransferResponse.FromString(
         await svc.execute_rpc("SpiTransfer", pb.SpiTransfer(data=b"data").SerializeToString())
     )

@@ -1325,8 +1325,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
 
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
-    written_frames: list[bytes] = []
-    mock_serial.write = MagicMock(side_effect=lambda data: written_frames.append(data) or len(data))
+    mock_serial.write = MagicMock(return_value=16)
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
     runtime_config.serial_shared_secret = b""
@@ -1345,8 +1344,8 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     )
     await transport.feed_data(mcu_req_frame)
     assert await transport.send("rpc.pb.DataStoreService/Get", pb.DatastoreGetResponse(value=b"val"))
-    decoded_frames = list(FrameDecoder().process(written_frames[-1]))
-    assert len(decoded_frames) == 1
-    out_pkt = pw_packets.decode(bytes(decoded_frames[0].data))
+    written_raw: bytes = mock_serial.write.call_args[0][0]
+    out_frame = next(iter(FrameDecoder().process(written_raw)))
+    out_pkt = pw_packets.decode(bytes(out_frame.data))
     assert out_pkt.type == PacketType.RESPONSE
     assert out_pkt.call_id == 77

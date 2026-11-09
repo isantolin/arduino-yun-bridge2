@@ -187,7 +187,7 @@ jobs:
           path: bin/
 
       - name: Log in to GitHub Container Registry (GHCR)
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -203,7 +203,7 @@ jobs:
 
       - name: Extract Metadata & Version Tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/mcubridge-openwrt-apk-feed
           labels: |
@@ -215,7 +215,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build and Push OCI Container to GHCR
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.apk-feed

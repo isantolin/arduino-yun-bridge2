@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
@@ -1234,7 +1235,7 @@ async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection()
         req_pkt = pw_packets.decode(outgoing[-1])
 
         # 2. Emit 66 PinUpdateEvent messages to exercise bounded queue + backpressure drop
-        stream_queue = cast(Any, _private_attribute(transport, "_stream_event_queue"))
+        stream_queue = cast(deque[Any], _private_attribute(transport, "_stream_event_queue"))
         enqueue_fn = cast(Callable[[Any], None], _private_attribute(transport, "_enqueue_stream_event"))
         for idx in range(66):
             enqueue_fn(pb.PinUpdateEvent(pin=13, value=idx, timestamp_micros=1000 + idx))
@@ -1325,7 +1326,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     enqueue_fn = cast(Callable[[Any], None], _private_attribute(transport, "_enqueue_stream_event"))
-    uninit_msg = MagicMock(spec=pb.PinUpdateEvent)
+    uninit_msg = MagicMock()
     uninit_msg.IsInitialized.return_value = False
     enqueue_fn(uninit_msg)
     assert runtime_state.serial_decode_errors == 1
@@ -1356,7 +1357,12 @@ async def test_server_stream_error_and_reset_cleanup_branches(
         "rpc.pb.GpioService/SubscribePins",
     )
 
-    setattr(transport, "_stream_call", call)
+    rpc_method.invoke = MagicMock(return_value=call)
+    assert await invoke_stream(
+        rpc_method,
+        pb.PinSubscribeRequest(pin=13, enabled=True),
+        "rpc.pb.GpioService/SubscribePins",
+    )
     enqueue_fn(pb.PinUpdateEvent(pin=1, value=1, timestamp_micros=1))
     await transport.reset()
     assert _private_attribute(transport, "_stream_call") is None

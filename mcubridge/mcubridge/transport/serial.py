@@ -128,7 +128,7 @@ class SerialTransport:
         self._active_rpc_calls: list[Any] = []
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
         self._stream_call: Any | None = None
-        self._stream_event_queue: deque[pb.PinUpdateEvent] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
+        self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
@@ -163,7 +163,8 @@ class SerialTransport:
 
     def cancel_pin_stream(self) -> bool:
         """Explicitly cancel any active server-streaming RPC call."""
-        call, self._stream_call = self._stream_call, None
+        call = self._stream_call
+        self._stream_call = None
         if call is None:
             return False
         try:
@@ -175,7 +176,7 @@ class SerialTransport:
 
     def _enqueue_stream_event(self, message: ProtobufMessage) -> None:
         """Buffer an incoming Pigweed server-streaming message with bounded backpressure."""
-        if not isinstance(message, pb.PinUpdateEvent) or not message.IsInitialized():
+        if not message.IsInitialized():
             logger.error("Transport gate rejected uninitialized stream payload from MCU")
             self.state.serial_decode_errors += 1
             return
@@ -192,7 +193,7 @@ class SerialTransport:
         gpio = getattr(self.service, "gpio", None) if self.service is not None else None
         while self._stream_event_queue:
             event = self._stream_event_queue.popleft()
-            if gpio is not None:
+            if gpio is not None and isinstance(event, pb.PinUpdateEvent):
                 await gpio.handle_pin_update_event(event)
 
     async def run(self) -> None:
@@ -718,12 +719,21 @@ class SerialTransport:
                 logger.warning("Pigweed server-streaming RPC failed", method=method_name, detail=str(detail))
                 future.set_result(False)
 
+        def _on_next(_call: Any, message: ProtobufMessage) -> None:
+            self._enqueue_stream_event(message)
+
+        def _on_completed(_call: Any, status: Any) -> None:
+            _finish_stream_call(status.ok(), status)
+
+        def _on_error(_call: Any, error: Any) -> None:
+            _finish_stream_call(False, error)
+
         try:
             call = rpc_method.invoke(
                 request,
-                on_next=lambda _call, message: self._enqueue_stream_event(message),
-                on_completed=lambda _call, status: _finish_stream_call(status.ok(), status),
-                on_error=lambda _call, error: _finish_stream_call(False, error),
+                on_next=_on_next,
+                on_completed=_on_completed,
+                on_error=_on_error,
             )
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             logger.error("Unable to invoke Pigweed server-streaming RPC", method=method_name, error=str(exc))

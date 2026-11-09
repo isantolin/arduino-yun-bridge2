@@ -6,12 +6,11 @@ Binary parsing uses stdlib struct; high-level schemas use Protobuf (SIL-2) [TEST
 
 from __future__ import annotations
 
-import asyncio
 import fnmatch
 import re
 import ssl
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     Any,
@@ -261,33 +260,6 @@ def create_queued_publish(
 
 
 # --- Serial Flow Structures ---
-
-
-@dataclass(slots=True)
-class PendingCommand:
-    """Book-keeping for a tracked command in flight. [SIL-2]"""
-
-    command_id: int
-    sequence_id: int | None = None
-    expected_resp_ids: list[int] = field(default_factory=list[int])
-    reply_topic: str | None = None
-    correlation_data: bytes | None = None
-    attempts: int = 0
-    success: bool | None = None
-    failure_status: int | None = None
-    completion: asyncio.Event = field(default_factory=asyncio.Event)
-    response_payload: bytes | ProtobufMessage | None = None
-
-    def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
-        self.response_payload = payload
-        self.success = True
-        self.completion.set()
-
-    def mark_failure(self, status: int | None) -> None:
-        self.success = False
-        if status is not None:
-            self.failure_status = status
-        self.completion.set()
 
 
 class ConsoleQueueTarget(Protocol):

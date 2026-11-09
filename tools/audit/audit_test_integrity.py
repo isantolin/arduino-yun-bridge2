@@ -75,7 +75,6 @@ ALLOWLIST_PY_HELPERS = {
     "toggle_dtr",
     "read_loop",
     "feed_data",
-    "correlate_frame",
     "check_baudrate_fallback",
     "is_healthy",
     "unsupported_mcu_request",

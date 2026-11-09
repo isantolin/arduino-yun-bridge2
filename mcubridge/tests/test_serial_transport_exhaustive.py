@@ -46,15 +46,6 @@ def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport,
         switch_fn(9600)
 
 
-async def test_reset(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
-    transport, _state, _ = mock_serial_setup
-    cmd = MagicMock()
-    transport.current_command = cmd
-    await transport.reset()
-    assert transport.current_command is None
-    cmd.mark_failure.assert_called_once()
-
-
 async def test_read_loop_decode_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:

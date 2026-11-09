@@ -32,7 +32,7 @@ Reglas obligatorias:
 | RPC MCU | Servicios Nanopb generados y registrados en firmware; `pw::rpc::Server` y `pw::rpc::Client` presentes | Simplificar registro, lifecycle y dispatch sin wrappers duplicados |
 | Esquema Protobuf | Servicios `GpioService`, `SystemService`, `ClockSyncService`, `SpiService`, `FileSystemService`, `MailboxService`, `ProcessService` y `DataStoreService` declarados; `CMD_PIN_SUBSCRIBE_RESP` y `CMD_PIN_UPDATE_EVENT` eliminados del wire MCU | Limpiar metadatos/IDs legacy restantes tras migrar la API de aplicación |
 | Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` deriva tipos e IDs; `BY_SERVER_STREAM` eliminado | Retirar empaquetado manual residual tras migrar los comandos restantes |
-| Cliente RPC Python | `serial.py` invoca métodos unary (PR #68) y server-streaming (`GpioService.SubscribePins`) con `pw_rpc.Client` y descriptores oficiales; mantiene camino raw/`PendingCommand` solo para handshake, baudrate, consola y `CMD_FILE_READ` | Retirar `PendingCommand` tras migrar consumidores restantes |
+| Cliente RPC Python | `serial.py` invoca métodos unary (PR #68) y server-streaming (`GpioService.SubscribePins`) con `pw_rpc.Client` y descriptores oficiales; `PendingCommand` y `correlate_frame` eliminados (`send_raw` solo para handshake, baudrate, consola y `CMD_FILE_READ`) | Completado |
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con cancelación, cierre, reconexión y backpressure | Completado |
 | API de aplicación | UBUS y servicios internos usan operaciones/Command IDs como compatibilidad de aplicación | Desacoplar la API de aplicación de los IDs de transporte |
 | Generación | Buf/Nanopb y generador propio producen bindings y metadatos | Reducir generación manual a partir de descriptores y eliminar salidas/tablas redundantes |
@@ -84,7 +84,7 @@ Cambios en el daemon y el contrato:
 
 1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` como método `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
 2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo del stream se entregan a `rpc_client.process_packet`, encolando `PinUpdateEvent` en una cola acotada (`_stream_event_queue`) con política de backpressure (descarta el evento más antiguo si la cola se llena) antes de despachar a `GpioService.handle_pin_update_event`.
-3. Se eliminan `CMD_PIN_SUBSCRIBE_RESP`, `CMD_PIN_UPDATE_EVENT`, `BY_SERVER_STREAM` y `GpioService.on_subscribe_resp`.
+3. Se eliminan `CMD_PIN_SUBSCRIBE_RESP`, `CMD_PIN_UPDATE_EVENT`, `BY_SERVER_STREAM`, `GpioService.on_subscribe_resp`, `PendingCommand` y `SerialTransport.correlate_frame`.
 4. `GpioService` cancela explícitamente el stream (`cancel_pin_stream`) al deshabilitar la última suscripción activa y restaura las suscripciones activas (`resubscribe_pins`) tras reconectar y sincronizar el enlace serie.
 
 ## Medición y reporte por etapa

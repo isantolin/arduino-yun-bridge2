@@ -13,6 +13,7 @@ Google Pigweed HDLC Framing (pw_hdlc).
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 import logging
 import sys
 import time
@@ -44,7 +45,6 @@ from mcubridge.protocol.protocol import (
     Status,
     get_operation,
 )
-from mcubridge.protocol.structures import PendingCommand
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import RuntimeState
 
@@ -123,17 +123,12 @@ class SerialTransport:
         self.consecutive_crc_errors = 0
         self.tx_sequence_id = 0
 
-        self.current_command: PendingCommand | None = None
-        self._flow_lock = asyncio.Lock()
         self._serial_write_lock = asyncio.Lock()
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
-        self._last_rpc_write_task: asyncio.Task[bool] | None = None
-        self._last_rpc_call_id: int | None = None
         self._active_rpc_calls: list[Any] = []
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
-        self._stream_rpc_calls: dict[tuple[int, int, int], Any] = {}
-        self._stream_rpc_packet_ids: dict[tuple[int, int, int], int] = {}
-        self._stream_event_queue: asyncio.Queue[ProtobufMessage] = asyncio.Queue(maxsize=_STREAM_EVENT_QUEUE_MAX)
+        self._stream_call: Any | None = None
+        self._stream_event_queue: deque[pb.PinUpdateEvent] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
@@ -147,16 +142,6 @@ class SerialTransport:
         self.decoder = FrameDecoder()
         self.detokenizer = detokenize.Detokenizer()
 
-    class _RetryableSerialError(Exception):
-        """Marker exception to request another send attempt."""
-
-    class _FatalSerialError(Exception):
-        """Raised when a frame should not be retried."""
-
-        def __init__(self, status: int | None) -> None:
-            super().__init__(status)
-            self.status = status
-
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:
             if self.serial:
@@ -166,10 +151,6 @@ class SerialTransport:
             raise RuntimeError(f"UART access failed: {e}") from e
 
     async def reset(self) -> None:
-        async with self._flow_lock:
-            if self.current_command:
-                self.current_command.mark_failure(Status.TIMEOUT.value)
-            self.current_command = None
         for call in tuple(self._active_rpc_calls):
             try:
                 call.cancel()
@@ -178,101 +159,41 @@ class SerialTransport:
         self.cancel_pin_stream()
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
-        while not self._stream_event_queue.empty():
-            try:
-                self._stream_event_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-
-    def _cleanup_stream_call(
-        self,
-        stream_key: tuple[int, int, int],
-        call: Any,
-        call_id: int | None,
-    ) -> None:
-        if self._stream_rpc_calls.get(stream_key) is call:
-            self._stream_rpc_calls.pop(stream_key, None)
-        if call_id is not None:
-            if self._stream_rpc_packet_ids.get(stream_key) == call_id:
-                self._stream_rpc_packet_ids.pop(stream_key, None)
-            self._active_rpc_packet_ids.discard((stream_key[0], stream_key[1], stream_key[2], call_id))
+        self._stream_event_queue.clear()
 
     def cancel_pin_stream(self) -> bool:
         """Explicitly cancel any active server-streaming RPC call."""
-        cancelled = False
-        for stream_key, call in tuple(self._stream_rpc_calls.items()):
-            call_id = self._stream_rpc_packet_ids.get(stream_key)
-            self._cleanup_stream_call(stream_key, call, call_id)
-            try:
-                call.cancel()
-                cancelled = True
-            except (AttributeError, KeyError, RuntimeError, ValueError) as exc:
-                logger.debug("Unable to cancel Pigweed server-streaming RPC", error=str(exc))
-        return cancelled
+        call, self._stream_call = self._stream_call, None
+        if call is None:
+            return False
+        try:
+            call.cancel()
+            return True
+        except (AttributeError, KeyError, RuntimeError, ValueError) as exc:
+            logger.debug("Unable to cancel Pigweed server-streaming RPC", error=str(exc))
+            return False
 
     def _enqueue_stream_event(self, message: ProtobufMessage) -> None:
         """Buffer an incoming Pigweed server-streaming message with bounded backpressure."""
-        if not message.IsInitialized():
+        if not isinstance(message, pb.PinUpdateEvent) or not message.IsInitialized():
             logger.error("Transport gate rejected uninitialized stream payload from MCU")
             self.state.serial_decode_errors += 1
             return
-        if self._stream_event_queue.full():
-            try:
-                self._stream_event_queue.get_nowait()
-                self._stream_backpressure_drops += 1
-                logger.warning(
-                    "Dropped oldest Pigweed stream event due to backpressure",
-                    drops=self._stream_backpressure_drops,
-                )
-            except asyncio.QueueEmpty:
-                logger.debug("Stream event queue emptied before backpressure eviction")
-        self._stream_event_queue.put_nowait(message)
+        if len(self._stream_event_queue) == _STREAM_EVENT_QUEUE_MAX:
+            self._stream_backpressure_drops += 1
+            logger.warning(
+                "Dropped oldest Pigweed stream event due to backpressure",
+                drops=self._stream_backpressure_drops,
+            )
+        self._stream_event_queue.append(message)
 
     async def _drain_stream_events(self) -> None:
         """Dispatch buffered Pigweed server-streaming events to the application service."""
-        while not self._stream_event_queue.empty():
-            try:
-                event = self._stream_event_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            gpio = getattr(self.service, "gpio", None) if self.service is not None else None
-            if gpio is not None and isinstance(event, pb.PinUpdateEvent):
+        gpio = getattr(self.service, "gpio", None) if self.service is not None else None
+        while self._stream_event_queue:
+            event = self._stream_event_queue.popleft()
+            if gpio is not None:
                 await gpio.handle_pin_update_event(event)
-
-    async def _process_client_rpc_packet(
-        self,
-        pkt: Any,
-        spec: Any,
-        frame_data: bytes,
-    ) -> bool:
-        """Route Linux-initiated RPC responses and server streams to pw_rpc.Client."""
-        if pw_packets.for_server(pkt) or spec is None:
-            return False
-        stream_key = (pkt.channel_id, pkt.service_id, pkt.method_id)
-        rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
-        active_stream_call_id = self._stream_rpc_packet_ids.get(stream_key)
-        if active_stream_call_id is not None and pkt.call_id == active_stream_call_id:
-            if pkt.type == PacketType.SERVER_STREAM:
-                self.rpc_client.process_packet(frame_data)
-                await self._drain_stream_events()
-                return True
-            if pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR):
-                self._stream_rpc_packet_ids.pop(stream_key, None)
-                self._active_rpc_packet_ids.discard(rpc_packet_key)
-                self.rpc_client.process_packet(frame_data)
-                await self._drain_stream_events()
-                return True
-        is_unary_rpc_response = (
-            getattr(spec.cardinality, "name", "") == "UNARY_UNARY"
-            and spec.command_id not in _LEGACY_RAW_REQUESTS
-            and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
-            and rpc_packet_key in self._active_rpc_packet_ids
-        )
-        if is_unary_rpc_response:
-            self._active_rpc_packet_ids.discard(rpc_packet_key)
-            self.rpc_client.process_packet(frame_data)
-            return True
-        return False
 
     async def run(self) -> None:
         """Main lifecycle loop of the serial transport."""
@@ -478,7 +399,18 @@ class SerialTransport:
 
             # Pigweed's native client owns responses and server streams for Linux-initiated RPCs,
             # including call-ID correlation, payload decoding, stream events, and completion status.
-            if await self._process_client_rpc_packet(pkt, spec, frame_data):
+            rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
+            is_client_rpc = (
+                spec is not None
+                and spec.command_id not in _LEGACY_RAW_REQUESTS
+                and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
+                and rpc_packet_key in self._active_rpc_packet_ids
+            )
+            if not pw_packets.for_server(pkt) and is_client_rpc:
+                if pkt.type != PacketType.SERVER_STREAM:
+                    self._active_rpc_packet_ids.discard(rpc_packet_key)
+                self.rpc_client.process_packet(frame_data)
+                await self._drain_stream_events()
                 return
 
             # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
@@ -531,8 +463,6 @@ class SerialTransport:
                 self.state.serial_decode_errors += 1
                 return
 
-            # Correlation and Service dispatch
-            self.correlate_frame(cmd_id, payload, seq_id)
             # In pw_rpc, PacketType.RESPONSE is only dispatched to service handlers when the
             # resolved operation is an explicit response/status handler (paired_request_id != None
             # or status code), never re-triggering bidirectional request handlers like MailboxPush.
@@ -546,45 +476,6 @@ class SerialTransport:
             ):
                 dispatch_key = (pkt.service_id, pkt.method_id) if pkt.type == PacketType.REQUEST else cmd_id
                 await self.service.handle_mcu_frame(dispatch_key, seq_id, payload)
-
-    def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> None:
-        pending = self.current_command
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "_correlate_frame entry",
-                command_id=command_id,
-                seq_id=seq_id,
-                pending_cmd=(pending.command_id if pending else None),
-                pending_seq=(pending.sequence_id if pending else None),
-            )
-        if pending is None:
-            return
-        if pending.success is not None:
-            if logger.is_enabled_for(logging.DEBUG):
-                logger.debug(
-                    "Pending command already resolved, ignoring further correlation",
-                    pending_cmd=pending.command_id,
-                    command_id=command_id,
-                )
-            return
-        if pending.sequence_id is not None and seq_id is not None and pending.sequence_id != seq_id:
-            if logger.is_enabled_for(logging.DEBUG):
-                logger.debug(
-                    "ignoring_stale_frame_sequence_mismatch",
-                    expected_seq=pending.sequence_id,
-                    received_seq=seq_id,
-                    command_id=command_id,
-                )
-            return
-        spec = get_operation(command_id)
-        paired_req_id = spec.paired_request_id if spec else None
-        if command_id == pending.command_id or (paired_req_id is not None and paired_req_id == pending.command_id):
-            pending.mark_success(payload)
-            return
-        if command_id in SERIAL_FAILURE_STATUS_CODES:
-            pending.mark_failure(command_id)
-        elif command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
-            pending.mark_success(payload)
 
     async def check_baudrate_fallback(self) -> None:
         self.consecutive_crc_errors += 1
@@ -606,11 +497,8 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
-        is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
-        is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
         if (
-            not is_link_reset
-            and spec is not None
+            spec is not None
             and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name
@@ -618,71 +506,13 @@ class SerialTransport:
         ):
             return await self._send_rpc(spec, payload, timeout)
 
-        is_tracked = not is_handshake and spec is not None and (bool(spec.expected_responses) or spec.requires_ack)
-
-        if not is_tracked:
-            return await self.send_raw(command_id, payload, seq_id)
-
-        effective_timeout = timeout if timeout is not None else self._response_timeout
-
-        async with self._flow_lock:
-            pending = PendingCommand(
-                command_id=command_id,
-                expected_resp_ids=list(spec.expected_responses) if spec else [],
-            )
-            self.current_command = pending
-            try:
-                retryer = tenacity.AsyncRetrying(
-                    stop=tenacity.stop_after_attempt(self.max_attempts),
-                    wait=tenacity.wait_exponential(
-                        multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX
-                    ),
-                    retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-                    reraise=True,
-                )
-
-                async def _send_attempt() -> Any:
-                    pending.attempts = (pending.attempts or 0) + 1
-                    pending.success = None
-
-                    attempt_seq = seq_id
-                    if attempt_seq is None:
-                        self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
-                        attempt_seq = self.tx_sequence_id
-                    pending.sequence_id = attempt_seq
-
-                    if not await self.send_raw(command_id, payload, attempt_seq):
-                        raise self._FatalSerialError(None)
-
-                    try:
-                        async with asyncio.timeout(effective_timeout):
-                            await pending.completion.wait()
-                            if pending.success:
-                                return pending.response_payload or True
-                    except TimeoutError as exc:
-                        raise self._RetryableSerialError() from exc
-
-                    if pending.failure_status is not None:
-                        raise self._FatalSerialError(pending.failure_status)
-                    raise self._RetryableSerialError()
-
-                with structlog.contextvars.bound_contextvars(command_id=command_id):
-                    return await retryer(_send_attempt)
-            except self._FatalSerialError as exc:
-                pending.mark_failure(exc.status)
-                return False
-            except (self._RetryableSerialError, tenacity.RetryError):
-                pending.mark_failure(Status.TIMEOUT.value)
-                return False
-            finally:
-                self.current_command = None
+        return await self.send_raw(command_id, payload, seq_id)
 
     def queue_rpc_packet(self, packet: bytes) -> None:
         """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
         try:
             rpc_packet = pw_packets.decode(packet)
             if rpc_packet.type == PacketType.REQUEST:
-                self._last_rpc_call_id = rpc_packet.call_id
                 self._active_rpc_packet_ids.add(
                     (
                         rpc_packet.channel_id,
@@ -708,7 +538,6 @@ class SerialTransport:
         except RuntimeError as exc:
             raise RuntimeError("Pigweed RPC output invoked outside the asyncio event loop") from exc
         task = loop.create_task(self._write_rpc_packet(packet), name="mcubridge-pw-rpc-write")
-        self._last_rpc_write_task = task
         self._rpc_write_tasks.add(task)
 
         def _finish(completed: asyncio.Task[bool]) -> None:
@@ -870,85 +699,38 @@ class SerialTransport:
         logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
         return False
 
-    def _start_server_stream_call(
+    async def _invoke_server_stream_rpc(
         self,
         rpc_method: Any,
         request: ProtobufMessage,
-        stream_key: tuple[int, int, int],
         method_name: str,
-        rejection_future: asyncio.Future[bool],
-    ) -> tuple[Any, int | None] | None:
-        self._last_rpc_write_task = None
-        self._last_rpc_call_id = None
-        call_ref: dict[str, Any] = {"call": None, "call_id": None}
+    ) -> bool:
+        """Invoke or update a server-streaming RPC via pw_rpc.Client."""
+        rejection_future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
-        def _on_next(_call: Any, message: ProtobufMessage) -> None:
-            self._enqueue_stream_event(message)
-
-        def _on_completed(
-            call: Any,
-            status: Any,
+        def _finish_stream_call(
+            ok: bool,
+            detail: Any,
             future: asyncio.Future[bool] = rejection_future,
         ) -> None:
-            self._cleanup_stream_call(stream_key, call, call_ref["call_id"])
-            if not status.ok() and not future.done():
-                logger.warning("Pigweed server-streaming RPC rejected by MCU", method=method_name, status=str(status))
-                future.set_result(False)
-
-        def _on_error(
-            call: Any,
-            error: Any,
-            future: asyncio.Future[bool] = rejection_future,
-        ) -> None:
-            self._cleanup_stream_call(stream_key, call, call_ref["call_id"])
-            if not future.done():
-                logger.warning("Pigweed server-streaming RPC failed", method=method_name, error=str(error))
+            self._stream_call = None
+            if not ok and not future.done():
+                logger.warning("Pigweed server-streaming RPC failed", method=method_name, detail=str(detail))
                 future.set_result(False)
 
         try:
             call = rpc_method.invoke(
                 request,
-                on_next=_on_next,
-                on_completed=_on_completed,
-                on_error=_on_error,
+                on_next=lambda _call, message: self._enqueue_stream_event(message),
+                on_completed=lambda _call, status: _finish_stream_call(status.ok(), status),
+                on_error=lambda _call, error: _finish_stream_call(False, error),
             )
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             logger.error("Unable to invoke Pigweed server-streaming RPC", method=method_name, error=str(exc))
-            return None
-
-        raw_call_id: Any = getattr(call, "call_id", None)
-        call_id: int | None = raw_call_id if isinstance(raw_call_id, int) else self._last_rpc_call_id
-        call_ref["call"] = call
-        call_ref["call_id"] = call_id
-        self._stream_rpc_calls[stream_key] = call
-        if call_id is not None:
-            self._stream_rpc_packet_ids[stream_key] = call_id
-        return call, call_id
-
-    async def _invoke_server_stream_rpc(
-        self,
-        rpc_method: Any,
-        request: ProtobufMessage,
-        spec: Any,
-        method_name: str,
-    ) -> bool:
-        """Invoke or update a server-streaming RPC via pw_rpc.Client."""
-        stream_key = (protocol.HDLC_ADDRESS_RPC, int(spec.service_id or 0), int(spec.method_id or 0))
-        old_call_id = self._stream_rpc_packet_ids.pop(stream_key, None)
-        if old_call_id is not None:
-            self._active_rpc_packet_ids.discard((stream_key[0], stream_key[1], stream_key[2], old_call_id))
-        self._stream_rpc_calls.pop(stream_key, None)
-
-        rejection_future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        started = self._start_server_stream_call(rpc_method, request, stream_key, method_name, rejection_future)
-        if started is None:
             return False
-        call, call_id = started
 
-        write_task = self._last_rpc_write_task
-        if write_task is not None and not await write_task:
-            self._cleanup_stream_call(stream_key, call, call_id)
-            return False
+        if not rejection_future.done():
+            self._stream_call = call
 
         try:
             async with asyncio.timeout(min(self._ack_timeout, 0.05)):
@@ -971,7 +753,7 @@ class SerialTransport:
             return False
         method_name = f"{spec.service_name}/{spec.method_name}"
         if spec.command_id == protocol.Command.CMD_PIN_SUBSCRIBE.value:
-            return await self._invoke_server_stream_rpc(rpc_method, request, spec, method_name)
+            return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
         effective_timeout = timeout if timeout is not None else self._response_timeout
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 

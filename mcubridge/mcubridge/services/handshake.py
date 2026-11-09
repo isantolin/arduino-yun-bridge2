@@ -481,13 +481,6 @@ class SerialHandshakeManager:
         )
         self._logger.info("MCU capabilities received", capabilities=str(self._state.mcu_capabilities))
 
-    async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
-        self._logger.info(
-            "MCU link reset acknowledged",
-            payload=(payload.hex() if isinstance(payload, bytes) else str(payload)),
-        )
-        return True
-
     async def handle_handshake_failure(
         self,
         reason: str,

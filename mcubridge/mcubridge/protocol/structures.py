@@ -10,21 +10,17 @@ import fnmatch
 import re
 import ssl
 from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     Any,
     Final,
     Protocol,
-    overload,
 )
 
 import anyio
 from anyio.streams.memory import MemoryObjectSendStream
 import structlog
 from google.protobuf.descriptor import FieldDescriptor
-from google.protobuf.message import DecodeError as ProtobufDecodeError
-from google.protobuf.message import Message as ProtobufMessage
 
 from ssl import TLSVersion
 
@@ -189,15 +185,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
 # =============================================================================
 
 
-# --- High-Level Structure ---
-
-
-@dataclass(slots=True)
-class PendingPinRequest:
-    pin: int
-    reply_context: Any | None = None
-
-
 # --- CLOUD Spool Helpers ---
 
 
@@ -292,28 +279,3 @@ class MemoryQueueAdapter:
 
     def close(self) -> None:
         self._send_stream.close()
-
-
-@overload
-def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T) -> T: ...
-
-
-@overload
-def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: None = None) -> T | None: ...
-
-
-def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T | None = None) -> T | None:
-    """Safely decode serial response payload to target Protobuf message type. [SIL-2]"""
-    if isinstance(res, target_type):
-        return res
-    if isinstance(res, (bytes, bytearray)):
-        try:
-            return target_type.FromString(bytes(res))
-        except (ProtobufDecodeError, TypeError, ValueError) as exc:
-            logger.warning(
-                "Failed to decode serial response into protobuf",
-                target=target_type.__name__,
-                error=str(exc),
-            )
-            return default
-    return default

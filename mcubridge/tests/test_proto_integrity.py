@@ -229,7 +229,7 @@ def test_telemetry_routing_table_matches_schema_metadata() -> None:
 
 
 def test_pre_sync_command_set_matches_schema_metadata() -> None:
-    expected_names = {"CMD_LINK_SYNC_RESP", "CMD_LINK_RESET_RESP", "CMD_XOFF", "CMD_XON"}
+    expected_names = {"CMD_LINK_SYNC_RESP", "CMD_XOFF", "CMD_XON"}
     command_values = pb.Command.DESCRIPTOR.values
     actual_names = {
         command.name for command in command_values if command.GetOptions().Extensions[pb.cmd_opts].pre_sync_allowed
@@ -471,7 +471,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     mcu_handlers = {
         op.command_id: op.mcu_handler for op in protocol.OPERATIONS if op.command_id is not None and op.mcu_handler
     }
-    assert len(mcu_handlers) == 23
+    assert len(mcu_handlers) == 18
     for code, handler_path in mcu_handlers.items():
         assert isinstance(code, int)
         root_attr = handler_path.split(".", 1)[0]

@@ -21,28 +21,6 @@ void __attribute__((weak)) handle_error(const etl::exception&) {
 }
 }  // namespace etl
 
-namespace pw::log {
-
-using LogSink = void (*)(uint8_t level, pw::ConstByteSpan log_data);
-
-namespace internal {
-inline LogSink g_active_log_sink = nullptr;
-
-inline void AvrLogSinkTrampoline(uint8_t level, const uint8_t* log_data,
-                                 size_t size) {
-  g_active_log_sink(
-      level,
-      pw::ConstByteSpan(reinterpret_cast<const pw::byte*>(log_data), size));
-}
-}  // namespace internal
-
-inline void SetLogSink(LogSink sink) {
-  internal::g_active_log_sink = sink;
-  pw_log_avr_SetLogSink(&internal::AvrLogSinkTrampoline);
-}
-
-}  // namespace pw::log
-
 namespace {
 
 uint32_t NowMillis() {
@@ -365,11 +343,9 @@ void BridgeClass::_initializeRuntime() {
     setStream(*_stream);
   }
 
-  pw::log::SetLogSink(
-      [](uint8_t /*level*/, pw::ConstByteSpan log_data) {
-        (void)Bridge.sendLogStream(etl::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(log_data.data()),
-            log_data.size()));
+  pw_log_avr_SetLogSink(
+      [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
+        (void)Bridge.sendLogStream(etl::span<const uint8_t>(log_data, size));
       });
 
   if (_rpc_services_registered) return;

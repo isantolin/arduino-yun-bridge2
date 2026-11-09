@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
@@ -90,32 +89,6 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
     mock_serial.read_until.assert_called_once_with(protocol.FRAME_DELIMITER, protocol.MAX_SERIAL_FRAME_BYTES)
-
-
-async def test_feed_data_baudrate_negotiation_response(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    transport = SerialTransport(mock_config, mock_state, None)
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.baudrate = 9600
-    transport.serial = mock_serial
-    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(mock_config.serial_shared_secret, nonce)
-    transport.state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
-    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
-    transport.state.connection_fsm.start_negotiating()
-    fut: asyncio.Future[bool] = asyncio.Future()
-    transport.negotiation_future = fut
-    transport.negotiation_target_baudrate = mock_config.serial_baud
-
-    cleartext = protocol.encode_hdlc_rpc(Command.CMD_SET_BAUDRATE_RESP.value, b"", call_id=1)
-    frame = next(iter(FrameDecoder().process(cleartext)))
-    raw = ui_frame(
-        protocol.HDLC_ADDRESS_RPC,
-        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
-    )
-    await transport.feed_data(raw)
-    assert fut.done()
-    assert fut.result() is True
-    assert mock_serial.baudrate == 115200
 
 
 async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import os
 import time
 from typing import cast
@@ -64,18 +63,6 @@ async def test_clock_sync_service() -> None:
         assert res["is_synchronized"] is True
         assert state.clock_sync_count == 1
 
-        # Test MCU response handler via dispatch registry
-        handler = service.mcu_registry[pb.Command.CMD_CLOCK_SYNC_RESP]
-        res_sync = handler(
-            1,
-            pb.ClockSyncResponse(
-                host_time_us=now_us - 2000,
-                mcu_time_us=400000,
-            ),
-        )
-        if inspect.isawaitable(res_sync):
-            await res_sync
-        assert state.clock_sync_count == 2
     finally:
         service.cleanup()
 
@@ -359,10 +346,10 @@ async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
         state.connection_fsm.connect()
         state.mcu_capabilities = {"clock_sync": True}
 
-        # 1. Return raw serialized bytes from mock_serial
+        # 1. Return ClockSyncResponse from mock_serial
         t1 = time.time_ns() // 1000 - 500
         resp_pb = pb.ClockSyncResponse(host_time_us=t1, mcu_time_us=123456)
-        mock_serial.send.return_value = resp_pb.SerializeToString()
+        mock_serial.send.return_value = resp_pb
 
         res1 = await clock.sync_now()
         assert res1["is_synchronized"] is True

@@ -50,12 +50,10 @@ from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.serial")
 
-_LEGACY_RAW_REQUESTS: Final[frozenset[int]] = frozenset(
+_HANDSHAKE_RAW_REQUESTS: Final[frozenset[int]] = frozenset(
     {
         protocol.Command.CMD_LINK_SYNC.value,
         protocol.Command.CMD_LINK_RESET.value,
-        protocol.Command.CMD_SET_BAUDRATE.value,
-        protocol.Command.CMD_FILE_READ.value,
     }
 )
 _STREAM_EVENT_QUEUE_MAX: Final[int] = 64
@@ -118,8 +116,6 @@ class SerialTransport:
         self.serial: serial.Serial | None = None
 
         self.stop_event = asyncio.Event()
-        self.negotiation_future: asyncio.Future[bool] | None = None
-        self.negotiation_target_baudrate: int | None = None
         self.consecutive_crc_errors = 0
         self.tx_sequence_id = 0
 
@@ -403,7 +399,7 @@ class SerialTransport:
             rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
             is_client_rpc = (
                 spec is not None
-                and spec.command_id not in _LEGACY_RAW_REQUESTS
+                and spec.command_id not in _HANDSHAKE_RAW_REQUESTS
                 and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
                 and rpc_packet_key in self._active_rpc_packet_ids
             )
@@ -446,17 +442,6 @@ class SerialTransport:
                     pkt.method_id,
                     seq_id,
                 )
-
-            if (
-                self.state.connection_fsm.negotiating_baud.is_active
-                and self.negotiation_future
-                and not self.negotiation_future.done()
-                and self.negotiation_target_baudrate is not None
-                and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
-            ):
-                self.switch_local_baudrate(self.negotiation_target_baudrate)
-                self.negotiation_future.set_result(True)
-                return
 
             # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
             if isinstance(payload, ProtobufMessage) and not payload.IsInitialized():
@@ -503,7 +488,7 @@ class SerialTransport:
             and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name
-            and spec.command_id not in _LEGACY_RAW_REQUESTS
+            and spec.command_id not in _HANDSHAKE_RAW_REQUESTS
         ):
             return await self._send_rpc(spec, payload, timeout)
 
@@ -553,7 +538,7 @@ class SerialTransport:
         serial_port = self.serial
         if not serial_port or not serial_port.is_open:
             return False
-        if not self.state.serial_tx_allowed.is_set():
+        if not self.state.serial_tx_allowed.is_set() and not self.state.connection_fsm.negotiating_baud.is_active:
             try:
                 async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
@@ -772,11 +757,7 @@ class SerialTransport:
         if not self.serial:
             return False
 
-        is_baudrate_negotiation = (
-            command_id == protocol.Command.CMD_SET_BAUDRATE.value
-            and self.state.connection_fsm.negotiating_baud.is_active
-        )
-        if not self.state.serial_tx_allowed.is_set() and not is_baudrate_negotiation:
+        if not self.state.serial_tx_allowed.is_set():
             try:
                 async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
@@ -857,13 +838,14 @@ class SerialTransport:
         payload = pb.SetBaudratePacket(baudrate=target_baud)
         was_synchronized = self.state.is_synchronized
         self.state.connection_fsm.start_negotiating()
-        self.negotiation_target_baudrate = target_baud
         try:
-            self.negotiation_future = asyncio.get_running_loop().create_future()
-            if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
+            if not await self.send(
+                protocol.Command.CMD_SET_BAUDRATE.value,
+                payload,
+                timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+            ):
                 return False
-            async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
-                await self.negotiation_future
+            self.switch_local_baudrate(target_baud)
             await asyncio.sleep(protocol.BAUDRATE_CHANGE_DELAY_MS / 1000)
             if was_synchronized:
                 self.state.connection_fsm.synchronize()
@@ -872,8 +854,6 @@ class SerialTransport:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
-            self.negotiation_future = None
-            self.negotiation_target_baudrate = None
             with anyio.CancelScope(shield=True):
                 if self.state.connection_fsm.negotiating_baud.is_active:
                     self.state.connection_fsm.connect()

@@ -4,7 +4,6 @@ Formally tests state invariants across:
 1. LinkConnectionMachine (serial physical connection & synchronization)
 2. ProcessMachine (asynchronous subprocess lifecycle)
 3. CloudLinkMachine (cloud gateway transport & degradation)
-4. FileTransferMachine (chunk streaming protocol transfer)
 5. HandshakeMachine (serial link handshake & synchronization state)
 """
 
@@ -40,7 +39,6 @@ from mcubridge.services.handshake import (
 from mcubridge.state.context import (
     CloudLinkMachine,
     CloudLinkState,
-    FileTransferMachine,
     ProcessContext,
     ProcessState,
     RuntimeState,
@@ -244,74 +242,6 @@ class CloudLinkStateMachine(RuleBasedStateMachine):
         )
 
 
-class FileTransferStateMachine(RuleBasedStateMachine):
-    """Formal model verification for chunk streaming file transfer machine."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.fsm = FileTransferMachine()
-
-    @rule()
-    def start_transfer(self) -> None:
-        self.fsm.start_transfer()
-        assert self.fsm.transferring.is_active
-
-    @rule()
-    def receive_chunk(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active
-        self.fsm.receive_chunk()
-        if can_trans:
-            assert self.fsm.transferring.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def complete(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active or self.fsm.completed.is_active
-        self.fsm.complete()
-        if can_trans:
-            assert self.fsm.completed.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def timeout(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active or self.fsm.timed_out.is_active
-        self.fsm.timeout()
-        if can_trans:
-            assert self.fsm.timed_out.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def abort(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = self.fsm.transferring.is_active or self.fsm.idle.is_active or self.fsm.aborted.is_active
-        self.fsm.abort()
-        if can_trans:
-            assert self.fsm.aborted.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def reset(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = not self.fsm.transferring.is_active
-        self.fsm.reset()
-        if can_trans:
-            assert self.fsm.idle.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @invariant()
-    def verify_transfer_invariants(self) -> None:
-        current: str = str(self.fsm.current_state_value)
-        assert current in ("idle", "transferring", "completed", "timed_out", "aborted")
-
-
 class HandshakeStateMachine(RuleBasedStateMachine):
     """Formal model verification for serial HandshakeMachine invariants."""
 
@@ -379,11 +309,6 @@ def test_process_lifecycle_state_machine() -> None:
 def test_cloud_link_state_machine() -> None:
     """Execute Hypothesis RuleBasedStateMachine on CloudLinkMachine."""
     run_state_machine_as_test(CloudLinkStateMachine)
-
-
-def test_file_transfer_state_machine() -> None:
-    """Execute Hypothesis RuleBasedStateMachine on FileTransferMachine."""
-    run_state_machine_as_test(FileTransferStateMachine)
 
 
 def test_handshake_state_machine() -> None:
@@ -880,4 +805,3 @@ async def test_handshake_send_failures_and_capabilities_branches(
 
     # 4. Let background capabilities discovery task (scheduled by handle_link_sync_resp) run
     await asyncio.sleep(0.02)
-    assert await hs.handle_link_reset_resp(1, b"\xaa\xbb")

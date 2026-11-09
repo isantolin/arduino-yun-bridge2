@@ -120,13 +120,6 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     sent = stream.sent_message
     assert sent.value == 1
 
-    # DigitalRead (bytes serialization)
-    mock_serial.send.return_value = pb.DigitalReadResponse(value=0).SerializeToString()
-    stream = _make_mock_stream(pb.PinRead(pin=13))
-    await local_svc.DigitalRead(stream)
-    sent = stream.sent_message
-    assert sent.value == 0
-
     # DigitalRead (no serial)
     service.serial = None
     stream = _make_mock_stream(pb.PinRead(pin=13))
@@ -305,12 +298,6 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
     sent = stream.sent_message
     assert sent.major == 2
 
-    mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=6).SerializeToString()
-    stream = _make_mock_stream(pb.SubscribeRequest())
-    await local_svc.GetVersion(stream)
-    sent = stream.sent_message
-    assert sent.minor == 8
-
     mock_serial.send.return_value = 12345  # unexpected type
     stream = _make_mock_stream(pb.SubscribeRequest())
     await local_svc.GetVersion(stream)
@@ -332,12 +319,6 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
     await local_svc.GetFreeMemory(stream)
     sent = stream.sent_message
     assert sent.value == 1024
-
-    mock_serial.send.return_value = pb.FreeMemoryResponse(value=2048).SerializeToString()
-    stream = _make_mock_stream(pb.SubscribeRequest())
-    await local_svc.GetFreeMemory(stream)
-    sent = stream.sent_message
-    assert sent.value == 2048
 
     mock_serial.send.return_value = "invalid"
     stream = _make_mock_stream(pb.SubscribeRequest())
@@ -386,7 +367,7 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     await local_svc.SubscribeConsole(_make_mock_stream(None))
 
     # AnalogRead branches
-    mock_serial.send.return_value = pb.AnalogReadResponse(value=100).SerializeToString()
+    mock_serial.send.return_value = pb.AnalogReadResponse(value=100)
     stream = _make_mock_stream(pb.PinRead(pin=0))
     await local_svc.AnalogRead(stream)
     assert stream.sent_message.value == 100
@@ -450,7 +431,7 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     assert stream.sent_message.status == "error"
 
     # SPI branches (bytes, unexpected, no serial)
-    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"\x01").SerializeToString()
+    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"\x01")
     service.serial = mock_serial
     stream = _make_mock_stream(pb.SpiTransfer(data=b"\x02"))
     await local_svc.SpiTransfer(stream)
@@ -685,15 +666,6 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
 
     await local_svc.Publish(mock_stream_broken.as_stream())
     assert b"corr-timeout-1" not in svc.ipc_requests
-
-
-def test_parse_serial_response_corrupt_bytes() -> None:
-    from mcubridge.protocol.structures import parse_serial_response
-
-    default_resp = pb.GenericResponse(message="fallback")
-    parsed = parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
-    assert parsed == default_resp
-    assert parsed.message == "fallback"
 
 
 def _make_property_service() -> tuple[BridgeService, MockLocalBridgeClient, AsyncMock]:

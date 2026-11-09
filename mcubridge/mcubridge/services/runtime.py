@@ -10,7 +10,6 @@ import secrets
 import shlex
 import time
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -58,7 +57,6 @@ from ..protocol.structures import (
 )
 from ..state.context import (
     DaemonLifecycleMachine,
-    FileTransferMachine,
     ProcessContext,
     RuntimeState,
     terminate_pid_tree,
@@ -73,7 +71,6 @@ from .ubus import UbusService, format_ubus_bytes
 
 __all__ = [
     "BridgeService",
-    "PendingMcuRead",
 ]
 
 from ..transport.serial import SerialTransport
@@ -81,13 +78,6 @@ from ..transport.serial import SerialTransport
 logger = structlog.get_logger("mcubridge.service")
 
 _STATUS_VALUES: Final = {s.value for s in Status}
-
-
-@dataclass
-class PendingMcuRead:
-    future: asyncio.Future[bytes]
-    buffer: bytearray = field(default_factory=bytearray)
-    fsm: FileTransferMachine = field(default_factory=FileTransferMachine)
 
 
 class BridgeService:
@@ -101,8 +91,6 @@ class BridgeService:
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
-    _mcu_read_lock: asyncio.Lock
-    pending_mcu_read: PendingMcuRead | None
     _process_slots: asyncio.Semaphore
     _cloud_publish_lock: asyncio.Lock
     cloud_spool: LmdbDeque | None
@@ -160,7 +148,7 @@ class BridgeService:
             logger_=logger,
         )
 
-        self._storage_lock, self._mcu_read_lock, self.pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
+        self._storage_lock = asyncio.Lock()
         self._process_slots = asyncio.Semaphore(state.process_max_concurrent)
         self._cloud_publish_lock = asyncio.Lock()
         self.cloud_spool = None
@@ -443,8 +431,6 @@ class BridgeService:
     async def on_serial_disconnected(self) -> None:
         self.state.connection_fsm.disconnect()
         self.ubus_service.notify("connection_state", {"connected": False, "synchronized": False})
-        for q in (self.state.pending_digital_reads, self.state.pending_analog_reads):
-            q.clear()
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         self.handshake.clear_handshake_expectations()
@@ -704,20 +690,8 @@ class BridgeService:
     async def file_read(
         self,
         path_or_req: str | pb.FileRead | int,
-        p: pb.FileRead | pb.FileReadResponse | None = None,
+        p: pb.FileRead | None = None,
     ) -> pb.FileReadResponse:
-        if isinstance(p, pb.FileReadResponse):
-            if self.pending_mcu_read:
-                if p.content:
-                    self.pending_mcu_read.fsm.receive_chunk()
-                    self.pending_mcu_read.buffer.extend(p.content)
-                elif not self.pending_mcu_read.future.done():
-                    self.pending_mcu_read.fsm.complete()
-                    completed_content = bytes(self.pending_mcu_read.buffer)
-                    self.pending_mcu_read.buffer.clear()
-                    self.pending_mcu_read.future.set_result(completed_content)
-                return p
-            return pb.FileReadResponse()
         if p is not None:
             serial = self.serial
             safe_path = self._get_safe_path(p.path)
@@ -751,33 +725,15 @@ class BridgeService:
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
             serial = self.serial
-            if not serial:
-                content = b""
-            else:
-                async with self._mcu_read_lock:
-                    pending = PendingMcuRead(asyncio.get_running_loop().create_future())
-                    pending.fsm.start_transfer()
-                    self.pending_mcu_read = pending
-                    clean_path = clean.removeprefix("mcu/")
-                    if not await serial.send_raw(
-                        Command.CMD_FILE_READ.value,
-                        pb.FileRead(path=clean_path),
-                    ):
-                        pending.fsm.abort()
-                        logger.error("MCU file read dispatch failed")
-                        self.pending_mcu_read = None
-                        content = b""
-                    else:
-                        try:
-                            timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
-                            async with asyncio.timeout(timeout_seconds):
-                                content = await pending.future
-                        except TimeoutError:
-                            pending.fsm.timeout()
-                            logger.error("Timed out waiting for MCU file read response")
-                            content = b""
-                        finally:
-                            self.pending_mcu_read = None
+            res = (
+                await serial.send(
+                    Command.CMD_FILE_READ.value,
+                    pb.FileRead(path=clean.removeprefix("mcu/")),
+                )
+                if serial
+                else None
+            )
+            content = res.content if isinstance(res, pb.FileReadResponse) else b""
         else:
             safe_data = await self._safe_file_read(path)
             content = safe_data if safe_data is not None else b""
@@ -1037,12 +993,10 @@ class BridgeService:
     async def _fetch_mcu_version(self) -> pb.VersionResponse | None:
         serial = self.serial
         res = (await serial.send(Command.CMD_GET_VERSION.value, b"")) if serial else None
-        if not isinstance(res, (pb.VersionResponse, bytes, bytearray)):
+        if not isinstance(res, pb.VersionResponse):
             return None
-        resp = structures.parse_serial_response(res, pb.VersionResponse, None)
-        if resp is not None:
-            self.state.mcu_version = (resp.major, resp.minor, resp.patch)
-        return resp
+        self.state.mcu_version = (res.major, res.minor, res.patch)
+        return res
 
     async def request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
         if await self._fetch_mcu_version() is None:
@@ -1331,7 +1285,7 @@ class BridgeService:
     ) -> T:
         serial = self.serial
         res = (await serial.send(cmd.value, payload)) if serial else None
-        return structures.parse_serial_response(res, resp_type, resp_type())
+        return res if isinstance(res, resp_type) else resp_type()
 
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
         spec = protocol.BY_NAME.get(method_name)

@@ -56,7 +56,7 @@ def test_commands_are_derived_from_protobuf_and_sorted() -> None:
     assert values == sorted(set(values))
 
     by_name: dict[str, dict[str, Any]] = {str(c["name"]): c for c in commands}
-    assert by_name["CMD_GET_VERSION"]["response_command"] == "CMD_GET_VERSION_RESP"
+    assert by_name["CMD_LINK_SYNC"]["response_command"] == "CMD_LINK_SYNC_RESP"
     assert by_name["CMD_GET_VERSION"]["auth_field"] == "system_version"
     assert by_name["CMD_MAILBOX_READ_RESP"]["pb_message"] == "MailboxReadResponse"
     assert by_name["CMD_MAILBOX_READ_RESP"]["request_command"] == "CMD_MAILBOX_READ"

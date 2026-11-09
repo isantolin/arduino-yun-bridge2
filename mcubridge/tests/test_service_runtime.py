@@ -658,7 +658,9 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
 
     svc.serial = mock_serial
     svc.state.connection_fsm.synchronize()
-    await svc.handle_mcu_frame(Command.CMD_GET_VERSION_RESP.value, 1, pb.VersionResponse().SerializeToString())
+    await svc.handle_mcu_frame(
+        Command.CMD_DATASTORE_GET_RESP.value, 1, pb.DatastoreGetResponse().SerializeToString()
+    )
     assert not mock_serial.send.called
 
     await svc.handle_mcu_frame(9999, 1, b"")
@@ -671,8 +673,8 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
         called_sync.append(_seq)
         return {"status": "ok"}
 
-    svc.mcu_registry[Command.CMD_GET_CAPABILITIES_RESP.value] = _sync_handler
-    await svc.handle_mcu_frame(Command.CMD_GET_CAPABILITIES_RESP.value, 2, b"")
+    svc.mcu_registry[Command.CMD_DATASTORE_GET_RESP.value] = _sync_handler
+    await svc.handle_mcu_frame(Command.CMD_DATASTORE_GET_RESP.value, 2, b"")
     assert called_sync == [2]
 
     # Test handler returning False

@@ -140,7 +140,7 @@ async def test_logging_not_debug_branches(
 
     # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
-    cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION_RESP.value, payload, call_id=1)
+    cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION.value, payload, call_id=1)
     frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,

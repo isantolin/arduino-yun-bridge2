@@ -446,17 +446,12 @@ async def test_handshake_capabilities_retry(
 
     attempts = 0
 
-    async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
+    async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool | bytes:
         nonlocal attempts
         attempts += 1
-        fut: Any = manager.capabilities_future
         if attempts < 3:
-            if fut is not None and not fut.done():
-                fut.set_exception(TimeoutError("mock timeout"))
-        elif attempts == 3:
-            # [SIL-2] Use valid empty Capabilities payload (serialized empty protobuf)
-            asyncio.create_task(manager.handle_capabilities_resp(1, pb.Capabilities().SerializeToString()))
-        return True
+            return False
+        return pb.Capabilities().SerializeToString()
 
     send_frame.side_effect = mock_send_frame
 
@@ -477,11 +472,8 @@ async def test_handshake_capabilities_corrupt_payload(
 
     timing.response_timeout_ms = 200
 
-    async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bool:
-        fut: Any = manager.capabilities_future
-        if fut is not None and not fut.done():
-            asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
-        return True
+    async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bytes:
+        return b"\x80"
 
     send_frame.side_effect = mock_send_frame_corrupt
 
@@ -676,18 +668,19 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     assert runtime_state.is_synchronized is True
 
 
-async def test_handshake_capabilities_resp_future_none(
+async def test_handshake_capabilities_protobuf_message(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
+    caps = pb.Capabilities(ver=2, watchdog=True)
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
         serial_timing=pb.HandshakeConfig(),
-        send_frame=AsyncMock(return_value=True),
+        send_frame=AsyncMock(return_value=caps),
         enqueue_cloud=AsyncMock(),
     )
-    hs.capabilities_future = None
-    assert await hs.handle_capabilities_resp(1, b"") is True
+    assert await hs.fetch_capabilities() is True
+    assert runtime_state.mcu_capabilities == caps
 
 
 async def test_handshake_fsm_state_override_and_unexpected_resp(

@@ -483,8 +483,15 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
+        is_server_response = (
+            spec is not None
+            and spec.response_type is not None
+            and spec.response_type is not spec.request_type
+            and isinstance(payload, spec.response_type)
+        )
         if (
             spec is not None
+            and not is_server_response
             and spec.paired_request_id is None
             and spec.service_name
             and spec.method_name

@@ -484,7 +484,7 @@ class BridgeService:
                 res = handler(sequence_id, p)
                 if inspect.isawaitable(res):
                     await res
-            elif spec is None or spec.paired_request_id is None:
+            else:
                 self.state.unknown_command_count += 1
                 self.state.unknown_command_last_id = command_id
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
@@ -622,7 +622,7 @@ class BridgeService:
         val = res if isinstance(res, bytes) else b""
         resp = pb.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
         if p is not None and self.serial:
-            await self.serial.send(Command.CMD_DATASTORE_GET_RESP.value, resp)
+            await self.serial.send(Command.CMD_DATASTORE_GET.value, resp)
         return resp
 
     # --- Mailbox Subsystem ---
@@ -651,14 +651,14 @@ class BridgeService:
             content = b""
         resp = pb.MailboxReadResponse(content=content)
         if from_mcu and self.serial:
-            await self.serial.send(Command.CMD_MAILBOX_READ_RESP.value, resp)
+            await self.serial.send(Command.CMD_MAILBOX_READ.value, resp)
         return resp
 
     async def mailbox_available(self, _seq: int, _p: Any) -> bool:
         return bool(
             self.serial
             and await self.serial.send(
-                Command.CMD_MAILBOX_AVAILABLE_RESP.value,
+                Command.CMD_MAILBOX_AVAILABLE.value,
                 pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
             )
         )
@@ -708,12 +708,12 @@ class BridgeService:
                 async with await anyio.Path(safe_path).open("rb") as source:
                     while chunk := await source.read(chunk_size):
                         response = pb.FileReadResponse(content=chunk)
-                        if not await serial.send(Command.CMD_FILE_READ_RESP.value, response):
+                        if not await serial.send(Command.CMD_FILE_READ.value, response):
                             logger.error("MCU file read response send failed", path=p.path)
                             return pb.FileReadResponse()
                 # Empty content is the protocol's explicit end-of-file marker.
                 if not await serial.send(
-                    Command.CMD_FILE_READ_RESP.value,
+                    Command.CMD_FILE_READ.value,
                     pb.FileReadResponse(content=b""),
                 ):
                     logger.error("MCU file read end marker send failed", path=p.path)
@@ -826,7 +826,7 @@ class BridgeService:
         resp = pb.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:
             await (
-                self.serial.send(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, resp)
+                self.serial.send(Command.CMD_PROCESS_RUN_ASYNC.value, resp)
                 if pid
                 else self.send_mcu_error("Exec failed")
             )
@@ -884,7 +884,7 @@ class BridgeService:
                         stderr_truncated=te,
                     )
         if p is not None and self.serial:
-            await self.serial.send(Command.CMD_PROCESS_POLL_RESP.value, resp)
+            await self.serial.send(Command.CMD_PROCESS_POLL.value, resp)
         return resp
 
     def release_process(self, pid: int) -> ProcessContext | None:

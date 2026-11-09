@@ -1322,3 +1322,12 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     enqueue_fn(pb.PinUpdateEvent(pin=1, value=1, timestamp_micros=1))
     await transport.reset()
     assert _private_attribute(transport, "_stream_call") is None
+
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=16)
+    mock_serial.flush = MagicMock()
+    transport.serial = mock_serial
+    runtime_config.serial_shared_secret = b""
+    runtime_state.link_cipher = None
+    assert await transport.send(Command.CMD_DATASTORE_GET.value, pb.DatastoreGetResponse(value=b"val")) is True

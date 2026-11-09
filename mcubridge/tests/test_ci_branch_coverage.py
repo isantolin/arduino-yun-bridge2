@@ -230,7 +230,7 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     service = MagicMock()
     service.handle_mcu_frame = AsyncMock()
     service.mcu_registry = {
-        protocol.Command.CMD_LINK_SYNC_RESP.value: AsyncMock(),
+        protocol.Command.CMD_LINK_SYNC.value: AsyncMock(),
     }
     transport = SerialTransport(runtime_config, runtime_state, service)
     mock_serial = MagicMock()
@@ -253,12 +253,13 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
 
     # 3. Pre-handshake: LinkSync response frame is accepted
     sync_resp_raw = protocol.encode_hdlc_rpc(
-        protocol.Command.CMD_LINK_SYNC_RESP.value,
+        protocol.Command.CMD_LINK_SYNC.value,
         pb.LinkSync(
             nonce=b"\x01" * protocol.HANDSHAKE_NONCE_LENGTH,
             tag=b"\x02" * protocol.HANDSHAKE_TAG_LENGTH,
         ),
         call_id=2,
+        packet_type=1,
     )
     sync_resp_frame = next(iter(FrameDecoder().process(sync_resp_raw)))
     await transport.process_hdlc_frame(sync_resp_frame)

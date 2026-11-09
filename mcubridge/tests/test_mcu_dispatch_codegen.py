@@ -55,10 +55,10 @@ def test_commands_are_derived_from_protobuf_and_sorted() -> None:
     assert values == sorted(set(values))
 
     by_name: dict[str, dict[str, Any]] = {str(c["name"]): c for c in commands}
-    assert by_name["CMD_LINK_SYNC"]["response_command"] == "CMD_LINK_SYNC_RESP"
+    assert by_name["CMD_LINK_SYNC"]["pre_sync_allowed"] is True
+    assert by_name["CMD_LINK_SYNC"]["pb_message"] == "LinkSync"
+    assert by_name["CMD_LINK_SYNC"]["mcu_handler"] == "handshake.handle_link_sync_resp"
     assert by_name["CMD_GET_VERSION"]["auth_field"] == "system_version"
-    assert by_name["CMD_LINK_SYNC_RESP"]["pb_message"] == "LinkSync"
-    assert by_name["CMD_LINK_SYNC_RESP"]["request_command"] == "CMD_LINK_SYNC"
 
 
 def test_pigweed_rpc_method_mappings() -> None:
@@ -100,6 +100,7 @@ def test_pigweed_rpc_method_mappings() -> None:
     assert ds_put.method_name == "Put"
 
 
+
 def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
     """Every MCU-facing Pigweed RPC method must be bound to exactly one CMD_* ID."""
     from mcubridge.protocol import protocol
@@ -130,7 +131,6 @@ def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
                 assert resolved.method_name == method.name
 
     assert seen_commands, "no MCU-facing Pigweed RPC methods were audited"
-
 
 def test_removed_command_metadata_is_absent_not_reserved() -> None:
     descriptor_file = descriptor_pb2.FileDescriptorProto()

@@ -229,7 +229,7 @@ def test_telemetry_routing_table_matches_schema_metadata() -> None:
 
 
 def test_pre_sync_command_set_matches_schema_metadata() -> None:
-    expected_names = {"CMD_LINK_SYNC_RESP", "CMD_XOFF", "CMD_XON"}
+    expected_names = {"CMD_LINK_SYNC", "CMD_XOFF", "CMD_XON"}
     command_values = pb.Command.DESCRIPTOR.values
     actual_names = {
         command.name for command in command_values if command.GetOptions().Extensions[pb.cmd_opts].pre_sync_allowed
@@ -272,10 +272,6 @@ def test_command_specs_multidimensional_integrity() -> None:
             msg_spec = protocol.get_operation(opts.pb_message)
             assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
-        if opts.response_command:
-            assert spec.expected_responses == frozenset({getattr(protocol.Command, opts.response_command).value})
-        if spec.paired_request_id:
-            assert any(s.expected_responses and spec.command_id in s.expected_responses for s in protocol.OPERATIONS)
 
 
 def test_daemon_metric_registry_matches_protobuf_field_options() -> None:

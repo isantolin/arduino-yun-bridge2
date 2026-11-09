@@ -68,10 +68,10 @@ async def test_handle_mcu_frame_handshake_routing(
 ) -> None:
     service, _state, _serial = runtime_setup
     mock_sync_resp = AsyncMock(return_value=True)
-    service.mcu_registry[Command.CMD_LINK_SYNC_RESP.value] = mock_sync_resp
+    service.mcu_registry[Command.CMD_LINK_SYNC.value] = mock_sync_resp
 
     sync_pb = pb.LinkSync(nonce=b"123456789012", tag=b"tag")
-    await service.handle_mcu_frame(Command.CMD_LINK_SYNC_RESP.value, 1, sync_pb.SerializeToString())
+    await service.handle_mcu_frame(Command.CMD_LINK_SYNC.value, 1, sync_pb.SerializeToString())
     mock_sync_resp.assert_awaited_once()
 
 

@@ -137,7 +137,8 @@ async def test_gpio_service() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.cancel_pin_stream = MagicMock(return_value=True)
+    cancel_pin_stream = MagicMock(return_value=True)
+    mock_serial.cancel_pin_stream = cancel_pin_stream
     service = BridgeService(config, state, mock_serial)
 
     try:
@@ -174,13 +175,13 @@ async def test_gpio_service() -> None:
         assert res_second["status"] == "ok"
         res_dis_first = await gpio.subscribe_pin(14, enabled=False)
         assert res_dis_first["status"] == "ok"
-        mock_serial.cancel_pin_stream.assert_not_called()
+        cancel_pin_stream.assert_not_called()
 
         # Disable last remaining subscription -> explicitly cancels pin stream
         res_dis = await gpio.subscribe_pin(13, enabled=False)
         assert res_dis["status"] == "ok"
         assert 13 not in state.pin_subscriptions
-        mock_serial.cancel_pin_stream.assert_called_once()
+        cancel_pin_stream.assert_called_once()
 
         # Test resubscribe_pins on reconnection
         state.pin_subscriptions[5] = {

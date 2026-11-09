@@ -27,7 +27,7 @@ from google.protobuf.message import DecodeError as ProtobufDecodeError, Message 
 from pw_hdlc.decode import FrameDecoder
 from pw_rpc import callback_client, packets as pw_packets
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
+from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
 
@@ -971,8 +971,7 @@ class SerialTransport:
         if rpc_method is None:
             return False
         method_name = f"{spec.service_name}/{spec.method_name}"
-        method_desc = getattr(rpc_method, "method", None)
-        if getattr(method_desc, "type", None) == PwRpcMethod.Type.SERVER_STREAMING:
+        if spec.command_id == protocol.Command.CMD_PIN_SUBSCRIBE.value:
             return await self._invoke_server_stream_rpc(rpc_method, request, spec, method_name)
         effective_timeout = timeout if timeout is not None else self._response_timeout
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)

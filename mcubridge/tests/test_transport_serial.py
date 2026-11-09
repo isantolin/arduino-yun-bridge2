@@ -278,7 +278,7 @@ async def test_serial_transport_send_failure_status_code(
     transport.serial = mock_serial
 
     send_task = asyncio.create_task(
-        transport.send(Command.CMD_PIN_SUBSCRIBE.value, pb.PinSubscribeRequest(pin=7, enabled=True))
+        transport.send(Command.CMD_FILE_READ.value, pb.FileRead(path="/tmp/test"))
     )
     await asyncio.sleep(0.01)
     transport.correlate_frame(Status.ERROR.value, b"")
@@ -1474,13 +1474,13 @@ async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection()
                     call_id=pkt.call_id,
                     status=8,
                 ).SerializeToString()
-                asyncio.get_running_loop().create_task(
-                    transport.feed_data(
-                        ui_frame(
-                            protocol.HDLC_ADDRESS_RPC,
-                            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, rej),
-                        )
-                    )
+                rej_frame = ui_frame(
+                    protocol.HDLC_ADDRESS_RPC,
+                    mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, rej),
+                )
+                cast(Any, asyncio.get_running_loop()).call_soon(
+                    asyncio.create_task,
+                    transport.feed_data(rej_frame),
                 )
 
         transport.rpc_client = PwRpcClient(

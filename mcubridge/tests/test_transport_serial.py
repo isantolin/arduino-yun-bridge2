@@ -434,11 +434,14 @@ async def test_serial_transport_edge_branches(
     assert res_raw is True
     runtime_state.serial_tx_allowed.set()
 
-    # 4. negotiate_baudrate when send fails vs succeeds
+    # 4. negotiate_baudrate when send fails, raises, or succeeds
     negotiate: Callable[[int], Awaitable[bool]] = transport.negotiate_baudrate
     mocker.patch.object(transport, "send", AsyncMock(return_value=False))
     res_neg_fail = await negotiate(115200)
     assert res_neg_fail is False
+
+    mocker.patch.object(transport, "send", AsyncMock(side_effect=OSError("Write failed")))
+    assert await negotiate(115200) is False
 
     mocker.patch.object(transport, "send", AsyncMock(return_value=True))
     res_neg_ok = await negotiate(115200)

@@ -1258,9 +1258,7 @@ enum Command {
     pb_message: "LinkSync"
     mcu_handler: "handshake.handle_link_sync_resp"
   }];
-  CMD_LINK_RESET = 70 [(cmd_opts) = {
-    description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
-  }];
+  CMD_LINK_RESET = 70 [(cmd_opts) = {description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."}];
   CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {response_command: "CMD_GET_CAPABILITIES_RESP"}];
   CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
     cloud_topic: "system/capabilities/value"

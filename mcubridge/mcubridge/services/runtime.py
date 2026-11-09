@@ -143,7 +143,7 @@ class BridgeService:
             config=config,
             state=state,
             serial_timing=derive_serial_timing(config),
-            send_frame=serial.send_raw,
+            send_frame=serial.send,
             enqueue_cloud=self.enqueue_cloud,
             logger_=logger,
         )

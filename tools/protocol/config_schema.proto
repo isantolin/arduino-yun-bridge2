@@ -1232,22 +1232,8 @@ enum Status {
 
 enum Command {
   CMD_UNSPECIFIED = 0;
-  CMD_GET_VERSION = 64 [(cmd_opts) = {
-    response_command: "CMD_GET_VERSION_RESP"
-    auth_field: "system_version"
-  }];
-  CMD_GET_VERSION_RESP = 65 [(cmd_opts) = {
-    cloud_topic: "system/version/value"
-    pb_message: "VersionResponse"
-  }];
-  CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {
-    response_command: "CMD_GET_FREE_MEMORY_RESP"
-    auth_field: "system_free_memory"
-  }];
-  CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = {
-    cloud_topic: "system/free_memory/value"
-    pb_message: "FreeMemoryResponse"
-  }];
+  CMD_GET_VERSION = 64 [(cmd_opts) = {auth_field: "system_version"}];
+  CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {auth_field: "system_free_memory"}];
   CMD_LINK_SYNC = 68 [(cmd_opts) = {
     description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
     pb_message: "LinkSync"
@@ -1259,12 +1245,7 @@ enum Command {
     mcu_handler: "handshake.handle_link_sync_resp"
   }];
   CMD_LINK_RESET = 70 [(cmd_opts) = {description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."}];
-  CMD_GET_CAPABILITIES = 72 [(cmd_opts) = {response_command: "CMD_GET_CAPABILITIES_RESP"}];
-  CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = {
-    cloud_topic: "system/capabilities/value"
-    pb_message: "Capabilities"
-    mcu_handler: "handshake.handle_capabilities_resp"
-  }];
+  CMD_GET_CAPABILITIES = 72;
   CMD_SET_BAUDRATE = 74 [(cmd_opts) = {
     requires_ack: true
     pb_message: "SetBaudratePacket"
@@ -1402,13 +1383,7 @@ enum Command {
   }];
   CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
     pb_message: "SpiTransfer"
-    response_command: "CMD_SPI_TRANSFER_RESP"
     auth_field: "spi_transfer"
-  }];
-  CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = {
-    cloud_topic: "spi/transfer/resp"
-    pb_message: "SpiTransferResponse"
-    mcu_handler: "publish_mcu_message"
   }];
   CMD_SPI_END = 179 [(cmd_opts) = {
     requires_ack: true

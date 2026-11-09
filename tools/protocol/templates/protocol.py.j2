@@ -205,17 +205,14 @@ class OperationSpec:
     rpc_name: str | None = None
     rpc_topic: str | None = None
     pb_class: type[Any] | None = None
-    payload_field: str | None = None
     cloud_topic: str | None = None
     auth_field: str | None = None
-    requires_ack: bool = False
     pre_sync_allowed: bool = False
     request_type: type[ProtobufMessage] | None = None
     response_type: type[ProtobufMessage] | None = None
     default_factory: Callable[[], ProtobufMessage] | None = None
     handler_name: str | None = None
     mcu_handler: str | None = None
-    mcu_unsupported_reason: str | None = None
     metrics_blob_field: str | None = None
     cardinality: Cardinality = Cardinality.UNARY_UNARY
     is_custom_handler: bool = False
@@ -237,6 +234,8 @@ class OperationSpec:
                 object.__setattr__(self, "response_type", pw_m.response_type)
             if self.request_type is None and self.pb_class in (None, pw_m.request_type):
                 object.__setattr__(self, "request_type", pw_m.request_type)
+        if self.pb_class is None and self.request_type not in (None, pb.SubscribeRequest):
+            object.__setattr__(self, "pb_class", self.request_type)
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,17 +270,11 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- if op.pb_class %}
         pb_class={{ op.pb_class }},
         {%- endif %}
-        {%- if op.payload_field %}
-        payload_field={{ op.payload_field|tojson }},
-        {%- endif %}
         {%- if op.cloud_topic %}
         cloud_topic={{ op.cloud_topic|tojson }},
         {%- endif %}
         {%- if op.auth_field %}
         auth_field={{ op.auth_field|tojson }},
-        {%- endif %}
-        {%- if op.requires_ack %}
-        requires_ack=True,
         {%- endif %}
         {%- if op.pre_sync_allowed %}
         pre_sync_allowed=True,
@@ -300,9 +293,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- endif %}
         {%- if op.mcu_handler %}
         mcu_handler={{ op.mcu_handler|tojson }},
-        {%- endif %}
-        {%- if op.mcu_unsupported_reason %}
-        mcu_unsupported_reason=STATUS_REASON_{{ op.mcu_unsupported_reason|upper }},
         {%- endif %}
         {%- if op.metrics_blob_field %}
         metrics_blob_field={{ op.metrics_blob_field|tojson }},
@@ -567,25 +557,15 @@ def build_mcu_dispatch(
     target: Any,
     *,
     status_handler: Callable[..., Any] | None = None,
-    unsupported_handler: Callable[..., Any] | None = None,
 ) -> McuDispatchTable:
     """Build O(1) MCU dispatch table from Protocol SSOT. [SIL-2]"""
     status_fn = status_handler or getattr(target, "handle_mcu_status", None)
-    unsupp_fn = unsupported_handler or getattr(target, "unsupported_mcu_request", None)
     dispatch: McuDispatchTable = {}
     if status_fn is not None:
         for s in Status:
             dispatch[s.value] = functools.partial(status_fn, s)
     for op in OPERATIONS:
-        fn = (
-            operator.attrgetter(op.mcu_handler)(target)
-            if op.mcu_handler
-            else (
-                functools.partial(unsupp_fn, msg=op.mcu_unsupported_reason)
-                if op.mcu_unsupported_reason and unsupp_fn is not None
-                else None
-            )
-        )
+        fn = operator.attrgetter(op.mcu_handler)(target) if op.mcu_handler else None
         if fn is not None and op.command_id is not None:
             dispatch[op.command_id] = fn
             if op.service_id is not None and op.method_id is not None:
@@ -633,7 +613,7 @@ def build_supervised_tasks(
 ) -> list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]]:
     """Build supervised daemon tasks list from Protocol SSOT. [SIL-2]"""
     fatals_map = fatal_exception_map or {}
-    tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]]= []
+    tasks: list[tuple[str, Callable[[], Any], tuple[type[BaseException], ...]]] = []
     for task in DAEMON_TASKS:
         if task.condition_property and not operator.attrgetter(task.condition_property)(service):
             continue

@@ -1299,7 +1299,7 @@ class BridgeService:
         with structlog.contextvars.bound_contextvars(rpc_method=method_name):
             if spec.handler_name and spec.handler_name in protocol.CUSTOM_HANDLERS:
                 resp = await getattr(self, spec.handler_name)(req)
-            elif spec.requires_ack and spec.command_id is not None:
+            elif spec.response_type is pb.GenericResponse and spec.command_id is not None:
                 resp = await self._send_serial_ack(Command(spec.command_id), req)
             elif spec.response_type is not None and spec.command_id is not None:
                 payload = b"" if isinstance(req, pb.SubscribeRequest) else req

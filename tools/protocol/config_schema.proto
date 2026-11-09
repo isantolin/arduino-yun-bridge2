@@ -371,8 +371,6 @@ option (rpc.pb.status_reasons) = {
   mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
   mcu_file_read_timeout: "mcu_file_read_timeout"
   pending_pin_overflow: "pending-pin-overflow"
-  unsupported_digital_read: "linux_originates_digital_read_requests"
-  unsupported_analog_read: "linux_originates_analog_read_requests"
 };
 option (rpc.pb.topics) = {
   name: "ANALOG"
@@ -1060,9 +1058,9 @@ message StatusReasons {
   string sync_length_mismatch = 18;
   string mcu_file_read_dispatch_failed = 19;
   string mcu_file_read_timeout = 20;
+  reserved 22, 23;
+  reserved "unsupported_digital_read", "unsupported_analog_read";
   string pending_pin_overflow = 21;
-  string unsupported_digital_read = 22;
-  string unsupported_analog_read = 23;
 }
 
 message TopicConfig {
@@ -1103,16 +1101,13 @@ message UbusMethodConfig {
 }
 
 message CommandOptions {
-  reserved 2, 4, 9, 10, 12, 13;
-  reserved "directions", "expects_direct_response", "response_command", "request_command", "rpc_method", "action_routes";
-  bool requires_ack = 3;
+  reserved 2, 3, 4, 8, 9, 10, 12, 13, 15;
+  reserved "directions", "requires_ack", "expects_direct_response", "pb_message", "response_command", "request_command", "rpc_method", "action_routes", "mcu_unsupported_reason";
   string description = 5;
   string cloud_topic = 6;
   bool pre_sync_allowed = 7;
-  string pb_message = 8;
   string auth_field = 11;
   string mcu_handler = 14;
-  string mcu_unsupported_reason = 15;
 }
 
 extend google.protobuf.MessageOptions {
@@ -1236,77 +1231,38 @@ enum Command {
   CMD_LINK_SYNC = 68 [(cmd_opts) = {
     description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
     pre_sync_allowed: true
-    pb_message: "LinkSync"
     mcu_handler: "handshake.handle_link_sync_resp"
   }];
   CMD_LINK_RESET = 70 [(cmd_opts) = {description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."}];
   CMD_GET_CAPABILITIES = 72;
-  CMD_SET_BAUDRATE = 74 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "SetBaudratePacket"
-  }];
-  CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "EnterBootloader"
-    auth_field: "system_bootloader"
-  }];
+  CMD_SET_BAUDRATE = 74;
+  CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {auth_field: "system_bootloader"}];
   CMD_XOFF = 78 [(cmd_opts) = {
     pre_sync_allowed: true
-    requires_ack: false
     description: "Pause transmission (Flow Control)"
     mcu_handler: "mcu_xoff"
   }];
   CMD_XON = 79 [(cmd_opts) = {
     pre_sync_allowed: true
-    requires_ack: false
     description: "Resume transmission (Flow Control)"
     mcu_handler: "mcu_xon"
   }];
-  CMD_SET_PIN_MODE = 80 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "PinMode"
-    auth_field: "digital_mode"
-  }];
-  CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "DigitalWrite"
-    auth_field: "digital_write"
-  }];
-  CMD_ANALOG_WRITE = 82 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "AnalogWrite"
-    auth_field: "analog_write"
-  }];
-  CMD_DIGITAL_READ = 83 [(cmd_opts) = {
-    pb_message: "PinRead"
-    auth_field: "digital_read"
-    mcu_unsupported_reason: "unsupported_digital_read"
-  }];
-  CMD_ANALOG_READ = 84 [(cmd_opts) = {
-    pb_message: "PinRead"
-    auth_field: "analog_read"
-    mcu_unsupported_reason: "unsupported_analog_read"
-  }];
-  CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "PinSubscribeRequest"
-    auth_field: "gpio_subscribe"
-  }];
+  CMD_SET_PIN_MODE = 80 [(cmd_opts) = {auth_field: "digital_mode"}];
+  CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {auth_field: "digital_write"}];
+  CMD_ANALOG_WRITE = 82 [(cmd_opts) = {auth_field: "analog_write"}];
+  CMD_DIGITAL_READ = 83 [(cmd_opts) = {auth_field: "digital_read"}];
+  CMD_ANALOG_READ = 84 [(cmd_opts) = {auth_field: "analog_read"}];
+  CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {auth_field: "gpio_subscribe"}];
   CMD_CONSOLE_WRITE = 96 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "ConsoleWrite"
     cloud_topic: "console/out"
     auth_field: "console_input"
     mcu_handler: "console_write"
   }];
   CMD_DATASTORE_PUT = 112 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "DatastorePut"
     auth_field: "datastore_put"
     mcu_handler: "datastore_put"
   }];
   CMD_DATASTORE_GET = 113 [(cmd_opts) = {
-    pb_message: "DatastoreGet"
     auth_field: "datastore_get"
     mcu_handler: "datastore_get"
   }];
@@ -1316,69 +1272,43 @@ enum Command {
   }];
   CMD_MAILBOX_PROCESSED = 129 [(cmd_opts) = {
     cloud_topic: "mailbox/processed"
-    pb_message: "MailboxProcessed"
     mcu_handler: "publish_mcu_message"
   }];
   CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {mcu_handler: "mailbox_available"}];
   CMD_MAILBOX_PUSH = 131 [(cmd_opts) = {
-    requires_ack: true
     cloud_topic: "mailbox/incoming"
-    pb_message: "MailboxPush"
     auth_field: "mailbox_write"
     mcu_handler: "mailbox_push"
   }];
   CMD_FILE_WRITE = 144 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "FileWrite"
     auth_field: "file_write"
     mcu_handler: "file_write"
   }];
   CMD_FILE_READ = 145 [(cmd_opts) = {
-    pb_message: "FileRead"
     auth_field: "file_read"
     mcu_handler: "file_read"
   }];
   CMD_FILE_REMOVE = 146 [(cmd_opts) = {
-    pb_message: "FileRemove"
     auth_field: "file_remove"
     mcu_handler: "file_remove"
   }];
   CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
-    pb_message: "ProcessRunAsync"
     auth_field: "shell_run_async"
     mcu_handler: "process_run_async"
   }];
   CMD_PROCESS_POLL = 162 [(cmd_opts) = {
-    pb_message: "ProcessPoll"
     auth_field: "shell_poll"
     mcu_handler: "process_poll"
   }];
   CMD_PROCESS_KILL = 163 [(cmd_opts) = {
-    pb_message: "ProcessKill"
     auth_field: "shell_kill"
     mcu_handler: "process_kill"
   }];
-  CMD_SPI_BEGIN = 176 [(cmd_opts) = {
-    requires_ack: true
-    auth_field: "spi_begin"
-  }];
-  CMD_SPI_TRANSFER = 177 [(cmd_opts) = {
-    pb_message: "SpiTransfer"
-    auth_field: "spi_transfer"
-  }];
-  CMD_SPI_END = 179 [(cmd_opts) = {
-    requires_ack: true
-    auth_field: "spi_end"
-  }];
-  CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {
-    requires_ack: true
-    pb_message: "SpiConfig"
-    auth_field: "spi_config"
-  }];
-  CMD_CLOCK_SYNC = 192 [(cmd_opts) = {
-    pb_message: "ClockSyncRequest"
-    auth_field: "clock_sync"
-  }];
+  CMD_SPI_BEGIN = 176 [(cmd_opts) = {auth_field: "spi_begin"}];
+  CMD_SPI_TRANSFER = 177 [(cmd_opts) = {auth_field: "spi_transfer"}];
+  CMD_SPI_END = 179 [(cmd_opts) = {auth_field: "spi_end"}];
+  CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {auth_field: "spi_config"}];
+  CMD_CLOCK_SYNC = 192 [(cmd_opts) = {auth_field: "clock_sync"}];
 }
 
 enum SafetyPinState {

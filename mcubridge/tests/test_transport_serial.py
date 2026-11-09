@@ -90,7 +90,9 @@ async def test_feed_data_success_dispatches() -> None:
         state.cleanup()
 
 
-async def test_feed_data_negotiation_ack_switches_local_baudrate() -> None:
+async def test_negotiate_baudrate_switches_local_baudrate(
+    mocker: MockerFixture,
+) -> None:
     config = _make_config()
     config.serial_baud = 230400
     config.serial_safe_baud = 115200
@@ -103,26 +105,9 @@ async def test_feed_data_negotiation_ack_switches_local_baudrate() -> None:
         target_baud = config.serial_safe_baud
         mock_serial.baudrate = config.serial_baud
         transport.serial = mock_serial
-        mcu_cipher = _install_link_cipher(config, state)
+        mocker.patch.object(transport, "send", AsyncMock(return_value=True))
 
-        transport.state.connection_fsm.start_negotiating()
-        fut = asyncio.get_running_loop().create_future()
-        transport.negotiation_future = fut
-        transport.negotiation_target_baudrate = target_baud
-
-        cleartext = protocol.encode_hdlc_rpc(
-            Command.CMD_SET_BAUDRATE_RESP.value,
-            b"",
-            call_id=0,
-        )
-        response_frame = next(iter(FrameDecoder().process(cleartext)))
-        encoded = ui_frame(
-            protocol.HDLC_ADDRESS_RPC,
-            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response_frame.data),
-        )
-        await transport.feed_data(encoded)
-
-        assert await fut
+        assert await transport.negotiate_baudrate(target_baud)
         assert mock_serial.baudrate == target_baud
     finally:
         state.cleanup()
@@ -216,25 +201,19 @@ async def test_feed_data_fallback_triggers_negotiation(
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
 
-        def _resolve_neg(_data: bytes) -> int:
-            if transport.negotiation_future and not transport.negotiation_future.done():
-                transport.negotiation_future.set_result(True)
-            return len(_data)
-
-        mock_serial.write = MagicMock(side_effect=_resolve_neg)
-        mock_serial.flush = MagicMock()
+        send_mock = mocker.patch.object(transport, "send", AsyncMock(return_value=True))
         transport.serial = mock_serial
 
         bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
 
         await transport.feed_data(bad_frame)
         assert transport.consecutive_crc_errors == 1
-        assert not mock_serial.write.called
+        assert not send_mock.called
 
         # Second error (threshold reached)
         await transport.feed_data(bad_frame)
         assert transport.consecutive_crc_errors == 0
-        assert mock_serial.write.called
+        assert send_mock.called
     finally:
         state.cleanup()
 
@@ -384,24 +363,6 @@ async def test_serial_transport_methods_with_none_serial(
     await fallback_fn()
 
 
-async def test_serial_feed_data_negotiating_non_baud_cmd(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, None)
-    transport.state.connection_fsm.start_negotiating()
-    fut = asyncio.get_running_loop().create_future()
-    transport.negotiation_future = fut
-
-    encoded = protocol.encode_hdlc_rpc(
-        Command.CMD_GET_VERSION.value,
-        b"",
-        call_id=1,
-    )
-    feed_fn: Callable[[bytes], Awaitable[None]] = transport.feed_data
-    await feed_fn(encoded)
-    assert not fut.done()
-
-
 async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
     _install_link_cipher(runtime_config, runtime_state)
@@ -473,21 +434,13 @@ async def test_serial_transport_edge_branches(
     assert res_raw is True
     runtime_state.serial_tx_allowed.set()
 
-    # 4. negotiate_baudrate when send_raw fails vs succeeds
+    # 4. negotiate_baudrate when send fails vs succeeds
     negotiate: Callable[[int], Awaitable[bool]] = transport.negotiate_baudrate
-    mock_serial.write = MagicMock(side_effect=OSError("Write failed"))
+    mocker.patch.object(transport, "send", AsyncMock(return_value=False))
     res_neg_fail = await negotiate(115200)
     assert res_neg_fail is False
 
-    loop = asyncio.get_running_loop()
-
-    def _mock_write_and_resolve(_data: bytes) -> int:
-        fut = transport.negotiation_future
-        if fut and not fut.done():
-            loop.call_soon_threadsafe(fut.set_result, True)
-        return len(_data)
-
-    mock_serial.write = MagicMock(side_effect=_mock_write_and_resolve)
+    mocker.patch.object(transport, "send", AsyncMock(return_value=True))
     res_neg_ok = await negotiate(115200)
     assert res_neg_ok is True
 

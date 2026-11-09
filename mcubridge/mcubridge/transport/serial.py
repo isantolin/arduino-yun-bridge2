@@ -195,7 +195,7 @@ class SerialTransport:
         if call_id is not None:
             if self._stream_rpc_packet_ids.get(stream_key) == call_id:
                 self._stream_rpc_packet_ids.pop(stream_key, None)
-            self._active_rpc_packet_ids.discard((*stream_key, call_id))
+            self._active_rpc_packet_ids.discard((stream_key[0], stream_key[1], stream_key[2], call_id))
 
     def cancel_pin_stream(self) -> bool:
         """Explicitly cancel any active server-streaming RPC call."""
@@ -249,7 +249,7 @@ class SerialTransport:
         if pw_packets.for_server(pkt) or spec is None:
             return False
         stream_key = (pkt.channel_id, pkt.service_id, pkt.method_id)
-        rpc_packet_key = (*stream_key, pkt.call_id)
+        rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
         active_stream_call_id = self._stream_rpc_packet_ids.get(stream_key)
         if active_stream_call_id is not None and pkt.call_id == active_stream_call_id:
             if pkt.type == PacketType.SERVER_STREAM:
@@ -937,7 +937,7 @@ class SerialTransport:
         stream_key = (protocol.HDLC_ADDRESS_RPC, int(spec.service_id or 0), int(spec.method_id or 0))
         old_call_id = self._stream_rpc_packet_ids.pop(stream_key, None)
         if old_call_id is not None:
-            self._active_rpc_packet_ids.discard((*stream_key, old_call_id))
+            self._active_rpc_packet_ids.discard((stream_key[0], stream_key[1], stream_key[2], old_call_id))
         self._stream_rpc_calls.pop(stream_key, None)
 
         rejection_future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()

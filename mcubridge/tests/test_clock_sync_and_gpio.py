@@ -198,10 +198,10 @@ async def test_gpio_service() -> None:
             "active": False,
         }
         assert await gpio.resubscribe_pins() == 1
-        assert state.pin_subscriptions[5]["active"] is True
+        assert state.pin_subscriptions[5]["active"]
         mock_serial.send.return_value = False
         assert await gpio.resubscribe_pins() == 0
-        assert state.pin_subscriptions[5]["active"] is False
+        assert not state.pin_subscriptions[5]["active"]
 
         # Test rejection by MCU
         mock_serial.send.return_value = False

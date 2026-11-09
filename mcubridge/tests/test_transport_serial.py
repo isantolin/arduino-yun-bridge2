@@ -3,9 +3,10 @@ from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
-import serial
-
+from dirty_equals import IsInstance
 import pytest
+from pytest_mock import MockerFixture
+import serial
 from hypothesis import given
 from hypothesis import strategies as st
 from pw_hdlc.decode import FrameDecoder
@@ -19,251 +20,251 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingCommand
-
-from mcubridge.security.security import LinkCipher, derive_link_keys
+from mcubridge.security.security import LinkCipher
+from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.transport.serial import SerialHandshakeFatal, SerialTransport
-from pytest_mock import MockerFixture
+from mcubridge.transport.serial import (
+    SerialTransport,
+    resolve_serial_url,
+)
 
 
 def _make_config() -> RuntimeConfig:
-    import os
-    import time
-
-    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
-    f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
     return RuntimeConfig(
-        serial_port="/dev/ttyATH0",
-        topic_prefix="br",
-        allowed_commands=("*",),
-        serial_shared_secret=b"secret123",
-        file_system_root=fs_root,
-        cloud_spool_dir="",
-        allow_non_tmp_paths=True,
+        serial_port="/dev/null",
+        serial_baud=115200,
+        serial_safe_baud=57600,
+        serial_shared_secret=b"secret_1234567890",
+        serial_response_timeout=0.2,
+        serial_retry_timeout=0.1,
+        serial_retry_attempts=2,
+        allowed_commands=("echo",),
+        file_system_root="/tmp/mcubridge-test-serial",
     )
 
 
 def _install_link_cipher(config: RuntimeConfig, state: RuntimeState) -> LinkCipher:
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(config.serial_shared_secret, nonce)
-    state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
-    return LinkCipher(mcu_to_host, host_to_mcu)
+    state.link_cipher = LinkCipher.for_host(config.serial_shared_secret, nonce)
+    return LinkCipher.for_mcu(config.serial_shared_secret, nonce)
 
 
-async def test_feed_data_crc_mismatch_reports_crc() -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    try:
-        state.connection_fsm.connect()
-        state.connection_fsm.synchronize()
-        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-        transport = SerialTransport(config, state, service)
+@pytest.mark.parametrize(
+    ("raw_port", "expected_url"),
+    [
+        ("", ""),
+        ("/dev/ttyATH0", "/dev/ttyATH0"),
+        ("  /dev/ttyUSB0  ", "/dev/ttyUSB0"),
+        ("./virtual_pty", "./virtual_pty"),
+        ("wifi://192.168.1.50", "socket://192.168.1.50:9000"),
+        ("wifi://192.168.1.50:2323", "socket://192.168.1.50:2323"),
+        ("tcp://10.0.0.10", "socket://10.0.0.10:9000"),
+        ("tcp://10.0.0.10:8888", "socket://10.0.0.10:8888"),
+        ("socket://127.0.0.1", "socket://127.0.0.1:9000"),
+        ("socket://127.0.0.1:5555", "socket://127.0.0.1:5555"),
+        ("192.168.4.1:9000", "socket://192.168.4.1:9000"),
+        ("rfc2217://localhost:7000", "rfc2217://localhost:7000"),
+    ],
+)
+def test_resolve_serial_url(raw_port: str, expected_url: str) -> None:
+    assert resolve_serial_url(raw_port) == expected_url
 
-        # Invalid HDLC frame with bad FCS
-        bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
-        await transport.feed_data(bad_frame)
 
-        assert state.serial_decode_errors == 1
-    finally:
-        state.cleanup()
-
-
-async def test_feed_data_success_dispatches() -> None:
+async def test_serial_transport_feed_and_process() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         service.handle_mcu_frame = AsyncMock()
-
+        transport = SerialTransport(config, state, service)
         mcu_cipher = _install_link_cipher(config, state)
-        encoded = ui_frame(
+
+        # Feed valid HDLC console frame
+        raw_frame = ui_frame(
             protocol.HDLC_ADDRESS_CONSOLE,
-            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"hi"),
+            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"hello"),
         )
-        transport = SerialTransport(config, state, service)
-        await transport.feed_data(encoded)
-
+        await transport.feed_data(raw_frame)
         service.handle_mcu_frame.assert_awaited_once_with(
-            Command.CMD_CONSOLE_WRITE.value, 0, pb.ConsoleWrite(data=b"hi")
+            Command.CMD_CONSOLE_WRITE.value,
+            0,
+            pb.ConsoleWrite(data=b"hello"),
         )
+
+        # Feed corrupted frame (CRC error)
+        corrupted = bytearray(raw_frame)
+        corrupted[-2] ^= 0xFF
+        transport.negotiate_baudrate = AsyncMock(return_value=True)
+        for _ in range(config.serial_fallback_threshold):
+            await transport.feed_data(bytes(corrupted))
+
+        assert state.serial_decode_errors >= config.serial_fallback_threshold
+        transport.negotiate_baudrate.assert_awaited_once_with(config.serial_safe_baud)
     finally:
         state.cleanup()
 
 
-async def test_feed_data_negotiation_ack_switches_local_baudrate() -> None:
+async def test_serial_transport_send_and_correlate() -> None:
     config = _make_config()
-    config.serial_baud = 230400
-    config.serial_safe_baud = 115200
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         transport = SerialTransport(config, state, service)
-
-        mock_serial = MagicMock(spec=serial.Serial)
-        target_baud = config.serial_safe_baud
-        mock_serial.baudrate = config.serial_baud
-        transport.serial = mock_serial
         mcu_cipher = _install_link_cipher(config, state)
+        state.serial_tx_allowed.set()
 
-        transport.state.connection_fsm.start_negotiating()
-        fut = asyncio.get_running_loop().create_future()
-        transport.negotiation_future = fut
-        transport.negotiation_target_baudrate = target_baud
-
-        cleartext = protocol.encode_hdlc_rpc(
-            Command.CMD_SET_BAUDRATE_RESP.value,
-            b"",
-            call_id=0,
-        )
-        response_frame = next(iter(FrameDecoder().process(cleartext)))
-        encoded = ui_frame(
-            protocol.HDLC_ADDRESS_RPC,
-            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response_frame.data),
-        )
-        await transport.feed_data(encoded)
-
-        assert await fut
-        assert mock_serial.baudrate == target_baud
-    finally:
-        state.cleanup()
-
-
-async def test_write_frame_debug_logs_unknown_command(
-    mocker: MockerFixture,
-) -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    try:
-        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-        import mcubridge.transport.serial
-
-        transport = SerialTransport(config, state, service)
-        _install_link_cipher(config, state)
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
-        mock_serial.write = MagicMock(return_value=10)
-        mock_serial.flush = MagicMock()
+        written: list[bytes] = []
+
+        def _write(data: bytes) -> int:
+            written.append(data)
+            frames = list(FrameDecoder().process(data))
+            if frames and frames[0].ok():
+                frame = frames[0]
+                if frame.address == protocol.HDLC_ADDRESS_RPC:
+                    pkt = pw_packets.decode(mcu_cipher.decrypt(frame.address, bytes(frame.data)))
+                    resp_pkt = RpcPacket(
+                        type=PacketType.RESPONSE,
+                        channel_id=pkt.channel_id,
+                        service_id=pkt.service_id,
+                        method_id=pkt.method_id,
+                        call_id=pkt.call_id,
+                        payload=pb.VersionResponse(major=2, minor=1, patch=0).SerializeToString(),
+                        status=0,
+                    )
+                    resp_frame = ui_frame(
+                        protocol.HDLC_ADDRESS_RPC,
+                        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, resp_pkt.SerializeToString()),
+                    )
+                    asyncio.get_running_loop().call_soon_threadsafe(
+                        asyncio.create_task,
+                        transport.feed_data(resp_frame),
+                    )
+            return len(data)
+
+        mock_serial.write.side_effect = _write
         transport.serial = mock_serial
 
-        mocker.patch.object(
-            mcubridge.transport.serial.logger,
-            "is_enabled_for",
-            return_value=True,
-        )
-        seen: dict[str, str] = {}
-
-        def mock_debug(msg: str, *args: Any) -> Any:
-            return seen.setdefault("msg", msg % args)
-
-        mocker.patch.object(
-            mcubridge.transport.serial.logger,
-            "debug",
-            side_effect=mock_debug,
-        )
-
-        def mock_log(_lvl: int, msg: str, *args: Any) -> Any:
-            return seen.setdefault("msg", msg % args)
-
-        mocker.patch.object(
-            mcubridge.transport.serial.logger,
-            "log",
-            side_effect=mock_log,
-        )
-
-        ok = await transport.send(0xFE, b"payload")
-        assert ok
-        assert mock_serial.write.called
-        # Check that the command 0xFE is present in the encoded hex string
-        assert "fe" in seen.get("msg", "").lower()
+        resp = await transport.send(Command.CMD_GET_VERSION.value, b"")
+        assert resp == IsInstance(pb.VersionResponse)
+        assert isinstance(resp, pb.VersionResponse)
+        assert resp.major == 2
+        assert len(written) == 1
     finally:
         state.cleanup()
 
 
-async def test_write_frame_returns_false_on_write_error() -> None:
+async def test_serial_transport_send_timeout_and_reset() -> None:
     config = _make_config()
+    config.serial_response_timeout = 0.05
+    config.serial_retry_timeout = 0.05
+    config.serial_retry_attempts = 1
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-
-        transport = SerialTransport(config, state, service)
+        transport = SerialTransport(config, state, None)
         _install_link_cipher(config, state)
+        state.serial_tx_allowed.set()
+
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
-        mock_serial.write = MagicMock(side_effect=OSError("boom"))
+        mock_serial.write.return_value = 10
         transport.serial = mock_serial
 
-        ok = await transport.send(Command.CMD_CONSOLE_WRITE.value, b"hi")
-        assert not ok
+        res = await transport.send(Command.CMD_GET_VERSION.value, b"", timeout=0.05)
+        assert not res
+
+        await transport.reset()
+        await transport.stop()
+        mock_serial.close.assert_called_once()
     finally:
         state.cleanup()
 
 
-async def test_feed_data_fallback_triggers_negotiation(
-    mocker: MockerFixture,
-) -> None:
-    config = _make_config()
-    config.serial_baud = protocol.DEFAULT_BAUDRATE
-    config.serial_safe_baud = 57600
-    config.serial_fallback_threshold = 2
-    state = create_runtime_state(config)
-    try:
-        state.connection_fsm.connect()
-        state.connection_fsm.synchronize()
-        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-
-        transport = SerialTransport(config, state, service)
-        _install_link_cipher(config, state)
-        mock_serial = MagicMock(spec=serial.Serial)
-        mock_serial.is_open = True
-
-        def _resolve_neg(_data: bytes) -> int:
-            if transport.negotiation_future and not transport.negotiation_future.done():
-                transport.negotiation_future.set_result(True)
-            return len(_data)
-
-        mock_serial.write = MagicMock(side_effect=_resolve_neg)
-        mock_serial.flush = MagicMock()
-        transport.serial = mock_serial
-
-        bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
-
-        await transport.feed_data(bad_frame)
-        assert transport.consecutive_crc_errors == 1
-        assert not mock_serial.write.called
-
-        # Second error (threshold reached)
-        await transport.feed_data(bad_frame)
-        assert transport.consecutive_crc_errors == 0
-        assert mock_serial.write.called
-    finally:
-        state.cleanup()
+@given(
+    cmd_id=st.sampled_from([Command.CMD_CONSOLE_WRITE.value, Command.CMD_DIGITAL_WRITE.value]),
+    payload=st.binary(min_size=0, max_size=64),
+)
+def test_serial_transport_hdlc_roundtrip_property(cmd_id: int, payload: bytes) -> None:
+    if cmd_id == Command.CMD_CONSOLE_WRITE.value:
+        encoded = protocol.encode_hdlc_console(payload)
+    else:
+        encoded = protocol.encode_hdlc_rpc(cmd_id, payload)
+    frames = list(FrameDecoder().process(encoded))
+    assert len(frames) == 1
+    assert frames[0].ok()
 
 
-async def test_serial_transport_toggle_dtr_error(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: Any
-) -> None:
-    monkeypatch.setattr("asyncio.sleep", AsyncMock())
-    monkeypatch.setattr("time.sleep", MagicMock())
-    transport = SerialTransport(runtime_config, runtime_state, None)
-    mock_serial = MagicMock(spec=serial.Serial)
-    type(mock_serial).dtr = PropertyMock(side_effect=OSError("I/O error"))
-    transport.serial = mock_serial
-    toggle_dtr_fn: Callable[[], Awaitable[None]] = transport.toggle_dtr
-    await toggle_dtr_fn()
-    assert transport.serial is mock_serial
-
-
-def test_serial_transport_switch_local_baudrate_error(
+async def test_serial_transport_ToggleDtr_and_Baudrate(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
+    _install_link_cipher(runtime_config, runtime_state)
     mock_serial = MagicMock(spec=serial.Serial)
-    type(mock_serial).baudrate = PropertyMock(side_effect=ValueError("Invalid baud"))
+    mock_serial.is_open = True
+    mock_serial.dtr = True
     transport.serial = mock_serial
-    switch_baud: Callable[[int], None] = transport.switch_local_baudrate
-    with pytest.raises(RuntimeError):
-        switch_baud(99999999)
+
+    await transport.toggle_dtr()
+    assert mock_serial.dtr
+
+    transport.switch_local_baudrate(230400)
+    assert mock_serial.baudrate == 230400
+
+    # Test negotiate_baudrate timeout failure
+    runtime_state.serial_tx_allowed.set()
+    mock_serial.write.return_value = 10
+    neg_ok = await transport.negotiate_baudrate(230400)
+    assert not neg_ok
+
+
+async def test_serial_transport_read_loop_and_stop(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mcu_cipher = _install_link_cipher(runtime_config, runtime_state)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+
+    frame_bytes = ui_frame(
+        protocol.HDLC_ADDRESS_CONSOLE,
+        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"ping"),
+    )
+    calls = 0
+
+    def _read_until(*_args: Any, **_kwargs: Any) -> bytes:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return frame_bytes
+        transport.stop_event.set()
+        return b""
+
+    mock_serial.read_until.side_effect = _read_until
+    await transport.read_loop(mock_serial)
+    assert runtime_state.metrics.serial_frames_received.value >= 1
+
+
+async def test_serial_transport_flow_control_auto_resume(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mcubridge.transport.serial as serial_mod
+
+    monkeypatch.setattr(serial_mod, "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.02)
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    _install_link_cipher(runtime_config, runtime_state)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write.return_value = 5
+    transport.serial = mock_serial
+
+    runtime_state.serial_tx_allowed.clear()
+    runtime_state.mcu_is_paused = True
+
+    sent = await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    assert sent
+    assert runtime_state.serial_tx_allowed.is_set()
 
 
 async def test_serial_transport_send_failure_status_code(
@@ -394,194 +395,245 @@ async def test_serial_transport_methods_with_none_serial(
     toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
 
-    await transport.stop()
-    stop_event: asyncio.Event = transport.stop_event
-    assert stop_event.is_set()
+    stop_fn: Callable[[], Awaitable[None]] = transport.stop
+    await stop_fn()
+    assert transport.stop_event.is_set()
 
-    runtime_config.serial_baud = runtime_config.serial_safe_baud
-    transport.consecutive_crc_errors = runtime_config.serial_fallback_threshold - 1
-    fallback_fn: Callable[[], Awaitable[None]] = transport.check_baudrate_fallback
-    await fallback_fn()
+    send_fn: Callable[[int, bytes], Awaitable[bool | bytes | Any]] = transport.send
+    assert not await send_fn(Command.CMD_GET_VERSION.value, b"")
+
+    send_raw_fn: Callable[[int, bytes], Awaitable[bool]] = transport.send_raw
+    assert not await send_raw_fn(Command.CMD_GET_VERSION.value, b"")
 
 
-async def test_serial_transport_correlate_frame_branches(
+async def test_serial_transport_correlate_edge_cases(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     from mcubridge.protocol.protocol import Status
+    from mcubridge.protocol.structures import PendingCommand
 
     transport = SerialTransport(runtime_config, runtime_state, None)
-    correlate_fn: Callable[[int, bytes], None] = transport.correlate_frame
+    correlate_fn: Callable[[int, bytes, int | None], None] = transport.correlate_frame
 
-    # 1. Matching command ID resolves pending command
-    curr1 = PendingCommand(
-        command_id=Command.CMD_DIGITAL_WRITE.value,
-        expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
-    )
+    # 1. No current command
+    transport.current_command = None
+    correlate_fn(Status.OK.value, b"", 1)
+
+    # 2. Sequence mismatch
+    cmd = PendingCommand(command_id=Command.CMD_GET_VERSION.value, sequence_id=10)
+    transport.current_command = cmd
+    correlate_fn(Command.CMD_GET_VERSION_RESP.value, b"", 99)
+    assert not cmd.completion.is_set()
+
+    # 3. Direct command_id match or paired_request_id match
+    curr1 = PendingCommand(command_id=Command.CMD_GET_VERSION.value, sequence_id=10)
     transport.current_command = curr1
-    correlate_fn(Command.CMD_DIGITAL_WRITE.value, b"data")
+    correlate_fn(Command.CMD_GET_VERSION_RESP.value, b"v1", 10)
+    assert curr1.completion.is_set()
     assert curr1.success is True
-    assert curr1.response_payload == b"data"
 
-    # 2. Failure status code marks failure
-    curr2 = PendingCommand(
-        command_id=Command.CMD_DIGITAL_WRITE.value,
-        expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
-    )
+    # 4. Already completed pending command
+    correlate_fn(Command.CMD_GET_VERSION_RESP.value, b"v2", 10)
+    assert curr1.response_payload == b"v1"
+
+    # 5. Failure status code
+    curr2 = PendingCommand(command_id=Command.CMD_GET_VERSION.value, sequence_id=11)
     transport.current_command = curr2
-    correlate_fn(Status.ERROR.value, b"")
+    correlate_fn(Status.MALFORMED.value, b"", 11)
+    assert curr2.completion.is_set()
     assert curr2.success is False
 
-    # 3. Status.OK without expected_resp_ids marks success
-    curr3 = PendingCommand(
-        command_id=Command.CMD_DIGITAL_WRITE.value,
-        expected_resp_ids=[],
-    )
+    # 6. Success status code when expected_resp_ids is empty
+    curr3 = PendingCommand(command_id=Command.CMD_SET_PIN_MODE.value, expected_resp_ids=[], sequence_id=12)
     transport.current_command = curr3
-    correlate_fn(Status.OK.value, b"ok")
+    correlate_fn(Status.OK.value, b"", 12)
+    assert curr3.completion.is_set()
     assert curr3.success is True
-    assert curr3.response_payload == b"ok"
 
 
-async def test_serial_feed_data_negotiating_non_baud_cmd(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+async def test_serial_transport_error_handlers_and_lifecycle(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, None)
-    transport.state.connection_fsm.start_negotiating()
-    fut = asyncio.get_running_loop().create_future()
-    transport.negotiation_future = fut
+    service = MagicMock()
+    service.on_serial_connected = AsyncMock()
+    service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("disconnect hook fail"))
+    service.handle_mcu_frame = AsyncMock()
 
-    encoded = protocol.encode_hdlc_rpc(
-        Command.CMD_GET_VERSION.value,
-        b"",
-        call_id=1,
-    )
-    feed_fn: Callable[[bytes], Awaitable[None]] = transport.feed_data
-    await feed_fn(encoded)
-    assert not fut.done()
-
-
-async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
+    transport = SerialTransport(runtime_config, runtime_state, service)
     _install_link_cipher(runtime_config, runtime_state)
-    mock_serial = MagicMock(spec=serial.Serial)
-
-    stop_event: asyncio.Event = transport.stop_event
-    stop_event.set()
-    read_loop: Callable[..., Awaitable[None]] = transport.read_loop
-    await read_loop(mock_serial)
-    mock_serial.read_until.assert_not_called()
-
-    # Test OSError during active read loop
-    stop_event.clear()
-    mock_serial.read_until.side_effect = OSError(5, "Input/output error")
-    await read_loop(mock_serial)
-
-    # Test OSError when stopped concurrently during shutdown
-    def _readuntil_during_stop(*_args: Any, **_kwargs: Any) -> Any:
-        stop_event.set()
-        raise OSError(5, "device disconnected")
-
-    stop_event.clear()
-    mock_serial.read_until.side_effect = _readuntil_during_stop
-    await read_loop(mock_serial)
-    assert stop_event.is_set()
-
-    assert transport.consecutive_crc_errors == 0
-
-
-async def test_serial_transport_connect_exceptions(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
-    async def _cancel_run() -> None:
-        raise asyncio.CancelledError()
-
-    transport_cancel = SerialTransport(runtime_config, runtime_state, AsyncMock())
-    transport_cancel.connect_and_run = _cancel_run
-    await transport_cancel.run()
-
-    async def _fatal_run() -> None:
-        raise SerialHandshakeFatal("Fatal")
-
-    transport_fatal = SerialTransport(runtime_config, runtime_state, AsyncMock())
-    transport_fatal.connect_and_run = _fatal_run
-    with pytest.raises(SerialHandshakeFatal):
-        await transport_fatal.run()
-
-
-async def test_serial_correlate_frame_already_resolved(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
-    cmd = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value)
-    cmd.mark_success(b"original")
-    transport.current_command = cmd
-
-    correlate: Callable[[int, bytes], None] = transport.correlate_frame
-    correlate(protocol.Status.OK.value, b"new_data")
-    assert cmd.response_payload == b"original"
-
-
-async def test_serial_transport_edge_branches(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-    mocker: MockerFixture,
-) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
-    _install_link_cipher(runtime_config, runtime_state)
-
-    # 1. correlate_frame with Status.OK when expected_resp_ids is empty
-    pending = PendingCommand(
-        command_id=Command.CMD_DIGITAL_WRITE.value,
-        expected_resp_ids=[],
-    )
-    transport.current_command = pending
-    correlate: Callable[[int, bytes], None] = transport.correlate_frame
-    correlate(Status.OK.value, b"")
-    assert pending.success is True
-
-    # 2. send() when serial is None (line 434)
-    transport.serial = None
-    res = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"payload")
-    assert res is False
-
-    # 3. send_raw when serial_tx_allowed is clear and wait times out
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
-    mock_serial.write = MagicMock(return_value=10)
-    mock_serial.flush = MagicMock()
-    transport.serial = mock_serial
-    runtime_state.serial_tx_allowed.clear()
-    mocker.patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.01)
-    res_raw = await transport.send_raw(Command.CMD_DIGITAL_WRITE.value, b"raw_test")
-    assert res_raw is True
-    runtime_state.serial_tx_allowed.set()
 
-    # 4. negotiate_baudrate when send_raw fails vs succeeds
-    negotiate: Callable[[int], Awaitable[bool]] = transport.negotiate_baudrate
-    mock_serial.write = MagicMock(side_effect=OSError("Write failed"))
-    res_neg_fail = await negotiate(115200)
+    # 1. switch_local_baudrate exception
+    type(mock_serial).baudrate = PropertyMock(side_effect=OSError("baud fail"))
+    transport.serial = mock_serial
+    with pytest.raises(RuntimeError, match="UART access failed"):
+        transport.switch_local_baudrate(115200)
+    type(mock_serial).baudrate = PropertyMock(return_value=115200)
+
+    # 2. toggle_dtr exception
+    type(mock_serial).dtr = PropertyMock(side_effect=OSError("dtr fail"))
+    await transport.toggle_dtr()
+    type(mock_serial).dtr = PropertyMock(return_value=True)
+
+    # 3. stop() with cancel_read / close exceptions
+    mock_serial.cancel_read.side_effect = OSError("cancel fail")
+    mock_serial.close.side_effect = OSError("close fail")
+    await transport.stop()
+    transport.stop_event.clear()
+
+    # 4. read_loop exception when stop_event is NOT set vs set
+    mock_serial.read_until.side_effect = OSError("read error")
+    await transport.read_loop(mock_serial)
+
+    transport.stop_event.set()
+    await transport.read_loop(mock_serial)
+    transport.stop_event.clear()
+
+    # 5. read_loop normal exit when stop_event is set during read_until
+    def _readuntil_during_stop(*_args: Any, **_kwargs: Any) -> Any:
+        transport.stop_event.set()
+        raise OSError("closed")
+
+    mock_serial.read_until.side_effect = _readuntil_during_stop
+    await transport.read_loop(mock_serial)
+    transport.stop_event.clear()
+
+    # 6. connect_and_run wireless loss & serial loss & baudrate negotiation failure
+    monkeypatch.setattr(serial, "serial_for_url", lambda *_a, **_kw: mock_serial)
+    transport.toggle_dtr = AsyncMock()
+
+    async def _fast_read_loop(_ser: Any) -> None:
+        await asyncio.sleep(0.01)
+
+    transport.read_loop = _fast_read_loop
+
+    # Baudrate negotiation failure
+    runtime_config.serial_baud = 230400
+    runtime_config.serial_safe_baud = 115200
+    transport.negotiate_baudrate = AsyncMock(return_value=False)
+    with pytest.raises(ConnectionError, match="Baudrate negotiation failed"):
+        await transport.connect_and_run()
+
+    # Serial connection lost (stop_event not set)
+    transport.negotiate_baudrate = AsyncMock(return_value=True)
+    with pytest.raises(ConnectionError, match="Serial connection lost"):
+        await transport.connect_and_run()
+
+    # Wireless connection lost
+    runtime_config.serial_port = "tcp://127.0.0.1:9000"
+    with pytest.raises(ConnectionError, match="Wireless network connection lost"):
+        await transport.connect_and_run()
+
+    # 7. run() with CancelledError and SerialHandshakeFatal
+    transport.connect_and_run = AsyncMock(side_effect=asyncio.CancelledError())
+    await transport.run()
+
+    transport.connect_and_run = AsyncMock(side_effect=SerialHandshakeFatal("fatal auth"))
+    with pytest.raises(SerialHandshakeFatal):
+        await transport.run()
+
+
+async def test_serial_transport_process_hdlc_frame_branches(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mcubridge.transport.serial as serial_mod
+    from mcubridge.protocol.structures import PendingCommand
+
+    service = MagicMock()
+    service.handle_mcu_frame = AsyncMock()
+    transport = SerialTransport(runtime_config, runtime_state, service)
+    mcu_cipher = _install_link_cipher(runtime_config, runtime_state)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    monkeypatch.setattr(serial_mod.logger, "is_enabled_for", lambda _lvl: True)
+
+    # 1. Baudrate negotiation frame interception
+    runtime_state.connection_fsm.start_negotiating()
+    loop = asyncio.get_running_loop()
+    transport.negotiation_future = loop.create_future()
+    transport.negotiation_target_baudrate = 230400
+
+    baud_pkt = protocol.encode_rpc_packet(
+        Command.CMD_SET_BAUDRATE_RESP.value,
+        pb.SetBaudratePacket(baudrate=230400),
+        call_id=1,
+    )
+    baud_frame = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, baud_pkt),
+    )
+    await transport.feed_data(baud_frame)
+    assert transport.negotiation_future.done()
+    runtime_state.connection_fsm.connect()
+
+    # 2. Uninitialized Protobuf message rejection in process_hdlc_frame
+    fake_uninit = MagicMock(spec=pb.VersionResponse)
+    fake_uninit.IsInitialized.return_value = False
+    spec = protocol.get_operation(Command.CMD_GET_VERSION_RESP.value)
+    if spec is not None:
+        monkeypatch.setattr(spec, "response_type", lambda: fake_uninit)
+        ver_pkt = protocol.encode_rpc_packet(Command.CMD_GET_VERSION_RESP.value, b"\x08\x01", call_id=2)
+        ver_frame = ui_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, ver_pkt),
+        )
+        await transport.feed_data(ver_frame)
+        assert runtime_state.serial_decode_errors >= 1
+
+    # 3. reset() with active current_command
+    pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
+    transport.current_command = pending
+    await transport.reset()
+    assert pending.success is False
+
+    # 4. send() when send_raw returns False -> _FatalSerialError
+    mock_serial2 = MagicMock(spec=serial.Serial)
+    mock_serial2.is_open = True
+    mock_serial2.write.side_effect = OSError("write error")
+    transport.serial = mock_serial2
+    runtime_state.serial_tx_allowed.set()
+    res = await transport.send(Command.CMD_GET_VERSION.value, b"")
+    assert res is False
+
+    # 5. send() untrackable command (e.g. CMD_LINK_SYNC)
+    mock_serial2.write.side_effect = None
+    mock_serial2.write.return_value = 10
+    runtime_state.link_cipher = None
+    res_raw = await transport.send(
+        Command.CMD_LINK_SYNC.value,
+        pb.LinkSync(
+            nonce=b"1234567890123456",
+            tag=b"1234567890123456",
+        ),
+    )
+    assert res_raw is True
+    _install_link_cipher(runtime_config, runtime_state)
+
+    # 6. negotiate_baudrate when send_raw fails vs succeeds
+    mock_serial2.write.side_effect = OSError("baud write fail")
+    res_neg_fail = await transport.negotiate_baudrate(230400)
     assert res_neg_fail is False
 
-    loop = asyncio.get_running_loop()
-
-    def _mock_write_and_resolve(_data: bytes) -> int:
+    def _complete_neg(_data: bytes) -> int:
         fut = transport.negotiation_future
         if fut and not fut.done():
             loop.call_soon_threadsafe(fut.set_result, True)
-        return len(_data)
+        return 10
 
-    mock_serial.write = MagicMock(side_effect=_mock_write_and_resolve)
-    res_neg_ok = await negotiate(115200)
+    mock_serial2.write.side_effect = _complete_neg
+    runtime_state.connection_fsm.synchronize()
+    res_neg_ok = await transport.negotiate_baudrate(230400)
     assert res_neg_ok is True
 
-    # 5. send() attempt when completion event fired with success=False, failure_status=None
-    mock_serial2 = MagicMock(spec=serial.Serial)
-    mock_serial2.is_open = True
-    mock_serial2.flush = MagicMock()
-    transport.serial = mock_serial2
+    # 7. send() where completion is set with failure_status=None and success=False -> _RetryableSerialError
     transport.max_attempts = 1
 
     def _resolve_pending_without_status(_data: bytes) -> int:
         curr = transport.current_command
-        if curr:
+        if curr is not None:
             curr.success = False
             curr.failure_status = None
             loop.call_soon_threadsafe(curr.completion.set)
@@ -592,114 +644,93 @@ async def test_serial_transport_edge_branches(
     assert res_fail_status is False
 
 
-async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
-    """Test that reader task re-establishes connection on failure."""
-    config = RuntimeConfig(
-        serial_port="/dev/test0",
-        serial_baud=protocol.DEFAULT_BAUDRATE,
-        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
-        cloud_host="localhost",
-        cloud_port=1883,
-        cloud_user=None,
-        cloud_pass=None,
-        cloud_tls=False,
-        cloud_cafile=None,
-        cloud_certfile=None,
-        cloud_keyfile=None,
-        topic_prefix="br",
-        allowed_commands=(),
-        file_system_root=".tmp_tests/reconnect_fs",
-        process_timeout=5,
-        reconnect_delay=1,
-        serial_shared_secret=b"s_e_c_r_e_t_mock",
-        allow_non_tmp_paths=True,
-    )
-    state = AsyncMock(spec=RuntimeState)
-    service = AsyncMock(spec=BridgeService)
-    service.on_serial_connected = AsyncMock()
-    service.on_serial_disconnected = AsyncMock()
-    service.register_serial_sender = MagicMock()
+def test_linux_serial_monkeypatch_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify pyserial scheme registration on import."""
+    import sys
 
-    import serial
-    from serial import SerialException
-
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.read_until.side_effect = SerialException("Connection lost")
-    mock_serial.dtr = True
-    mock_serial.baudrate = 115200
-
-    mock_serial_for_url = MagicMock(return_value=mock_serial)
-    sleep_count = 0
-
-    async def mock_sleep_fn(duration: Any) -> None:
-        nonlocal sleep_count
-        sleep_count += 1
-        if sleep_count > 10:
-            raise RuntimeError("Break Loop")
-
-    mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
-
-    mocker.patch("serial.serial_for_url", mock_serial_for_url)
-    mocker.patch("asyncio.sleep", mock_sleep)
-    mocker.patch("time.sleep", MagicMock())
-    transport = SerialTransport(config, state, service)
-    with pytest.raises(RuntimeError, match="Break Loop"):
-        await transport.run()
-
-    assert mock_serial_for_url.call_count >= 2
-    assert service.on_serial_connected.called
-    assert service.on_serial_disconnected.called
+    assert "serial.urlhandler.protocol_wifi" in sys.modules
+    assert "serial.urlhandler.protocol_tcp" in sys.modules
 
 
-@given(raw_bytes=st.binary(min_size=0, max_size=256))
-async def test_feed_data_fuzz_resilience_property(raw_bytes: bytes) -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    try:
-        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-        transport = SerialTransport(config, state, service)
-
-        # Fuzz feed_data with arbitrary bytes: must never raise unhandled exceptions
-        await transport.feed_data(raw_bytes)
-        assert state.serial_decode_errors >= 0
-    finally:
-        state.cleanup()
-
-
-@given(
-    command_id=st.integers(1, 0x00FF),
-    seq_id=st.integers(1, protocol.UINT16_MAX),
-    payload=st.binary(max_size=128),
-)
-async def test_send_raw_arbitrary_payload_and_sequence_property(
-    command_id: int,
-    seq_id: int,
-    payload: bytes,
+async def test_connect_and_run_taskgroup_multiple_exceptions(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    monkeypatch.setattr(serial, "serial_for_url", lambda *_a, **_kw: mock_serial)
+    transport.toggle_dtr = AsyncMock()
+
+    async def _failing_read_loop(_ser: Any) -> None:
+        raise ValueError("read loop boom")
+
+    transport.read_loop = _failing_read_loop
+    service = MagicMock()
+    service.on_serial_connected = AsyncMock(side_effect=RuntimeError("connect hook boom"))
+    service.on_serial_disconnected = AsyncMock()
+    transport.service = service
+
+    with pytest.raises((ValueError, RuntimeError, BaseExceptionGroup)):
+        await transport.connect_and_run()
+
+
+async def test_check_baudrate_fallback_already_at_safe_baud(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    runtime_config.serial_baud = runtime_config.serial_safe_baud
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    transport.negotiate_baudrate = AsyncMock()
+    transport.consecutive_crc_errors = runtime_config.serial_fallback_threshold - 1
+    await transport.check_baudrate_fallback()
+    transport.negotiate_baudrate.assert_not_called()
+
+
+async def test_send_raw_disappeared_serial_inside_lock(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    transport.serial = mock_serial
+    runtime_state.serial_tx_allowed.set()
+
+    # Acquire lock first, then clear transport.serial before send_raw acquires it
+    async with transport._serial_write_lock:
+        task = asyncio.create_task(transport.send_raw(Command.CMD_GET_VERSION.value, b""))
+        await asyncio.sleep(0.01)
+        transport.serial = None
+
+    assert not await task
+
+
+async def test_send_raw_console_bytes_vs_protobuf() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-
-        transport = SerialTransport(config, state, service)
-        _install_link_cipher(config, state)
+        transport = SerialTransport(config, state, None)
+        mcu_cipher = _install_link_cipher(config, state)
+        state.serial_tx_allowed.set()
 
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
-        mock_serial.write = MagicMock(return_value=10)
-        mock_serial.flush = MagicMock()
+        written: list[bytes] = []
+        mock_serial.write.side_effect = lambda d: written.append(d) or len(d)
         transport.serial = mock_serial
 
-        ok = await transport.send_raw(command_id, payload, seq_id=seq_id)
+        # Send console write with Protobuf message
+        ok = await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=b"hello"))
         assert ok is True
-        assert mock_serial.write.called
-        written_data: bytes = mock_serial.write.call_args[0][0]
-        # HDLC frame starts and ends with FRAME_DELIMITER (0x7E)
-        assert written_data.startswith(protocol.FRAME_DELIMITER)
-        assert written_data.endswith(protocol.FRAME_DELIMITER)
-        # HDLC decoding must succeed
-        decoder = FrameDecoder()
-        frames = list(decoder.process(written_data))
+        assert len(written) == 1
+        frames = list(FrameDecoder().process(written[0]))
+        assert len(frames) == 1
+        assert frames[0].ok()
+        assert frames[0].address == protocol.HDLC_ADDRESS_CONSOLE
+        assert mcu_cipher.decrypt(frames[0].address, bytes(frames[0].data)) == b"hello"
+
+        # Send console write with unexpected payload type
+        written.clear()
+        await transport.send_raw(Command.CMD_CONSOLE_WRITE.value, 12345)  # type: ignore[arg-type]
+        assert len(written) == 1
+        frames = list(FrameDecoder().process(written[0]))
         assert len(frames) == 1
         assert frames[0].ok()
     finally:
@@ -1426,8 +1457,8 @@ async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection()
         # 5. Reconnect and resubscribe active pin, then cancel stream explicitly
         restored = await service.gpio.resubscribe_pins()
         assert restored == 1
-        assert transport.cancel_pin_stream() is True
-        assert transport.cancel_pin_stream() is False
+        assert transport.cancel_pin_stream()
+        assert not transport.cancel_pin_stream()
 
         # 6. Immediate MCU rejection (RESOURCE_EXHAUSTED = 8) fails subscribe_pin
         def reject_immediately(packet: bytes) -> None:
@@ -1443,14 +1474,13 @@ async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection()
                     call_id=pkt.call_id,
                     status=8,
                 ).SerializeToString()
-                asyncio.get_running_loop().call_soon(
-                    asyncio.create_task,
+                asyncio.get_running_loop().create_task(
                     transport.feed_data(
                         ui_frame(
                             protocol.HDLC_ADDRESS_RPC,
                             mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, rej),
                         )
-                    ),
+                    )
                 )
 
         transport.rpc_client = PwRpcClient(

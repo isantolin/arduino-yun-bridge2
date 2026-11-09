@@ -87,7 +87,6 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
             state.cleanup()
 
 
-
 async def test_handle_mcu_frame_dispatches_by_pigweed_service_and_method() -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -658,11 +657,6 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
 
     svc.serial = mock_serial
     svc.state.connection_fsm.synchronize()
-    await svc.handle_mcu_frame(
-        Command.CMD_DATASTORE_GET_RESP.value, 1, pb.DatastoreGetResponse().SerializeToString()
-    )
-    assert not mock_serial.send.called
-
     await svc.handle_mcu_frame(9999, 1, b"")
     assert mock_serial.send.called
 
@@ -673,8 +667,8 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
         called_sync.append(_seq)
         return {"status": "ok"}
 
-    svc.mcu_registry[Command.CMD_DATASTORE_GET_RESP.value] = _sync_handler
-    await svc.handle_mcu_frame(Command.CMD_DATASTORE_GET_RESP.value, 2, b"")
+    svc.mcu_registry[Command.CMD_GET_CAPABILITIES.value] = _sync_handler
+    await svc.handle_mcu_frame(Command.CMD_GET_CAPABILITIES.value, 2, b"")
     assert called_sync == [2]
 
     # Test handler returning False
@@ -1153,7 +1147,7 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     mock_serial.send.assert_awaited_once()
     sent_cmd = mock_serial.send.call_args[0][0]
     sent_resp = mock_serial.send.call_args[0][1]
-    assert sent_cmd == Command.CMD_DATASTORE_GET_RESP.value
+    assert sent_cmd == Command.CMD_DATASTORE_GET.value
     assert sent_resp.value == b"active"
 
     mock_serial.send.reset_mock()
@@ -1459,7 +1453,7 @@ async def test_runtime_streams_local_file_responses_to_mcu(
     assert response.content == b""
     calls = mock_serial.send.await_args_list
     assert len(calls) > 1
-    assert all(call.args[0] == Command.CMD_FILE_READ_RESP.value for call in calls)
+    assert all(call.args[0] == Command.CMD_FILE_READ.value for call in calls)
     assert calls[-1].args[1].content == b""
     assert b"".join(call.args[1].content for call in calls[:-1]) == payload
     assert all(len(call.args[1].content) <= protocol.MAX_PAYLOAD_SIZE - 3 for call in calls)

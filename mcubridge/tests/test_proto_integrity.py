@@ -264,7 +264,6 @@ def test_command_specs_multidimensional_integrity() -> None:
         assert spec.name == val.name
         opts = val.GetOptions().Extensions[pb.cmd_opts]
         assert spec.requires_ack == opts.requires_ack
-        assert spec.expects_direct_response == bool(opts.response_command)
         assert spec.pre_sync_allowed == opts.pre_sync_allowed
         assert spec.cloud_topic == (opts.cloud_topic or None)
         assert spec.auth_field == (opts.auth_field or None)

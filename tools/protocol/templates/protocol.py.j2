@@ -211,7 +211,6 @@ class OperationSpec:
     paired_request_id: int | None = None
     auth_field: str | None = None
     requires_ack: bool = False
-    expects_direct_response: bool = False
     pre_sync_allowed: bool = False
     request_type: type[ProtobufMessage] | None = None
     response_type: type[ProtobufMessage] | None = None
@@ -291,9 +290,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- endif %}
         {%- if op.requires_ack %}
         requires_ack=True,
-        {%- endif %}
-        {%- if op.expects_direct_response %}
-        expects_direct_response=True,
         {%- endif %}
         {%- if op.pre_sync_allowed %}
         pre_sync_allowed=True,
@@ -431,6 +427,10 @@ for _op in OPERATIONS:
     if _op.request_type is not None:
         BY_TYPE.setdefault(_op.request_type, _op)
         BY_NAME.setdefault(_op.request_type.DESCRIPTOR.name, _op)
+for _op in OPERATIONS:
+    if _op.response_type is not None:
+        BY_TYPE.setdefault(_op.response_type, _op)
+        BY_NAME.setdefault(_op.response_type.DESCRIPTOR.name, _op)
 
 for _alias, _target_name in RPC_ALIASES.items():
     if _target_op := BY_NAME.get(_target_name):
@@ -725,6 +725,14 @@ def encode_rpc_packet(
                 spec = paired
                 if actual_type == 0:
                     actual_type = 1
+        elif (
+            actual_type == 0
+            and spec is not None
+            and spec.response_type is not None
+            and spec.response_type is not spec.request_type
+            and isinstance(payload_or_service, spec.response_type)
+        ):
+            actual_type = 1
         if spec is not None and spec.service_id is not None and spec.method_id is not None:
             srv_id = spec.service_id
             meth_id = spec.method_id

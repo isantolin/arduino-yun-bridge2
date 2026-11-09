@@ -1312,13 +1312,10 @@ enum Command {
   }];
   CMD_DATASTORE_GET = 113 [(cmd_opts) = {
     pb_message: "DatastoreGet"
-    response_command: "CMD_DATASTORE_GET_RESP"
     auth_field: "datastore_get"
     mcu_handler: "datastore_get"
   }];
-  CMD_DATASTORE_GET_RESP = 114 [(cmd_opts) = {pb_message: "DatastoreGetResponse"}];
   CMD_MAILBOX_READ = 128 [(cmd_opts) = {
-    response_command: "CMD_MAILBOX_READ_RESP"
     auth_field: "mailbox_read"
     mcu_handler: "mailbox_read"
   }];
@@ -1327,10 +1324,7 @@ enum Command {
     pb_message: "MailboxProcessed"
     mcu_handler: "publish_mcu_message"
   }];
-  CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {
-    response_command: "CMD_MAILBOX_AVAILABLE_RESP"
-    mcu_handler: "mailbox_available"
-  }];
+  CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {mcu_handler: "mailbox_available"}];
   CMD_MAILBOX_PUSH = 131 [(cmd_opts) = {
     requires_ack: true
     cloud_topic: "mailbox/incoming"
@@ -1338,8 +1332,6 @@ enum Command {
     auth_field: "mailbox_write"
     mcu_handler: "mailbox_push"
   }];
-  CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = {pb_message: "MailboxReadResponse"}];
-  CMD_MAILBOX_AVAILABLE_RESP = 133 [(cmd_opts) = {pb_message: "MailboxAvailableResponse"}];
   CMD_FILE_WRITE = 144 [(cmd_opts) = {
     requires_ack: true
     pb_message: "FileWrite"
@@ -1348,7 +1340,6 @@ enum Command {
   }];
   CMD_FILE_READ = 145 [(cmd_opts) = {
     pb_message: "FileRead"
-    response_command: "CMD_FILE_READ_RESP"
     auth_field: "file_read"
     mcu_handler: "file_read"
   }];
@@ -1357,16 +1348,13 @@ enum Command {
     auth_field: "file_remove"
     mcu_handler: "file_remove"
   }];
-  CMD_FILE_READ_RESP = 147 [(cmd_opts) = {pb_message: "FileReadResponse"}];
   CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
     pb_message: "ProcessRunAsync"
-    response_command: "CMD_PROCESS_RUN_ASYNC_RESP"
     auth_field: "shell_run_async"
     mcu_handler: "process_run_async"
   }];
   CMD_PROCESS_POLL = 162 [(cmd_opts) = {
     pb_message: "ProcessPoll"
-    response_command: "CMD_PROCESS_POLL_RESP"
     auth_field: "shell_poll"
     mcu_handler: "process_poll"
   }];
@@ -1375,8 +1363,6 @@ enum Command {
     auth_field: "shell_kill"
     mcu_handler: "process_kill"
   }];
-  CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = {pb_message: "ProcessRunAsyncResponse"}];
-  CMD_PROCESS_POLL_RESP = 166 [(cmd_opts) = {pb_message: "ProcessPollResponse"}];
   CMD_SPI_BEGIN = 176 [(cmd_opts) = {
     requires_ack: true
     auth_field: "spi_begin"

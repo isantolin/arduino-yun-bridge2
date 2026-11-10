@@ -117,7 +117,7 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
 
     # Console input topic
     req_console = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/console.write",
+        topic_name=f"{state.cloud_topic_prefix}/req/ConsoleWrite",
         payload=pb.ConsoleWrite(data=b"help\n").SerializeToString(),
     )
     await service.handle_request(req_console)
@@ -126,7 +126,7 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
 
     # Mailbox write topic
     req_mb = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/mailbox.push",
+        topic_name=f"{state.cloud_topic_prefix}/req/MailboxService/Push",
         payload=pb.MailboxPush(data=b"ping").SerializeToString(),
     )
     await service.handle_request(req_mb)

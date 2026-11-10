@@ -218,9 +218,9 @@ def test_protobuf_descriptor_purged_elements() -> None:
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:
     expected_map = {
-        "metrics": "daemon_metrics_blob",
-        "summary": "bridge_snapshot_blob",
-        "handshake": "handshake_snapshot_blob",
+        "Metrics": "daemon_metrics_blob",
+        "BridgeSnapshot": "bridge_snapshot_blob",
+        "HandshakeSnapshot": "handshake_snapshot_blob",
     }
     assert expected_map == protocol.TELEMETRY_TOPIC_FIELD_MAP
     assert protocol.TELEMETRY_DEFAULT_FIELD == "system_status_blob"
@@ -243,13 +243,12 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
     assert expected_names == pre_sync_specs
 
 
-def test_topic_lookup_matches_schema_metadata() -> None:
-    topic_configs = config_schema_pb2.Constants.DESCRIPTOR.file.GetOptions().Extensions[config_schema_pb2.topics]
-    for topic_config in topic_configs:
-        enum_val = protocol.Topic[topic_config.name]
-        assert protocol.lookup_topic(topic_config.value) == enum_val
-        for alias in topic_config.aliases:
-            assert protocol.lookup_topic(alias) == enum_val
+def test_pw_services_integrity() -> None:
+    """Verify that all canonical Pigweed services are registered and valid."""
+    assert len(protocol.PW_SERVICES) >= 6
+    for service in protocol.PW_SERVICES:
+        assert service.full_name.startswith("rpc.pb.")
+        assert len(service.methods) > 0
 
 
 def test_operation_specs_multidimensional_integrity() -> None:

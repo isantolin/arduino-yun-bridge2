@@ -41,7 +41,7 @@ async def run_test(
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
         is_interactive = sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
-        topic_cw = Topic.build(Topic.CONSOLE, "write", prefix=topic_prefix)
+        topic_cw = Topic.build("req", "ConsoleWrite", prefix=topic_prefix)
 
         if not is_interactive:
             logger.info("Non-interactive mode. Running Echo Test (ping/pong)...")

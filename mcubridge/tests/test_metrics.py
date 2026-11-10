@@ -51,7 +51,7 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
         await task
 
     message = captured["message"]
-    expected_topic = "test/prefix/system/metrics"
+    expected_topic = "test/prefix/evt/SystemService/Metrics"
 
     assert message.topic_name == expected_topic
     decoded = mcu_wire_pb2.DaemonMetrics()
@@ -126,8 +126,8 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         await task
 
     topics = {message.topic_name for message in messages}
-    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
-    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
+    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/evt/SystemService/BridgeSnapshot" in topics
+    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/evt/SystemService/HandshakeSnapshot" in topics
     props = [(p.key, p.value) for message in messages for p in message.user_properties]
     assert ("bridge-snapshot", "summary") in props
     assert ("bridge-snapshot", "handshake") in props

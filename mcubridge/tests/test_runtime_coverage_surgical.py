@@ -151,8 +151,8 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     svc.cloud_publisher = mock_publish
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    put_topic = f"{prefix}/req/datastore.put"
-    get_topic = f"{prefix}/req/datastore.get"
+    put_topic = f"{prefix}/req/DataStoreService/Put"
+    get_topic = f"{prefix}/req/DataStoreService/Get"
 
     # PUT Action
     msg_put = cloud_gateway_pb2.CloudQueuedPublish(
@@ -177,7 +177,7 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     svc.cloud_publisher = mock_enqueue
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    write_topic = f"{prefix}/req/mailbox.push"
+    write_topic = f"{prefix}/req/MailboxService/Push"
 
     # WRITE Action
     msg_write = cloud_gateway_pb2.CloudQueuedPublish(
@@ -197,7 +197,7 @@ async def test_handle_file_mcu_read_success_and_timeout(
     svc.cloud_publisher = mock_enqueue
 
     inbound = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/file.read",
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/FileSystemService/Read",
         payload=mcu_wire_pb2.FileRead(path="/mcu/etc/config").SerializeToString(),
     )
     await svc.handle_request(inbound)
@@ -256,19 +256,19 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     svc.cloud_publisher = mock_publisher
 
     # Bootloader action
-    t_bootloader = f"{mock_bridge_state.cloud_topic_prefix}/req/system.bootloader"
+    t_bootloader = f"{mock_bridge_state.cloud_topic_prefix}/req/SystemService/EnterBootloader"
     await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_bootloader, payload=b""))
     mock_serial.send.assert_awaited_with(
         "rpc.pb.SystemService/EnterBootloader", mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC)
     )
 
     # Version action
-    t_version = f"{mock_bridge_state.cloud_topic_prefix}/req/system.version"
+    t_version = f"{mock_bridge_state.cloud_topic_prefix}/req/SystemService/GetVersion"
     await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_version, payload=b""))
     assert mock_bridge_state.mcu_version == (2, 8, 5)
 
     # System status action
-    t_status = f"{mock_bridge_state.cloud_topic_prefix}/req/system.status"
+    t_status = f"{mock_bridge_state.cloud_topic_prefix}/req/GetStatus"
     await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_status, payload=b""))
     mock_publisher.assert_awaited()
 

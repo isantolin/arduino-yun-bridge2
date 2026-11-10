@@ -685,12 +685,12 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 
 El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante invocaciones tipadas de `LocalBridge` o despacho de comandos en tópicos canónicos:
 - **Comandos Canónicos Cloud**:
-  - Escritura digital: `{prefix}/req/gpio.write` (o `devices/{device_id}/req/gpio.write`) con payload Protobuf `DigitalWrite { pin, value }`.
-  - Modo de pin: `{prefix}/req/gpio.set_mode` con payload Protobuf `PinMode { pin, mode }`.
-  - Lectura digital: `{prefix}/req/gpio.read` con payload Protobuf `PinRead { pin }`.
-  - Escritura analógica: `{prefix}/req/gpio.analog_write` con payload Protobuf `AnalogWrite { pin, value }`.
-  - Lectura analógica: `{prefix}/req/gpio.analog_read` con payload Protobuf `PinRead { pin }`.
-  - Suscripción de pin: `{prefix}/req/gpio.subscribe` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
+  - Escritura digital: `{prefix}/req/GpioService/DigitalWrite` (o `devices/{device_id}/req/GpioService/DigitalWrite`) con payload Protobuf `DigitalWrite { pin, value }`.
+  - Modo de pin: `{prefix}/req/GpioService/SetPinMode` con payload Protobuf `PinMode { pin, mode }`.
+  - Lectura digital: `{prefix}/req/GpioService/DigitalRead` con payload Protobuf `PinRead { pin }`.
+  - Escritura analógica: `{prefix}/req/GpioService/AnalogWrite` con payload Protobuf `AnalogWrite { pin, value }`.
+  - Lectura analógica: `{prefix}/req/GpioService/AnalogRead` con payload Protobuf `PinRead { pin }`.
+  - Suscripción de pin: `{prefix}/req/GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
 - **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `CMD_DIGITAL_WRITE`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
 - **Correlación Asíncrona**: Cada request/response se correlaciona con `call_id` / `sequence_id` garantizando entrega determinista fin a fin.
 - **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/gpio.pin_update` (o `br/gpio/pin_update`).
@@ -1054,11 +1054,11 @@ Utilizado por el daemon de borde cuando procesa rutas relativas a su propio pref
   - `req`: Peticiones / comandos RPC entrantes desde la nube o clientes hacia el daemon.
   - `res`: Respuestas y retornos generados por el daemon tras la ejecución del RPC.
   - `evt`: Eventos asíncronos y telemetría emitidos espontáneamente por el daemon hacia el Gateway (`status_online`, `pin_event`, etc.).
-- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `gpio.write`, `gpio.set_mode`, `file.read`, `system.version`, `datastore.put`, `mailbox.push`).
+- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `GpioService/DigitalWrite`, `FileSystemService/Read`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
 
 Ejemplos:
-- Petición de escritura GPIO: `br/req/gpio.write`
-- Respuesta a lectura de archivo: `br/res/file.read`
+- Petición de escritura GPIO: `br/req/GpioService/DigitalWrite`
+- Respuesta a lectura de archivo: `br/res/FileSystemService/Read`
 - Evento de cambio de pin: `br/evt/gpio.event`
 
 #### 2. Formato Flota / Multi-Dispositivo (`devices/{device_id}/{direction}/{method}`)
@@ -1069,7 +1069,7 @@ Utilizado por el `mcubridge-gateway` central para el enrutamiento Hub-and-Spoke 
 - **`{method}`**: Identificador canónico de la operación.
 
 Ejemplos:
-- Petición remota a un nodo: `devices/yun-01/req/gpio.write`
+- Petición remota a un nodo: `devices/yun-01/req/GpioService/DigitalWrite`
 - Retorno de telemetría de un nodo: `devices/yun-01/evt/status_online`
 
 ### 11.2 Resolución Declarativa en la Fuente de Verdad (SSOT)

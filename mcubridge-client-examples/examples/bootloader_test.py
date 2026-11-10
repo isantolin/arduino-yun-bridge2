@@ -26,7 +26,7 @@ async def run_test(
 
     log.info("Triggering bootloader via LocalBridgeStub...")
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
-        topic_bl = Topic.build(Topic.SYSTEM, "bootloader", prefix=topic_prefix)
+        topic_bl = Topic.build("req", "SystemService", "EnterBootloader", prefix=topic_prefix)
         await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_bl, payload=b"", qos=1))
         log.info("Bootloader command sent.")
 

@@ -51,7 +51,6 @@ from ..protocol.protocol import (
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
     Status,
-    Topic,
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
@@ -192,7 +191,7 @@ class BridgeService:
             self.ipc_requests[correlation].put_nowait(resolved_message)
             return
 
-        if Topic.CONSOLE in resolved_message.topic_name:
+        if "console" in resolved_message.topic_name.lower():
             for q in list(self.console_queues):
                 q.put_nowait(resolved_message)
 
@@ -522,7 +521,9 @@ class BridgeService:
                 await self.reject_cloud(request, route.method, action)
                 return
 
-            if not spec.pre_sync_allowed and route.method.startswith(("gpio.", "console.", "spi.")):
+            if not spec.pre_sync_allowed and (
+                route.method.startswith(("GpioService/", "SpiService/")) or route.method == "ConsoleWrite"
+            ):
                 try:
                     async with asyncio.timeout(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
                         await self.state.link_sync_event.wait()
@@ -604,7 +605,7 @@ class BridgeService:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(k, v)
         tp = getattr(reply_context, "response_topic", None) or protocol.topic_path(
-            self.state.cloud_topic_prefix, "res", "datastore.get"
+            self.state.cloud_topic_prefix, "res", "DataStoreService/Get"
         )
         await self.enqueue_cloud_publish(
             tp,
@@ -1012,10 +1013,9 @@ class BridgeService:
         )
         return True
 
-    async def reject_cloud(self, ctx: Any, tp: Topic | str, act: str) -> None:
-        val = tp.value if isinstance(tp, Topic) else tp
+    async def reject_cloud(self, ctx: Any, topic: str, act: str) -> None:
         await self.enqueue_cloud_status_report(
-            StatusReport(status=403, topic=val, action=act, reason="forbidden"),
+            StatusReport(status=403, topic=topic, action=act, reason="forbidden"),
             user_properties=(("bridge-error", "topic-action-forbidden"),),
             reply_context=ctx,
         )

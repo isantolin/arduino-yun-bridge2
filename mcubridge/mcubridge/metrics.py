@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
 
 from .protocol import cloud_gateway_pb2, mcu_wire_pb2
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
-from .protocol.protocol import BRIDGE_SNAPSHOT_EXPIRY_SECONDS, Topic, topic_path
+from .protocol.protocol import BRIDGE_SNAPSHOT_EXPIRY_SECONDS, get_topic_for_message, topic_path
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
@@ -25,10 +25,11 @@ def _build_metrics_message(
     *,
     expiry_seconds: float,
 ) -> cloud_gateway_pb2.CloudQueuedPublish:
-    topic = topic_path(
+    topic = get_topic_for_message(state.cloud_topic_prefix, snapshot) or topic_path(
         state.cloud_topic_prefix,
-        Topic.SYSTEM,
-        "metrics",
+        "evt",
+        "SystemService",
+        "Metrics",
     )
     # [SIL-2] Direct Protobuf serialization without StructuredPayload overhead
     message = create_queued_publish(
@@ -182,13 +183,12 @@ def _build_bridge_snapshot_message(
     flavor: str,
     snapshot: Any,
 ) -> cloud_gateway_pb2.CloudQueuedPublish:
-    segments: Sequence[str] = (
-        ("bridge", "handshake", "value") if flavor == "handshake" else ("bridge", "summary", "value")
-    )
-    topic = topic_path(
+    fallback_leaf = "HandshakeSnapshot" if flavor == "handshake" else "BridgeSnapshot"
+    topic = get_topic_for_message(state.cloud_topic_prefix, snapshot) or topic_path(
         state.cloud_topic_prefix,
-        Topic.SYSTEM,
-        *segments,
+        "evt",
+        "SystemService",
+        fallback_leaf,
     )
     return create_queued_publish(
         topic_name=topic,

@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Topic, topic_path
+from mcubridge.protocol.protocol import topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -52,7 +52,7 @@ async def test_cloud_command_pin_dispatch_property(
     """Validate that cloud pin commands (digital write and mode) dispatch correlated RPC and responses."""
     svc, state, serial_mock, mock_publish = _make_service()
     try:
-        method = "gpio.set_mode" if is_mode else "gpio.write"
+        method = "GpioService/SetPinMode" if is_mode else "GpioService/DigitalWrite"
         t_path = topic_path(state.cloud_topic_prefix, "req", method)
         payload = (
             mcu_wire_pb2.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
@@ -110,7 +110,7 @@ async def test_publish_cloud_message_wraps_command_response(
         svc.cloud_stream = stream_mock
 
         msg = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"br/{Topic.DIGITAL.value}/13/response",
+            topic_name="br/res/GpioService/DigitalRead",
             payload=payload,
             correlation_data=seq_id.to_bytes(8, "big"),
             response_topic="cloud",
@@ -156,7 +156,7 @@ async def test_mcu_pin_update_event_forwarding(
         call_args = mock_cloud.await_args.args
         assert len(call_args) > 0
         queued_msg: cloud_gateway_pb2.CloudQueuedPublish = call_args[0]
-        assert f"{Topic.DIGITAL.value}/{pin}/update" in queued_msg.topic_name
+        assert f"evt/GpioService/PinUpdateEvent/{pin}" in queued_msg.topic_name
         assert queued_msg.payload == str(value).encode()
     finally:
         state.cleanup()

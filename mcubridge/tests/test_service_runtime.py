@@ -260,7 +260,7 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
 
     envelope_cmd = MagicMock()
     envelope_cmd.WhichOneof.return_value = "command_request"
-    envelope_cmd.command_request.command_path = "rpc/GetVersion"
+    envelope_cmd.command_request.command_path = "rpc.pb.LocalBridge/GetVersion"
     envelope_cmd.command_request.payload = b""
     envelope_cmd.sequence_id = 1234
 
@@ -381,9 +381,9 @@ async def test_runtime_handle_mcu_status_binary_undecodable(
     mock_enqueue = AsyncMock()
     service.cloud_publisher = mock_enqueue
     handle_mcu_status: Callable[..., Awaitable[None]] = service.handle_mcu_status
-    await handle_mcu_status(Status.TIMEOUT, 1, b"\xff\xfe\xfd\x80")
+    await handle_mcu_status(Status.DEADLINE_EXCEEDED, 1, b"\xff\xfe\xfd\x80")
     assert mock_enqueue.await_count == 1
-    await handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
+    await handle_mcu_status(Status.INTERNAL, 2, cast(Any, 12345))
     assert mock_enqueue.await_count == 2
 
 
@@ -1173,18 +1173,20 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     cmd_ok = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=1,
-        command_request=cloud_gateway_pb2.CommandRequest(command_path="rpc/GetVersion", payload=b""),
+        command_request=cloud_gateway_pb2.CommandRequest(command_path="rpc.pb.LocalBridge/GetVersion", payload=b""),
     )
     cmd_invalid = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=2,
-        command_request=cloud_gateway_pb2.CommandRequest(command_path="rpc/UnknownMethod", payload=b"err"),
+        command_request=cloud_gateway_pb2.CommandRequest(
+            command_path="rpc.pb.LocalBridge/UnknownMethod", payload=b"err"
+        ),
     )
     cmd_os_err = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=3,
         command_request=cloud_gateway_pb2.CommandRequest(
-            command_path="rpc/SetPinMode",
+            command_path="rpc.pb.LocalBridge/SetPinMode",
             payload=mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PinModeType.PIN_OUTPUT).SerializeToString(),
         ),
     )

@@ -15,7 +15,7 @@ from tools.emulation import frame_debug
 
 TEST_BROKEN_CRC = 0xDEADBEEF
 
-_VALID_CMD_NAMES = frozenset(frame_debug.ENUM_BY_NAME.keys())
+_VALID_OP_NAMES = frozenset(frame_debug.ENUM_BY_NAME.keys())
 
 
 @given(val=st.integers(min_value=0, max_value=protocol.UINT16_MAX))
@@ -48,7 +48,7 @@ def test_resolve_command_empty() -> None:
 @given(
     invalid_name=st.text(alphabet=st.characters(blacklist_categories=("Cs",)), min_size=1, max_size=30).filter(
         lambda s: (
-            s.strip().upper() not in _VALID_CMD_NAMES
+            s.strip().upper() not in _VALID_OP_NAMES
             and not s.strip().startswith(("0x", "0X"))
             and not s.strip().isdigit()
             and bool(s.strip())

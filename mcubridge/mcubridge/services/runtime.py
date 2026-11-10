@@ -169,7 +169,7 @@ class BridgeService:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
 
     async def send_mcu_error(self, message: str) -> bool:
-        return bool(self.serial and await self.serial.send(Status.ERROR.value, b""))
+        return bool(self.serial and await self.serial.send(Status.INTERNAL.value, b""))
 
     async def _send_mcu_status(self, ok: bool, error_message: str = "") -> bool:
         return await (self.send_mcu_ok() if ok else self.send_mcu_error(error_message))
@@ -472,7 +472,7 @@ class BridgeService:
                     except ProtobufDecodeError as exc:
                         logger.error("Failed to decode MCU Protobuf payload", error=str(exc))
                         self.state.serial_decode_errors += 1
-                        await serial.send(Status.MALFORMED.value, b"")
+                        await serial.send(Status.INVALID_ARGUMENT.value, b"")
                         return
 
                 res = handler(sequence_id, p)
@@ -485,7 +485,7 @@ class BridgeService:
                     if isinstance(operation_key, int)
                     else (operation_key[1] if isinstance(operation_key, tuple) else 0)
                 )
-                await serial.send(Status.NOT_IMPLEMENTED.value, b"")
+                await serial.send(Status.UNIMPLEMENTED.value, b"")
 
     @staticmethod
     def _coerce_inbound_request(inbound: Any) -> CloudQueuedPublish:
@@ -845,7 +845,7 @@ class BridgeService:
             ctx = self.state.running_processes.get(pid)
             if not ctx:
                 resp = mcu_wire_pb2.ProcessPollResponse(
-                    status=Status.ERROR.value,
+                    status=Status.INTERNAL.value,
                     exit_code=1,
                     stdout_data=b"",
                     stderr_data=b"",
@@ -1150,11 +1150,7 @@ class BridgeService:
 
                         if payload_type == "command_request":
                             cmd = envelope.command_request
-                            method_name = (
-                                cmd.command_path.removeprefix("rpc/")
-                                if cmd.command_path.startswith("rpc/")
-                                else cmd.command_path
-                            )
+                            method_name = cmd.command_path
                             try:
                                 resp_payload = await self.execute_rpc(method_name, cmd.payload)
                                 status_code = 200

@@ -974,17 +974,24 @@ extend google.protobuf.FieldOptions {
 }
 
 enum Status {
-  STATUS_UNSPECIFIED = 0;
   option (enum_cloud_topic) = "evt/SystemService/StatusReport";
-  reserved "CMD_UNKNOWN";
-  OK = 48 [(status_opts) = {description: "Operation completed successfully."}];
-  ERROR = 49 [(status_opts) = {description: "Generic failure."}];
-  OPERATION_UNKNOWN = 50 [(status_opts) = {description: "Operation not recognized."}];
-  MALFORMED = 51 [(status_opts) = {description: "Payload had invalid structure."}];
-  OVERFLOW = 52 [(status_opts) = {description: "Frame exceeded buffer size."}];
-  CRC_MISMATCH = 53 [(status_opts) = {description: "CRC check failed."}];
-  TIMEOUT = 54 [(status_opts) = {description: "Operation timed out."}];
-  NOT_IMPLEMENTED = 55 [(status_opts) = {description: "Operation defined but not supported."}];
+  OK = 0 [(status_opts) = {description: "Operation completed successfully."}];
+  CANCELLED = 1 [(status_opts) = {description: "Operation was cancelled."}];
+  UNKNOWN = 2 [(status_opts) = {description: "Unknown error."}];
+  INVALID_ARGUMENT = 3 [(status_opts) = {description: "Payload had invalid structure or arguments."}];
+  DEADLINE_EXCEEDED = 4 [(status_opts) = {description: "Operation timed out."}];
+  NOT_FOUND = 5 [(status_opts) = {description: "Requested entity was not found."}];
+  ALREADY_EXISTS = 6 [(status_opts) = {description: "Entity already exists."}];
+  PERMISSION_DENIED = 7 [(status_opts) = {description: "Caller lacks permission."}];
+  RESOURCE_EXHAUSTED = 8 [(status_opts) = {description: "Resource exhausted or frame overflow."}];
+  FAILED_PRECONDITION = 9 [(status_opts) = {description: "System not in required state."}];
+  ABORTED = 10 [(status_opts) = {description: "Operation aborted."}];
+  OUT_OF_RANGE = 11 [(status_opts) = {description: "Value or index out of range."}];
+  UNIMPLEMENTED = 12 [(status_opts) = {description: "Operation defined but not implemented."}];
+  INTERNAL = 13 [(status_opts) = {description: "Internal failure."}];
+  UNAVAILABLE = 14 [(status_opts) = {description: "Service unavailable."}];
+  DATA_LOSS = 15 [(status_opts) = {description: "Unrecoverable data loss or CRC failure."}];
+  UNAUTHENTICATED = 16 [(status_opts) = {description: "Authentication failed."}];
 }
 
 enum SafetyPinState {

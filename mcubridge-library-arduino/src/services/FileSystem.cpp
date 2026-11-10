@@ -12,7 +12,7 @@
 void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
   rpc_pb_FileWrite p = rpc_pb_FileWrite_init_default;
@@ -27,7 +27,7 @@ void FileSystemClass::read(
     typename FileSystemClass::FileSystemReadHandler handler) {
   _pending_reads.clear();
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
   rpc_pb_FileRead p = rpc_pb_FileRead_init_default;
@@ -45,7 +45,7 @@ void FileSystemClass::read(
 
 void FileSystemClass::remove(etl::string_view path) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
   rpc_pb_FileRemove p = rpc_pb_FileRemove_init_default;

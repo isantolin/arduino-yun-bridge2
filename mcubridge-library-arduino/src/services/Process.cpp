@@ -17,7 +17,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
                             etl::span<const etl::string_view> args,
                             typename ProcessClass::ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED);
     handler(kProcessInvalidPid);
     return;
   }
@@ -37,7 +37,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   if (!ok) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
@@ -48,7 +48,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
       etl::string_view(command_buffer.data(), command_buffer.size()));
 
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
@@ -64,12 +64,12 @@ void ProcessClass::runAsync(etl::string_view cmd,
 void ProcessClass::poll(int32_t pid,
                         typename ProcessClass::ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED);
     return;
   }
 
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
 
@@ -89,7 +89,7 @@ void ProcessClass::poll(int32_t pid,
 
 void ProcessClass::kill(int32_t pid) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
   rpc_pb_ProcessKill p = rpc_pb_ProcessKill_init_default;

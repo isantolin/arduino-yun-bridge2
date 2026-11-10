@@ -33,7 +33,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 │  │ GatewayLocalBridgeService (LocalBridgeBase)                         │  │
 │  │  - Validates and extracts x-device-id from stream metadata          │  │
 │  │  - Resolves active DeviceSession in active_sessions registry        │  │
-│  │  - Dispatches CommandRequest(command_path="rpc/<method>") to device │  │
+│  │  - Dispatches CommandRequest(command_path="rpc.pb.LocalBridge/<method>") to device │  │
 │  │  - Multiplexes SubscribeConsole queues to client streams            │  │
 │  └─────────────────────────────────────────────────────────────────────┘  │
 │                                                                           │

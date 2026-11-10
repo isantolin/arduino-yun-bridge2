@@ -610,7 +610,7 @@ class GatewayLocalBridgeService:
             try:
                 cmd_resp = await self.gateway.send_command(
                     device_id,
-                    f"rpc/{method_name}",
+                    f"rpc.pb.LocalBridge/{method_name}",
                     payload=req.SerializeToString(),
                     timeout_seconds=15.0,
                 )
@@ -837,7 +837,7 @@ class ProtobufGateway:
     ) -> None:
         """[SIL-2] Handle incoming command response from edge device and resolve pending future."""
         logger.debug(
-            "[DEVICE -> GATEWAY] [DEVICE:%s] [CMD_RESP] [SEQ:%d] [STATUS:%d]",
+            "[DEVICE -> GATEWAY] [DEVICE:%s] [COMMAND_RESPONSE] [SEQ:%d] [STATUS:%d]",
             device_id,
             sequence_id,
             response.status_code,

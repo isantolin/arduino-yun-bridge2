@@ -25,7 +25,7 @@ Todos los clientes se comunican **exclusivamente con el Cloud Gateway** mediante
 │  - Multiplexación N:1 de dispositivos de borde              │
 └──────────────────┬──────────────────────────────────────────┘
                    │ gRPC Bidirectional Session Stream
-                   │ CommandRequest(command_path="rpc/<method>")
+                   │ CommandRequest(command_path="rpc.pb.LocalBridge/<method>")
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │             McuBridge Daemon (Edge Linux / MPU)             │

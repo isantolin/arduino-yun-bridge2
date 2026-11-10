@@ -89,7 +89,7 @@ async def test_unsupported_mcu_request(
     if has_serial:
         assert state.unknown_command_count == 1
         assert state.unknown_command_last_id == dr_op.method_id
-        assert serial.send.call_args[0][0] == Status.NOT_IMPLEMENTED.value
+        assert serial.send.call_args[0][0] == Status.UNIMPLEMENTED.value
 
 
 # -----------------------------------------------------------------------------
@@ -173,7 +173,7 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     service.config.file_system_root = "/tmp/fs"
     serial.send.return_value = True
     assert (await on_write(1, mcu_wire_pb2.FileWrite(path="../../../etc/shadow", data=b"evil"))).status == "error"
-    assert serial.send.call_args[0][0] == Status.ERROR.value
+    assert serial.send.call_args[0][0] == Status.INTERNAL.value
 
     # Successful write
     assert (await on_write(2, mcu_wire_pb2.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
@@ -193,7 +193,7 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     service.serial = serial
     serial.send.return_value = True
     assert (await on_read(1, mcu_wire_pb2.FileRead(path="missing.txt"))).content == b""
-    assert serial.send.call_args[0][0] == Status.ERROR.value
+    assert serial.send.call_args[0][0] == Status.INTERNAL.value
 
     # Read existing nonempty file as bounded SERVER_STREAM frames plus stream completion (b"").
     await service.file_write(mcu_wire_pb2.FileWrite(path="exists.txt", data=b"chunk-data"))
@@ -222,7 +222,7 @@ async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeS
     # Remove nonexistent file
     service.serial = serial
     assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"
-    assert serial.send.call_args[0][0] == Status.ERROR.value
+    assert serial.send.call_args[0][0] == Status.INTERNAL.value
 
     # Remove existing file
     assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="exists.txt"))).status == "ok"
@@ -248,7 +248,7 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
     service.serial = serial
     serial.send.return_value = True
     assert (await on_run(1, mcu_wire_pb2.ProcessRunAsync(command="rm -rf /"))).pid == 0
-    assert serial.send.call_args[0][0] == Status.ERROR.value
+    assert serial.send.call_args[0][0] == Status.INTERNAL.value
 
     # Allowed command
     assert (await on_run(2, mcu_wire_pb2.ProcessRunAsync(command="echo test_exec"))).pid == IsPositiveInt
@@ -289,7 +289,7 @@ async def test_status_reporting_and_ack(
     assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/evt/SystemService/StatusReport"
 
     # Status with GenericResponse
-    await handle_status(Status.ERROR, 2, cloud_gateway_pb2.GenericResponse(status="error", message="fault"))
+    await handle_status(Status.INTERNAL, 2, cloud_gateway_pb2.GenericResponse(status="error", message="fault"))
     report = cloud_gateway_pb2.StatusReport.FromString(captured[-1].payload)
     assert report.message == "fault"
 
@@ -326,7 +326,7 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     await service.handle_mcu_frame("ConsoleWrite", 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
-    mock_serial.send.assert_awaited_with(Status.MALFORMED.value, b"")
+    mock_serial.send.assert_awaited_with(Status.INVALID_ARGUMENT.value, b"")
 
 
 @given(pin_mode=st.from_type(mcu_wire_pb2.PinMode))

@@ -16,6 +16,7 @@ from typing import Any, Final, cast
 from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Cardinality, Handler
 import parse
+from pw_hdlc.encode import ui_frame
 from pw_rpc.descriptors import (
     Method as PwRpcMethod,
     Service as PwRpcService,
@@ -682,8 +683,6 @@ def encode_hdlc_rpc(
     status: int = 0,
 ) -> bytes:
     """Build and encode a Pigweed HDLC UI frame carrying an RpcPacket."""
-    from pw_hdlc.encode import ui_frame
-
     packet = encode_rpc_packet(
         channel_id_or_command,
         payload_or_service,
@@ -698,6 +697,4 @@ def encode_hdlc_rpc(
 
 def encode_hdlc_console(data: bytes) -> bytes:
     """Encode raw console stream bytes into a Pigweed HDLC UI frame on HDLC_ADDRESS_CONSOLE."""
-    from pw_hdlc.encode import ui_frame
-
     return ui_frame(HDLC_ADDRESS_CONSOLE, data)

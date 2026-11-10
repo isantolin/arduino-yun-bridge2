@@ -14,6 +14,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import mcubridge.protocol.mcu_wire_pb2 as pb
+import pytest
 import serial
 from pw_hdlc.encode import ui_frame
 from pw_rpc import packets as pw_packets
@@ -23,7 +24,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Status
 from mcubridge.security.security import LinkCipher, derive_link_keys
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 _TEST_SECRET = b"coverage test shared secret"
@@ -224,3 +225,44 @@ async def test_serial_transport_send_uses_pigweed_rpc(tmp_path: Path) -> None:
         assert await send_task == response
     finally:
         state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_detokenizer_with_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    csv_file = tmp_path / "tokens.csv"
+    csv_file.write_text('12345678,,"Booting system v2"\n', encoding="utf-8")
+    monkeypatch.setenv("MCUBRIDGE_TOKEN_DATABASE", str(csv_file))
+
+    dt = SerialTransport.init_detokenizer()
+    assert dt.database is not None
+    # 0x12345678 in little-endian is \x78\x56\x34\x12
+    detokenized = str(dt.detokenize(b"\x78\x56\x34\x12"))
+    assert "Booting system v2" in detokenized
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_detokenizer_invalid_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bad_file = tmp_path / "invalid_tokens.csv"
+    bad_file.write_text("invalid_not_hex,not_a_valid_token\n", encoding="utf-8")
+    monkeypatch.setenv("MCUBRIDGE_TOKEN_DATABASE", str(bad_file))
+
+    dt = SerialTransport.init_detokenizer()
+    assert dt is not None
+    assert dt.database is None or len(dt.database) == 0
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_feed_hdlc_log_frame(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    csv_file = tmp_path / "tokens.csv"
+    csv_file.write_text('12345678,,"MCU System Ready"\n', encoding="utf-8")
+    monkeypatch.setenv("MCUBRIDGE_TOKEN_DATABASE", str(csv_file))
+
+    state = RuntimeState()
+    transport = SerialTransport(RuntimeConfig(), state, None)
+    log_payload = b"\x78\x56\x34\x12"
+    log_frame = ui_frame(protocol.HDLC_ADDRESS_LOG, log_payload)
+
+    await transport.feed_data(log_frame)
+    assert transport.detokenizer is not None
+    assert transport.detokenizer.database is not None
+    state.cleanup()

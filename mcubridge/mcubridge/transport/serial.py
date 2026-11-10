@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import logging
+import os
+from pathlib import Path
 import sys
 import time
 from typing import Any, Final, Protocol, cast
@@ -31,6 +33,7 @@ from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
+from pw_tokenizer.tokens import DatabaseFormatError
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb
@@ -139,7 +142,31 @@ class SerialTransport:
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
         self.max_attempts = max(1, self.config.serial_retry_attempts or 1)
         self.decoder = FrameDecoder()
-        self.detokenizer = detokenize.Detokenizer()
+        self.detokenizer = self.init_detokenizer()
+
+    @staticmethod
+    def init_detokenizer() -> detokenize.Detokenizer:
+        """Initialize Pigweed detokenizer, optionally loading a token database from disk. [SIL-2]"""
+        candidate_paths: list[Path] = []
+        env_path = os.environ.get("MCUBRIDGE_TOKEN_DATABASE")
+        if env_path:
+            candidate_paths.append(Path(env_path))
+        candidate_paths.extend(
+            [
+                Path("/etc/mcubridge/tokens.csv"),
+                Path("/etc/mcubridge/tokens.bin"),
+                Path("/usr/share/mcubridge/tokens.csv"),
+            ]
+        )
+        for path in candidate_paths:
+            if path.is_file():
+                try:
+                    dt = detokenize.Detokenizer(path)
+                    logger.info("Loaded Pigweed tokenizer database", path=str(path))
+                    return dt
+                except (OSError, ValueError, TypeError, DatabaseFormatError) as exc:
+                    logger.warning("Failed to load Pigweed tokenizer database", path=str(path), error=str(exc))
+        return detokenize.Detokenizer()
 
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:

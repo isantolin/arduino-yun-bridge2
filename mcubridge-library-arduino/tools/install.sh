@@ -168,8 +168,6 @@ ETL_VERSION="20.49.0"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
-MBEDTLS_VERSION="mbedtls-4.2.0"
-MBEDTLS_SHA256="2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
 WOLFSSL_VERSION="5.8.4"
 WOLFSSL_SHA256="a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
@@ -190,56 +188,6 @@ if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
         echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
     fi
 fi
-
-# Mbed TLS 4 is used on AVR/SAMD. ESP32 keeps PSA SHA-256/HMAC from its Arduino
-# core and uses WolfCrypt for HKDF-SHA256 and ChaCha20-Poly1305.
-MBEDTLS_URL="https://github.com/Mbed-TLS/mbedtls/releases/download/${MBEDTLS_VERSION}/${MBEDTLS_VERSION}.tar.bz2"
-install_dependency "MbedTLS" "$MBEDTLS_URL" "tf-psa-crypto/include/psa/crypto.h" "$LIB_DIR" "$MBEDTLS_SHA256"
-MBEDTLS_LIB="$LIB_DIR/MbedTLS"
-MBEDTLS_SRC="$MBEDTLS_LIB/src"
-MBEDTLS_CT_SOURCE="$MBEDTLS_LIB/tf-psa-crypto/utilities/constant_time.c"
-if ! grep -Fq "AVR constant-time comparison requires byte-wise access" "$MBEDTLS_CT_SOURCE"; then
-    patch --batch --forward --fuzz=0 -p1 -d "$MBEDTLS_LIB/tf-psa-crypto" \
-        < "$LIB_ROOT/patches/mbedtls-4.2.0-avr-ct-memcmp.patch"
-fi
-rm -rf "$MBEDTLS_SRC"
-mkdir -p "$MBEDTLS_SRC"
-cp -a "$MBEDTLS_LIB/include/mbedtls" "$MBEDTLS_SRC/"
-cp -a "$MBEDTLS_LIB/tf-psa-crypto/include/." "$MBEDTLS_SRC/"
-mkdir -p "$MBEDTLS_SRC/tf-psa-crypto/drivers"
-for component in core extras platform utilities; do
-    cp -a "$MBEDTLS_LIB/tf-psa-crypto/$component" "$MBEDTLS_SRC/tf-psa-crypto/"
-done
-cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin" "$MBEDTLS_SRC/tf-psa-crypto/drivers/"
-cp -a "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/include/." "$MBEDTLS_SRC/"
-for component in core dispatch extras platform utilities; do
-    find "$MBEDTLS_LIB/tf-psa-crypto/$component" -maxdepth 1 -type f -name "*.h" \
-        -exec cp -a {} "$MBEDTLS_SRC/" \;
-done
-find "$MBEDTLS_LIB/tf-psa-crypto/drivers/builtin/src" -maxdepth 1 -type f -name "*.h" \
-    -exec cp -a {} "$MBEDTLS_SRC/" \;
-cp "$LIB_ROOT/src/config/mbedtls_config.h" "$MBEDTLS_SRC/mbedtls/mbedtls_config.h"
-cp "$LIB_ROOT/src/config/psa_crypto_config.h" "$MBEDTLS_SRC/psa/crypto_config.h"
-cat > "$MBEDTLS_SRC/MbedTLS.h" <<'EOF'
-#ifndef MCUBRIDGE_MBEDTLS_ARDUINO_H
-#define MCUBRIDGE_MBEDTLS_ARDUINO_H
-
-#include <psa/crypto.h>
-
-#endif
-EOF
-cp "$MBEDTLS_SRC/MbedTLS.h" "$MBEDTLS_LIB/MbedTLS.h"
-cat > "$MBEDTLS_LIB/library.properties" <<EOF
-name=MbedTLS
-version=${MBEDTLS_VERSION#mbedtls-}
-author=Mbed TLS Contributors
-maintainer=Mbed TLS Contributors
-sentence=Minimal Mbed TLS cryptographic primitives used by McuBridge.
-paragraph=Staged by the McuBridge installer from the pinned upstream release.
-category=Communication
-architectures=avr,samd
-includes=MbedTLS.h,psa/crypto.h,psa/crypto_extra.h,mbedtls/platform_util.h
-EOF
 
 WOLFSSL_URL="https://downloads.arduino.cc/libraries/github.com/wolfSSL/wolfssl-${WOLFSSL_VERSION}.zip"
 install_dependency "wolfssl" "$WOLFSSL_URL" "library.properties" "$LIB_DIR" "$WOLFSSL_SHA256"

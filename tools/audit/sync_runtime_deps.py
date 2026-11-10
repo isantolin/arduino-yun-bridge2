@@ -276,7 +276,6 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
         "Embedded_Template_Library": "ETL_VERSION",
         "Unity": "UNITY_VERSION",
         "nanopb_core": "NANOPB_VERSION",
-        "MbedTLS": "MBEDTLS_VERSION",
         "wolfssl": "WOLFSSL_VERSION",
     }
     lines: list[str] = []
@@ -291,10 +290,6 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
                 raise ManifestError("nanopb_core must list its runtime files")
             quoted_files = " ".join(f'"{file_name}"' for file_name in dep["files"])
             lines.append(f"NANOPB_CORE_FILES=({quoted_files})")
-        elif dep["name"] == "MbedTLS":
-            if not dep["sha256"]:
-                raise ManifestError("MbedTLS must have a pinned SHA-256 archive digest")
-            lines.append(f'MBEDTLS_SHA256="{dep["sha256"]}"')
         elif dep["name"] == "wolfssl":
             if not dep["sha256"]:
                 raise ManifestError("wolfssl must have a pinned SHA-256 archive digest")

@@ -12,7 +12,7 @@
                 "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
                 "${workspaceFolder}/third_party/avr_pigweed_port/dist/PigweedAVR/src",
                 "${workspaceFolder}/.dummy_libs/Unity/src",
-                "${env:HOME}/Arduino/libraries/MbedTLS/src",
+                "${env:HOME}/Arduino/libraries/wolfssl/src",
                 "/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include",
                 "/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/arduino",
                 "/home/ignaciosantolin/Arduino/libraries/PigweedAVR/src"

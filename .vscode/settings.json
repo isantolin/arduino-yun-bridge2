@@ -20,7 +20,7 @@
     "${workspaceFolder}/mcubridge-library-arduino/tests",
     "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
     "${workspaceFolder}/tools/arduino_stub/include",
-    "${env:HOME}/Arduino/libraries/MbedTLS/src",
+    "${env:HOME}/Arduino/libraries/wolfssl/src",
     "~/Arduino/libraries/**"
   ],
   "C_Cpp.default.defines": [

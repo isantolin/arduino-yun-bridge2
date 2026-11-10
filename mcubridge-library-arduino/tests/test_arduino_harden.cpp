@@ -45,7 +45,7 @@ void test_bridge_malformed_rpc_packet() {
 
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), frame_len));
 
-  TEST_ASSERT_EQUAL(static_cast<int>(rpc::StatusCode::STATUS_MALFORMED),
+  TEST_ASSERT_EQUAL(static_cast<int>(rpc::StatusCode::STATUS_INVALID_ARGUMENT),
                     static_cast<int>(s_captured_harden_status));
   Bridge.onStatus(BridgeClass::StatusHandler());
 }

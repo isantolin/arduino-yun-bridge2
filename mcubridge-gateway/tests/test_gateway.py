@@ -839,14 +839,16 @@ def test_tsdb_sink_format_line_protocol_property(
     [
         (None, set[str](), None, None, None),
         (
-            cloud_gateway_pb2.CommandDispatch(target_device_id="", command_path="rpc/DigitalWrite"),
+            cloud_gateway_pb2.CommandDispatch(target_device_id="", command_path="rpc.pb.LocalBridge/DigitalWrite"),
             set[str](),
             None,
             400,
             b"Explicit target_device_id is required",
         ),
         (
-            cloud_gateway_pb2.CommandDispatch(target_device_id="dev-unknown", command_path="rpc/DigitalWrite"),
+            cloud_gateway_pb2.CommandDispatch(
+                target_device_id="dev-unknown", command_path="rpc.pb.LocalBridge/DigitalWrite"
+            ),
             set[str](),
             None,
             503,
@@ -855,7 +857,7 @@ def test_tsdb_sink_format_line_protocol_property(
         (
             cloud_gateway_pb2.CommandDispatch(
                 target_device_id="dev-1",
-                command_path="rpc/DigitalWrite",
+                command_path="rpc.pb.LocalBridge/DigitalWrite",
                 payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
             ),
             {"dev-1"},
@@ -868,7 +870,7 @@ def test_tsdb_sink_format_line_protocol_property(
         (
             cloud_gateway_pb2.CommandDispatch(
                 target_device_id="dev-1",
-                command_path="rpc/AnalogWrite",
+                command_path="rpc.pb.LocalBridge/AnalogWrite",
                 payload=mcu_wire_pb2.AnalogWrite(pin=5, value=128).SerializeToString(),
             ),
             {"dev-1"},
@@ -880,7 +882,7 @@ def test_tsdb_sink_format_line_protocol_property(
         ),
         (
             cloud_gateway_pb2.CommandDispatch(
-                target_device_id="dev-1", command_path="rpc/DigitalWrite", timeout_seconds=2
+                target_device_id="dev-1", command_path="rpc.pb.LocalBridge/DigitalWrite", timeout_seconds=2
             ),
             {"dev-1"},
             TimeoutError("Device response timeout"),

@@ -688,6 +688,9 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, A
         proto_dir = str(proto_path.parent)
         if proto_dir not in sys.path:
             sys.path.insert(0, proto_dir)
+        for mod_name in ("config_schema_pb2", "mcu_wire_pb2", "cloud_gateway_pb2"):
+            if mod_name in sys.modules:
+                del sys.modules[mod_name]
         cfg_mod = importlib.import_module("config_schema_pb2")
         wire_mod = importlib.import_module("mcu_wire_pb2")
         cloud_mod = importlib.import_module("cloud_gateway_pb2")

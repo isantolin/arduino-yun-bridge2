@@ -19,7 +19,7 @@ etl::circular_buffer<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
   rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
@@ -52,7 +52,7 @@ bool MailboxClass::requestAvailable() {
 
 void MailboxClass::signalProcessed(uint32_t message_id) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
   }
   rpc_pb_MailboxProcessed p = rpc_pb_MailboxProcessed_init_default;

@@ -137,7 +137,7 @@ async def test_handle_mcu_status_formatting(test_config: RuntimeConfig, mock_bri
     mock_enqueue.assert_awaited()
 
     # Test status with raw bytes payload
-    await handle_status(Status.ERROR, 2, b"Raw error bytes")
+    await handle_status(Status.INTERNAL, 2, b"Raw error bytes")
     assert mock_enqueue.call_count == 2
 
 
@@ -227,7 +227,7 @@ async def test_cloud_events_and_direct_rpc_dispatch(
         protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=88,
         command_request=cloud_gateway_pb2.CommandRequest(
-            command_path="rpc/DigitalWrite",
+            command_path="rpc.pb.LocalBridge/DigitalWrite",
             payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
         ),
     )
@@ -281,7 +281,7 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
 
     # Missing PID poll
     resp = await svc.process_poll(99999)
-    assert resp.status == Status.ERROR.value
+    assert resp.status == Status.INTERNAL.value
     assert resp.finished is True
 
     # Process termination wait

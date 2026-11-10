@@ -386,7 +386,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _fsm.receive(bridge::fsm::EvReset());
 
   if (secret_too_long) {
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
     enterSafeState();
     return;
   }
@@ -487,7 +487,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
 
     if (!_shared_secret.empty() && _session_keys_ready && !clear_link_reset) {
       if (!_decryptHdlcFrame(addr, raw_data, data)) {
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        emitStatus(rpc::StatusCode::STATUS_UNAUTHENTICATED);
         return;
       }
       decrypted = true;
@@ -495,7 +495,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     } else if (!_shared_secret.empty() && !_session_keys_ready) {
       if (!raw_meta.ok() ||
           (!isLinkSyncRequest(raw_meta.value()) && !clear_link_reset)) {
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        emitStatus(rpc::StatusCode::STATUS_UNAUTHENTICATED);
         enterSafeState();
         return;
       }
@@ -506,7 +506,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     }
   } else if (!_shared_secret.empty()) {
     if (!_session_keys_ready || !_decryptHdlcFrame(addr, raw_data, data)) {
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
+      emitStatus(rpc::StatusCode::STATUS_UNAUTHENTICATED);
       return;
     }
     decrypted = true;
@@ -522,14 +522,14 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       if (decrypted) {
         rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
       }
-      emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+      emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
       return;
     }
     const auto& meta = meta_result.value();
     if (meta.destination_is_server()) {
       if (!_shared_secret.empty() && _session_keys_ready &&
           isLinkSyncRequest(meta)) {
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        emitStatus(rpc::StatusCode::STATUS_FAILED_PRECONDITION);
         if (decrypted) {
           rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
         }
@@ -537,7 +537,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       }
       if (!_shared_secret.empty() && !isSynchronized() &&
           !isLinkSyncRequest(meta) && !isLinkResetRequest(meta)) {
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        emitStatus(rpc::StatusCode::STATUS_FAILED_PRECONDITION);
         enterSafeState();
         if (decrypted) {
           rpc::security::secure_zero(etl::span<uint8_t>(_rx_plaintext));
@@ -548,7 +548,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       const auto status = _rpc_server.ProcessPacket(pw::ConstByteSpan(
           reinterpret_cast<const pw::byte*>(data.data()), data.size()));
       _rpc_plaintext_response = false;
-      if (!status.ok()) emitStatus(rpc::StatusCode::STATUS_ERROR);
+      if (!status.ok()) emitStatus(status);
     } else if (meta.destination_is_client()) {
       (void)_rpc_client.ProcessPacket(pw::ConstByteSpan(
           reinterpret_cast<const pw::byte*>(data.data()), data.size()));
@@ -880,7 +880,7 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
   if (!nonce_valid || !tag_shape_valid) {
     _clearLinkSession();
     _fsm.receive(bridge::fsm::EvHandshakeFailed());
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
     return;
   }
 
@@ -893,7 +893,7 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
             etl::span<const uint8_t>(request.tag.bytes, request.tag.size))) {
       _clearLinkSession();
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
+      emitStatus(rpc::StatusCode::STATUS_UNAUTHENTICATED);
       return;
     }
 

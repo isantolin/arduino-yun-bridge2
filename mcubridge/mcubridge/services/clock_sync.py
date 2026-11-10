@@ -91,7 +91,7 @@ class ClockSyncService:
             return self.get_status()
 
         # [SIL-2] Check MCU capabilities before attempting clock synchronization.
-        # Avoid dispatching CMD_CLOCK_SYNC if the MCU firmware explicitly marks it unsupported.
+        # Avoid dispatching ClockSyncService/Sync if the MCU firmware explicitly marks it unsupported.
         if (caps := state.mcu_capabilities) is not None and not getattr(caps, "clock_sync", True):
             self.fsm.mark_unsupported()
             return self.get_status()

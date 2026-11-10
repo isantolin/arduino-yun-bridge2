@@ -719,7 +719,7 @@ async def test_error_status_response_maps_to_status_error() -> None:
 
         handle_mock.assert_awaited_once()
         assert handle_mock.await_args is not None
-        assert handle_mock.await_args.args[0] == Status.ERROR.value
+        assert handle_mock.await_args.args[0] == Status.INTERNAL.value
     finally:
         state.cleanup()
 
@@ -743,7 +743,7 @@ async def test_server_error_packet_maps_to_status_error() -> None:
 
         handle_mock.assert_awaited_once()
         assert handle_mock.await_args is not None
-        assert handle_mock.await_args.args[:2] == (Status.ERROR.value, 9)
+        assert handle_mock.await_args.args[:2] == (Status.INTERNAL.value, 9)
     finally:
         state.cleanup()
 

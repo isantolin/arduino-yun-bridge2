@@ -189,6 +189,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                       reinterpret_cast<const uint8_t*>(p.data()), p.size()));
   }
 
+  void emitStatus(pw::Status s, etl::span<const uint8_t> p = {}) {
+    emitStatus(static_cast<rpc::StatusCode>(s.code()), p);
+  }
+
+  void emitStatus(pw::Status s, etl::string_view p) {
+    emitStatus(static_cast<rpc::StatusCode>(s.code()), p);
+  }
+
   [[nodiscard]] bool sendPinEvent(uint8_t pin, uint16_t value);
 
   template <uint16_t ValidCount = 1>

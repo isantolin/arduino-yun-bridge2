@@ -50,7 +50,7 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
 
 Notas:
 - Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
-- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc/<method>")`).
+- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc.pb.LocalBridge/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
 - Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent` y transferencia multi-chunk `FileSystemService/Read` vía `NanopbServerWriter` / `NanopbClientReader`).
 - gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
@@ -170,8 +170,8 @@ Gestiona la autenticación mutua y el ciclo de vida del enlace criptográfico se
 | Estado | Descripción |
 |--------|-------------|
 | `unsynchronized` | Estado inicial. Sin enlace establecido. Tráfico RPC bloqueado. |
-| `resetting` | Enviando `rpc.pb.SystemService/LinkReset` (`CMD_LINK_RESET`) para inicializar parámetros de sesión. |
-| `syncing` | Enviando `rpc.pb.SystemService/LinkSync` (`CMD_LINK_SYNC`) con nonce y tag de desafío. |
+| `resetting` | Enviando `rpc.pb.SystemService/LinkReset` para inicializar parámetros de sesión. |
+| `syncing` | Enviando `rpc.pb.SystemService/LinkSync` con nonce y tag de desafío. |
 | `synchronized` | Enlace establecido y autenticado. Tráfico RPC habilitado. |
 | `fault` | Error crítico o de autenticación detectado. |
 
@@ -277,7 +277,7 @@ Implementada con `etl::fsm` y `enum class StateId : uint8_t` para cero conversio
 |--------|----|-------------|
 | `STARTUP` | 0 | Estado inicial al arrancar. Esperando primer reset. |
 | `UNSYNCHRONIZED` | 1 | Enlace no establecido. Esperando handshake. |
-| `HANDSHAKE` | 2 | Handshake en progreso (`CMD_LINK_SYNC` enviado). |
+| `HANDSHAKE` | 2 | Handshake en progreso (`LinkSync` enviado). |
 | `SYNCHRONIZED` | 3 | Enlace sincronizado y autenticado, listo para operar. |
 | `AWAITING_ACK` | 4 | Frame crítico enviado, esperando confirmación ACK. |
 | `FAULT` | 5 | Fallo crítico (timeout, auth fail). Llama `hal::forceSafeState()`. |
@@ -377,7 +377,7 @@ El estado de salud del enlace se expone en:
 | `status_interval` | Intervalo de emisión periódica de telemetría y snapshots. | `1.0` |
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
-| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `CMD_FILE_WRITE`). | `262144` |
+| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `FileSystemService/Write`). | `262144` |
 | `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `4194304` |
 
 ## Flujo de inicio (resumen)
@@ -442,11 +442,11 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
 - **Errores de Servidor (`PacketType.SERVER_ERROR`):** Si un servicio o método no existe o el payload está corrupto, el receptor responde con `type = SERVER_ERROR` (`5`) y el código `pw::Status` correspondiente.
 - **Comandos ACK-only:** Son métodos unarios cuyo éxito se confirma mediante `RESPONSE` con `status = 0` (`Ok`) o `AckPacket` (`STATUS_ACK`):
   Esta lista está alineada con el spec (bindings Python: `OPERATIONS` con `requires_ack=True`):
-  - `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
-  - `CMD_CONSOLE_WRITE` (bidireccional)
-  - `CMD_DATASTORE_PUT` (MCU → Linux)
-  - `CMD_MAILBOX_PUSH` (bidireccional)
-  - `CMD_FILE_WRITE` (bidireccional)
+  - `rpc.pb.GpioService/SetPinMode`, `rpc.pb.GpioService/DigitalWrite`, `rpc.pb.GpioService/AnalogWrite` (Linux → MCU)
+  - `rpc.pb.ConsoleService/ConsoleWrite` (bidireccional)
+  - `rpc.pb.DataStoreService/Put` (MCU → Linux)
+  - `rpc.pb.MailboxService/Push` (bidireccional)
+  - `rpc.pb.FileSystemService/Write` (bidireccional)
 
 ## 2. Transporte y Multiplexación de Canales HDLC (`pw_hdlc`)
 
@@ -503,21 +503,29 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono`). | Reloj monótono `time.monotonic()`. |
 | **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / direct `*_pb2.py` modules, orquestado vía `PW_SERVICES`). |
 
-## 4. Códigos de estado (`Status`)
+## 4. Códigos de estado (`Status` / `pw_status`)
 
-Los status de aplicación usan el rango `0x30` - `0x3F`.
+El protocolo utiliza los códigos de estado canónicos de Pigweed (`pw::Status`) y gRPC:
 
-| Código | Nombre | Uso típico |
-| --- | --- | --- |
-| `0x30` | `STATUS_OK` | Operación completada correctamente. |
-| `0x31` | `STATUS_ERROR` | Fallo genérico. |
-| `0x32` | `STATUS_CMD_UNKNOWN` | Comando no reconocido. |
-| `0x33` | `STATUS_MALFORMED` | Payload inválido. |
-| `0x34` | `STATUS_OVERFLOW` | Frame excede buffers. |
-| `0x35` | `STATUS_CRC_MISMATCH` | CRC inválido. |
-| `0x36` | `STATUS_TIMEOUT` | Timeout. |
-| `0x37` | `STATUS_NOT_IMPLEMENTED` | Definido pero no soportado. |
-| `0x38` | `STATUS_ACK` | ACK para operaciones fire-and-forget/push simétrico. |
+| Código | Nombre | Constante C++ | Descripción |
+| --- | --- | --- | --- |
+| `0` | `OK` | `StatusCode::STATUS_OK` | Operación completada con éxito. |
+| `1` | `CANCELLED` | `StatusCode::STATUS_CANCELLED` | La operación fue cancelada. |
+| `2` | `UNKNOWN` | `StatusCode::STATUS_UNKNOWN` | Error genérico o desconocido. |
+| `3` | `INVALID_ARGUMENT` | `StatusCode::STATUS_INVALID_ARGUMENT` | Argumento o estructura de payload inválido. |
+| `4` | `DEADLINE_EXCEEDED` | `StatusCode::STATUS_DEADLINE_EXCEEDED` | Tiempo límite de operación excedido (timeout). |
+| `5` | `NOT_FOUND` | `StatusCode::STATUS_NOT_FOUND` | Entidad o recurso no encontrado. |
+| `6` | `ALREADY_EXISTS` | `StatusCode::STATUS_ALREADY_EXISTS` | La entidad ya existe. |
+| `7` | `PERMISSION_DENIED` | `StatusCode::STATUS_PERMISSION_DENIED` | Acceso no autorizado para el llamador. |
+| `8` | `RESOURCE_EXHAUSTED` | `StatusCode::STATUS_RESOURCE_EXHAUSTED` | Recurso agotado o desbordamiento de buffer. |
+| `9` | `FAILED_PRECONDITION` | `StatusCode::STATUS_FAILED_PRECONDITION` | El sistema no se encuentra en el estado requerido. |
+| `10` | `ABORTED` | `StatusCode::STATUS_ABORTED` | Operación abortada. |
+| `11` | `OUT_OF_RANGE` | `StatusCode::STATUS_OUT_OF_RANGE` | Índice o valor fuera de rango. |
+| `12` | `UNIMPLEMENTED` | `StatusCode::STATUS_UNIMPLEMENTED` | Operación definida pero no implementada. |
+| `13` | `INTERNAL` | `StatusCode::STATUS_INTERNAL` | Fallo interno del sistema. |
+| `14` | `UNAVAILABLE` | `StatusCode::STATUS_UNAVAILABLE` | Servicio o transporte no disponible. |
+| `15` | `DATA_LOSS` | `StatusCode::STATUS_DATA_LOSS` | Pérdida irrecuperable de datos o fallo CRC. |
+| `16` | `UNAUTHENTICATED` | `StatusCode::STATUS_UNAUTHENTICATED` | Fallo de autenticación en handshake o trama. |
 
 ## 5. Servicios y Métodos RPC (`rpc.pb.*`)
 
@@ -526,17 +534,17 @@ Los status de aplicación usan el rango `0x30` - `0x3F`.
 - **Correlación mediante `call_id`:** Cada invocación `pw_rpc` incluye un `call_id` en `RpcPacket` que permite correlacionar respuestas asíncronas y descartar duplicados o respuestas huérfanas.
 - **Retries acotados:** `SerialTransport` gestiona los reintentos declarativos mediante `tenacity` si no recibe respuesta dentro de `response_timeout_ms`.
 
-### 5.1 Sistema y control de flujo (`rpc.pb.SystemService`, 0x40 – 0x4F)
+### 5.1 Sistema y control de flujo (`rpc.pb.SystemService`)
 
-- **`rpc.pb.SystemService/GetVersion` (`0x40` CMD_GET_VERSION, Linux → MCU)**
+- **`rpc.pb.SystemService/GetVersion` (Linux → MCU)**
   - Petición: `SubscribeRequest` (vacío).
   - Respuesta: mensaje Protobuf `VersionResponse` (`major`, `minor`, `patch`).
 
-- **`rpc.pb.SystemService/GetFreeMemory` (`0x42` CMD_GET_FREE_MEMORY, Linux → MCU)**
+- **`rpc.pb.SystemService/GetFreeMemory` (Linux → MCU)**
   - Petición: `SubscribeRequest` (vacío).
   - Respuesta: mensaje Protobuf `FreeMemoryResponse` (`value`).
 
-- **`rpc.pb.SystemService/LinkSync` (`0x44` CMD_LINK_SYNC, Linux ↔ MCU)**
+- **`rpc.pb.SystemService/LinkSync` (Linux ↔ MCU)**
   - Petición: mensaje Protobuf `LinkSync` con `nonce` de 16 bytes y `tag` de 16 bytes si hay secreto; `tag` vacío si la autenticación está explícitamente deshabilitada.
   - Respuesta (`PacketType.RESPONSE`, MCU → Linux): mensaje `LinkSync` con el mismo `nonce` y una prueba HMAC bajo un dominio HKDF separado (`"mcubridge-link-sync-resp-v2"`); `tag` vacío en modo no autenticado.
 
@@ -551,7 +559,7 @@ sequenceDiagram
     D->>D: Generate nonce (16 bytes)
     D->>D: derived_key = HKDF(secret, "handshake-auth")
     D->>D: our_tag = HMAC-SHA256(derived_key, nonce)[:16]
-    D->>M: CMD_LINK_SYNC (0x44) [nonce || our_tag]
+    D->>M: LinkSync [nonce || our_tag]
 
     Note over D,M: Phase 2: Verificación y prueba del MCU
     M->>M: derived_key = HKDF(secret, "handshake-auth")
@@ -560,7 +568,7 @@ sequenceDiagram
     alt Tag Valid
         M->>M: response_key = HKDF(secret, "handshake-response")
         M->>M: tag_mcu = HMAC-SHA256(response_key, nonce)[:16]
-        M->>D: CMD_LINK_SYNC_RESP (0x45) [nonce || tag_mcu]
+        M->>D: LinkSync (Response) [nonce || tag_mcu]
     else Tag Invalid
         M->>M: enterSafeState()
         M->>M: FSM -> Fault
@@ -580,7 +588,7 @@ sequenceDiagram
             D->>D: SerialHandshakeFatal
             Note over D,M: ✗ Fatal: Check secrets
         else Retry
-            D->>M: CMD_LINK_SYNC (retry)
+            D->>M: LinkSync (retry)
         end
     end
 ```
@@ -603,17 +611,17 @@ HDLC Wire Frame:
   7E                              # Closing Flag
 ```
 
-- **`0x46` CMD_LINK_RESET (`rpc.pb.SystemService/LinkReset`, Linux → MCU)**
+- **`rpc.pb.SystemService/LinkReset` (Linux → MCU)**
   - Petición: opcionalmente `LinkReset { ack_timeout_ms, retry_limit, response_timeout_ms }`.
-  - Respuesta (`0x47 CMD_LINK_RESET_RESP`): `AckPacket`.
+  - Respuesta: `AckPacket`.
 
-- **`0x4A` CMD_SET_BAUDRATE (`rpc.pb.SystemService/SetBaudrate`, Linux → MCU)**
+- **`rpc.pb.SystemService/SetBaudrate` (Linux → MCU)**
   - Petición: `SetBaudratePacket { baudrate: uint32 }`.
-  - Respuesta (`0x4B CMD_SET_BAUDRATE_RESP`): `AckPacket`.
+  - Respuesta: `AckPacket`.
 
-- **`0x48` CMD_GET_CAPABILITIES (`rpc.pb.SystemService/GetCapabilities`, Linux → MCU)**
+- **`rpc.pb.SystemService/GetCapabilities` (Linux → MCU)**
   - Petición: `Empty`.
-  - Respuesta (`0x49 CMD_GET_CAPABILITIES_RESP`): mensaje protobuf `Capabilities { ver, arch, dig, ana, feat }`.
+  - Respuesta: mensaje protobuf `Capabilities { ver, arch, dig, ana, feat }`.
   - **Propósito:** Introspección estática de hardware (SIL-2 Safety). Permite al MPU validar que la configuración de pines no excede los límites físicos del MCU.
   - **Features Bitmask (`feat`, u32):**
     | Bit | Valor | Feature | Descripción |
@@ -633,9 +641,9 @@ HDLC Wire Frame:
     | 12 | `4096` | Filesystem | Sistema de archivos habilitado. |
     | 13 | `8192` | Process | Gestión de procesos habilitada. |
 
-- **`0x4E` CMD_XOFF (`rpc.pb.SystemService/Xoff`, MCU → Linux)** / **`0x4F` CMD_XON (`rpc.pb.SystemService/Xon`, MCU → Linux)**
+- **`rpc.pb.SystemService/Xoff` (MCU → Linux)** / **`rpc.pb.SystemService/Xon` (MCU → Linux)**
   - Sin payload (`Empty`).
-  - Semántica: `CMD_XOFF` indica backpressure del MCU (buffers/colas cerca de saturación). Linux debe **detener todo envío** de frames al MCU hasta recibir `CMD_XON`.
+  - Semántica: `Xoff` indica backpressure del MCU (buffers/colas cerca de saturación). Linux debe **detener todo envío** de frames al MCU hasta recibir `Xon`.
   - Implementación esperada en daemon: el gating de TX es global (no sólo consola), y debe liberarse también ante desconexión para evitar deadlocks.
 
 ### 5.1.1 Control de Flujo XON/XOFF (Detalle)
@@ -645,8 +653,8 @@ El protocolo implementa control de flujo por software para proteger los buffers 
 #### Mecanismo
 
 ```
-MCU detecta RX buffer > 75% → envía CMD_XOFF (0x4E) → Linux pausa TX
-MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
+MCU detecta RX buffer > 75% → envía rpc.pb.SystemService/Xoff → Linux pausa TX
+MCU detecta RX buffer < 25% → envía rpc.pb.SystemService/Xon  → Linux reanuda TX
 ```
 
 #### Parámetros de Configuración (MCU)
@@ -666,20 +674,19 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 
 #### Notas de Implementación
 
-- `CMD_XOFF` y `CMD_XON` **no requieren ACK** (`requires_ack = false` en `mcu_wire.proto`).
-- Son comandos unidireccionales MCU → Linux únicamente.
+- `Xoff` y `Xon` **no requieren ACK** (`requires_ack = false` en `mcu_wire.proto`).
+- Son métodos unidireccionales MCU → Linux únicamente.
 - El daemon debe aplicar el gating de forma **global** (todos los comandos, no solo consola).
 - La pausa debe liberarse inmediatamente ante pérdida de conexión serial.
 
-### 5.2 GPIO (`rpc.pb.GpioService`, 0x50 – 0x5F)
+### 5.2 GPIO (`rpc.pb.GpioService`)
 
-- **`0x50` CMD_SET_PIN_MODE (`SetPinMode`, Linux → MCU)**: `PinMode { pin, mode }`.
-- **`0x51` CMD_DIGITAL_WRITE (`DigitalWrite`, Linux → MCU)**: `DigitalWrite { pin, value }`.
-- **`0x52` CMD_ANALOG_WRITE (`AnalogWrite`, Linux → MCU)**: `AnalogWrite { pin, value }`.
-- **`0x53` CMD_DIGITAL_READ (`DigitalRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta `0x55 CMD_DIGITAL_READ_RESP`: `DigitalReadResponse { value }`.
-- **`0x54` CMD_ANALOG_READ (`AnalogRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `AnalogReadResponse { value }`.
-- **`0x57` (87) CMD_PIN_SUBSCRIBE (`SubscribePins`, Linux → MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Respuesta inicial `0x58 CMD_PIN_SUBSCRIBE_RESP`: `PinSubscribeResponse { pin, success }`.
-- **`0x59` (89) CMD_PIN_UPDATE_EVENT (`SubscribePins` Server-Stream, MCU → Linux)**: Payload `PinUpdateEvent { pin, value, timestamp_micros }`. Evento de streaming (`PacketType::kServerStream` / `PacketType.SERVER_STREAM` sobre `rpc.pb.GpioService/SubscribePins`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico `gpio/pin_update`.
+- **`rpc.pb.GpioService/SetPinMode` (`SetPinMode`, Linux → MCU)**: `PinMode { pin, mode }`. Retorna `AckPacket`.
+- **`rpc.pb.GpioService/DigitalWrite` (`DigitalWrite`, Linux → MCU)**: `DigitalWrite { pin, value }`. Retorna `AckPacket`.
+- **`rpc.pb.GpioService/AnalogWrite` (`AnalogWrite`, Linux → MCU)**: `AnalogWrite { pin, value }`. Retorna `AckPacket`.
+- **`rpc.pb.GpioService/DigitalRead` (`DigitalRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta: `DigitalReadResponse { value }`.
+- **`rpc.pb.GpioService/AnalogRead` (`AnalogRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta: `AnalogReadResponse { value }`.
+- **`rpc.pb.GpioService/SubscribePins` (Server-Streaming, Linux ↔ MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Evento de streaming (`PacketType.SERVER_STREAM`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico canónico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
 
 #### Control Bidireccional de GPIO desde Cloud Gateway
 
@@ -691,9 +698,9 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
   - Escritura analógica: `{prefix}/req/GpioService/AnalogWrite` con payload Protobuf `AnalogWrite { pin, value }`.
   - Lectura analógica: `{prefix}/req/GpioService/AnalogRead` con payload Protobuf `PinRead { pin }`.
   - Suscripción de pin: `{prefix}/req/GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
-- **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `CMD_DIGITAL_WRITE`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
+- **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `rpc.pb.GpioService/DigitalWrite`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
 - **Correlación Asíncrona**: Cada request/response se correlaciona con `call_id` / `sequence_id` garantizando entrega determinista fin a fin.
-- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/gpio.pin_update` (o `br/gpio/pin_update`).
+- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
 
 #### GPIO Frame Examples (`pw_hdlc` + `RpcPacket`)
 
@@ -713,77 +720,57 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 ```
 
 
-### 5.3 Consola (Canal HDLC `HDLC_ADDRESS_CONSOLE = 3` / `0x60`)
+### 5.3 Consola (Canal HDLC `HDLC_ADDRESS_CONSOLE = 3` y RPC)
 
 - **Stream HDLC Nativo (`HDLC_ADDRESS_CONSOLE = 3`, bidireccional):**
   - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`encode_hdlc_console`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
-- **`0x60` CMD_CONSOLE_WRITE (compatibilidad RPC):**
-  - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`.
+- **`rpc.pb.ConsoleService/ConsoleWrite` (Linux ↔ MCU):**
+  - Payload: mensaje protobuf `ConsoleData { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `AckPacket`.
 
-### 5.4 Datastore (0x70)
+### 5.4 Datastore (`rpc.pb.DataStoreService`)
 
-- **`0x70` CMD_DATASTORE_PUT (MCU → Linux)**: `[key_len: u8, key: char[], value_len: u8, value: char[]]`.
-- **`0x71` CMD_DATASTORE_GET (MCU → Linux)**: `[key_len: u8, key: char[]]`.
-- **`0x72` CMD_DATASTORE_GET_RESP (Linux → MCU)**: `[value_len: u8, value: char[]]`.
+- **`rpc.pb.DataStoreService/Put` (MCU → Linux)**: Payload `DatastorePut { key, value }`. Retorna `AckPacket`.
+- **`rpc.pb.DataStoreService/Get` (MCU → Linux)**: Payload `DatastoreGet { key }`. Retorna `DatastoreGetResp { value }`.
 
 Notas operativas:
 
 - El datastore del daemon es **volátil (RAM)**: se mantiene en memoria mientras el proceso está vivo y **no persiste a disco**.
 - La persistencia “durable” del sistema se limita al spool de Nube (si está habilitado) y por defecto se ubica en `/tmp` para minimizar desgaste de flash.
 
-### 5.5 Mailbox (0x80)
+### 5.5 Mailbox (`rpc.pb.MailboxService`)
 
-- **`0x80` CMD_MAILBOX_READ (MCU → Linux)**: sin payload. Respuesta `0x84 CMD_MAILBOX_READ_RESP`.
-- **`0x81` CMD_MAILBOX_PROCESSED (MCU → Linux)**: `[message_id: u16]` (opcional).
-- **`0x82` CMD_MAILBOX_AVAILABLE (MCU → Linux)**:
-  - Modo *request*: sin payload.
-  - Respuesta: `0x85 CMD_MAILBOX_AVAILABLE_RESP` (Linux → MCU) con `[count: u8]`.
-  - Regla estricta: si el request incluye payload (cualquier `payload_length != 0`), el daemon responde con `STATUS_MALFORMED (0x33)` cuyo payload es el `command_id` (u16 big-endian) del request.
-  - `CMD_MAILBOX_AVAILABLE` (Linux → MCU) es inválido en el contrato y el firmware lo descarta.
-- **`0x83` CMD_MAILBOX_PUSH (push simétrico, bidireccional)**:
-  - Payload: `[message_len: u16, message: byte[]]`.
-  - Confirmación: `STATUS_ACK (0x38)`.
+- **`rpc.pb.MailboxService/Read` (MCU → Linux)**: Payload `SubscribeRequest` (vacío). Respuesta: `MailboxReadResponse { content, message_id }`.
+- **`rpc.pb.MailboxService/Processed` (MCU → Linux)**: Payload `MailboxProcessed { message_id }`. Retorna `AckPacket`.
+- **`rpc.pb.MailboxService/Available` (MCU → Linux)**: Payload `SubscribeRequest` (vacío). Respuesta: `MailboxAvailableResponse { count }`.
+- **`rpc.pb.MailboxService/Push` (Linux ↔ MCU, bidireccional)**: Payload `MailboxPush { data }`. Retorna `AckPacket`.
 
-### 5.6 Sistema de archivos (0x90)
+### 5.6 Sistema de archivos (`rpc.pb.FileSystemService`)
 
-- **`0x90` CMD_FILE_WRITE (push simétrico, bidireccional)**:
-  - Payload: `[path_len: u8, path: char[], data_len: u16, data: byte[]]`.
-  - Confirmación: `STATUS_ACK (0x38)`.
-- **`0x91` CMD_FILE_READ (MCU → Linux)**: `[path_len: u8, path: char[]]`. Respuesta `0x93 CMD_FILE_READ_RESP`.
-- **`0x92` CMD_FILE_REMOVE (MCU → Linux)**: `[path_len: u8, path: char[]]`.
+- **`rpc.pb.FileSystemService/Write` (Linux ↔ MCU, bidireccional)**: Payload `FileWrite { path, data }`. Retorna `AckPacket`.
+- **`rpc.pb.FileSystemService/Read` (Server-Streaming, Linux ↔ MCU)**: Payload `FileRead { path }`. Respuesta: stream `FileReadResponse { content }` con fragmentación multi-chunk sin memoria dinámica.
+- **`rpc.pb.FileSystemService/Remove` (Linux ↔ MCU)**: Payload `FileRemove { path }`. Retorna `AckPacket`.
 
-### 5.7 Gestión de procesos (0xA0)
+### 5.7 Gestión de procesos (`rpc.pb.ProcessService`)
 
-- **`0xA1` CMD_PROCESS_RUN_ASYNC (MCU → Linux)**: protobuf `ProcessRunAsync { command: string }`.
-- **`0xA2` CMD_PROCESS_POLL (MCU → Linux)**: protobuf `ProcessPoll { pid: uint32 }`.
-- **`0xA3` CMD_PROCESS_KILL (MCU → Linux)**: protobuf `ProcessKill { pid: uint32 }`.
+- **`rpc.pb.ProcessService/RunAsync` (MCU → Linux)**: Payload `ProcessRunAsync { command }`. Respuesta: `ProcessRunAsyncResponse { pid }`.
+- **`rpc.pb.ProcessService/Poll` (MCU → Linux)**: Payload `ProcessPoll { pid }`. Respuesta: `ProcessPollResponse { status, exit_code, stdout_data, stderr_data, finished, stdout_truncated, stderr_truncated }`.
+- **`rpc.pb.ProcessService/Kill` (MCU → Linux)**: Payload `ProcessKill { pid }`. Retorna `AckPacket`.
 
-Respuestas (Linux → MCU):
-
-- **`0xA5` CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)**: protobuf `ProcessRunAsyncResponse { pid: uint32 }`.
-- **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: protobuf `ProcessPollResponse { status, exit_code, stdout_data: bytes, stderr_data: bytes, finished, stdout_truncated, stderr_truncated }`.
-
-Notas:
-- Todos los payloads de proceso usan mensajes protobuf definidos en los schemas bajo `tools/protocol/`.
-- El daemon envía ACK primero (con `AckPacket`) y luego la respuesta de negocio en un frame separado.
-- `CMD_PROCESS_KILL` se confirma con `STATUS_ACK` conteniendo `AckPacket`.
-
-### 5.8 Periférico SPI (0xB0 – 0xB4 / 176 – 180)
+### 5.8 Periférico SPI (`rpc.pb.SpiService`)
 
 El MCU expone operaciones deterministas del bus SPI de hardware para control de periféricos:
 
-- **`0xB0` (176) CMD_SPI_BEGIN (Linux → MCU)**: Payload vacío. Inicia el bus SPI y requiere confirmación `STATUS_ACK`.
-- **`0xB1` (177) CMD_SPI_TRANSFER (Linux → MCU)**: Payload protobuf `SpiTransfer { data: bytes }`. Realiza una transferencia síncrona full-duplex de bytes sobre el bus SPI. Espera respuesta directa de negocio.
-- **`0xB2` (178) CMD_SPI_TRANSFER_RESP (MCU → Linux)**: Payload protobuf `SpiTransferResponse { data: bytes }`. Retorna los datos leídos del bus durante la transferencia.
-- **`0xB3` (179) CMD_SPI_END (Linux → MCU)**: Payload vacío. Desactiva el bus SPI liberando los pines asociados y requiere confirmación `STATUS_ACK`.
-- **`0xB4` (180) CMD_SPI_SET_CONFIG (Linux → MCU)**: Payload protobuf `SpiConfig { bit_order: SpiBitOrder, data_mode: SpiDataMode, frequency: uint32 }`; `frequency` se expresa en Hz. Los valores de ambos enums se definen canónicamente en `config_schema.proto`. Requiere `STATUS_ACK`.
+- **`rpc.pb.SpiService/Begin` (Linux → MCU)**: Payload vacío. Inicia el bus SPI y retorna `AckPacket`.
+- **`rpc.pb.SpiService/Transfer` (Linux → MCU)**: Payload `SpiTransfer { data: bytes }`. Realiza una transferencia síncrona full-duplex de bytes sobre el bus SPI. Retorna `SpiTransferResponse { data: bytes }`.
+- **`rpc.pb.SpiService/End` (Linux → MCU)**: Payload vacío. Desactiva el bus SPI liberando los pines asociados y retorna `AckPacket`.
+- **`rpc.pb.SpiService/SetConfig` (Linux → MCU)**: Payload `SpiConfig { bit_order: SpiBitOrder, data_mode: SpiDataMode, frequency: uint32 }`; `frequency` se expresa en Hz. Retorna `AckPacket`.
 
-### 5.9 Sincronización de Reloj (Clock Sync: 0xC0 – 0xC1 / 192 – 193)
+### 5.9 Sincronización de Reloj (`rpc.pb.ClockSyncService`)
 
 Para correlación de eventos, telemetría y detección de derivas temporales entre el Linux MPU y el firmware del microcontrolador:
 
-- **`0xC0` (192) CMD_CLOCK_SYNC (Linux → MCU)**: Payload protobuf `ClockSyncRequest { host_time_us: uint64 }`. Envía la marca temporal actual del procesador host en microsegundos.
-- **`0xC1` (193) CMD_CLOCK_SYNC_RESP (MCU → Linux)**: Payload protobuf `ClockSyncResponse { host_time_us: uint64, mcu_time_us: uint32 }`. Devuelve la estampa recibida junto con el valor instantáneo de `micros()` del microcontrolador. Permite estimar el Round-Trip Time (RTT) y calcular el offset de tiempo absoluto entre ambos dominios de ejecución con precisión de microsegundos.
+- **`rpc.pb.ClockSyncService/Sync` (Linux → MCU)**: Payload `ClockSyncRequest { host_time_us: uint64 }`. Envía la marca temporal actual del procesador host en microsegundos.
+  - Respuesta: `ClockSyncResponse { host_time_us: uint64, mcu_time_us: uint32 }`. Devuelve la estampa recibida junto con el valor instantáneo de `micros()` del microcontrolador. Permite estimar el Round-Trip Time (RTT) y calcular el offset de tiempo absoluto entre ambos dominios de ejecución con precisión de microsegundos.
 
 
 ## 6. Consideraciones adicionales
@@ -807,13 +794,13 @@ El Cloud Gateway centralizado (`mcubridge-gateway`) expone el servicio `LocalBri
        │
        │ 1. Validación de x-device-id (Status.INVALID_ARGUMENT si falta)
        │ 2. Resolución de sesión activa (Status.UNAVAILABLE si no está conectado)
-       │ 3. Empaquetado: CommandRequest(command_path="rpc/<method>", payload=...)
+       │ 3. Empaquetado: CommandRequest(command_path="rpc.pb.LocalBridge/<method>", payload=...)
        ▼
 [Stream de Sesión gRPC Bidireccional (Session)]
        ▼
 [McuBridge Daemon en Linux MPU]
        │
-       │ 4. Intercepción de comando: command_path.startswith("rpc/")
+       │ 4. Resolución O(1) de método: command_path en protocol.BY_NAME
        │ 5. Despacho delegado: self.local_bridge_service.execute_rpc(method, payload)
        │ 6. Ejecución hardware/serie/sistema y retorno de CommandResponse
        ▼
@@ -861,13 +848,14 @@ Además de los comandos anteriores, el daemon transmite eventos periódicos y le
 
 | Status Code | Name | Typical Cause | Resolution |
 |-------------|------|---------------|------------|
-| `0x31` | `STATUS_ERROR` | Generic handler failure | Check daemon logs for specific error context |
-| `0x32` | `STATUS_CMD_UNKNOWN` | Unsupported command ID | Verify protocol version match (MCU vs daemon) |
-| `0x33` | `STATUS_MALFORMED` | Invalid payload structure | Check payload length and field encoding |
-| `0x34` | `STATUS_OVERFLOW` | Frame exceeds buffer limits | Reduce payload size (max 64 bytes) |
-| `0x35` | `STATUS_CRC_MISMATCH` | Corrupted frame | Check baud rate (115200), serial cable, noise |
-| `0x36` | `STATUS_TIMEOUT` | No response within deadline | Increase `response_timeout_ms`, check MCU load |
-| `0x37` | `STATUS_NOT_IMPLEMENTED` | Feature disabled on MCU | Enable feature via `BRIDGE_ENABLE_*` macros |
+| `3` | `INVALID_ARGUMENT` | Invalid payload structure or arguments | Check payload length and field types |
+| `4` | `DEADLINE_EXCEEDED` | No response within deadline | Increase `response_timeout_ms`, check MCU load |
+| `8` | `RESOURCE_EXHAUSTED` | Frame exceeds buffer limits or queue full | Reduce payload size or check queue limits |
+| `12` | `UNIMPLEMENTED` | Feature or method disabled on MCU | Enable feature via `BRIDGE_ENABLE_*` macros |
+| `13` | `INTERNAL` | Generic handler or internal failure | Check daemon and MCU logs for error context |
+| `14` | `UNAVAILABLE` | MCU serial link offline or unsynchronized | Await link synchronization |
+| `15` | `DATA_LOSS` | Corrupted frame or FCS CRC32 failure | Check baud rate (115200), serial cable, noise |
+| `16` | `UNAUTHENTICATED` | Handshake proof verification failure | Verify `serial_shared_secret` match on both sides |
 
 ### 8.2 Common Error Scenarios
 
@@ -875,10 +863,10 @@ Además de los comandos anteriores, el daemon transmite eventos periódicos y le
 |---------|-------------|------------|-----|
 | Repeated CRC errors | `serial_crc_errors` incrementing | Baud rate mismatch or electrical noise | Verify both sides at 115200; use shielded cable |
 | Handshake never completes | `handshake_failure_streak > 0` | Secret mismatch | Rotate credentials, recompile sketch |
-| Commands timeout | `STATUS_TIMEOUT` responses | MCU busy or queue full | Check `CMD_XOFF`/`CMD_XON` flow; reduce rate |
+| Commands timeout | `DEADLINE_EXCEEDED` responses | MCU busy or queue full | Check `Xoff`/`Xon` flow; reduce rate |
 | Frame parse errors | `HDLC frame error on link` | Kernel console noise on ttyATH0 | Apply `kernel.printk = 0 0 0 0` (see §Platform Notes) |
-| GPIO rejected | `STATUS_MALFORMED` on pin ops | Pin number exceeds `num_digital_pins` | Query `CMD_GET_CAPABILITIES` first |
-| File write rejected | `STATUS_ERROR` with quota message | Storage quota exceeded | Increase `file_storage_quota_bytes` or clean up |
+| GPIO rejected | `INVALID_ARGUMENT` on pin ops | Pin number exceeds `num_digital_pins` | Query `GetCapabilities` first |
+| File write rejected | `INTERNAL` with quota message | Storage quota exceeded | Increase `file_storage_quota_bytes` or clean up |
 
 ### 8.3 Debug Commands
 

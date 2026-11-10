@@ -336,21 +336,26 @@ void test_bridge_emit_status_variants() {
                         static_cast<int>(g_last_status));
   TEST_ASSERT_EQUAL_UINT32(0U, g_last_status_len);
 
-  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view("Error"));
+  Bridge.emitStatus(rpc::StatusCode::STATUS_INTERNAL, etl::string_view("Error"));
   TEST_ASSERT_EQUAL_UINT32(2U, g_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_ERROR),
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_INTERNAL),
                         static_cast<int>(g_last_status));
   TEST_ASSERT_EQUAL_UINT32(5U, g_last_status_len);
 
   const etl::array<uint8_t, 3> raw = {1U, 2U, 3U};
-  Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED,
+  Bridge.emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT,
                     etl::span<const uint8_t>(raw.data(), raw.size()));
   TEST_ASSERT_EQUAL_UINT32(3U, g_status_calls);
   TEST_ASSERT_EQUAL_UINT32(3U, g_last_status_len);
 
+  Bridge.emitStatus(pw::Status::ResourceExhausted());
+  TEST_ASSERT_EQUAL_UINT32(4U, g_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED),
+                        static_cast<int>(g_last_status));
+
   Bridge.onStatus(BridgeClass::StatusHandler());
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
-  TEST_ASSERT_EQUAL_UINT32(3U, g_status_calls);
+  TEST_ASSERT_EQUAL_UINT32(4U, g_status_calls);
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
 }
 
@@ -888,10 +893,10 @@ void test_bridge_fault_injection_kat_and_post() {
                            etl::span<const uint8_t>(), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), len));
 
-  // 3. Status malformed with status handler
+  // 3. Status invalid argument with status handler
   s_status_called = false;
   Bridge.onStatus(BridgeClass::StatusHandler::create<&dummy_status_cb>());
-  Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  Bridge.emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
   TEST_ASSERT_TRUE(s_status_called);
   Bridge.onStatus(BridgeClass::StatusHandler());
 

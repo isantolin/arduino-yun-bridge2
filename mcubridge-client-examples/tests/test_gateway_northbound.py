@@ -36,7 +36,7 @@ async def run_test(
     try:
         dispatch = cloud_gateway_pb2.CommandDispatch(
             target_device_id=device_id,
-            command_path="rpc/DigitalWrite",
+            command_path="rpc.pb.LocalBridge/DigitalWrite",
             payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
             timeout_seconds=5,
         )

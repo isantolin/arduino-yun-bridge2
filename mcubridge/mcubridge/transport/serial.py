@@ -415,7 +415,7 @@ class SerialTransport:
             is_status_pkt = pkt.method_id in SERIAL_FAILURE_STATUS_CODES or pkt.method_id in SERIAL_SUCCESS_STATUS_CODES
             dispatch_key: int | str | tuple[int, int]
             if is_error_pkt:
-                dispatch_key = Status.ERROR.value
+                dispatch_key = pkt.status if pkt.status != 0 else Status.INTERNAL.value
             elif spec is None and is_status_pkt:
                 dispatch_key = pkt.method_id
             else:

@@ -3,9 +3,9 @@
 #include <PigweedAVR.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
 #include <pw_rpc/internal/packet.h>
+#include <pw_span/span.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -66,8 +66,8 @@ struct ByteBuffer {
     return static_cast<int>(data[pos]);
   }
 
-  etl::span<const uint8_t> span() const {
-    return etl::span<const uint8_t>(data.data(), len);
+  pw::span<const uint8_t> span() const {
+    return pw::span<const uint8_t>(data.data(), len);
   }
 };
 
@@ -130,14 +130,11 @@ class BiStream : public Stream {
 
 struct TestHdlc {
   template <size_t N>
-  static size_t encodeUIFrame(uint64_t address,
-                              etl::span<const uint8_t> payload,
+  static size_t encodeUIFrame(uint64_t address, pw::span<const uint8_t> payload,
                               etl::array<uint8_t, N>& out_buf) {
     pw::stream::MemoryWriter writer(
         pw::as_writable_bytes(pw::span(out_buf.data(), out_buf.size())));
-    auto res = pw::hdlc::WriteUIFrame(
-        address, pw::as_bytes(pw::span(payload.data(), payload.size())),
-        writer);
+    auto res = pw::hdlc::WriteUIFrame(address, pw::as_bytes(payload), writer);
     return res.ok() ? writer.bytes_written() : 0;
   }
 };
@@ -158,12 +155,11 @@ inline bool extract_next_valid_hdlc_frame(
 
 inline size_t build_rpc_packet(pw::rpc::internal::pwpb::PacketType type,
                                uint32_t service_id, uint32_t method_id,
-                               etl::span<const uint8_t> payload,
+                               pw::span<const uint8_t> payload,
                                uint8_t* out_buf, size_t out_max,
                                uint32_t call_id = 0, uint32_t channel_id = 1) {
-  pw::rpc::internal::Packet packet(
-      type, channel_id, service_id, method_id, call_id,
-      pw::as_bytes(pw::span(payload.data(), payload.size())));
+  pw::rpc::internal::Packet packet(type, channel_id, service_id, method_id,
+                                   call_id, pw::as_bytes(payload));
   auto res = packet.Encode(pw::as_writable_bytes(pw::span(out_buf, out_max)));
   return res.ok() ? res.value().size() : 0;
 }
@@ -172,7 +168,7 @@ template <size_t N>
 inline size_t build_hdlc_rpc_frame(uint64_t address,
                                    pw::rpc::internal::pwpb::PacketType type,
                                    uint32_t service_id, uint32_t method_id,
-                                   etl::span<const uint8_t> payload,
+                                   pw::span<const uint8_t> payload,
                                    etl::array<uint8_t, N>& out_frame_buf,
                                    uint32_t call_id = 0,
                                    uint32_t channel_id = 1) {
@@ -182,7 +178,7 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
                        sizeof(packet_buf), call_id, channel_id);
   if (pkt_len == 0) return 0;
   return TestHdlc::encodeUIFrame(
-      address, etl::span<const uint8_t>(packet_buf, pkt_len), out_frame_buf);
+      address, pw::span<const uint8_t>(packet_buf, pkt_len), out_frame_buf);
 }
 
 // ---------------------------------------------------------------------------
@@ -205,5 +201,97 @@ inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   }
   auto& ba = bridge::test::TestAccessor::create(bridge);
   ba.setIdle();
+}
+
+inline size_t send_hdlc_rpc(bridge::test::TestAccessor& ba,
+                            uint32_t service_hash, uint32_t method_hash,
+                            pw::span<const uint8_t> payload = {},
+                            pw::rpc::internal::pwpb::PacketType type =
+                                pw::rpc::internal::pwpb::PacketType::REQUEST,
+                            uint32_t call_id = 0, uint32_t channel_id = 1) {
+  etl::array<uint8_t, 256> frame;
+  size_t len = build_hdlc_rpc_frame(1, type, service_hash, method_hash, payload,
+                                    frame, call_id, channel_id);
+  if (len > 0) {
+    ba.feedHdlcBytes(pw::span<const uint8_t>(frame.data(), len));
+  }
+  return len;
+}
+
+template <typename NanopbType, size_t BufCap = 64>
+inline size_t send_rpc_request(bridge::test::TestAccessor& ba,
+                               uint32_t service_hash, uint32_t method_hash,
+                               const pb_msgdesc_t* fields,
+                               const NanopbType& msg, uint32_t call_id = 0) {
+  uint8_t payload[BufCap];
+  pb_ostream_t os = pb_ostream_from_buffer(payload, sizeof(payload));
+  if (!pb_encode(&os, fields, &msg)) return 0;
+  return send_hdlc_rpc(ba, service_hash, method_hash,
+                       pw::span<const uint8_t>(payload, os.bytes_written),
+                       pw::rpc::internal::pwpb::PacketType::REQUEST, call_id);
+}
+
+template <typename NanopbType, size_t BufCap = 128>
+inline void invoke_rpc_response(bridge::test::TestAccessor& ba,
+                                uint32_t service_id, uint32_t method_id,
+                                const pb_msgdesc_t* fields,
+                                const NanopbType& msg, uint32_t call_id = 0,
+                                uint32_t channel_id = 1) {
+  uint8_t payload_buf[BufCap];
+  pb_ostream_t pbos = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  if (pb_encode(&pbos, fields, &msg)) {
+    pw::rpc::internal::Packet pkt(
+        pw::rpc::internal::pwpb::PacketType::RESPONSE, channel_id, service_id,
+        method_id, call_id,
+        pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
+    ba.invokeRpcResponse(pkt);
+  }
+}
+
+inline bool perform_test_link_sync(bridge::test::TestAccessor& ba,
+                                   uint8_t nonce_fill = 0xABU,
+                                   pw::span<uint8_t> out_nonce = {}) {
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> handshake_nonce = {};
+  handshake_nonce.fill(nonce_fill);
+  if (!out_nonce.empty()) {
+    etl::copy_n(handshake_nonce.begin(),
+                std::min(out_nonce.size(), handshake_nonce.size()),
+                out_nonce.begin());
+  }
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  etl::copy_n(handshake_nonce.begin(), handshake_nonce.size(),
+              sync.nonce.bytes);
+  sync.nonce.size = handshake_nonce.size();
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> handshake_tag = {};
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size,
+                         handshake_tag.data());
+  etl::copy_n(handshake_tag.begin(), handshake_tag.size(), sync.tag.bytes);
+  sync.tag.size = handshake_tag.size();
+
+  return send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                          pw::tokenizer::Hash("LinkSync"),
+                          rpc_pb_LinkSync_fields, sync) > 0 &&
+         ba.isSynchronized();
+}
+
+template <typename NanopbType>
+inline bool decode_tx_response(const BiStream& stream,
+                               const pb_msgdesc_t* fields,
+                               NanopbType& out_msg) {
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto frame = decoder.Process(static_cast<pw::byte>(stream.tx_buf.data[i]));
+    if (!frame.ok()) continue;
+    auto pkt = pw::rpc::internal::Packet::FromBuffer(frame.value().data());
+    if (!pkt.ok() ||
+        pkt.value().type() != pw::rpc::internal::pwpb::PacketType::RESPONSE) {
+      continue;
+    }
+    auto payload = pkt.value().payload();
+    pb_istream_t in = pb_istream_from_buffer(
+        reinterpret_cast<const uint8_t*>(payload.data()), payload.size());
+    return pb_decode(&in, fields, &out_msg);
+  }
+  return false;
 }
 #endif

@@ -7,7 +7,7 @@
 #include <BridgeFaultInjection.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/span.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -43,34 +43,15 @@ void test_all_handlers_coverage() {
   BiStream stream;
   reset_bridge_comp(stream);
 
-  etl::array<uint8_t, 128> frame_buf;
-  size_t sz = 0;
-
-  // Call GetVersion
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                            pw::tokenizer::Hash("rpc.pb.SystemService"),
-                            pw::tokenizer::Hash("GetVersion"),
-                            etl::span<const uint8_t>(), frame_buf);
-  TestAccessor::create(Bridge).feedHdlcBytes(
-      etl::span<const uint8_t>(frame_buf.data(), sz));
+  auto& ba = TestAccessor::create(Bridge);
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                pw::tokenizer::Hash("GetVersion"));
   Mailbox.process();
-
-  // Call GetFreeMemory
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                            pw::tokenizer::Hash("rpc.pb.SystemService"),
-                            pw::tokenizer::Hash("GetFreeMemory"),
-                            etl::span<const uint8_t>(), frame_buf);
-  TestAccessor::create(Bridge).feedHdlcBytes(
-      etl::span<const uint8_t>(frame_buf.data(), sz));
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                pw::tokenizer::Hash("GetFreeMemory"));
   Mailbox.process();
-
-  // Call GetCapabilities
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                            pw::tokenizer::Hash("rpc.pb.SystemService"),
-                            pw::tokenizer::Hash("GetCapabilities"),
-                            etl::span<const uint8_t>(), frame_buf);
-  TestAccessor::create(Bridge).feedHdlcBytes(
-      etl::span<const uint8_t>(frame_buf.data(), sz));
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                pw::tokenizer::Hash("GetCapabilities"));
   Mailbox.process();
 
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
@@ -99,7 +80,7 @@ void test_datastore_api() {
   reset_bridge_comp(stream);
 #if BRIDGE_ENABLE_DATASTORE
   uint8_t dummy_val[] = {1, 2, 3};
-  DataStore.set("test_k", etl::span<const uint8_t>(dummy_val, 3));
+  DataStore.set("test_k", pw::span<const uint8_t>(dummy_val, 3));
 #endif
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
@@ -107,7 +88,7 @@ void test_datastore_api() {
 static bool message_callback_called = false;
 static uint8_t last_message_data[64] = {0};
 static size_t last_message_len = 0;
-static void my_message_callback(etl::span<const uint8_t> data) {
+static void my_message_callback(pw::span<const uint8_t> data) {
   message_callback_called = true;
   last_message_len = etl::min(data.size(), sizeof(last_message_data));
   if (last_message_len > 0) {
@@ -140,7 +121,7 @@ void test_mailbox_api() {
 
   // 2. Test sending commands
   uint8_t raw_payload[] = {0xAA, 0xBB, 0xCC};
-  Mailbox.push(etl::span<const uint8_t>(raw_payload, 3));
+  Mailbox.push(pw::span<const uint8_t>(raw_payload, 3));
   TEST_ASSERT_TRUE(Mailbox.requestRead());
   TEST_ASSERT_TRUE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(456);
@@ -152,18 +133,10 @@ void test_mailbox_api() {
     push_msg.data.size = 2;
     push_msg.data.bytes[0] = 0x11;
     push_msg.data.bytes[1] = 0x22;
-    uint8_t payload_buf[64];
-    pb_ostream_t pbos =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_MailboxPush_fields, &push_msg));
-    etl::array<uint8_t, 128> hdlc_buf;
-    size_t sz = build_hdlc_rpc_frame(
-        1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-        pw::tokenizer::Hash("rpc.pb.MailboxService"),
-        pw::tokenizer::Hash("Push"),
-        etl::span<const uint8_t>(payload_buf, pbos.bytes_written), hdlc_buf);
-    TestAccessor::create(Bridge).feedHdlcBytes(
-        etl::span<const uint8_t>(hdlc_buf.data(), sz));
+    send_rpc_request(TestAccessor::create(Bridge),
+                     pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                     pw::tokenizer::Hash("Push"), rpc_pb_MailboxPush_fields,
+                     push_msg);
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(2, last_message_len);
@@ -180,17 +153,10 @@ void test_mailbox_api() {
     read_resp.content.bytes[0] = 0x33;
     read_resp.content.bytes[1] = 0x44;
     read_resp.content.bytes[2] = 0x55;
-    uint8_t payload_buf[64];
-    pb_ostream_t pbos =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    TEST_ASSERT_TRUE(
-        pb_encode(&pbos, rpc_pb_MailboxReadResponse_fields, &read_resp));
-    pw::rpc::internal::Packet pkt(
-        pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
-        pw::tokenizer::Hash("rpc.pb.MailboxService"),
-        pw::tokenizer::Hash("Read"), 0,
-        pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
-    TestAccessor::create(Bridge).invokeRpcResponse(pkt);
+    invoke_rpc_response(TestAccessor::create(Bridge),
+                        pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                        pw::tokenizer::Hash("Read"),
+                        rpc_pb_MailboxReadResponse_fields, read_resp);
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(3, last_message_len);
@@ -204,17 +170,10 @@ void test_mailbox_api() {
     rpc_pb_MailboxAvailableResponse avail_resp =
         rpc_pb_MailboxAvailableResponse_init_default;
     avail_resp.count = 42;
-    uint8_t payload_buf[32];
-    pb_ostream_t pbos =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    TEST_ASSERT_TRUE(
-        pb_encode(&pbos, rpc_pb_MailboxAvailableResponse_fields, &avail_resp));
-    pw::rpc::internal::Packet pkt(
-        pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
-        pw::tokenizer::Hash("rpc.pb.MailboxService"),
-        pw::tokenizer::Hash("Available"), 0,
-        pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
-    TestAccessor::create(Bridge).invokeRpcResponse(pkt);
+    invoke_rpc_response(TestAccessor::create(Bridge),
+                        pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                        pw::tokenizer::Hash("Available"),
+                        rpc_pb_MailboxAvailableResponse_fields, avail_resp);
     Mailbox.process();
     TEST_ASSERT_TRUE(available_callback_called);
     TEST_ASSERT_EQUAL_UINT32(42, last_available_count);
@@ -232,17 +191,9 @@ void test_send_pin_event_api() {
   rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
   sub_req.pin = 13;
   sub_req.enabled = true;
-  uint8_t pl_buf[64];
-  pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
-  TEST_ASSERT_TRUE(
-      pb_encode(&pbos, rpc_pb_PinSubscribeRequest_fields, &sub_req));
-  etl::array<uint8_t, 128> hdlc_buf;
-  const size_t sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.GpioService"),
-      pw::tokenizer::Hash("SubscribePins"),
-      etl::span<const uint8_t>(pl_buf, pbos.bytes_written), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
+                   pw::tokenizer::Hash("SubscribePins"),
+                   rpc_pb_PinSubscribeRequest_fields, sub_req);
 
   const size_t initial_bytes = stream.tx_buf.len;
   const bool result = Bridge.sendPinEvent(13, 1023);
@@ -264,25 +215,25 @@ void test_spi_data_modes_map_to_native_settings() {
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
                                   payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_1;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
                                   payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE1, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_2;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
                                   payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE2, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
                                   payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE3, SPI.last_settings.data_mode);
   TEST_ASSERT_EQUAL_UINT8(LSBFIRST, SPI.last_settings.bit_order);
@@ -290,18 +241,18 @@ void test_spi_data_modes_map_to_native_settings() {
 
   config.data_mode = static_cast<rpc_pb_SpiDataMode>(99);
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
                                   payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
 
   SPIService.end();
 }
 
-static void dummy_fs_read(etl::span<const uint8_t>) {}
+static void dummy_fs_read(pw::span<const uint8_t>) {}
 static void dummy_process_run(int32_t) {}
 static void dummy_process_poll(rpc::StatusCode, uint16_t,
-                               etl::span<const uint8_t>,
-                               etl::span<const uint8_t>) {}
+                               pw::span<const uint8_t>,
+                               pw::span<const uint8_t>) {}
 
 void test_component_extended_operations() {
   BiStream stream;
@@ -309,7 +260,7 @@ void test_component_extended_operations() {
 
   // Mailbox
   uint8_t mbox_data[16] = {1, 2, 3};
-  Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
+  Mailbox.push(pw::span<const uint8_t>(mbox_data, 3));
   Mailbox.onLost();
   TEST_ASSERT_TRUE(Mailbox.requestRead());
   TEST_ASSERT_TRUE(Mailbox.requestAvailable());
@@ -318,21 +269,21 @@ void test_component_extended_operations() {
   // FileSystem
   FileSystem.read(
       "test.txt",
-      etl::delegate<void(etl::span<const uint8_t>)>::create<dummy_fs_read>());
-  FileSystem.write("test.txt", etl::span<const uint8_t>(mbox_data, 3));
+      etl::delegate<void(pw::span<const uint8_t>)>::create<dummy_fs_read>());
+  FileSystem.write("test.txt", pw::span<const uint8_t>(mbox_data, 3));
   FileSystem.remove("test.txt");
 
   rpc_pb_FileReadResponse fr_p = rpc_pb_FileReadResponse_init_default;
-  bridge::pb::copy_bytes(fr_p.content, etl::span<const uint8_t>(mbox_data, 3));
+  bridge::pb::copy_bytes(fr_p.content, mbox_data, 3);
   FileSystem._onResponse(fr_p);
 
   // Process
-  Process.runAsync("ls", etl::span<const etl::string_view>(),
+  Process.runAsync("ls", pw::span<const etl::string_view>(),
                    etl::delegate<void(int32_t)>::create<dummy_process_run>());
   Process.kill(1);
   Process.poll(1, etl::delegate<void(
-                      rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
-                      etl::span<const uint8_t>)>::create<dummy_process_poll>());
+                      rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
+                      pw::span<const uint8_t>)>::create<dummy_process_poll>());
 
   rpc_pb_ProcessRunAsyncResponse prar =
       rpc_pb_ProcessRunAsyncResponse_init_default;
@@ -347,7 +298,7 @@ void test_component_extended_operations() {
   // SPI uninitialized transfer
   SPIService.end();
   uint8_t spi_buf[2] = {0, 0};
-  SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));
+  SPIService.transfer(pw::span<uint8_t>(spi_buf, 2));
 
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
@@ -355,8 +306,8 @@ void test_component_extended_operations() {
 static int32_t s_captured_pid = 0;
 static void capture_async_handler(int32_t pid) { s_captured_pid = pid; }
 static void capture_poll_handler(rpc::StatusCode, uint16_t,
-                                 etl::span<const uint8_t>,
-                                 etl::span<const uint8_t>) {}
+                                 pw::span<const uint8_t>,
+                                 pw::span<const uint8_t>) {}
 
 void test_process_edges() {
   BiStream stream;
@@ -400,7 +351,7 @@ void test_process_edges() {
   etl::array<etl::string_view, 2> overflow_args = {oversized_arg,
                                                    etl::string_view("y")};
   Process.runAsync(
-      "x", etl::span<const etl::string_view>(overflow_args.data(), 2),
+      "x", pw::span<const etl::string_view>(overflow_args.data(), 2),
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
 
@@ -410,7 +361,7 @@ void test_process_edges() {
   etl::array<etl::string_view, 1> single_arg = {etl::string_view("z")};
   Process.runAsync(
       etl::string_view(near_full_cmd.data(), rpc::MAX_PAYLOAD_SIZE - 1U),
-      etl::span<const etl::string_view>(single_arg.data(), 1),
+      pw::span<const etl::string_view>(single_arg.data(), 1),
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
 
@@ -458,7 +409,7 @@ void test_process_edges() {
   // branch)
   etl::string_view valid_args[1] = {etl::string_view("-la")};
   Process.runAsync(
-      "ls", etl::span<const etl::string_view>(valid_args, 1),
+      "ls", pw::span<const etl::string_view>(valid_args, 1),
       etl::delegate<void(int32_t)>::create<&capture_async_handler>());
 
   // 13. Send failure with valid and invalid handler (covers line 64)
@@ -474,7 +425,7 @@ void test_process_edges() {
   Process.reset();
   const char* secret_str =
       "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
-  ba.setSharedSecret(etl::span<const uint8_t>(
+  ba.setSharedSecret(pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(secret_str), strlen(secret_str)));
   etl::array<char, 60> large_cmd_buf;
   large_cmd_buf.fill('x');
@@ -538,9 +489,9 @@ void test_console_edges() {
   Console.onLost();
 }
 
-static void dummy_ds_edge_handler(etl::string_view, etl::span<const uint8_t>) {}
+static void dummy_ds_edge_handler(etl::string_view, pw::span<const uint8_t>) {}
 static bool s_ds_edge_called = false;
-static void dummy_ds_valid_handler(etl::string_view, etl::span<const uint8_t>) {
+static void dummy_ds_valid_handler(etl::string_view, pw::span<const uint8_t>) {
   s_ds_edge_called = true;
 }
 
@@ -551,7 +502,7 @@ void test_datastore_edges() {
   ba.setSynchronized();
 
   // Empty key/val
-  DataStore.set(etl::string_view(), etl::span<const uint8_t>());
+  DataStore.set(etl::string_view(), pw::span<const uint8_t>());
   rpc_pb_DatastoreGetResponse ds_resp =
       rpc_pb_DatastoreGetResponse_init_default;
   DataStore._onResponse(ds_resp);
@@ -590,13 +541,13 @@ void test_datastore_edges() {
   ba.clearSharedSecret();
   ba.setTxEnabled(false);
   uint8_t payload_bytes[] = {'h', 'e', 'l', 'l', 'o'};
-  DataStore.set("key2", etl::span<const uint8_t>(payload_bytes, 3));
+  DataStore.set("key2", pw::span<const uint8_t>(payload_bytes, 3));
   ba.setTxEnabled(true);
 
   DataStore.onLost();
 }
 
-static void dummy_fs_edge_handler(etl::span<const uint8_t>) {}
+static void dummy_fs_edge_handler(pw::span<const uint8_t>) {}
 
 void test_filesystem_edges() {
   BiStream stream;
@@ -604,7 +555,7 @@ void test_filesystem_edges() {
   auto& ba = TestAccessor::create(Bridge);
 
   // 1. Unsynchronized / empty path send failure
-  FileSystem.write(etl::string_view(), etl::span<const uint8_t>());
+  FileSystem.write(etl::string_view(), pw::span<const uint8_t>());
   FileSystem.read(etl::string_view(), FileSystemClass::FileSystemReadHandler());
   FileSystem.remove(etl::string_view());
 
@@ -621,7 +572,7 @@ void test_filesystem_edges() {
 
   // 4. Synchronized write, read, remove
   uint8_t data[] = {1, 2, 3};
-  FileSystem.write("test.txt", etl::span<const uint8_t>(data, 3));
+  FileSystem.write("test.txt", pw::span<const uint8_t>(data, 3));
   FileSystem.read(
       "test.txt",
       FileSystemClass::FileSystemReadHandler::create<&dummy_fs_edge_handler>());
@@ -658,36 +609,29 @@ void test_filesystem_edges() {
   // 8. Large file multi-chunk reading via active ServerWriter
   etl::array<uint8_t, 100> large_data;
   large_data.fill(0xAA);
-  auto res_w1 = bridge::hal::writeFile("test_large.txt", large_data);
-  TEST_ASSERT_TRUE(res_w1.has_value());
+  auto res_w1 = bridge::hal::writeFile(
+      "test_large.txt",
+      pw::span<const uint8_t>(large_data.data(), large_data.size()));
+  TEST_ASSERT_TRUE(res_w1.ok());
   rpc_pb_FileRead req_large = {};
   strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
-  uint8_t req_large_buf[80];
-  pb_ostream_t pos_large =
-      pb_ostream_from_buffer(req_large_buf, sizeof(req_large_buf));
-  TEST_ASSERT_TRUE(pb_encode(&pos_large, rpc_pb_FileRead_fields, &req_large));
-  etl::array<uint8_t, 128> fs_hdlc_buf;
-  const size_t fs_sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-      pw::tokenizer::Hash("Read"),
-      etl::span<const uint8_t>(req_large_buf, pos_large.bytes_written),
-      fs_hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(fs_hdlc_buf.data(), fs_sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+                   pw::tokenizer::Hash("Read"), rpc_pb_FileRead_fields,
+                   req_large);
 
   // 9. Send-fail branches when tx disabled
   ba.clearSharedSecret();
   ba.setTxEnabled(false);
   uint8_t fsdata[] = {1, 2};
-  FileSystem.write("send_fail.txt", etl::span<const uint8_t>(fsdata, 2));
+  FileSystem.write("send_fail.txt", pw::span<const uint8_t>(fsdata, 2));
   FileSystem.remove("send_fail.txt");
   TEST_ASSERT_EQUAL(pw::Status::Unavailable().code(),
                     FileSystem._onRead(req_large, inactive_writer).code());
   ba.setTxEnabled(true);
 
   // 10. Empty file (to_copy == 0)
-  auto res_w2 = bridge::hal::writeFile("empty.txt", etl::span<const uint8_t>());
-  TEST_ASSERT_TRUE(res_w2.has_value());
+  auto res_w2 = bridge::hal::writeFile("empty.txt", pw::span<const uint8_t>());
+  TEST_ASSERT_TRUE(res_w2.ok());
   rpc_pb_FileRead fread_empty = {};
   const char* empty_path = "empty.txt";
   etl::copy_n(empty_path, strlen(empty_path), fread_empty.path);
@@ -714,36 +658,32 @@ void test_spi_edges() {
 
   // 2. Normal transfer, empty transfer, uninitialized transfer
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
-  size_t n = SPIService.transfer(etl::span<uint8_t>(buf));
+  size_t n = SPIService.transfer(pw::span<uint8_t>(buf));
   TEST_ASSERT_EQUAL(4, n);
-  n = SPIService.transfer(etl::span<uint8_t>());
+  n = SPIService.transfer(pw::span<uint8_t>());
   TEST_ASSERT_EQUAL(0, n);
 
   SPIService.end();
-  n = SPIService.transfer(etl::span<uint8_t>(buf));
+  n = SPIService.transfer(pw::span<uint8_t>(buf));
   TEST_ASSERT_EQUAL(0, n);
 
   // 3. Timeout fault
   SPIService.begin();
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
-  size_t t3 = SPIService.transfer(etl::span<uint8_t>(buf));
+  size_t t3 = SPIService.transfer(pw::span<uint8_t>(buf));
   TEST_ASSERT_EQUAL(0U, t3);
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
   // 4. SPI Transfer via HDLC RPC
   rpc_pb_SpiTransfer spi_req = rpc_pb_SpiTransfer_init_default;
   spi_req.data.size = 0;
-  uint8_t req_buf[32];
-  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
-  pb_encode(&pos, rpc_pb_SpiTransfer_fields, &spi_req);
-  etl::array<uint8_t, 64> hdlc_buf;
-  size_t sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.SpiService"), pw::tokenizer::Hash("Transfer"),
-      etl::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SpiService"),
+                   pw::tokenizer::Hash("Transfer"), rpc_pb_SpiTransfer_fields,
+                   spi_req);
   ba.setTxEnabled(false);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SpiService"),
+                   pw::tokenizer::Hash("Transfer"), rpc_pb_SpiTransfer_fields,
+                   spi_req);
   ba.setTxEnabled(true);
 
   // 5. onLost
@@ -753,7 +693,7 @@ void test_spi_edges() {
 static uint32_t s_mb_avail = 0;
 static void mb_avail_cb(uint32_t c) { s_mb_avail = c; }
 static bool s_mb_msg_called = false;
-static void mb_msg_cb(etl::span<const uint8_t>) { s_mb_msg_called = true; }
+static void mb_msg_cb(pw::span<const uint8_t>) { s_mb_msg_called = true; }
 
 void test_mailbox_edges() {
   BiStream stream;
@@ -769,7 +709,7 @@ void test_mailbox_edges() {
   constexpr etl::array<uint8_t, 5> push_attempts{};
   etl::for_each(push_attempts.begin(), push_attempts.end(), [&mb_msg](uint8_t) {
     MailboxClass::_enqueue(
-        etl::span<const uint8_t>(mb_msg.data.bytes, mb_msg.data.size));
+        pw::span<const uint8_t>(mb_msg.data.bytes, mb_msg.data.size));
   });
 
   // Available response with and without callback
@@ -799,7 +739,7 @@ void test_mailbox_edges() {
   uint8_t payload_bytes[] = {'h', 'e', 'l', 'l', 'o'};
   ba.clearSharedSecret();
   ba.setTxEnabled(false);
-  Mailbox.push(etl::span<const uint8_t>(payload_bytes, 5));
+  Mailbox.push(pw::span<const uint8_t>(payload_bytes, 5));
   TEST_ASSERT_FALSE(Mailbox.requestRead());
   TEST_ASSERT_FALSE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(789U);
@@ -811,36 +751,25 @@ void test_mailbox_edges() {
   size_t sz = build_hdlc_rpc_frame(
       1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
-      pw::tokenizer::Hash("GetVersion"), etl::span<const uint8_t>(), hdlc_buf);
+      pw::tokenizer::Hash("GetVersion"), pw::span<const uint8_t>(), hdlc_buf);
   stream.feed(hdlc_buf.data(), sz);
   Bridge.process();
 
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::RESPONSE,
-                            pw::tokenizer::Hash("rpc.pb.MailboxService"),
-                            pw::tokenizer::Hash("Available"),
-                            etl::span<const uint8_t>(), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
-
-  sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
-      pw::tokenizer::Hash("rpc.pb.MailboxService"), pw::tokenizer::Hash("Read"),
-      etl::span<const uint8_t>(), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
-
-  sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::CLIENT_ERROR,
-      pw::tokenizer::Hash("rpc.pb.MailboxService"), pw::tokenizer::Hash("Read"),
-      etl::span<const uint8_t>(), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                pw::tokenizer::Hash("Available"), {},
+                pw::rpc::internal::pwpb::PacketType::RESPONSE);
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                pw::tokenizer::Hash("Read"), {},
+                pw::rpc::internal::pwpb::PacketType::SERVER_STREAM);
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                pw::tokenizer::Hash("Read"), {},
+                pw::rpc::internal::pwpb::PacketType::CLIENT_ERROR);
 
   // Unknown method_id fallthroughs in RPC services and _dispatchRpcResponse
   constexpr uint32_t kUnknownMethod = 0xDEADBEEFU;
   auto send_rpc = [&](pw::rpc::internal::pwpb::PacketType ptype, uint32_t srv,
-                      uint32_t meth,
-                      etl::span<const uint8_t> pl =
-                          etl::span<const uint8_t>()) {
-    const size_t n = build_hdlc_rpc_frame(1, ptype, srv, meth, pl, hdlc_buf);
-    ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), n));
+                      uint32_t meth, pw::span<const uint8_t> pl = {}) {
+    send_hdlc_rpc(ba, srv, meth, pl, ptype);
   };
   send_rpc(pw::rpc::internal::pwpb::PacketType::REQUEST,
            pw::tokenizer::Hash("rpc.pb.GpioService"), kUnknownMethod);
@@ -876,11 +805,11 @@ void test_mailbox_edges() {
   send_rpc(pw::rpc::internal::pwpb::PacketType::REQUEST,
            pw::tokenizer::Hash("rpc.pb.SystemService"),
            pw::tokenizer::Hash("LinkSync"),
-           etl::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
+           pw::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
   send_rpc(pw::rpc::internal::pwpb::PacketType::REQUEST,
            pw::tokenizer::Hash("rpc.pb.MailboxService"),
            pw::tokenizer::Hash("Push"),
-           etl::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
+           pw::span<const uint8_t>(bad_pb, sizeof(bad_pb)));
 
   Console.pushBytes(nullptr, 5);
   Console.pushBytes(payload_bytes, 0);

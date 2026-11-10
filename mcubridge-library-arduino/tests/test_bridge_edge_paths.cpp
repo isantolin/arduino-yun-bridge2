@@ -34,44 +34,30 @@ void tearDown() {}
 
 namespace {
 
-void on_fs_read(etl::span<const uint8_t>) {}
-void on_datastore_get(etl::string_view, etl::span<const uint8_t>) {}
+void on_fs_read(pw::span<const uint8_t>) {}
+void on_datastore_get(etl::string_view, pw::span<const uint8_t>) {}
 void on_process_run(int32_t) {}
-void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
-                     etl::span<const uint8_t>) {}
+void on_process_poll(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
+                     pw::span<const uint8_t>) {}
 
 inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
-                             etl::span<const uint8_t> payload = {}) {
-  etl::array<uint8_t, 256> frame_raw;
-  size_t len =
-      build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                           service_id, method_id, payload, frame_raw);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
+                             pw::span<const uint8_t> payload = {}) {
+  send_hdlc_rpc(ba, service_id, method_id, payload);
 }
 
 template <typename ProtoMsg>
 inline void feed_rpc_request_msg(TestAccessor& ba, uint32_t service_id,
                                  uint32_t method_id, const pb_msgdesc_t* fields,
                                  const ProtoMsg& msg) {
-  uint8_t pl_buf[128];
-  pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
-  pb_encode(&pbos, fields, &msg);
-  feed_rpc_request(ba, service_id, method_id,
-                   etl::span<const uint8_t>(pl_buf, pbos.bytes_written));
+  send_rpc_request<ProtoMsg, 128>(ba, service_id, method_id, fields, msg);
 }
 
 template <typename ProtoMsg>
 inline void invoke_response(TestAccessor& ba, uint32_t service_id,
                             uint32_t method_id, const pb_msgdesc_t* fields,
                             const ProtoMsg& msg, uint32_t call_id = 0) {
-  uint8_t payload_buf[128];
-  pb_ostream_t pbos = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-  pb_encode(&pbos, fields, &msg);
-  pw::rpc::internal::Packet pkt(
-      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1, service_id, method_id,
-      call_id, pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
-  ba.invokeRpcResponse(pkt);
+  invoke_rpc_response(ba, service_id, method_id, fields, msg, call_id);
 }
 
 void test_dispatch_valid_payload_handlers_unique_seq() {
@@ -203,7 +189,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                   rpc_pb_FileReadResponse_fields, fr_resp);
 
   // 15. ProcessRunAsync response
-  Process.runAsync("ls", etl::span<const etl::string_view>(),
+  Process.runAsync("ls", pw::span<const etl::string_view>(),
                    ProcessType::ProcessRunHandler::create<on_process_run>());
   rpc_pb_ProcessRunAsyncResponse pr_resp =
       rpc_pb_ProcessRunAsyncResponse_init_default;
@@ -242,7 +228,7 @@ void test_dispatch_malformed_payload_paths() {
 
   // Malformed payload: truncated or invalid wire bytes
   const uint8_t malformed_bytes[] = {0xC1, 0xFF, 0xEE, 0xDD};
-  etl::span<const uint8_t> bad_pl(malformed_bytes, sizeof(malformed_bytes));
+  pw::span<const uint8_t> bad_pl(malformed_bytes, sizeof(malformed_bytes));
 
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("SetBaudrate"), bad_pl);
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("EnterBootloader"), bad_pl);
@@ -265,7 +251,7 @@ void test_dispatch_malformed_payload_paths() {
                 DataStoreType::GetHandler::create<on_datastore_get>());
   FileSystem.read("edge.bin",
                   FileSystemType::FileSystemReadHandler::create<on_fs_read>());
-  Process.runAsync("ls", etl::span<const etl::string_view>(),
+  Process.runAsync("ls", pw::span<const etl::string_view>(),
                    ProcessType::ProcessRunHandler::create<on_process_run>());
   Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
   pw::rpc::internal::Packet bad_pkt(
@@ -323,29 +309,28 @@ void test_packet_received_security_paths() {
   size_t len =
       build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                            kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
-                           etl::span<const uint8_t>(), corrupt_frame);
+                           pw::span<const uint8_t>(), corrupt_frame);
   TEST_ASSERT_GREATER_THAN(2, len);
   if (len >= 2) {
     corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC
   }
-  ba.feedHdlcBytes(etl::span<const uint8_t>(corrupt_frame.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(corrupt_frame.data(), len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
   // 3. Truncated RPC packet inside HDLC frame (< 4 bytes)
   const uint8_t short_bytes[] = {0x01, 0x02};
   etl::array<uint8_t, 64> hdlc_short;
   size_t short_len = TestHdlc::encodeUIFrame(
-      1, etl::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
-      hdlc_short);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_short.data(), short_len));
+      1, pw::span<const uint8_t>(short_bytes, sizeof(short_bytes)), hdlc_short);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_short.data(), short_len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
   // 4. Unknown HDLC address (e.g. 0x99) dropped safely
   etl::array<uint8_t, 64> hdlc_unknown_addr;
   size_t unk_len = TestHdlc::encodeUIFrame(
-      0x99, etl::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
+      0x99, pw::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
       hdlc_unknown_addr);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
   // 5. Unsynchronized access with shared secret set rejects non-LinkSync RPC
@@ -389,9 +374,8 @@ void test_console_and_policy_edges() {
   const uint8_t console_in[] = {0x41, 0x42};
   etl::array<uint8_t, 64> hdlc_console;
   size_t len = TestHdlc::encodeUIFrame(
-      3, etl::span<const uint8_t>(console_in, sizeof(console_in)),
-      hdlc_console);
-  ba2.feedHdlcBytes(etl::span<const uint8_t>(hdlc_console.data(), len));
+      3, pw::span<const uint8_t>(console_in, sizeof(console_in)), hdlc_console);
+  ba2.feedHdlcBytes(pw::span<const uint8_t>(hdlc_console.data(), len));
 
   TEST_ASSERT_EQUAL(0x41, Console.peek());
   TEST_ASSERT_EQUAL(0x41, Console.read());
@@ -401,13 +385,13 @@ void test_console_and_policy_edges() {
   // Send console/log stream with null stream returns false
   ba2.setNullStream();
   TEST_ASSERT_FALSE(Bridge.sendConsoleStream(
-      etl::span<const uint8_t>(console_in, sizeof(console_in))));
+      pw::span<const uint8_t>(console_in, sizeof(console_in))));
   TEST_ASSERT_FALSE(Bridge.sendLogStream(
-      etl::span<const uint8_t>(console_in, sizeof(console_in))));
+      pw::span<const uint8_t>(console_in, sizeof(console_in))));
 
   Bridge.enterSafeState();
   TEST_ASSERT_FALSE(Bridge.sendLogStream(
-      etl::span<const uint8_t>(console_in, sizeof(console_in))));
+      pw::span<const uint8_t>(console_in, sizeof(console_in))));
 }
 
 void test_observer_and_task_runtime_edges() {
@@ -491,8 +475,8 @@ void test_service_capacity_and_send_fail_edges() {
                   FileSystemType::FileSystemReadHandler::create<on_fs_read>());
   DataStore.get(
       "key",
-      etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
-          on_datastore_get>());
+      etl::delegate<void(etl::string_view,
+                         pw::span<const uint8_t>)>::create<on_datastore_get>());
   Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
@@ -592,7 +576,7 @@ void test_fault_injection_harness_paths() {
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
   TEST_ASSERT_EQUAL_UINT32(
       0,
-      static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
+      static_cast<uint32_t>(SPIService.transfer(pw::span<uint8_t>(spi_buf))));
   SPIService.end();
 
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
@@ -848,7 +832,7 @@ void test_bootloader_timer_and_hal_coverage() {
 template <size_t N>
 size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
                                   uint64_t counter,
-                                  etl::span<const uint8_t> plaintext,
+                                  pw::span<const uint8_t> plaintext,
                                   etl::array<uint8_t, N>& out_hdlc,
                                   bool corrupt_tag = false) {
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
@@ -862,9 +846,9 @@ size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
     nonce[4U + i] = b;
     aad[1U + i] = b;
   }
-  auto ct = etl::span<uint8_t>(envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE,
-                               plaintext.size());
-  auto tag = etl::span<uint8_t>(
+  auto ct = pw::span<uint8_t>(envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE,
+                              plaintext.size());
+  auto tag = pw::span<uint8_t>(
       envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + plaintext.size(),
       rpc::RPC_AEAD_TAG_SIZE);
   rpc::security::aead_encrypt(ba.rxAeadKey(), nonce, aad, plaintext, ct, tag);
@@ -874,7 +858,7 @@ size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
   const size_t env_len =
       rpc::RPC_AEAD_COUNTER_SIZE + plaintext.size() + rpc::RPC_AEAD_TAG_SIZE;
   return TestHdlc::encodeUIFrame(
-      address, etl::span<const uint8_t>(envelope.data(), env_len), out_hdlc);
+      address, pw::span<const uint8_t>(envelope.data(), env_len), out_hdlc);
 }
 
 void test_encrypted_hdlc_and_session_edge_paths() {
@@ -900,9 +884,9 @@ void test_encrypted_hdlc_and_session_edge_paths() {
 
   const uint8_t msg_bytes[] = {'O', 'K'};
   const bool console_sent = Bridge.sendConsoleStream(
-      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
+      pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
   const bool log_sent = Bridge.sendLogStream(
-      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
+      pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
   TEST_ASSERT_TRUE(console_sent);
   TEST_ASSERT_TRUE(log_sent);
 
@@ -910,25 +894,25 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   etl::array<uint8_t, 256> hdlc_buf = {};
   size_t hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_CONSOLE, 1U,
-      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+      pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   TEST_ASSERT_EQUAL('O', Console.read());
   TEST_ASSERT_EQUAL('K', Console.read());
 
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_CONSOLE, 2U,
-      etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf, true);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+      pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf, true);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
 
   ba.setSessionKeysReady(false);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   ba.setSessionKeysReady(true);
 
   const uint8_t bad_rpc_inner[] = {0xFF, 0xFF};
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 2U,
-      etl::span<const uint8_t>(bad_rpc_inner, sizeof(bad_rpc_inner)), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+      pw::span<const uint8_t>(bad_rpc_inner, sizeof(bad_rpc_inner)), hdlc_buf);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
 
   pw::rpc::internal::Packet sync_pkt(
       pw::rpc::internal::pwpb::PacketType::REQUEST, 1, kSysSvc,
@@ -937,8 +921,8 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   auto enc_sync = sync_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 3U,
-      etl::span<const uint8_t>(pkt_buf, enc_sync.value().size()), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+      pw::span<const uint8_t>(pkt_buf, enc_sync.value().size()), hdlc_buf);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
 
   ba.clearSynchronized();
   ba.setSessionKeysReady(true);
@@ -948,16 +932,16 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   auto enc_ver = ver_pkt.Encode(pw::as_writable_bytes(pw::span(pkt_buf)));
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 4U,
-      etl::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+      pw::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
   ba.setSynchronized();
   ba.setSessionKeysReady(true);
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 5U,
-      etl::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
+      pw::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
   TEST_ASSERT_FALSE(ba.isSessionKeysReady());
 
@@ -965,21 +949,21 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   etl::array<uint8_t, 10> small_env = {};
   etl::array<uint8_t, 24> exact_env = {};
   TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      256U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
+      256U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
   TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), small_env));
+      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), small_env));
   TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
+      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
   ba.setTxAeadCounter(UINT64_MAX);
   etl::array<uint8_t, 64> normal_env = {};
   TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
+      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
   ba.setTxAeadCounter(0U);
   ba.setSessionKeysReady(false);
   TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, etl::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
+      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
 
-  etl::span<const uint8_t> plain_out;
+  pw::span<const uint8_t> plain_out;
   TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
   ba.setSessionKeysReady(true);
   TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(256U, exact_env, plain_out));

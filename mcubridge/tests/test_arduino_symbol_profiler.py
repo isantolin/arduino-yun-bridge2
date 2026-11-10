@@ -14,7 +14,10 @@ from tools.profiling.arduino_symbol_profiler import (
     detect_board_label,
     extract_elf_memory_table,
     extract_symbols,
+    find_matching_baseline_elf,
+    format_delta,
     profile_elf,
+    run_pw_bloat,
 )
 
 runner = CliRunner()
@@ -130,3 +133,68 @@ def test_extract_elf_memory_table_esp32(tmp_path: Path) -> None:
     assert "### 📊 Arduino Memory Usage" in table
     assert "Arduino Nano ESP32" in table
     assert "`BridgeControl`" in table
+
+
+def test_format_delta() -> None:
+    assert format_delta(100, None) == "N/A"
+    assert "🔺" in format_delta(200, 100)
+    assert "+100 B" in format_delta(200, 100)
+    assert "🟢" in format_delta(100, 200)
+    assert "-100 B" in format_delta(100, 200)
+    assert format_delta(100, 100) == "0 B ➖"
+
+
+def test_find_matching_baseline_elf(tmp_path: Path) -> None:
+    cur_dir = tmp_path / "build_cur"
+    base_dir = tmp_path / "build_base"
+    cur_elf = ensure_test_elf(cur_dir / "arduino-avr-mega" / "firmware.elf")
+    base_elf = ensure_test_elf(base_dir / "arduino-avr-mega" / "firmware.elf")
+
+    # Match by directory structure
+    match = find_matching_baseline_elf(cur_elf, cur_dir, base_dir)
+    assert match == base_elf
+
+    # Match direct file
+    assert find_matching_baseline_elf(cur_elf, cur_dir, base_elf) == base_elf
+
+    # Missing directory / file
+    assert find_matching_baseline_elf(cur_elf, cur_dir, tmp_path / "missing") is None
+
+
+def test_extract_elf_memory_table_with_diff(tmp_path: Path) -> None:
+    cur_dir = tmp_path / "build_cur" / "arduino-avr-mega"
+    base_dir = tmp_path / "build_base" / "arduino-avr-mega"
+    ensure_test_elf(cur_dir / "firmware.elf")
+    ensure_test_elf(base_dir / "firmware.elf")
+
+    table = extract_elf_memory_table(cur_dir, baseline_dir=base_dir)
+    assert table is not None
+    assert "### 📊 Arduino Memory Usage & Differential" in table
+    assert "Δ Flash" in table
+    assert "Δ RAM" in table
+    assert "0 B ➖" in table
+
+
+def test_cli_main_with_diff(tmp_path: Path) -> None:
+    cur_dir = tmp_path / "build_cur" / "arduino-avr-mega"
+    base_dir = tmp_path / "build_base" / "arduino-avr-mega"
+    ensure_test_elf(cur_dir / "firmware.elf")
+    ensure_test_elf(base_dir / "firmware.elf")
+
+    out_file = tmp_path / "diff_report.md"
+    result = runner.invoke(
+        cast(Any, cli),
+        [str(cur_dir), "--diff", str(base_dir), "--output", str(out_file)],
+    )
+    assert result.exit_code == 0
+    assert out_file.exists()
+    content = out_file.read_text(encoding="utf-8")
+    assert "Arduino Memory Usage & Differential" in content
+    assert "Top Symbols" in content
+
+
+def test_run_pw_bloat_handling(tmp_path: Path) -> None:
+    elf_path = ensure_test_elf(tmp_path / "test.elf")
+    # Should execute gracefully and return string or None without crashing
+    out = run_pw_bloat(elf_path)
+    assert out is None or isinstance(out, str)

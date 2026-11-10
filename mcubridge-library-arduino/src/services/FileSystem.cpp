@@ -2,15 +2,15 @@
 
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
 void FileSystemClass::write(etl::string_view path,
-                            etl::span<const uint8_t> data) {
+                            pw::span<const uint8_t> data) {
   if (!Bridge.isRpcTxReady()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
@@ -57,7 +57,7 @@ void FileSystemClass::remove(etl::string_view path) {
 void FileSystemClass::_onWrite(const rpc_pb_FileWrite& msg) {
   bridge::hal::writeFile(
       etl::string_view(msg.path),
-      etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+      pw::span<const uint8_t>(msg.data.bytes, msg.data.size));
 }
 
 pw::Status FileSystemClass::_onRead(
@@ -73,10 +73,10 @@ pw::Status FileSystemClass::_onRead(
       etl::fixed_iterator<uint8_t*>(&cursor),
       etl::fixed_iterator<uint8_t*>(&sentinel), [&](uint8_t) {
         rpc_pb_FileReadResponse response = rpc_pb_FileReadResponse_init_default;
-        const etl::span<uint8_t> chunk_buf(response.content.bytes,
-                                           sizeof(response.content.bytes));
+        const pw::span<uint8_t> chunk_buf(response.content.bytes,
+                                          sizeof(response.content.bytes));
         const auto res = bridge::hal::readFileChunk(path, offset, chunk_buf);
-        if (!res) {
+        if (!res.ok()) {
           result = pw::Status::NotFound();
           return true;
         }
@@ -105,7 +105,7 @@ void FileSystemClass::_onResponse(const rpc_pb_FileReadResponse& msg) {
   if (_pending_reads.empty()) return;
   const FileSystemReadHandler handler = _pending_reads.front();
   if (handler.is_valid()) {
-    handler(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+    handler(pw::span<const uint8_t>(msg.content.bytes, msg.content.size));
   }
 }
 

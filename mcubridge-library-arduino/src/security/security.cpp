@@ -12,6 +12,7 @@
 #include <mbedtls/platform_util.h>
 #include <psa/crypto.h>
 #include <psa/crypto_extra.h>
+#include <pw_span/span.h>
 #if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 #include <wolfssl/wolfcrypt/settings.h>
 #endif
@@ -80,7 +81,7 @@ void initialize_crypto() { static_cast<void>(psa_crypto_init()); }
 mbedtls_svc_key_id_t import_key(psa_key_type_t type, size_t bits,
                                 psa_key_usage_t usage,
                                 psa_algorithm_t algorithm,
-                                etl::span<const uint8_t> material) {
+                                pw::span<const uint8_t> material) {
   mbedtls_svc_key_id_t key_id = 0;
   psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
   psa_set_key_type(&attributes, type);
@@ -94,10 +95,10 @@ mbedtls_svc_key_id_t import_key(psa_key_type_t type, size_t bits,
   return key_id;
 }
 
-void derive_hkdf_sha256(etl::span<const uint8_t> secret,
-                        etl::span<const uint8_t> salt,
-                        etl::span<const uint8_t> info,
-                        etl::span<uint8_t> output) {
+void derive_hkdf_sha256(pw::span<const uint8_t> secret,
+                        pw::span<const uint8_t> salt,
+                        pw::span<const uint8_t> info,
+                        pw::span<uint8_t> output) {
 #if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
   if (secret.empty() || output.empty() ||
       output.size() > 255U * RPC_SHA256_DIGEST_SIZE ||
@@ -121,7 +122,7 @@ void derive_hkdf_sha256(etl::span<const uint8_t> secret,
                         info_data, static_cast<word32>(info.size()),
                         output.data(), static_cast<word32>(output.size())) == 0;
   }
-  secure_zero(etl::span<uint8_t>(pseudo_random_key));
+  secure_zero(pw::span<uint8_t>(pseudo_random_key));
   if (!ok) {
     secure_zero(output);
   }
@@ -145,8 +146,8 @@ void derive_hkdf_sha256(etl::span<const uint8_t> secret,
 #endif
 }
 
-void compute_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
-                 etl::span<const uint8_t> input, etl::span<uint8_t> output) {
+void compute_mac(pw::span<const uint8_t> key, psa_algorithm_t algorithm,
+                 pw::span<const uint8_t> input, pw::span<uint8_t> output) {
   initialize_crypto();
   const mbedtls_svc_key_id_t key_id =
       import_key(PSA_KEY_TYPE_HMAC, key.size() * 8U, PSA_KEY_USAGE_SIGN_MESSAGE,
@@ -158,9 +159,9 @@ void compute_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
   static_cast<void>(psa_destroy_key(key_id));
 }
 
-bool verify_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
-                etl::span<const uint8_t> input,
-                etl::span<const uint8_t> expected_mac) {
+bool verify_mac(pw::span<const uint8_t> key, psa_algorithm_t algorithm,
+                pw::span<const uint8_t> input,
+                pw::span<const uint8_t> expected_mac) {
   initialize_crypto();
   const mbedtls_svc_key_id_t key_id =
       import_key(PSA_KEY_TYPE_HMAC, key.size() * 8U,
@@ -172,17 +173,17 @@ bool verify_mac(etl::span<const uint8_t> key, psa_algorithm_t algorithm,
   return status == PSA_SUCCESS;
 }
 
-void derive_handshake_auth_key(etl::span<const uint8_t> secret,
-                               etl::span<const uint8_t> info,
-                               etl::span<uint8_t> auth_key) {
+void derive_handshake_auth_key(pw::span<const uint8_t> secret,
+                               pw::span<const uint8_t> info,
+                               pw::span<uint8_t> auth_key) {
   const auto salt = copy_progmem(RPC_HANDSHAKE_HKDF_SALT);
   derive_hkdf_sha256(secret, salt, info, auth_key);
 }
 
-bool derive_handshake_tag(etl::span<const uint8_t> secret,
-                          etl::span<const uint8_t> nonce,
-                          etl::span<const uint8_t> info,
-                          etl::span<uint8_t> out_tag) {
+bool derive_handshake_tag(pw::span<const uint8_t> secret,
+                          pw::span<const uint8_t> nonce,
+                          pw::span<const uint8_t> info,
+                          pw::span<uint8_t> out_tag) {
   if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
       out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH) {
     secure_zero(out_tag);
@@ -193,8 +194,8 @@ bool derive_handshake_tag(etl::span<const uint8_t> secret,
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   derive_handshake_auth_key(secret, info, auth_key);
   compute_mac(auth_key, kHandshakeMac, nonce,
-              etl::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
-  secure_zero(etl::span<uint8_t>(auth_key));
+              pw::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
+  secure_zero(pw::span<uint8_t>(auth_key));
   return true;
 }
 
@@ -206,16 +207,16 @@ bool combine_ok(bool lhs, bool rhs) {
 
 }  // namespace
 
-void secure_zero(etl::span<uint8_t> buf) {
+void secure_zero(pw::span<uint8_t> buf) {
   if (!buf.empty()) {
     mbedtls_platform_zeroize(buf.data(), buf.size());
   }
 }
 
-bool derive_session_keys(etl::span<const uint8_t> secret,
-                         etl::span<const uint8_t> nonce,
-                         etl::span<uint8_t> host_to_mcu_key,
-                         etl::span<uint8_t> mcu_to_host_key) {
+bool derive_session_keys(pw::span<const uint8_t> secret,
+                         pw::span<const uint8_t> nonce,
+                         pw::span<uint8_t> host_to_mcu_key,
+                         pw::span<uint8_t> mcu_to_host_key) {
   if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
       host_to_mcu_key.size() != RPC_AEAD_KEY_SIZE ||
       mcu_to_host_key.size() != RPC_AEAD_KEY_SIZE) {
@@ -226,18 +227,18 @@ bool derive_session_keys(etl::span<const uint8_t> secret,
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_SESSION);
   etl::array<uint8_t, RPC_AEAD_KEY_SIZE * 2U> keys = {};
-  derive_hkdf_sha256(secret, nonce, info, etl::span<uint8_t>(keys));
+  derive_hkdf_sha256(secret, nonce, info, pw::span<uint8_t>(keys));
   etl::copy_n(keys.begin(), host_to_mcu_key.size(), host_to_mcu_key.begin());
   etl::copy_n(keys.begin() + host_to_mcu_key.size(), mcu_to_host_key.size(),
               mcu_to_host_key.begin());
-  secure_zero(etl::span<uint8_t>(keys));
+  secure_zero(pw::span<uint8_t>(keys));
   return true;
 }
 
-bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
-                  etl::span<const uint8_t> aad,
-                  etl::span<const uint8_t> plaintext,
-                  etl::span<uint8_t> ciphertext, etl::span<uint8_t> tag) {
+bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
+                  pw::span<const uint8_t> aad,
+                  pw::span<const uint8_t> plaintext,
+                  pw::span<uint8_t> ciphertext, pw::span<uint8_t> tag) {
   if (key.size() != RPC_AEAD_KEY_SIZE || nonce.size() != RPC_AEAD_NONCE_SIZE ||
       ciphertext.size() < plaintext.size() || tag.size() != RPC_AEAD_TAG_SIZE) {
     secure_zero(ciphertext);
@@ -294,10 +295,10 @@ bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
 #endif
 }
 
-bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
-                  etl::span<const uint8_t> aad,
-                  etl::span<const uint8_t> ciphertext,
-                  etl::span<const uint8_t> tag, etl::span<uint8_t> plaintext) {
+bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
+                  pw::span<const uint8_t> aad,
+                  pw::span<const uint8_t> ciphertext,
+                  pw::span<const uint8_t> tag, pw::span<uint8_t> plaintext) {
   if (key.size() != RPC_AEAD_KEY_SIZE || nonce.size() != RPC_AEAD_NONCE_SIZE ||
       ciphertext.size() > plaintext.size() || tag.size() != RPC_AEAD_TAG_SIZE) {
     secure_zero(plaintext);
@@ -349,23 +350,23 @@ bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
   return ok;
 }
 
-bool handshake_generate_tag(etl::span<const uint8_t> secret,
-                            etl::span<const uint8_t> nonce,
-                            etl::span<uint8_t> out_tag) {
+bool handshake_generate_tag(pw::span<const uint8_t> secret,
+                            pw::span<const uint8_t> nonce,
+                            pw::span<uint8_t> out_tag) {
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_AUTH);
   return derive_handshake_tag(secret, nonce, info, out_tag);
 }
 
-bool handshake_generate_response_tag(etl::span<const uint8_t> secret,
-                                     etl::span<const uint8_t> nonce,
-                                     etl::span<uint8_t> out_tag) {
+bool handshake_generate_response_tag(pw::span<const uint8_t> secret,
+                                     pw::span<const uint8_t> nonce,
+                                     pw::span<uint8_t> out_tag) {
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_RESPONSE);
   return derive_handshake_tag(secret, nonce, info, out_tag);
 }
 
-bool handshake_verify_tag(etl::span<const uint8_t> secret,
-                          etl::span<const uint8_t> nonce,
-                          etl::span<const uint8_t> received_tag) {
+bool handshake_verify_tag(pw::span<const uint8_t> secret,
+                          pw::span<const uint8_t> nonce,
+                          pw::span<const uint8_t> received_tag) {
   if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
       received_tag.size() != RPC_HANDSHAKE_TAG_LENGTH) {
     return false;
@@ -375,7 +376,7 @@ bool handshake_verify_tag(etl::span<const uint8_t> secret,
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   derive_handshake_auth_key(secret, info, auth_key);
   const bool ok = verify_mac(auth_key, kHandshakeMac, nonce, received_tag);
-  secure_zero(etl::span<uint8_t>(auth_key));
+  secure_zero(pw::span<uint8_t>(auth_key));
   return ok;
 }
 
@@ -502,14 +503,14 @@ bool run_cryptographic_self_tests() {
       ok, etl::equal(rejected_plaintext.begin(), rejected_plaintext.end(),
                      zero_plaintext.begin()));
 
-  secure_zero(etl::span<uint8_t>(digest));
-  secure_zero(etl::span<uint8_t>(hmac_result));
-  secure_zero(etl::span<uint8_t>(handshake_request));
-  secure_zero(etl::span<uint8_t>(handshake_response));
-  secure_zero(etl::span<uint8_t>(ciphertext));
-  secure_zero(etl::span<uint8_t>(tag));
-  secure_zero(etl::span<uint8_t>(decrypted));
-  secure_zero(etl::span<uint8_t>(rejected_plaintext));
+  secure_zero(pw::span<uint8_t>(digest));
+  secure_zero(pw::span<uint8_t>(hmac_result));
+  secure_zero(pw::span<uint8_t>(handshake_request));
+  secure_zero(pw::span<uint8_t>(handshake_response));
+  secure_zero(pw::span<uint8_t>(ciphertext));
+  secure_zero(pw::span<uint8_t>(tag));
+  secure_zero(pw::span<uint8_t>(decrypted));
+  secure_zero(pw::span<uint8_t>(rejected_plaintext));
   return ok;
 }
 

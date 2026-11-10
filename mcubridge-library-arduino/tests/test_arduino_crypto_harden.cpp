@@ -6,7 +6,7 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/byte_stream.h>
-#include <etl/span.h>
+#include <pw_span/span.h>
 extern "C" {
 #include <mbedtls/constant_time.h>
 }
@@ -56,7 +56,7 @@ void tearDown(void) {}
 void test_handshake_tag_generation_rejects_invalid_buffers(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> output_tag = {0xAAU};
   const bool empty_secret_result = rpc::security::handshake_generate_tag(
-      etl::span<const uint8_t>(), kHandshakeNonce, output_tag);
+      pw::span<const uint8_t>(), kHandshakeNonce, output_tag);
   TEST_ASSERT_FALSE(empty_secret_result);
   TEST_ASSERT_EQUAL_UINT8(0U, output_tag[0]);
 
@@ -71,8 +71,8 @@ void test_handshake_tag_generation_rejects_invalid_buffers(void) {
       0xAAU};
   const bool short_nonce_result = rpc::security::handshake_generate_tag(
       kSecret,
-      etl::span<const uint8_t>(kHandshakeNonce.data(),
-                               kHandshakeNonce.size() - 1U),
+      pw::span<const uint8_t>(kHandshakeNonce.data(),
+                              kHandshakeNonce.size() - 1U),
       output_for_short_nonce);
   TEST_ASSERT_FALSE(short_nonce_result);
   TEST_ASSERT_EQUAL_UINT8(0U, output_for_short_nonce[0]);
@@ -94,11 +94,11 @@ void test_handshake_tag_generation_and_verification(void) {
       kSecret, kHandshakeNonce, received_tag));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
-      kSecret, kHandshakeNonce, etl::span<const uint8_t>()));
+      kSecret, kHandshakeNonce, pw::span<const uint8_t>()));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
       kSecret, kHandshakeNonce,
-      etl::span<const uint8_t>(received_tag.data(), received_tag.size() - 1U)));
+      pw::span<const uint8_t>(received_tag.data(), received_tag.size() - 1U)));
 }
 
 void test_ct_memcmp_returns_nonzero_for_high_bit_mismatch(void) {
@@ -201,9 +201,9 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE - 1U> short_aead_tag{};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH - 1U> short_handshake_tag{};
 
-  rpc::security::secure_zero(etl::span<uint8_t>());
+  rpc::security::secure_zero(pw::span<uint8_t>());
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      etl::span<const uint8_t>(), handshake_nonce, key, key));
+      pw::span<const uint8_t>(), handshake_nonce, key, key));
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
       input, short_handshake_nonce, key, key));
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(input, handshake_nonce,
@@ -212,7 +212,7 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
                                                        key, short_key));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
-      etl::span<const uint8_t>(), handshake_nonce, handshake_tag));
+      pw::span<const uint8_t>(), handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
       input, short_handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
@@ -220,33 +220,33 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_response_tag(
       input, short_handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
-      etl::span<const uint8_t>(), handshake_nonce, handshake_tag));
+      pw::span<const uint8_t>(), handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
       input, short_handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(input, handshake_nonce,
                                                         short_handshake_tag));
 
   TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      short_key, aead_nonce, etl::span<const uint8_t>(), input, output, tag));
+      short_key, aead_nonce, pw::span<const uint8_t>(), input, output, tag));
   TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      key, short_aead_nonce, etl::span<const uint8_t>(), input, output, tag));
+      key, short_aead_nonce, pw::span<const uint8_t>(), input, output, tag));
   TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      key, aead_nonce, etl::span<const uint8_t>(), input,
-      etl::span<uint8_t>(output.data(), input.size() - 1U), tag));
+      key, aead_nonce, pw::span<const uint8_t>(), input,
+      pw::span<uint8_t>(output.data(), input.size() - 1U), tag));
   TEST_ASSERT_FALSE(rpc::security::aead_encrypt(key, aead_nonce,
-                                                etl::span<const uint8_t>(),
+                                                pw::span<const uint8_t>(),
                                                 input, output, short_aead_tag));
 
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      short_key, aead_nonce, etl::span<const uint8_t>(), input, tag, output));
+      short_key, aead_nonce, pw::span<const uint8_t>(), input, tag, output));
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      key, short_aead_nonce, etl::span<const uint8_t>(), input, tag, output));
+      key, short_aead_nonce, pw::span<const uint8_t>(), input, tag, output));
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(key, aead_nonce,
-                                                etl::span<const uint8_t>(),
+                                                pw::span<const uint8_t>(),
                                                 input, short_aead_tag, output));
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      key, aead_nonce, etl::span<const uint8_t>(), input, tag,
-      etl::span<uint8_t>(output.data(), input.size() - 1U)));
+      key, aead_nonce, pw::span<const uint8_t>(), input, tag,
+      pw::span<uint8_t>(output.data(), input.size() - 1U)));
 }
 
 void test_psa_random_fails_without_entropy_source(void) {
@@ -263,17 +263,17 @@ void test_psa_random_fails_without_entropy_source(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag{};
   const uint8_t aad_byte = 1U;
   TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
-      key, nonce, etl::span<const uint8_t>(&aad_byte, 1U),
-      etl::span<const uint8_t>(), etl::span<uint8_t>(), tag));
+      key, nonce, pw::span<const uint8_t>(&aad_byte, 1U),
+      pw::span<const uint8_t>(), pw::span<uint8_t>(), tag));
   TEST_ASSERT_TRUE(rpc::security::aead_decrypt(
-      key, nonce, etl::span<const uint8_t>(&aad_byte, 1U),
-      etl::span<const uint8_t>(), tag, etl::span<uint8_t>()));
+      key, nonce, pw::span<const uint8_t>(&aad_byte, 1U),
+      pw::span<const uint8_t>(), tag, pw::span<uint8_t>()));
   TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
-      key, nonce, etl::span<const uint8_t>(), etl::span<const uint8_t>(),
-      etl::span<uint8_t>(), tag));
+      key, nonce, pw::span<const uint8_t>(), pw::span<const uint8_t>(),
+      pw::span<uint8_t>(), tag));
   TEST_ASSERT_TRUE(rpc::security::aead_decrypt(
-      key, nonce, etl::span<const uint8_t>(), etl::span<const uint8_t>(), tag,
-      etl::span<uint8_t>()));
+      key, nonce, pw::span<const uint8_t>(), pw::span<const uint8_t>(), tag,
+      pw::span<uint8_t>()));
 }
 
 #if BRIDGE_ENABLE_POST_TESTS

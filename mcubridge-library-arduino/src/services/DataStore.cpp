@@ -1,12 +1,13 @@
 #include "services/DataStore.h"
 
 #include <etl/algorithm.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 
 #if BRIDGE_ENABLE_DATASTORE
 
-void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
+void DataStoreClass::set(etl::string_view key, pw::span<const uint8_t> value) {
   if (!Bridge.isRpcTxReady()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
@@ -45,7 +46,7 @@ void DataStoreClass::_onResponse(const rpc_pb_DatastoreGetResponse& msg) {
     _pending_gets.pop();
     if (handler.is_valid()) {
       handler(etl::string_view(),
-              etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
+              pw::span<const uint8_t>(msg.value.bytes, msg.value.size));
     }
   }
 }

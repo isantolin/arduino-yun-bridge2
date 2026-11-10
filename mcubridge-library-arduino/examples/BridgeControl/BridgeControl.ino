@@ -11,8 +11,8 @@
 
 #include <Bridge.h>
 #include <PigweedAVR.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
+#include <pw_span/span.h>
 #include <services/Console.h>
 #include <services/FileSystem.h>
 #include <services/Mailbox.h>
@@ -35,7 +35,7 @@ void setup() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
   Bridge.onStatus(BridgeClass::StatusHandler::create(
-      [](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
+      [](rpc::StatusCode status_code, pw::span<const uint8_t> payload) {
         (void)payload;
         // Solo imprimir errores graves para evitar saturación
         if (status_code != rpc::StatusCode::STATUS_OK) {

@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 import logging
+import os
+from pathlib import Path
 import sys
 import time
 from typing import Any, Final, Protocol, cast
@@ -26,11 +28,13 @@ import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_rpc import callback_client, packets as pw_packets
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
+from pw_tokenizer.tokens import DatabaseFormatError
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb
@@ -97,6 +101,12 @@ def resolve_serial_url(port_str: str) -> str:
     return clean
 
 
+def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
+    """Thread target to write raw bytes to serial device and flush immediately. [SIL-2]"""
+    ser.write(data)
+    ser.flush()
+
+
 class SerialTransport:
     """High-performance asyncio serial/wireless transport with flattened pipeline. [SIL-2]"""
 
@@ -139,7 +149,31 @@ class SerialTransport:
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
         self.max_attempts = max(1, self.config.serial_retry_attempts or 1)
         self.decoder = FrameDecoder()
-        self.detokenizer = detokenize.Detokenizer()
+        self.detokenizer = self.init_detokenizer()
+
+    @staticmethod
+    def init_detokenizer() -> detokenize.Detokenizer:
+        """Initialize Pigweed detokenizer, optionally loading a token database from disk. [SIL-2]"""
+        candidate_paths: list[Path] = []
+        env_path = os.environ.get("MCUBRIDGE_TOKEN_DATABASE")
+        if env_path:
+            candidate_paths.append(Path(env_path))
+        candidate_paths.extend(
+            [
+                Path("/etc/mcubridge/tokens.csv"),
+                Path("/etc/mcubridge/tokens.bin"),
+                Path("/usr/share/mcubridge/tokens.csv"),
+            ]
+        )
+        for path in candidate_paths:
+            if path.is_file():
+                try:
+                    dt = detokenize.Detokenizer(path)
+                    logger.info("Loaded Pigweed tokenizer database", path=str(path))
+                    return dt
+                except (OSError, ValueError, TypeError, DatabaseFormatError) as exc:
+                    logger.warning("Failed to load Pigweed tokenizer database", path=str(path), error=str(exc))
+        return detokenize.Detokenizer()
 
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:
@@ -566,8 +600,6 @@ class SerialTransport:
                 self.state.mcu_is_paused = False
                 self.state.serial_tx_allowed.set()
 
-        from pw_hdlc.encode import ui_frame
-
         async with self._serial_write_lock:
             cipher = self.state.link_cipher
             if self.config.serial_shared_secret and cipher is None:
@@ -576,10 +608,6 @@ class SerialTransport:
 
             frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
             encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
-
-            def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
-                ser.write(data)
-                ser.flush()
 
             try:
                 await asyncio.to_thread(_write_and_flush, serial_port, encoded)
@@ -864,8 +892,6 @@ class SerialTransport:
                 if cipher is None:
                     encoded = protocol.encode_hdlc_console(data)
                 else:
-                    from pw_hdlc.encode import ui_frame
-
                     envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
                     encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
             else:
@@ -875,8 +901,6 @@ class SerialTransport:
                     if cipher is not None and is_link_sync:
                         return False
                 if cipher is not None and not is_link_reset:
-                    from pw_hdlc.encode import ui_frame
-
                     packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
                     envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
                     encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
@@ -891,11 +915,6 @@ class SerialTransport:
                 )
 
             try:
-
-                def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
-                    ser.write(data)
-                    ser.flush()
-
                 await asyncio.to_thread(_write_and_flush, serial_port, encoded)
                 self.state.metrics.serial_bytes_sent.inc(len(encoded))
                 self.state.metrics.serial_frames_sent.inc()

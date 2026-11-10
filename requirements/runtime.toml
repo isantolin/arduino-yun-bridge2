@@ -149,7 +149,7 @@ rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 [[dependency]]
 name = "annotated-doc"
 openwrt = "python3-annotated-doc"
-pip = "annotated-doc==0.0.5"
+pip = "annotated-doc==0.0.6"
 gateway = true
 rationale = "Doc docstrings extraction runtime required by Typer"
 

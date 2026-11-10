@@ -22,22 +22,16 @@ void test_hal_weak_defaults_without_mock() {
   TEST_ASSERT_FALSE(bridge::hal::hasSD());
 
   const auto write_res =
-      bridge::hal::writeFile("test.txt", etl::span<const uint8_t>());
-  TEST_ASSERT_FALSE(write_res.has_value());
-  TEST_ASSERT_EQUAL(static_cast<int>(bridge::hal::HalError::NOT_IMPLEMENTED),
-                    static_cast<int>(write_res.error()));
+      bridge::hal::writeFile("test.txt", pw::span<const uint8_t>());
+  TEST_ASSERT_TRUE(write_res.IsUnimplemented());
 
   uint8_t buffer[8];
   const auto read_res =
-      bridge::hal::readFileChunk("test.txt", 0, etl::span<uint8_t>(buffer, 8));
-  TEST_ASSERT_FALSE(read_res.has_value());
-  TEST_ASSERT_EQUAL(static_cast<int>(bridge::hal::HalError::NOT_IMPLEMENTED),
-                    static_cast<int>(read_res.error()));
+      bridge::hal::readFileChunk("test.txt", 0, pw::span<uint8_t>(buffer, 8));
+  TEST_ASSERT_TRUE(read_res.status().IsUnimplemented());
 
   const auto remove_res = bridge::hal::removeFile("test.txt");
-  TEST_ASSERT_FALSE(remove_res.has_value());
-  TEST_ASSERT_EQUAL(static_cast<int>(bridge::hal::HalError::NOT_IMPLEMENTED),
-                    static_cast<int>(remove_res.error()));
+  TEST_ASSERT_TRUE(remove_res.IsUnimplemented());
 
   rpc_pb_Capabilities caps = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(caps);

@@ -174,19 +174,19 @@ void init() {
 
 __attribute__((weak)) bool hasSD() { return false; }
 
-__attribute__((weak)) etl::expected<void, HalError> writeFile(
-    etl::string_view, etl::span<const uint8_t>) {
-  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+__attribute__((weak)) pw::Status writeFile(etl::string_view,
+                                           pw::span<const uint8_t>) {
+  return pw::Status::Unimplemented();
 }
 
-__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(
-    etl::string_view, size_t, etl::span<uint8_t>) {
-  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+__attribute__((weak)) pw::Result<ChunkResult> readFileChunk(etl::string_view,
+                                                            size_t,
+                                                            pw::span<uint8_t>) {
+  return pw::Status::Unimplemented();
 }
 
-__attribute__((weak)) etl::expected<void, HalError> removeFile(
-    etl::string_view) {
-  return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+__attribute__((weak)) pw::Status removeFile(etl::string_view) {
+  return pw::Status::Unimplemented();
 }
 
 void applySafetyPin(uint8_t pin, SafetyPinState state) {

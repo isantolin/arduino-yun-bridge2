@@ -46,11 +46,11 @@ void test_bridge_packet_corruption_chaos() {
 
   // Inject asynchronous random noise into HDLC decoder
   const uint8_t noise[] = {0x00, 0xFF, 0xAA, 0x55, 0x7E, 0x12, 0x34};
-  ba.feedHdlcBytes(etl::span<const uint8_t>(noise, sizeof(noise)));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(noise, sizeof(noise)));
 
   // Inject truncated frame with valid flag start but cut off
   const uint8_t truncated[] = {0x7E, 0x01, 0x00, 0x7E};
-  ba.feedHdlcBytes(etl::span<const uint8_t>(truncated, sizeof(truncated)));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(truncated, sizeof(truncated)));
 
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
@@ -71,10 +71,10 @@ void test_bridge_dispatch_security_denial() {
       build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                            pw::tokenizer::Hash("rpc.pb.SystemService"),
                            pw::tokenizer::Hash("GetFreeMemory"),
-                           etl::span<const uint8_t>(), frame_buf, 1, 1);
+                           pw::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
 
   // Must not synchronize and TX must remain disabled
   TEST_ASSERT_FALSE(ba.isSynchronized());

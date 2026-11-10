@@ -16,7 +16,6 @@
 #include <etl/array.h>
 #include <etl/fixed_iterator.h>
 #include <etl/queue.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
 #include <fcntl.h>
 #include <libgen.h>

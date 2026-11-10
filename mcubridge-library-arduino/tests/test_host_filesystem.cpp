@@ -18,25 +18,25 @@ void tearDown(void) {}
 namespace {
 using bridge::test::TestAccessor;
 
-void fs_read_callback_handler(etl::span<const uint8_t>) {}
+void fs_read_callback_handler(pw::span<const uint8_t>) {}
 
 void test_hal_roundtrip() {
   etl::array<uint8_t, 8> payload = {'m', 'c', 'u', '-', 'd', 'a', 't', 'a'};
   const etl::string_view path = "test_hal.bin";
 
   auto res_w = bridge::hal::writeFile(
-      path, etl::span<const uint8_t>(payload.data(), payload.size()));
-  TEST_ASSERT(res_w.has_value());
+      path, pw::span<const uint8_t>(payload.data(), payload.size()));
+  TEST_ASSERT(res_w.ok());
 
   etl::array<uint8_t, 32> read_buffer;
   read_buffer.fill(0);
   auto res_r = bridge::hal::readFileChunk(
-      path, 0, etl::span<uint8_t>(read_buffer.data(), read_buffer.size()));
-  TEST_ASSERT(res_r.has_value());
+      path, 0, pw::span<uint8_t>(read_buffer.data(), read_buffer.size()));
+  TEST_ASSERT(res_r.ok());
   TEST_ASSERT_EQUAL(payload.size(), res_r->bytes_read);
   TEST_ASSERT(etl::equal(payload.begin(), payload.end(), read_buffer.begin()));
 
-  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).ok());
 }
 
 void test_hal_chunked_read_roundtrip() {
@@ -47,8 +47,8 @@ void test_hal_chunked_read_roundtrip() {
                 [&idx]() { return static_cast<uint8_t>('a' + (idx++ % 26U)); });
 
   auto res_w = bridge::hal::writeFile(
-      path, etl::span<const uint8_t>(read_payload.data(), read_payload.size()));
-  TEST_ASSERT(res_w.has_value());
+      path, pw::span<const uint8_t>(read_payload.data(), read_payload.size()));
+  TEST_ASSERT(res_w.ok());
 
   etl::array<uint8_t, 62> first_chunk;
   first_chunk.fill(0);
@@ -56,14 +56,14 @@ void test_hal_chunked_read_roundtrip() {
   second_chunk.fill(0);
 
   auto res_r1 = bridge::hal::readFileChunk(
-      path, 0, etl::span<uint8_t>(first_chunk.data(), first_chunk.size()));
-  TEST_ASSERT(res_r1.has_value());
+      path, 0, pw::span<uint8_t>(first_chunk.data(), first_chunk.size()));
+  TEST_ASSERT(res_r1.ok());
   TEST_ASSERT_EQUAL(62, res_r1->bytes_read);
   TEST_ASSERT(res_r1->has_more);
 
   auto res_r2 = bridge::hal::readFileChunk(
-      path, 62, etl::span<uint8_t>(second_chunk.data(), second_chunk.size()));
-  TEST_ASSERT(res_r2.has_value());
+      path, 62, pw::span<uint8_t>(second_chunk.data(), second_chunk.size()));
+  TEST_ASSERT(res_r2.ok());
   TEST_ASSERT_EQUAL(120 - 62, res_r2->bytes_read);
   TEST_ASSERT(!res_r2->has_more);
 
@@ -72,7 +72,7 @@ void test_hal_chunked_read_roundtrip() {
   TEST_ASSERT(etl::equal(read_payload.begin() + 62, read_payload.end(),
                          second_chunk.begin()));
 
-  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).ok());
 }
 
 void test_filesystem_api_write() {
@@ -82,7 +82,7 @@ void test_filesystem_api_write() {
   ba.setSynchronized();
   etl::array<uint8_t, 3> data = {1, 2, 3};
   FileSystem.write("api_write.bin",
-                   etl::span<const uint8_t>(data.data(), data.size()));
+                   pw::span<const uint8_t>(data.data(), data.size()));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
   TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
 }
@@ -116,7 +116,7 @@ void test_filesystem_on_write() {
   bridge::pb::copy_string(msg.path, sizeof(msg.path), "on_write.bin");
   bridge::pb::copy_bytes(msg.data, resp_data.data(), resp_data.size());
   FileSystem._onWrite(msg);
-  TEST_ASSERT_TRUE(bridge::hal::removeFile("on_write.bin").has_value());
+  TEST_ASSERT_TRUE(bridge::hal::removeFile("on_write.bin").ok());
 }
 
 void test_filesystem_on_read() {
@@ -127,8 +127,8 @@ void test_filesystem_on_read() {
   const etl::string_view path = "on_read.bin";
   etl::array<uint8_t, 1> data = {0xAA};
   TEST_ASSERT_TRUE(bridge::hal::writeFile(
-                       path, etl::span<const uint8_t>(data.data(), data.size()))
-                       .has_value());
+                       path, pw::span<const uint8_t>(data.data(), data.size()))
+                       .ok());
 
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
@@ -140,11 +140,11 @@ void test_filesystem_on_read() {
       1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.FileSystemService"),
       pw::tokenizer::Hash("Read"),
-      etl::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
+      pw::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
   stream.tx_buf.clear();
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
   TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
-  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).ok());
 }
 
 void test_filesystem_on_read_multichunk() {
@@ -156,8 +156,8 @@ void test_filesystem_on_read_multichunk() {
   etl::array<uint8_t, 70> data = {};
   etl::fill(data.begin(), data.end(), 0x55);
   TEST_ASSERT_TRUE(bridge::hal::writeFile(
-                       path, etl::span<const uint8_t>(data.data(), data.size()))
-                       .has_value());
+                       path, pw::span<const uint8_t>(data.data(), data.size()))
+                       .ok());
 
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
@@ -169,11 +169,11 @@ void test_filesystem_on_read_multichunk() {
       1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.FileSystemService"),
       pw::tokenizer::Hash("Read"),
-      etl::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
+      pw::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
   stream.tx_buf.clear();
-  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
   TEST_ASSERT_TRUE(stream.tx_buf.len > 70U);
-  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).ok());
 }
 
 void test_filesystem_on_read_error() {
@@ -195,12 +195,12 @@ void test_filesystem_on_remove() {
   etl::array<uint8_t, 2> dummy = {1, 2};
   TEST_ASSERT_TRUE(
       bridge::hal::writeFile(
-          "on_rem.bin", etl::span<const uint8_t>(dummy.data(), dummy.size()))
-          .has_value());
+          "on_rem.bin", pw::span<const uint8_t>(dummy.data(), dummy.size()))
+          .ok());
   rpc_pb_FileRemove msg = rpc_pb_FileRemove_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), "on_rem.bin");
   FileSystem._onRemove(msg);
-  TEST_ASSERT_FALSE(bridge::hal::removeFile("on_rem.bin").has_value());
+  TEST_ASSERT_FALSE(bridge::hal::removeFile("on_rem.bin").ok());
 }
 
 void test_filesystem_api_empty_and_error_paths() {
@@ -210,7 +210,7 @@ void test_filesystem_api_empty_and_error_paths() {
   ba.setSynchronized();
 
   // Empty write
-  FileSystem.write("", etl::span<const uint8_t>());
+  FileSystem.write("", pw::span<const uint8_t>());
 
   // Empty read
   FileSystem.read("", FileSystemType::FileSystemReadHandler::create<

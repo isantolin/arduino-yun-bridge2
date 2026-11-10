@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <PigweedAVR.h>
 #include <etl/array.h>
-#include <etl/span.h>
+#include <pw_span/span.h>
 #include <unity.h>
 
 #include "protocol/mcu_wire.pb.h"
@@ -20,7 +20,7 @@ void test_hdlc_roundtrip_and_crc() {
   etl::array<uint8_t, 256> out_buf;
   const uint8_t test_payload[] = {0x01, 0x02, 0x03, 0x04, 0x05};
   size_t encoded_len = TestHdlc::encodeUIFrame(
-      1, etl::span<const uint8_t>(test_payload, sizeof(test_payload)), out_buf);
+      1, pw::span<const uint8_t>(test_payload, sizeof(test_payload)), out_buf);
   TEST_ASSERT_TRUE(encoded_len > sizeof(test_payload));
 
   // Decode frame
@@ -59,7 +59,7 @@ void test_hdlc_address_demux() {
     etl::array<uint8_t, 128> frame_buf;
     const uint8_t payload[] = {0xAA, 0xBB};
     size_t len = TestHdlc::encodeUIFrame(
-        addr, etl::span<const uint8_t>(payload, sizeof(payload)), frame_buf);
+        addr, pw::span<const uint8_t>(payload, sizeof(payload)), frame_buf);
     TEST_ASSERT_TRUE(len > 0);
 
     pw::hdlc::DecoderBuffer<256> decoder;

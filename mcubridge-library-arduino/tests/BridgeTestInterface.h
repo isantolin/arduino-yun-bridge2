@@ -5,8 +5,8 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
 #endif
 
-#include <etl/span.h>
 #include <pw_rpc/internal/packet.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 #include "security/security.h"
@@ -51,7 +51,7 @@ class TestAccessor : public BridgeClass {
   void setTxEnabled(bool enabled) {
     _state_flags.set(FLAG_TX_ENABLED, enabled);
   }
-  void setSharedSecret(etl::span<const uint8_t> secret) {
+  void setSharedSecret(pw::span<const uint8_t> secret) {
     _shared_secret.assign(secret.begin(), secret.end());
   }
 
@@ -60,9 +60,9 @@ class TestAccessor : public BridgeClass {
     if (_shared_secret.empty()) return;
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> out_tag = {};
     if (rpc::security::handshake_generate_tag(
-            etl::span<const uint8_t>(_shared_secret),
-            etl::span<const uint8_t>(nonce_ptr, len),
-            etl::span<uint8_t>(out_tag))) {
+            pw::span<const uint8_t>(_shared_secret),
+            pw::span<const uint8_t>(nonce_ptr, len),
+            pw::span<uint8_t>(out_tag))) {
       etl::copy_n(out_tag.begin(), out_tag.size(), tag_out);
     }
   }
@@ -80,7 +80,7 @@ class TestAccessor : public BridgeClass {
     }
   }
 
-  void feedHdlcBytes(etl::span<const uint8_t> data) {
+  void feedHdlcBytes(pw::span<const uint8_t> data) {
     for (uint8_t b : data) {
       feedHdlcByte(b);
     }
@@ -151,17 +151,17 @@ class TestAccessor : public BridgeClass {
   void setSessionKeysReady(bool ready) { _session_keys_ready = ready; }
   void setTxAeadCounter(uint64_t c) { _tx_aead_counter = c; }
   void setRxAeadCounter(uint64_t c) { _rx_aead_counter = c; }
-  etl::span<const uint8_t> rxAeadKey() const {
-    return etl::span<const uint8_t>(_rx_aead_key);
+  pw::span<const uint8_t> rxAeadKey() const {
+    return pw::span<const uint8_t>(_rx_aead_key);
   }
   bool invokeWriteEncryptedHdlcFrameWithBuffer(uint64_t address,
-                                               etl::span<const uint8_t> data,
-                                               etl::span<uint8_t> envelope) {
+                                               pw::span<const uint8_t> data,
+                                               pw::span<uint8_t> envelope) {
     return _writeEncryptedHdlcFrameWithBuffer(address, data, envelope);
   }
   bool invokeDecryptHdlcFrame(uint64_t address,
-                              etl::span<const uint8_t> envelope,
-                              etl::span<const uint8_t>& plaintext) {
+                              pw::span<const uint8_t> envelope,
+                              pw::span<const uint8_t>& plaintext) {
     return _decryptHdlcFrame(address, envelope, plaintext);
   }
   pw::Status invokeChannelSend(pw::span<const std::byte> packet) {

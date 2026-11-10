@@ -8,7 +8,7 @@
 #include <SPI.h>
 #undef min
 #undef max
-#include <etl/span.h>
+#include <pw_span/span.h>
 
 #include "protocol/mcu_wire.pb.h"
 
@@ -19,7 +19,7 @@ class SPIServiceClass : public bridge::BridgeObserver {
   void begin();
   void end();
   void setConfig(const rpc_pb_SpiConfig& config);
-  size_t transfer(etl::span<uint8_t> buffer);
+  size_t transfer(pw::span<uint8_t> buffer);
 
   void onLost() override { end(); }
 

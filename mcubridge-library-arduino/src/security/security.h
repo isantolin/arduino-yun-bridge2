@@ -9,7 +9,7 @@
 #define RPC_SECURITY_H
 
 #include <etl/array.h>
-#include <etl/span.h>
+#include <pw_span/span.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -19,40 +19,40 @@ namespace rpc {
 namespace security {
 
 /** Derive host-to-MCU and MCU-to-host keys from the shared secret and nonce. */
-bool derive_session_keys(etl::span<const uint8_t> secret,
-                         etl::span<const uint8_t> nonce,
-                         etl::span<uint8_t> host_to_mcu_key,
-                         etl::span<uint8_t> mcu_to_host_key);
+bool derive_session_keys(pw::span<const uint8_t> secret,
+                         pw::span<const uint8_t> nonce,
+                         pw::span<uint8_t> host_to_mcu_key,
+                         pw::span<uint8_t> mcu_to_host_key);
 
 /** Encrypt plaintext with ChaCha20-Poly1305. */
-bool aead_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
-                  etl::span<const uint8_t> aad,
-                  etl::span<const uint8_t> plaintext,
-                  etl::span<uint8_t> ciphertext, etl::span<uint8_t> tag);
+bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
+                  pw::span<const uint8_t> aad,
+                  pw::span<const uint8_t> plaintext,
+                  pw::span<uint8_t> ciphertext, pw::span<uint8_t> tag);
 
 /** Authenticate and decrypt ciphertext with ChaCha20-Poly1305. */
-bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
-                  etl::span<const uint8_t> aad,
-                  etl::span<const uint8_t> ciphertext,
-                  etl::span<const uint8_t> tag, etl::span<uint8_t> plaintext);
+bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
+                  pw::span<const uint8_t> aad,
+                  pw::span<const uint8_t> ciphertext,
+                  pw::span<const uint8_t> tag, pw::span<uint8_t> plaintext);
 
 /** Generate the truncated HMAC-SHA256 tag for a valid handshake nonce. */
-bool handshake_generate_tag(etl::span<const uint8_t> secret,
-                            etl::span<const uint8_t> nonce,
-                            etl::span<uint8_t> out_tag);
+bool handshake_generate_tag(pw::span<const uint8_t> secret,
+                            pw::span<const uint8_t> nonce,
+                            pw::span<uint8_t> out_tag);
 
 /** Generate the domain-separated MCU proof for a valid handshake nonce. */
-bool handshake_generate_response_tag(etl::span<const uint8_t> secret,
-                                     etl::span<const uint8_t> nonce,
-                                     etl::span<uint8_t> out_tag);
+bool handshake_generate_response_tag(pw::span<const uint8_t> secret,
+                                     pw::span<const uint8_t> nonce,
+                                     pw::span<uint8_t> out_tag);
 
 /** Verify the host's exact-length handshake tag using a timing-safe compare. */
-bool handshake_verify_tag(etl::span<const uint8_t> secret,
-                          etl::span<const uint8_t> nonce,
-                          etl::span<const uint8_t> received_tag);
+bool handshake_verify_tag(pw::span<const uint8_t> secret,
+                          pw::span<const uint8_t> nonce,
+                          pw::span<const uint8_t> received_tag);
 
 /** Securely erase memory through the platform crypto implementation. */
-void secure_zero(etl::span<uint8_t> buf);
+void secure_zero(pw::span<uint8_t> buf);
 
 /**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.

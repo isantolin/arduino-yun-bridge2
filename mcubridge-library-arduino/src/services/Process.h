@@ -5,9 +5,9 @@
 #undef max
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/utility.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 #include "protocol/mcu_wire.pb.h"
@@ -17,13 +17,13 @@ class ProcessClass : public bridge::BridgeObserver {
  public:
   using ProcessRunHandler = etl::delegate<void(int32_t)>;
   using ProcessPollHandler =
-      etl::delegate<void(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
-                         etl::span<const uint8_t>)>;
+      etl::delegate<void(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
+                         pw::span<const uint8_t>)>;
   using PendingPoll = etl::pair<int32_t, ProcessPollHandler>;
 
   ProcessClass() = default;
   static void runAsync(etl::string_view cmd,
-                       etl::span<const etl::string_view> args,
+                       pw::span<const etl::string_view> args,
                        ProcessRunHandler handler);
   void poll(int32_t pid, ProcessPollHandler handler);
   static void kill(int32_t pid);

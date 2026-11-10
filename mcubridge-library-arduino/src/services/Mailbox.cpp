@@ -1,6 +1,7 @@
 #include "services/Mailbox.h"
 
 #include <etl/algorithm.h>
+#include <pw_span/span.h>
 
 #if BRIDGE_ENABLE_MAILBOX
 
@@ -17,7 +18,7 @@ typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 etl::circular_buffer<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
     MailboxClass::_queue;
 
-void MailboxClass::push(etl::span<const uint8_t> data) {
+void MailboxClass::push(pw::span<const uint8_t> data) {
   if (!Bridge.isRpcTxReady()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
     return;
@@ -34,7 +35,7 @@ bool MailboxClass::requestRead() {
       req, [](const rpc_pb_MailboxReadResponse& resp, pw::Status status) {
         static_cast<void>(status);
         Mailbox._enqueue(
-            etl::span<const uint8_t>(resp.content.bytes, resp.content.size));
+            pw::span<const uint8_t>(resp.content.bytes, resp.content.size));
       });
   return true;
 }
@@ -60,7 +61,7 @@ void MailboxClass::signalProcessed(uint32_t message_id) {
   (void)Bridge.mailboxClient().Processed(p);
 }
 
-void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
+void MailboxClass::_enqueue(pw::span<const uint8_t> data) {
   if (!_queue.full()) {
     MailboxBuffer m;
     const size_t sz = etl::min(data.size(), m.capacity());
@@ -79,7 +80,7 @@ void MailboxClass::_onAvailableResponse(
 void MailboxClass::process() {
   if (!_queue.empty() && _message_callback) {
     const auto& m = _queue.front();
-    _message_callback(etl::span<const uint8_t>(m.data(), m.size()));
+    _message_callback(pw::span<const uint8_t>(m.data(), m.size()));
     _queue.pop();
   }
 }

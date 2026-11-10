@@ -60,7 +60,6 @@
 #include <etl/delegate.h>
 #include <etl/fsm.h>
 #include <etl/observer.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/vector.h>
 // clang-format on
@@ -71,6 +70,7 @@
 #include <pw_rpc/nanopb/server_reader_writer.h>
 #include <pw_rpc/packet_meta.h>
 #include <pw_rpc/server.h>
+#include <pw_span/span.h>
 
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
@@ -111,7 +111,7 @@ inline void copy_string(char* dst, size_t dst_cap, etl::string_view src) {
 }
 
 template <typename PbBytesField>
-inline void copy_bytes(PbBytesField& dst, etl::span<const uint8_t> src) {
+inline void copy_bytes(PbBytesField& dst, pw::span<const uint8_t> src) {
   const size_t len = etl::min(src.size(), sizeof(dst.bytes));
   etl::copy_n(src.data(), len, dst.bytes);
   dst.size = static_cast<pb_size_t>(len);
@@ -175,21 +175,21 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint32_t getWatchdogTimeout() const { return _watchdog_timeout_ms; }
 
   using StatusHandler =
-      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
+      etl::delegate<void(rpc::StatusCode, pw::span<const uint8_t>)>;
   void onStatus(StatusHandler h) { _status_handler = h; }
 
-  void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p = {}) {
+  void emitStatus(rpc::StatusCode s, pw::span<const uint8_t> p = {}) {
     if (_status_handler.is_valid()) {
       _status_handler(s, p);
     }
   }
 
   void emitStatus(rpc::StatusCode s, etl::string_view p) {
-    emitStatus(s, etl::span<const uint8_t>(
+    emitStatus(s, pw::span<const uint8_t>(
                       reinterpret_cast<const uint8_t*>(p.data()), p.size()));
   }
 
-  void emitStatus(pw::Status s, etl::span<const uint8_t> p = {}) {
+  void emitStatus(pw::Status s, pw::span<const uint8_t> p = {}) {
     emitStatus(static_cast<rpc::StatusCode>(s.code()), p);
   }
 
@@ -208,8 +208,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return true;
   }
 
-  [[nodiscard]] bool sendConsoleStream(etl::span<const uint8_t> data);
-  [[nodiscard]] bool sendLogStream(etl::span<const uint8_t> data);
+  [[nodiscard]] bool sendConsoleStream(pw::span<const uint8_t> data);
+  [[nodiscard]] bool sendLogStream(pw::span<const uint8_t> data);
 
   [[nodiscard]] bool isRpcTxReady() const {
     return _state_flags.test(FLAG_TX_ENABLED) &&
@@ -267,17 +267,16 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _initializeRuntime();
   void _initObservers();
   void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
-  bool _writeHdlcFrame(uint64_t address, etl::span<const uint8_t> data,
+  bool _writeHdlcFrame(uint64_t address, pw::span<const uint8_t> data,
                        bool plaintext = false);
-  bool _writeEncryptedHdlcFrame(uint64_t address,
-                                etl::span<const uint8_t> data);
+  bool _writeEncryptedHdlcFrame(uint64_t address, pw::span<const uint8_t> data);
   bool _writeEncryptedHdlcFrameWithBuffer(uint64_t address,
-                                          etl::span<const uint8_t> data,
-                                          etl::span<uint8_t> envelope);
+                                          pw::span<const uint8_t> data,
+                                          pw::span<uint8_t> envelope);
   bool _writeEncryptedHdlcFrameWithStackBuffer(uint64_t address,
-                                               etl::span<const uint8_t> data);
-  bool _decryptHdlcFrame(uint64_t address, etl::span<const uint8_t> envelope,
-                         etl::span<const uint8_t>& plaintext);
+                                               pw::span<const uint8_t> data);
+  bool _decryptHdlcFrame(uint64_t address, pw::span<const uint8_t> envelope,
+                         pw::span<const uint8_t>& plaintext);
   void _clearLinkSession();
 
   static constexpr size_t kMaxRpcRequestPacketSize =

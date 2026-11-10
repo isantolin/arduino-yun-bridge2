@@ -7,12 +7,11 @@ from typing import Any, Protocol
 
 import structlog
 
-from ..protocol import mcubridge_pb2 as pb
+from ..protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from ..protocol.protocol import (
     CLOUD_EXPIRY_PIN,
     DEFAULT_PIN_HYSTERESIS,
     DEFAULT_PIN_INTERVAL_MS,
-    Command,
     Topic,
     topic_path,
 )
@@ -32,7 +31,9 @@ class GpioRuntime(Protocol):
     @property
     def state(self) -> RuntimeState: ...
 
-    async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None: ...
+    async def enqueue_cloud(
+        self, message: cloud_gateway_pb2.CloudQueuedPublish, *, reply_context: Any | None = None
+    ) -> None: ...
 
 
 class GpioService:
@@ -54,8 +55,8 @@ class GpioService:
         if serial is None or not self._runtime.state.is_connected:
             return {"status": "error", "message": "Serial transport is not connected"}
 
-        pb_mode = getattr(pb.PinModeType, f"PIN_{mode.upper()}", pb.PinModeType.PIN_INPUT)
-        req = pb.PinSubscribeRequest(
+        pb_mode = getattr(config_schema_pb2.PinModeType, f"PIN_{mode.upper()}", config_schema_pb2.PinModeType.PIN_INPUT)
+        req = mcu_wire_pb2.PinSubscribeRequest(
             pin=pin,
             mode=pb_mode,
             interval_ms=interval_ms,
@@ -63,7 +64,7 @@ class GpioService:
             enabled=enabled,
         )
 
-        if await serial.send(Command.CMD_PIN_SUBSCRIBE.value, req):
+        if await serial.send("rpc.pb.GpioService/SubscribePins", req):
             state = self._runtime.state
             if enabled:
                 state.pin_subscriptions[pin] = {
@@ -93,22 +94,22 @@ class GpioService:
             if not sub.get("active", True):
                 continue
             mode_str = str(sub.get("mode", "INPUT")).upper()
-            pb_mode = getattr(pb.PinModeType, f"PIN_{mode_str}", pb.PinModeType.PIN_INPUT)
-            req = pb.PinSubscribeRequest(
+            pb_mode = getattr(config_schema_pb2.PinModeType, f"PIN_{mode_str}", config_schema_pb2.PinModeType.PIN_INPUT)
+            req = mcu_wire_pb2.PinSubscribeRequest(
                 pin=pin,
                 mode=pb_mode,
                 interval_ms=int(sub.get("interval_ms", DEFAULT_PIN_INTERVAL_MS)),
                 hysteresis=int(sub.get("hysteresis", DEFAULT_PIN_HYSTERESIS)),
                 enabled=True,
             )
-            if await serial.send(Command.CMD_PIN_SUBSCRIBE.value, req):
+            if await serial.send("rpc.pb.GpioService/SubscribePins", req):
                 sub["active"] = True
                 restored += 1
             else:
                 sub["active"] = False
         return restored
 
-    async def handle_pin_update_event(self, event: pb.PinUpdateEvent) -> None:
+    async def handle_pin_update_event(self, event: mcu_wire_pb2.PinUpdateEvent) -> None:
         """Handle streaming pin value change events from the MCU.
 
         [SIL-2] Routes through enqueue_cloud() for proper LMDB spool persistence,

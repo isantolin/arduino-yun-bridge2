@@ -9,7 +9,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -27,7 +27,7 @@ async def run_test(
         cmd_str = shlex.join(command_to_run)
         logger.info("Launching command", command=cmd_str)
 
-        res = await stub.ProcessRunAsync(pb.ProcessRunAsync(command=cmd_str))
+        res = await stub.ProcessRunAsync(mcu_wire_pb2.ProcessRunAsync(command=cmd_str))
         logger.info(
             "Shell process launched via gRPC",
             pid=res.pid,

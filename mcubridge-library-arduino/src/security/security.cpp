@@ -338,9 +338,8 @@ bool aead_decrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
   }
 
   size_t verify_length = 0;
-  const bool ok =
-      psa_aead_verify(&operation, &kEmptyBuffer, 0U, &verify_length, tag.data(),
-                      tag.size()) == PSA_SUCCESS;
+  const bool ok = psa_aead_verify(&operation, &kEmptyBuffer, 0U, &verify_length,
+                                  tag.data(), tag.size()) == PSA_SUCCESS;
   static_cast<void>(psa_aead_abort(&operation));
   static_cast<void>(psa_destroy_key(key_id));
 #endif
@@ -446,9 +445,8 @@ bool run_cryptographic_self_tests() {
   const auto hmac_expected = copy_progmem(kat_hmac_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> hmac_result = {};
   compute_mac(hmac_key, kHmacSha256, hmac_data, hmac_result);
-  ok = combine_ok(
-      ok, etl::equal(hmac_result.begin(), hmac_result.end(),
-                     hmac_expected.begin()));
+  ok = combine_ok(ok, etl::equal(hmac_result.begin(), hmac_result.end(),
+                                 hmac_expected.begin()));
 
   const auto handshake_secret = copy_progmem(kat_handshake_secret);
   const auto handshake_nonce = copy_progmem(kat_handshake_nonce);
@@ -460,9 +458,9 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_response = {};
   ok = combine_ok(ok, handshake_generate_tag(handshake_secret, handshake_nonce,
                                              handshake_request));
-  ok = combine_ok(
-      ok, etl::equal(handshake_request.begin(), handshake_request.end(),
-                     handshake_request_expected.begin()));
+  ok = combine_ok(ok,
+                  etl::equal(handshake_request.begin(), handshake_request.end(),
+                             handshake_request_expected.begin()));
   ok = combine_ok(ok, handshake_verify_tag(handshake_secret, handshake_nonce,
                                            handshake_request_expected));
   ok = combine_ok(
@@ -487,19 +485,18 @@ bool run_cryptographic_self_tests() {
                                  aead_expected.begin()));
   ok = combine_ok(
       ok, etl::equal(tag.begin(), tag.end(), aead_expected_tag.begin()));
-  ok = combine_ok(ok, aead_decrypt(aead_key, aead_nonce, aead_aad,
-                                   aead_expected, aead_expected_tag,
-                                   decrypted));
-  ok = combine_ok(
-      ok, etl::equal(decrypted.begin(), decrypted.end(),
-                     aead_plaintext.begin()));
+  ok =
+      combine_ok(ok, aead_decrypt(aead_key, aead_nonce, aead_aad, aead_expected,
+                                  aead_expected_tag, decrypted));
+  ok = combine_ok(ok, etl::equal(decrypted.begin(), decrypted.end(),
+                                 aead_plaintext.begin()));
 
   auto invalid_tag = aead_expected_tag;
   invalid_tag[0] ^= 0x01U;
   etl::array<uint8_t, 4> rejected_plaintext = {0xAAU, 0xAAU, 0xAAU, 0xAAU};
-  ok = combine_ok(ok, !aead_decrypt(aead_key, aead_nonce, aead_aad,
-                                    aead_expected, invalid_tag,
-                                    rejected_plaintext));
+  ok = combine_ok(ok,
+                  !aead_decrypt(aead_key, aead_nonce, aead_aad, aead_expected,
+                                invalid_tag, rejected_plaintext));
   const etl::array<uint8_t, 4> zero_plaintext = {};
   ok = combine_ok(
       ok, etl::equal(rejected_plaintext.begin(), rejected_plaintext.end(),

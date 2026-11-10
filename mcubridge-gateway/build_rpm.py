@@ -101,8 +101,12 @@ def create_source_tarball(version: str, sources_dir: Path) -> Path:
         "frame.py",
         "protocol.py",
         "structures.py",
-        "mcubridge_pb2.py",
-        "mcubridge_pb2.pyi",
+        "config_schema_pb2.py",
+        "config_schema_pb2.pyi",
+        "mcu_wire_pb2.py",
+        "mcu_wire_pb2.pyi",
+        "cloud_gateway_pb2.py",
+        "cloud_gateway_pb2.pyi",
         "mcubridge_grpc.py",
     ):
         src_f = proto_src / fname

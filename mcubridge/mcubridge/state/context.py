@@ -17,7 +17,7 @@ from google.protobuf.json_format import ParseDict
 from statemachine import State, StateMachine
 
 from ..config.settings import RuntimeConfig
-from ..protocol import mcubridge_pb2 as pb
+from ..protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from ..protocol import protocol
 from ..protocol.protocol import (
     DEFAULT_CLOUD_QUEUE_LIMIT,
@@ -60,9 +60,9 @@ def terminate_pid_tree(pid: int, timeout: float = float(protocol.PROCESS_KILL_TI
 T = TypeVar("T")
 
 
-def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedPublish]:
+def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish]:
     normalized = max(0, maxsize)
-    return asyncio.Queue[pb.CloudQueuedPublish](maxsize=normalized)
+    return asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish](maxsize=normalized)
 
 
 def _metric_prop(attr: str) -> Any:
@@ -264,7 +264,7 @@ class RuntimeState:
     cloud_link_state: str
     cloud_fsm: CloudLinkMachine
     cloud_queue_limit: int
-    cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish]
+    cloud_publish_queue: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish]
     cloud_drop_counts: dict[str, int]
     allow_non_tmp_paths: bool
     datastore_cache: LmdbCache | None
@@ -274,8 +274,8 @@ class RuntimeState:
     console_to_mcu_queue: collections.deque[bytes]
     running_processes: dict[int, ProcessContext]
     process_lock: asyncio.Lock
-    allowed_policy: pb.AllowedCommandPolicy
-    topic_authorization: pb.TopicAuthorization | None
+    allowed_policy: config_schema_pb2.AllowedCommandPolicy
+    topic_authorization: config_schema_pb2.TopicAuthorization | None
     process_timeout: int
     file_system_root: str
     file_write_max_bytes: int
@@ -289,7 +289,7 @@ class RuntimeState:
     last_watchdog_beat: float
     mailbox_queue_limit: int
     mcu_version: tuple[int, int, int] | None
-    _mcu_capabilities: pb.Capabilities | None
+    _mcu_capabilities: mcu_wire_pb2.Capabilities | None
     link_handshake_nonce: bytes | None
     link_sync_event: asyncio.Event
     link_expected_tag: bytes | None
@@ -306,14 +306,14 @@ class RuntimeState:
     handshake_fatal_detail: str | None
     handshake_fatal_unix: float
     handshake_last_started: float
-    serial_flow_stats: pb.SerialFlowSnapshot
+    serial_flow_stats: cloud_gateway_pb2.SerialFlowSnapshot
     serial_pipeline_inflight: dict[str, Any] | None
     serial_pipeline_last: dict[str, Any] | None
     process_max_concurrent: int
     unknown_command_last_id: int
     config_source: str
     serial_response_timeout_ms: int
-    supervisor_stats: dict[str, pb.SupervisorSnapshot]
+    supervisor_stats: dict[str, mcu_wire_pb2.SupervisorSnapshot]
     cloud_dropped_messages: int
     cloud_spool_corrupt_dropped: int
     cloud_spool_dropped_limit: int
@@ -335,7 +335,7 @@ class RuntimeState:
         self.state: str = kwargs.get("state", "disconnected")
 
         self.cloud_queue_limit: int = kwargs.get("cloud_queue_limit", DEFAULT_CLOUD_QUEUE_LIMIT)
-        self.cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish] = kwargs.get(
+        self.cloud_publish_queue: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish] = kwargs.get(
             "cloud_publish_queue"
         ) or _make_cloud_publish_queue(self.cloud_queue_limit)
         self.cloud_drop_counts: dict[str, int] = kwargs.get("cloud_drop_counts") or {}
@@ -350,8 +350,10 @@ class RuntimeState:
 
         self.running_processes: dict[int, ProcessContext] = kwargs.get("running_processes") or {}
         self.process_lock: asyncio.Lock = kwargs.get("process_lock") or asyncio.Lock()
-        self.allowed_policy: pb.AllowedCommandPolicy = kwargs.get("allowed_policy") or create_allowed_policy([])
-        self.topic_authorization: pb.TopicAuthorization | None = kwargs.get("topic_authorization")
+        self.allowed_policy: config_schema_pb2.AllowedCommandPolicy = kwargs.get(
+            "allowed_policy"
+        ) or create_allowed_policy([])
+        self.topic_authorization: config_schema_pb2.TopicAuthorization | None = kwargs.get("topic_authorization")
         self.process_timeout: int = kwargs.get("process_timeout", DEFAULT_PROCESS_TIMEOUT)
         self.file_system_root: str = kwargs.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT)
         self.file_write_max_bytes: int = kwargs.get("file_write_max_bytes", DEFAULT_FILE_WRITE_MAX_BYTES)
@@ -367,7 +369,7 @@ class RuntimeState:
         self.mailbox_queue_limit: int = kwargs.get("mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT)
 
         self.mcu_version: tuple[int, int, int] | None = kwargs.get("mcu_version")
-        self._mcu_capabilities: pb.Capabilities | None = None
+        self._mcu_capabilities: mcu_wire_pb2.Capabilities | None = None
         self.mcu_capabilities = kwargs.get("mcu_capabilities")
         self.link_handshake_nonce: bytes | None = kwargs.get("link_handshake_nonce")
         self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
@@ -385,7 +387,9 @@ class RuntimeState:
         self.handshake_fatal_detail: str | None = kwargs.get("handshake_fatal_detail")
         self.handshake_fatal_unix: float = kwargs.get("handshake_fatal_unix", 0.0)
         self.handshake_last_started: float = kwargs.get("handshake_last_started", 0.0)
-        self.serial_flow_stats: pb.SerialFlowSnapshot = kwargs.get("serial_flow_stats") or pb.SerialFlowSnapshot()
+        self.serial_flow_stats: cloud_gateway_pb2.SerialFlowSnapshot = (
+            kwargs.get("serial_flow_stats") or cloud_gateway_pb2.SerialFlowSnapshot()
+        )
         self.serial_pipeline_inflight: dict[str, Any] | None = kwargs.get("serial_pipeline_inflight")
         self.serial_pipeline_last: dict[str, Any] | None = kwargs.get("serial_pipeline_last")
         self.process_max_concurrent: int = kwargs.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
@@ -394,7 +398,7 @@ class RuntimeState:
         self.serial_response_timeout_ms: int = kwargs.get(
             "serial_response_timeout_ms", int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
         )
-        self.supervisor_stats: dict[str, pb.SupervisorSnapshot] = kwargs.get("supervisor_stats") or {}
+        self.supervisor_stats: dict[str, mcu_wire_pb2.SupervisorSnapshot] = kwargs.get("supervisor_stats") or {}
 
         self.cloud_dropped_messages: int = kwargs.get("cloud_dropped_messages", 0)
         for _counter_field in (
@@ -447,15 +451,15 @@ class RuntimeState:
         return ".".join(map(str, self.mcu_version)) if self.mcu_version is not None else "unknown"
 
     @property
-    def mcu_capabilities(self) -> pb.Capabilities | None:
+    def mcu_capabilities(self) -> mcu_wire_pb2.Capabilities | None:
         return self._mcu_capabilities
 
     @mcu_capabilities.setter
-    def mcu_capabilities(self, value: pb.Capabilities | dict[str, Any] | None) -> None:
-        if value is None or isinstance(value, pb.Capabilities):
+    def mcu_capabilities(self, value: mcu_wire_pb2.Capabilities | dict[str, Any] | None) -> None:
+        if value is None or isinstance(value, mcu_wire_pb2.Capabilities):
             self._mcu_capabilities = value
         else:
-            caps = pb.Capabilities()
+            caps = mcu_wire_pb2.Capabilities()
             ParseDict(value, cast(Any, caps), ignore_unknown_fields=True)
             self._mcu_capabilities = caps
 
@@ -679,26 +683,32 @@ class RuntimeState:
                 logger.warning("Datastore falling back to RAM cache")
                 self.datastore_cache = None
 
-    def build_serial_pipeline_snapshot(self) -> pb.SerialPipelineSnapshot:
-        def _to_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:
-            return pb.PipelineEvent(**ev_dict) if ev_dict else pb.PipelineEvent(event="none")
+    def build_serial_pipeline_snapshot(self) -> cloud_gateway_pb2.SerialPipelineSnapshot:
+        def _to_pipeline_event(ev_dict: dict[str, Any] | None) -> cloud_gateway_pb2.PipelineEvent:
+            return (
+                cloud_gateway_pb2.PipelineEvent(**ev_dict) if ev_dict else cloud_gateway_pb2.PipelineEvent(event="none")
+            )
 
-        return pb.SerialPipelineSnapshot(
+        return cloud_gateway_pb2.SerialPipelineSnapshot(
             inflight=_to_pipeline_event(self.serial_pipeline_inflight),
             last_completion=_to_pipeline_event(self.serial_pipeline_last),
         )
 
-    def build_metrics_snapshot(self) -> pb.DaemonMetrics:
+    def build_metrics_snapshot(self) -> mcu_wire_pb2.DaemonMetrics:
         """Build a concrete metrics snapshot for telemetry. [SIL-2]"""
-        supervisors = [pb.SupervisorEntry(name=name, stats=stats) for name, stats in self.supervisor_stats.items()]
+        supervisors = [
+            mcu_wire_pb2.SupervisorEntry(name=name, stats=stats) for name, stats in self.supervisor_stats.items()
+        ]
         cloud_drop_counts = [
-            pb.CloudDropCount(topic=topic, count=count) for topic, count in self.cloud_drop_counts.items()
+            mcu_wire_pb2.CloudDropCount(topic=topic, count=count) for topic, count in self.cloud_drop_counts.items()
         ]
         retries = [
-            pb.ComponentRetry(component=component, count=count) for component, count in self.metrics.retries.items()
+            mcu_wire_pb2.ComponentRetry(component=component, count=count)
+            for component, count in self.metrics.retries.items()
         ]
         mcu_status_counts = [
-            pb.McuStatusCount(status=status, count=count) for status, count in self.metrics.mcu_status_counts.items()
+            mcu_wire_pb2.McuStatusCount(status=status, count=count)
+            for status, count in self.metrics.mcu_status_counts.items()
         ]
         try:
             uptime = max(0.0, time.time() - psutil.boot_time())
@@ -706,7 +716,7 @@ class RuntimeState:
             logger.debug("Failed to read system boot time for uptime metric", error=str(exc))
             uptime = self.metrics.uptime_seconds.value
 
-        snapshot = pb.DaemonMetrics(
+        snapshot = mcu_wire_pb2.DaemonMetrics(
             cloud_queue_depth=self.cloud_publish_queue.qsize(),
             cloud_dropped_messages=self.cloud_dropped_messages,
             cloud_drop_counts=cloud_drop_counts,
@@ -717,7 +727,7 @@ class RuntimeState:
             cloud_spool_degraded=self.cloud_spool_degraded,
             cloud_spool_failure_reason=self.cloud_spool_failure_reason or "",
             cloud_spool_pending_messages=self.cloud_spool_pending_messages,
-            queue_depths=pb.QueueDepths(
+            queue_depths=mcu_wire_pb2.QueueDepths(
                 cloud_publish=self.cloud_publish_queue.qsize(),
                 console=len(self.console_to_mcu_queue),
                 mailbox_outgoing=len(self.mailbox_queue),
@@ -735,14 +745,14 @@ class RuntimeState:
             retries=retries,
             mcu_status_counts=mcu_status_counts,
         )
-        for field in pb.DaemonMetrics.DESCRIPTOR.fields:
+        for field in mcu_wire_pb2.DaemonMetrics.DESCRIPTOR.fields:
             if field.name != "uptime_seconds" and hasattr(self.metrics, field.name):
                 metric = getattr(self.metrics, field.name)
                 if hasattr(metric, "value"):
                     setattr(snapshot, field.name, metric.value)
         return snapshot
 
-    def build_status_snapshot(self) -> pb.BridgeStatus:
+    def build_status_snapshot(self) -> cloud_gateway_pb2.BridgeStatus:
         """Build a holistic snapshot of the bridge status. [SIL-2]"""
         try:
             sys_cpu = psutil.cpu_percent(interval=None)
@@ -759,7 +769,7 @@ class RuntimeState:
             load1m = 0.0
             uptime = 0.0
 
-        system_pb = pb.SystemStatus(
+        system_pb = cloud_gateway_pb2.SystemStatus(
             cpu_percent=sys_cpu,
             memory_total_bytes=total_mem,
             memory_available_bytes=avail_mem,
@@ -767,7 +777,7 @@ class RuntimeState:
             uptime_seconds=uptime,
         )
 
-        proc_stats: list[pb.ProcessStats] = []
+        proc_stats: list[cloud_gateway_pb2.ProcessStats] = []
         try:
             curr_p = psutil.Process()
             with curr_p.oneshot():
@@ -775,7 +785,7 @@ class RuntimeState:
                 curr_cpu = curr_p.cpu_percent(interval=None)
                 proc_name = curr_p.name() or "mcubridge-daemon"
             proc_stats.append(
-                pb.ProcessStats(
+                cloud_gateway_pb2.ProcessStats(
                     name=proc_name,
                     cpu_percent=curr_cpu,
                     memory_rss_bytes=curr_mem,
@@ -794,7 +804,7 @@ class RuntimeState:
                             sub_cpu = sub_p.cpu_percent(interval=None)
                             sub_mem = sub_p.memory_info().rss
                         proc_stats.append(
-                            pb.ProcessStats(
+                            cloud_gateway_pb2.ProcessStats(
                                 name=f"subproc-{pid}",
                                 cpu_percent=sub_cpu,
                                 memory_rss_bytes=sub_mem,
@@ -804,15 +814,15 @@ class RuntimeState:
                         logger.debug("Subprocess disappeared during telemetry collection", pid=pid, error=str(exc))
                         continue
 
-        return pb.BridgeStatus(
+        return cloud_gateway_pb2.BridgeStatus(
             metrics=self.build_metrics_snapshot(),
             bridge=self.build_bridge_snapshot(),
             process_stats=proc_stats,
             system=system_pb,
         )
 
-    def build_handshake_snapshot(self) -> pb.HandshakeSnapshot:
-        return pb.HandshakeSnapshot(
+    def build_handshake_snapshot(self) -> cloud_gateway_pb2.HandshakeSnapshot:
+        return cloud_gateway_pb2.HandshakeSnapshot(
             synchronised=self.is_synchronized,
             attempts=self.handshake_attempts,
             successes=self.handshake_successes,
@@ -831,17 +841,17 @@ class RuntimeState:
             nonce_length=self.link_nonce_length,
         )
 
-    def build_bridge_snapshot(self) -> pb.BridgeSnapshot:
+    def build_bridge_snapshot(self) -> cloud_gateway_pb2.BridgeSnapshot:
         versionpb_obj = None
         if self.mcu_version is not None:
-            versionpb_obj = pb.VersionResponse(
+            versionpb_obj = mcu_wire_pb2.VersionResponse(
                 major=self.mcu_version[0],
                 minor=self.mcu_version[1],
                 patch=self.mcu_version[2],
             )
 
-        return pb.BridgeSnapshot(
-            serial_link=pb.SerialLinkSnapshot(
+        return cloud_gateway_pb2.BridgeSnapshot(
+            serial_link=cloud_gateway_pb2.SerialLinkSnapshot(
                 connected=self.is_connected,
                 writer_attached=self.serial_writer is not None,
                 synchronised=self.is_synchronized,

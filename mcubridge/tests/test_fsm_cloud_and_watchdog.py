@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import (
     RuntimeState,

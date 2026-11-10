@@ -1,6 +1,10 @@
 """Unit tests for the mcubridge-gateway gRPC server and CLI interface."""
 
 from __future__ import annotations
+from tools.testing.mock_stream import MockGrpcStream, MockPeer
+from typer.testing import CliRunner
+from pytest_mock import MockerFixture
+from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 
 import asyncio
 from collections.abc import Callable
@@ -36,12 +40,8 @@ import hypothesis.stateful as h_stateful
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
-from pytest_mock import MockerFixture
-from typer.testing import CliRunner
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 
-from tools.testing.mock_stream import MockGrpcStream, MockPeer
 
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Any, h_stateful
@@ -59,13 +59,15 @@ def cloud_service(mock_gateway: ProtobufGateway) -> CloudBridgeService:
 
 
 async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
-    ping_envelope = pb.CloudEnvelope(
+    ping_envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="DEV_001",
         sequence_id=10,
-        ping=pb.KeepalivePing(interval_ms=1000),
+        ping=cloud_gateway_pb2.KeepalivePing(interval_ms=1000),
     )
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](inbound=[ping_envelope])
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
+        inbound=[ping_envelope]
+    )
 
     await cloud_service.Session(mock_stream.as_stream())
 
@@ -77,9 +79,11 @@ async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
 
 async def test_session_client_cert_common_name(cloud_service: CloudBridgeService) -> None:
     inbound = [
-        pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
+        cloud_gateway_pb2.CloudEnvelope(
+            protocol_version=PROTOCOL_VERSION, telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=b"data")
+        )
     ]
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         inbound=inbound,
         peer_addr=("10.0.0.1", 12345),
         client_cn="device-mips-01",
@@ -90,15 +94,15 @@ async def test_session_client_cert_common_name(cloud_service: CloudBridgeService
 
 
 async def test_session_event_and_command_response(cloud_service: CloudBridgeService) -> None:
-    event_envelope = pb.CloudEnvelope(
+    event_envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
-        event=pb.EventNotification(event_type="boot", severity="info", description="MCU reset"),
+        event=cloud_gateway_pb2.EventNotification(event_type="boot", severity="info", description="MCU reset"),
     )
-    cmd_resp_envelope = pb.CloudEnvelope(
+    cmd_resp_envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
-        command_response=pb.CommandResponse(status_code=200, error_message="", payload=b""),
+        command_response=cloud_gateway_pb2.CommandResponse(status_code=200, error_message="", payload=b""),
     )
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         inbound=[event_envelope, cmd_resp_envelope],
         peer_addr=("127.0.0.1", 9999),
     )
@@ -140,8 +144,8 @@ def test_cli_help() -> None:
 
 
 async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) -> None:
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
-        inbound=[pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION)],
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
+        inbound=[cloud_gateway_pb2.CloudEnvelope(protocol_version=PROTOCOL_VERSION)],
         peer_addr=("127.0.0.1", 1234),
         aiter_exception=OSError("Connection reset by peer"),
     )
@@ -236,7 +240,7 @@ async def test_protobuf_gateway_http3_flag_falls_back_to_http2(mocker: MockerFix
 async def test_cloud_bridge_service_cert_parse_error() -> None:
     gw = ProtobufGateway(use_tls=False)
     service = CloudBridgeService(gw)
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         peer_addr=("127.0.0.1", 12345), peer_cert={"subject": [None]}
     )
     await service.Session(mock_stream.as_stream())
@@ -246,7 +250,7 @@ async def test_cloud_bridge_service_cert_parse_error() -> None:
 async def test_cloud_bridge_service_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     service = CloudBridgeService(gw)
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         peer_addr=("127.0.0.1", 12345), aiter_exception=asyncio.CancelledError()
     )
     with pytest.raises(asyncio.CancelledError):
@@ -255,8 +259,10 @@ async def test_cloud_bridge_service_session_cancelled() -> None:
 
 async def test_session_invalid_envelope_validation(cloud_service: CloudBridgeService) -> None:
     # Invalid envelope with wrong protocol_version (fails native check)
-    invalid_envelope = pb.CloudEnvelope(protocol_version=99, device_id="DEV_001")
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](inbound=[invalid_envelope])
+    invalid_envelope = cloud_gateway_pb2.CloudEnvelope(protocol_version=99, device_id="DEV_001")
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
+        inbound=[invalid_envelope]
+    )
 
     await cloud_service.Session(mock_stream.as_stream())
     assert not mock_stream.send_message.called
@@ -322,12 +328,12 @@ def test_gateway_session_machine_lifecycle() -> None:
 
 
 async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudBridgeService) -> None:
-    empty_envelope = pb.CloudEnvelope(
+    empty_envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="DEV_EMPTY",
         sequence_id=99,
     )
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         inbound=[empty_envelope], peer_addr=("127.0.0.1", 55555)
     )
 
@@ -413,25 +419,25 @@ async def test_auth_interceptor_flow() -> None:
 
 
 async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeService) -> None:
-    metrics = pb.DaemonMetrics(
+    metrics = mcu_wire_pb2.DaemonMetrics(
         cloud_queue_depth=4,
         link_synchronised=True,
         cloud_spool_pending_messages=2,
         watchdog_enabled=True,
     )
-    telemetry_envelope = pb.CloudEnvelope(
+    telemetry_envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="test-yun-01",
         sequence_id=1,
-        telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
+        telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
-    event_envelope = pb.CloudEnvelope(
+    event_envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="test-yun-01",
         sequence_id=2,
-        event=pb.EventNotification(event_type="alarm", severity="warning", description="temp high"),
+        event=cloud_gateway_pb2.EventNotification(event_type="alarm", severity="warning", description="temp high"),
     )
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         inbound=[telemetry_envelope, event_envelope],
         peer_addr=("10.0.0.2", 12345),
         client_cn="test-yun-01",
@@ -467,7 +473,7 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled is True
 
-    metrics = pb.DaemonMetrics(
+    metrics = mcu_wire_pb2.DaemonMetrics(
         cloud_queue_depth=5,
         cloud_dropped_messages=1,
         cloud_spool_pending_messages=3,
@@ -496,10 +502,10 @@ async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
 
     urlopen_mock = mocker.patch("urllib.request.urlopen", side_effect=mock_urlopen)
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
-    metrics = pb.DaemonMetrics(cloud_queue_depth=1)
-    envelope = pb.CloudEnvelope(
+    metrics = mcu_wire_pb2.DaemonMetrics(cloud_queue_depth=1)
+    envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
-        telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
+        telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
 
     spy_format = mocker.spy(sink, "format_line_protocol")
@@ -525,11 +531,11 @@ async def test_send_command_success_and_correlation(mock_gateway: ProtobufGatewa
         assert mock_gateway.pending_commands == HasLen(1)
         key = list(mock_gateway.pending_commands.keys())[0]
         seq = key[1]
-        resp_envelope = pb.CloudEnvelope(
+        resp_envelope = cloud_gateway_pb2.CloudEnvelope(
             protocol_version=PROTOCOL_VERSION,
             device_id="device-test",
             sequence_id=seq,
-            command_response=pb.CommandResponse(status_code=200, payload=b"OK"),
+            command_response=cloud_gateway_pb2.CommandResponse(status_code=200, payload=b"OK"),
         )
         mock_gateway.handle_command_response("device-test", seq, resp_envelope.command_response)
 
@@ -605,14 +611,16 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths(mocker: MockerFixture) -> N
     # 1. Disabled sink returns early
     sink_disabled = TSDBSink(endpoint_url=None)
     assert not sink_disabled.enabled
-    envelope = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
+    envelope = cloud_gateway_pb2.CloudEnvelope(telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=b"data"))
     await sink_disabled.ingest_telemetry("dev1", envelope)
 
     # 2. Corrupted metrics blob caught and logged
     urlopen_mock = mocker.patch("urllib.request.urlopen")
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled
-    envelope_corrupt = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"))
+    envelope_corrupt = cloud_gateway_pb2.CloudEnvelope(
+        telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff")
+    )
     await sink.ingest_telemetry("dev1", envelope_corrupt)
     urlopen_mock.assert_not_called()
 
@@ -630,10 +638,10 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
         "mcubridge_device_telemetry_total", {"device_id": "edge-1"}
     )
     init_val = raw_metric or 0.0
-    envelope_empty = pb.CloudEnvelope(
+    envelope_empty = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="edge-1",
-        telemetry=pb.TelemetryReport(daemon_metrics_blob=b""),
+        telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=b""),
     )
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_empty)
     telemetry_val1 = mock_gateway.metrics.registry.get_sample_value(
@@ -642,10 +650,10 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     assert telemetry_val1 == init_val + 1.0
 
     # 2. Corrupted metrics blob
-    envelope_corrupt = pb.CloudEnvelope(
+    envelope_corrupt = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="edge-1",
-        telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
+        telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
     )
     urlopen_mock = mocker.patch("urllib.request.urlopen")
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
@@ -659,13 +667,13 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
 async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway) -> None:
 
     # 1. Key not in pending commands (ignored safely)
-    resp = pb.CommandResponse(status_code=0, payload=b"ok")
+    resp = cloud_gateway_pb2.CommandResponse(status_code=0, payload=b"ok")
     mock_gateway.handle_command_response("dev-none", 999, resp)
 
     # 2. Future already done (does not raise InvalidStateError)
     loop = asyncio.get_running_loop()
     fut = loop.create_future()
-    fut.set_result(pb.CommandResponse(status_code=1, payload=b"already_done"))
+    fut.set_result(cloud_gateway_pb2.CommandResponse(status_code=1, payload=b"already_done"))
     mock_gateway.pending_commands[("dev-done", 1)] = fut
     mock_gateway.handle_command_response("dev-done", 1, resp)
     assert fut.result().payload == b"already_done"
@@ -680,7 +688,7 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
     # Create mixed futures in pending_commands
     fut_target = loop.create_future()
     fut_done = loop.create_future()
-    fut_done.set_result(pb.CommandResponse(status_code=0, payload=b"done"))
+    fut_done.set_result(cloud_gateway_pb2.CommandResponse(status_code=0, payload=b"done"))
     fut_other = loop.create_future()
 
     mock_gateway.pending_commands[("disc-dev", 1)] = fut_target
@@ -688,7 +696,7 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
     mock_gateway.pending_commands[("other-dev", 3)] = fut_other
 
     # Mock stream raising CancelledError immediately
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         client_cn="disc-dev", aiter_exception=asyncio.CancelledError()
     )
 
@@ -707,7 +715,7 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
     svc = CloudBridgeService(mock_gateway)
     mock_stream = AsyncMock()
 
-    metrics = pb.DaemonMetrics(
+    metrics = mcu_wire_pb2.DaemonMetrics(
         cloud_queue_depth=5,
         cloud_dropped_messages=2,
         cloud_spool_pending_messages=3,
@@ -726,13 +734,13 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
         cloud_messages_published=8,
         serial_latency_ms=12.5,
         rpc_latency_ms=25.0,
-        retries=[pb.ComponentRetry(component="cloud_connect", count=4)],
+        retries=[mcu_wire_pb2.ComponentRetry(component="cloud_connect", count=4)],
     )
 
-    envelope = pb.CloudEnvelope(
+    envelope = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="edge-full",
-        telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
+        telemetry=cloud_gateway_pb2.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
 
     await handle_telemetry(svc, "edge-full", mock_stream, envelope)
@@ -803,7 +811,7 @@ def test_tsdb_sink_format_line_protocol_property(
     watchdog: bool,
     ts: int,
 ) -> None:
-    metrics = pb.DaemonMetrics(
+    metrics = mcu_wire_pb2.DaemonMetrics(
         serial_bytes_sent=serial_sent,
         serial_bytes_received=serial_recv,
         serial_crc_errors=crc_errors,
@@ -832,43 +840,49 @@ def test_tsdb_sink_format_line_protocol_property(
     [
         (None, set[str](), None, None, None),
         (
-            pb.CommandDispatch(target_device_id="", command_path="rpc/DigitalWrite"),
+            cloud_gateway_pb2.CommandDispatch(target_device_id="", command_path="rpc/DigitalWrite"),
             set[str](),
             None,
             400,
             b"Explicit target_device_id is required",
         ),
         (
-            pb.CommandDispatch(target_device_id="dev-unknown", command_path="rpc/DigitalWrite"),
+            cloud_gateway_pb2.CommandDispatch(target_device_id="dev-unknown", command_path="rpc/DigitalWrite"),
             set[str](),
             None,
             503,
             b"is not connected",
         ),
         (
-            pb.CommandDispatch(
+            cloud_gateway_pb2.CommandDispatch(
                 target_device_id="dev-1",
                 command_path="rpc/DigitalWrite",
-                payload=pb.DigitalWrite(pin=13, value=1).SerializeToString(),
+                payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
             ),
             {"dev-1"},
-            pb.CommandResponse(status_code=200, payload=pb.GenericResponse(status="ok").SerializeToString()),
+            cloud_gateway_pb2.CommandResponse(
+                status_code=200, payload=cloud_gateway_pb2.GenericResponse(status="ok").SerializeToString()
+            ),
             200,
             None,
         ),
         (
-            pb.CommandDispatch(
+            cloud_gateway_pb2.CommandDispatch(
                 target_device_id="dev-1",
                 command_path="rpc/AnalogWrite",
-                payload=pb.AnalogWrite(pin=5, value=128).SerializeToString(),
+                payload=mcu_wire_pb2.AnalogWrite(pin=5, value=128).SerializeToString(),
             ),
             {"dev-1"},
-            pb.CommandResponse(status_code=200, payload=pb.GenericResponse(status="ok").SerializeToString()),
+            cloud_gateway_pb2.CommandResponse(
+                status_code=200, payload=cloud_gateway_pb2.GenericResponse(status="ok").SerializeToString()
+            ),
             200,
             None,
         ),
         (
-            pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/DigitalWrite", timeout_seconds=2),
+            cloud_gateway_pb2.CommandDispatch(
+                target_device_id="dev-1", command_path="rpc/DigitalWrite", timeout_seconds=2
+            ),
             {"dev-1"},
             TimeoutError("Device response timeout"),
             504,
@@ -878,9 +892,9 @@ def test_tsdb_sink_format_line_protocol_property(
 )
 async def test_dispatch_command_branches(
     mock_gateway: ProtobufGateway,
-    dispatch_msg: pb.CommandDispatch | None,
+    dispatch_msg: cloud_gateway_pb2.CommandDispatch | None,
     connected_devs: set[str],
-    send_result: pb.CommandResponse | Exception | None,
+    send_result: cloud_gateway_pb2.CommandResponse | Exception | None,
     expected_code: int | None,
     expected_payload_substr: bytes | None,
 ) -> None:
@@ -910,35 +924,67 @@ async def test_dispatch_command_branches(
 
 async def _assert_local_bridge_rpc_matrix(local_svc: GatewayLocalBridgeService, mock_gateway: ProtobufGateway) -> None:
     rpc_cases: list[tuple[Any, Any, Any]] = [
-        (local_svc.SetPinMode, pb.PinMode(pin=1, mode=pb.PinModeType.PIN_OUTPUT), pb.GenericResponse(status="ok")),
-        (local_svc.DigitalRead, pb.PinRead(pin=13), pb.DigitalReadResponse(value=1)),
-        (local_svc.AnalogWrite, pb.AnalogWrite(pin=9, value=128), pb.GenericResponse(status="ok")),
-        (local_svc.AnalogRead, pb.PinRead(pin=0), pb.AnalogReadResponse(value=512)),
+        (
+            local_svc.SetPinMode,
+            mcu_wire_pb2.PinMode(pin=1, mode=config_schema_pb2.PinModeType.PIN_OUTPUT),
+            cloud_gateway_pb2.GenericResponse(status="ok"),
+        ),
+        (local_svc.DigitalRead, mcu_wire_pb2.PinRead(pin=13), mcu_wire_pb2.DigitalReadResponse(value=1)),
+        (
+            local_svc.AnalogWrite,
+            mcu_wire_pb2.AnalogWrite(pin=9, value=128),
+            cloud_gateway_pb2.GenericResponse(status="ok"),
+        ),
+        (local_svc.AnalogRead, mcu_wire_pb2.PinRead(pin=0), mcu_wire_pb2.AnalogReadResponse(value=512)),
         (
             local_svc.PinSubscribe,
-            pb.PinSubscribeRequest(pin=2, enabled=True),
-            pb.PinSubscribeResponse(pin=2, success=True),
+            mcu_wire_pb2.PinSubscribeRequest(pin=2, enabled=True),
+            mcu_wire_pb2.PinSubscribeResponse(pin=2, success=True),
         ),
-        (local_svc.DatastorePut, pb.DatastorePut(key="k", value=b"v"), pb.GenericResponse(status="ok")),
-        (local_svc.DatastoreGet, pb.DatastoreGet(key="k"), pb.DatastoreGetResponse(value=b"v")),
-        (local_svc.MailboxPush, pb.MailboxPush(data=b"m"), pb.GenericResponse(status="ok")),
-        (local_svc.MailboxRead, pb.SubscribeRequest(), pb.MailboxReadResponse(content=b"m")),
-        (local_svc.FileWrite, pb.FileWrite(path="f", data=b"d"), pb.GenericResponse(status="ok")),
-        (local_svc.FileRead, pb.FileRead(path="f"), pb.FileReadResponse(content=b"d")),
-        (local_svc.FileRemove, pb.FileRemove(path="f"), pb.GenericResponse(status="ok")),
-        (local_svc.ProcessRunAsync, pb.ProcessRunAsync(command="echo"), pb.ProcessRunAsyncResponse(pid=123)),
-        (local_svc.ProcessPoll, pb.ProcessPoll(pid=123), pb.ProcessPollResponse(status=0, finished=True)),
-        (local_svc.ProcessKill, pb.ProcessKill(pid=123), pb.GenericResponse(status="ok")),
-        (local_svc.SpiTransfer, pb.SpiTransfer(data=b"x"), pb.SpiTransferResponse(data=b"x")),
-        (local_svc.SpiConfigure, pb.SpiConfig(frequency=1000000), pb.GenericResponse(status="ok")),
-        (local_svc.GetVersion, pb.SubscribeRequest(), pb.VersionResponse(major=2, minor=0, patch=0)),
-        (local_svc.GetFreeMemory, pb.SubscribeRequest(), pb.FreeMemoryResponse(value=1024)),
-        (local_svc.GetStatus, pb.SubscribeRequest(), pb.BridgeStatus()),
+        (
+            local_svc.DatastorePut,
+            mcu_wire_pb2.DatastorePut(key="k", value=b"v"),
+            cloud_gateway_pb2.GenericResponse(status="ok"),
+        ),
+        (local_svc.DatastoreGet, mcu_wire_pb2.DatastoreGet(key="k"), mcu_wire_pb2.DatastoreGetResponse(value=b"v")),
+        (local_svc.MailboxPush, mcu_wire_pb2.MailboxPush(data=b"m"), cloud_gateway_pb2.GenericResponse(status="ok")),
+        (local_svc.MailboxRead, mcu_wire_pb2.SubscribeRequest(), mcu_wire_pb2.MailboxReadResponse(content=b"m")),
+        (
+            local_svc.FileWrite,
+            mcu_wire_pb2.FileWrite(path="f", data=b"d"),
+            cloud_gateway_pb2.GenericResponse(status="ok"),
+        ),
+        (local_svc.FileRead, mcu_wire_pb2.FileRead(path="f"), mcu_wire_pb2.FileReadResponse(content=b"d")),
+        (local_svc.FileRemove, mcu_wire_pb2.FileRemove(path="f"), cloud_gateway_pb2.GenericResponse(status="ok")),
+        (
+            local_svc.ProcessRunAsync,
+            mcu_wire_pb2.ProcessRunAsync(command="echo"),
+            mcu_wire_pb2.ProcessRunAsyncResponse(pid=123),
+        ),
+        (
+            local_svc.ProcessPoll,
+            mcu_wire_pb2.ProcessPoll(pid=123),
+            mcu_wire_pb2.ProcessPollResponse(status=0, finished=True),
+        ),
+        (local_svc.ProcessKill, mcu_wire_pb2.ProcessKill(pid=123), cloud_gateway_pb2.GenericResponse(status="ok")),
+        (local_svc.SpiTransfer, mcu_wire_pb2.SpiTransfer(data=b"x"), mcu_wire_pb2.SpiTransferResponse(data=b"x")),
+        (
+            local_svc.SpiConfigure,
+            mcu_wire_pb2.SpiConfig(frequency=1000000),
+            cloud_gateway_pb2.GenericResponse(status="ok"),
+        ),
+        (
+            local_svc.GetVersion,
+            mcu_wire_pb2.SubscribeRequest(),
+            mcu_wire_pb2.VersionResponse(major=2, minor=0, patch=0),
+        ),
+        (local_svc.GetFreeMemory, mcu_wire_pb2.SubscribeRequest(), mcu_wire_pb2.FreeMemoryResponse(value=1024)),
+        (local_svc.GetStatus, mcu_wire_pb2.SubscribeRequest(), cloud_gateway_pb2.BridgeStatus()),
     ]
     for rpc_fn, req_msg, resp_msg in rpc_cases:
         rpc_stream = MockGrpcStream(request=req_msg, metadata={"x-device-id": "dev-1"})
         mock_gateway.send_command = AsyncMock(
-            return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())
+            return_value=cloud_gateway_pb2.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())
         )
         await rpc_fn(rpc_stream.as_stream())
         assert rpc_stream.send_message.called
@@ -950,7 +996,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     # 1. Missing explicit device_id -> raises GRPCError INVALID_ARGUMENT
     stream_no_dev = AsyncMock()
     stream_no_dev.metadata = {}
-    stream_no_dev.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    stream_no_dev.recv_message = AsyncMock(return_value=mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     with pytest.raises(GRPCError) as exc_info:
         await local_svc.DigitalWrite(stream_no_dev)
     assert exc_info.value.status == Status.INVALID_ARGUMENT
@@ -959,7 +1005,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     # 2. Device not connected -> raises GRPCError UNAVAILABLE
     stream_unknown_dev = AsyncMock()
     stream_unknown_dev.metadata = {"x-device-id": "dev-missing"}
-    stream_unknown_dev.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    stream_unknown_dev.recv_message = AsyncMock(return_value=mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     with pytest.raises(GRPCError) as exc_info_unavail:
         await local_svc.DigitalWrite(stream_unknown_dev)
     assert exc_info_unavail.value.status == Status.UNAVAILABLE
@@ -968,24 +1014,26 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     # 3. Connected device -> forwards command and returns response
     mock_gateway.connections["dev-1"] = AsyncMock()
     mock_send = AsyncMock(
-        return_value=pb.CommandResponse(
+        return_value=cloud_gateway_pb2.CommandResponse(
             status_code=200,
-            payload=pb.GenericResponse(status="ok").SerializeToString(),
+            payload=cloud_gateway_pb2.GenericResponse(status="ok").SerializeToString(),
         )
     )
     mock_gateway.send_command = mock_send
-    stream_valid = MockGrpcStream(request=pb.DigitalWrite(pin=13, value=1), metadata={"x-device-id": "dev-1"})
+    stream_valid = MockGrpcStream(request=mcu_wire_pb2.DigitalWrite(pin=13, value=1), metadata={"x-device-id": "dev-1"})
     await local_svc.DigitalWrite(stream_valid.as_stream())
     mock_send.assert_awaited_once()
     assert stream_valid.sent_message.status == "ok"
 
     # 4. SubscribeConsole explicit device resolution
-    stream_sub_no_dev = MockGrpcStream(request=pb.SubscribeRequest(), metadata={})
+    stream_sub_no_dev = MockGrpcStream(request=mcu_wire_pb2.SubscribeRequest(), metadata={})
     with pytest.raises(GRPCError) as sub_exc_info:
         await local_svc.SubscribeConsole(stream_sub_no_dev.as_stream())
     assert sub_exc_info.value.status == Status.INVALID_ARGUMENT
 
-    stream_sub_unknown = MockGrpcStream(request=pb.SubscribeRequest(), metadata={"x-device-id": "dev-missing"})
+    stream_sub_unknown = MockGrpcStream(
+        request=mcu_wire_pb2.SubscribeRequest(), metadata={"x-device-id": "dev-missing"}
+    )
     with pytest.raises(GRPCError) as sub_unavail:
         await local_svc.SubscribeConsole(stream_sub_unknown.as_stream())
     assert sub_unavail.value.status == Status.UNAVAILABLE
@@ -1007,8 +1055,8 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     stream_none.send_message.assert_not_called()
 
     # 7. Error forwarding branches (non-200 status code and TimeoutError)
-    stream_err = MockGrpcStream(request=pb.DigitalWrite(pin=13, value=1), metadata={"x-device-id": "dev-1"})
-    mock_send_err = AsyncMock(return_value=pb.CommandResponse(status_code=500, error_message="fail"))
+    stream_err = MockGrpcStream(request=mcu_wire_pb2.DigitalWrite(pin=13, value=1), metadata={"x-device-id": "dev-1"})
+    mock_send_err = AsyncMock(return_value=cloud_gateway_pb2.CommandResponse(status_code=500, error_message="fail"))
     mock_gateway.send_command = mock_send_err
     await local_svc.DigitalWrite(stream_err.as_stream())
     assert stream_err.sent_message.status == "error"
@@ -1023,7 +1071,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     await _assert_local_bridge_rpc_matrix(local_svc, mock_gateway)
 
     # 9. Publish RPC (console routing and missing device_id)
-    stream_pub_no_dev = MockGrpcStream(request=pb.CloudQueuedPublish(topic_name="br/test"), metadata={})
+    stream_pub_no_dev = MockGrpcStream(request=cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/test"), metadata={})
     with pytest.raises(GRPCError) as pub_no_dev_exc:
         await local_svc.Publish(stream_pub_no_dev.as_stream())
     assert pub_no_dev_exc.value.status == Status.INVALID_ARGUMENT
@@ -1032,12 +1080,12 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     await local_svc.Publish(stream_pub_none.as_stream())
 
     # Console queue subscription and publishing flow
-    console_q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+    console_q: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish] = asyncio.Queue()
     mock_gateway.console_queues["dev-1"] = [console_q]
-    pub_console_msg = pb.CloudQueuedPublish(topic_name="br/console/write", payload=b"ping")
+    pub_console_msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/write", payload=b"ping")
     stream_pub_console = MockGrpcStream(request=pub_console_msg, metadata={"x-device-id": "dev-1"})
     mock_gateway.send_command = AsyncMock(
-        return_value=pb.CommandResponse(status_code=200, payload=pub_console_msg.SerializeToString())
+        return_value=cloud_gateway_pb2.CommandResponse(status_code=200, payload=pub_console_msg.SerializeToString())
     )
     await local_svc.Publish(stream_pub_console.as_stream())
     assert not console_q.empty()
@@ -1046,7 +1094,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
 
     # 10. SubscribeConsole active delivery and termination
     stream_sub_active = MockGrpcStream(
-        request=pb.SubscribeRequest(),
+        request=mcu_wire_pb2.SubscribeRequest(),
         metadata={"x-device-id": "dev-1"},
         send_exception=RuntimeError("stream disconnect"),
     )
@@ -1054,7 +1102,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     async def _feed_console() -> None:
         await asyncio.sleep(0.01)
         for q in mock_gateway.console_queues.get("dev-1", []):
-            q.put_nowait(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello"))
+            q.put_nowait(cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello"))
 
     asyncio.create_task(_feed_console())
     await local_svc.SubscribeConsole(stream_sub_active.as_stream())
@@ -1065,10 +1113,10 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     await local_svc.SubscribeConsole(stream_sub_none.as_stream())
 
     # 11. Publish with non-console topic (covers branch 707->710)
-    pub_data_msg = pb.CloudQueuedPublish(topic_name="br/telemetry/data", payload=b"123")
+    pub_data_msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/telemetry/data", payload=b"123")
     stream_pub_non_console = MockGrpcStream(request=pub_data_msg, metadata={"x-device-id": "dev-1"})
     mock_gateway.send_command = AsyncMock(
-        return_value=pb.CommandResponse(status_code=200, payload=pub_data_msg.SerializeToString())
+        return_value=cloud_gateway_pb2.CommandResponse(status_code=200, payload=pub_data_msg.SerializeToString())
     )
     await local_svc.Publish(stream_pub_non_console.as_stream())
 
@@ -1078,7 +1126,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         raise RuntimeError("stream aborted")
 
     stream_sub_cleanup = MockGrpcStream(
-        request=pb.SubscribeRequest(),
+        request=mcu_wire_pb2.SubscribeRequest(),
         metadata={"x-device-id": "dev-1"},
         send_side_effect=_fail_and_clear_queues,
     )
@@ -1086,7 +1134,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     async def _feed_console_cleanup() -> None:
         await asyncio.sleep(0.01)
         for q in mock_gateway.console_queues.get("dev-1", []):
-            q.put_nowait(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"bye"))
+            q.put_nowait(cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/out", payload=b"bye"))
 
     asyncio.create_task(_feed_console_cleanup())
     await local_svc.SubscribeConsole(stream_sub_cleanup.as_stream())
@@ -1114,7 +1162,7 @@ async def test_gateway_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     svc = CloudBridgeService(gw)
 
-    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+    mock_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](
         client_cn="test-dev", aiter_exception=asyncio.CancelledError()
     )
 
@@ -1133,7 +1181,7 @@ async def test_gateway_device_session_lifecycle() -> None:
     session.fsm.activate()
     assert session.fsm.current_state_value == "active"
 
-    q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+    q: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish] = asyncio.Queue()
     session.console_queues.append(q)
 
     session.close()

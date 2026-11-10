@@ -13,7 +13,7 @@ import httpx
 import pytest
 import tenacity
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
 from mcubridge.services.ubus import UbusService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from pytest_mock import MockerFixture
@@ -29,7 +29,7 @@ class TypedRuntimeFacade:
         self.serial = MagicMock()
         self.handle_request = AsyncMock()
         self.process_run_async = AsyncMock(return_value=pb.ProcessRunAsyncResponse(pid=123))
-        self.process_kill = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+        self.process_kill = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok"))
         self.reset_link = AsyncMock(return_value=True)
         self.file_write = AsyncMock(return_value=True)
         self.file_read = AsyncMock(return_value=b"")
@@ -40,7 +40,7 @@ class TypedRuntimeFacade:
         self.mailbox_read = AsyncMock(return_value=b"")
         self.flush_console_queue = AsyncMock()
         self.console_queues: list[Any] = []
-        self.ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
+        self.ipc_requests: dict[bytes, asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish]] = {}
         self.clock_sync = MagicMock()
         self.gpio = MagicMock()
         self.process_poll = AsyncMock(

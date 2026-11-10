@@ -1,7 +1,6 @@
 # Protobuf and Nanopb Generated Files
 *.pb.c
 *.pb.h
-mcubridge-library-arduino/src/pw_rpc/internal/packet.pwpb.h
 *_pb2.py
 *_pb2.pyi
 mcubridge_grpc.py
@@ -136,11 +135,7 @@ luci-app-mcubridge/root/etc/config/mcubridge
 .tmp_tests/sample-build/
 
 # Nanopb and Protobuf generated/vendored files
-mcubridge-client-examples/mcubridge_client/mcubridge_pb2.py
-mcubridge-client-examples/mcubridge_client/mcubridge_pb2.pyi
 mcubridge-client-examples/mcubridge_client/mcubridge_grpc.py
-mcubridge/mcubridge/protocol/mcubridge_pb2.py
-mcubridge/mcubridge/protocol/mcubridge_pb2.pyi
 mcubridge/mcubridge/protocol/mcubridge_grpc.py
 mcubridge-library-arduino/src/pb.h
 mcubridge-library-arduino/src/pb_common.c

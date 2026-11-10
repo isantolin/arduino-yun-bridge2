@@ -30,7 +30,7 @@ constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kVectorNonce = {
     0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU,
     0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU, 0xABU};
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH>
-    kLongHandshakeNonce = {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U,
+    kLongHandshakeNonce = {0U, 1U, 2U,  3U,  4U,  5U,  6U,  7U,
                            8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U};
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> kExpectedTag = {
     0xF0U, 0x7AU, 0x5AU, 0xA1U, 0x34U, 0x05U, 0x71U, 0x5BU,
@@ -147,12 +147,11 @@ void test_long_handshake_secret_known_answer(void) {
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedLongHandshakeResponseTag.data(),
                                 response_tag.data(), response_tag.size());
 
-  constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE>
-      kExpectedHostToMcu = {
-          0xDCU, 0xCFU, 0x88U, 0xF5U, 0x7BU, 0x24U, 0x3BU, 0x24U,
-          0xDEU, 0xC4U, 0x5BU, 0xD2U, 0xCAU, 0xBEU, 0x12U, 0x5AU,
-          0x4EU, 0xDCU, 0x9FU, 0xF7U, 0xC5U, 0xA1U, 0x77U, 0x17U,
-          0x22U, 0x03U, 0xE1U, 0x16U, 0x73U, 0x7AU, 0x9BU, 0x03U};
+  constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedHostToMcu = {
+      0xDCU, 0xCFU, 0x88U, 0xF5U, 0x7BU, 0x24U, 0x3BU, 0x24U,
+      0xDEU, 0xC4U, 0x5BU, 0xD2U, 0xCAU, 0xBEU, 0x12U, 0x5AU,
+      0x4EU, 0xDCU, 0x9FU, 0xF7U, 0xC5U, 0xA1U, 0x77U, 0x17U,
+      0x22U, 0x03U, 0xE1U, 0x16U, 0x73U, 0x7AU, 0x9BU, 0x03U};
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedMcuToHost = {
       0x74U, 0xA8U, 0xD5U, 0xD4U, 0xBDU, 0x85U, 0x87U, 0xCCU,
       0x3FU, 0xB1U, 0x89U, 0xCCU, 0x5DU, 0x2CU, 0x41U, 0xD2U,
@@ -162,10 +161,10 @@ void test_long_handshake_secret_known_answer(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
       secret, kLongHandshakeNonce, host_to_mcu, mcu_to_host));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(),
-                                host_to_mcu.data(), host_to_mcu.size());
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
-                                mcu_to_host.data(), mcu_to_host.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), host_to_mcu.data(),
+                                host_to_mcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(), mcu_to_host.data(),
+                                mcu_to_host.size());
 }
 
 void test_session_key_derivation_known_answer(void) {
@@ -207,10 +206,10 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
       etl::span<const uint8_t>(), handshake_nonce, key, key));
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
       input, short_handshake_nonce, key, key));
-  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      input, handshake_nonce, short_key, key));
-  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      input, handshake_nonce, key, short_key));
+  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(input, handshake_nonce,
+                                                       short_key, key));
+  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(input, handshake_nonce,
+                                                       key, short_key));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
       etl::span<const uint8_t>(), handshake_nonce, handshake_tag));
@@ -224,8 +223,8 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
       etl::span<const uint8_t>(), handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
       input, short_handshake_nonce, handshake_tag));
-  TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
-      input, handshake_nonce, short_handshake_tag));
+  TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(input, handshake_nonce,
+                                                        short_handshake_tag));
 
   TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
       short_key, aead_nonce, etl::span<const uint8_t>(), input, output, tag));
@@ -234,17 +233,17 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
   TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
       key, aead_nonce, etl::span<const uint8_t>(), input,
       etl::span<uint8_t>(output.data(), input.size() - 1U), tag));
-  TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      key, aead_nonce, etl::span<const uint8_t>(), input, output,
-      short_aead_tag));
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt(key, aead_nonce,
+                                                etl::span<const uint8_t>(),
+                                                input, output, short_aead_tag));
 
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
       short_key, aead_nonce, etl::span<const uint8_t>(), input, tag, output));
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
       key, short_aead_nonce, etl::span<const uint8_t>(), input, tag, output));
-  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      key, aead_nonce, etl::span<const uint8_t>(), input, short_aead_tag,
-      output));
+  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(key, aead_nonce,
+                                                etl::span<const uint8_t>(),
+                                                input, short_aead_tag, output));
   TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
       key, aead_nonce, etl::span<const uint8_t>(), input, tag,
       etl::span<uint8_t>(output.data(), input.size() - 1U)));

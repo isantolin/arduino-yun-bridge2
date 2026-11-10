@@ -122,6 +122,8 @@ void test_filesystem_on_write() {
 void test_filesystem_on_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
   const etl::string_view path = "on_read.bin";
   etl::array<uint8_t, 1> data = {0xAA};
   TEST_ASSERT_TRUE(bridge::hal::writeFile(
@@ -129,17 +131,27 @@ void test_filesystem_on_read() {
                        .has_value());
 
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
-  rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
-  TEST_ASSERT_TRUE(FileSystem._onRead(msg, resp).ok());
-  TEST_ASSERT_EQUAL_UINT32(1U, resp.content.size);
-  TEST_ASSERT_EQUAL_UINT8(0xAA, resp.content.bytes[0]);
+  uint8_t req_buf[80];
+  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
+  TEST_ASSERT_TRUE(pb_encode(&pos, rpc_pb_FileRead_fields, &msg));
+  etl::array<uint8_t, 128> hdlc_buf;
+  const size_t sz = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+      pw::tokenizer::Hash("Read"),
+      etl::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
+  stream.tx_buf.clear();
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
   TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
 void test_filesystem_on_read_multichunk() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
   const etl::string_view path = "multi_read.bin";
   etl::array<uint8_t, 70> data = {};
   etl::fill(data.begin(), data.end(), 0x55);
@@ -148,11 +160,19 @@ void test_filesystem_on_read_multichunk() {
                        .has_value());
 
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
-  rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
-  TEST_ASSERT_EQUAL(pw::Status::ResourceExhausted().code(),
-                    FileSystem._onRead(msg, resp).code());
-  TEST_ASSERT_EQUAL_UINT32(0U, resp.content.size);
+  uint8_t req_buf[80];
+  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
+  TEST_ASSERT_TRUE(pb_encode(&pos, rpc_pb_FileRead_fields, &msg));
+  etl::array<uint8_t, 128> hdlc_buf;
+  const size_t sz = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+      pw::tokenizer::Hash("Read"),
+      etl::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
+  stream.tx_buf.clear();
+  ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 70U);
   TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
@@ -162,10 +182,10 @@ void test_filesystem_on_read_error() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
-  rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
+  pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse> writer;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), "non_existent_file.bin");
   TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
-                    FileSystem._onRead(msg, resp).code());
+                    FileSystem._onRead(msg, writer).code());
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 

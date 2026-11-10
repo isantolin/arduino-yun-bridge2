@@ -17,8 +17,9 @@ from mcubridge_client import (
     SpiDataMode,
     SpiDevice,
     build_bridge_args,
+    cloud_gateway_pb2,
     dump_client_env,
-    pb,
+    mcu_wire_pb2,
 )
 from mcubridge_client.cli import bridge_session, configure_logging
 from mcubridge_client.env import is_openwrt, read_uci_general
@@ -129,10 +130,10 @@ def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_spi_device_lifecycle_and_transfer() -> None:
     """SpiDevice context manager, properties, begin/end, and transfer."""
     mock_stub = MagicMock(spec=LocalBridgeStub)
-    mock_stub.SpiConfigure = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+    mock_stub.SpiConfigure = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok"))
 
-    def _mock_spi_transfer(req: pb.SpiTransfer) -> pb.SpiTransferResponse:
-        return pb.SpiTransferResponse(data=req.data)
+    def _mock_spi_transfer(req: mcu_wire_pb2.SpiTransfer) -> mcu_wire_pb2.SpiTransferResponse:
+        return mcu_wire_pb2.SpiTransferResponse(data=req.data)
 
     mock_stub.SpiTransfer = AsyncMock(side_effect=_mock_spi_transfer)
 

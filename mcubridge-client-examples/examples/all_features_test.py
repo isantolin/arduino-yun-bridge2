@@ -9,7 +9,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, pb
+from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -27,38 +27,38 @@ async def run_test(
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         # 1. LED test
         logger.info("Testing LED (Digital Write)...")
-        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=1))
+        await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_builtin_pin, value=1))
         await asyncio.sleep(0.5)
-        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=0))
+        await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_builtin_pin, value=0))
         logger.info("LED test passed.")
 
         # 2. Analog Write test
         logger.info("Testing Analog Operations...")
-        await stub.AnalogWrite(pb.AnalogWrite(pin=9, value=128))
+        await stub.AnalogWrite(mcu_wire_pb2.AnalogWrite(pin=9, value=128))
         logger.info("Analog write completed.")
 
         # 3. DataStore test
         logger.info("Testing DataStore...")
         test_key = f"e2e_key_{uuid.uuid4().hex[:6]}"
-        await stub.DatastorePut(pb.DatastorePut(key=test_key, value=b"hello"))
-        ds_val = await stub.DatastoreGet(pb.DatastoreGet(key=test_key))
+        await stub.DatastorePut(mcu_wire_pb2.DatastorePut(key=test_key, value=b"hello"))
+        ds_val = await stub.DatastoreGet(mcu_wire_pb2.DatastoreGet(key=test_key))
         assert ds_val.value == b"hello"
         logger.info("DataStore key verified.", key=test_key, value=ds_val.value.decode("utf-8"))
 
         # 4. Console test
         logger.info("Testing Console Write...")
         topic_cw = Topic.build(Topic.CONSOLE, "write", prefix=topic_prefix)
-        await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
+        await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
         logger.info("Console ping written.")
 
         # 5. FileIO test
         logger.info("Testing FileIO...")
         test_file = "test_file_all.txt"
         test_data = b"e2e-data-all"
-        await stub.FileWrite(pb.FileWrite(path=test_file, data=test_data))
-        file_res = await stub.FileRead(pb.FileRead(path=test_file))
+        await stub.FileWrite(mcu_wire_pb2.FileWrite(path=test_file, data=test_data))
+        file_res = await stub.FileRead(mcu_wire_pb2.FileRead(path=test_file))
         assert file_res.content == test_data
-        await stub.FileRemove(pb.FileRemove(path=test_file))
+        await stub.FileRemove(mcu_wire_pb2.FileRemove(path=test_file))
         logger.info("FileIO verified.")
 
     logger.info("--- ALL-FEATURES TEST SUCCEEDED ---")

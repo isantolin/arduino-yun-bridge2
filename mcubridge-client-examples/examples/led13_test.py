@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -26,11 +26,11 @@ async def run_test(
         logger.info("--- Starting LED Pin Control Test ---")
 
         logger.info("Turning built-in LED state", pin=led_builtin_pin, state="ON")
-        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=1))
+        await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_builtin_pin, value=1))
         await asyncio.sleep(2)
 
         logger.info("Turning built-in LED state", pin=led_builtin_pin, state="OFF")
-        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=0))
+        await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_builtin_pin, value=0))
         await asyncio.sleep(2)
 
     logger.info("--- LED Test Complete ---")

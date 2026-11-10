@@ -5,20 +5,20 @@ version: v2
 inputs:
   - directory: .
 plugins:
-  # 1. Python pb2 runtime bindings (mcubridge_pb2.py)
+  # 1. Python pb2 runtime bindings (*_pb2.py)
   - protoc_builtin: python
     protoc_path: protoc
     out: .
 
-  # 2. Python type stubs (mcubridge_pb2.pyi) via mypy-protobuf
+  # 2. Python type stubs (*_pb2.pyi) via mypy-protobuf
   - local: protoc-gen-mypy
     out: .
 
-  # 3. gRPC service stubs (mcubridge_grpc.py) via grpclib
+  # 3. gRPC service stubs (*_grpc.py) via grpclib
   - local: protoc-gen-grpclib_python
     out: .
 
-  # 4. Nanopb C headers/sources (mcubridge.pb.h, mcubridge.pb.c) for Zero-Heap MCU
+  # 4. Nanopb C headers/sources (*.pb.h, *.pb.c) for Zero-Heap MCU
   - local: protoc-gen-nanopb
     out: .
     exclude_types:

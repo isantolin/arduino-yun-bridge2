@@ -160,9 +160,8 @@ class SpiRpcService final
 
   pw::Status Transfer(const rpc_pb_SpiTransfer& request,
                       rpc_pb_SpiTransferResponse& response) {
-    const size_t len =
-        etl::min(static_cast<size_t>(request.data.size),
-                 sizeof(response.data.bytes));
+    const size_t len = etl::min(static_cast<size_t>(request.data.size),
+                                sizeof(response.data.bytes));
     etl::copy_n(request.data.bytes, len, response.data.bytes);
     const size_t transferred =
         SPIService.transfer(etl::span<uint8_t>(response.data.bytes, len));
@@ -182,9 +181,9 @@ class FileSystemRpcService final
     return pw::OkStatus();
   }
 
-  pw::Status Read(const rpc_pb_FileRead& request,
-                  rpc_pb_FileReadResponse& response) {
-    return FileSystem._onRead(request, response);
+  void Read(const rpc_pb_FileRead& request,
+            pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>& writer) {
+    (void)FileSystem._onRead(request, writer);
   }
 
   pw::Status Remove(const rpc_pb_FileRemove& request, rpc_pb_Empty&) {
@@ -205,8 +204,7 @@ class MailboxRpcService final
     return pw::OkStatus();
   }
 
-  pw::Status Read(const rpc_pb_SubscribeRequest&,
-                  rpc_pb_MailboxReadResponse&) {
+  pw::Status Read(const rpc_pb_SubscribeRequest&, rpc_pb_MailboxReadResponse&) {
     return pw::Status::NotFound();
   }
 
@@ -270,19 +268,19 @@ BridgeClass::BridgeClass(Stream& stream)
 
 BridgeClass::~BridgeClass() {
   if (!_rpc_services_registered) return;
-  _rpc_server.UnregisterService(
-      g_gpio_service, g_system_service, g_clock_sync_service
+  _rpc_server.UnregisterService(g_gpio_service, g_system_service,
+                                g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
-      ,
-      g_spi_service
+                                ,
+                                g_spi_service
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-      ,
-      g_file_system_service
+                                ,
+                                g_file_system_service
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-      ,
-      g_mailbox_service
+                                ,
+                                g_mailbox_service
 #endif
   );
 }
@@ -349,8 +347,8 @@ void BridgeClass::_initializeRuntime() {
       });
 
   if (_rpc_services_registered) return;
-  _rpc_server.RegisterService(
-      g_gpio_service, g_system_service, g_clock_sync_service
+  _rpc_server.RegisterService(g_gpio_service, g_system_service,
+                              g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
                               ,
                               g_spi_service
@@ -441,9 +439,8 @@ void BridgeClass::_watchdogTask() {
 void BridgeClass::_serialTask() {
   if (!_stream) return;
   etl::array<pw::byte, bridge::config::RX_BUFFER_SIZE> chunk;
-  const auto read_result =
-      _arduino_stream.Read(
-          pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
+  const auto read_result = _arduino_stream.Read(
+      pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
   if (read_result.ok()) {
     const pw::ConstByteSpan rx_span = read_result.value();
     etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::byte b) {
@@ -480,8 +477,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       reinterpret_cast<const uint8_t*>(frame.data().data()),
       frame.data().size());
   etl::span<const uint8_t> data = raw_data;
-  pw::Result<pw::rpc::PacketMeta> meta_result =
-      pw::Status::DataLoss();
+  pw::Result<pw::rpc::PacketMeta> meta_result = pw::Status::DataLoss();
   bool decrypted = false;
 
   if (addr == rpc::RPC_HDLC_ADDRESS_RPC) {
@@ -618,11 +614,10 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   aad[0] = static_cast<uint8_t>(address);
   size_t idx = 0;
   etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
-    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - idx) * 8U;
-    const uint8_t byte = static_cast<uint8_t>(counter >> shift);
-    envelope[idx] = byte;
-    nonce_byte = byte;
-    aad[1U + idx] = byte;
+    nonce_byte = static_cast<uint8_t>(
+        counter >> ((rpc::RPC_AEAD_COUNTER_SIZE - 1U - idx) * 8U));
+    envelope[idx] = nonce_byte;
+    aad[1U + idx] = nonce_byte;
     ++idx;
   });
 
@@ -632,10 +627,9 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   auto tag =
       etl::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
                          rpc::RPC_AEAD_TAG_SIZE);
-  (void)rpc::security::aead_encrypt(etl::span<const uint8_t>(_tx_aead_key),
-                                    etl::span<const uint8_t>(nonce),
-                                    etl::span<const uint8_t>(aad), data,
-                                    ciphertext, tag);
+  (void)rpc::security::aead_encrypt(
+      etl::span<const uint8_t>(_tx_aead_key), etl::span<const uint8_t>(nonce),
+      etl::span<const uint8_t>(aad), data, ciphertext, tag);
 
   const size_t envelope_size =
       rpc::RPC_AEAD_COUNTER_SIZE + data.size() + rpc::RPC_AEAD_TAG_SIZE;
@@ -671,10 +665,9 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   aad[0] = static_cast<uint8_t>(address);
   size_t idx = 0;
   etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
-    const uint8_t byte = envelope[idx];
-    counter = (counter << 8U) | byte;
-    nonce_byte = byte;
-    aad[1U + idx] = byte;
+    nonce_byte = envelope[idx];
+    counter = (counter << 8U) | nonce_byte;
+    aad[1U + idx] = nonce_byte;
     ++idx;
   });
   if (counter == 0 || counter <= _rx_aead_counter) {
@@ -867,9 +860,9 @@ void BridgeClass::_handlePinSubscribe(
   }
 
   _pin_stream_writer = etl::move(writer);
-  const bool any_active = etl::any_of(
-      _pin_subscriptions.begin(), _pin_subscriptions.end(),
-      [](const PinSubscription& s) { return s.active; });
+  const bool any_active =
+      etl::any_of(_pin_subscriptions.begin(), _pin_subscriptions.end(),
+                  [](const PinSubscription& s) { return s.active; });
   if (!any_active && _pin_stream_writer.active()) {
     (void)_pin_stream_writer.Finish(pw::OkStatus());
   }

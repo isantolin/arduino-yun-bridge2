@@ -86,7 +86,7 @@ void loop() {
 - The library targets AVR, SAMD21, and ESP32 Arduino MCU boards alongside a host C++17 test/emulation target.
 - The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/protocol`.
 - All payload serialization uses **nanopb/protobuf** via generated `rpc_pb_*` structs in `mcu_wire.pb.h` / `config_schema.pb.h` encoded and decoded via `rpc::encode_pb` and `rpc::decode_pb`.
-- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via Cloud/IPC requests (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`), while asynchronous pin events are streamed via `Bridge.sendPinEvent` (`GpioService/SubscribePins`).
+- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via Cloud/IPC requests (`GpioService/DigitalRead`/`GpioService/AnalogRead`), while asynchronous pin events are streamed via `Bridge.sendPinEvent` (`GpioService/SubscribePins`).
 
 ## Contributing
 

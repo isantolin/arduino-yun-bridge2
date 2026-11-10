@@ -10,9 +10,10 @@ The protocol is formally defined in modular proto3 files under `tools/protocol/`
 All files in this directory should be considered **read-only artifacts** of the generation process, with the exception of helper classes that wrap the generated structures.
 
 ## Files
-*   `rpc_protocol.h`: Constants, command IDs, enums, and `rpc::encode_pb` / `rpc::decode_pb` Nanopb helpers generated from the protobuf spec.
+*   `rpc_protocol.h`: Protocol constants, HKDF domain tags, capability/architecture masks, and `rpc::StatusCode` enums generated from the protobuf spec.
 *   `rpc_hw_config.h`: Hardware buffer sizes and limits generated from `config_schema.proto`.
 *   `mcu_wire.pb.h` / `mcu_wire.pb.c` & `config_schema.pb.h` / `config_schema.pb.c`: Zero-heap Nanopb C structs and descriptors.
+*   `mcu_wire.rpc.pb.h`: Upstream Pigweed `pw_rpc` Nanopb service and client stubs generated via `tools/protocol/protoc_gen_mcu_rpc.py`.
 
 ## Generation
 To regenerate these files after modifying the `.proto` schemas under `tools/protocol/`:

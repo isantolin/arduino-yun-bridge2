@@ -78,11 +78,7 @@ def test_audit_test_only_hooks_allows_production_local_call(tmp_path: Path, mock
     fake_test.parent.mkdir(parents=True, exist_ok=True)
 
     fake_prod.write_text(
-        "def derive_keys(secret):\n"
-        "    return secret\n"
-        "\n"
-        "def make_cipher(secret):\n"
-        "    return derive_keys(secret)\n",
+        "def derive_keys(secret):\n    return secret\n\ndef make_cipher(secret):\n    return derive_keys(secret)\n",
         encoding="utf-8",
     )
     fake_test.write_text(

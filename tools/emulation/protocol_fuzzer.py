@@ -72,14 +72,14 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
         return self.seq_id
 
-    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes) -> bytes:
+    def _build_raw_frame(self, cmd: int | str, seq: int, payload: bytes) -> bytes:
         return protocol.encode_hdlc_rpc(cmd, payload, call_id=seq)
 
     @rule(payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE))
     def fuzz_valid_ping(self, payload: bytes) -> None:
         """Generate valid version probe frames with arbitrary valid payloads."""
         seq: int = self._next_seq_id()
-        frame: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
+        frame: bytes = self._build_raw_frame("rpc.pb.SystemService/GetVersion", seq, payload)
         self._send_raw(frame)
 
     @rule(
@@ -129,7 +129,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
         seq: int = self._next_seq_id()
-        probe: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
+        probe: bytes = self._build_raw_frame("rpc.pb.SystemService/GetVersion", seq, b"PROBE")
         self._send_raw(probe)
         resp: bytes | None = self._read_probe()
         if resp is not None:

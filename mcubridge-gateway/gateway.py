@@ -36,7 +36,7 @@ from grpclib.protocol import Peer
 from grpclib.reflection.service import ServerReflection
 from grpclib.server import Server, Stream
 from mcubridge.config.logging import configure_logging
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import (
     DEFAULT_CLOUD_HOST,
@@ -87,7 +87,7 @@ class GatewayDeviceSession:
     """[SIL-2] Edge session container and deterministic lifecycle controller."""
 
     device_id: str
-    stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope] | None
+    stream: Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope] | None
     metrics: FleetMetrics | None
     gateway: Any | None
     console_queues: list[Any]
@@ -96,7 +96,7 @@ class GatewayDeviceSession:
     def __init__(
         self,
         device_id: str = "",
-        stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope] | None = None,
+        stream: Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope] | None = None,
         metrics: FleetMetrics | None = None,
         gateway: Any | None = None,
     ) -> None:
@@ -193,7 +193,7 @@ class FleetMetrics:
             registry=self.registry,
         )
 
-    def update_daemon_metrics(self, device_id: str, metrics: pb.DaemonMetrics) -> None:
+    def update_daemon_metrics(self, device_id: str, metrics: mcu_wire_pb2.DaemonMetrics) -> None:
         """Apply a decoded Protobuf snapshot using the generated metric catalog."""
         for spec in METRICS:
             source = getattr(metrics, spec.source_field)
@@ -239,7 +239,7 @@ class TSDBSink:
     @staticmethod
     def format_line_protocol(
         device_id: str,
-        metrics: pb.DaemonMetrics,
+        metrics: mcu_wire_pb2.DaemonMetrics,
         timestamp_ns: int | None = None,
     ) -> str:
         """Format metrics into standard Influx/VictoriaMetrics Line Protocol."""
@@ -255,12 +255,12 @@ class TSDBSink:
         )
         return f"mcubridge_telemetry,device_id={device_id} {fields} {ts}"
 
-    async def ingest_telemetry(self, device_id: str, envelope: pb.CloudEnvelope) -> None:
+    async def ingest_telemetry(self, device_id: str, envelope: cloud_gateway_pb2.CloudEnvelope) -> None:
         """Asynchronously post telemetry report to external TSDB endpoint."""
         if not self.enabled or not self.endpoint_url or not envelope.telemetry.daemon_metrics_blob:
             return
         try:
-            metrics = pb.DaemonMetrics()
+            metrics = mcu_wire_pb2.DaemonMetrics()
             metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
             line = self.format_line_protocol(device_id, metrics)
             await self.post_line(line)
@@ -298,14 +298,14 @@ class TSDBSink:
 async def _handle_ping(
     _: CloudBridgeService,
     __: str,
-    stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
-    envelope: pb.CloudEnvelope,
+    stream: Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope],
+    envelope: cloud_gateway_pb2.CloudEnvelope,
 ) -> None:
-    pong = pb.CloudEnvelope(
+    pong = cloud_gateway_pb2.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="CLOUD_GW",
         sequence_id=envelope.sequence_id,
-        pong=pb.KeepalivePong(roundtrip_ms=0),
+        pong=cloud_gateway_pb2.KeepalivePong(roundtrip_ms=0),
     )
     await stream.send_message(pong)
 
@@ -313,15 +313,15 @@ async def _handle_ping(
 async def handle_telemetry(
     service: CloudBridgeService,
     device_id: str,
-    _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
-    envelope: pb.CloudEnvelope,
+    _: Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope],
+    envelope: cloud_gateway_pb2.CloudEnvelope,
 ) -> None:
     logger.info("Processed telemetry", device_id=device_id)
     service.gateway.metrics.telemetry_messages.labels(device_id=device_id).inc()
 
     if envelope.telemetry.daemon_metrics_blob:
         try:
-            metrics = pb.DaemonMetrics()
+            metrics = mcu_wire_pb2.DaemonMetrics()
             metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
             service.gateway.metrics.update_daemon_metrics(device_id, metrics)
         except (DecodeError, ValueError) as exc:
@@ -334,8 +334,8 @@ async def handle_telemetry(
 async def _handle_event(
     service: CloudBridgeService,
     device_id: str,
-    _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
-    envelope: pb.CloudEnvelope,
+    _: Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope],
+    envelope: cloud_gateway_pb2.CloudEnvelope,
 ) -> None:
     evt = envelope.event
     logger.warning(
@@ -351,7 +351,12 @@ async def _handle_event(
 
 
 _PayloadHandler = Callable[
-    ["CloudBridgeService", str, Stream[pb.CloudEnvelope, pb.CloudEnvelope], pb.CloudEnvelope],
+    [
+        "CloudBridgeService",
+        str,
+        Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope],
+        cloud_gateway_pb2.CloudEnvelope,
+    ],
     Awaitable[None] | None,
 ]
 
@@ -440,7 +445,7 @@ class CloudBridgeService(CloudBridgeBase):
     def __init__(self, gateway: ProtobufGateway) -> None:
         self.gateway = gateway
 
-    async def Session(self, stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope]) -> None:
+    async def Session(self, stream: Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope]) -> None:
         try:
             device_id, is_authenticated = extract_peer_identity(stream.peer, stream.metadata)
         except ValueError as exc:
@@ -508,7 +513,9 @@ class CloudBridgeService(CloudBridgeBase):
                     self.gateway.sessions.pop(device_id, None)
                     self.gateway.connections.pop(device_id, None)
 
-    async def DispatchCommand(self, stream: Stream[pb.CommandDispatch, pb.CommandResponse]) -> None:
+    async def DispatchCommand(
+        self, stream: Stream[cloud_gateway_pb2.CommandDispatch, cloud_gateway_pb2.CommandResponse]
+    ) -> None:
         """[SIL-2] Northbound gRPC endpoint dispatching a command to an active edge device."""
         request = await stream.recv_message()
         if request is None:
@@ -517,13 +524,13 @@ class CloudBridgeService(CloudBridgeBase):
         target_id = request.target_device_id
         if not target_id:
             await stream.send_message(
-                pb.CommandResponse(status_code=400, payload=b"Explicit target_device_id is required")
+                cloud_gateway_pb2.CommandResponse(status_code=400, payload=b"Explicit target_device_id is required")
             )
             return
 
         if target_id not in self.gateway.connections:
             await stream.send_message(
-                pb.CommandResponse(
+                cloud_gateway_pb2.CommandResponse(
                     status_code=503,
                     payload=f"Device '{target_id}' is not connected to gateway".encode(),
                 )
@@ -544,7 +551,9 @@ class CloudBridgeService(CloudBridgeBase):
                 )
                 await stream.send_message(response)
             except (KeyError, TimeoutError, OSError) as exc:
-                await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
+                await stream.send_message(
+                    cloud_gateway_pb2.CommandResponse(status_code=504, payload=str(exc).encode("utf-8"))
+                )
 
 
 class GatewayLocalBridgeService:
@@ -621,7 +630,9 @@ class GatewayLocalBridgeService:
                 )
                 await stream.send_message(default_resp)
 
-    async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
+    async def Publish(
+        self, stream: Stream[cloud_gateway_pb2.CloudQueuedPublish, cloud_gateway_pb2.CloudQueuedPublish]
+    ) -> None:
         req = await stream.recv_message()
         if req is None:
             return
@@ -639,9 +650,17 @@ class GatewayLocalBridgeService:
             if "console" in req.topic_name:
                 for q in self.gateway.console_queues.get(device_id, []):
                     q.put_nowait(req)
-            await self._forward_rpc(stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req)
+            await self._forward_rpc(
+                stream,
+                "Publish",
+                cloud_gateway_pb2.CloudQueuedPublish,
+                cloud_gateway_pb2.CloudQueuedPublish(),
+                pre_read_req=req,
+            )
 
-    async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
+    async def SubscribeConsole(
+        self, stream: Stream[mcu_wire_pb2.SubscribeRequest, cloud_gateway_pb2.CloudQueuedPublish]
+    ) -> None:
         req = await stream.recv_message()
         if req is None:
             return
@@ -663,7 +682,9 @@ class GatewayLocalBridgeService:
             target_device_id=device_id,
             rpc_method="SubscribeConsole",
         ):
-            send_stream, receive_stream = anyio.create_memory_object_stream[pb.CloudQueuedPublish](max_buffer_size=64)
+            send_stream, receive_stream = anyio.create_memory_object_stream[cloud_gateway_pb2.CloudQueuedPublish](
+                max_buffer_size=64
+            )
             adapter = MemoryQueueAdapter(send_stream)
             self.gateway.console_queues.setdefault(device_id, []).append(adapter)
             try:
@@ -734,9 +755,9 @@ class ProtobufGateway:
         self.http3_port = http3_port
         self.metrics_port = metrics_port
         self.server: Server | None = None
-        self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
+        self.connections: dict[str, Stream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope]] = {}
         self.sessions: dict[str, GatewayDeviceSession] = {}
-        self.pending_commands: dict[tuple[str, int], asyncio.Future[pb.CommandResponse]] = {}
+        self.pending_commands: dict[tuple[str, int], asyncio.Future[cloud_gateway_pb2.CommandResponse]] = {}
         self._sequence_id: int = 0
         self.metrics: FleetMetrics = FleetMetrics(registry=metrics_registry)
         self.tsdb_sink: TSDBSink = TSDBSink(endpoint_url=tsdb_url)
@@ -767,7 +788,7 @@ class ProtobufGateway:
         command_path: str,
         payload: bytes = b"",
         timeout_seconds: float = 10.0,
-    ) -> pb.CommandResponse:
+    ) -> cloud_gateway_pb2.CommandResponse:
         """[SIL-2] Asynchronously dispatch a command to an active edge device and await response."""
         stream = self.connections.get(device_id)
         if not stream:
@@ -776,19 +797,19 @@ class ProtobufGateway:
         self._sequence_id = (self._sequence_id + 1) & 0x7FFFFFFF
         seq = self._sequence_id
 
-        req_envelope = pb.CloudEnvelope(
+        req_envelope = cloud_gateway_pb2.CloudEnvelope(
             protocol_version=PROTOCOL_VERSION,
             device_id="CLOUD_GW",
             sequence_id=seq,
             timestamp_utc=int(time.time()),
-            command_request=pb.CommandRequest(
+            command_request=cloud_gateway_pb2.CommandRequest(
                 command_path=command_path,
                 payload=payload,
             ),
         )
 
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[pb.CommandResponse] = loop.create_future()
+        future: asyncio.Future[cloud_gateway_pb2.CommandResponse] = loop.create_future()
         key = (device_id, seq)
         self.pending_commands[key] = future
 
@@ -812,7 +833,7 @@ class ProtobufGateway:
         self,
         device_id: str,
         sequence_id: int,
-        response: pb.CommandResponse,
+        response: cloud_gateway_pb2.CommandResponse,
     ) -> None:
         """[SIL-2] Handle incoming command response from edge device and resolve pending future."""
         logger.debug(

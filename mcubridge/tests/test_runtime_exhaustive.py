@@ -5,10 +5,9 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
-import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -59,7 +58,7 @@ async def test_handle_mcu_frame_pre_sync_denied(runtime_setup: tuple[BridgeServi
     service, state, serial = runtime_setup
     assert not state.is_synchronized
 
-    await service.handle_mcu_frame(Command.CMD_GET_VERSION.value, 1, b"")
+    await service.handle_mcu_frame("rpc.pb.SystemService/GetVersion", 1, b"")
     serial.send.assert_not_called()
 
 
@@ -68,10 +67,10 @@ async def test_handle_mcu_frame_handshake_routing(
 ) -> None:
     service, _state, _serial = runtime_setup
     mock_sync_resp = AsyncMock(return_value=True)
-    service.mcu_registry[Command.CMD_LINK_SYNC.value] = mock_sync_resp
+    service.mcu_registry["rpc.pb.SystemService/LinkSync"] = mock_sync_resp
 
     sync_pb = pb.LinkSync(nonce=b"123456789012", tag=b"tag")
-    await service.handle_mcu_frame(Command.CMD_LINK_SYNC.value, 1, sync_pb.SerializeToString())
+    await service.handle_mcu_frame("rpc.pb.SystemService/LinkSync", 1, sync_pb.SerializeToString())
     mock_sync_resp.assert_awaited_once()
 
 
@@ -89,7 +88,7 @@ async def test_handle_mcu_frame_rpc_handlers(
     mock_incoming = AsyncMock()
     state.mailbox_incoming_queue = mock_incoming
     req_mb = pb.MailboxPush(data=b"test_payload")
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 10, req_mb.SerializeToString())
+    await service.handle_mcu_frame("rpc.pb.MailboxService/Push", 10, req_mb.SerializeToString())
     mock_pub.assert_awaited()
     mock_incoming.append.assert_awaited_once_with(b"test_payload")
 
@@ -98,7 +97,7 @@ async def test_handle_mcu_frame_rpc_handlers(
     mock_cache.get.return_value = b"25.5"
     state.datastore_cache = mock_cache
     req_ds = pb.DatastorePut(key="temp", value=b"25.5")
-    await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, 11, req_ds.SerializeToString())
+    await service.handle_mcu_frame("rpc.pb.DataStoreService/Put", 11, req_ds.SerializeToString())
     assert state.datastore_cache is not None
     assert await state.datastore_cache.get("temp") == b"25.5"
     mock_cache.set.assert_awaited_once_with("temp", b"25.5")
@@ -106,7 +105,7 @@ async def test_handle_mcu_frame_rpc_handlers(
     # 3. MCU Mailbox Processed
     mock_pub.reset_mock()
     mb_proc = pb.MailboxProcessed(message_id=12)
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PROCESSED.value, 12, mb_proc.SerializeToString())
+    await service.handle_mcu_frame("rpc.pb.MailboxService/Processed", 12, mb_proc.SerializeToString())
     mock_pub.assert_awaited()
 
 
@@ -117,7 +116,7 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
     serial.send.return_value = True
 
     # Console input topic
-    req_console = pb.CloudQueuedPublish(
+    req_console = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=f"{state.cloud_topic_prefix}/req/console.write",
         payload=pb.ConsoleWrite(data=b"help\n").SerializeToString(),
     )
@@ -126,7 +125,7 @@ async def test_handle_request_routing(runtime_setup: tuple[BridgeService, Runtim
     serial.send.assert_awaited()
 
     # Mailbox write topic
-    req_mb = pb.CloudQueuedPublish(
+    req_mb = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=f"{state.cloud_topic_prefix}/req/mailbox.push",
         payload=pb.MailboxPush(data=b"ping").SerializeToString(),
     )
@@ -140,7 +139,7 @@ async def test_enqueue_cloud_spool_and_flush(
     service, _state, _serial = runtime_setup
 
     # Enqueue when disconnected triggers spooling
-    msg = pb.CloudQueuedPublish(
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name="mcu/test",
         payload=b"spooled_data",
     )
@@ -151,6 +150,6 @@ async def test_enqueue_cloud_spool_and_flush(
 
     # Drain spool
     popped_bytes = await spool.popleft()
-    popped_msg = pb.CloudQueuedPublish.FromString(popped_bytes)
+    popped_msg = cloud_gateway_pb2.CloudQueuedPublish.FromString(popped_bytes)
     assert popped_msg.topic_name == "mcu/test"
     assert popped_msg.payload == b"spooled_data"

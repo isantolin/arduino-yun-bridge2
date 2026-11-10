@@ -29,10 +29,10 @@ INCLUDES=(
     "-I${SRC_DIR}/protocol"
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
-    "-I${ETL_INC}"
-    "-I${PIGWEED_INC}"
-    "-I${ARDUINO_LIBS}/PigweedAVR"
-    "-I${MBEDTLS_INC}"
+    "-isystem${ETL_INC}"
+    "-isystem${PIGWEED_INC}"
+    "-isystem${ARDUINO_LIBS}/PigweedAVR"
+    "-isystem${MBEDTLS_INC}"
 )
 
 COMPILE_FLAGS=(

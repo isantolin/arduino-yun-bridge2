@@ -44,9 +44,9 @@ inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
                              etl::span<const uint8_t> payload = {}) {
   etl::array<uint8_t, 256> frame_raw;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST, service_id, method_id,
-      payload, frame_raw);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+                           service_id, method_id, payload, frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
 }
 
@@ -180,7 +180,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   invoke_response(ba, kDsSvc, pw::tokenizer::Hash("Get"),
                   rpc_pb_DatastoreGetResponse_fields, ds_resp);
 
-  // 14. FileRead response
+  // 14. FileRead server-streaming response (chunk + completion)
   FileSystem.read("edge.bin",
                   FileSystemType::FileSystemReadHandler::create<on_fs_read>());
   rpc_pb_FileReadResponse fr_resp = rpc_pb_FileReadResponse_init_default;
@@ -189,6 +189,16 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   fr_resp.content.bytes[1] = 2;
   fr_resp.content.bytes[2] = 3;
   fr_resp.content.bytes[3] = 4;
+  {
+    uint8_t fr_buf[128];
+    pb_ostream_t pbos = pb_ostream_from_buffer(fr_buf, sizeof(fr_buf));
+    pb_encode(&pbos, rpc_pb_FileReadResponse_fields, &fr_resp);
+    pw::rpc::internal::Packet stream_pkt(
+        pw::rpc::internal::pwpb::PacketType::SERVER_STREAM, 1, kFsSvc,
+        pw::tokenizer::Hash("Read"), 0,
+        pw::as_bytes(pw::span(fr_buf, pbos.bytes_written)));
+    ba.invokeRpcResponse(stream_pkt);
+  }
   invoke_response(ba, kFsSvc, pw::tokenizer::Hash("Read"),
                   rpc_pb_FileReadResponse_fields, fr_resp);
 
@@ -274,7 +284,9 @@ void test_dispatch_malformed_payload_paths() {
 
   bad_pkt.set_service_id(kFsSvc);
   bad_pkt.set_method_id(pw::tokenizer::Hash("Read"));
+  bad_pkt.set_type(pw::rpc::internal::pwpb::PacketType::SERVER_STREAM);
   ba.invokeRpcResponse(bad_pkt);
+  bad_pkt.set_type(pw::rpc::internal::pwpb::PacketType::RESPONSE);
 
   bad_pkt.set_service_id(kProcSvc);
   bad_pkt.set_method_id(pw::tokenizer::Hash("RunAsync"));
@@ -308,10 +320,10 @@ void test_packet_received_security_paths() {
 
   // 2. Corrupt FCS frame is dropped by decoder
   etl::array<uint8_t, 128> corrupt_frame;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST, kGpioSvc,
-      pw::tokenizer::Hash("DigitalWrite"), etl::span<const uint8_t>(),
-      corrupt_frame);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+                           kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                           etl::span<const uint8_t>(), corrupt_frame);
   TEST_ASSERT_GREATER_THAN(2, len);
   if (len >= 2) {
     corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC

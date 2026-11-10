@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from grpclib.client import Channel
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge_client import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge_client import LocalBridgeStub
 from mcubridge_client.definitions import (
     build_bridge_args,
@@ -36,26 +36,26 @@ async def test_client_connect_disconnect(mock_grpc: tuple[MagicMock, MagicMock])
 
 async def test_client_digital_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
-    msg = pb.DigitalWrite(pin=13, value=1)
+    msg = mcu_wire_pb2.DigitalWrite(pin=13, value=1)
     await mock_stub.DigitalWrite(msg)
     mock_fn = cast(AsyncMock, mock_stub.DigitalWrite)
     mock_fn.assert_awaited_once_with(msg)
     call_args = mock_fn.call_args
     assert call_args is not None
-    sent = cast(pb.DigitalWrite, call_args[0][0])
+    sent = cast(mcu_wire_pb2.DigitalWrite, call_args[0][0])
     assert sent.pin == 13
     assert sent.value == 1
 
 
 async def test_client_analog_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
-    msg = pb.AnalogWrite(pin=3, value=128)
+    msg = mcu_wire_pb2.AnalogWrite(pin=3, value=128)
     await mock_stub.AnalogWrite(msg)
     mock_fn = cast(AsyncMock, mock_stub.AnalogWrite)
     mock_fn.assert_awaited_once_with(msg)
     call_args = mock_fn.call_args
     assert call_args is not None
-    sent = cast(pb.AnalogWrite, call_args[0][0])
+    sent = cast(mcu_wire_pb2.AnalogWrite, call_args[0][0])
     assert sent.pin == 3
     assert sent.value == 128
 
@@ -63,27 +63,27 @@ async def test_client_analog_write(mock_grpc: tuple[MagicMock, MagicMock]) -> No
 async def test_client_datastore_put(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     mock_fn = cast(AsyncMock, mock_stub.DatastorePut)
-    mock_fn.return_value = pb.GenericResponse(status="ok")
-    msg = pb.DatastorePut(key="test_key", value=b"test_value")
-    res = cast(pb.GenericResponse, await mock_stub.DatastorePut(msg))
+    mock_fn.return_value = cloud_gateway_pb2.GenericResponse(status="ok")
+    msg = mcu_wire_pb2.DatastorePut(key="test_key", value=b"test_value")
+    res = cast(cloud_gateway_pb2.GenericResponse, await mock_stub.DatastorePut(msg))
     mock_fn.assert_awaited_once_with(msg)
     assert res.status == "ok"
     call_args = mock_fn.call_args
     assert call_args is not None
-    sent = cast(pb.DatastorePut, call_args[0][0])
+    sent = cast(mcu_wire_pb2.DatastorePut, call_args[0][0])
     assert sent.key == "test_key"
     assert sent.value == b"test_value"
 
 
 async def test_client_file_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
-    msg = pb.FileWrite(path="test.txt", data=b"content")
+    msg = mcu_wire_pb2.FileWrite(path="test.txt", data=b"content")
     await mock_stub.FileWrite(msg)
     mock_fn = cast(AsyncMock, mock_stub.FileWrite)
     mock_fn.assert_awaited_once_with(msg)
     call_args = mock_fn.call_args
     assert call_args is not None
-    sent = cast(pb.FileWrite, call_args[0][0])
+    sent = cast(mcu_wire_pb2.FileWrite, call_args[0][0])
     assert sent.path == "test.txt"
     assert sent.data == b"content"
 
@@ -92,7 +92,7 @@ async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]
     _, mock_stub = mock_grpc
     mock_fn = cast(AsyncMock, mock_stub.AnalogRead)
     mock_fn.side_effect = TimeoutError("RPC timeout")
-    msg = pb.PinRead(pin=0)
+    msg = mcu_wire_pb2.PinRead(pin=0)
     with pytest.raises(TimeoutError):
         await mock_stub.AnalogRead(msg)
 
@@ -100,21 +100,21 @@ async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]
 async def test_client_pin_subscribe(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
     mock_fn = cast(AsyncMock, mock_stub.PinSubscribe)
-    mock_fn.return_value = pb.PinSubscribeResponse(pin=13, success=True)
-    msg = pb.PinSubscribeRequest(
+    mock_fn.return_value = mcu_wire_pb2.PinSubscribeResponse(pin=13, success=True)
+    msg = mcu_wire_pb2.PinSubscribeRequest(
         pin=13,
-        mode=pb.PinModeType.PIN_INPUT,
+        mode=config_schema_pb2.PinModeType.PIN_INPUT,
         interval_ms=100,
         hysteresis=1,
         enabled=True,
     )
-    res = cast(pb.PinSubscribeResponse, await mock_stub.PinSubscribe(msg))
+    res = cast(mcu_wire_pb2.PinSubscribeResponse, await mock_stub.PinSubscribe(msg))
     mock_fn.assert_awaited_once_with(msg)
     assert res.pin == 13
     assert res.success is True
     call_args = mock_fn.call_args
     assert call_args is not None
-    sent = cast(pb.PinSubscribeRequest, call_args[0][0])
+    sent = cast(mcu_wire_pb2.PinSubscribeRequest, call_args[0][0])
     assert sent.pin == 13
     assert sent.interval_ms == 100
     assert sent.enabled is True
@@ -206,7 +206,7 @@ async def test_spi_device_transfer() -> None:
     mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
     mock_spi_config = AsyncMock()
     mock_stub.SpiConfigure = mock_spi_config
-    mock_stub.SpiTransfer = AsyncMock(return_value=pb.SpiTransfer(data=b"\xaa\xbb"))
+    mock_stub.SpiTransfer = AsyncMock(return_value=mcu_wire_pb2.SpiTransfer(data=b"\xaa\xbb"))
 
     dev = SpiDevice(mock_stub)
 

@@ -73,7 +73,7 @@ async def test_status_writer_handles_exception(
 
 
 def test_write_status_file_handles_oserror() -> None:
-    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol import cloud_gateway_pb2 as pb
 
     status_msg = pb.BridgeStatus()
     invalid_file = Path("/proc/invalid_status_dir_test/status.json")

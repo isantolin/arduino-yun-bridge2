@@ -278,7 +278,6 @@ service LocalBridge {
   }
   rpc SpiConfigure(rpc.pb.SpiConfig) returns (rpc.pb.GenericResponse) {
     option (rpc.pb.rpc_topic) = "spi.configure";
-    option (rpc.pb.rpc_command) = "CMD_SPI_SET_CONFIG";
     option (rpc.pb.is_custom_handler) = true;
   }
 
@@ -304,6 +303,9 @@ service LocalBridge {
     option (rpc.pb.rpc_topic) = "console.write";
     option (rpc.pb.rpc_aliases) = "console.in";
     option (rpc.pb.is_custom_handler) = true;
+    option (rpc.pb.cloud_topic) = "console/out";
+    option (rpc.pb.auth_field) = "console_input";
+    option (rpc.pb.mcu_handler) = "console_write";
   }
   rpc ClockSync(rpc.pb.ClockSyncRequest) returns (rpc.pb.ClockSyncResponse) {
     option (rpc.pb.rpc_topic) = "clock.sync";

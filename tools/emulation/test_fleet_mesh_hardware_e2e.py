@@ -138,7 +138,7 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
 
 def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
     """Wait for one authenticated LinkSync response without queuing overlapping probes."""
-    sync_operation = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+    sync_operation = protocol.get_operation("rpc.pb.SystemService/LinkSync")
     if sync_operation is None or sync_operation.service_id is None or sync_operation.method_id is None:
         raise RuntimeError("LinkSync is missing generated RPC metadata")
     if timeout <= 0:
@@ -172,7 +172,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
             if pending_sync is None and now >= next_probe:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
                 reset_request = protocol.encode_hdlc_rpc(
-                    protocol.Command.CMD_LINK_RESET.value,
+                    "rpc.pb.SystemService/LinkReset",
                     b"",
                     call_id=call_id,
                 )
@@ -183,7 +183,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
                 request_tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
                 sync_request = protocol.encode_hdlc_rpc(
-                    protocol.Command.CMD_LINK_SYNC.value,
+                    "rpc.pb.SystemService/LinkSync",
                     mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
                     call_id=call_id,
                 )
@@ -316,9 +316,9 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     return True
 
 
-def compile_fleet_firmwares() -> (
-    tuple[tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]]
-):
+def compile_fleet_firmwares() -> tuple[
+    tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]
+]:
     """Compile universal firmwares and extract metadata for all 3 targets."""
     sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
     fw_mega = ensure_firmware_compiled(

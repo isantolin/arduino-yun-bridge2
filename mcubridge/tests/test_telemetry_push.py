@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
@@ -57,19 +57,19 @@ async def test_pure_telemetry_push_mode(
     stream_mock = AsyncMock()
     svc.cloud_stream = stream_mock
 
-    metrics = pb.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
+    metrics = mcu_wire_pb2.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
     payload = metrics.SerializeToString() if telemetry_field == "daemon_metrics_blob" else b"telemetry-payload"
-    msg = pb.CloudQueuedPublish(
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=topic_name,
         payload=payload,
     )
 
-    publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
+    publish_cloud_msg: Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
     published = await publish_cloud_msg(msg)
     assert published is True
 
     stream_mock.send_message.assert_awaited_once()
-    envelope: pb.CloudEnvelope = stream_mock.send_message.await_args[0][0]
+    envelope: cloud_gateway_pb2.CloudEnvelope = stream_mock.send_message.await_args[0][0]
     assert envelope.WhichOneof("payload") == "telemetry"
     assert getattr(envelope.telemetry, telemetry_field) == payload
     assert {field.name for field, _ in envelope.telemetry.ListFields()} == {telemetry_field}

@@ -99,12 +99,12 @@ void test_bridge_handshake_response_uses_tag_length() {
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce = {};
   nonce.fill(0x42U);
-  const auto secret = etl::span<const uint8_t>(
-      reinterpret_cast<const uint8_t*>(kSharedSecret),
-      sizeof(kSharedSecret) - 1U);
+  const auto secret =
+      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kSharedSecret),
+                               sizeof(kSharedSecret) - 1U);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> request_tag = {};
-  TEST_ASSERT_TRUE(rpc::security::handshake_generate_tag(
-      secret, nonce, request_tag));
+  TEST_ASSERT_TRUE(
+      rpc::security::handshake_generate_tag(secret, nonce, request_tag));
 
   rpc_pb_LinkSync request = rpc_pb_LinkSync_init_default;
   etl::copy_n(nonce.begin(), nonce.size(), request.nonce.bytes);
@@ -239,10 +239,10 @@ void test_bridge_status_ack() {
   ba.setSynchronized();
 
   // Verify RpcPacket response routing
-  pw::rpc::internal::Packet pkt(
-      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
-      pw::tokenizer::Hash("rpc.pb.SystemService"),
-      pw::tokenizer::Hash("GetVersion"), 0, pw::ConstByteSpan());
+  pw::rpc::internal::Packet pkt(pw::rpc::internal::pwpb::PacketType::RESPONSE,
+                                1, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                                pw::tokenizer::Hash("GetVersion"), 0,
+                                pw::ConstByteSpan());
   ba.invokeRpcResponse(pkt);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
@@ -413,9 +413,9 @@ void test_bridge_dispatch_status_and_unknown() {
   ba.setSynchronized();
 
   etl::array<uint8_t, 128> frame_raw;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST, 99999, 88888,
-      etl::span<const uint8_t>(), frame_raw);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+                           99999, 88888, etl::span<const uint8_t>(), frame_raw);
   ba.feedHdlcBytes(etl::span<const uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
@@ -881,11 +881,11 @@ void test_bridge_fault_injection_kat_and_post() {
   // 2. Unknown RPC method
   ba.setSynchronized();
   etl::array<uint8_t, 128> hdlc_buf;
-  size_t len = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.SystemService"),
-      pw::tokenizer::Hash("UnknownMethod"), etl::span<const uint8_t>(),
-      hdlc_buf);
+  size_t len =
+      build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+                           pw::tokenizer::Hash("rpc.pb.SystemService"),
+                           pw::tokenizer::Hash("UnknownMethod"),
+                           etl::span<const uint8_t>(), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), len));
 
   // 3. Status malformed with status handler

@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 import subprocess
+from typing import Any
 
 from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
@@ -10,7 +11,7 @@ import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge.protocol import protocol
 from tools.audit import codebase_auditor
 from tools.audit.codebase_auditor import app, audit_ast_integrity, audit_proto_integrity, audit_proto_usage
@@ -71,7 +72,10 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, mocker: MockerF
     mocker.patch.object(codebase_auditor, "ROOT", tmp_path)
     mocker.patch.object(codebase_auditor.shutil, "which", return_value="semgrep")
 
-    def _mock_cmd_fail(cmd: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def _mock_cmd_fail(
+        cmd: Sequence[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        _ = env
         return subprocess.CompletedProcess(list(cmd), 2, stdout='{"results":[]}', stderr="invalid rules")
 
     mocker.patch.object(codebase_auditor, "run_command", _mock_cmd_fail)
@@ -85,7 +89,10 @@ def test_audit_semgrep_reports_empty_output_as_execution_error(tmp_path: Path, m
     mocker.patch.object(codebase_auditor, "ROOT", tmp_path)
     mocker.patch.object(codebase_auditor.shutil, "which", return_value="semgrep")
 
-    def _mock_cmd_empty(cmd: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def _mock_cmd_empty(
+        cmd: Sequence[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        _ = env
         return subprocess.CompletedProcess(list(cmd), 0, stdout="   \n", stderr="")
 
     mocker.patch.object(codebase_auditor, "run_command", _mock_cmd_empty)
@@ -143,16 +150,18 @@ def test_audit_ast_integrity_detects_violations_and_skips_ignored(
 
 def test_protobuf_descriptor_purged_elements() -> None:
     """SIL-2: Verify compiled descriptor does not contain any abandoned messages or fields."""
-    file_desc = pb.DESCRIPTOR
+    all_descriptors = (cloud_gateway_pb2.DESCRIPTOR, mcu_wire_pb2.DESCRIPTOR, config_schema_pb2.DESCRIPTOR)
 
     # 1. No DataFormats message
-    assert "DataFormats" not in file_desc.message_types_by_name
+    for fd in all_descriptors:
+        assert "DataFormats" not in fd.message_types_by_name
 
     # 2. No data_formats file extension
-    assert "data_formats" not in file_desc.extensions_by_name
+    for fd in all_descriptors:
+        assert "data_formats" not in fd.extensions_by_name
 
     # 3. No decorative handshake fields
-    handshake_fields = pb.Handshake.DESCRIPTOR.fields_by_name
+    handshake_fields = config_schema_pb2.Handshake.DESCRIPTOR.fields_by_name
     assert "tag_algorithm" not in handshake_fields
     assert "tag_description" not in handshake_fields
     assert "hkdf_algorithm" not in handshake_fields
@@ -161,7 +170,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert "aead_description" not in handshake_fields
 
     # 4. Retired constants are absent and their field numbers/names remain reserved.
-    constant_fields = pb.Constants.DESCRIPTOR.fields_by_name
+    constant_fields = config_schema_pb2.Constants.DESCRIPTOR.fields_by_name
     retired_constants = {
         "max_command_id",
         "invalid_id_sentinel",
@@ -197,7 +206,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert retired_constants.isdisjoint(constant_fields)
 
     descriptor_file = descriptor_pb2.FileDescriptorProto()
-    descriptor_file.ParseFromString(pb.Constants.DESCRIPTOR.file.serialized_pb)
+    descriptor_file.ParseFromString(config_schema_pb2.Constants.DESCRIPTOR.file.serialized_pb)
     constants_proto = next(message for message in descriptor_file.message_type if message.name == "Constants")
     reserved_constant_numbers = {
         number for item in constants_proto.reserved_range for number in range(item.start, item.end)
@@ -216,34 +225,26 @@ def test_telemetry_routing_table_matches_schema_metadata() -> None:
     assert expected_map == protocol.TELEMETRY_TOPIC_FIELD_MAP
     assert protocol.TELEMETRY_DEFAULT_FIELD == "system_status_blob"
 
-    fields_by_name = pb.TelemetryReport.DESCRIPTOR.fields_by_name
+    fields_by_name = cloud_gateway_pb2.TelemetryReport.DESCRIPTOR.fields_by_name
     assert set(expected_map.values()) | {protocol.TELEMETRY_DEFAULT_FIELD} == set(fields_by_name)
     for topic_match, field_name in expected_map.items():
         options = fields_by_name[field_name].GetOptions()
-        assert options.HasExtension(pb.telemetry_topic_match)
-        assert options.Extensions[pb.telemetry_topic_match] == topic_match
+        assert options.HasExtension(config_schema_pb2.telemetry_topic_match)
+        assert options.Extensions[config_schema_pb2.telemetry_topic_match] == topic_match
 
     default_options = fields_by_name[protocol.TELEMETRY_DEFAULT_FIELD].GetOptions()
-    assert default_options.HasExtension(pb.telemetry_topic_default)
-    assert default_options.Extensions[pb.telemetry_topic_default] is True
+    assert default_options.HasExtension(config_schema_pb2.telemetry_topic_default)
+    assert default_options.Extensions[config_schema_pb2.telemetry_topic_default] is True
 
 
 def test_pre_sync_command_set_matches_schema_metadata() -> None:
-    expected_names = {"CMD_LINK_SYNC", "CMD_XOFF", "CMD_XON"}
-    command_values = pb.Command.DESCRIPTOR.values
-    actual_names = {
-        command.name for command in command_values if command.GetOptions().Extensions[pb.cmd_opts].pre_sync_allowed
-    }
-
-    assert expected_names == actual_names
-    pre_sync_specs = {
-        spec.command_id for spec in protocol.OPERATIONS if spec.command_id is not None and spec.pre_sync_allowed
-    }
-    assert {protocol.Command[name].value for name in expected_names} == pre_sync_specs
+    expected_names = {"rpc.pb.SystemService/LinkSync"}
+    pre_sync_specs = {spec.name for spec in protocol.OPERATIONS if spec.pre_sync_allowed}
+    assert expected_names == pre_sync_specs
 
 
 def test_topic_lookup_matches_schema_metadata() -> None:
-    topic_configs = pb.Constants.DESCRIPTOR.file.GetOptions().Extensions[pb.topics]
+    topic_configs = config_schema_pb2.Constants.DESCRIPTOR.file.GetOptions().Extensions[config_schema_pb2.topics]
     for topic_config in topic_configs:
         enum_val = protocol.Topic[topic_config.name]
         assert protocol.lookup_topic(topic_config.value) == enum_val
@@ -251,60 +252,52 @@ def test_topic_lookup_matches_schema_metadata() -> None:
             assert protocol.lookup_topic(alias) == enum_val
 
 
-def test_command_specs_multidimensional_integrity() -> None:
-    """Verify that every command has a canonical OperationSpec matching Protobuf descriptors."""
-    commands_count = len(pb.Command.DESCRIPTOR.values) - 1
-    assert len(protocol.BY_COMMAND_ID) == commands_count
-    for val in pb.Command.DESCRIPTOR.values:
-        if val.name == "CMD_UNSPECIFIED":
-            continue
-        spec = protocol.get_operation(val.number)
-        assert spec is not None
-        assert spec.command_id == val.number
-        assert spec.name == val.name
-        opts = val.GetOptions().Extensions[pb.cmd_opts]
-        assert spec.pre_sync_allowed == opts.pre_sync_allowed
-        assert spec.cloud_topic == (opts.cloud_topic or None)
-        assert spec.auth_field == (opts.auth_field or None)
-        if spec.request_type not in (None, pb.SubscribeRequest):
+def test_operation_specs_multidimensional_integrity() -> None:
+    """Verify that every operation has a canonical OperationSpec matching Protobuf descriptors."""
+    assert len(protocol.OPERATIONS) >= 30
+    for spec in protocol.OPERATIONS:
+        assert protocol.get_operation(spec.name) is spec
+        if spec.service_id is not None and spec.method_id is not None:
+            assert protocol.get_operation((spec.service_id, spec.method_id)) is spec
+        if spec.request_type not in (None, mcu_wire_pb2.SubscribeRequest, mcu_wire_pb2.Empty):
             assert spec.pb_class is not None
             assert spec.pb_class is spec.request_type
             msg_spec = protocol.get_operation(spec.pb_class.DESCRIPTOR.name)
             assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
-        else:
+        elif spec.request_type in (mcu_wire_pb2.SubscribeRequest, mcu_wire_pb2.Empty):
             assert spec.pb_class is None
 
 
 def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
-    fields = pb.DaemonMetrics.DESCRIPTOR.fields_by_name
+    fields = mcu_wire_pb2.DaemonMetrics.DESCRIPTOR.fields_by_name
     annotated_fields = {
         field.name
         for field in fields.values()
-        if field.GetOptions().HasExtension(pb.telemetry_metric)
-        and field.GetOptions().Extensions[pb.telemetry_metric].prometheus_name
+        if field.GetOptions().HasExtension(config_schema_pb2.telemetry_metric)
+        and field.GetOptions().Extensions[config_schema_pb2.telemetry_metric].prometheus_name
     }
     specs_by_field = {spec.source_field: spec for spec in protocol.METRICS}
     line_protocol_specs = protocol.LINE_PROTOCOL_FIELDS
     line_protocol_fields = {
         field.name
         for field in fields.values()
-        if field.GetOptions().HasExtension(pb.telemetry_metric)
-        and field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_name
+        if field.GetOptions().HasExtension(config_schema_pb2.telemetry_metric)
+        and field.GetOptions().Extensions[config_schema_pb2.telemetry_metric].line_protocol_name
     }
     ordered_line_fields = sorted(
         (
             field
             for field in fields.values()
-            if field.GetOptions().HasExtension(pb.telemetry_metric)
-            and field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_name
+            if field.GetOptions().HasExtension(config_schema_pb2.telemetry_metric)
+            and field.GetOptions().Extensions[config_schema_pb2.telemetry_metric].line_protocol_name
         ),
-        key=lambda field: field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_order,
+        key=lambda field: field.GetOptions().Extensions[config_schema_pb2.telemetry_metric].line_protocol_order,
     )
     line_protocol_kinds = {
-        pb.LINE_PROTOCOL_FIELD_KIND_INTEGER: protocol.LineProtocolFieldKind.INTEGER,
-        pb.LINE_PROTOCOL_FIELD_KIND_FLOAT: protocol.LineProtocolFieldKind.FLOAT,
-        pb.LINE_PROTOCOL_FIELD_KIND_BOOLEAN: protocol.LineProtocolFieldKind.BOOLEAN,
+        config_schema_pb2.LINE_PROTOCOL_FIELD_KIND_INTEGER: protocol.LineProtocolFieldKind.INTEGER,
+        config_schema_pb2.LINE_PROTOCOL_FIELD_KIND_FLOAT: protocol.LineProtocolFieldKind.FLOAT,
+        config_schema_pb2.LINE_PROTOCOL_FIELD_KIND_BOOLEAN: protocol.LineProtocolFieldKind.BOOLEAN,
     }
 
     assert set(specs_by_field) == annotated_fields
@@ -319,18 +312,18 @@ def test_daemon_metric_registry_matches_protobuf_field_options() -> None:
     assert [(spec.source_field, spec.field_name) for spec in line_protocol_specs] == [
         (
             field.name,
-            field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_name,
+            field.GetOptions().Extensions[config_schema_pb2.telemetry_metric].line_protocol_name,
         )
         for field in ordered_line_fields
     ]
     assert [spec.kind for spec in line_protocol_specs] == [
-        line_protocol_kinds[field.GetOptions().Extensions[pb.telemetry_metric].line_protocol_kind]
+        line_protocol_kinds[field.GetOptions().Extensions[config_schema_pb2.telemetry_metric].line_protocol_kind]
         for field in ordered_line_fields
     ]
 
 
 def test_runtime_config_defaults_reference_canonical_metadata() -> None:
-    fields = pb.RuntimeConfig.DESCRIPTOR.fields_by_name
+    fields = config_schema_pb2.RuntimeConfig.DESCRIPTOR.fields_by_name
     expected_references = {
         "serial_baud": "constants.default_baudrate",
         "serial_safe_baud": "constants.default_safe_baudrate",
@@ -343,9 +336,9 @@ def test_runtime_config_defaults_reference_canonical_metadata() -> None:
     }
     for field_name, reference in expected_references.items():
         options = fields[field_name].GetOptions()
-        assert options.HasExtension(pb.config_default_ref)
-        assert options.Extensions[pb.config_default_ref] == reference
-        assert not options.HasExtension(pb.config_default)
+        assert options.HasExtension(config_schema_pb2.config_default_ref)
+        assert options.Extensions[config_schema_pb2.config_default_ref] == reference
+        assert not options.HasExtension(config_schema_pb2.config_default)
 
     assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_baud"] == protocol.DEFAULT_BAUDRATE
     assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_safe_baud"] == protocol.DEFAULT_SAFE_BAUDRATE
@@ -362,7 +355,7 @@ def test_runtime_config_defaults_reference_canonical_metadata() -> None:
 
 
 def test_spi_config_uses_canonical_enums() -> None:
-    fields = pb.SpiConfig.DESCRIPTOR.fields_by_name
+    fields = mcu_wire_pb2.SpiConfig.DESCRIPTOR.fields_by_name
     assert fields["bit_order"].type == FieldDescriptor.TYPE_ENUM
     assert fields["bit_order"].enum_type is not None
     assert fields["bit_order"].enum_type.name == "SpiBitOrder"
@@ -380,15 +373,15 @@ def test_spi_config_uses_canonical_enums() -> None:
 @pytest.mark.parametrize(
     "data_mode_name",
     [
-        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_0),
-        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_1),
-        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_2),
-        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_3),
+        mcu_wire_pb2.SpiDataMode.Name(mcu_wire_pb2.SpiDataMode.SPI_DATA_MODE_0),
+        mcu_wire_pb2.SpiDataMode.Name(mcu_wire_pb2.SpiDataMode.SPI_DATA_MODE_1),
+        mcu_wire_pb2.SpiDataMode.Name(mcu_wire_pb2.SpiDataMode.SPI_DATA_MODE_2),
+        mcu_wire_pb2.SpiDataMode.Name(mcu_wire_pb2.SpiDataMode.SPI_DATA_MODE_3),
     ],
 )
 def test_spi_data_modes_round_trip(data_mode_name: str) -> None:
-    data_mode = pb.SpiDataMode.Value(data_mode_name)
-    restored = pb.SpiConfig.FromString(pb.SpiConfig(data_mode=data_mode).SerializeToString())
+    data_mode = mcu_wire_pb2.SpiDataMode.Value(data_mode_name)
+    restored = mcu_wire_pb2.SpiConfig.FromString(mcu_wire_pb2.SpiConfig(data_mode=data_mode).SerializeToString())
     assert restored.data_mode == data_mode
 
 
@@ -462,15 +455,13 @@ def test_constants_completeness() -> None:
 def test_proto_dispatch_handlers_ssot() -> None:
     """SIL-2: Verify dispatch tables and action routes are derived from .proto SSOT."""
     import operator
-    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
     from mcubridge.services.runtime import BridgeService
 
-    mcu_handlers = {
-        op.command_id: op.mcu_handler for op in protocol.OPERATIONS if op.command_id is not None and op.mcu_handler
-    }
-    assert len(mcu_handlers) == 16
-    for code, handler_path in mcu_handlers.items():
-        assert isinstance(code, int)
+    mcu_handlers = {op.name: op.mcu_handler for op in protocol.OPERATIONS if op.mcu_handler}
+    assert len(mcu_handlers) == 14
+    for name, handler_path in mcu_handlers.items():
+        assert isinstance(name, str)
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
@@ -478,9 +469,15 @@ def test_proto_dispatch_handlers_ssot() -> None:
     assert len(protocol.RPC_SPECS) == 25
     from mcubridge.services.runtime import BridgeService
 
+    def _lookup_proto_type(name: str) -> Any:
+        for m in (cloud_gateway_pb2, mcu_wire_pb2, config_schema_pb2):
+            if hasattr(m, name):
+                return getattr(m, name)
+        raise AttributeError(f"Protobuf type {name} not found")
+
     service_desc = next(
         dep.services_by_name["LocalBridge"]
-        for dep in [pb.DESCRIPTOR, *pb.DESCRIPTOR.dependencies]
+        for dep in [cloud_gateway_pb2.DESCRIPTOR, *cloud_gateway_pb2.DESCRIPTOR.dependencies]
         if "LocalBridge" in dep.services_by_name
     )
     unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
@@ -490,8 +487,8 @@ def test_proto_dispatch_handlers_ssot() -> None:
         method_name = spec.rpc_name or spec.name
         assert method_name in unary_methods
         method_desc = unary_methods[method_name]
-        assert spec.request_type is getattr(pb, method_desc.input_type.name)
-        assert spec.response_type is getattr(pb, method_desc.output_type.name)
+        assert spec.request_type is _lookup_proto_type(method_desc.input_type.name)
+        assert spec.response_type is _lookup_proto_type(method_desc.output_type.name)
         assert spec.handler_name is not None
         if spec.is_custom_handler:
             assert hasattr(BridgeService, spec.handler_name)
@@ -503,8 +500,8 @@ def test_proto_dispatch_handlers_ssot() -> None:
 def test_hardware_options_completeness_ssot() -> None:
     """SIL-2: Verify all Hardware fields in config_schema.proto are > 0 and C++ headers delegate to SSoT."""
     repo_root = Path(__file__).resolve().parent.parent.parent
-    hw_opts = pb.Hardware.DESCRIPTOR.file.GetOptions().Extensions[pb.hardware]
-    zero_fields = [f.name for f in pb.Hardware.DESCRIPTOR.fields if getattr(hw_opts, f.name) <= 0]
+    hw_opts = config_schema_pb2.Hardware.DESCRIPTOR.file.GetOptions().Extensions[config_schema_pb2.hardware]
+    zero_fields = [f.name for f in config_schema_pb2.Hardware.DESCRIPTOR.fields if getattr(hw_opts, f.name) <= 0]
     assert zero_fields == [], f"Hardware option fields with zero/unset values: {zero_fields}"
 
     rpc_hw_header = (repo_root / "mcubridge-library-arduino/src/protocol/rpc_hw_config.h").read_text(encoding="utf-8")

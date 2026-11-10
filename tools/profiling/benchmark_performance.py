@@ -28,7 +28,7 @@ from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_rpc import packets as pw_packets
 
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.state.storage import LmdbCache
 
@@ -208,7 +208,7 @@ def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
     # 1. Build Frame
     start = time.perf_counter()
     raw_frames = [
-        protocol.encode_hdlc_rpc(protocol.Command.CMD_DIGITAL_WRITE.value, msg, call_id=i) for i in range(iterations)
+        protocol.encode_hdlc_rpc("rpc.pb.GpioService/DigitalWrite", msg, call_id=i) for i in range(iterations)
     ]
     dur_build = time.perf_counter() - start
     build_metric = BenchmarkMetric(

@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -29,7 +29,7 @@ async def run_test(
             # --- Test File Write ---
             logger.info("Writing file", filename=test_filename, content=test_content)
             await stub.FileWrite(
-                pb.FileWrite(
+                mcu_wire_pb2.FileWrite(
                     path=test_filename,
                     data=test_content.encode("utf-8"),
                 )
@@ -38,7 +38,7 @@ async def run_test(
             # --- Test File Read ---
             logger.info("Reading file", filename=test_filename)
             res = await stub.FileRead(
-                pb.FileRead(
+                mcu_wire_pb2.FileRead(
                     path=test_filename,
                 )
             )
@@ -53,7 +53,7 @@ async def run_test(
             # --- Test File Remove ---
             logger.info("Removing file", filename=test_filename)
             await stub.FileRemove(
-                pb.FileRemove(
+                mcu_wire_pb2.FileRemove(
                     path=test_filename,
                 )
             )

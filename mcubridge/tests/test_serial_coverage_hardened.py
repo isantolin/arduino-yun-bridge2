@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
-import mcubridge.protocol.mcubridge_pb2 as pb
+import mcubridge.protocol.mcu_wire_pb2 as pb
 import serial
 from pw_hdlc.encode import ui_frame
 from pw_rpc import packets as pw_packets
@@ -21,7 +21,7 @@ from pw_rpc.internal.packet_pb2 import PacketType
 from serial import SerialException
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Status
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -71,19 +71,19 @@ async def test_serial_transport_send_raw(tmp_path: Path) -> None:
     transport, state, mock_serial = _make_transport(tmp_path)
 
     # 1. Normal send_raw
-    res = await transport.send_raw(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13), seq_id=10)
+    res = await transport.send_raw("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13), seq_id=10)
     assert res is True
     assert mock_serial.write.called
 
     # 2. send_raw with closed serial
     transport.serial = None
-    res_none = await transport.send_raw(Command.CMD_DIGITAL_READ.value, b"")
+    res_none = await transport.send_raw("rpc.pb.GpioService/DigitalRead", b"")
     assert res_none is False
 
     # 3. send_raw with write exception
     transport.serial = mock_serial
     mock_serial.write.side_effect = SerialException("device disconnected")
-    res_err = await transport.send_raw(Command.CMD_DIGITAL_READ.value, b"")
+    res_err = await transport.send_raw("rpc.pb.GpioService/DigitalRead", b"")
     assert res_err is False
 
     state.cleanup()
@@ -98,13 +98,13 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
     state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
 
-    assert await transport.send_raw(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13), seq_id=7)
+    assert await transport.send_raw("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13), seq_id=7)
     encoded = mock_serial.write.call_args.args[0]
     outgoing_frame = next(iter(transport.decoder.process(encoded)))
     assert outgoing_frame.address == protocol.HDLC_ADDRESS_RPC
     decoded_request = mcu_cipher.decrypt(outgoing_frame.address, outgoing_frame.data)
     packet = pw_packets.decode(decoded_request)
-    operation = protocol.get_operation(Command.CMD_DIGITAL_READ.value)
+    operation = protocol.get_operation("rpc.pb.GpioService/DigitalRead")
     assert operation is not None
     assert packet.type == PacketType.REQUEST
     assert packet.call_id == 7
@@ -116,7 +116,7 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
     console_envelope = mcu_cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"console output")
     await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_CONSOLE, console_envelope))
     service_mock.handle_mcu_frame.assert_awaited_once_with(
-        Command.CMD_CONSOLE_WRITE.value,
+        "ConsoleWrite",
         0,
         pb.ConsoleWrite(data=b"console output"),
     )
@@ -169,7 +169,7 @@ async def test_serial_transport_feed_data_hdlc_rpc(tmp_path: Path) -> None:
     host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE)
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
     packet = protocol.encode_rpc_packet(
-        Command.CMD_DIGITAL_READ.value,
+        "rpc.pb.GpioService/DigitalRead",
         pb.PinRead(pin=13),
         call_id=5,
     )
@@ -199,7 +199,7 @@ async def test_serial_transport_send_uses_pigweed_rpc(tmp_path: Path) -> None:
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
             protocol.PW_SERVICES,
         )
-        send_task = asyncio.create_task(transport.send(Command.CMD_DIGITAL_READ.value, pb.PinRead(pin=13)))
+        send_task = asyncio.create_task(transport.send("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13)))
         for _ in range(100):
             if outgoing:
                 break

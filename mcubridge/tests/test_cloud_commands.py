@@ -6,12 +6,13 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
-import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2
 from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import Command, Topic, topic_path
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -54,17 +55,17 @@ async def test_cloud_command_pin_dispatch_property(
         method = "gpio.set_mode" if is_mode else "gpio.write"
         t_path = topic_path(state.cloud_topic_prefix, "req", method)
         payload = (
-            pb.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
+            mcu_wire_pb2.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
             if is_mode
-            else pb.DigitalWrite(pin=pin, value=val).SerializeToString()
+            else mcu_wire_pb2.DigitalWrite(pin=pin, value=val).SerializeToString()
         )
-        inbound = pb.CloudQueuedPublish(
+        inbound = cloud_gateway_pb2.CloudQueuedPublish(
             topic_name=t_path,
             payload=payload,
             correlation_data=corr_id.to_bytes(8, "big"),
         )
 
-        serial_mock.send.return_value = pb.GenericResponse(status="ok")
+        serial_mock.send.return_value = cloud_gateway_pb2.GenericResponse(status="ok")
         await svc.handle_request(inbound)
 
         # Validate serial command was dispatched
@@ -74,15 +75,15 @@ async def test_cloud_command_pin_dispatch_property(
         mock_publish.assert_awaited_once()
         assert mock_publish.await_args is not None
         pub_msg = mock_publish.await_args.args[0]
-        assert isinstance(pub_msg, pb.CloudQueuedPublish)
+        assert isinstance(pub_msg, cloud_gateway_pb2.CloudQueuedPublish)
         if is_mode:
-            assert args[0] == Command.CMD_SET_PIN_MODE.value
-            assert isinstance(args[1], pb.PinMode)
+            assert args[0] == protocol.get_operation("SetPinMode")
+            assert isinstance(args[1], mcu_wire_pb2.PinMode)
             assert args[1].pin == pin
             assert f"res/{method}" in pub_msg.topic_name
         else:
-            assert args[0] == Command.CMD_DIGITAL_WRITE.value
-            assert isinstance(args[1], pb.DigitalWrite)
+            assert args[0] == protocol.get_operation("DigitalWrite")
+            assert isinstance(args[1], mcu_wire_pb2.DigitalWrite)
             assert args[1].pin == pin
             assert args[1].value == val
             assert f"res/{method}" in pub_msg.topic_name
@@ -102,20 +103,20 @@ async def test_publish_cloud_message_wraps_command_response(
     seq_id: int,
     payload: bytes,
 ) -> None:
-    """Validate that _publish_cloud_message builds pb.CommandResponse envelope when correlation_data is present."""
+    """Validate that _publish_cloud_message builds CommandResponse envelope when correlation_data is present."""
     svc, state, _, _ = _make_service()
     try:
-        stream_mock = MockGrpcStream[Any, pb.CloudEnvelope]()
+        stream_mock = MockGrpcStream[Any, cloud_gateway_pb2.CloudEnvelope]()
         svc.cloud_stream = stream_mock
 
-        msg = pb.CloudQueuedPublish(
+        msg = cloud_gateway_pb2.CloudQueuedPublish(
             topic_name=f"br/{Topic.DIGITAL.value}/13/response",
             payload=payload,
             correlation_data=seq_id.to_bytes(8, "big"),
             response_topic="cloud",
         )
 
-        publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
+        publish_cloud_msg: Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
         published = await publish_cloud_msg(msg)
         assert published is True
 
@@ -144,9 +145,9 @@ async def test_mcu_pin_update_event_forwarding(
     svc, state, _, mock_cloud = _make_service()
     try:
         initial_events = state.pin_events_count
-        event = pb.PinUpdateEvent(pin=pin, value=value, timestamp_micros=timestamp)
+        event = mcu_wire_pb2.PinUpdateEvent(pin=pin, value=value, timestamp_micros=timestamp)
 
-        on_pin_update: Callable[[pb.PinUpdateEvent], Awaitable[None]] = svc.gpio.handle_pin_update_event
+        on_pin_update: Callable[[mcu_wire_pb2.PinUpdateEvent], Awaitable[None]] = svc.gpio.handle_pin_update_event
         await on_pin_update(event)
 
         assert state.pin_events_count == initial_events + 1
@@ -154,7 +155,7 @@ async def test_mcu_pin_update_event_forwarding(
         assert mock_cloud.await_args is not None
         call_args = mock_cloud.await_args.args
         assert len(call_args) > 0
-        queued_msg: pb.CloudQueuedPublish = call_args[0]
+        queued_msg: cloud_gateway_pb2.CloudQueuedPublish = call_args[0]
         assert f"{Topic.DIGITAL.value}/{pin}/update" in queued_msg.topic_name
         assert queued_msg.payload == str(value).encode()
     finally:

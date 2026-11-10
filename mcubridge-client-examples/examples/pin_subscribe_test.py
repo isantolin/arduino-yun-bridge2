@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import config_schema_pb2, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -30,7 +30,7 @@ async def run_test(
 
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         mode_upper = mode.upper()
-        pb_mode = getattr(pb.PinModeType, f"PIN_{mode_upper}", pb.PinModeType.PIN_INPUT)
+        pb_mode = getattr(config_schema_pb2.PinModeType, f"PIN_{mode_upper}", config_schema_pb2.PinModeType.PIN_INPUT)
 
         logger.info(
             "Registering pin subscription",
@@ -40,7 +40,7 @@ async def run_test(
             hysteresis=hysteresis,
         )
 
-        sub_req = pb.PinSubscribeRequest(
+        sub_req = mcu_wire_pb2.PinSubscribeRequest(
             pin=pin,
             mode=pb_mode,
             interval_ms=interval_ms,
@@ -55,7 +55,7 @@ async def run_test(
         logger.info("Subscription active on MCU", pin=resp.pin, success=resp.success)
 
         # Introspect bridge status snapshot
-        status = await stub.GetStatus(pb.SubscribeRequest())
+        status = await stub.GetStatus(mcu_wire_pb2.SubscribeRequest())
         logger.info(
             "Bridge status verified",
             is_synchronized=status.bridge.handshake.synchronised,
@@ -67,7 +67,7 @@ async def run_test(
 
         # Deterministic teardown: Cancel subscription
         logger.info("Cancelling pin subscription", pin=pin)
-        unsub_req = pb.PinSubscribeRequest(
+        unsub_req = mcu_wire_pb2.PinSubscribeRequest(
             pin=pin,
             enabled=False,
         )

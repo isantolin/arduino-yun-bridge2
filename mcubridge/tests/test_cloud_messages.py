@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from hypothesis import example, given
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2 as pb
 
 from tests.conftest import st_cloud_queued_publish
 

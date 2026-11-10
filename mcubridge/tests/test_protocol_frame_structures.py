@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import TopicRoute, allows_method, get_operation
 
@@ -36,12 +36,12 @@ def test_topic_route_properties() -> None:
     arg=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=0, max_size=16),
 )
 def test_is_command_allowed_property(cmd: str, arg: str) -> None:
-    policy = pb.AllowedCommandPolicy(entries=[cmd, "*"])
+    policy = config_schema_pb2.AllowedCommandPolicy(entries=[cmd, "*"])
     full_cmd = f"{cmd} {arg}".strip()
     assert structures.is_command_allowed(policy, full_cmd) is True
     assert structures.is_command_allowed(policy, "") is False
 
-    strict_policy = pb.AllowedCommandPolicy(entries=[cmd])
+    strict_policy = config_schema_pb2.AllowedCommandPolicy(entries=[cmd])
     assert structures.is_command_allowed(strict_policy, full_cmd) is True
     assert structures.is_command_allowed(strict_policy, f"disallowed_{cmd}") is False
 
@@ -55,18 +55,18 @@ def test_create_allowed_policy() -> None:
 
 
 def test_allows_method() -> None:
-    auth = pb.TopicAuthorization(digital_read=True, digital_write=False)
-    spec_read = get_operation(pb.Command.CMD_DIGITAL_READ)
-    spec_write = get_operation(pb.Command.CMD_DIGITAL_WRITE)
+    auth = config_schema_pb2.TopicAuthorization(digital_read=True, digital_write=False)
+    spec_read = get_operation("rpc.pb.GpioService/DigitalRead")
+    spec_write = get_operation("rpc.pb.GpioService/DigitalWrite")
     assert spec_read is not None
     assert allows_method(auth, spec_read) is True
     assert spec_write is not None
     assert allows_method(auth, spec_write) is False
 
 
-def _valid_runtime_config() -> pb.RuntimeConfig:
+def _valid_runtime_config() -> config_schema_pb2.RuntimeConfig:
     """Build a RuntimeConfig satisfying all validation rules."""
-    cfg = pb.RuntimeConfig()
+    cfg = config_schema_pb2.RuntimeConfig()
     cfg.serial_port = "/dev/ttyATH0"
     cfg.cloud_port = 8883
     cfg.topic_prefix = "bridge"
@@ -158,17 +158,17 @@ def test_validate_config_invalid_watchdog_interval_property(interval: float) -> 
 
 
 def test_get_ssl_context() -> None:
-    cfg = pb.RuntimeConfig(cloud_tls=False)
+    cfg = config_schema_pb2.RuntimeConfig(cloud_tls=False)
     assert structures.get_ssl_context(cfg) is None
 
-    cfg_tls = pb.RuntimeConfig(
+    cfg_tls = config_schema_pb2.RuntimeConfig(
         cloud_tls=True,
         cloud_cafile="/nonexistent/ca.pem",
     )
     with pytest.raises(RuntimeError, match="Cloud TLS CA file missing|TLS setup failed"):
         structures.get_ssl_context(cfg_tls)
 
-    cfg_mtls_invalid = pb.RuntimeConfig(
+    cfg_mtls_invalid = config_schema_pb2.RuntimeConfig(
         cloud_tls=True,
         cloud_certfile="/path/to/cert",
         cloud_keyfile="",
@@ -178,7 +178,7 @@ def test_get_ssl_context() -> None:
 
 
 def test_resolve_cloud_context() -> None:
-    msg = pb.CloudQueuedPublish(topic_name="initial", payload=b"p")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="initial", payload=b"p")
 
     # context is None
     assert structures.resolve_cloud_context(msg, None) == msg
@@ -206,7 +206,7 @@ def test_resolve_cloud_context() -> None:
 
 def test_get_ssl_context_insecure() -> None:
 
-    cfg_insecure = pb.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)
+    cfg_insecure = config_schema_pb2.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)
     ctx = structures.get_ssl_context(cfg_insecure)
     assert ctx is not None
     assert ctx.check_hostname is False
@@ -219,8 +219,8 @@ def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
     from mcubridge.protocol import protocol
 
     # 1. RPC HDLC encoding & decoding
-    pin_msg = pb.PinRead(pin=13)
-    encoded_rpc = protocol.encode_hdlc_rpc(protocol.Command.CMD_DIGITAL_READ.value, pin_msg, call_id=42)
+    pin_msg = mcu_wire_pb2.PinRead(pin=13)
+    encoded_rpc = protocol.encode_hdlc_rpc("rpc.pb.GpioService/DigitalRead", pin_msg, call_id=42)
     assert encoded_rpc.startswith(b"\x7e")
     assert encoded_rpc.endswith(b"\x7e")
 
@@ -234,7 +234,7 @@ def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
     pkt = RpcPacket()
     pkt.ParseFromString(frame.data)
     assert pkt.call_id == 42
-    decoded_pin = pb.PinRead()
+    decoded_pin = mcu_wire_pb2.PinRead()
     decoded_pin.ParseFromString(pkt.payload)
     assert decoded_pin.pin == 13
 
@@ -262,10 +262,10 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     ca_file = tmp_path / "test_ca.crt"
     ca_file.write_text("dummy ca content")
     with pytest.raises(RuntimeError, match="TLS setup failed"):
-        structures.get_ssl_context(pb.RuntimeConfig(cloud_tls=True, cloud_cafile=str(ca_file)))
+        structures.get_ssl_context(config_schema_pb2.RuntimeConfig(cloud_tls=True, cloud_cafile=str(ca_file)))
 
     # 6. structures.validate_config with cloud_http3_port=0 and >0 (line 159->162)
-    cfg_http3_zero = pb.RuntimeConfig(
+    cfg_http3_zero = config_schema_pb2.RuntimeConfig(
         serial_port="/dev/ttyATH0",
         cloud_port=8443,
         process_timeout=10,
@@ -277,7 +277,7 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     structures.validate_config(cfg_http3_zero)
     assert cfg_http3_zero.cloud_http3_port == 0
 
-    cfg_http3_active = pb.RuntimeConfig(
+    cfg_http3_active = config_schema_pb2.RuntimeConfig(
         serial_port="/dev/ttyATH0",
         cloud_port=8443,
         process_timeout=10,
@@ -296,16 +296,16 @@ def test_structures_coverage_boost() -> None:
     assert qp.payload == b"payload"
     assert qp.qos == 1
 
-    ta = pb.TopicAuthorization()
+    ta = config_schema_pb2.TopicAuthorization()
     ta.file_read = True
     assert ta.file_read
 
     class MockAllowAllAuth:
         allow_all = True
 
-    spec_write = get_operation(pb.Command.CMD_DIGITAL_WRITE)
+    spec_write = get_operation("rpc.pb.GpioService/DigitalWrite")
     assert spec_write is not None
     assert allows_method(MockAllowAllAuth(), spec_write) is True
-    assert get_operation(pb.Command.CMD_DIGITAL_WRITE) is not None
-    assert get_operation(pb.DigitalWrite) is not None
-    assert get_operation(pb.DigitalWrite()) is not None
+    assert get_operation("rpc.pb.GpioService/DigitalWrite") is not None
+    assert get_operation(mcu_wire_pb2.DigitalWrite) is not None
+    assert get_operation(mcu_wire_pb2.DigitalWrite()) is not None

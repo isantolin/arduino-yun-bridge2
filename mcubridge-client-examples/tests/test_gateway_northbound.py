@@ -3,7 +3,7 @@
 
 Flow:
 Northbound Client -> CloudBridge.DispatchCommand -> ProtobufGateway.send_command
--> CloudEnvelope(command_request) -> McuBridge Daemon -> Serial CMD_DIGITAL_WRITE
+-> CloudEnvelope(command_request) -> McuBridge Daemon -> Serial GpioService.DigitalWrite
 -> MCU Emulator -> Serial ACK -> McuBridge Daemon -> CloudEnvelope(command_response)
 -> ProtobufGateway -> Northbound Client.
 """
@@ -17,8 +17,7 @@ from typing import Annotated, Any
 import structlog
 import typer
 from grpclib.client import Channel
-from mcubridge.protocol import mcubridge_grpc
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2, mcubridge_grpc
 from mcubridge_client.cli import configure_logging
 
 logger = structlog.get_logger("test-gateway-northbound")
@@ -35,10 +34,10 @@ async def run_test(
     channel = channel_factory(host, port) if channel_factory is not None else Channel(host, port)
     stub = stub_factory(channel) if stub_factory is not None else mcubridge_grpc.CloudBridgeStub(channel)
     try:
-        dispatch = pb.CommandDispatch(
+        dispatch = cloud_gateway_pb2.CommandDispatch(
             target_device_id=device_id,
             command_path="rpc/DigitalWrite",
-            payload=pb.DigitalWrite(pin=13, value=1).SerializeToString(),
+            payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
             timeout_seconds=5,
         )
         logger.info("Dispatching command to gateway", command=dispatch.command_path, target_device_id=device_id)
@@ -53,7 +52,7 @@ async def run_test(
         if response.payload == b"OK":
             pass
         else:
-            gen_resp = pb.GenericResponse()
+            gen_resp = cloud_gateway_pb2.GenericResponse()
             gen_resp.ParseFromString(response.payload)
             assert gen_resp.status == "ok", f"Expected ok status, got {gen_resp.status}"
         logger.info("Northbound roundtrip test PASSED")

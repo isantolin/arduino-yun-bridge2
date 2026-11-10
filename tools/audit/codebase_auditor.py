@@ -62,11 +62,13 @@ def run_command(
     command: list[str],
     *,
     cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str] | OSError:
     try:
         return subprocess.run(
             command,
             cwd=cwd or ROOT,
+            env=env,
             capture_output=True,
             text=True,
             check=False,
@@ -88,8 +90,7 @@ def _buf_check(buf_bin: str, label: str, cwd: Path, *arguments: str) -> str | No
 def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
     if isinstance(node, (ast.Try, ast.TryStar)):
         return [
-            f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
-            f"Catching exceptions with 'pass' is strictly prohibited."
+            f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - Catching exceptions with 'pass' is strictly prohibited."
             for handler in node.handlers
             for stmt in handler.body
             if isinstance(stmt, ast.Pass)
@@ -176,7 +177,11 @@ def audit_semgrep() -> list[str]:
     if not semgrep_bin:
         return ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
 
-    res = run_command([semgrep_bin, "--config", str(config_path), "--json"])
+    env = os.environ.copy()
+    if "SEMGREP_CORE_EXTRA" not in env:
+        env["SEMGREP_CORE_EXTRA"] = "-use_parmap"
+
+    res = run_command([semgrep_bin, "--config", str(config_path), "--json"], env=env)
     if isinstance(res, OSError):
         return [f"Semgrep Execution Error: {res}"]
     if res.returncode != 0:
@@ -365,7 +370,7 @@ def _collect_extension_message_types(descriptor: FileDescriptor) -> set[str]:
 
 def audit_proto_usage() -> list[str]:
     """Find generated constants and enum values with no source or test references."""
-    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol import config_schema_pb2 as pb
 
     identifier_suffixes = _collect_identifier_suffixes()
     findings: list[str] = []
@@ -386,11 +391,11 @@ def audit_proto_usage() -> list[str]:
             )
 
     for enum_desc in pb.DESCRIPTOR.enum_types_by_name.values():
-        if enum_desc.name not in {"Command", "Status"}:
+        if enum_desc.name != "Status":
             findings.extend(
                 f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}"
                 for value_desc in enum_desc.values
-                if value_desc.name not in identifier_suffixes
+                if not value_desc.name.endswith("_UNSPECIFIED") and value_desc.name not in identifier_suffixes
             )
 
     extension_message_types = _collect_extension_message_types(pb.DESCRIPTOR)

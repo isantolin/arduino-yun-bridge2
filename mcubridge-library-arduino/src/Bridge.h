@@ -7,6 +7,7 @@
 #define BRIDGE_H
 
 #include <Arduino.h>
+
 #include <cstddef>
 #if defined(ARDUINO_ARCH_ESP32)
 #include <wolfssl.h>
@@ -66,10 +67,10 @@
 
 #include <pw_rpc/channel.h>
 #include <pw_rpc/client.h>
-#include <pw_rpc/server.h>
 #include <pw_rpc/nanopb/client_reader_writer.h>
 #include <pw_rpc/nanopb/server_reader_writer.h>
 #include <pw_rpc/packet_meta.h>
+#include <pw_rpc/server.h>
 
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"

@@ -1100,16 +1100,6 @@ message UbusMethodConfig {
   string description = 3;
 }
 
-message CommandOptions {
-  reserved 2, 3, 4, 8, 9, 10, 12, 13, 15;
-  reserved "directions", "requires_ack", "expects_direct_response", "pb_message", "response_command", "request_command", "rpc_method", "action_routes", "mcu_unsupported_reason";
-  string description = 5;
-  string cloud_topic = 6;
-  bool pre_sync_allowed = 7;
-  string auth_field = 11;
-  string mcu_handler = 14;
-}
-
 extend google.protobuf.MessageOptions {
   string msg_cloud_topic = 1020;
   string msg_error_init = 1031;
@@ -1118,8 +1108,12 @@ extend google.protobuf.MessageOptions {
 extend google.protobuf.MethodOptions {
   string rpc_topic = 1032;
   repeated string rpc_aliases = 1033;
-  string rpc_command = 1034;
   bool is_custom_handler = 1036;
+  string auth_field = 1039;
+  string mcu_handler = 1040;
+  string cloud_topic = 1041;
+  bool pre_sync_allowed = 1042;
+  string method_description = 1043;
 }
 
 extend google.protobuf.EnumOptions {
@@ -1189,7 +1183,6 @@ extend google.protobuf.FileOptions {
 }
 
 extend google.protobuf.EnumValueOptions {
-  CommandOptions cmd_opts = 1013;
   StatusOptions status_opts = 1014;
 }
 
@@ -1214,101 +1207,15 @@ extend google.protobuf.FieldOptions {
 enum Status {
   STATUS_UNSPECIFIED = 0;
   option (enum_cloud_topic) = "system/status";
+  reserved "CMD_UNKNOWN";
   OK = 48 [(status_opts) = {description: "Operation completed successfully."}];
   ERROR = 49 [(status_opts) = {description: "Generic failure."}];
-  CMD_UNKNOWN = 50 [(status_opts) = {description: "Command not recognized."}];
+  OPERATION_UNKNOWN = 50 [(status_opts) = {description: "Operation not recognized."}];
   MALFORMED = 51 [(status_opts) = {description: "Payload had invalid structure."}];
   OVERFLOW = 52 [(status_opts) = {description: "Frame exceeded buffer size."}];
   CRC_MISMATCH = 53 [(status_opts) = {description: "CRC check failed."}];
   TIMEOUT = 54 [(status_opts) = {description: "Operation timed out."}];
-  NOT_IMPLEMENTED = 55 [(status_opts) = {description: "Command defined but not supported."}];
-}
-
-enum Command {
-  CMD_UNSPECIFIED = 0;
-  CMD_GET_VERSION = 64 [(cmd_opts) = {auth_field: "system_version"}];
-  CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = {auth_field: "system_free_memory"}];
-  CMD_LINK_SYNC = 68 [(cmd_opts) = {
-    description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
-    pre_sync_allowed: true
-    mcu_handler: "handshake.handle_link_sync_resp"
-  }];
-  CMD_LINK_RESET = 70 [(cmd_opts) = {description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."}];
-  CMD_GET_CAPABILITIES = 72;
-  CMD_SET_BAUDRATE = 74;
-  CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = {auth_field: "system_bootloader"}];
-  CMD_XOFF = 78 [(cmd_opts) = {
-    pre_sync_allowed: true
-    description: "Pause transmission (Flow Control)"
-    mcu_handler: "mcu_xoff"
-  }];
-  CMD_XON = 79 [(cmd_opts) = {
-    pre_sync_allowed: true
-    description: "Resume transmission (Flow Control)"
-    mcu_handler: "mcu_xon"
-  }];
-  CMD_SET_PIN_MODE = 80 [(cmd_opts) = {auth_field: "digital_mode"}];
-  CMD_DIGITAL_WRITE = 81 [(cmd_opts) = {auth_field: "digital_write"}];
-  CMD_ANALOG_WRITE = 82 [(cmd_opts) = {auth_field: "analog_write"}];
-  CMD_DIGITAL_READ = 83 [(cmd_opts) = {auth_field: "digital_read"}];
-  CMD_ANALOG_READ = 84 [(cmd_opts) = {auth_field: "analog_read"}];
-  CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = {auth_field: "gpio_subscribe"}];
-  CMD_CONSOLE_WRITE = 96 [(cmd_opts) = {
-    cloud_topic: "console/out"
-    auth_field: "console_input"
-    mcu_handler: "console_write"
-  }];
-  CMD_DATASTORE_PUT = 112 [(cmd_opts) = {
-    auth_field: "datastore_put"
-    mcu_handler: "datastore_put"
-  }];
-  CMD_DATASTORE_GET = 113 [(cmd_opts) = {
-    auth_field: "datastore_get"
-    mcu_handler: "datastore_get"
-  }];
-  CMD_MAILBOX_READ = 128 [(cmd_opts) = {
-    auth_field: "mailbox_read"
-    mcu_handler: "mailbox_read"
-  }];
-  CMD_MAILBOX_PROCESSED = 129 [(cmd_opts) = {
-    cloud_topic: "mailbox/processed"
-    mcu_handler: "publish_mcu_message"
-  }];
-  CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = {mcu_handler: "mailbox_available"}];
-  CMD_MAILBOX_PUSH = 131 [(cmd_opts) = {
-    cloud_topic: "mailbox/incoming"
-    auth_field: "mailbox_write"
-    mcu_handler: "mailbox_push"
-  }];
-  CMD_FILE_WRITE = 144 [(cmd_opts) = {
-    auth_field: "file_write"
-    mcu_handler: "file_write"
-  }];
-  CMD_FILE_READ = 145 [(cmd_opts) = {
-    auth_field: "file_read"
-    mcu_handler: "file_read"
-  }];
-  CMD_FILE_REMOVE = 146 [(cmd_opts) = {
-    auth_field: "file_remove"
-    mcu_handler: "file_remove"
-  }];
-  CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = {
-    auth_field: "shell_run_async"
-    mcu_handler: "process_run_async"
-  }];
-  CMD_PROCESS_POLL = 162 [(cmd_opts) = {
-    auth_field: "shell_poll"
-    mcu_handler: "process_poll"
-  }];
-  CMD_PROCESS_KILL = 163 [(cmd_opts) = {
-    auth_field: "shell_kill"
-    mcu_handler: "process_kill"
-  }];
-  CMD_SPI_BEGIN = 176 [(cmd_opts) = {auth_field: "spi_begin"}];
-  CMD_SPI_TRANSFER = 177 [(cmd_opts) = {auth_field: "spi_transfer"}];
-  CMD_SPI_END = 179 [(cmd_opts) = {auth_field: "spi_end"}];
-  CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = {auth_field: "spi_config"}];
-  CMD_CLOCK_SYNC = 192 [(cmd_opts) = {auth_field: "clock_sync"}];
+  NOT_IMPLEMENTED = 55 [(status_opts) = {description: "Operation defined but not supported."}];
 }
 
 enum SafetyPinState {

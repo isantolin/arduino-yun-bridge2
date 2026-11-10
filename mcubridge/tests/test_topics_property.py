@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol.protocol import (
     OPERATIONS,
     RPC_ALIASES,
@@ -55,9 +55,7 @@ def test_parse_topic_mismatched_prefix_rejected(prefix_a: str, prefix_b: str, di
     assert parse_topic(prefix_a, raw) is None
 
 
-_KNOWN_COMMAND_IDS = [
-    spec.command_id for spec in OPERATIONS if spec.command_id is not None and spec.cloud_topic is not None
-]
+_KNOWN_OP_NAMES = [spec.name for spec in OPERATIONS if spec.cloud_topic is not None]
 
 
 @given(
@@ -85,14 +83,14 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
 
 @given(
     prefix=_SAFE_TEXT,
-    command_id=st.sampled_from(_KNOWN_COMMAND_IDS),
+    op_name=st.sampled_from(_KNOWN_OP_NAMES),
 )
-def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) -> None:
-    """Property: get_topic_for_message returns exact topic path for all registered commands."""
-    res = get_topic_for_message(prefix, command_id)
+def test_get_topic_for_message_op_name_known(prefix: str, op_name: str) -> None:
+    """Property: get_topic_for_message returns exact topic path for all registered operations."""
+    res = get_topic_for_message(prefix, op_name)
     assert res is not None
     assert res.startswith(prefix)
-    spec = get_operation(command_id)
+    spec = get_operation(op_name)
     assert spec is not None
     expected_topic = spec.cloud_topic
     assert expected_topic is not None
@@ -104,8 +102,7 @@ def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) ->
     unknown_id=st.integers(min_value=60000, max_value=65535),
 )
 def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
-    """Property: get_topic_for_message returns None for any unregistered command ID."""
-    assume(unknown_id not in _KNOWN_COMMAND_IDS)
+    """Property: get_topic_for_message returns None for any unregistered operation."""
     assert get_topic_for_message(prefix, unknown_id) is None
 
 

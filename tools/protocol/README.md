@@ -20,7 +20,7 @@ The command refreshes:
 
 - `mcubridge/mcubridge/protocol/protocol.py` — Python enums, `PW_SERVICES` (`pw_rpc.descriptors.Services`), and constants from the schema.
 - `mcubridge-library-arduino/src/protocol/rpc_protocol.h` and `rpc_hw_config.h` — C++ protocol declarations, FNV-1a service/method IDs, and hardware pin geometry constants.
-- `mcubridge/mcubridge/protocol/mcubridge_pb2.py` + `.pyi` — Python protobuf bindings.
+- `mcubridge/mcubridge/protocol/*_pb2.py` + `.pyi` — Python protobuf bindings.
 - `mcubridge/mcubridge/protocol/mcubridge_grpc.py` — Python gRPC bindings.
 - `mcubridge-library-arduino/src/protocol/mcu_wire.pb.h` + `config_schema.pb.h` — C Nanopb structs for MCU.
 - `mcubridge-client-examples/mcubridge_client/protocol.py` — Python client library enums and protocol constants.

@@ -16,7 +16,7 @@ import tenacity
 from statemachine import State, StateMachine
 from statemachine.exceptions import TransitionNotAllowed
 
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -33,7 +33,6 @@ from ..security.security import LinkCipher
 from ..protocol.protocol import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
-    Command,
     get_topic_for_message,
 )
 from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
@@ -118,11 +117,14 @@ class RateLimiter:
 
 class SendFrameCallable(Protocol):
     async def __call__(
-        self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None
+        self,
+        command_id: int | str | protocol.OperationSpec | tuple[int, int],
+        payload: bytes | ProtobufMessage,
+        seq_id: int | None = None,
     ) -> bool | bytes | ProtobufMessage: ...
 
 
-EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
+EnqueueMessageCallable = Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[None]]
 
 logger = structlog.get_logger("mcubridge.service.handshake")
 
@@ -277,7 +279,7 @@ class SerialHandshakeManager:
         self._state.link_cipher = None
 
         reset_ok = await self.send_frame(
-            Command.CMD_LINK_RESET.value,
+            "rpc.pb.SystemService/LinkReset",
             self._reset_payload,
         )
         if not reset_ok:
@@ -297,7 +299,7 @@ class SerialHandshakeManager:
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Serialize LINK_SYNC as protobuf.
         sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag)
-        sync_ok = await self.send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
+        sync_ok = await self.send_frame("rpc.pb.SystemService/LinkSync", sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_sync_send_failed")
@@ -429,8 +431,8 @@ class SerialHandshakeManager:
         await self.fetch_capabilities()
 
     async def fetch_capabilities(self) -> bool:
-        cmd_id = Command.CMD_GET_CAPABILITIES.value
-        self._logger.debug("Starting capabilities discovery", command_id=f"0x{cmd_id:02X}")
+        cmd_id = "rpc.pb.SystemService/GetCapabilities"
+        self._logger.debug("Starting capabilities discovery", method=cmd_id)
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),

@@ -125,6 +125,14 @@ class SystemRpcService final
     Bridge._handleEnterBootloader(request);
     return pw::OkStatus();
   }
+
+  pw::Status Xoff(const rpc_pb_SubscribeRequest&, rpc_pb_Empty&) {
+    return pw::OkStatus();
+  }
+
+  pw::Status Xon(const rpc_pb_SubscribeRequest&, rpc_pb_Empty&) {
+    return pw::OkStatus();
+  }
 };
 
 class ClockSyncRpcService final
@@ -455,9 +463,11 @@ void BridgeClass::_serialTask() {
   if (!_state_flags.test(FLAG_SERIAL_XOFF) &&
       avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
     _state_flags.set(FLAG_SERIAL_XOFF, true);
+    _sendFlowControl(true);
   } else if (_state_flags.test(FLAG_SERIAL_XOFF) &&
              avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
     _state_flags.set(FLAG_SERIAL_XOFF, false);
+    _sendFlowControl(false);
   }
 }
 
@@ -740,6 +750,7 @@ void BridgeClass::enterSafeState() {
                 });
   _pin_stream_writer = {};
   _state_flags.set(FLAG_TX_ENABLED, false);
+  _state_flags.set(FLAG_SERIAL_XOFF, false);
   _fsm.receive(bridge::fsm::EvReset());
   notify_observers(bridge::SystemEvent::SAFE_STATE_ENTERED);
 }
@@ -765,6 +776,16 @@ bool BridgeClass::sendConsoleStream(pw::span<const uint8_t> data) {
 bool BridgeClass::sendLogStream(pw::span<const uint8_t> data) {
   if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
   return _writeHdlcFrame(rpc::RPC_HDLC_ADDRESS_LOG, data);
+}
+
+void BridgeClass::_sendFlowControl(bool xoff) {
+  if (!isRpcTxReady()) return;
+  rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
+  if (xoff) {
+    (void)systemClient().Xoff(req);
+  } else {
+    (void)systemClient().Xon(req);
+  }
 }
 
 void BridgeClass::_onHandshakeTimeout() {

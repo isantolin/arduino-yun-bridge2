@@ -416,9 +416,14 @@ void test_observer_and_task_runtime_edges() {
   auto& ba_flow = TestAccessor::create(Bridge);
   flow.avail = bridge::config::FLOW_CONTROL_XOFF_THRESHOLD + 1;
   ba_flow.invokeSerialTask();
+  TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba_flow.isSerialXoffSent());
+  ba_flow.setSynchronized();
+  ba_flow.invokeSendFlowControl(true);
+  ba_flow.invokeSendFlowControl(false);
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_timer_link_and_bootloader_edges() {

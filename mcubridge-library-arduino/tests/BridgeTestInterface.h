@@ -104,6 +104,7 @@ class TestAccessor : public BridgeClass {
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
   bool isSerialXoffSent() const { return _state_flags.test(FLAG_SERIAL_XOFF); }
+  void invokeSendFlowControl(bool xoff) { _sendFlowControl(xoff); }
 
   void startTimersForCoverage() {
     _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);

@@ -232,6 +232,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
+  rpc::pb::pw_rpc::nanopb::SystemService::Client systemClient() {
+    return {_rpc_client, 1};
+  }
+
   void _onBaudrateChange();
   void _onHandshakeTimeout();
 
@@ -312,6 +316,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _serialTask();
   void _timerTask();
   void _subscriptionTask();
+  void _sendFlowControl(bool xoff);
 
   enum StateFlags : uint8_t {
     FLAG_POST_PASSED = 0,

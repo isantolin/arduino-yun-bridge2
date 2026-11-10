@@ -22,6 +22,7 @@ from pw_rpc.descriptors import (
     Service as PwRpcService,
     Services as PwRpcServices,
 )
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 import structlog
 
 from . import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
@@ -181,6 +182,7 @@ class OperationSpec:
     mcu_handler: str | None = None
     metrics_blob_field: str | None = None
     cardinality: Cardinality = Cardinality.UNARY_UNARY
+    is_server_streaming: bool = False
     is_custom_handler: bool = False
 
     def __post_init__(self) -> None:
@@ -189,6 +191,7 @@ class OperationSpec:
             object.__setattr__(self, "request_type", lb_m.request_type)
             object.__setattr__(self, "response_type", lb_m.response_type)
             object.__setattr__(self, "cardinality", _PW_TO_GRPCLIB_CARDINALITY[lb_m.type])
+            object.__setattr__(self, "is_server_streaming", lb_m.type is PwRpcMethod.Type.SERVER_STREAMING)
             if self.default_factory is None:
                 object.__setattr__(self, "default_factory", lb_m.response_type)
         if self.service_name and self.method_name:
@@ -196,6 +199,8 @@ class OperationSpec:
             pw_m = svc.methods[self.method_name]
             object.__setattr__(self, "service_id", svc.id)
             object.__setattr__(self, "method_id", pw_m.id)
+            object.__setattr__(self, "cardinality", _PW_TO_GRPCLIB_CARDINALITY[pw_m.type])
+            object.__setattr__(self, "is_server_streaming", pw_m.type is PwRpcMethod.Type.SERVER_STREAMING)
             if self.response_type is None:
                 object.__setattr__(self, "response_type", pw_m.response_type)
             if self.request_type is None and self.pb_class in (None, pw_m.request_type):
@@ -596,18 +601,10 @@ def encode_rpc_packet(
     1. Direct RPC: encode_rpc_packet(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
     2. Operation: encode_rpc_packet(op_or_name, payload=b"", call_id=1)
     """
-    from google.protobuf.message import Message as ProtobufMessage
-    from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
-
     if method_id is None:
         target = channel_id_or_command
         spec = get_operation(target)
         actual_type = packet_type
-        pw_method = (
-            PW_SERVICES[spec.service_name].methods[spec.method_name]
-            if spec is not None and spec.service_name and spec.method_name
-            else None
-        )
         if (
             actual_type == int(PacketType.REQUEST)
             and spec is not None
@@ -617,13 +614,12 @@ def encode_rpc_packet(
             if isinstance(payload_or_service, spec.response_type):
                 actual_type = (
                     int(PacketType.SERVER_STREAM)
-                    if pw_method is not None and pw_method.type is PwRpcMethod.Type.SERVER_STREAMING
+                    if spec.is_server_streaming
                     else int(PacketType.RESPONSE)
                 )
             elif (
                 payload_or_service == b""
-                and pw_method is not None
-                and pw_method.type is PwRpcMethod.Type.SERVER_STREAMING
+                and spec.is_server_streaming
             ):
                 actual_type = int(PacketType.RESPONSE)
         if spec is not None and spec.service_id is not None and spec.method_id is not None:

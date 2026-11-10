@@ -1,5 +1,7 @@
 #include "SPIService.h"
 
+#include <pw_span/span.h>
+
 #include "Bridge.h"
 
 #if BRIDGE_ENABLE_SPI
@@ -34,7 +36,7 @@ void SPIServiceClass::setConfig(const rpc_pb_SpiConfig& config) {
       data_mode);
 }
 
-size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
+size_t SPIServiceClass::transfer(pw::span<uint8_t> buffer) {
   if (!_initialized || buffer.empty()) return 0;
 
   SPI.beginTransaction(_settings);

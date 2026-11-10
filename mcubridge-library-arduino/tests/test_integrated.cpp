@@ -41,11 +41,11 @@ void integrated_test_bridge_core() {
       1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
-      etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
-      1, 1);
+      pw::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf, 1,
+      1);
   TEST_ASSERT_TRUE(frame_len > 0);
 
-  accessor.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), frame_len));
+  accessor.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), frame_len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
@@ -64,7 +64,7 @@ void integrated_test_components() {
 
 #if BRIDGE_ENABLE_DATASTORE
   etl::array<uint8_t, 1> val = {1};
-  DataStore.set("k", etl::span<const uint8_t>(val.data(), 1));
+  DataStore.set("k", pw::span<const uint8_t>(val.data(), 1));
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX

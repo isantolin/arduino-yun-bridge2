@@ -3,7 +3,7 @@
 #endif
 #include <Arduino.h>
 #include <etl/array.h>
-#include <etl/span.h>
+#include <pw_span/span.h>
 #include <unity.h>
 
 #include "Bridge.h"
@@ -19,7 +19,7 @@ Stream* g_arduino_stream_delegate = nullptr;
 using bridge::test::TestAccessor;
 
 static rpc::StatusCode s_captured_harden_status = rpc::StatusCode::STATUS_OK;
-static void capture_harden_status(rpc::StatusCode s, etl::span<const uint8_t>) {
+static void capture_harden_status(rpc::StatusCode s, pw::span<const uint8_t>) {
   s_captured_harden_status = s;
 }
 
@@ -39,11 +39,11 @@ void test_bridge_malformed_rpc_packet() {
   const uint8_t malformed_rpc[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   etl::array<uint8_t, 64> frame_buf;
   size_t frame_len = TestHdlc::encodeUIFrame(
-      1, etl::span<const uint8_t>(malformed_rpc, sizeof(malformed_rpc)),
+      1, pw::span<const uint8_t>(malformed_rpc, sizeof(malformed_rpc)),
       frame_buf);
   TEST_ASSERT_TRUE(frame_len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), frame_len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), frame_len));
 
   TEST_ASSERT_EQUAL(static_cast<int>(rpc::StatusCode::STATUS_INVALID_ARGUMENT),
                     static_cast<int>(s_captured_harden_status));
@@ -60,10 +60,10 @@ void test_bridge_unknown_command_jump_table() {
   etl::array<uint8_t, 256> frame_buf;
   size_t len = build_hdlc_rpc_frame(
       1, pw::rpc::internal::pwpb::PacketType::REQUEST, 0xDEADBEEF, 0xCAFEBABE,
-      etl::span<const uint8_t>(), frame_buf, 42, 1);
+      pw::span<const uint8_t>(), frame_buf, 42, 1);
   TEST_ASSERT_TRUE(len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
   // Server should send a response (Status::NotFound)
   TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
 }
@@ -78,11 +78,11 @@ void test_bridge_console_stream_rx() {
   const uint8_t console_data[] = {'H', 'e', 'l', 'l', 'o'};
   etl::array<uint8_t, 64> frame_buf;
   size_t len = TestHdlc::encodeUIFrame(
-      3, etl::span<const uint8_t>(console_data, sizeof(console_data)),
+      3, pw::span<const uint8_t>(console_data, sizeof(console_data)),
       frame_buf);
   TEST_ASSERT_TRUE(len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
@@ -93,7 +93,7 @@ void test_bridge_packet_received_edge_cases() {
 
   // 1. Incomplete HDLC frame (no end flag)
   const uint8_t short_pkt[] = {0x7E, 0x01, 0x00};
-  ba.feedHdlcBytes(etl::span<const uint8_t>(short_pkt, sizeof(short_pkt)));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(short_pkt, sizeof(short_pkt)));
 
   // 2. Corrupt CRC frame
   etl::array<uint8_t, 256> frame_buf;
@@ -101,12 +101,12 @@ void test_bridge_packet_received_edge_cases() {
       build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                            pw::tokenizer::Hash("rpc.pb.SystemService"),
                            pw::tokenizer::Hash("GetVersion"),
-                           etl::span<const uint8_t>(), frame_buf, 1, 1);
+                           pw::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
 
   // Invalidate CRC
   frame_buf[len - 2] ^= 0xFF;
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
 
   // Should not have processed corrupt frame
   TEST_ASSERT_FALSE(ba.isSynchronized());
@@ -143,11 +143,11 @@ void test_bridge_linksync_auth_failure() {
       1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
-      etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
-      1, 1);
+      pw::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf, 1,
+      1);
   TEST_ASSERT_TRUE(len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_FALSE(ba.isSynchronized());
 }
 
@@ -165,10 +165,10 @@ void test_bridge_security_pre_sync_rejection() {
       build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                            pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                            pw::tokenizer::Hash("Remove"),
-                           etl::span<const uint8_t>(), frame_buf, 1, 1);
+                           pw::span<const uint8_t>(), frame_buf, 1, 1);
   TEST_ASSERT_TRUE(len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_FALSE(ba.isSynchronized());
 }
 
@@ -197,11 +197,11 @@ void test_bridge_nonce_reuse_attack() {
       1, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.SystemService"),
       pw::tokenizer::Hash("LinkSync"),
-      etl::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf,
-      1, 1);
+      pw::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf, 1,
+      1);
   TEST_ASSERT_TRUE(len > 0);
 
-  ba.feedHdlcBytes(etl::span<const uint8_t>(frame_buf.data(), len));
+  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
 

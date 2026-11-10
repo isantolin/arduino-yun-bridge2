@@ -9,27 +9,13 @@
 #undef min
 #undef max
 #undef round
-#include <etl/expected.h>
-#include <etl/span.h>
+#include <PigweedAVR.h>
 #include <etl/string_view.h>
 #include <stdint.h>
 
 #include "protocol/mcu_wire.pb.h"
 
 namespace bridge::hal {
-
-/**
- * @brief Error codes for HAL operations.
- */
-enum class HalError {
-  NONE = 0,
-  IO_ERROR,
-  NOT_FOUND,
-  TIMEOUT,
-  PERMISSION_DENIED,
-  INVALID_ARGUMENT,
-  NOT_IMPLEMENTED
-};
 
 struct ChunkResult {
   size_t bytes_read;
@@ -80,20 +66,18 @@ bool hasSD();
 /**
  * @brief Write data to a file on the SD card.
  */
-etl::expected<void, HalError> writeFile(etl::string_view path,
-                                        etl::span<const uint8_t> data);
+pw::Status writeFile(etl::string_view path, pw::span<const uint8_t> data);
 
 /**
  * @brief Read a chunk from a file on the SD card.
  */
-etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
-                                                   size_t offset,
-                                                   etl::span<uint8_t> buffer);
+pw::Result<ChunkResult> readFileChunk(etl::string_view path, size_t offset,
+                                      pw::span<uint8_t> buffer);
 
 /**
  * @brief Remove a file from the SD card.
  */
-etl::expected<void, HalError> removeFile(etl::string_view path);
+pw::Status removeFile(etl::string_view path);
 
 /**
  * @brief Populate MCU capabilities directly into the Protobuf message.

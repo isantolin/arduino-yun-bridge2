@@ -3,9 +3,9 @@
 #include <PigweedAVR.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
 #include <pw_rpc/internal/packet.h>
+#include <pw_span/span.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -66,8 +66,8 @@ struct ByteBuffer {
     return static_cast<int>(data[pos]);
   }
 
-  etl::span<const uint8_t> span() const {
-    return etl::span<const uint8_t>(data.data(), len);
+  pw::span<const uint8_t> span() const {
+    return pw::span<const uint8_t>(data.data(), len);
   }
 };
 
@@ -130,14 +130,11 @@ class BiStream : public Stream {
 
 struct TestHdlc {
   template <size_t N>
-  static size_t encodeUIFrame(uint64_t address,
-                              etl::span<const uint8_t> payload,
+  static size_t encodeUIFrame(uint64_t address, pw::span<const uint8_t> payload,
                               etl::array<uint8_t, N>& out_buf) {
     pw::stream::MemoryWriter writer(
         pw::as_writable_bytes(pw::span(out_buf.data(), out_buf.size())));
-    auto res = pw::hdlc::WriteUIFrame(
-        address, pw::as_bytes(pw::span(payload.data(), payload.size())),
-        writer);
+    auto res = pw::hdlc::WriteUIFrame(address, pw::as_bytes(payload), writer);
     return res.ok() ? writer.bytes_written() : 0;
   }
 };
@@ -158,12 +155,11 @@ inline bool extract_next_valid_hdlc_frame(
 
 inline size_t build_rpc_packet(pw::rpc::internal::pwpb::PacketType type,
                                uint32_t service_id, uint32_t method_id,
-                               etl::span<const uint8_t> payload,
+                               pw::span<const uint8_t> payload,
                                uint8_t* out_buf, size_t out_max,
                                uint32_t call_id = 0, uint32_t channel_id = 1) {
-  pw::rpc::internal::Packet packet(
-      type, channel_id, service_id, method_id, call_id,
-      pw::as_bytes(pw::span(payload.data(), payload.size())));
+  pw::rpc::internal::Packet packet(type, channel_id, service_id, method_id,
+                                   call_id, pw::as_bytes(payload));
   auto res = packet.Encode(pw::as_writable_bytes(pw::span(out_buf, out_max)));
   return res.ok() ? res.value().size() : 0;
 }
@@ -172,7 +168,7 @@ template <size_t N>
 inline size_t build_hdlc_rpc_frame(uint64_t address,
                                    pw::rpc::internal::pwpb::PacketType type,
                                    uint32_t service_id, uint32_t method_id,
-                                   etl::span<const uint8_t> payload,
+                                   pw::span<const uint8_t> payload,
                                    etl::array<uint8_t, N>& out_frame_buf,
                                    uint32_t call_id = 0,
                                    uint32_t channel_id = 1) {
@@ -182,7 +178,7 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
                        sizeof(packet_buf), call_id, channel_id);
   if (pkt_len == 0) return 0;
   return TestHdlc::encodeUIFrame(
-      address, etl::span<const uint8_t>(packet_buf, pkt_len), out_frame_buf);
+      address, pw::span<const uint8_t>(packet_buf, pkt_len), out_frame_buf);
 }
 
 // ---------------------------------------------------------------------------

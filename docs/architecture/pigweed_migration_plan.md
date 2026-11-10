@@ -54,7 +54,7 @@ Reglas obligatorias:
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
 | 7 | Transferencias | Opción 1 adoptada: `FileSystemService.Read` como `SERVER_STREAMING` multi-chunk nativo de Pigweed con `NanopbServerWriter` y `NanopbClientReader`, cero hilos para AVR bare-metal | **Completada** |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
-| 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso de `etl::span` y `pw::span` | **Completada** |
+| 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
 | 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |
 | 11 | Unificación Canónica de Tópicos y Manejadores | Erradicación total de `Topic.*` legacy (`"a"`, `"d"`, `"sh"`), unificación de `cloud_topic` y `mcu_handler` bajo descriptores Pigweed `{direction}/{Service}/{Method|Message}`, eliminación de `CommonAction`/`rpc.pb.actions`, y despacho gRPC canónico `rpc.pb.<Service>/<Method>` desde Gateway | **Completada** |
 
@@ -118,7 +118,7 @@ Cambios en el daemon y el contrato:
 2. **Contenedores y buffers estáticos:**
    - Buffers acotados fijos para HDLC, RPC y AEAD.
    - Cero asignación dinámica de memoria (`malloc`/`new`) en rutas críticas del MCU.
-   - Uso de `etl::span` y `pw::span` para vistas de memoria seguras.
+   - Uso exclusivo y unificado de `pw::span` para vistas de memoria contiguas seguras.
 
 ## Detalle de la etapa 10: Validación integral y métricas finales
 

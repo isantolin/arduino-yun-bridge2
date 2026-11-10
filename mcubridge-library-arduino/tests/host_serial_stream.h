@@ -2,8 +2,8 @@
 
 #include <Arduino.h>
 #include <etl/algorithm.h>
-#include <etl/span.h>
 #include <poll.h>
+#include <pw_span/span.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -35,7 +35,7 @@ class HostSerialStream : public Stream {
 
   size_t write(const uint8_t* buffer, size_t size) override {
     if (Debug) {
-      etl::span<const uint8_t> buf_span(buffer, size);
+      pw::span<const uint8_t> buf_span(buffer, size);
       etl::for_each(buf_span.begin(), buf_span.end(), [](uint8_t b) {
         fprintf(stderr, "[MCU -> SERIAL] %02X\n", b);
       });

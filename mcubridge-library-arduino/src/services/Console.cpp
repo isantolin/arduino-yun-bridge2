@@ -18,7 +18,7 @@ void ConsoleClass::pushBytes(const uint8_t* data, size_t size) {
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
     if (Bridge.sendConsoleStream(
-            etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()))) {
+            pw::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()))) {
       _tx_buffer.clear();
     }
   }

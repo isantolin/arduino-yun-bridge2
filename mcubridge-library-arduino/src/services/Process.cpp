@@ -2,6 +2,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/string.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 
@@ -14,7 +15,7 @@ constexpr int32_t kProcessInvalidPid = -1;
 }  // namespace
 
 void ProcessClass::runAsync(etl::string_view cmd,
-                            etl::span<const etl::string_view> args,
+                            pw::span<const etl::string_view> args,
                             typename ProcessClass::ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED);
@@ -113,8 +114,8 @@ void ProcessClass::_onPollResponse(const rpc_pb_ProcessPollResponse& msg) {
     _pending_polls.pop();
     pending.second(
         static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-        etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-        etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
+        pw::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
+        pw::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }
 }
 

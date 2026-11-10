@@ -4,8 +4,8 @@
 #include <Bridge.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
+#include <pw_span/span.h>
 #include <services/Console.h>
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.

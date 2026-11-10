@@ -59,50 +59,44 @@ static bool ensure_host_parent_directories(const PathString& full_path) {
 
 bool hasSD() { return g_host_fs_enabled && g_host_has_sd; }
 
-etl::expected<void, HalError> writeFile(etl::string_view path,
-                                        etl::span<const uint8_t> data) {
-  if (!g_host_fs_enabled)
-    return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+pw::Status writeFile(etl::string_view path, pw::span<const uint8_t> data) {
+  if (!g_host_fs_enabled) return pw::Status::Unimplemented();
   PathString full_path;
   if (!resolve_to_full_path(path, full_path) ||
       !ensure_host_parent_directories(full_path))
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
+    return pw::Status::Internal();
   FILE* file = fopen(full_path.c_str(), "wb");
-  if (file == nullptr) return etl::unexpected<HalError>(HalError::IO_ERROR);
+  if (file == nullptr) return pw::Status::Internal();
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
   fflush(file);
   fclose(file);
-  return (bytes_written == data.size())
-             ? etl::expected<void, HalError>{}
-             : etl::unexpected<HalError>(HalError::IO_ERROR);
+  return (bytes_written == data.size()) ? pw::OkStatus()
+                                        : pw::Status::Internal();
 }
 
-etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
-                                                   size_t offset,
-                                                   etl::span<uint8_t> buffer) {
-  if (!g_host_fs_enabled)
-    return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+pw::Result<ChunkResult> readFileChunk(etl::string_view path, size_t offset,
+                                      pw::span<uint8_t> buffer) {
+  if (!g_host_fs_enabled) return pw::Status::Unimplemented();
   PathString full_path;
   if (!resolve_to_full_path(path, full_path))
-    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+    return pw::Status::InvalidArgument();
   struct stat st = {};
   if ((::stat(full_path.c_str(), &st) != 0) || !S_ISREG(st.st_mode))
-    return etl::unexpected<HalError>(HalError::NOT_FOUND);
+    return pw::Status::NotFound();
   const size_t file_size = static_cast<size_t>(st.st_size);
-  if (offset > file_size)
-    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+  if (offset > file_size) return pw::Status::InvalidArgument();
   FILE* file = fopen(full_path.c_str(), "rb");
-  if (file == nullptr) return etl::unexpected<HalError>(HalError::IO_ERROR);
+  if (file == nullptr) return pw::Status::Internal();
   if ((offset > 0U) &&
       (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
     fclose(file);
-    return etl::unexpected<HalError>(HalError::IO_ERROR);
+    return pw::Status::Internal();
   }
   ChunkResult result = {};
   result.bytes_read = fread(buffer.data(), 1U, buffer.size(), file);
   bool failed = ferror(file) != 0;
   fclose(file);
-  if (failed) return etl::unexpected<HalError>(HalError::IO_ERROR);
+  if (failed) return pw::Status::Internal();
   result.has_more = (offset + result.bytes_read) < file_size;
   if (bridge::test::fault::consume(
           bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT)) {
@@ -113,15 +107,13 @@ etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
   return result;
 }
 
-etl::expected<void, HalError> removeFile(etl::string_view path) {
-  if (!g_host_fs_enabled)
-    return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+pw::Status removeFile(etl::string_view path) {
+  if (!g_host_fs_enabled) return pw::Status::Unimplemented();
   PathString full_path;
   if (!resolve_to_full_path(path, full_path))
-    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
-  return (::unlink(full_path.c_str()) == 0)
-             ? etl::expected<void, HalError>{}
-             : etl::unexpected<HalError>(HalError::IO_ERROR);
+    return pw::Status::InvalidArgument();
+  return (::unlink(full_path.c_str()) == 0) ? pw::OkStatus()
+                                            : pw::Status::Internal();
 }
 
 }  // namespace hal

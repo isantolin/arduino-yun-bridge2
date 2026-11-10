@@ -22,10 +22,10 @@
 #include <Arduino.h>
 #include <Bridge.h>
 #include <etl/algorithm.h>
-#include <etl/span.h>
 #include <etl/string.h>
 #include <etl/string_view.h>
 #include <hal/hal.h>
+#include <pw_span/span.h>
 #include <services/Console.h>
 #include <services/DataStore.h>
 #include <services/FileSystem.h>
@@ -49,7 +49,7 @@ inline constexpr uint8_t TEST_PWM_PIN = 8;
 inline constexpr uint8_t TEST_IN_PIN = 7;
 #endif
 
-static void onMailboxMessage(etl::span<const uint8_t> payload) {
+static void onMailboxMessage(pw::span<const uint8_t> payload) {
   etl::string_view msg(reinterpret_cast<const char*>(payload.data()),
                        payload.size());
   Console.print(F("[MAILBOX_IN] "));
@@ -60,17 +60,17 @@ static void onMailboxMessage(etl::span<const uint8_t> payload) {
     etl::string<64> reply = "RESP:";
     etl::string_view rest = msg.substr(7);
     reply.append(rest.data(), rest.size());
-    Mailbox.push(etl::span<const uint8_t>(
+    Mailbox.push(pw::span<const uint8_t>(
         reinterpret_cast<const uint8_t*>(reply.data()), reply.size()));
   } else if (msg == "PING") {
     const char pong[] = "PONG";
-    Mailbox.push(etl::span<const uint8_t>(
-        reinterpret_cast<const uint8_t*>(pong), sizeof(pong) - 1));
+    Mailbox.push(pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(pong),
+                                         sizeof(pong) - 1));
   }
 }
 
 static void onDataStoreRead(etl::string_view key,
-                            etl::span<const uint8_t> value) {
+                            pw::span<const uint8_t> value) {
   Console.print(F("[DATASTORE_GET] key="));
   Console.print(key.data());
   Console.print(F(" val="));
@@ -78,7 +78,7 @@ static void onDataStoreRead(etl::string_view key,
   Console.println();
 }
 
-static void onFileReadComplete(etl::span<const uint8_t> content) {
+static void onFileReadComplete(pw::span<const uint8_t> content) {
   Console.print(F("[FILE_READ] size="));
   Console.println(content.size());
 }
@@ -129,8 +129,8 @@ void loop() {
     const char initialVal[] = "ONLINE";
     DataStore.set(
         "node/status",
-        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(initialVal),
-                                 sizeof(initialVal) - 1));
+        pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(initialVal),
+                                sizeof(initialVal) - 1));
     s_initStep = InitStep::INIT_FILESYSTEM;
     s_lastInitMs = millis();
   } else if (s_initStep == InitStep::INIT_FILESYSTEM &&
@@ -138,8 +138,8 @@ void loop() {
     const char tokenData[] = "BOOT_OK";
     FileSystem.write(
         "boot_token.txt",
-        etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
-                                 sizeof(tokenData) - 1));
+        pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
+                                sizeof(tokenData) - 1));
     s_initStep = InitStep::INIT_DONE;
   }
 

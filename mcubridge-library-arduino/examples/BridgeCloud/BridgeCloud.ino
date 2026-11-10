@@ -14,8 +14,8 @@
 #include <Arduino.h>
 #include <Bridge.h>
 #include <PigweedAVR.h>
-#include <etl/span.h>
 #include <etl/string_view.h>
+#include <pw_span/span.h>
 #include <services/Console.h>
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.
@@ -39,7 +39,7 @@ void setup() {
 
   // Registrar observador de estado para registrar anomalías
   Bridge.onStatus(BridgeClass::StatusHandler::create(
-      [](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
+      [](rpc::StatusCode status_code, pw::span<const uint8_t> payload) {
         (void)payload;
         if (status_code != rpc::StatusCode::STATUS_OK) {
           // Si ocurre un error, parpadear rápido para diagnóstico físico

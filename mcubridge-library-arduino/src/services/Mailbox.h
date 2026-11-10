@@ -5,8 +5,8 @@
 #undef max
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
-#include <etl/span.h>
 #include <etl/vector.h>
+#include <pw_span/span.h>
 
 #include "Bridge.h"
 #include "config/bridge_config.h"
@@ -18,12 +18,12 @@
 
 class MailboxClass : public bridge::BridgeObserver {
  public:
-  using MessageCallback = etl::delegate<void(etl::span<const uint8_t>)>;
+  using MessageCallback = etl::delegate<void(pw::span<const uint8_t>)>;
   using AvailableCallback = etl::delegate<void(uint32_t)>;
   using MailboxBuffer = etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE>;
 
   MailboxClass();
-  static void push(etl::span<const uint8_t> data);
+  static void push(pw::span<const uint8_t> data);
   static bool requestRead();
   static bool requestAvailable();
   static void signalProcessed(uint32_t message_id);
@@ -37,7 +37,7 @@ class MailboxClass : public bridge::BridgeObserver {
 
   static void _onAvailableResponse(const rpc_pb_MailboxAvailableResponse& msg);
 
-  static void _enqueue(etl::span<const uint8_t> data);
+  static void _enqueue(pw::span<const uint8_t> data);
 
   static void process();
   void onLost() override;

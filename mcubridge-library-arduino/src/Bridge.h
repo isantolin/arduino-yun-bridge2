@@ -9,14 +9,7 @@
 #include <Arduino.h>
 
 #include <cstddef>
-#if defined(ARDUINO_ARCH_ESP32)
 #include <wolfssl.h>
-#else
-#include <MbedTLS.h>
-#if defined(ARDUINO_ARCH_AVR)
-#include <wolfssl.h>
-#endif
-#endif
 #include <stdint.h>
 
 #if defined(ARDUINO_ARCH_AVR)

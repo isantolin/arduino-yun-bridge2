@@ -35,12 +35,25 @@ echo "[emulator] Installing library dependencies..."
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
-MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
-mapfile -t MBEDTLS_SOURCES < <(find "$MBEDTLS_PATH/tf-psa-crypto" -type f -name '*.c' -print | sort)
-if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
-    echo "[emulator] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
-    exit 1
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
+if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
+if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH/src"
+else
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH"
 fi
+WOLF_SOURCES=(
+    "$WOLFCRYPT_SRC/sha256.c"
+    "$WOLFCRYPT_SRC/hmac.c"
+    "$WOLFCRYPT_SRC/kdf.c"
+    "$WOLFCRYPT_SRC/chacha.c"
+    "$WOLFCRYPT_SRC/poly1305.c"
+    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
+    "$WOLFCRYPT_SRC/hash.c"
+    "$WOLFCRYPT_SRC/misc.c"
+)
 
 mkdir -p "${METADATA_DIR}"
 "${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
@@ -68,19 +81,20 @@ NANOPB_SOURCES=(
     "${SRC_DIR}/protocol/mcu_wire.pb.c"
 )
 
-MBEDTLS_OBJ_DIR="${METADATA_DIR}/mbedtls"
-mkdir -p "$MBEDTLS_OBJ_DIR"
-MBEDTLS_OBJECTS=()
-for source in "${MBEDTLS_SOURCES[@]}"; do
-    object_name="${source#"$MBEDTLS_PATH/"}"
+WOLF_OBJ_DIR="${METADATA_DIR}/wolfssl"
+mkdir -p "$WOLF_OBJ_DIR"
+WOLF_OBJECTS=()
+for source in "${WOLF_SOURCES[@]}"; do
+    object_name="${source#"$WOLFSSL_PATH/"}"
     object_name="${object_name//\//_}"
-    object="${MBEDTLS_OBJ_DIR}/${object_name%.c}.o"
+    object="${WOLF_OBJ_DIR}/${object_name%.c}.o"
     gcc -std=c99 -O2 -g -Wall -Wextra -Werror \
-        -DBRIDGE_HOST_TEST=1 -DARDUINO=100 \
+        -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DWOLFSSL_USER_SETTINGS \
         -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
-        -I"${MBEDTLS_PATH}" \
+        -I"${WOLFSSL_INC}" \
+        -I"${WOLFSSL_PATH}" \
         -c "$source" -o "$object"
-    MBEDTLS_OBJECTS+=("$object")
+    WOLF_OBJECTS+=("$object")
 done
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
@@ -97,9 +111,11 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
-    -I"${MBEDTLS_PATH}" \
+    -I"${WOLFSSL_INC}" \
+    -I"${WOLFSSL_PATH}" \
+    -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
-    "${MBEDTLS_OBJECTS[@]}" \
+    "${WOLF_OBJECTS[@]}" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \
@@ -144,9 +160,11 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/arduino" \
     -I"${PIGWEED_PATH}" \
     -I"${PIGWEED_PATH}/src" \
-    -I"${MBEDTLS_PATH}" \
+    -I"${WOLFSSL_INC}" \
+    -I"${WOLFSSL_PATH}" \
+    -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
-    "${MBEDTLS_OBJECTS[@]}" \
+    "${WOLF_OBJECTS[@]}" \
     "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
     "$PIGWEED_PATH/src/assert_avr.cpp" \
     "$PIGWEED_PATH/src/system_clock_avr.cpp" \

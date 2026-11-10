@@ -9,61 +9,26 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/string_view.h>
-#include <mbedtls/platform_util.h>
-#include <psa/crypto.h>
-#include <psa/crypto_extra.h>
 #include <pw_span/span.h>
-#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
+
 #include <wolfssl/wolfcrypt/settings.h>
-#endif
-#if defined(ARDUINO_ARCH_ESP32)
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
-#endif
-#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 #include <wolfssl/wolfcrypt/hmac.h>
-#endif
+#include <wolfssl/wolfcrypt/kdf.h>
+#include <wolfssl/wolfcrypt/misc.h>
+#include <wolfssl/wolfcrypt/sha256.h>
 
 #include "../config/bridge_config.h"
-
-#if defined(MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG)
-/* AVR/SAMD have no cryptographic RNG; fail closed if PSA random is requested.
- */
-extern "C" psa_status_t mbedtls_psa_external_get_random(
-    mbedtls_psa_external_random_context_t* context, uint8_t* output,
-    size_t output_size, size_t* output_length) {
-  static_cast<void>(context);
-  static_cast<void>(output);
-  static_cast<void>(output_size);
-  if (output_length == nullptr) {
-    return PSA_ERROR_INVALID_ARGUMENT;
-  }
-  *output_length = 0U;
-  return PSA_ERROR_INSUFFICIENT_ENTROPY;
-}
-#endif
 
 namespace rpc {
 namespace security {
 namespace {
 
-constexpr psa_algorithm_t kHmacSha256 = PSA_ALG_HMAC(PSA_ALG_SHA_256);
-constexpr psa_algorithm_t kHandshakeMac = PSA_ALG_TRUNCATED_MAC(
-    kHmacSha256, static_cast<psa_algorithm_t>(RPC_HANDSHAKE_TAG_LENGTH));
-#if !defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ARCH_AVR)
-constexpr psa_algorithm_t kHkdfSha256 = PSA_ALG_HKDF(PSA_ALG_SHA_256);
-#endif
-#if !defined(ARDUINO_ARCH_ESP32)
-constexpr psa_algorithm_t kChaCha20Poly1305 = PSA_ALG_CHACHA20_POLY1305;
-#endif
-static_assert(PSA_MAC_LENGTH(PSA_KEY_TYPE_HMAC, 256U, kHandshakeMac) ==
-              RPC_HANDSHAKE_TAG_LENGTH);
 static uint8_t kEmptyBuffer = 0U;
 
-#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
 bool fits_wolfssl_length(size_t length) {
   return length <= static_cast<size_t>(UINT32_MAX);
 }
-#endif
 
 template <size_t N>
 static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
@@ -76,30 +41,10 @@ static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
   return dst;
 }
 
-void initialize_crypto() { static_cast<void>(psa_crypto_init()); }
-
-mbedtls_svc_key_id_t import_key(psa_key_type_t type, size_t bits,
-                                psa_key_usage_t usage,
-                                psa_algorithm_t algorithm,
-                                pw::span<const uint8_t> material) {
-  mbedtls_svc_key_id_t key_id = 0;
-  psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
-  psa_set_key_type(&attributes, type);
-  psa_set_key_bits(&attributes, bits);
-  psa_set_key_lifetime(&attributes, PSA_KEY_LIFETIME_VOLATILE);
-  psa_set_key_usage_flags(&attributes, usage);
-  psa_set_key_algorithm(&attributes, algorithm);
-  static_cast<void>(
-      psa_import_key(&attributes, material.data(), material.size(), &key_id));
-  psa_reset_key_attributes(&attributes);
-  return key_id;
-}
-
 void derive_hkdf_sha256(pw::span<const uint8_t> secret,
                         pw::span<const uint8_t> salt,
                         pw::span<const uint8_t> info,
                         pw::span<uint8_t> output) {
-#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_AVR)
   if (secret.empty() || output.empty() ||
       output.size() > 255U * RPC_SHA256_DIGEST_SIZE ||
       !fits_wolfssl_length(secret.size()) ||
@@ -126,51 +71,62 @@ void derive_hkdf_sha256(pw::span<const uint8_t> secret,
   if (!ok) {
     secure_zero(output);
   }
-#else
-  initialize_crypto();
-  const mbedtls_svc_key_id_t secret_key =
-      import_key(PSA_KEY_TYPE_DERIVE, secret.size() * 8U, PSA_KEY_USAGE_DERIVE,
-                 kHkdfSha256, secret);
-  psa_key_derivation_operation_t operation = PSA_KEY_DERIVATION_OPERATION_INIT;
-  static_cast<void>(psa_key_derivation_setup(&operation, kHkdfSha256));
-  static_cast<void>(psa_key_derivation_input_bytes(
-      &operation, PSA_KEY_DERIVATION_INPUT_SALT, salt.data(), salt.size()));
-  static_cast<void>(psa_key_derivation_input_key(
-      &operation, PSA_KEY_DERIVATION_INPUT_SECRET, secret_key));
-  static_cast<void>(psa_key_derivation_input_bytes(
-      &operation, PSA_KEY_DERIVATION_INPUT_INFO, info.data(), info.size()));
-  static_cast<void>(psa_key_derivation_output_bytes(&operation, output.data(),
-                                                    output.size()));
-  static_cast<void>(psa_key_derivation_abort(&operation));
-  static_cast<void>(psa_destroy_key(secret_key));
-#endif
 }
 
-void compute_mac(pw::span<const uint8_t> key, psa_algorithm_t algorithm,
-                 pw::span<const uint8_t> input, pw::span<uint8_t> output) {
-  initialize_crypto();
-  const mbedtls_svc_key_id_t key_id =
-      import_key(PSA_KEY_TYPE_HMAC, key.size() * 8U, PSA_KEY_USAGE_SIGN_MESSAGE,
-                 algorithm, key);
-  size_t output_length = 0;
-  static_cast<void>(psa_mac_compute(key_id, algorithm, input.data(),
-                                    input.size(), output.data(), output.size(),
-                                    &output_length));
-  static_cast<void>(psa_destroy_key(key_id));
+bool compute_hmac_sha256(pw::span<const uint8_t> key,
+                         pw::span<const uint8_t> input,
+                         pw::span<uint8_t> output) {
+  if (key.empty() || !fits_wolfssl_length(key.size()) ||
+      !fits_wolfssl_length(input.size()) || output.empty()) {
+    secure_zero(output);
+    return false;
+  }
+
+  const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
+  Hmac hmac;
+  if (wc_HmacInit(&hmac, nullptr, 0) != 0) {
+    secure_zero(output);
+    return false;
+  }
+
+  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> full_digest = {};
+  const bool ok = (wc_HmacSetKey(&hmac, WC_SHA256, key.data(),
+                                 static_cast<word32>(key.size())) == 0) &&
+                  (wc_HmacUpdate(&hmac, input_data,
+                                 static_cast<word32>(input.size())) == 0) &&
+                  (wc_HmacFinal(&hmac, full_digest.data()) == 0);
+  wc_HmacFree(&hmac);
+
+  if (ok) {
+    const size_t copy_len = etl::min(output.size(), full_digest.size());
+    etl::copy_n(full_digest.begin(), copy_len, output.begin());
+  } else {
+    secure_zero(output);
+  }
+  secure_zero(pw::span<uint8_t>(full_digest));
+  return ok;
 }
 
-bool verify_mac(pw::span<const uint8_t> key, psa_algorithm_t algorithm,
-                pw::span<const uint8_t> input,
-                pw::span<const uint8_t> expected_mac) {
-  initialize_crypto();
-  const mbedtls_svc_key_id_t key_id =
-      import_key(PSA_KEY_TYPE_HMAC, key.size() * 8U,
-                 PSA_KEY_USAGE_VERIFY_MESSAGE, algorithm, key);
-  const psa_status_t status =
-      psa_mac_verify(key_id, algorithm, input.data(), input.size(),
-                     expected_mac.data(), expected_mac.size());
-  static_cast<void>(psa_destroy_key(key_id));
-  return status == PSA_SUCCESS;
+bool verify_hmac_sha256(pw::span<const uint8_t> key,
+                        pw::span<const uint8_t> input,
+                        pw::span<const uint8_t> expected_mac) {
+  if (key.empty() || expected_mac.empty() ||
+      !fits_wolfssl_length(key.size()) || !fits_wolfssl_length(input.size()) ||
+      !fits_wolfssl_length(expected_mac.size())) {
+    return false;
+  }
+
+  etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> computed_mac = {};
+  if (!compute_hmac_sha256(key, input, pw::span<uint8_t>(computed_mac))) {
+    return false;
+  }
+
+  const bool ok =
+      (expected_mac.size() == computed_mac.size()) &&
+      (ConstantCompare(computed_mac.data(), expected_mac.data(),
+                       static_cast<int>(computed_mac.size())) == 0);
+  secure_zero(pw::span<uint8_t>(computed_mac));
+  return ok;
 }
 
 void derive_handshake_auth_key(pw::span<const uint8_t> secret,
@@ -193,10 +149,11 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
   secure_zero(out_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   derive_handshake_auth_key(secret, info, auth_key);
-  compute_mac(auth_key, kHandshakeMac, nonce,
-              pw::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
+  const bool ok = compute_hmac_sha256(
+      auth_key, nonce,
+      pw::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
   secure_zero(pw::span<uint8_t>(auth_key));
-  return true;
+  return ok;
 }
 
 #if BRIDGE_ENABLE_POST_TESTS
@@ -209,7 +166,7 @@ bool combine_ok(bool lhs, bool rhs) {
 
 void secure_zero(pw::span<uint8_t> buf) {
   if (!buf.empty()) {
-    mbedtls_platform_zeroize(buf.data(), buf.size());
+    ForceZero(buf.data(), buf.size());
   }
 }
 
@@ -246,7 +203,6 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
     return false;
   }
 
-#if defined(ARDUINO_ARCH_ESP32)
   const uint8_t* aad_data = aad.empty() ? &kEmptyBuffer : aad.data();
   const uint8_t* plaintext_data =
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
@@ -264,35 +220,6 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
     secure_zero(tag);
   }
   return ok;
-#else
-  initialize_crypto();
-  const mbedtls_svc_key_id_t key_id =
-      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_ENCRYPT,
-                 kChaCha20Poly1305, key);
-  psa_aead_operation_t operation = PSA_AEAD_OPERATION_INIT;
-  static_cast<void>(
-      psa_aead_encrypt_setup(&operation, key_id, kChaCha20Poly1305));
-  static_cast<void>(psa_aead_set_nonce(&operation, nonce.data(), nonce.size()));
-  if (!aad.empty()) {
-    static_cast<void>(psa_aead_update_ad(&operation, aad.data(), aad.size()));
-  }
-
-  size_t update_length = 0;
-  if (!plaintext.empty()) {
-    static_cast<void>(psa_aead_update(&operation, plaintext.data(),
-                                      plaintext.size(), ciphertext.data(),
-                                      ciphertext.size(), &update_length));
-  }
-
-  size_t finish_length = 0;
-  size_t tag_length = 0;
-  static_cast<void>(psa_aead_finish(&operation, &kEmptyBuffer, 0U,
-                                    &finish_length, tag.data(), tag.size(),
-                                    &tag_length));
-  static_cast<void>(psa_aead_abort(&operation));
-  static_cast<void>(psa_destroy_key(key_id));
-  return true;
-#endif
 }
 
 bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
@@ -305,7 +232,6 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
     return false;
   }
 
-#if defined(ARDUINO_ARCH_ESP32)
   const uint8_t* aad_data = aad.empty() ? &kEmptyBuffer : aad.data();
   const uint8_t* ciphertext_data =
       ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
@@ -318,32 +244,6 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
           key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
           ciphertext_data, static_cast<word32>(ciphertext.size()), tag.data(),
           plaintext_data) == 0;
-#else
-  initialize_crypto();
-  const mbedtls_svc_key_id_t key_id =
-      import_key(PSA_KEY_TYPE_CHACHA20, key.size() * 8U, PSA_KEY_USAGE_DECRYPT,
-                 kChaCha20Poly1305, key);
-  psa_aead_operation_t operation = PSA_AEAD_OPERATION_INIT;
-  static_cast<void>(
-      psa_aead_decrypt_setup(&operation, key_id, kChaCha20Poly1305));
-  static_cast<void>(psa_aead_set_nonce(&operation, nonce.data(), nonce.size()));
-  if (!aad.empty()) {
-    static_cast<void>(psa_aead_update_ad(&operation, aad.data(), aad.size()));
-  }
-
-  size_t update_length = 0;
-  if (!ciphertext.empty()) {
-    static_cast<void>(psa_aead_update(&operation, ciphertext.data(),
-                                      ciphertext.size(), plaintext.data(),
-                                      plaintext.size(), &update_length));
-  }
-
-  size_t verify_length = 0;
-  const bool ok = psa_aead_verify(&operation, &kEmptyBuffer, 0U, &verify_length,
-                                  tag.data(), tag.size()) == PSA_SUCCESS;
-  static_cast<void>(psa_aead_abort(&operation));
-  static_cast<void>(psa_destroy_key(key_id));
-#endif
   if (!ok) {
     secure_zero(plaintext);
   }
@@ -375,7 +275,7 @@ bool handshake_verify_tag(pw::span<const uint8_t> secret,
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_AUTH);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   derive_handshake_auth_key(secret, info, auth_key);
-  const bool ok = verify_mac(auth_key, kHandshakeMac, nonce, received_tag);
+  const bool ok = verify_hmac_sha256(auth_key, nonce, received_tag);
   secure_zero(pw::span<uint8_t>(auth_key));
   return ok;
 }
@@ -431,21 +331,24 @@ static constexpr etl::array<uint8_t, RPC_AEAD_TAG_SIZE> kat_aead_tag PROGMEM = {
      0xE6, 0xA0, 0x6B, 0xCF}};
 
 bool run_cryptographic_self_tests() {
-  initialize_crypto();
   const auto sha_msg = copy_progmem(kat_sha256_msg);
   const auto sha_expected = copy_progmem(kat_sha256_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> digest = {};
-  size_t digest_length = 0;
-  static_cast<void>(psa_hash_compute(PSA_ALG_SHA_256, sha_msg.data(),
-                                     sha_msg.size(), digest.data(),
-                                     digest.size(), &digest_length));
-  bool ok = etl::equal(digest.begin(), digest.end(), sha_expected.begin());
+  wc_Sha256 sha;
+  bool sha_init_ok = (wc_InitSha256(&sha) == 0);
+  if (sha_init_ok) {
+    wc_Sha256Update(&sha, sha_msg.data(), static_cast<word32>(sha_msg.size()));
+    wc_Sha256Final(&sha, digest.data());
+    wc_Sha256Free(&sha);
+  }
+  bool ok = sha_init_ok &&
+            etl::equal(digest.begin(), digest.end(), sha_expected.begin());
 
   const auto hmac_key = copy_progmem(kat_hmac_key);
   const auto hmac_data = copy_progmem(kat_hmac_data);
   const auto hmac_expected = copy_progmem(kat_hmac_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> hmac_result = {};
-  compute_mac(hmac_key, kHmacSha256, hmac_data, hmac_result);
+  ok = combine_ok(ok, compute_hmac_sha256(hmac_key, hmac_data, hmac_result));
   ok = combine_ok(ok, etl::equal(hmac_result.begin(), hmac_result.end(),
                                  hmac_expected.begin()));
 

@@ -14,14 +14,14 @@ python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
 
 # Ensure Arduino libraries are present
 if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
-   [ ! -f "$ARDUINO_LIBS/MbedTLS/src/psa/crypto.h" ]; then
+   [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
 PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
-MBEDTLS_INC="$ARDUINO_LIBS/MbedTLS/src"
+WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
 
 INCLUDES=(
     "-I${SRC_DIR}"
@@ -32,7 +32,8 @@ INCLUDES=(
     "-isystem${ETL_INC}"
     "-isystem${PIGWEED_INC}"
     "-isystem${ARDUINO_LIBS}/PigweedAVR"
-    "-isystem${MBEDTLS_INC}"
+    "-isystem${WOLFSSL_INC}"
+    "-isystem${ARDUINO_LIBS}/wolfssl"
 )
 
 COMPILE_FLAGS=(
@@ -41,6 +42,7 @@ COMPILE_FLAGS=(
     "-DPB_PROTO_HEADER_VERSION=40"
     "-DETL_NO_STL"
     "-DETL_FORCE_STD_INITIALIZER_LIST"
+    "-DWOLFSSL_USER_SETTINGS"
     "${INCLUDES[@]}"
 )
 

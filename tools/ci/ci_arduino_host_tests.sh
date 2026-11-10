@@ -65,12 +65,25 @@ mkdir -p "${ARDUINO_LIBS}"
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
-MBEDTLS_PATH="$ARDUINO_LIBS/MbedTLS/src"
-mapfile -t MBEDTLS_SOURCES < <(find "$MBEDTLS_PATH/tf-psa-crypto" -type f -name '*.c' -print | sort)
-if [[ ${#MBEDTLS_SOURCES[@]} -eq 0 ]]; then
-    echo "[host-cpp] ERROR: No TF-PSA-Crypto sources found at $MBEDTLS_PATH" >&2
-    exit 1
+WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
+if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
+if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH/src"
+else
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH"
 fi
+WOLF_SOURCES=(
+    "$WOLFCRYPT_SRC/sha256.c"
+    "$WOLFCRYPT_SRC/hmac.c"
+    "$WOLFCRYPT_SRC/kdf.c"
+    "$WOLFCRYPT_SRC/chacha.c"
+    "$WOLFCRYPT_SRC/poly1305.c"
+    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
+    "$WOLFCRYPT_SRC/hash.c"
+    "$WOLFCRYPT_SRC/misc.c"
+)
 mapfile -t PIGWEED_RPC_SOURCES < <(
     find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
         \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
@@ -86,7 +99,7 @@ fi
 
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
-    "${MBEDTLS_SOURCES[@]}"
+    "${WOLF_SOURCES[@]}"
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
@@ -133,7 +146,8 @@ INC_FLAGS=(
     -I"$ETL_PATH/arduino"
     -I"$PIGWEED_PATH"
     -I"$PIGWEED_PATH/src"
-    -I"$MBEDTLS_PATH"
+    -I"$WOLFSSL_INC"
+    -I"$WOLFSSL_PATH"
 )
 
 COMMON_DEFS=(
@@ -143,6 +157,7 @@ COMMON_DEFS=(
     -Wno-unused-parameter
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
+    -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
@@ -187,8 +202,8 @@ echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
 for src in "${SOURCES[@]}"; do
     obj_name=$(basename "${src}").o
-    if [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
-        obj_name="${src#"$MBEDTLS_PATH/"}"
+    if [[ "${src}" == "$WOLFSSL_PATH/"* ]]; then
+        obj_name="${src#"$WOLFSSL_PATH/"}"
         obj_name="${obj_name//\//_}.o"
     fi
     obj="${OBJ_DIR}/${obj_name}"
@@ -196,9 +211,7 @@ for src in "${SOURCES[@]}"; do
 
     if [ "$COVERAGE_MODE" = true ] && [[ "${src}" == *pb_* || "${src}" == *.pb.c ]]; then
         g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}" &
-    elif [[ "${src}" == */tf-psa-crypto/utilities/constant_time.c ]]; then
-        gcc -std=c99 "${BASE_FLAGS[@]}" -D__AVR__ -c "${src}" -o "${obj}" &
-    elif [[ "${src}" == "$MBEDTLS_PATH/"* ]]; then
+    elif [[ "${src}" == "$WOLFSSL_PATH/"* ]]; then
         gcc -std=c99 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     elif [[ "${src}" == *.c ]]; then
         g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
@@ -248,7 +261,7 @@ if [ "$COVERAGE_MODE" = true ]; then
     fi
 
     ${PYTHON_CMD} -m gcovr --root "${SRC_DIR}" "${BUILD_DIR}" --filter "${SRC_DIR}" \
-        -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" \
+        -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" -e ".*wolfssl.*" -e ".*wolfcrypt.*" \
         --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max \
         --sort uncovered-percent \
         --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" \

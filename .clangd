@@ -26,6 +26,6 @@ CompileFlags:
     "-I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/arduino",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/third_party/avr_pigweed_port/dist/PigweedAVR/src",
     "-I/home/ignaciosantolin/Arduino/libraries/PigweedAVR/src",
-    "-I/home/ignaciosantolin/Arduino/libraries/MbedTLS/src",
+    "-I/home/ignaciosantolin/Arduino/libraries/wolfssl/src",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/tests/Unity/src"
   ]

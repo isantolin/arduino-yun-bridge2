@@ -480,6 +480,14 @@ service SystemService {
   rpc EnterBootloader(rpc.pb.EnterBootloader) returns (rpc.pb.Empty) {
     option (auth_field) = "system_bootloader";
   }
+  rpc Xoff(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
+    option (method_description) = "Signal MCU RX buffer pressure (XOFF flow control). Linux pauses TX.";
+    option (mcu_handler) = "mcu_xoff";
+  }
+  rpc Xon(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
+    option (method_description) = "Signal MCU RX buffer relief (XON flow control). Linux resumes TX.";
+    option (mcu_handler) = "mcu_xon";
+  }
 }
 
 service ClockSyncService {

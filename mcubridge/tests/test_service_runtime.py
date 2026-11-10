@@ -944,7 +944,7 @@ async def test_runtime_poll_process_eof_and_xoff(
 
     handle_xoff: Callable[..., Awaitable[None]] = svc.mcu_xoff
     await handle_xoff(1, None)
-    assert svc.state.mcu_is_paused is True
+    assert svc.state.mcu_is_paused
     assert not svc.state.serial_tx_allowed.is_set()
 
     spec_xon = protocol.get_operation("rpc.pb.SystemService/Xon")
@@ -952,7 +952,7 @@ async def test_runtime_poll_process_eof_and_xoff(
     assert spec_xon.service_id is not None
     assert spec_xon.method_id is not None
     await svc.handle_mcu_frame((spec_xon.service_id, spec_xon.method_id), 2, b"")
-    assert svc.state.mcu_is_paused is False
+    assert not svc.state.mcu_is_paused
     assert svc.state.serial_tx_allowed.is_set()
 
     spec_xoff = protocol.get_operation("rpc.pb.SystemService/Xoff")
@@ -960,11 +960,11 @@ async def test_runtime_poll_process_eof_and_xoff(
     assert spec_xoff.service_id is not None
     assert spec_xoff.method_id is not None
     await svc.handle_mcu_frame((spec_xoff.service_id, spec_xoff.method_id), 3, b"")
-    assert svc.state.mcu_is_paused is True
+    assert svc.state.mcu_is_paused
     assert not svc.state.serial_tx_allowed.is_set()
 
     await svc.mcu_xon(4, None)
-    assert svc.state.mcu_is_paused is False
+    assert not svc.state.mcu_is_paused
     assert svc.state.serial_tx_allowed.is_set()
 
     on_console: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = svc.console_write

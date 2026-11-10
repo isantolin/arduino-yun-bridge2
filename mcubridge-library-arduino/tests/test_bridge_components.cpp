@@ -43,34 +43,15 @@ void test_all_handlers_coverage() {
   BiStream stream;
   reset_bridge_comp(stream);
 
-  etl::array<uint8_t, 128> frame_buf;
-  size_t sz = 0;
-
-  // Call GetVersion
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                            pw::tokenizer::Hash("rpc.pb.SystemService"),
-                            pw::tokenizer::Hash("GetVersion"),
-                            pw::span<const uint8_t>(), frame_buf);
-  TestAccessor::create(Bridge).feedHdlcBytes(
-      pw::span<const uint8_t>(frame_buf.data(), sz));
+  auto& ba = TestAccessor::create(Bridge);
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                pw::tokenizer::Hash("GetVersion"));
   Mailbox.process();
-
-  // Call GetFreeMemory
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                            pw::tokenizer::Hash("rpc.pb.SystemService"),
-                            pw::tokenizer::Hash("GetFreeMemory"),
-                            pw::span<const uint8_t>(), frame_buf);
-  TestAccessor::create(Bridge).feedHdlcBytes(
-      pw::span<const uint8_t>(frame_buf.data(), sz));
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                pw::tokenizer::Hash("GetFreeMemory"));
   Mailbox.process();
-
-  // Call GetCapabilities
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                            pw::tokenizer::Hash("rpc.pb.SystemService"),
-                            pw::tokenizer::Hash("GetCapabilities"),
-                            pw::span<const uint8_t>(), frame_buf);
-  TestAccessor::create(Bridge).feedHdlcBytes(
-      pw::span<const uint8_t>(frame_buf.data(), sz));
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                pw::tokenizer::Hash("GetCapabilities"));
   Mailbox.process();
 
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
@@ -152,18 +133,10 @@ void test_mailbox_api() {
     push_msg.data.size = 2;
     push_msg.data.bytes[0] = 0x11;
     push_msg.data.bytes[1] = 0x22;
-    uint8_t payload_buf[64];
-    pb_ostream_t pbos =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_MailboxPush_fields, &push_msg));
-    etl::array<uint8_t, 128> hdlc_buf;
-    size_t sz = build_hdlc_rpc_frame(
-        1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-        pw::tokenizer::Hash("rpc.pb.MailboxService"),
-        pw::tokenizer::Hash("Push"),
-        pw::span<const uint8_t>(payload_buf, pbos.bytes_written), hdlc_buf);
-    TestAccessor::create(Bridge).feedHdlcBytes(
-        pw::span<const uint8_t>(hdlc_buf.data(), sz));
+    send_rpc_request(TestAccessor::create(Bridge),
+                     pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                     pw::tokenizer::Hash("Push"), rpc_pb_MailboxPush_fields,
+                     push_msg);
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(2, last_message_len);
@@ -180,17 +153,10 @@ void test_mailbox_api() {
     read_resp.content.bytes[0] = 0x33;
     read_resp.content.bytes[1] = 0x44;
     read_resp.content.bytes[2] = 0x55;
-    uint8_t payload_buf[64];
-    pb_ostream_t pbos =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    TEST_ASSERT_TRUE(
-        pb_encode(&pbos, rpc_pb_MailboxReadResponse_fields, &read_resp));
-    pw::rpc::internal::Packet pkt(
-        pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
-        pw::tokenizer::Hash("rpc.pb.MailboxService"),
-        pw::tokenizer::Hash("Read"), 0,
-        pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
-    TestAccessor::create(Bridge).invokeRpcResponse(pkt);
+    invoke_rpc_response(TestAccessor::create(Bridge),
+                        pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                        pw::tokenizer::Hash("Read"),
+                        rpc_pb_MailboxReadResponse_fields, read_resp);
     Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(3, last_message_len);
@@ -204,17 +170,10 @@ void test_mailbox_api() {
     rpc_pb_MailboxAvailableResponse avail_resp =
         rpc_pb_MailboxAvailableResponse_init_default;
     avail_resp.count = 42;
-    uint8_t payload_buf[32];
-    pb_ostream_t pbos =
-        pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-    TEST_ASSERT_TRUE(
-        pb_encode(&pbos, rpc_pb_MailboxAvailableResponse_fields, &avail_resp));
-    pw::rpc::internal::Packet pkt(
-        pw::rpc::internal::pwpb::PacketType::RESPONSE, 1,
-        pw::tokenizer::Hash("rpc.pb.MailboxService"),
-        pw::tokenizer::Hash("Available"), 0,
-        pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
-    TestAccessor::create(Bridge).invokeRpcResponse(pkt);
+    invoke_rpc_response(TestAccessor::create(Bridge),
+                        pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                        pw::tokenizer::Hash("Available"),
+                        rpc_pb_MailboxAvailableResponse_fields, avail_resp);
     Mailbox.process();
     TEST_ASSERT_TRUE(available_callback_called);
     TEST_ASSERT_EQUAL_UINT32(42, last_available_count);
@@ -232,17 +191,9 @@ void test_send_pin_event_api() {
   rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
   sub_req.pin = 13;
   sub_req.enabled = true;
-  uint8_t pl_buf[64];
-  pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
-  TEST_ASSERT_TRUE(
-      pb_encode(&pbos, rpc_pb_PinSubscribeRequest_fields, &sub_req));
-  etl::array<uint8_t, 128> hdlc_buf;
-  const size_t sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.GpioService"),
-      pw::tokenizer::Hash("SubscribePins"),
-      pw::span<const uint8_t>(pl_buf, pbos.bytes_written), hdlc_buf);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
+                   pw::tokenizer::Hash("SubscribePins"),
+                   rpc_pb_PinSubscribeRequest_fields, sub_req);
 
   const size_t initial_bytes = stream.tx_buf.len;
   const bool result = Bridge.sendPinEvent(13, 1023);
@@ -664,18 +615,9 @@ void test_filesystem_edges() {
   TEST_ASSERT_TRUE(res_w1.ok());
   rpc_pb_FileRead req_large = {};
   strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
-  uint8_t req_large_buf[80];
-  pb_ostream_t pos_large =
-      pb_ostream_from_buffer(req_large_buf, sizeof(req_large_buf));
-  TEST_ASSERT_TRUE(pb_encode(&pos_large, rpc_pb_FileRead_fields, &req_large));
-  etl::array<uint8_t, 128> fs_hdlc_buf;
-  const size_t fs_sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-      pw::tokenizer::Hash("Read"),
-      pw::span<const uint8_t>(req_large_buf, pos_large.bytes_written),
-      fs_hdlc_buf);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(fs_hdlc_buf.data(), fs_sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+                   pw::tokenizer::Hash("Read"), rpc_pb_FileRead_fields,
+                   req_large);
 
   // 9. Send-fail branches when tx disabled
   ba.clearSharedSecret();
@@ -735,17 +677,13 @@ void test_spi_edges() {
   // 4. SPI Transfer via HDLC RPC
   rpc_pb_SpiTransfer spi_req = rpc_pb_SpiTransfer_init_default;
   spi_req.data.size = 0;
-  uint8_t req_buf[32];
-  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
-  pb_encode(&pos, rpc_pb_SpiTransfer_fields, &spi_req);
-  etl::array<uint8_t, 64> hdlc_buf;
-  size_t sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.SpiService"), pw::tokenizer::Hash("Transfer"),
-      pw::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SpiService"),
+                   pw::tokenizer::Hash("Transfer"), rpc_pb_SpiTransfer_fields,
+                   spi_req);
   ba.setTxEnabled(false);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SpiService"),
+                   pw::tokenizer::Hash("Transfer"), rpc_pb_SpiTransfer_fields,
+                   spi_req);
   ba.setTxEnabled(true);
 
   // 5. onLost
@@ -817,31 +755,21 @@ void test_mailbox_edges() {
   stream.feed(hdlc_buf.data(), sz);
   Bridge.process();
 
-  sz = build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::RESPONSE,
-                            pw::tokenizer::Hash("rpc.pb.MailboxService"),
-                            pw::tokenizer::Hash("Available"),
-                            pw::span<const uint8_t>(), hdlc_buf);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
-
-  sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
-      pw::tokenizer::Hash("rpc.pb.MailboxService"), pw::tokenizer::Hash("Read"),
-      pw::span<const uint8_t>(), hdlc_buf);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
-
-  sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::CLIENT_ERROR,
-      pw::tokenizer::Hash("rpc.pb.MailboxService"), pw::tokenizer::Hash("Read"),
-      pw::span<const uint8_t>(), hdlc_buf);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                pw::tokenizer::Hash("Available"), {},
+                pw::rpc::internal::pwpb::PacketType::RESPONSE);
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                pw::tokenizer::Hash("Read"), {},
+                pw::rpc::internal::pwpb::PacketType::SERVER_STREAM);
+  send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.MailboxService"),
+                pw::tokenizer::Hash("Read"), {},
+                pw::rpc::internal::pwpb::PacketType::CLIENT_ERROR);
 
   // Unknown method_id fallthroughs in RPC services and _dispatchRpcResponse
   constexpr uint32_t kUnknownMethod = 0xDEADBEEFU;
   auto send_rpc = [&](pw::rpc::internal::pwpb::PacketType ptype, uint32_t srv,
-                      uint32_t meth,
-                      pw::span<const uint8_t> pl = pw::span<const uint8_t>()) {
-    const size_t n = build_hdlc_rpc_frame(1, ptype, srv, meth, pl, hdlc_buf);
-    ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), n));
+                      uint32_t meth, pw::span<const uint8_t> pl = {}) {
+    send_hdlc_rpc(ba, srv, meth, pl, ptype);
   };
   send_rpc(pw::rpc::internal::pwpb::PacketType::REQUEST,
            pw::tokenizer::Hash("rpc.pb.GpioService"), kUnknownMethod);

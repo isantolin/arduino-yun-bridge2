@@ -28,6 +28,7 @@ import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_rpc import callback_client, packets as pw_packets
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
@@ -98,6 +99,12 @@ def resolve_serial_url(port_str: str) -> str:
     if ":" in clean and not clean.startswith(("/", ".")):
         return f"socket://{clean}"
     return clean
+
+
+def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
+    """Thread target to write raw bytes to serial device and flush immediately. [SIL-2]"""
+    ser.write(data)
+    ser.flush()
 
 
 class SerialTransport:
@@ -593,8 +600,6 @@ class SerialTransport:
                 self.state.mcu_is_paused = False
                 self.state.serial_tx_allowed.set()
 
-        from pw_hdlc.encode import ui_frame
-
         async with self._serial_write_lock:
             cipher = self.state.link_cipher
             if self.config.serial_shared_secret and cipher is None:
@@ -603,10 +608,6 @@ class SerialTransport:
 
             frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
             encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
-
-            def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
-                ser.write(data)
-                ser.flush()
 
             try:
                 await asyncio.to_thread(_write_and_flush, serial_port, encoded)
@@ -891,8 +892,6 @@ class SerialTransport:
                 if cipher is None:
                     encoded = protocol.encode_hdlc_console(data)
                 else:
-                    from pw_hdlc.encode import ui_frame
-
                     envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
                     encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
             else:
@@ -902,8 +901,6 @@ class SerialTransport:
                     if cipher is not None and is_link_sync:
                         return False
                 if cipher is not None and not is_link_reset:
-                    from pw_hdlc.encode import ui_frame
-
                     packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
                     envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
                     encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
@@ -918,11 +915,6 @@ class SerialTransport:
                 )
 
             try:
-
-                def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
-                    ser.write(data)
-                    ser.flush()
-
                 await asyncio.to_thread(_write_and_flush, serial_port, encoded)
                 self.state.metrics.serial_bytes_sent.inc(len(encoded))
                 self.state.metrics.serial_frames_sent.inc()

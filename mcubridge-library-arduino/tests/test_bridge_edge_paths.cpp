@@ -43,35 +43,21 @@ void on_process_poll(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
 inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
                              pw::span<const uint8_t> payload = {}) {
-  etl::array<uint8_t, 256> frame_raw;
-  size_t len =
-      build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-                           service_id, method_id, payload, frame_raw);
-  ba.feedHdlcBytes(pw::span<const uint8_t>(frame_raw.data(), len));
+  send_hdlc_rpc(ba, service_id, method_id, payload);
 }
 
 template <typename ProtoMsg>
 inline void feed_rpc_request_msg(TestAccessor& ba, uint32_t service_id,
                                  uint32_t method_id, const pb_msgdesc_t* fields,
                                  const ProtoMsg& msg) {
-  uint8_t pl_buf[128];
-  pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf, sizeof(pl_buf));
-  pb_encode(&pbos, fields, &msg);
-  feed_rpc_request(ba, service_id, method_id,
-                   pw::span<const uint8_t>(pl_buf, pbos.bytes_written));
+  send_rpc_request<ProtoMsg, 128>(ba, service_id, method_id, fields, msg);
 }
 
 template <typename ProtoMsg>
 inline void invoke_response(TestAccessor& ba, uint32_t service_id,
                             uint32_t method_id, const pb_msgdesc_t* fields,
                             const ProtoMsg& msg, uint32_t call_id = 0) {
-  uint8_t payload_buf[128];
-  pb_ostream_t pbos = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-  pb_encode(&pbos, fields, &msg);
-  pw::rpc::internal::Packet pkt(
-      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1, service_id, method_id,
-      call_id, pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)));
-  ba.invokeRpcResponse(pkt);
+  invoke_rpc_response(ba, service_id, method_id, fields, msg, call_id);
 }
 
 void test_dispatch_valid_payload_handlers_unique_seq() {

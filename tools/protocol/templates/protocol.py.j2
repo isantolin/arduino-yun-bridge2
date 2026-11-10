@@ -23,11 +23,11 @@ from pw_rpc.descriptors import (
 )
 import structlog
 
-from . import mcu_wire_pb2, mcubridge_pb2 as pb
+from . import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
     PwRpcService.from_descriptor(desc)
-    for mod in (mcu_wire_pb2, pb)
+    for mod in (mcu_wire_pb2, cloud_gateway_pb2)
     for desc in cast(Any, mod).DESCRIPTOR.services_by_name.values()
 )
 
@@ -38,7 +38,7 @@ _PW_TO_GRPCLIB_CARDINALITY: Final[dict[PwRpcMethod.Type, Cardinality]] = {
     PwRpcMethod.Type.BIDIRECTIONAL_STREAMING: Cardinality.STREAM_STREAM,
 }
 
-type McuDispatchTable = dict[int | tuple[int, int], Callable[..., Any]]
+type McuDispatchTable = dict[int | str | tuple[int, int], Callable[..., Any]]
 
 logger = structlog.get_logger(__name__)
 
@@ -96,11 +96,6 @@ SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(
 )
 SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({Status.OK.value})
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
-
-class Command(IntEnum):
-    {%- for cmd in commands %}
-    {{ cmd.name }} = {{ cmd.value }}
-    {%- endfor %}
 
 
 class Topic(StrEnum):
@@ -194,10 +189,9 @@ class LineProtocolFieldSpec:
 
 @dataclass(frozen=True, slots=True)
 class OperationSpec:
-    """Canonical specification of a protocol operation (Command, RPC, or Telemetry). [SIL-2]"""
+    """Canonical specification of a protocol operation (RPC or Telemetry). [SIL-2]"""
 
     name: str
-    command_id: int | None = None
     service_name: str | None = None
     service_id: int | None = None
     method_name: str | None = None
@@ -234,7 +228,7 @@ class OperationSpec:
                 object.__setattr__(self, "response_type", pw_m.response_type)
             if self.request_type is None and self.pb_class in (None, pw_m.request_type):
                 object.__setattr__(self, "request_type", pw_m.request_type)
-        if self.pb_class is None and self.request_type not in (None, pb.SubscribeRequest):
+        if self.pb_class is None and self.request_type not in (None, mcu_wire_pb2.SubscribeRequest):
             object.__setattr__(self, "pb_class", self.request_type)
 
 
@@ -254,9 +248,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
 {%- for op in operations %}
     OperationSpec(
         name={{ op.name|tojson }},
-        {%- if op.command_id %}
-        command_id={{ op.command_id }},
-        {%- endif %}
         {%- if op.service_name %}
         service_name={{ op.service_name|tojson }},
         method_name={{ op.method_name|tojson }},
@@ -389,9 +380,6 @@ RPC_SPECS: Final[tuple[OperationSpec, ...]] = tuple(op for op in OPERATIONS if o
 CUSTOM_HANDLERS: Final[frozenset[str]] = frozenset(
     op.handler_name for op in OPERATIONS if op.is_custom_handler and op.handler_name
 )
-BY_COMMAND_ID: Final[dict[int, OperationSpec]] = {
-    op.command_id: op for op in OPERATIONS if op.command_id is not None
-}
 BY_RPC: Final[dict[tuple[int, int], OperationSpec]] = {
     (op.service_id, op.method_id): op
     for op in OPERATIONS
@@ -403,6 +391,9 @@ BY_TYPE: Final[dict[type[ProtobufMessage], OperationSpec]] = {}
 for _op in OPERATIONS:
     if _op.rpc_name:
         BY_NAME[_op.rpc_name] = _op
+    if _op.service_name and _op.method_name:
+        BY_NAME[f"{_op.service_name}/{_op.method_name}"] = _op
+        BY_NAME.setdefault(_op.method_name, _op)
     if _op.pb_class is not None:
         BY_TYPE.setdefault(_op.pb_class, _op)
         BY_NAME.setdefault(_op.pb_class.DESCRIPTOR.name, _op)
@@ -463,10 +454,10 @@ def allows_method(auth: Any, spec: OperationSpec) -> bool:
 
 def get_operation(key: Any) -> OperationSpec | None:
     """Polymorphic O(1) operation lookup. [SIL-2]"""
+    if isinstance(key, OperationSpec):
+        return key
     if isinstance(key, tuple):
         return BY_RPC.get(cast(tuple[int, int], key))
-    if isinstance(key, int):
-        return BY_COMMAND_ID.get(key)
     if isinstance(key, str):
         return BY_NAME.get(key)
     if isinstance(key, type):
@@ -478,10 +469,6 @@ def get_operation(key: Any) -> OperationSpec | None:
             return BY_RPC.get((srv, meth))
     if isinstance(key, ProtobufMessage):
         return BY_TYPE.get(type(key)) or BY_NAME.get(key.DESCRIPTOR.name)
-    if hasattr(key, "value"):
-        val = getattr(key, "value", None)
-        if isinstance(val, int):
-            return BY_COMMAND_ID.get(val)
     return None
 
 
@@ -566,10 +553,14 @@ def build_mcu_dispatch(
             dispatch[s.value] = functools.partial(status_fn, s)
     for op in OPERATIONS:
         fn = operator.attrgetter(op.mcu_handler)(target) if op.mcu_handler else None
-        if fn is not None and op.command_id is not None:
-            dispatch[op.command_id] = fn
+        if fn is not None:
+            dispatch[op.name] = fn
             if op.service_id is not None and op.method_id is not None:
                 dispatch[(op.service_id, op.method_id)] = fn
+            if op.service_name and op.method_name:
+                dispatch[f"{op.service_name}.{op.method_name}"] = fn
+                dispatch[f"{op.service_name}/{op.method_name}"] = fn
+                dispatch.setdefault(op.method_name, fn)
     return dispatch
 
 
@@ -670,7 +661,7 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 # ==============================================================================
 
 def encode_rpc_packet(
-    channel_id_or_command: int | OperationSpec | tuple[int, int],
+    channel_id_or_command: int | str | OperationSpec | tuple[int, int],
     payload_or_service: Any = b"",
     method_id: int | None = None,
     call_id: int = 1,
@@ -682,23 +673,38 @@ def encode_rpc_packet(
 
     Supports two calling conventions:
     1. Direct RPC: encode_rpc_packet(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
-    2. Operation/Command: encode_rpc_packet(command_or_op, payload=b"", call_id=1)
+    2. Operation: encode_rpc_packet(op_or_name, payload=b"", call_id=1)
     """
     from google.protobuf.message import Message as ProtobufMessage
-    from pw_rpc.internal.packet_pb2 import RpcPacket
+    from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
     if method_id is None:
         target = channel_id_or_command
         spec = get_operation(target)
         actual_type = packet_type
+        pw_method = (
+            PW_SERVICES[spec.service_name].methods[spec.method_name]
+            if spec is not None and spec.service_name and spec.method_name
+            else None
+        )
         if (
-            actual_type == 0
+            actual_type == int(PacketType.REQUEST)
             and spec is not None
             and spec.response_type is not None
             and spec.response_type is not spec.request_type
-            and isinstance(payload_or_service, spec.response_type)
         ):
-            actual_type = 1
+            if isinstance(payload_or_service, spec.response_type):
+                actual_type = (
+                    int(PacketType.SERVER_STREAM)
+                    if pw_method is not None and pw_method.type is PwRpcMethod.Type.SERVER_STREAMING
+                    else int(PacketType.RESPONSE)
+                )
+            elif (
+                payload_or_service == b""
+                and pw_method is not None
+                and pw_method.type is PwRpcMethod.Type.SERVER_STREAMING
+            ):
+                actual_type = int(PacketType.RESPONSE)
         if spec is not None and spec.service_id is not None and spec.method_id is not None:
             srv_id = spec.service_id
             meth_id = spec.method_id
@@ -747,7 +753,7 @@ def encode_rpc_packet(
 
 
 def encode_hdlc_rpc(
-    channel_id_or_command: int | OperationSpec | tuple[int, int],
+    channel_id_or_command: int | str | OperationSpec | tuple[int, int],
     payload_or_service: Any = b"",
     method_id: int | None = None,
     call_id: int = 1,

@@ -28,12 +28,12 @@ from google.protobuf.message import DecodeError as ProtobufDecodeError, Message 
 from pw_hdlc.decode import FrameDecoder
 from pw_rpc import callback_client, packets as pw_packets
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
@@ -50,10 +50,12 @@ from mcubridge.state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.serial")
 
-_HANDSHAKE_RAW_REQUESTS: Final[frozenset[int]] = frozenset(
+_LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
+_LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
+_HANDSHAKE_RAW_NAMES: Final[frozenset[str]] = frozenset(
     {
-        protocol.Command.CMD_LINK_SYNC.value,
-        protocol.Command.CMD_LINK_RESET.value,
+        "rpc.pb.SystemService/LinkSync",
+        "rpc.pb.SystemService/LinkReset",
     }
 )
 _STREAM_EVENT_QUEUE_MAX: Final[int] = 64
@@ -71,7 +73,7 @@ class SerialBridgeService(Protocol):
     async def on_serial_disconnected(self) -> None: ...
 
     async def handle_mcu_frame(
-        self, operation_key: int | tuple[int, int], seq_id: int, payload: bytes | ProtobufMessage, /
+        self, operation_key: int | str | tuple[int, int], seq_id: int, payload: bytes | ProtobufMessage, /
     ) -> Any: ...
 
 
@@ -123,6 +125,7 @@ class SerialTransport:
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: list[Any] = []
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
+        self._active_server_call_ids: dict[tuple[int, int], int] = {}
         self._stream_call: Any | None = None
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
@@ -155,6 +158,7 @@ class SerialTransport:
         self.cancel_pin_stream()
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
+        self._active_server_call_ids.clear()
         self._stream_event_queue.clear()
 
     def cancel_pin_stream(self) -> bool:
@@ -365,9 +369,7 @@ class SerialTransport:
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
-                await self.service.handle_mcu_frame(
-                    protocol.Command.CMD_CONSOLE_WRITE.value, 0, pb.ConsoleWrite(data=frame_data)
-                )
+                await self.service.handle_mcu_frame("ConsoleWrite", 0, pb.ConsoleWrite(data=frame_data))
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
@@ -378,15 +380,12 @@ class SerialTransport:
                 logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame_data.hex())
                 return
             spec = protocol.get_operation(pkt)
-            cmd_id = spec.command_id if spec and spec.command_id is not None else pkt.method_id
             seq_id = pkt.call_id
 
             if self.config.serial_shared_secret and self.state.link_cipher is None:
-                link_sync = protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
                 is_link_sync_response = (
-                    link_sync is not None
-                    and pkt.service_id == link_sync.service_id
-                    and pkt.method_id == link_sync.method_id
+                    pkt.service_id == _LINK_SYNC_SPEC.service_id
+                    and pkt.method_id == _LINK_SYNC_SPEC.method_id
                     and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
                 )
                 if not is_link_sync_response:
@@ -399,7 +398,7 @@ class SerialTransport:
             rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
             is_client_rpc = (
                 spec is not None
-                and spec.command_id not in _HANDSHAKE_RAW_REQUESTS
+                and spec.name not in _HANDSHAKE_RAW_NAMES
                 and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
                 and rpc_packet_key in self._active_rpc_packet_ids
             )
@@ -411,9 +410,16 @@ class SerialTransport:
                 return
 
             # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
-            # successful responses map onto the operation's canonical response id.
-            if pkt.type == PacketType.SERVER_ERROR or (pkt.type == PacketType.RESPONSE and pkt.status != 0):
-                cmd_id = Status.ERROR.value
+            # successful responses map onto the operation's canonical service/method tuple.
+            is_error_pkt = pkt.type == PacketType.SERVER_ERROR or (pkt.type == PacketType.RESPONSE and pkt.status != 0)
+            is_status_pkt = pkt.method_id in SERIAL_FAILURE_STATUS_CODES or pkt.method_id in SERIAL_SUCCESS_STATUS_CODES
+            dispatch_key: int | str | tuple[int, int]
+            if is_error_pkt:
+                dispatch_key = Status.ERROR.value
+            elif spec is None and is_status_pkt:
+                dispatch_key = pkt.method_id
+            else:
+                dispatch_key = (pkt.service_id, pkt.method_id)
 
             payload: ProtobufMessage | bytes = pkt.payload
             if (
@@ -434,8 +440,7 @@ class SerialTransport:
 
             if logger.is_enabled_for(logging.DEBUG):
                 logger.debug(
-                    "[MCU -> SERIAL] [CMD:0x%02X] [SVC:0x%08X METH:0x%08X SEQ:%d]",
-                    cmd_id,
+                    "[MCU -> SERIAL] [SVC:0x%08X METH:0x%08X SEQ:%d]",
                     pkt.service_id,
                     pkt.method_id,
                     seq_id,
@@ -451,15 +456,16 @@ class SerialTransport:
             # resolved operation is an explicit raw handshake or status handler, never
             # re-triggering bidirectional request handlers like MailboxPush.
             is_response_handler = (
-                cmd_id in _HANDSHAKE_RAW_REQUESTS
-                or cmd_id in SERIAL_FAILURE_STATUS_CODES
-                or cmd_id in SERIAL_SUCCESS_STATUS_CODES
+                (spec is not None and spec.name in _HANDSHAKE_RAW_NAMES)
+                or dispatch_key in SERIAL_FAILURE_STATUS_CODES
+                or dispatch_key in SERIAL_SUCCESS_STATUS_CODES
             )
+            if pkt.type == PacketType.REQUEST:
+                self._active_server_call_ids[(pkt.service_id, pkt.method_id)] = pkt.call_id
             if self.service and (
                 pkt.type != PacketType.RESPONSE
-                or (is_response_handler and cmd_id in getattr(self.service, "mcu_registry", {}))
+                or (is_response_handler and dispatch_key in getattr(self.service, "mcu_registry", {}))
             ):
-                dispatch_key = (pkt.service_id, pkt.method_id) if pkt.type == PacketType.REQUEST else cmd_id
                 await self.service.handle_mcu_frame(dispatch_key, seq_id, payload)
 
     async def check_baudrate_fallback(self) -> None:
@@ -472,7 +478,7 @@ class SerialTransport:
 
     async def send(
         self,
-        command_id: int,
+        command_id: int | str | protocol.OperationSpec | tuple[int, int],
         payload: bytes | ProtobufMessage,
         seq_id: int | None = None,
         timeout: float | None = None,
@@ -482,22 +488,30 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
-        is_server_response = (
+        pw_method = (
+            protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
+            if spec is not None and spec.service_name and spec.method_name
+            else None
+        )
+        is_streaming_response: bool = False
+        if pw_method is not None and getattr(pw_method, "type", None) is PwRpcMethod.Type.SERVER_STREAMING:
+            is_streaming_response = isinstance(payload, bytes) and payload == b""
+        is_server_response: bool = (
             spec is not None
             and spec.response_type is not None
             and spec.response_type is not spec.request_type
-            and isinstance(payload, spec.response_type)
+            and (isinstance(payload, spec.response_type) or is_streaming_response)
         )
         if (
             spec is not None
             and not is_server_response
             and spec.service_name
             and spec.method_name
-            and spec.command_id not in _HANDSHAKE_RAW_REQUESTS
+            and spec.name not in _HANDSHAKE_RAW_NAMES
         ):
             return await self._send_rpc(spec, payload, timeout)
 
-        return await self.send_raw(command_id, payload, seq_id)
+        return await self.send_raw(spec if spec is not None else command_id, payload, seq_id)
 
     def queue_rpc_packet(self, packet: bytes) -> None:
         """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
@@ -610,30 +624,41 @@ class SerialTransport:
         request: ProtobufMessage,
         method_name: str,
         timeout: float,
+        *,
+        is_finite_stream: bool = False,
     ) -> bool | ProtobufMessage:
         for attempt in range(1, self.max_attempts + 1):
             loop = asyncio.get_running_loop()
             completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
             callback_state: dict[str, ProtobufMessage | None] = {"response": None}
+            stream_chunks: list[bytes] = []
 
             def _on_next(
                 _call: Any,
                 message: ProtobufMessage,
                 state: dict[str, ProtobufMessage | None] = callback_state,
+                chunks: list[bytes] = stream_chunks,
             ) -> None:
-                state["response"] = message
+                if is_finite_stream:
+                    chunks.append(bytes(getattr(message, "content", b"")))
+                else:
+                    state["response"] = message
 
             def _on_completed(
                 _call: Any,
                 status: Any,
                 future: asyncio.Future[bool | ProtobufMessage] = completion,
                 state: dict[str, ProtobufMessage | None] = callback_state,
+                chunks: list[bytes] = stream_chunks,
             ) -> None:
                 if future.done():
                     return
                 if status.ok():
-                    response_message = state["response"]
-                    future.set_result(response_message if response_message is not None else True)
+                    if is_finite_stream:
+                        future.set_result(pb.FileReadResponse(content=b"".join(chunks)))
+                    else:
+                        response_message = state["response"]
+                        future.set_result(response_message if response_message is not None else True)
                 else:
                     future.set_result(False)
 
@@ -752,12 +777,26 @@ class SerialTransport:
         if rpc_method is None:
             return False
         method_name = f"{spec.service_name}/{spec.method_name}"
-        if spec.command_id == protocol.Command.CMD_PIN_SUBSCRIBE.value:
-            return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
+        pw_method = protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
         effective_timeout = timeout if timeout is not None else self._response_timeout
+        if pw_method.type is PwRpcMethod.Type.SERVER_STREAMING:
+            if spec.response_type is pb.FileReadResponse:
+                return await self._invoke_rpc_with_retries(
+                    rpc_method,
+                    request,
+                    method_name,
+                    effective_timeout,
+                    is_finite_stream=True,
+                )
+            return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 
-    async def send_raw(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
+    async def send_raw(
+        self,
+        command_id: int | str | protocol.OperationSpec | tuple[int, int],
+        payload: bytes | ProtobufMessage,
+        seq_id: int | None = None,
+    ) -> bool:
         """Low-level send logic without tracking."""
         if not self.serial:
             return False
@@ -774,9 +813,33 @@ class SerialTransport:
                 self.state.mcu_is_paused = False
                 self.state.serial_tx_allowed.set()
 
+        spec = get_operation(command_id)
         if seq_id is None:
-            self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
-            seq_id = self.tx_sequence_id
+            if (
+                spec is not None
+                and spec.service_id is not None
+                and spec.method_id is not None
+                and spec.response_type is not None
+                and spec.response_type is not spec.request_type
+                and (spec.service_id, spec.method_id) in self._active_server_call_ids
+            ):
+                key = (spec.service_id, spec.method_id)
+                pw_method = (
+                    protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
+                    if spec.service_name and spec.method_name
+                    else None
+                )
+                if (
+                    pw_method is not None
+                    and pw_method.type is PwRpcMethod.Type.SERVER_STREAMING
+                    and isinstance(payload, spec.response_type)
+                ):
+                    seq_id = self._active_server_call_ids[key]
+                else:
+                    seq_id = self._active_server_call_ids.pop(key)
+            else:
+                self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
+                seq_id = self.tx_sequence_id
 
         async with self._serial_write_lock:
             serial_port = self.serial
@@ -784,10 +847,12 @@ class SerialTransport:
                 return False
 
             cipher = self.state.link_cipher
-            is_link_reset = command_id == protocol.Command.CMD_LINK_RESET.value
-            is_link_sync = command_id == protocol.Command.CMD_LINK_SYNC.value
+            target = spec if spec is not None else command_id
+            is_link_reset = spec is _LINK_RESET_SPEC
+            is_link_sync = spec is _LINK_SYNC_SPEC
+            is_console_write = (spec is not None and spec.name == "ConsoleWrite") or command_id == "ConsoleWrite"
 
-            if command_id == protocol.Command.CMD_CONSOLE_WRITE.value:
+            if is_console_write:
                 if isinstance(payload, bytes):
                     data = payload
                 elif hasattr(payload, "data"):
@@ -812,16 +877,16 @@ class SerialTransport:
                 if cipher is not None and not is_link_reset:
                     from pw_hdlc.encode import ui_frame
 
-                    packet = protocol.encode_rpc_packet(command_id, payload, call_id=seq_id or 1)
+                    packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
                     envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
                     encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
                 else:
-                    encoded = protocol.encode_hdlc_rpc(command_id, payload, call_id=seq_id or 1)
+                    encoded = protocol.encode_hdlc_rpc(target, payload, call_id=seq_id or 1)
 
             if logger.is_enabled_for(logging.DEBUG):
                 logger.debug(
-                    "[SERIAL -> MCU] [CMD:0x%02X] [HDLC]: [%s]",
-                    command_id,
+                    "[SERIAL -> MCU] [OP:%s] [HDLC]: [%s]",
+                    spec.name if spec is not None else command_id,
                     encoded.hex().upper(),
                 )
 
@@ -845,7 +910,7 @@ class SerialTransport:
         self.state.connection_fsm.start_negotiating()
         try:
             if not await self.send(
-                protocol.Command.CMD_SET_BAUDRATE.value,
+                "rpc.pb.SystemService/SetBaudrate",
                 payload,
                 timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
             ):

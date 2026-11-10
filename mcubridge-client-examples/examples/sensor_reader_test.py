@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -46,10 +46,10 @@ async def run_test(
                 break
 
             if is_analog:
-                resp_ar = await stub.AnalogRead(pb.PinRead(pin=pin_number))
+                resp_ar = await stub.AnalogRead(mcu_wire_pb2.PinRead(pin=pin_number))
                 logger.info("Received analog value", pin=pin, value=resp_ar.value)
             else:
-                resp_dr = await stub.DigitalRead(pb.PinRead(pin=pin_number))
+                resp_dr = await stub.DigitalRead(mcu_wire_pb2.PinRead(pin=pin_number))
                 logger.info("Received digital value", pin=pin, value=resp_dr.value)
 
             await asyncio.sleep(interval)

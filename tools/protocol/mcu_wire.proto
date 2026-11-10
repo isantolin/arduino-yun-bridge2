@@ -439,114 +439,124 @@ message Empty {}
 
 service GpioService {
   rpc SetPinMode(rpc.pb.PinMode) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_SET_PIN_MODE";
+    option (auth_field) = "digital_mode";
   }
   rpc DigitalWrite(rpc.pb.DigitalWrite) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_DIGITAL_WRITE";
+    option (auth_field) = "digital_write";
   }
   rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse) {
-    option (rpc_command) = "CMD_DIGITAL_READ";
+    option (auth_field) = "digital_read";
   }
   rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_ANALOG_WRITE";
+    option (auth_field) = "analog_write";
   }
   rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse) {
-    option (rpc_command) = "CMD_ANALOG_READ";
+    option (auth_field) = "analog_read";
   }
   rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (stream rpc.pb.PinUpdateEvent) {
-    option (rpc_command) = "CMD_PIN_SUBSCRIBE";
+    option (auth_field) = "gpio_subscribe";
   }
 }
 
 service SystemService {
   rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse) {
-    option (rpc_command) = "CMD_GET_VERSION";
+    option (auth_field) = "system_version";
   }
   rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse) {
-    option (rpc_command) = "CMD_GET_FREE_MEMORY";
+    option (auth_field) = "system_free_memory";
   }
   rpc LinkSync(rpc.pb.LinkSync) returns (rpc.pb.LinkSync) {
-    option (rpc_command) = "CMD_LINK_SYNC";
+    option (method_description) = "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)].";
+    option (pre_sync_allowed) = true;
+    option (mcu_handler) = "handshake.handle_link_sync_resp";
   }
   rpc LinkReset(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_LINK_RESET";
+    option (method_description) = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters.";
   }
-  rpc GetCapabilities(rpc.pb.SubscribeRequest) returns (rpc.pb.Capabilities) {
-    option (rpc_command) = "CMD_GET_CAPABILITIES";
-  }
-  rpc SetBaudrate(rpc.pb.SetBaudratePacket) returns (rpc.pb.SetBaudratePacket) {
-    option (rpc_command) = "CMD_SET_BAUDRATE";
-  }
+  rpc GetCapabilities(rpc.pb.SubscribeRequest) returns (rpc.pb.Capabilities);
+  rpc SetBaudrate(rpc.pb.SetBaudratePacket) returns (rpc.pb.SetBaudratePacket);
   rpc EnterBootloader(rpc.pb.EnterBootloader) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_ENTER_BOOTLOADER";
+    option (auth_field) = "system_bootloader";
   }
 }
 
 service ClockSyncService {
   rpc ClockSync(rpc.pb.ClockSyncRequest) returns (rpc.pb.ClockSyncResponse) {
-    option (rpc_command) = "CMD_CLOCK_SYNC";
+    option (auth_field) = "clock_sync";
   }
 }
 
 service SpiService {
   rpc Begin(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_SPI_BEGIN";
+    option (auth_field) = "spi_begin";
   }
   rpc End(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_SPI_END";
+    option (auth_field) = "spi_end";
   }
   rpc SetConfig(rpc.pb.SpiConfig) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_SPI_SET_CONFIG";
+    option (auth_field) = "spi_config";
   }
   rpc Transfer(rpc.pb.SpiTransfer) returns (rpc.pb.SpiTransferResponse) {
-    option (rpc_command) = "CMD_SPI_TRANSFER";
+    option (auth_field) = "spi_transfer";
   }
 }
 
 service FileSystemService {
   rpc Write(rpc.pb.FileWrite) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_FILE_WRITE";
+    option (auth_field) = "file_write";
+    option (mcu_handler) = "file_write";
   }
-  rpc Read(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse) {
-    option (rpc_command) = "CMD_FILE_READ";
+  rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse) {
+    option (auth_field) = "file_read";
+    option (mcu_handler) = "file_read";
   }
   rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_FILE_REMOVE";
+    option (auth_field) = "file_remove";
+    option (mcu_handler) = "file_remove";
   }
 }
 
 service MailboxService {
   rpc Push(rpc.pb.MailboxPush) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_MAILBOX_PUSH";
+    option (cloud_topic) = "mailbox/incoming";
+    option (auth_field) = "mailbox_write";
+    option (mcu_handler) = "mailbox_push";
   }
   rpc Read(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse) {
-    option (rpc_command) = "CMD_MAILBOX_READ";
+    option (auth_field) = "mailbox_read";
+    option (mcu_handler) = "mailbox_read";
   }
   rpc Available(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxAvailableResponse) {
-    option (rpc_command) = "CMD_MAILBOX_AVAILABLE";
+    option (mcu_handler) = "mailbox_available";
   }
   rpc Processed(rpc.pb.MailboxProcessed) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_MAILBOX_PROCESSED";
+    option (cloud_topic) = "mailbox/processed";
+    option (mcu_handler) = "publish_mcu_message";
   }
 }
 
 service ProcessService {
   rpc RunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse) {
-    option (rpc_command) = "CMD_PROCESS_RUN_ASYNC";
+    option (auth_field) = "shell_run_async";
+    option (mcu_handler) = "process_run_async";
   }
   rpc Poll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse) {
-    option (rpc_command) = "CMD_PROCESS_POLL";
+    option (auth_field) = "shell_poll";
+    option (mcu_handler) = "process_poll";
   }
   rpc Kill(rpc.pb.ProcessKill) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_PROCESS_KILL";
+    option (auth_field) = "shell_kill";
+    option (mcu_handler) = "process_kill";
   }
 }
 
 service DataStoreService {
   rpc Put(rpc.pb.DatastorePut) returns (rpc.pb.Empty) {
-    option (rpc_command) = "CMD_DATASTORE_PUT";
+    option (auth_field) = "datastore_put";
+    option (mcu_handler) = "datastore_put";
   }
   rpc Get(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse) {
-    option (rpc_command) = "CMD_DATASTORE_GET";
+    option (auth_field) = "datastore_get";
+    option (mcu_handler) = "datastore_get";
   }
 }

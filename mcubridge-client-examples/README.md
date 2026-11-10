@@ -148,16 +148,18 @@ python3 mcubridge-client-examples/examples/sensor_reader_test.py \
 ```python
 import asyncio
 from grpclib.client import Channel
-from mcubridge_client import pb, pb_grpc
+from mcubridge_client import LocalBridgeStub, mcu_wire_pb2
 
 
 async def main():
     device_id = "yun-mcu-01"
     async with Channel("127.0.0.1", 8443) as channel:
-        stub = pb_grpc.LocalBridgeStub(channel)
+        stub = LocalBridgeStub(channel)
 
         # Inyectar x-device-id en los metadatos de la llamada
-        response = await stub.DigitalWrite(pb.DigitalWrite(pin=13, value=1), metadata={"x-device-id": device_id})
+        response = await stub.DigitalWrite(
+            mcu_wire_pb2.DigitalWrite(pin=13, value=1), metadata={"x-device-id": device_id}
+        )
         print("Respuesta:", response.status)
 
 

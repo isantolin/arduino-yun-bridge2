@@ -53,7 +53,6 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
         proto_dir / "mcubridge.options",
         proto_dir / "buf.gen.yaml",
         template_dir / "protocol.py.j2",
-        pigweed_root / "pw_rpc" / "internal" / "packet.proto",
     ):
         original_content = changed_input.read_text(encoding="utf-8")
         changed_input.write_text(original_content + "# changed\n", encoding="utf-8")

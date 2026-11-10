@@ -36,7 +36,7 @@ class FrameDebugSnapshot:
     def render(self) -> str:
         """Renders the snapshot as a formatted string for display."""
         return (
-            f"Command: {self.command_name} (0x{self.command_id:02X})\n"
+            f"Operation: {self.command_name} (0x{self.command_id:02X})\n"
             f"Payload Length: {self.payload_length} bytes\n"
             f"HDLC Length: {self.hdlc_length} bytes\n"
             f"Encoded Frame (hex): {self.encoded_hex}\n"
@@ -44,16 +44,25 @@ class FrameDebugSnapshot:
         )
 
 
-_ENUM_BY_NAME: dict[str, int] = {
-    entry.name.upper(): entry.value for enum_cls in (protocol.Command, protocol.Status) for entry in enum_cls
+_OP_BY_METHOD_ID: dict[int, protocol.OperationSpec] = {
+    op.method_id: op for op in protocol.OPERATIONS if op.method_id is not None
 }
-_ENUM_BY_VALUE: dict[int, str] = {
-    entry.value: entry.name for enum_cls in (protocol.Command, protocol.Status) for entry in enum_cls
-}
+ENUM_BY_NAME: dict[str, int] = {entry.name.upper(): entry.value for entry in protocol.Status}
+for _op in protocol.OPERATIONS:
+    if _op.method_id is not None:
+        ENUM_BY_NAME[_op.name.upper()] = _op.method_id
+        if _op.method_name:
+            ENUM_BY_NAME[_op.method_name.upper()] = _op.method_id
+        if _op.rpc_name:
+            ENUM_BY_NAME[_op.rpc_name.upper()] = _op.method_id
+ENUM_BY_VALUE: dict[int, str] = {entry.value: entry.name for entry in protocol.Status}
+for _op in protocol.OPERATIONS:
+    if _op.method_id is not None:
+        ENUM_BY_VALUE[_op.method_id] = _op.name
 
 
 def name_for_command(command_id: int) -> str:
-    return _ENUM_BY_VALUE.get(command_id, f"UNKNOWN(0x{command_id:02X})")
+    return ENUM_BY_VALUE.get(command_id, f"UNKNOWN(0x{command_id:02X})")
 
 
 def resolve_command(cmd_str: str) -> int:
@@ -67,7 +76,7 @@ def resolve_command(cmd_str: str) -> int:
     if clean.isdigit():
         return int(clean)
 
-    cmd_val = _ENUM_BY_NAME.get(clean.upper())
+    cmd_val = ENUM_BY_NAME.get(clean.upper())
     if cmd_val is not None:
         return cmd_val
 
@@ -83,7 +92,7 @@ def parse_payload(payload_str: str | None) -> bytes:
     try:
         return binascii.unhexlify(clean_hex)
     except binascii.Error as e:
-        if "Odd-length" in str(e):
+        if "Odd" in str(e):
             raise ValueError("Odd-length string") from e
         raise ValueError("Invalid hex payload") from e
 
@@ -93,7 +102,8 @@ def _hex_with_spacing(data: bytes) -> str:
 
 
 def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDebugSnapshot:
-    encoded_packet = protocol.encode_hdlc_rpc(command_id, payload, call_id=0)
+    target = _OP_BY_METHOD_ID.get(command_id, command_id)
+    encoded_packet = protocol.encode_hdlc_rpc(target, payload, call_id=0)
 
     if isinstance(payload, (bytes, bytearray, memoryview)):
         payload_length = len(payload)
@@ -117,9 +127,7 @@ def _decode_frame(encoded_packet: bytes) -> tuple[int, int, bytes]:
     for frame in decoder.process(encoded_packet):
         if frame.ok() and frame.address == protocol.HDLC_ADDRESS_RPC:
             pkt = pw_packets.decode(frame.data)
-            op = protocol.get_operation((pkt.service_id, pkt.method_id))
-            cmd_id = op.command_id if op and op.command_id is not None else pkt.method_id
-            return cmd_id, pkt.call_id, pkt.payload
+            return pkt.method_id, pkt.call_id, pkt.payload
     raise ValueError("No valid HDLC RPC frame found")
 
 
@@ -212,7 +220,7 @@ cli = typer.Typer(help="MCU Bridge Frame Debugger", add_completion=False)
 
 @cli.command()
 def generate(
-    command: Annotated[str, typer.Option("--command", "-c", help="Command name (e.g. CMD_DIGITAL_READ) or ID")],
+    command: Annotated[str, typer.Option("--command", "-c", help="RPC method name (e.g. DigitalRead) or ID")],
     payload: Annotated[str, typer.Option("--payload", "-p", help="Payload in hex format (e.g. 0x010203)")] = "",
 ) -> None:
     """Generate and display frame debug information without sending."""
@@ -226,8 +234,8 @@ def send(
     port: Annotated[str, typer.Option("--port", help="Serial port URL, device or TCP socket")] = "/dev/ttyATH0",
     baudrate: Annotated[int, typer.Option("--baudrate", help="Serial baudrate")] = DEFAULT_BAUDRATE,
     command: Annotated[
-        str, typer.Option("--command", "-c", help="Command name (e.g. CMD_DIGITAL_READ) or ID")
-    ] = "CMD_GET_VERSION",
+        str, typer.Option("--command", "-c", help="RPC method name (e.g. DigitalRead) or ID")
+    ] = "GetVersion",
     payload: Annotated[str, typer.Option("--payload", "-p", help="Payload in hex format (e.g. 0x010203)")] = "",
     interval: Annotated[float, typer.Option("--interval", "-i", help="Interval between frames in seconds")] = 1.0,
     count: Annotated[int, typer.Option("--count", "-n", help="Number of frames to send (0 = infinite)")] = 1,

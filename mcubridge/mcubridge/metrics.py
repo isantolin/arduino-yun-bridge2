@@ -9,22 +9,22 @@ from typing import Any
 
 import structlog
 
-from .protocol import mcubridge_pb2 as pb
+from .protocol import cloud_gateway_pb2, mcu_wire_pb2
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from .protocol.protocol import BRIDGE_SNAPSHOT_EXPIRY_SECONDS, Topic, topic_path
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
 
-PublishEnqueue = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
+PublishEnqueue = Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[None]]
 
 
 def _build_metrics_message(
     state: RuntimeState,
-    snapshot: pb.DaemonMetrics,
+    snapshot: mcu_wire_pb2.DaemonMetrics,
     *,
     expiry_seconds: float,
-) -> pb.CloudQueuedPublish:
+) -> cloud_gateway_pb2.CloudQueuedPublish:
     topic = topic_path(
         state.cloud_topic_prefix,
         Topic.SYSTEM,
@@ -181,7 +181,7 @@ def _build_bridge_snapshot_message(
     state: RuntimeState,
     flavor: str,
     snapshot: Any,
-) -> pb.CloudQueuedPublish:
+) -> cloud_gateway_pb2.CloudQueuedPublish:
     segments: Sequence[str] = (
         ("bridge", "handshake", "value") if flavor == "handshake" else ("bridge", "summary", "value")
     )

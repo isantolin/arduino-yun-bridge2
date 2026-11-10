@@ -10,7 +10,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, pb
+from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -29,7 +29,7 @@ async def run_test(
         async def console_listener() -> None:
             try:
                 async with stub.SubscribeConsole.open() as stream:
-                    await stream.send_message(pb.SubscribeRequest())
+                    await stream.send_message(mcu_wire_pb2.SubscribeRequest())
                     async for msg in stream:
                         payload_str = (msg.payload or b"").decode("utf-8")
                         logger.info("Received from Arduino", payload=payload_str)
@@ -45,7 +45,7 @@ async def run_test(
 
         if not is_interactive:
             logger.info("Non-interactive mode. Running Echo Test (ping/pong)...")
-            await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
+            await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
             await asyncio.sleep(2.0)
             logger.info("Echo Test phase completed.")
         else:
@@ -56,7 +56,7 @@ async def run_test(
                     if user_input.lower() == "exit":
                         break
                     await stub.Publish(
-                        pb.CloudQueuedPublish(
+                        cloud_gateway_pb2.CloudQueuedPublish(
                             topic_name=topic_cw,
                             payload=user_input.encode("utf-8"),
                             qos=1,

@@ -21,7 +21,7 @@ from pw_hdlc.decode import FrameDecoder
 from pw_rpc.internal.packet_pb2 import RpcPacket
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -50,7 +50,7 @@ def test_wait_for_node_ready_requires_sync_and_capabilities(
 
 
 def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: pytest.MonkeyPatch) -> None:
-    sync_operation = fleet_mesh.protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+    sync_operation = fleet_mesh.protocol.get_operation("rpc.pb.SystemService/LinkSync")
     assert sync_operation is not None
     assert sync_operation.method_id is not None
 
@@ -101,7 +101,7 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
         def _queue_response(self, call_id: int, nonce: bytes, tag: bytes) -> None:
             self.incoming.extend(
                 fleet_mesh.protocol.encode_hdlc_rpc(
-                    protocol.Command.CMD_LINK_SYNC.value,
+                    "rpc.pb.SystemService/LinkSync",
                     mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
                     call_id=call_id,
                     packet_type=1,
@@ -127,7 +127,7 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
 
 
 def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    sync_operation = fleet_mesh.protocol.get_operation(protocol.Command.CMD_LINK_SYNC.value)
+    sync_operation = fleet_mesh.protocol.get_operation("rpc.pb.SystemService/LinkSync")
     assert sync_operation is not None
     assert sync_operation.method_id is not None
 
@@ -158,9 +158,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
                 response_tag = fleet_mesh.SerialHandshakeManager.calculate_handshake_response_tag(
                     secret, sync_request.nonce
                 )
-                self.pending.append(
-                    (time.monotonic() + 0.55, request.call_id, sync_request.nonce, response_tag)
-                )
+                self.pending.append((time.monotonic() + 0.55, request.call_id, sync_request.nonce, response_tag))
                 self.max_inflight = max(self.max_inflight, len(self.pending))
             return len(data)
 
@@ -171,7 +169,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
             for _, call_id, nonce, tag in ready:
                 self.incoming.extend(
                     fleet_mesh.protocol.encode_hdlc_rpc(
-                        protocol.Command.CMD_LINK_SYNC.value,
+                        "rpc.pb.SystemService/LinkSync",
                         mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
                         call_id=call_id,
                         packet_type=1,
@@ -190,6 +188,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
         return fake_serial
 
     monkeypatch.setattr(fleet_mesh.serial, "serial_for_url", open_serial)
+
     def fixed_nonce(size: int) -> bytes:
         return bytes([2]) * size
 
@@ -213,7 +212,7 @@ class MeshNodeContext:
         self.node_dir.mkdir(parents=True, exist_ok=True)
 
         self.status_file = self.node_dir / "status.json"
-        self.published_messages: list[pb.CloudQueuedPublish] = []
+        self.published_messages: list[cloud_gateway_pb2.CloudQueuedPublish] = []
 
         self.config = RuntimeConfig(
             cloud_host="127.0.0.1",
@@ -241,7 +240,7 @@ class MeshNodeContext:
             cloud_publisher=self._capture_cloud_publish,
         )
 
-    async def _capture_cloud_publish(self, msg: pb.CloudQueuedPublish) -> None:
+    async def _capture_cloud_publish(self, msg: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         self.published_messages.append(msg)
 
 

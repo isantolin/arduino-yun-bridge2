@@ -1,6 +1,19 @@
 """Pytest configuration for MCU Bridge tests."""
 
 from __future__ import annotations
+from pytest_mock import MockerFixture
+from mcubridge.transport.serial import SerialTransport
+from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.services.runtime import BridgeService
+from mcubridge.protocol.protocol import (
+    DEFAULT_BAUDRATE,
+    DEFAULT_CLOUD_PORT,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_RECONNECT_DELAY,
+    DEFAULT_SAFE_BAUDRATE,
+    DEFAULT_STATUS_INTERVAL,
+)
+from mcubridge.protocol import protocol
 
 import gc
 import logging
@@ -21,25 +34,15 @@ import pytest
 import structlog
 from hypothesis import Phase
 from hypothesis import settings as hyp_settings
+
 from hypothesis import strategies as st
 from hypothesis.strategies import DrawFn
 from mcubridge.config import common, settings
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import (
-    DEFAULT_BAUDRATE,
-    DEFAULT_CLOUD_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SAFE_BAUDRATE,
-    DEFAULT_STATUS_INTERVAL,
-)
-from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.transport.serial import SerialTransport
-from pytest_mock import MockerFixture
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+
+# Canonical Protobuf modules are imported directly
 
 # Hypothesis profile registration for deterministic SIL-2 test runs
 hyp_settings.register_profile(
@@ -106,7 +109,7 @@ original_get_default_config = mcubridge.config.common.get_default_config
 
 
 class PatchedRuntimeConfig:
-    def __new__(_cls: type[PatchedRuntimeConfig], *args: Any, **kwargs: Any) -> pb.RuntimeConfig:
+    def __new__(_cls: type[PatchedRuntimeConfig], *args: Any, **kwargs: Any) -> config_schema_pb2.RuntimeConfig:
         mappings = {
             "cloud_topic": "topic_prefix",
             "cloud_spool_dir": "cloud_spool_dir",
@@ -285,7 +288,7 @@ def default_serial_secret(mocker: MockerFixture) -> None:
 
 
 @pytest.fixture
-def runtime_config() -> pb.RuntimeConfig:
+def runtime_config() -> config_schema_pb2.RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -319,7 +322,7 @@ def runtime_config() -> pb.RuntimeConfig:
 
 
 @pytest.fixture
-def runtime_state(runtime_config: pb.RuntimeConfig) -> Iterator[RuntimeState]:
+def runtime_state(runtime_config: config_schema_pb2.RuntimeConfig) -> Iterator[RuntimeState]:
     """Provide a RuntimeState instance with proper cleanup."""
     state = create_runtime_state(runtime_config)
     state.connection_fsm.connect()
@@ -331,7 +334,7 @@ def runtime_state(runtime_config: pb.RuntimeConfig) -> Iterator[RuntimeState]:
 
 
 @pytest.fixture
-def real_config() -> pb.RuntimeConfig:
+def real_config() -> config_schema_pb2.RuntimeConfig:
     raw = settings.get_default_config()
     raw["serial_shared_secret"] = b"abcd1234"
     raw["serial_retry_timeout"] = 1.0
@@ -348,7 +351,7 @@ def real_config() -> pb.RuntimeConfig:
 
 @pytest.fixture
 def service_stack(
-    runtime_config: pb.RuntimeConfig,
+    runtime_config: config_schema_pb2.RuntimeConfig,
 ) -> Iterator[tuple[BridgeService, RuntimeState, SerialTransport]]:
     """Provide a complete service stack (Service, State, Serial) for integration testing."""
     state = create_runtime_state(runtime_config)
@@ -377,14 +380,14 @@ def mock_serial() -> AsyncMock:
 
 @pytest.fixture
 def mock_bridge_service(
-    runtime_config: pb.RuntimeConfig, runtime_state: RuntimeState, mock_serial: AsyncMock
+    runtime_config: config_schema_pb2.RuntimeConfig, runtime_state: RuntimeState, mock_serial: AsyncMock
 ) -> BridgeService:
     """Provide an isolated BridgeService instance with mocked serial transport."""
     return BridgeService(runtime_config, runtime_state, mock_serial)
 
 
 @pytest.fixture
-def mock_daemon_env(mocker: MockerFixture, runtime_config: pb.RuntimeConfig) -> dict[str, Any]:
+def mock_daemon_env(mocker: MockerFixture, runtime_config: config_schema_pb2.RuntimeConfig) -> dict[str, Any]:
     """Reusable fixture for daemon bootstrap isolation."""
     mock_load = mocker.patch("mcubridge.daemon.load_runtime_config", return_value=runtime_config)
     mock_verify = mocker.patch("mcubridge.daemon.verify_crypto_integrity")
@@ -406,7 +409,7 @@ def st_cloud_queued_publish(
     draw: DrawFn,
     min_payload_size: int = 0,
     max_payload_size: int = 1024,
-) -> pb.CloudQueuedPublish:
+) -> cloud_gateway_pb2.CloudQueuedPublish:
     """Canonical Hypothesis strategy for generating valid Protobuf CloudQueuedPublish instances."""
     topic = draw(st.text(min_size=1, max_size=64))
     payload = draw(st.binary(min_size=min_payload_size, max_size=max_payload_size))
@@ -414,7 +417,7 @@ def st_cloud_queued_publish(
     retain = draw(st.booleans())
     corr = draw(st.binary(max_size=32))
     reply = draw(st.text(max_size=64))
-    return pb.CloudQueuedPublish(
+    return cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=topic,
         payload=payload,
         qos=qos,
@@ -425,7 +428,7 @@ def st_cloud_queued_publish(
 
 
 @st.composite
-def st_runtime_config(draw: DrawFn) -> pb.RuntimeConfig:
+def st_runtime_config(draw: DrawFn) -> config_schema_pb2.RuntimeConfig:
     """Canonical Hypothesis strategy for generating valid RuntimeConfig instances."""
     baud = draw(st.sampled_from([9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]))
     port = draw(st.integers(min_value=1024, max_value=65535))
@@ -442,92 +445,94 @@ def st_runtime_config(draw: DrawFn) -> pb.RuntimeConfig:
 
 
 @st.composite
-def st_pin_mode(draw: DrawFn) -> pb.PinMode:
+def st_pin_mode(draw: DrawFn) -> mcu_wire_pb2.PinMode:
     """Canonical Hypothesis strategy for generating PinMode messages."""
     pin = draw(st.integers(min_value=0, max_value=64))
-    mode = draw(st.sampled_from([pb.PIN_INPUT, pb.PIN_OUTPUT, pb.PIN_INPUT_PULLUP]))
-    return pb.PinMode(pin=pin, mode=mode)
+    mode = draw(
+        st.sampled_from([config_schema_pb2.PIN_INPUT, config_schema_pb2.PIN_OUTPUT, config_schema_pb2.PIN_INPUT_PULLUP])
+    )
+    return mcu_wire_pb2.PinMode(pin=pin, mode=mode)
 
 
 @st.composite
-def st_digital_write(draw: DrawFn) -> pb.DigitalWrite:
+def st_digital_write(draw: DrawFn) -> mcu_wire_pb2.DigitalWrite:
     """Canonical Hypothesis strategy for generating DigitalWrite messages."""
     pin = draw(st.integers(min_value=0, max_value=64))
     value = draw(st.sampled_from([0, 1]))
-    return pb.DigitalWrite(pin=pin, value=value)
+    return mcu_wire_pb2.DigitalWrite(pin=pin, value=value)
 
 
 @st.composite
-def st_analog_write(draw: DrawFn) -> pb.AnalogWrite:
+def st_analog_write(draw: DrawFn) -> mcu_wire_pb2.AnalogWrite:
     """Canonical Hypothesis strategy for generating AnalogWrite messages."""
     pin = draw(st.integers(min_value=0, max_value=64))
     value = draw(st.integers(min_value=0, max_value=255))
-    return pb.AnalogWrite(pin=pin, value=value)
+    return mcu_wire_pb2.AnalogWrite(pin=pin, value=value)
 
 
 @st.composite
-def st_pin_read(draw: DrawFn) -> pb.PinRead:
+def st_pin_read(draw: DrawFn) -> mcu_wire_pb2.PinRead:
     """Canonical Hypothesis strategy for generating PinRead messages."""
     pin = draw(st.integers(min_value=0, max_value=64))
-    return pb.PinRead(pin=pin)
+    return mcu_wire_pb2.PinRead(pin=pin)
 
 
 @st.composite
-def st_datastore_put(draw: DrawFn) -> pb.DatastorePut:
+def st_datastore_put(draw: DrawFn) -> mcu_wire_pb2.DatastorePut:
     """Canonical Hypothesis strategy for generating DatastorePut messages."""
     key = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,32}$", fullmatch=True))
     value = draw(st.binary(min_size=0, max_size=256))
-    return pb.DatastorePut(key=key, value=value)
+    return mcu_wire_pb2.DatastorePut(key=key, value=value)
 
 
 @st.composite
-def st_datastore_get(draw: DrawFn) -> pb.DatastoreGet:
+def st_datastore_get(draw: DrawFn) -> mcu_wire_pb2.DatastoreGet:
     """Canonical Hypothesis strategy for generating DatastoreGet messages."""
     key = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,32}$", fullmatch=True))
-    return pb.DatastoreGet(key=key)
+    return mcu_wire_pb2.DatastoreGet(key=key)
 
 
 @st.composite
-def st_mailbox_push(draw: DrawFn) -> pb.MailboxPush:
+def st_mailbox_push(draw: DrawFn) -> mcu_wire_pb2.MailboxPush:
     """Canonical Hypothesis strategy for generating MailboxPush messages."""
     data = draw(st.binary(min_size=0, max_size=256))
-    return pb.MailboxPush(data=data)
+    return mcu_wire_pb2.MailboxPush(data=data)
 
 
 @st.composite
-def st_file_write(draw: DrawFn) -> pb.FileWrite:
+def st_file_write(draw: DrawFn) -> mcu_wire_pb2.FileWrite:
     """Canonical Hypothesis strategy for generating FileWrite messages."""
     name = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,16}$", fullmatch=True))
     data = draw(st.binary(min_size=0, max_size=512))
-    return pb.FileWrite(path=f"/tmp/{name}", data=data)
+    return mcu_wire_pb2.FileWrite(path=f"/tmp/{name}", data=data)
 
 
 @st.composite
-def st_file_read(draw: DrawFn) -> pb.FileRead:
+def st_file_read(draw: DrawFn) -> mcu_wire_pb2.FileRead:
     """Canonical Hypothesis strategy for generating FileRead messages."""
     name = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,16}$", fullmatch=True))
-    return pb.FileRead(path=f"/tmp/{name}")
+    return mcu_wire_pb2.FileRead(path=f"/tmp/{name}")
 
 
 @st.composite
-def st_spi_transfer(draw: DrawFn) -> pb.SpiTransfer:
+def st_spi_transfer(draw: DrawFn) -> mcu_wire_pb2.SpiTransfer:
     """Canonical Hypothesis strategy for generating SpiTransfer messages."""
     data = draw(st.binary(min_size=1, max_size=64))
-    return pb.SpiTransfer(data=data)
+    return mcu_wire_pb2.SpiTransfer(data=data)
 
 
 # ==============================================================================
 # CANONICAL HYPOTHESIS TYPE STRATEGY REGISTRATIONS [SIL-2]
 # ==============================================================================
-st.register_type_strategy(pb.PinMode, st_pin_mode())
-st.register_type_strategy(pb.DigitalWrite, st_digital_write())
-st.register_type_strategy(pb.AnalogWrite, st_analog_write())
-st.register_type_strategy(pb.PinRead, st_pin_read())
-st.register_type_strategy(pb.DatastorePut, st_datastore_put())
-st.register_type_strategy(pb.DatastoreGet, st_datastore_get())
-st.register_type_strategy(pb.MailboxPush, st_mailbox_push())
-st.register_type_strategy(pb.FileWrite, st_file_write())
-st.register_type_strategy(pb.FileRead, st_file_read())
-st.register_type_strategy(pb.SpiTransfer, st_spi_transfer())
-st.register_type_strategy(pb.CloudQueuedPublish, st_cloud_queued_publish())
-st.register_type_strategy(pb.RuntimeConfig, st_runtime_config())
+st.register_type_strategy(mcu_wire_pb2.PinMode, st_pin_mode())
+st.register_type_strategy(mcu_wire_pb2.DigitalWrite, st_digital_write())
+st.register_type_strategy(mcu_wire_pb2.AnalogWrite, st_analog_write())
+st.register_type_strategy(mcu_wire_pb2.PinRead, st_pin_read())
+st.register_type_strategy(mcu_wire_pb2.DatastorePut, st_datastore_put())
+st.register_type_strategy(mcu_wire_pb2.DatastoreGet, st_datastore_get())
+st.register_type_strategy(mcu_wire_pb2.MailboxPush, st_mailbox_push())
+st.register_type_strategy(mcu_wire_pb2.FileWrite, st_file_write())
+st.register_type_strategy(mcu_wire_pb2.FileRead, st_file_read())
+st.register_type_strategy(mcu_wire_pb2.SpiTransfer, st_spi_transfer())
+st.register_type_strategy(cloud_gateway_pb2.CloudQueuedPublish, st_cloud_queued_publish())
+st.register_type_strategy(config_schema_pb2.RuntimeConfig, st_runtime_config())

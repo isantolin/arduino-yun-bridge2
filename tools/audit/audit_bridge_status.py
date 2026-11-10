@@ -11,7 +11,7 @@ from typing import Annotated, Any, cast
 
 import typer
 from google.protobuf.json_format import ParseDict, ParseError
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2 as pb
 
 try:
     ubus: Any = importlib.import_module("ubus")

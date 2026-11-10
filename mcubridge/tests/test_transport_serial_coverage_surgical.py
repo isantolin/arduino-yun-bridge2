@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
-import mcubridge.protocol.mcubridge_pb2 as pb
+import mcubridge.protocol.mcu_wire_pb2 as pb
 import pytest
 import serial
 from pw_hdlc.decode import FrameDecoder
@@ -16,7 +16,6 @@ from google.protobuf.message import Message as ProtobufMessage
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -106,7 +105,7 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
 async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     transport.serial = None
-    ok = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
+    ok = await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
     assert ok is False
 
 
@@ -135,12 +134,12 @@ async def test_logging_not_debug_branches(
 
     mocker.patch("mcubridge.transport.serial.logger.is_enabled_for", return_value=False)
     # 1. send_raw when logger is not debug
-    ok = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
+    ok = await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
     assert ok is True
 
     # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
-    cleartext = protocol.encode_hdlc_rpc(Command.CMD_GET_VERSION.value, payload, call_id=1)
+    cleartext = protocol.encode_hdlc_rpc("rpc.pb.SystemService/GetVersion", payload, call_id=1)
     frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
@@ -159,7 +158,6 @@ async def test_feed_data_uninitialized_protobuf(
 
     fake_spec = protocol.OperationSpec(
         name="fake",
-        command_id=0x50,
         service_id=0x1000,
         method_id=0x2000,
         response_type=cast(Any, MagicMock(return_value=mock_proto)),

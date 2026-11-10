@@ -17,7 +17,7 @@ import structlog
 from google.protobuf import json_format
 from google.protobuf.descriptor import FieldDescriptor
 
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import config_schema_pb2
 from mcubridge.protocol.structures import validate_config
 
 from ..config.common import (
@@ -29,11 +29,11 @@ logger = structlog.get_logger(__name__)
 
 _PATH_FIELD_NAMES: Final[frozenset[str]] = frozenset(
     f.name
-    for f in pb.RuntimeConfig.DESCRIPTOR.fields
+    for f in config_schema_pb2.RuntimeConfig.DESCRIPTOR.fields
     if any(x in f.name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key"))
 )
 
-_TOPIC_AUTH_FIELDS: Final[frozenset[str]] = frozenset(pb.TopicAuthorization.DESCRIPTOR.fields_by_name)
+_TOPIC_AUTH_FIELDS: Final[frozenset[str]] = frozenset(config_schema_pb2.TopicAuthorization.DESCRIPTOR.fields_by_name)
 
 
 def coerce_bool(v: Any) -> bool:
@@ -64,7 +64,7 @@ def coerce_commands(v: Any) -> list[str]:
     return [] if v is None else [str(v)]
 
 
-RuntimeConfig = pb.RuntimeConfig
+RuntimeConfig = config_schema_pb2.RuntimeConfig
 
 
 def load_raw_config(uci_getter: Callable[[], dict[str, Any]] | None = None) -> tuple[dict[str, Any], str]:
@@ -104,7 +104,7 @@ def normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes | 
     norm: dict[str, Any] = {}
     auth: dict[str, bool] = {}
     secret: bytes | None = None
-    fields = pb.RuntimeConfig.DESCRIPTOR.fields_by_name
+    fields = config_schema_pb2.RuntimeConfig.DESCRIPTOR.fields_by_name
 
     for k, v in raw.items():
         if k == "serial_shared_secret":
@@ -164,7 +164,7 @@ def load_runtime_config(
         source = "cli"
     _config_source[0] = source
 
-    msg = pb.RuntimeConfig()
+    msg = config_schema_pb2.RuntimeConfig()
     norm_dict, secret = normalize_config_dict(merged_values)
     try:
         json_format.ParseDict(norm_dict, msg, ignore_unknown_fields=True)

@@ -15,7 +15,7 @@ from mcubridge.config.settings import (
     get_config_source,
     load_runtime_config,
 )
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import config_schema_pb2 as pb
 from pytest_mock import MockerFixture
 
 # =============================================================================

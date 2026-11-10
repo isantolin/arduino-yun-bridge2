@@ -77,7 +77,6 @@ ALLOWLIST_PY_HELPERS = {
     "feed_data",
     "check_baudrate_fallback",
     "is_healthy",
-    "unsupported_mcu_request",
     "lookup_topic",
     "request_mcu_version",
     "normalize_config_dict",

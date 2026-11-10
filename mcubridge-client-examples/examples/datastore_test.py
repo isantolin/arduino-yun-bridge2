@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -29,12 +29,12 @@ async def run_test(
         key1: str = "client_test/temperature"
         value1: str = "25.5"
 
-        await stub.DatastorePut(pb.DatastorePut(key=key1, value=value1.encode("utf-8")))
+        await stub.DatastorePut(mcu_wire_pb2.DatastorePut(key=key1, value=value1.encode("utf-8")))
         logger.info("Put value to key", key=key1, value=value1)
 
         # --- Test 2: Get key-value pair ---
         logger.info("[Test 2: Get key-value pair]")
-        resp = await stub.DatastoreGet(pb.DatastoreGet(key=key1))
+        resp = await stub.DatastoreGet(mcu_wire_pb2.DatastoreGet(key=key1))
         logger.info("Retrieved value", key=key1, value=resp.value.decode("utf-8"))
 
     logger.info("Done.")

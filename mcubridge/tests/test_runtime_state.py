@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 from dirty_equals import IsFloat, IsPartialDict, IsPositiveInt
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
 from mcubridge.watchdog import WatchdogKeepalive
 from pytest_mock import MockerFixture

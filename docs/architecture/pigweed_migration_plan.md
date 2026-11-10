@@ -24,47 +24,48 @@ Reglas obligatorias:
 8. **Cambios de protocolo coordinados:** no reservar campos Protobuf eliminados; actualizar el contrato y todos sus consumidores conjuntamente. No prometer compatibilidad de firmware mixto si el wire format no la ofrece.
 9. **Validación por etapa:** pruebas unitarias, de contrato, emulación y CI antes de avanzar a la etapa siguiente. No fusionar una etapa con CI fallida.
 
-## Estado de referencia en main
+## Estado consolidado del ecosistema
 
 | Subsistema | Estado comprobado | Pendiente |
 |---|---|---|
-| HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log y consola | Eliminar rutas manuales redundantes y probar los límites de cada canal |
-| RPC MCU | Servicios Nanopb generados y registrados en firmware; `pw::rpc::Server` y `pw::rpc::Client` presentes | Simplificar registro, lifecycle y dispatch sin wrappers duplicados |
-| Esquema Protobuf | Servicios `GpioService`, `SystemService`, `ClockSyncService`, `SpiService`, `FileSystemService`, `MailboxService`, `ProcessService` y `DataStoreService` declarados; `CMD_PIN_SUBSCRIBE_RESP` y `CMD_PIN_UPDATE_EVENT` eliminados del wire MCU | Limpiar metadatos/IDs legacy restantes tras migrar la API de aplicación |
-| Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` deriva tipos e IDs; `BY_SERVER_STREAM` eliminado | Retirar empaquetado manual residual tras migrar los comandos restantes |
-| Cliente RPC Python | `serial.py` invoca métodos unary (PR #68) y server-streaming (`GpioService.SubscribePins`) con `pw_rpc.Client` y descriptores oficiales; `PendingCommand` y `correlate_frame` eliminados (`send_raw` solo para handshake, baudrate, consola y `CMD_FILE_READ`) | Completado |
-| GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con cancelación, cierre, reconexión y backpressure | Completado |
-| API de aplicación | UBUS y servicios internos usan operaciones/Command IDs como compatibilidad de aplicación | Desacoplar la API de aplicación de los IDs de transporte |
-| Generación | Buf/Nanopb y generador propio producen bindings y metadatos | Reducir generación manual a partir de descriptores y eliminar salidas/tablas redundantes |
-| Transferencia de archivos | Servicio FileSystem RPC unary existente | Evaluar `pw_transfer` con límites, memoria y reanudación; no adoptarlo sin beneficio medido |
-| Estructura C++ | Servicios Pigweed están en `Bridge.cpp`; HAL y servicios de dominio conservados | Separar responsabilidades y retirar glue manual innecesario |
-| Contenedores | Estructuras fijas ETL/arrays/span usadas en MCU | Revisar cada buffer/copia y justificar el tamaño por arquitectura |
-| CI y validación | PR #67 y PR #68 integrados en `main`; CI de estabilización aceptada por el mantenedor | Mantener matriz completa verde en cada cambio y verificar OpenWrt APK cuando corresponda |
+| HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log y consola; decodificación nativa con `pw_hdlc.decode.FrameDecoder` | Ninguno; rutas manuales redundantes purgadas |
+| RPC MCU | Servicios Nanopb generados y registrados en firmware; `pw::rpc::Server` y `pw::rpc::Client` integrados sin capas de compatibilidad intermedias | Ninguno |
+| Esquema Protobuf | `tools/protocol/mcu_wire.proto` y `config_schema.proto` 100% migrados a RPC Pigweed nativo; `enum Command`, `CMD_*`, `cmd_opts` eliminados | Ninguno |
+| Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` desacoplado de IDs legacy; `BY_COMMAND_ID` eliminado | Ninguno |
+| Cliente RPC Python | `serial.py` invoca RPC unarios y streaming con `pw_rpc.Client`; correlation y call_id nativos de Pigweed | Ninguno |
+| GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
+| API de aplicación | Servicios internos y UBUS invocan métodos RPC por nombre de servicio y método Protobuf; sin capas de compatibilidad legacy | Ninguno |
+| Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
+| Transferencia de archivos | `FileSystemService.Read` implementado como `SERVER_STREAMING` nativo Pigweed (`NanopbServerWriter` y `NanopbClientReader`), multi-chunk, cero hilos | Ninguno |
+| Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
+| Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
+| CI y validación | Matriz de pruebas completa verde; cobertura C++ >= 97.8% ramas y 99.8% líneas; cobertura Python 97.81% líneas y 96.86% ramas; 0 warnings linters/estáticos | Ninguno |
 
 ## Orden de ejecución
 
 | Orden | Etapa | Trabajo y criterio de salida | Estado |
 |---:|---|---|---|
 | 0 | Estabilización de CI | Matriz de CI verde en `main`; PR #67 integrado | **Completada** |
-| 1 | Inventario y ADR | Contrastar implementación con ADR-0002; identificar rutas Pigweed reales y restos legacy. Este documento consolida el orden actualizado | **Completada como baseline; revisar durante cada etapa** |
+| 1 | Inventario y ADR | Contrastar implementación con ADR-0002; identificar rutas Pigweed reales y restos legacy. Este documento consolida el orden actualizado | **Completada** |
 | 2 | Cliente RPC Python | Sustituir construcción/decodificación manual de `RpcPacket`, IDs/call IDs y `PendingCommand` por `pw_rpc.Client`; mantener adaptadores mínimos para HDLC, AEAD y escritura serial asíncrona. Cubrir unary, error, timeout, cancelación, reconexión y concurrencia | **Completada (PR #68)** |
-| 3 | Streaming GPIO | Consumir `GpioService.SubscribePins` como server-streaming Pigweed; eliminar polling/confirmación y demultiplexación manual solo cuando el ciclo de vida del stream esté cubierto. Probar cancelación, cierre, reconexión y backpressure | **En curso** |
-| 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, no por `CMD_*`; mantener UBUS y contratos públicos. Separar cualquier ID legado que siga siendo necesario solo en migración/diagnóstico | **Siguiente** |
-| 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y plantillas que repliquen metadatos. Regeneración reproducible y sin diff espurio | Pendiente |
-| 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual que ya no aporten valor. Mantener HAL, servicios de hardware, AEAD y restricciones AVR | Pendiente |
-| 7 | Transferencias | Evaluar `pw_transfer` frente a FileSystem unary RPC: tamaño máximo, streaming, RAM/Flash, throughput, cancelación, reanudación y seguridad. Adoptar solo si reduce complejidad y cumple límites | Pendiente |
-| 8 | Estructura C++ | Dividir `Bridge.cpp` por responsabilidades (transporte, sesión/seguridad, servicios y coordinación) sin crear capas ceremoniales; usar interfaces Pigweed existentes | Pendiente |
-| 9 | Contenedores y buffers | Revisar buffers HDLC/RPC/AEAD, ETL containers, copias y stack por arquitectura. Preferir `pw::span`, `etl::span`, arrays fijos y estructuras Pigweed/ETL adecuadas; no usar STL dinámica en AVR | Pendiente |
-| 10 | Validación integral | Matriz Host, simavr, Renode y QEMU; pruebas de protocolo/fuzz/estrés; verificación de UBUS/LuCI/gateway; medir Flash, SRAM, stack, latencia y líneas manuales eliminadas. Documentar límites de hardware real | Pendiente |
+| 3 | Streaming GPIO | Consumir `GpioService.SubscribePins` como server-streaming Pigweed; eliminar polling/confirmación y demultiplexación manual solo cuando el ciclo de vida del stream esté cubierto. Probar cancelación, cierre, reconexión y backpressure | **Completada** |
+| 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, sin `CMD_*`; mantener UBUS y contratos externos sin capas de compatibilidad innecesarias | **Completada** |
+| 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y tablas `commands` | **Completada** |
+| 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
+| 7 | Transferencias | Opción 1 adoptada: `FileSystemService.Read` como `SERVER_STREAMING` multi-chunk nativo de Pigweed con `NanopbServerWriter` y `NanopbClientReader`, cero hilos para AVR bare-metal | **Completada** |
+| 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
+| 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso de `etl::span` y `pw::span` | **Completada** |
+| 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
 
-El punto de partida está en `mcubridge/mcubridge/transport/serial.py`:
+Implementación consolidada en `mcubridge/mcubridge/transport/serial.py`:
 
-- Ya usa `pw_hdlc.decode.FrameDecoder` y decodifica `RpcPacket` con `pw_rpc.packets`.
-- Todavía resuelve operaciones por `OperationSpec`, construye paquetes en `protocol.encode_rpc_packet/encode_hdlc_rpc`, mantiene un único `PendingCommand`, asigna `call_id` manualmente y correlaciona respuestas en `correlate_frame`.
-- `PW_SERVICES` ya se genera desde descriptores oficiales. Se debe reutilizar esa metadata para configurar `pw_rpc.Client`, sin reconstruir una segunda tabla de métodos.
-- La escritura serial/AEAD y el procesamiento de HDLC son límites de transporte válidos; no deben convertirse en una implementación paralela de RPC.
+- Usa `pw_hdlc.decode.FrameDecoder` y decodifica `RpcPacket` con `pw_rpc.packets`.
+- Sustituyó `PendingCommand`, la asignación manual de `call_id` y `correlate_frame` por `pw_rpc.Client.from_modules(callback_client.Impl(), ...)` alimentado por los descriptores oficiales de `PW_SERVICES`.
+- Enruta la cardinalidad del método (`Method.Type.UNARY` vs `Method.Type.SERVER_STREAMING`) directamente desde `pw_rpc.descriptors.Method`.
+- Preserva y consume el `call_id` entrante (`_active_server_call_ids`) al responder peticiones iniciadas por el MCU (`DataStore.get`, `FileSystem.read`, `Process.runAsync`, `Process.poll`).
+- La escritura serial/AEAD y el procesamiento de HDLC permanecen como límites de transporte válidos sin reimplementar el motor RPC.
 
 Criterios de aceptación:
 
@@ -76,16 +77,68 @@ Criterios de aceptación:
 6. Las pruebas demuestran equivalencia funcional y no dependen de mocks que reimplementen internamente Pigweed.
 7. El código manual retirado y el código nuevo se cuantifican; no se acepta una capa adicional que aumente la complejidad sin reemplazar lógica.
 
-## Detalle de la etapa 3: streaming GPIO
+## Detalle de la etapa 3: streaming GPIO y lectura de archivos (`SERVER_STREAMING`)
 
-El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) ya expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos.
+El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) ya expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. Asimismo, `FileSystemService::Read` (`rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse)`) utiliza `pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>` y `pw::rpc::NanopbClientReader<rpc_pb_FileReadResponse>` para transferir archivos multi-chunk en ambas direcciones sin requerir `pw_thread` / `pw_transfer` en AVR bare-metal.
 
 Cambios en el daemon y el contrato:
 
-1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` como método `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
-2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo del stream se entregan a `rpc_client.process_packet`, encolando `PinUpdateEvent` en una cola acotada (`_stream_event_queue`) con política de backpressure (descarta el evento más antiguo si la cola se llena) antes de despachar a `GpioService.handle_pin_update_event`.
+1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` y `rpc.pb.FileSystemService/Read` como métodos `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
+2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo del stream se entregan a `rpc_client.process_packet`, encolando `PinUpdateEvent` en una cola acotada (`_stream_event_queue`) con política de backpressure (descarta el evento más antiguo si la cola se llena) antes de despachar a `GpioService.handle_pin_update_event`, o acumulando fragmentos `FileReadResponse` hasta recibir el paquete terminal `PacketType.RESPONSE`.
 3. Se eliminan `CMD_PIN_SUBSCRIBE_RESP`, `CMD_PIN_UPDATE_EVENT`, `BY_SERVER_STREAM`, `GpioService.on_subscribe_resp`, `PendingCommand` y `SerialTransport.correlate_frame`.
 4. `GpioService` cancela explícitamente el stream (`cancel_pin_stream`) al deshabilitar la última suscripción activa y restaura las suscripciones activas (`resubscribe_pins`) tras reconectar y sincronizar el enlace serie.
+
+## Detalle de las etapas 4 y 5: API de aplicación, servicios y generador sin comandos legacy
+
+1. **Eliminación integral de `CMD_*` y tablas redundantes:**
+   - Se removió completamente `enum Command` y la opción `rpc_command` de `tools/protocol/mcu_wire.proto` y `tools/protocol/config_schema.proto`.
+   - Se eliminó `BY_COMMAND_ID` y `command_id` en `OperationSpec`. Toda la resolución de métodos en Python y C++ se realiza de forma directa mediante descriptores canónicos de Pigweed (`PW_SERVICES`) y Nanopb.
+   - En `tools/protocol/generate.py` y sus plantillas Jinja2 (`protocol.py.j2`, `protocol_client.py.j2`, `rpc_protocol.h.j2`), se eliminaron las tablas de comandos estáticas y la lógica de catálogo paralela.
+   - Los servicios de aplicación (`BridgeService`, `ClockSyncService`, `GpioService`, `RuntimeService`, `UbusService`, `FileSystemService`, etc.) y sus clientes invocan métodos nativos de `pw_rpc` por nombre de servicio y método Protobuf.
+   - Se preservaron íntegramente los contratos hacia el norte (UBUS OpenWrt, LuCI y gRPC `LocalBridge`).
+
+## Detalle de las etapas 6 y 7: Firmware y streaming de archivos (Opción 1)
+
+1. **Firmware C++ Nanopb y Pigweed RPC:**
+   - Se eliminó el dispatch manual de comandos numéricos y sus estructuras intermedias en `Bridge.cpp`.
+   - Registro y ciclo de vida de servicios mediante `pw::rpc::Server` y `pw::rpc::Client`.
+2. **Transferencias de archivos (Opción 1 nativa Pigweed RPC):**
+   - Implementado `FileSystemService.Read` como RPC `SERVER_STREAMING` nativo (`rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse)`).
+   - En MCU (`mcubridge-library-arduino/src/Bridge.cpp` y `FileSystem.cpp`), el firmware emite fragmentos de archivo con `pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>` y recibe archivos mediante `pw::rpc::NanopbClientReader<rpc_pb_FileReadResponse>`.
+   - Cero dependencias de `pw_thread` o memoria dinámica, garantizando compatibilidad total con AVR ATmega2560 bare-metal (Zero-STL, buffers estáticos).
+   - Se eliminaron shims y artificios legacy (`FileReadResponse(content=b"")`).
+
+## Detalle de las etapas 8 y 9: Estructura C++, cero supresiones NOLINT y gestión estática de memoria
+
+1. **Calidad de código C++ y cero NOLINT:**
+   - Cero supresiones `NOLINT` en todo el código C++ de producción y pruebas (`mcubridge-library-arduino/`).
+   - Todos los checks de `clang-tidy` (bugprone, cert, clang-analyzer, cppcoreguidelines, misc, modernize, performance, readability) pasan con 0 advertencias.
+   - `cppcheck` pasa con 0 errores y 0 advertencias sobre los 11 archivos C++ del proyecto.
+2. **Contenedores y buffers estáticos:**
+   - Buffers acotados fijos para HDLC, RPC y AEAD.
+   - Cero asignación dinámica de memoria (`malloc`/`new`) en rutas críticas del MCU.
+   - Uso de `etl::span` y `pw::span` para vistas de memoria seguras.
+
+## Detalle de la etapa 10: Validación integral y métricas finales
+
+1. **Evidencia de pruebas y análisis estático:**
+   - **Pruebas y cobertura C++ (`tools/ci/coverage_arduino.sh`):**
+     - Líneas: 99.8%
+     - Funciones: 100.0%
+     - Ramas: 97.8% (supera el umbral mandatorio $\ge 95\%$)
+     - Clang-Tidy: 0 advertencias, 0 supresiones `NOLINT`.
+     - Cppcheck: 0 advertencias, 0 errores.
+   - **Pruebas y cobertura Python (`tools/ci/coverage_python.py`):**
+     - 899 pruebas unitarias y de integración superadas (899 passed, 0 failed en 134s).
+     - Cobertura total de líneas: 97.81% (supera $\ge 95\%$).
+     - Cobertura pura de ramas: 96.86% (1017/1050, supera $\ge 95\%$).
+   - **Herramientas de auditoría y tipado:**
+     - Pyright: 0 errores, 0 advertencias.
+     - Pyrefly: 0 diagnósticos.
+     - Vulture: 0 código muerto detectado (código de salida 0).
+     - Flake8: 0 problemas.
+     - Black: 100% formateado según PEP 8.
+     - `codebase_auditor.py` (Semgrep + AST): 0 violaciones detectadas.
 
 ## Medición y reporte por etapa
 

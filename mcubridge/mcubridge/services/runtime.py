@@ -28,7 +28,15 @@ from grpclib.client import Channel
 from grpclib.exceptions import GRPCError, ProtocolError, StreamTerminatedError
 from grpclib.server import Stream
 
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from mcubridge.protocol.cloud_gateway_pb2 import (
+    CloudEnvelope,
+    CloudQueuedPublish,
+    CommandResponse,
+    EventNotification,
+    StatusReport,
+    TelemetryReport,
+)
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
 
 from ..config.settings import RuntimeConfig
@@ -42,7 +50,6 @@ from ..protocol.protocol import (
     STREAM_POLL_TIMEOUT_SECONDS,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    Command,
     Status,
     Topic,
 )
@@ -95,13 +102,13 @@ class BridgeService:
     _cloud_publish_lock: asyncio.Lock
     cloud_spool: LmdbDeque | None
     mcu_registry: protocol.McuDispatchTable
-    ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
+    ipc_requests: dict[bytes, asyncio.Queue[CloudQueuedPublish]]
     console_queues: list[ConsoleQueueTarget]
     ubus_service: UbusService
     clock_sync: ClockSyncService
     gpio: GpioService
     _tg: asyncio.TaskGroup | None
-    cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None
+    cloud_publisher: Callable[[CloudQueuedPublish], Awaitable[None]] | None
     lifecycle_fsm: DaemonLifecycleMachine
 
     def __init__(
@@ -110,7 +117,7 @@ class BridgeService:
         state: RuntimeState,
         serial: SerialTransport,
         *,
-        cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None = None,
+        cloud_publisher: Callable[[CloudQueuedPublish], Awaitable[None]] | None = None,
         handshake: SerialHandshakeManager | None = None,
     ) -> None:
         self.config, self.state, self.serial = config, state, serial
@@ -168,16 +175,9 @@ class BridgeService:
     async def _send_mcu_status(self, ok: bool, error_message: str = "") -> bool:
         return await (self.send_mcu_ok() if ok else self.send_mcu_error(error_message))
 
-    async def unsupported_mcu_request(
-        self, _seq: int, _payload: Any, msg: str = protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED
-    ) -> Any:
-        if not self.serial:
-            return False
-        return await self.serial.send(Status.NOT_IMPLEMENTED.value, b"")
-
     # --- External Interface ---
 
-    async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
+    async def enqueue_cloud(self, message: CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_cloud_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
         if logger.is_enabled_for(logging.DEBUG):
@@ -244,13 +244,13 @@ class BridgeService:
 
     async def enqueue_cloud_status_report(
         self,
-        report: pb.StatusReport,
+        report: StatusReport,
         *,
         user_properties: Iterable[tuple[str, str]] = (),
         reply_context: Any | None = None,
     ) -> None:
         """Enqueue a Protobuf StatusReport message to the cloud. [SIL-2]"""
-        topic = protocol.get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or ""
+        topic = protocol.get_topic_for_message(self.state.cloud_topic_prefix, StatusReport) or ""
         await self.enqueue_cloud_publish(
             topic,
             report.SerializeToString(),
@@ -268,7 +268,7 @@ class BridgeService:
         self.state.cloud_dropped_messages += 1
         self.state.metrics.cloud_messages_dropped.inc()
 
-    async def spool_cloud_message_locked(self, message: pb.CloudQueuedPublish) -> bool:
+    async def spool_cloud_message_locked(self, message: CloudQueuedPublish) -> bool:
         spool = self.cloud_spool
         if spool is None:
             return False
@@ -313,7 +313,7 @@ class BridgeService:
         while len(spool) > 0:
             try:
                 encoded = await spool.peek()
-                queued = pb.CloudQueuedPublish.FromString(encoded)
+                queued = CloudQueuedPublish.FromString(encoded)
             except IndexError as exc:
                 logger.error("Spool is empty during peek", error=str(exc))
                 break
@@ -347,7 +347,7 @@ class BridgeService:
             self.state.cloud_spool_degraded = True
             self.state.cloud_spool_failure_reason = str(exc)
 
-    async def publish_cloud_message(self, message: pb.CloudQueuedPublish) -> bool:
+    async def publish_cloud_message(self, message: CloudQueuedPublish) -> bool:
         if not self.cloud_stream:
             return False
 
@@ -355,18 +355,18 @@ class BridgeService:
             # Check if this is a command response
             if message.correlation_data:
                 seq_id = int.from_bytes(message.correlation_data[:8], "big")
-                envelope = pb.CloudEnvelope(
+                envelope = CloudEnvelope(
                     protocol_version=protocol.PROTOCOL_VERSION,
                     device_id=self.state.device_id,
                     sequence_id=seq_id,
-                    command_response=pb.CommandResponse(
+                    command_response=CommandResponse(
                         status_code=200,
                         payload=message.payload,
                     ),
                 )
             else:
                 # Telemetry report
-                report = pb.TelemetryReport()
+                report = TelemetryReport()
                 telemetry_attr = next(
                     (
                         field_name
@@ -377,7 +377,7 @@ class BridgeService:
                 )
                 setattr(report, telemetry_attr, message.payload)
 
-                envelope = pb.CloudEnvelope(
+                envelope = CloudEnvelope(
                     protocol_version=protocol.PROTOCOL_VERSION,
                     device_id=self.state.device_id,
                     sequence_id=0,
@@ -449,26 +449,21 @@ class BridgeService:
     # --- Dispatchers ---
 
     async def handle_mcu_frame(
-        self, operation_key: int | tuple[int, int], sequence_id: int, payload: bytes | ProtobufMessage
+        self, operation_key: int | str | tuple[int, int], sequence_id: int, payload: bytes | ProtobufMessage
     ) -> None:
-        """Dispatch an inbound frame by Pigweed service/method, or a control command ID."""
+        """Dispatch an inbound frame by Pigweed service/method, operation name, or status code."""
         serial = self.serial
         if not serial:
             return
 
         spec = protocol.get_operation(operation_key)
-        command_id = (
-            spec.command_id
-            if spec is not None and spec.command_id is not None
-            else operation_key if isinstance(operation_key, int) else operation_key[1]
-        )
-        if not (
-            self.state.is_synchronized or command_id in _STATUS_VALUES or (spec is not None and spec.pre_sync_allowed)
-        ):
+        is_status = isinstance(operation_key, int) and operation_key in _STATUS_VALUES
+        if not (self.state.is_synchronized or is_status or (spec is not None and spec.pre_sync_allowed)):
             return
 
-        with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):
-            handler = self.mcu_registry.get(operation_key) or self.mcu_registry.get(command_id)
+        cmd_label = spec.name if spec is not None else operation_key
+        with structlog.contextvars.bound_contextvars(cmd_id=cmd_label, seq_id=sequence_id):
+            handler = self.mcu_registry.get(operation_key) or (self.mcu_registry.get(spec.name) if spec else None)
             if handler is not None:
                 p = payload
                 if not isinstance(p, ProtobufMessage) and spec is not None and spec.pb_class is not None:
@@ -486,17 +481,21 @@ class BridgeService:
                     await res
             else:
                 self.state.unknown_command_count += 1
-                self.state.unknown_command_last_id = command_id
+                self.state.unknown_command_last_id = (
+                    operation_key
+                    if isinstance(operation_key, int)
+                    else (operation_key[1] if isinstance(operation_key, tuple) else 0)
+                )
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
     @staticmethod
-    def _coerce_inbound_request(inbound: Any) -> pb.CloudQueuedPublish:
-        if isinstance(inbound, pb.CloudQueuedPublish):
+    def _coerce_inbound_request(inbound: Any) -> CloudQueuedPublish:
+        if isinstance(inbound, CloudQueuedPublish):
             return inbound
         props = getattr(inbound, "properties", None)
         rt = getattr(inbound, "response_topic", None) or (getattr(props, "ResponseTopic", None) if props else None)
         cd = getattr(inbound, "correlation_data", None) or (getattr(props, "CorrelationData", None) if props else None)
-        return pb.CloudQueuedPublish(
+        return CloudQueuedPublish(
             topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
             payload=bytes(getattr(inbound, "payload", b"")),
             correlation_data=bytes(cd) if cd else b"",
@@ -565,7 +564,7 @@ class BridgeService:
     ) -> None:
         if isinstance(payload_or_msg, ProtobufMessage):
             msg: ProtobufMessage | type[ProtobufMessage] = payload_or_msg
-            if isinstance(payload_or_msg, pb.SpiTransferResponse):
+            if isinstance(payload_or_msg, mcu_wire_pb2.SpiTransferResponse):
                 payload = payload_or_msg.data
             else:
                 payload = payload_or_msg.SerializeToString()
@@ -585,19 +584,23 @@ class BridgeService:
 
     async def datastore_put(
         self,
-        req_or_key: str | pb.DatastorePut | int,
-        value: bytes | pb.DatastorePut = b"",
+        req_or_key: str | mcu_wire_pb2.DatastorePut | int,
+        value: bytes | mcu_wire_pb2.DatastorePut = b"",
         *,
         reply_context: Any | None = None,
-    ) -> pb.GenericResponse:
-        src = value if isinstance(value, pb.DatastorePut) else req_or_key
-        k, v = (src.key, src.value) if isinstance(src, pb.DatastorePut) else (str(req_or_key), cast(bytes, value))
+    ) -> cloud_gateway_pb2.GenericResponse:
+        src = value if isinstance(value, mcu_wire_pb2.DatastorePut) else req_or_key
+        k, v = (
+            (src.key, src.value)
+            if isinstance(src, mcu_wire_pb2.DatastorePut)
+            else (str(req_or_key), cast(bytes, value))
+        )
         if (
             not k
             or len(k.encode("utf-8")) > protocol.MAX_DATASTORE_KEY_LENGTH
             or len(v) > protocol.MAX_DATASTORE_VALUE_SIZE
         ):
-            return pb.GenericResponse(status="error")
+            return cloud_gateway_pb2.GenericResponse(status="error")
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(k, v)
         tp = getattr(reply_context, "response_topic", None) or protocol.topic_path(
@@ -610,145 +613,147 @@ class BridgeService:
             user_properties=(("bridge-datastore-key", k),),
             reply_context=reply_context,
         )
-        return pb.GenericResponse(status="ok")
+        return cloud_gateway_pb2.GenericResponse(status="ok")
 
     async def datastore_get(
-        self, req_or_key: str | pb.DatastoreGet | int, p: pb.DatastoreGet | None = None
-    ) -> pb.DatastoreGetResponse:
+        self, req_or_key: str | mcu_wire_pb2.DatastoreGet | int, p: mcu_wire_pb2.DatastoreGet | None = None
+    ) -> mcu_wire_pb2.DatastoreGetResponse:
         target = p if p is not None else req_or_key
-        key = target.key if isinstance(target, pb.DatastoreGet) else str(target)
+        key = target.key if isinstance(target, mcu_wire_pb2.DatastoreGet) else str(target)
         cache = self.state.datastore_cache
         res = (await cache.get(key, b"")) if cache else b""
         val = res if isinstance(res, bytes) else b""
-        resp = pb.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
+        resp = mcu_wire_pb2.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
         if p is not None and self.serial:
-            await self.serial.send(Command.CMD_DATASTORE_GET.value, resp)
+            await self.serial.send("rpc.pb.DataStoreService/Get", resp)
         return resp
 
     # --- Mailbox Subsystem ---
 
     async def mailbox_push(
-        self, req_or_data: bytes | pb.MailboxPush | int, p: pb.MailboxPush | None = None
-    ) -> pb.GenericResponse:
+        self, req_or_data: bytes | mcu_wire_pb2.MailboxPush | int, p: mcu_wire_pb2.MailboxPush | None = None
+    ) -> cloud_gateway_pb2.GenericResponse:
         if p is not None:
             await self.state.mailbox_incoming_queue.append(p.data)
             await self.publish_mcu_message(p, p.data)
-            return pb.GenericResponse(status="ok")
-        data = req_or_data.data if isinstance(req_or_data, pb.MailboxPush) else cast(bytes, req_or_data)
+            return cloud_gateway_pb2.GenericResponse(status="ok")
+        data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
         await self.state.mailbox_queue.append(data)
         serial = self.serial
-        res = (await serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=data))) if serial else False
-        return pb.GenericResponse(status="ok" if res else "error")
+        res = (
+            (await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data))) if serial else False
+        )
+        return cloud_gateway_pb2.GenericResponse(status="ok" if res else "error")
 
     async def mailbox_read(
-        self, req_or_seq: pb.SubscribeRequest | int | None = None, _p: Any = None
-    ) -> pb.MailboxReadResponse:
+        self, req_or_seq: mcu_wire_pb2.SubscribeRequest | int | None = None, _p: Any = None
+    ) -> mcu_wire_pb2.MailboxReadResponse:
         from_mcu = isinstance(req_or_seq, int)
         queue = self.state.mailbox_queue if from_mcu else self.state.mailbox_incoming_queue
         try:
             content = await queue.popleft()
         except IndexError:
             content = b""
-        resp = pb.MailboxReadResponse(content=content)
+        resp = mcu_wire_pb2.MailboxReadResponse(content=content)
         if from_mcu and self.serial:
-            await self.serial.send(Command.CMD_MAILBOX_READ.value, resp)
+            await self.serial.send("rpc.pb.MailboxService/Read", resp)
         return resp
 
     async def mailbox_available(self, _seq: int, _p: Any) -> bool:
         return bool(
             self.serial
             and await self.serial.send(
-                Command.CMD_MAILBOX_AVAILABLE.value,
-                pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
+                "rpc.pb.MailboxService/Available",
+                mcu_wire_pb2.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
             )
         )
 
     # --- Filesystem Subsystem ---
 
     async def file_write(
-        self, path_or_req: str | pb.FileWrite | int, data: bytes | pb.FileWrite = b""
-    ) -> pb.GenericResponse:
-        from_mcu = isinstance(data, pb.FileWrite)
+        self, path_or_req: str | mcu_wire_pb2.FileWrite | int, data: bytes | mcu_wire_pb2.FileWrite = b""
+    ) -> cloud_gateway_pb2.GenericResponse:
+        from_mcu = isinstance(data, mcu_wire_pb2.FileWrite)
         src = data if from_mcu else path_or_req
-        path = src.path if isinstance(src, pb.FileWrite) else str(path_or_req)
-        payload_data = src.data if isinstance(src, pb.FileWrite) else cast(bytes, data)
+        path = src.path if isinstance(src, mcu_wire_pb2.FileWrite) else str(path_or_req)
+        payload_data = src.data if isinstance(src, mcu_wire_pb2.FileWrite) else cast(bytes, data)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
             mcu_path = clean.removeprefix("mcu/")
             serial = self.serial
             ok = bool(
                 serial
-                and await serial.send(Command.CMD_FILE_WRITE.value, pb.FileWrite(path=mcu_path, data=payload_data))
+                and await serial.send(
+                    "rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path=mcu_path, data=payload_data)
+                )
             )
         else:
             safe_path = self._get_safe_path(path)
             ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
         if from_mcu:
             await self._send_mcu_status(ok, "Path not allowed or quota exceeded")
-        return pb.GenericResponse(status="ok" if ok else "error")
+        return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     async def file_read(
         self,
-        path_or_req: str | pb.FileRead | int,
-        p: pb.FileRead | None = None,
-    ) -> pb.FileReadResponse:
+        path_or_req: str | mcu_wire_pb2.FileRead | int,
+        p: mcu_wire_pb2.FileRead | None = None,
+    ) -> mcu_wire_pb2.FileReadResponse:
         if p is not None:
             serial = self.serial
             safe_path = self._get_safe_path(p.path)
             if safe_path is None:
                 if serial is not None:
                     await self.send_mcu_error("Read failed")
-                return pb.FileReadResponse()
+                return mcu_wire_pb2.FileReadResponse()
             if serial is None:
                 data = await self._safe_file_read(p.path)
-                return pb.FileReadResponse(content=data or b"")
+                return mcu_wire_pb2.FileReadResponse(content=data or b"")
 
             try:
                 chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
                 async with await anyio.Path(safe_path).open("rb") as source:
                     while chunk := await source.read(chunk_size):
-                        response = pb.FileReadResponse(content=chunk)
-                        if not await serial.send(Command.CMD_FILE_READ.value, response):
+                        response = mcu_wire_pb2.FileReadResponse(content=chunk)
+                        if not await serial.send("rpc.pb.FileSystemService/Read", response):
                             logger.error("MCU file read response send failed", path=p.path)
-                            return pb.FileReadResponse()
-                # Empty content is the protocol's explicit end-of-file marker.
-                if not await serial.send(
-                    Command.CMD_FILE_READ.value,
-                    pb.FileReadResponse(content=b""),
-                ):
-                    logger.error("MCU file read end marker send failed", path=p.path)
+                            return mcu_wire_pb2.FileReadResponse()
+                if not await serial.send("rpc.pb.FileSystemService/Read", b""):
+                    logger.error("MCU file read stream completion send failed", path=p.path)
             except OSError as exc:
                 logger.warning("Safe file streaming failed", path=p.path, error=str(exc))
                 await self.send_mcu_error("Read failed")
-            return pb.FileReadResponse()
-        path = path_or_req.path if isinstance(path_or_req, pb.FileRead) else str(path_or_req)
+            return mcu_wire_pb2.FileReadResponse()
+        path = path_or_req.path if isinstance(path_or_req, mcu_wire_pb2.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
             serial = self.serial
             res = (
                 await serial.send(
-                    Command.CMD_FILE_READ.value,
-                    pb.FileRead(path=clean.removeprefix("mcu/")),
+                    "rpc.pb.FileSystemService/Read",
+                    mcu_wire_pb2.FileRead(path=clean.removeprefix("mcu/")),
                 )
                 if serial
                 else None
             )
-            content = res.content if isinstance(res, pb.FileReadResponse) else b""
+            content = res.content if isinstance(res, mcu_wire_pb2.FileReadResponse) else b""
         else:
             safe_data = await self._safe_file_read(path)
             content = safe_data if safe_data is not None else b""
-        return pb.FileReadResponse(content=content)
+        return mcu_wire_pb2.FileReadResponse(content=content)
 
     async def file_remove(
-        self, path_or_req: str | pb.FileRemove | int, p: pb.FileRemove | None = None
-    ) -> pb.GenericResponse:
+        self, path_or_req: str | mcu_wire_pb2.FileRemove | int, p: mcu_wire_pb2.FileRemove | None = None
+    ) -> cloud_gateway_pb2.GenericResponse:
         src = p if p is not None else path_or_req
-        path = src.path if isinstance(src, pb.FileRemove) else str(path_or_req)
+        path = src.path if isinstance(src, mcu_wire_pb2.FileRemove) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
             mcu_path = clean.removeprefix("mcu/")
             serial = self.serial
-            ok = bool(serial and await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=mcu_path)))
+            ok = bool(
+                serial and await serial.send("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path=mcu_path))
+            )
         else:
             if not (safe_path := self._get_safe_path(path)):
                 ok = False
@@ -761,7 +766,7 @@ class BridgeService:
                     ok = False
         if p is not None:
             await self._send_mcu_status(ok, "Path not allowed or not found")
-        return pb.GenericResponse(status="ok" if ok else "error")
+        return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     def _get_safe_path(self, p_str: str) -> Path | None:
         if not p_str or not p_str.strip():
@@ -801,10 +806,10 @@ class BridgeService:
     # --- Process Subsystem ---
 
     async def process_run_async(
-        self, req_or_cmd: str | pb.ProcessRunAsync | int, p: pb.ProcessRunAsync | None = None
-    ) -> pb.ProcessRunAsyncResponse:
+        self, req_or_cmd: str | mcu_wire_pb2.ProcessRunAsync | int, p: mcu_wire_pb2.ProcessRunAsync | None = None
+    ) -> mcu_wire_pb2.ProcessRunAsyncResponse:
         src = p if p is not None else req_or_cmd
-        command = src.command if isinstance(src, pb.ProcessRunAsync) else str(req_or_cmd)
+        command = src.command if isinstance(src, mcu_wire_pb2.ProcessRunAsync) else str(req_or_cmd)
         pid = 0
         if command and is_command_allowed(self.state.allowed_policy, command):
             with structlog.contextvars.bound_contextvars(command=command):
@@ -823,24 +828,22 @@ class BridgeService:
                     (tg.create_task if tg else asyncio.create_task)(self._monitor_process(pid))
                 except OSError:
                     self._process_slots.release()
-        resp = pb.ProcessRunAsyncResponse(pid=pid)
+        resp = mcu_wire_pb2.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:
             await (
-                self.serial.send(Command.CMD_PROCESS_RUN_ASYNC.value, resp)
-                if pid
-                else self.send_mcu_error("Exec failed")
+                self.serial.send("rpc.pb.ProcessService/RunAsync", resp) if pid else self.send_mcu_error("Exec failed")
             )
         return resp
 
     async def process_poll(
-        self, req_or_pid: int | pb.ProcessPoll, p: pb.ProcessPoll | None = None
-    ) -> pb.ProcessPollResponse:
+        self, req_or_pid: int | mcu_wire_pb2.ProcessPoll, p: mcu_wire_pb2.ProcessPoll | None = None
+    ) -> mcu_wire_pb2.ProcessPollResponse:
         src = p if p is not None else req_or_pid
-        pid = src.pid if isinstance(src, pb.ProcessPoll) else src
+        pid = src.pid if isinstance(src, mcu_wire_pb2.ProcessPoll) else src
         async with self.state.process_lock:
             ctx = self.state.running_processes.get(pid)
             if not ctx:
-                resp = pb.ProcessPollResponse(
+                resp = mcu_wire_pb2.ProcessPollResponse(
                     status=Status.ERROR.value,
                     exit_code=1,
                     stdout_data=b"",
@@ -874,7 +877,7 @@ class BridgeService:
                         and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof())
                     ):
                         self.release_process(pid)
-                    resp = pb.ProcessPollResponse(
+                    resp = mcu_wire_pb2.ProcessPollResponse(
                         status=Status.OK.value,
                         exit_code=ctx.exit_code,
                         stdout_data=o,
@@ -884,7 +887,7 @@ class BridgeService:
                         stderr_truncated=te,
                     )
         if p is not None and self.serial:
-            await self.serial.send(Command.CMD_PROCESS_POLL.value, resp)
+            await self.serial.send("rpc.pb.ProcessService/Poll", resp)
         return resp
 
     def release_process(self, pid: int) -> ProcessContext | None:
@@ -926,23 +929,23 @@ class BridgeService:
         return ctx.handle.returncode if ctx.handle.returncode is not None else -1
 
     async def process_kill(
-        self, req_or_pid: int | pb.ProcessKill, p: pb.ProcessKill | None = None
-    ) -> pb.GenericResponse:
+        self, req_or_pid: int | mcu_wire_pb2.ProcessKill, p: mcu_wire_pb2.ProcessKill | None = None
+    ) -> cloud_gateway_pb2.GenericResponse:
         target = p if p is not None else req_or_pid
-        actual_pid = target.pid if isinstance(target, pb.ProcessKill) else target
+        actual_pid = target.pid if isinstance(target, mcu_wire_pb2.ProcessKill) else target
         with structlog.contextvars.bound_contextvars(pid=actual_pid):
             async with self.state.process_lock:
                 ctx = self.state.running_processes.get(actual_pid)
             if not ctx:
-                return pb.GenericResponse(status="error")
+                return cloud_gateway_pb2.GenericResponse(status="error")
             try:
                 ctx.exit_code = await self.terminate_process(
                     actual_pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
                 )
-                return pb.GenericResponse(status="ok")
+                return cloud_gateway_pb2.GenericResponse(status="ok")
             except OSError as exc:
                 logger.error("Process termination failed", error=str(exc))
-                return pb.GenericResponse(status="error")
+                return cloud_gateway_pb2.GenericResponse(status="error")
             finally:
                 self.release_process(actual_pid)
 
@@ -956,7 +959,7 @@ class BridgeService:
             buf = self.state.console_to_mcu_queue.popleft()
 
             for chunk in iter_chunks(buf, protocol.MAX_PAYLOAD_SIZE):
-                if not await serial.send(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=chunk)):
+                if not await serial.send("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=chunk)):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
@@ -981,7 +984,7 @@ class BridgeService:
         log_func = logger.error if status != Status.OK else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_cloud_status_report(
-            pb.StatusReport(
+            StatusReport(
                 status=status.value,
                 name=status.name,
                 description=status.description,
@@ -990,19 +993,19 @@ class BridgeService:
             user_properties=(("bridge-status", status.name),),
         )
 
-    async def _fetch_mcu_version(self) -> pb.VersionResponse | None:
+    async def _fetch_mcu_version(self) -> mcu_wire_pb2.VersionResponse | None:
         serial = self.serial
-        res = (await serial.send(Command.CMD_GET_VERSION.value, b"")) if serial else None
-        if not isinstance(res, pb.VersionResponse):
+        res = (await serial.send("rpc.pb.SystemService/GetVersion", b"")) if serial else None
+        if not isinstance(res, mcu_wire_pb2.VersionResponse):
             return None
         self.state.mcu_version = (res.major, res.minor, res.patch)
         return res
 
-    async def request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
+    async def request_mcu_version(self, inbound: CloudQueuedPublish | None = None) -> bool:
         if await self._fetch_mcu_version() is None:
             return False
         await self.publish_mcu_message(
-            pb.VersionResponse,
+            mcu_wire_pb2.VersionResponse,
             self.state.mcu_version_str.encode(),
             message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE,
             reply_context=inbound,
@@ -1012,7 +1015,7 @@ class BridgeService:
     async def reject_cloud(self, ctx: Any, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_cloud_status_report(
-            pb.StatusReport(status=403, topic=val, action=act, reason="forbidden"),
+            StatusReport(status=403, topic=val, action=act, reason="forbidden"),
             user_properties=(("bridge-error", "topic-action-forbidden"),),
             reply_context=ctx,
         )
@@ -1167,11 +1170,11 @@ class BridgeService:
                                 status_code = 500
                                 err_msg = str(exc)
 
-                            resp_env = pb.CloudEnvelope(
+                            resp_env = CloudEnvelope(
                                 protocol_version=protocol.PROTOCOL_VERSION,
                                 device_id=self.state.device_id,
                                 sequence_id=envelope.sequence_id,
-                                command_response=pb.CommandResponse(
+                                command_response=CommandResponse(
                                     status_code=status_code,
                                     error_message=err_msg,
                                     payload=resp_payload,
@@ -1199,12 +1202,12 @@ class BridgeService:
             channel.close()
 
     async def send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
-        envelope = pb.CloudEnvelope(
+        envelope = CloudEnvelope(
             protocol_version=protocol.PROTOCOL_VERSION,
             device_id=self.state.device_id,
             sequence_id=0,
             timestamp_utc=int(time.time()),
-            event=pb.EventNotification(
+            event=EventNotification(
                 event_type=event_type,
                 severity=severity,
                 description=description,
@@ -1275,16 +1278,18 @@ class BridgeService:
 
     # --- RPC Execution & Operations [SIL-2] ---
 
-    async def _send_serial_ack(self, cmd: Command, payload: ProtobufMessage | bytes) -> pb.GenericResponse:
+    async def _send_serial_ack(
+        self, cmd: str | protocol.OperationSpec | tuple[int, int], payload: ProtobufMessage | bytes
+    ) -> cloud_gateway_pb2.GenericResponse:
         serial = self.serial
-        res = (await serial.send(cmd.value, payload)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
+        res = (await serial.send(cmd, payload)) if serial else None
+        return cloud_gateway_pb2.GenericResponse(status="ok" if res is not None and res is not False else "error")
 
     async def _send_serial_query[T: ProtobufMessage](
-        self, cmd: Command, payload: ProtobufMessage | bytes, resp_type: type[T]
+        self, cmd: str | protocol.OperationSpec | tuple[int, int], payload: ProtobufMessage | bytes, resp_type: type[T]
     ) -> T:
         serial = self.serial
-        res = (await serial.send(cmd.value, payload)) if serial else None
+        res = (await serial.send(cmd, payload)) if serial else None
         return res if isinstance(res, resp_type) else resp_type()
 
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
@@ -1299,16 +1304,16 @@ class BridgeService:
         with structlog.contextvars.bound_contextvars(rpc_method=method_name):
             if spec.handler_name and spec.handler_name in protocol.CUSTOM_HANDLERS:
                 resp = await getattr(self, spec.handler_name)(req)
-            elif spec.response_type is pb.GenericResponse and spec.command_id is not None:
-                resp = await self._send_serial_ack(Command(spec.command_id), req)
-            elif spec.response_type is not None and spec.command_id is not None:
-                payload = b"" if isinstance(req, pb.SubscribeRequest) else req
-                resp = await self._send_serial_query(Command(spec.command_id), payload, spec.response_type)
+            elif spec.response_type is cloud_gateway_pb2.GenericResponse and spec.service_id is not None:
+                resp = await self._send_serial_ack(spec, req)
+            elif spec.response_type is not None and spec.service_id is not None:
+                payload = b"" if isinstance(req, mcu_wire_pb2.SubscribeRequest) else req
+                resp = await self._send_serial_query(spec, payload, spec.response_type)
             else:
                 raise ValueError(f"No execution path for {method_name}")
             return resp.SerializeToString()
 
-    async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
+    async def Publish(self, stream: Stream[CloudQueuedPublish, CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is None:
             return
 
@@ -1321,15 +1326,15 @@ class BridgeService:
         with structlog.contextvars.bound_contextvars(
             topic=req.topic_name, correlation=correlation.hex() if correlation else ""
         ):
-            response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
+            response_queue: asyncio.Queue[CloudQueuedPublish] | None = None
             if is_query and correlation:
                 response_queue = asyncio.Queue(maxsize=1)
                 self.ipc_requests[correlation] = response_queue
 
-            resp = pb.CloudQueuedPublish()
+            resp = CloudQueuedPublish()
             try:
                 await self.handle_request(
-                    pb.CloudQueuedPublish(topic_name=req.topic_name, payload=req.payload, correlation_data=correlation)
+                    CloudQueuedPublish(topic_name=req.topic_name, payload=req.payload, correlation_data=correlation)
                 )
 
                 if is_query and response_queue is not None:
@@ -1348,11 +1353,11 @@ class BridgeService:
             except OSError as exc:
                 logger.debug("IPC connection closed during response write", error=str(exc))
 
-    async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
+    async def SubscribeConsole(self, stream: Stream[mcu_wire_pb2.SubscribeRequest, CloudQueuedPublish]) -> None:
         if await stream.recv_message() is None:
             return
 
-        send_stream, receive_stream = anyio.create_memory_object_stream[pb.CloudQueuedPublish](max_buffer_size=64)
+        send_stream, receive_stream = anyio.create_memory_object_stream[CloudQueuedPublish](max_buffer_size=64)
         adapter = MemoryQueueAdapter(send_stream)
         self.console_queues.append(adapter)
         try:
@@ -1367,43 +1372,45 @@ class BridgeService:
             if adapter in self.console_queues:
                 self.console_queues.remove(adapter)
 
-    async def pin_subscribe(self, req: pb.PinSubscribeRequest) -> pb.PinSubscribeResponse:
+    async def pin_subscribe(self, req: mcu_wire_pb2.PinSubscribeRequest) -> mcu_wire_pb2.PinSubscribeResponse:
         try:
-            mode_str = pb.PinModeType.Name(req.mode).removeprefix("PIN_")
+            mode_str = config_schema_pb2.PinModeType.Name(req.mode).removeprefix("PIN_")
         except (ValueError, KeyError) as exc:
             logger.warning("Unrecognized pin mode enum, defaulting to INPUT", mode=req.mode, error=str(exc))
             mode_str = "INPUT"
         res = await self.gpio.subscribe_pin(
             pin=req.pin, mode=mode_str, interval_ms=req.interval_ms, hysteresis=req.hysteresis, enabled=req.enabled
         )
-        return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
+        return mcu_wire_pb2.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
 
-    async def spi_configure(self, req: pb.SpiConfig) -> pb.GenericResponse:
+    async def spi_configure(self, req: mcu_wire_pb2.SpiConfig) -> cloud_gateway_pb2.GenericResponse:
         serial = self.serial
         ok = bool(
             serial
-            and await serial.send(Command.CMD_SPI_BEGIN.value, b"")
-            and await serial.send(Command.CMD_SPI_SET_CONFIG.value, req)
+            and await serial.send("rpc.pb.SpiService/Begin", b"")
+            and await serial.send("rpc.pb.SpiService/SetConfig", req)
         )
-        return pb.GenericResponse(status="ok" if ok else "error")
+        return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
-    async def get_version(self, _req: pb.SubscribeRequest | None = None) -> pb.VersionResponse:
-        return (await self._fetch_mcu_version()) or pb.VersionResponse()
+    async def get_version(self, _req: mcu_wire_pb2.SubscribeRequest | None = None) -> mcu_wire_pb2.VersionResponse:
+        return (await self._fetch_mcu_version()) or mcu_wire_pb2.VersionResponse()
 
-    async def get_status(self, _req: pb.SubscribeRequest | None = None) -> pb.BridgeStatus:
+    async def get_status(self, _req: mcu_wire_pb2.SubscribeRequest | None = None) -> cloud_gateway_pb2.BridgeStatus:
         return self.state.build_status_snapshot()
 
-    async def enter_bootloader(self, req: pb.EnterBootloader) -> pb.GenericResponse:
+    async def enter_bootloader(self, req: mcu_wire_pb2.EnterBootloader) -> cloud_gateway_pb2.GenericResponse:
         magic = req.magic or protocol.BOOTLOADER_MAGIC
-        return await self._send_serial_ack(Command.CMD_ENTER_BOOTLOADER, pb.EnterBootloader(magic=magic))
+        return await self._send_serial_ack(
+            "rpc.pb.SystemService/EnterBootloader", mcu_wire_pb2.EnterBootloader(magic=magic)
+        )
 
     async def console_write(
-        self, req_or_seq: pb.ConsoleWrite | int, p: pb.ConsoleWrite | None = None
-    ) -> pb.GenericResponse:
+        self, req_or_seq: mcu_wire_pb2.ConsoleWrite | int, p: mcu_wire_pb2.ConsoleWrite | None = None
+    ) -> cloud_gateway_pb2.GenericResponse:
         if p is not None:
             if p.data:
                 await self.publish_mcu_message(p, p.data, message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE)
-        elif isinstance(req_or_seq, pb.ConsoleWrite) and (pl := req_or_seq.data):
+        elif isinstance(req_or_seq, mcu_wire_pb2.ConsoleWrite) and (pl := req_or_seq.data):
             self.state.console_to_mcu_queue.append(pl)
             await self.flush_console_queue()
-        return pb.GenericResponse(status="ok")
+        return cloud_gateway_pb2.GenericResponse(status="ok")

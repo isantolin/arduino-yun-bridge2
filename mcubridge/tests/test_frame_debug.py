@@ -8,14 +8,14 @@ import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import UINT8_MASK, Command, Status
+from mcubridge.protocol.protocol import UINT8_MASK, Status
 from pytest_mock import MockerFixture
 
 from tools.emulation import frame_debug
 
 TEST_BROKEN_CRC = 0xDEADBEEF
 
-_VALID_CMD_NAMES = frozenset([entry.name.upper() for enum_cls in (Command, Status) for entry in enum_cls])
+_VALID_CMD_NAMES = frozenset(frame_debug.ENUM_BY_NAME.keys())
 
 
 @given(val=st.integers(min_value=0, max_value=protocol.UINT16_MAX))
@@ -28,10 +28,16 @@ def test_resolve_command_numeric_property(val: int) -> None:
 
 
 def test_resolve_command_name() -> None:
-    assert frame_debug.resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
-    assert frame_debug.resolve_command("CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value
+    get_version_op = protocol.get_operation("GetVersion")
+    get_free_memory_op = protocol.get_operation("GetFreeMemory")
+    assert get_version_op is not None
+    assert get_version_op.method_id is not None
+    assert get_free_memory_op is not None
+    assert get_free_memory_op.method_id is not None
+    assert frame_debug.resolve_command("GetVersion") == get_version_op.method_id
+    assert frame_debug.resolve_command("GetFreeMemory") == get_free_memory_op.method_id
     # Case insensitive
-    assert frame_debug.resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
+    assert frame_debug.resolve_command("getversion") == get_version_op.method_id
 
 
 def test_resolve_command_empty() -> None:
@@ -77,7 +83,10 @@ def test_parse_payload_invalid() -> None:
 
 
 def test_name_for_command() -> None:
-    assert frame_debug.name_for_command(Command.CMD_GET_VERSION.value) == "CMD_GET_VERSION"
+    get_version_op = protocol.get_operation("GetVersion")
+    assert get_version_op is not None
+    assert get_version_op.method_id is not None
+    assert frame_debug.name_for_command(get_version_op.method_id) == get_version_op.name
     # Keep testing Status resolution
     assert frame_debug.name_for_command(Status.OK.value) == "OK"
     assert frame_debug.name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
@@ -85,15 +94,15 @@ def test_name_for_command() -> None:
 
 def test_snapshot_render() -> None:
     snapshot = frame_debug.FrameDebugSnapshot(
-        command_id=Command.CMD_GET_VERSION.value,
-        command_name="CMD_GET_VERSION",
+        command_id=0x40,
+        command_name="GetVersion",
         payload_length=5,
         hdlc_length=12,
         encoded_packet=b"encoded_packet",
         encoded_hex="03 04",
     )
     rendered = snapshot.render()
-    assert "CMD_GET_VERSION (0x40)" in rendered
+    assert "GetVersion (0x40)" in rendered
     assert "Payload Length: 5 bytes" in rendered
     assert "HDLC Length: 12 bytes" in rendered
     assert "Encoded Frame (hex): 03 04" in rendered

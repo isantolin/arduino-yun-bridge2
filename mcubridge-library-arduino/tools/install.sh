@@ -343,6 +343,8 @@ for rel in (
         ("constexpr RawServerReader() = default;", "RawServerReader() = default;"),
         ("constexpr RawServerWriter() = default;", "RawServerWriter() = default;"),
         ("constexpr RawUnaryResponder() = default;", "RawUnaryResponder() = default;"),
+        ("proto_on_next_local = std::move(proto_on_next);", "proto_on_next_local = std::exchange(proto_on_next, nullptr);"),
+        ("        // NOLINTNEXTLINE(bugprone-use-after-move)\n", ""),
     ):
         c = c.replace(old, new)
     hdr.write_text(c, encoding="utf-8")

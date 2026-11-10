@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hypothesis import given
 from hypothesis import strategies as st
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import config_schema_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import create_allowed_policy, is_command_allowed
 
@@ -57,7 +57,7 @@ class TestMethodAuthorization:
 
     def test_unregistered_or_empty_auth_field_denied_without_allow_all(self) -> None:
         """Property: Any operation without an auth_field defaults to deny unless allow_all is set."""
-        spec_unprotected = protocol.OperationSpec(command_id=999, name="unprotected")
+        spec_unprotected = protocol.OperationSpec(name="unprotected")
         auth = _make_auth()
         assert not protocol.allows_method(auth, spec_unprotected)
 

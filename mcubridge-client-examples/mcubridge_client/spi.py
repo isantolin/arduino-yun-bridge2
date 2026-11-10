@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import cast
 
-from . import mcubridge_pb2 as pb
+from . import mcu_wire_pb2
 from .mcubridge_grpc import LocalBridgeStub
 from .protocol import SpiBitOrder, SpiDataMode
 
@@ -45,10 +45,10 @@ class SpiDevice:
         """Initialize the SPI bus on the MCU."""
         if self.is_active:
             return
-        cfg = pb.SpiConfig(
+        cfg = mcu_wire_pb2.SpiConfig(
             frequency=self.frequency,
-            bit_order=pb.SpiBitOrder.Value(self.bit_order.name),
-            data_mode=pb.SpiDataMode.Value(self.mode.name),
+            bit_order=mcu_wire_pb2.SpiBitOrder.Value(self.bit_order.name),
+            data_mode=mcu_wire_pb2.SpiDataMode.Value(self.mode.name),
         )
         await self._stub.SpiConfigure(cfg)
         self.is_active = True
@@ -64,5 +64,5 @@ class SpiDevice:
 
         payload = cast(bytes, data) if isinstance(data, (bytes, bytearray)) else bytes(data)
 
-        resp = await self._stub.SpiTransfer(pb.SpiTransfer(data=payload))
+        resp = await self._stub.SpiTransfer(mcu_wire_pb2.SpiTransfer(data=payload))
         return resp.data

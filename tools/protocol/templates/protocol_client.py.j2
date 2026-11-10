@@ -27,12 +27,6 @@ class Status(IntEnum):
     {{ status.name }} = {{ status.value }}  # {{ status.description|wordwrap(80)|replace('\n', '\n    # ') }}
     {%- endfor %}
 
-# Command Enums
-class Command(IntEnum):
-    {%- for cmd in commands %}
-    {{ cmd.name }} = {{ cmd.value }}  # {{ cmd.description|default('None', true)|wordwrap(80)|replace('\n', '\n    # ') }}
-    {%- endfor %}
-
 # SPI Enums
 class SpiBitOrder(IntEnum):
     {%- for value in spi_bit_orders %}

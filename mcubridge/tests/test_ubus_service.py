@@ -13,8 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from dirty_equals import Contains, IsInstance, IsPartialDict
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import Command
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
 from mcubridge.services.ubus import UbusService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from pytest_mock import MockerFixture
@@ -26,7 +25,7 @@ class MockRuntimeFacade:
         self.state = state
         self.handle_request = AsyncMock()
         self.process_run_async = AsyncMock(return_value=pb.ProcessRunAsyncResponse(pid=123))
-        self.process_kill = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+        self.process_kill = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok"))
         self.reset_link = AsyncMock(return_value=True)
         self.serial: AsyncMock | None = AsyncMock()
         self.serial.send = AsyncMock(return_value=True)
@@ -39,7 +38,7 @@ class MockRuntimeFacade:
         self.file_remove = AsyncMock(return_value=True)
         self.flush_console_queue = AsyncMock()
         self.console_queues: list[Any] = []
-        self.ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
+        self.ipc_requests: dict[bytes, asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish]] = {}
         self.clock_sync: MagicMock | None = MagicMock()
         self.gpio: MagicMock | None = MagicMock()
         self.process_poll = AsyncMock(
@@ -268,7 +267,9 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
     assert res == {"status": "accepted", "pin": 13, "value": 1}
     await asyncio.sleep(0.01)
     assert mock_runtime.serial is not None
-    mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=1))
+    mock_runtime.serial.send.assert_awaited_once_with(
+        "rpc.pb.GpioService/DigitalWrite", pb.DigitalWrite(pin=13, value=1)
+    )
 
 
 def test_ubus_handle_pin_write_serial_none(mock_runtime: MockRuntimeFacade) -> None:
@@ -285,7 +286,9 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
     assert res == {"status": "accepted", "pin": 9, "value": 128}
     await asyncio.sleep(0.01)
     assert mock_runtime.serial is not None
-    mock_runtime.serial.send.assert_awaited_once_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=9, value=128))
+    mock_runtime.serial.send.assert_awaited_once_with(
+        "rpc.pb.GpioService/AnalogWrite", pb.AnalogWrite(pin=9, value=128)
+    )
 
 
 async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None:
@@ -322,7 +325,7 @@ def test_ubus_handle_process_kill_sync(mock_runtime: MockRuntimeFacade) -> None:
 
 
 def test_ubus_handle_process_kill_failure(mock_runtime: MockRuntimeFacade) -> None:
-    mock_runtime.process_kill = AsyncMock(return_value=pb.GenericResponse(status="error"))
+    mock_runtime.process_kill = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="error"))
     service = UbusService(mock_runtime)
     res = service.ubus_handle_process_kill(MagicMock(), {"pid": 999})
     assert res == {"status": "error", "pid": 999}
@@ -801,7 +804,7 @@ def test_ubus_handle_pin_write_property(pin: int, val: int) -> None:
         assert resp_d == {"status": "accepted", "pin": pin, "value": val}
         assert mock_rt.serial is not None
         mock_rt.serial.send.assert_awaited_once_with(
-            Command.CMD_DIGITAL_WRITE.value,
+            "rpc.pb.GpioService/DigitalWrite",
             pb.DigitalWrite(pin=pin, value=val),
         )
 
@@ -810,7 +813,7 @@ def test_ubus_handle_pin_write_property(pin: int, val: int) -> None:
         assert resp_a == {"status": "accepted", "pin": pin, "value": val}
         assert mock_rt.serial is not None
         mock_rt.serial.send.assert_awaited_with(
-            Command.CMD_ANALOG_WRITE.value,
+            "rpc.pb.GpioService/AnalogWrite",
             pb.AnalogWrite(pin=pin, value=val),
         )
     finally:
@@ -900,7 +903,7 @@ def test_ubus_pump_events_with_detected_socket_fd(mock_runtime: MockRuntimeFacad
     calls = 0
 
     def mock_select(
-        rlist: list[int], _w: list[int], _x: list[int], _to: float
+        _rlist: list[int], _w: list[int], _x: list[int], _to: float
     ) -> tuple[list[int], list[int], list[int]]:
         nonlocal calls
         calls += 1
@@ -980,7 +983,7 @@ def test_ubus_pump_events_select_error_and_loop_error(mock_runtime: MockRuntimeF
     service.is_active = True
     calls = 0
 
-    def mock_select(r: list[int], w: list[int], x: list[int], to: float) -> tuple[list[int], list[int], list[int]]:
+    def mock_select(_r: list[int], _w: list[int], _x: list[int], _to: float) -> tuple[list[int], list[int], list[int]]:
         nonlocal calls
         calls += 1
         if calls == 1:

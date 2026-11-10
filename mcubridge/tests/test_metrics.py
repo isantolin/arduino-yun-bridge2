@@ -11,7 +11,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE
 from mcubridge.state.context import RuntimeState
@@ -21,9 +21,9 @@ from pytest_mock import MockerFixture
 async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
     event = asyncio.Event()
-    captured: dict[str, pb.CloudQueuedPublish] = {}
+    captured: dict[str, cloud_gateway_pb2.CloudQueuedPublish] = {}
 
-    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
+    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -54,7 +54,7 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
     expected_topic = "test/prefix/system/metrics"
 
     assert message.topic_name == expected_topic
-    decoded = pb.DaemonMetrics()
+    decoded = mcu_wire_pb2.DaemonMetrics()
     decoded.ParseFromString(message.payload)
     assert decoded.cloud_spool_degraded
     assert decoded.cloud_spool_failure_reason == "disk-full"
@@ -69,9 +69,9 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
 async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     """Ensure bridge-spool user property defaults to 'unknown'."""
     event = asyncio.Event()
-    captured: dict[str, pb.CloudQueuedPublish] = {}
+    captured: dict[str, cloud_gateway_pb2.CloudQueuedPublish] = {}
 
-    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
+    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -103,9 +103,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     runtime_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     event = asyncio.Event()
-    messages: list[pb.CloudQueuedPublish] = []
+    messages: list[cloud_gateway_pb2.CloudQueuedPublish] = []
 
-    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
+    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         messages.append(message)
         if len(messages) >= 2:
             event.set()
@@ -136,9 +136,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
 async def test_publish_bridge_snapshots_noop_when_disabled(
     runtime_state: RuntimeState,
 ) -> None:
-    messages: list[pb.CloudQueuedPublish] = []
+    messages: list[cloud_gateway_pb2.CloudQueuedPublish] = []
 
-    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
+    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         messages.append(message)
 
     task = asyncio.create_task(
@@ -163,7 +163,7 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, moc
     mock_log = mocker.patch("mcubridge.metrics.logger.error")
     mock_critical = mocker.patch("mcubridge.metrics.logger.critical")
 
-    async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
+    async def _failing_enqueue(_: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         raise OSError("Disk full")
 
     # OSError in enqueue is caught and logged as error
@@ -171,7 +171,7 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, moc
     assert mock_log.call_count == 1
 
     # AttributeError in snapshot emission is caught and logged as critical
-    async def _attr_error_enqueue(_: pb.CloudQueuedPublish) -> None:
+    async def _attr_error_enqueue(_: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         raise AttributeError("Corrupted snapshot")
 
     await emit_fn(runtime_state, _attr_error_enqueue, flavor="summary")
@@ -182,7 +182,7 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, moc
 async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> None:
     calls = 0
 
-    async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
+    async def _failing_enqueue(_: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         nonlocal calls
         calls += 1
         raise OSError("Transient IO failure")
@@ -205,7 +205,7 @@ async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> 
 async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState) -> None:
     calls = 0
 
-    async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
+    async def _failing_enqueue(_: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         nonlocal calls
         calls += 1
         raise RuntimeError("Loop IO failure")
@@ -240,9 +240,9 @@ async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState,
 
 async def test_publish_metrics_file_write_limit_rejection(runtime_state: RuntimeState) -> None:
     event = asyncio.Event()
-    captured: dict[str, pb.CloudQueuedPublish] = {}
+    captured: dict[str, cloud_gateway_pb2.CloudQueuedPublish] = {}
 
-    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
+    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -272,7 +272,7 @@ async def test_publish_metrics_file_write_limit_rejection(runtime_state: Runtime
 async def test_publish_bridge_snapshots_missing_intervals(runtime_state: RuntimeState) -> None:
     calls = 0
 
-    async def _dummy_enqueue(_: pb.CloudQueuedPublish) -> None:
+    async def _dummy_enqueue(_: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         nonlocal calls
         calls += 1
 

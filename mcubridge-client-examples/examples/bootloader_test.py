@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, pb
+from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, cloud_gateway_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -27,7 +27,7 @@ async def run_test(
     log.info("Triggering bootloader via LocalBridgeStub...")
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         topic_bl = Topic.build(Topic.SYSTEM, "bootloader", prefix=topic_prefix)
-        await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_bl, payload=b"", qos=1))
+        await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_bl, payload=b"", qos=1))
         log.info("Bootloader command sent.")
 
     log.info("Watching for MCU output (2s)...")

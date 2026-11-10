@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 from dirty_equals import IsFloat, IsPositiveInt, IsStr
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2 as pb
 from mcubridge.state.context import ProcessContext, create_runtime_state
 from pytest_mock import MockerFixture
 

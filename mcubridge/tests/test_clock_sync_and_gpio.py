@@ -13,7 +13,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge.services.clock_sync import ClockSyncService
 from mcubridge.services.gpio import GpioService
 from mcubridge.services.runtime import BridgeService
@@ -52,7 +52,7 @@ async def test_clock_sync_service() -> None:
 
         # Simulate MCU response
         now_us = time.time_ns() // 1000
-        mock_serial.send.return_value = pb.ClockSyncResponse(
+        mock_serial.send.return_value = mcu_wire_pb2.ClockSyncResponse(
             host_time_us=now_us - 1000,
             mcu_time_us=500000,
         )
@@ -83,7 +83,7 @@ def test_clock_sync_record_sync_arithmetic_property(delay_us: int, mcu_time_us: 
     now_us = time.time_ns() // 1000
     t1_host_us = now_us - delay_us
 
-    resp = pb.ClockSyncResponse(host_time_us=t1_host_us, mcu_time_us=mcu_time_us)
+    resp = mcu_wire_pb2.ClockSyncResponse(host_time_us=t1_host_us, mcu_time_us=mcu_time_us)
     res = clock.record_sync(resp)
 
     assert res["sync_count"] == 1
@@ -108,12 +108,12 @@ def test_gpio_pin_event_canonical_topic_property(pin: int, value: int, ts_us: in
         mock_runtime.enqueue_cloud = mock_enqueue
 
         gpio = GpioService(mock_runtime)
-        evt = pb.PinUpdateEvent(pin=pin, value=value, timestamp_micros=ts_us)
+        evt = mcu_wire_pb2.PinUpdateEvent(pin=pin, value=value, timestamp_micros=ts_us)
         await gpio.handle_pin_update_event(evt)
 
         assert state.pin_events_count == 1
         mock_enqueue.assert_awaited_once()
-        cloud_msg: pb.CloudQueuedPublish = mock_enqueue.call_args[0][0]
+        cloud_msg: cloud_gateway_pb2.CloudQueuedPublish = mock_enqueue.call_args[0][0]
         assert cloud_msg.topic_name == f"br/d/{pin}/update"
         assert cloud_msg.payload == str(value).encode("utf-8")
 
@@ -142,7 +142,7 @@ async def test_gpio_service() -> None:
         assert state.pin_subscriptions[13]["mode"] == "INPUT_PULLUP"
 
         # Receive streaming pin event via GpioService handler
-        evt = pb.PinUpdateEvent(pin=13, value=1, timestamp_micros=999999)
+        evt = mcu_wire_pb2.PinUpdateEvent(pin=13, value=1, timestamp_micros=999999)
 
         mock_enqueue: AsyncMock = AsyncMock()
         service.cloud_publisher = mock_enqueue
@@ -152,7 +152,7 @@ async def test_gpio_service() -> None:
 
         # Verify enqueue_cloud was called with canonical topic path (br/d/13/update)
         mock_enqueue.assert_awaited_once()
-        cloud_msg: pb.CloudQueuedPublish = mock_enqueue.call_args[0][0]
+        cloud_msg: cloud_gateway_pb2.CloudQueuedPublish = mock_enqueue.call_args[0][0]
         assert cloud_msg.topic_name == "br/d/13/update"
         assert cloud_msg.payload == b"1"
         assert cloud_msg.message_expiry_interval == 5
@@ -259,7 +259,7 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
         # 2. Capabilities dict with clock_sync enabled -> executes send with timeout=1.0
         state.mcu_capabilities = {"watchdog": True, "clock_sync": True}
         now_us = time.time_ns() // 1000
-        mock_serial.send.return_value = pb.ClockSyncResponse(
+        mock_serial.send.return_value = mcu_wire_pb2.ClockSyncResponse(
             host_time_us=now_us - 500,
             mcu_time_us=123456,
         )
@@ -282,7 +282,7 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
         # 4. First-time probe failure on board without clock sync transitions to unsupported
         clock.fsm.disconnect()
         assert clock.fsm.current_state_value == "idle"
-        state.mcu_capabilities = pb.Capabilities(watchdog=True, spi=True)
+        state.mcu_capabilities = mcu_wire_pb2.Capabilities(watchdog=True, spi=True)
         mock_serial.send.return_value = None
         res_probe_fail = await clock.sync_now()
         assert res_probe_fail["state"] == "unsupported"
@@ -319,7 +319,7 @@ async def test_clock_sync_fsm_lifecycle() -> None:
         # Successful sync -> synchronized
         state.mcu_capabilities = {"clock_sync": True}
         now_us = time.time_ns() // 1000
-        mock_serial.send.return_value = pb.ClockSyncResponse(host_time_us=now_us - 100, mcu_time_us=1000)
+        mock_serial.send.return_value = mcu_wire_pb2.ClockSyncResponse(host_time_us=now_us - 100, mcu_time_us=1000)
         await clock.sync_now()
         assert clock.fsm.current_state_value == "synchronized"
 
@@ -348,7 +348,7 @@ async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
 
         # 1. Return ClockSyncResponse from mock_serial
         t1 = time.time_ns() // 1000 - 500
-        resp_pb = pb.ClockSyncResponse(host_time_us=t1, mcu_time_us=123456)
+        resp_pb = mcu_wire_pb2.ClockSyncResponse(host_time_us=t1, mcu_time_us=123456)
         mock_serial.send.return_value = resp_pb
 
         res1 = await clock.sync_now()
@@ -450,9 +450,9 @@ async def test_local_bridge_pin_subscribe() -> None:
         state.connection_fsm.connect()
         mock_serial.send.return_value = True
 
-        req = pb.PinSubscribeRequest(
+        req = mcu_wire_pb2.PinSubscribeRequest(
             pin=13,
-            mode=pb.PinModeType.PIN_INPUT_PULLUP,
+            mode=config_schema_pb2.PinModeType.PIN_INPUT_PULLUP,
             interval_ms=100,
             hysteresis=2,
             enabled=True,
@@ -464,9 +464,9 @@ async def test_local_bridge_pin_subscribe() -> None:
         assert 13 in state.pin_subscriptions
 
         # Test unrecognized pin mode enum fallback
-        req_invalid = pb.PinSubscribeRequest(
+        req_invalid = mcu_wire_pb2.PinSubscribeRequest(
             pin=14,
-            mode=cast(pb.PinModeType.ValueType, 9999),
+            mode=cast(config_schema_pb2.PinModeType.ValueType, 9999),
             interval_ms=100,
             hysteresis=2,
             enabled=True,

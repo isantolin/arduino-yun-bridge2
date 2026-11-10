@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import pb
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -28,14 +28,14 @@ async def run_test(
         # --- Send phase ---
         message_to_send = "hello_from_mailbox_test"
         logger.info("Sending message to mailbox", message=message_to_send)
-        await stub.MailboxPush(pb.MailboxPush(data=message_to_send.encode("utf-8")))
+        await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=message_to_send.encode("utf-8")))
         logger.info("Message sent successfully.")
 
         # --- Read phase ---
         logger.info("Polling for mailbox responses", max_polls=max_polls)
         polls = 0
         while max_polls <= 0 or polls < max_polls:
-            res = await stub.MailboxRead(pb.SubscribeRequest())
+            res = await stub.MailboxRead(mcu_wire_pb2.SubscribeRequest())
             polls += 1
             message: bytes | None = res.content if (res and res.content) else None
             if not message:

@@ -131,7 +131,7 @@ async def test_serial_transport_tcp_connect_and_stream(
     assert transport.serial.is_open is True
 
     # Send a raw frame
-    await transport.send_raw(protocol.Command.CMD_GET_VERSION.value, b"", 1)
+    await transport.send_raw("rpc.pb.SystemService/GetVersion", b"", 1)
     await asyncio.sleep(0.1)
 
     assert len(received_packets) > 0

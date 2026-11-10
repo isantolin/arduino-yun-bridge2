@@ -52,7 +52,7 @@ Notas:
 - Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
 - Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
-- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`).
+- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent` y transferencia multi-chunk `FileSystemService/Read` vía `NanopbServerWriter` / `NanopbClientReader`).
 - gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
 ```
 
@@ -63,7 +63,7 @@ La **fuente de verdad machine-readable** del protocolo vive modularizada en `too
 ### Serialización de Payloads y Sobres RPC (`pw_rpc` + Protobuf)
 Todos los servicios y payloads del protocolo se definen en los schemas bajo `tools/protocol/` y se transportan dentro de sobres **`pw.rpc.internal.RpcPacket`** sobre tramas **`pw_hdlc`**.
 
-- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcubridge_pb2.py`, `mcu_wire_pb2.py`) y los módulos oficiales de Google Pigweed (`pw_hdlc`, `pw_rpc.packets`, `pw_rpc.descriptors.Services`, `pw_tokenizer.Detokenizer`), orquestados por `PW_SERVICES` y las tablas modulares de `protocol.py`.
+- **Python (daemon y clientes):** utiliza las clases tipadas nativas generadas por `google.protobuf` (`mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`) y los módulos oficiales de Google Pigweed (`pw_hdlc`, `pw_rpc.packets`, `pw_rpc.descriptors.Services`, `pw_tokenizer.Detokenizer`), orquestados por `PW_SERVICES` y las tablas modulares de `protocol.py`.
 - **C++ (MCU):** usa Nanopb (`mcu_wire.pb.h` / `config_schema.pb.h`) junto con los stubs generados por `tools/protocol/protoc_gen_mcu_rpc.py` (`mcu_wire.rpc.pb.h`, `pw_rpc.codegen_nanopb`) para codificar/decodificar payloads sin heap dinámico en runtime (`pb_encode` / `pb_decode_noinit`), manteniendo las restricciones estáticas de tamaño definidas en `mcu_wire.options` y `config_schema.options`.
 
 ### Despacho de Servicios `pw_rpc` (MCU y MPU)
@@ -102,7 +102,7 @@ python3 tools/protocol/generate.py \
 
 …se regeneran los bindings de enums/constantes y el catálogo `PW_SERVICES` / `OPERATIONS`. Además, el generador produce artefactos protobuf para ambos lados:
 
-- **Python:** módulos de mensajes `mcubridge_pb2.py`, `mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, stubs `.pyi`, servicios `mcubridge_grpc.py` y el módulo `protocol.py`.
+- **Python:** módulos de mensajes `mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, stubs `.pyi`, servicios `mcubridge_grpc.py` y el módulo `protocol.py`.
 - **C++ (nanopb/protobuf):** cabeceras de protocolo `rpc_protocol.h` y `rpc_hw_config.h`, junto con las cabeceras Nanopb `mcu_wire.pb.h`/`.c` y `config_schema.pb.h`/`.c` (estáticas, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
@@ -132,8 +132,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 ## Componentes
 
-- **BridgeService (Python 3.13.9+)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
-- **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola, aplicando la política de seguridad y controlando la concurrencia.
+- **BridgeService (Python 3.13.9+)**: orquesta de forma unificada la comunicación MCU↔Linux, la ejecución de subprocesos asíncronos y comandos de shell/consola, el sandbox de archivos, el datastore y los servicios especializados (`GpioService`, `ClockSyncService`, `SerialHandshakeManager`).
 - **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte transparente para `pyserial` (UART POSIX y sockets TCP/WiFi).
 - **gRPC Bidirectional Stream (HTTP/2 + TLS 1.3)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway delegando la negociación y reanudación de sesión TLS 1.3 a OpenSSL y el stack estándar de Python.
@@ -148,7 +147,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 4. **Auto-Validación (KAT)**: Tanto el MCU como el daemon realizan **Known Answer Tests (KAT)** para SHA256 y HMAC-SHA256 en cada arranque. Si la validación falla, el sistema entra en modo **Fail-Secure** y aborta la operación.
 5. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se aplica al ejecutar procesos/shell.
 6. **Namespaces sensibles**: `TopicAuthorization` gobierna toggles `cloud_allow_*` (consola, archivos, datastore, mailbox, shell, GPIO, etc.).
-7. **Sandbox de archivos**: `FileComponent` normaliza rutas, bloquea `..`, obliga a permanecer bajo `file_system_root`, aplica `file_write_max_bytes` y `file_storage_quota_bytes`.
+7. **Sandbox de archivos**: `BridgeService` normaliza rutas, bloquea `..`, obliga a permanecer bajo `file_system_root`, aplica `file_write_max_bytes` y `file_storage_quota_bytes`.
 
 ## Observabilidad
 
@@ -171,19 +170,18 @@ Gestiona la autenticación mutua y el ciclo de vida del enlace criptográfico se
 | Estado | Descripción |
 |--------|-------------|
 | `unsynchronized` | Estado inicial. Sin enlace establecido. Tráfico RPC bloqueado. |
-| `resetting` | Enviando `CMD_LINK_RESET` para inicializar parámetros de tiempo. |
-| `syncing` | Enviando `CMD_LINK_SYNC` con nonce de desafío. |
-| `confirming` | Esperando `CMD_LINK_SYNC_RESP` validado. |
+| `resetting` | Enviando `rpc.pb.SystemService/LinkReset` (`CMD_LINK_RESET`) para inicializar parámetros de sesión. |
+| `syncing` | Enviando `rpc.pb.SystemService/LinkSync` (`CMD_LINK_SYNC`) con nonce y tag de desafío. |
 | `synchronized` | Enlace establecido y autenticado. Tráfico RPC habilitado. |
 | `fault` | Error crítico o de autenticación detectado. |
 
 #### Transiciones
-- `start_reset`: `*` → `resetting` (Inicia secuencia de sincronización)
-- `start_sync`: `resetting` → `syncing` (Parámetros de tiempo aceptados)
-- `start_confirm`: `syncing` → `confirming` (Nonce de desafío enviado)
-- `complete_handshake`: `confirming` → `synchronized` (Respuesta HMAC validada)
-- `fail_handshake`: `*` → `fault` (Error de integridad o timeout fatal)
-- `reset_fsm`: `*` → `unsynchronized` (Reinicio manual o desconexión)
+- `start_sync`: `unsynchronized` / `fault` / `resetting` → `resetting` (Inicia secuencia de sincronización)
+- `reset_sent`: `resetting` → `syncing` (`LinkReset` enviado)
+- `sync_sent`: `syncing` → `syncing` (`LinkSync` enviado; esperando respuesta autenticada)
+- `sync_confirmed`: `syncing` → `synchronized` (Respuesta HMAC validada y claves de sesión derivadas)
+- `failure`: `resetting` / `syncing` / `synchronized` / `fault` → `fault` (Error de integridad o autenticación)
+- `reset`: `*` → `unsynchronized` (Reinicio manual o desconexión)
 
 ---
 
@@ -433,7 +431,7 @@ dmesg -n 1
 El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se basa en **Google Pigweed**:
 - **Capa de enlace (`pw_hdlc`):** Encapsulado HDLC con delimitadores `0x7E`, byte-stuffing (`0x7D`), control UI (`0x03`), secuencia de verificación de trama **CRC-32 IEEE 802.3 (FCS)** y multiplexación nativa por dirección lógica.
 - **Capa de procedimiento remoto (`pw_rpc`):** Transporte de sobres Protobuf `pw.rpc.internal.RpcPacket` (`REQUEST`, `RESPONSE`, `SERVER_STREAM`, `SERVER_ERROR`) direccionados por hashes FNV-1a de 32 bits (`service_id`, `method_id`) y correlacionados por `call_id`.
-- **Serialización de payloads (Protobuf / Nanopb):** Las definiciones viven en `tools/protocol/` (`mcu_wire.proto`, `config_schema.proto`, `cloud_gateway.proto`), generando structs estáticos C++ (`mcu_wire.pb.h`, `config_schema.pb.h`) y descriptores/mensajes Python (`mcubridge_pb2.py`, `mcu_wire_pb2.py`, `protocol.py`).
+- **Serialización de payloads (Protobuf / Nanopb):** Las definiciones viven en `tools/protocol/` (`mcu_wire.proto`, `config_schema.proto`, `cloud_gateway.proto`), generando structs estáticos C++ (`mcu_wire.pb.h`, `config_schema.pb.h`) y descriptores/mensajes Python (`mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, `protocol.py`).
 
 ## 1.1 Contrato de direccionalidad, `RpcPacket` y confirmación
 
@@ -503,7 +501,7 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Google Pigweed**: `pw::rpc::Server`, `pw::rpc::Client`, `pw::rpc::Channel` y `protoc_gen_mcu_rpc.py` (`rpc::pb::pw_rpc::nanopb::<Service>::Service` para 6 servicios servidor registrados y `Client` para `ProcessService` y `DataStoreService`). | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`) para los 8 contratos Protobuf. |
 | **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Google Pigweed**: fachada `pw::log::SetLogSink` (`pw_log` + `pw_tokenizer`). | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
 | **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono`). | Reloj monótono `time.monotonic()`. |
-| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / `mcubridge_pb2.py`, orquestado vía `PW_SERVICES`). |
+| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / direct `*_pb2.py` modules, orquestado vía `PW_SERVICES`). |
 
 ## 4. Códigos de estado (`Status`)
 
@@ -528,19 +526,19 @@ Los status de aplicación usan el rango `0x30` - `0x3F`.
 - **Correlación mediante `call_id`:** Cada invocación `pw_rpc` incluye un `call_id` en `RpcPacket` que permite correlacionar respuestas asíncronas y descartar duplicados o respuestas huérfanas.
 - **Retries acotados:** `SerialTransport` gestiona los reintentos declarativos mediante `tenacity` si no recibe respuesta dentro de `response_timeout_ms`.
 
-### 5.1 Sistema y control de flujo (0x40 – 0x4F)
+### 5.1 Sistema y control de flujo (`rpc.pb.SystemService`, 0x40 – 0x4F)
 
-- **`0x40` CMD_GET_VERSION (Linux → MCU)**
-  - Petición: sin payload.
-  - Respuesta (`0x41 CMD_GET_VERSION_RESP`): `[version_major: u8, version_minor: u8]`.
+- **`rpc.pb.SystemService/GetVersion` (`0x40` CMD_GET_VERSION, Linux → MCU)**
+  - Petición: `SubscribeRequest` (vacío).
+  - Respuesta: mensaje Protobuf `VersionResponse` (`major`, `minor`, `patch`).
 
-- **`0x42` CMD_GET_FREE_MEMORY (Linux → MCU)**
-  - Petición: sin payload.
-  - Respuesta (`0x43 CMD_GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
+- **`rpc.pb.SystemService/GetFreeMemory` (`0x42` CMD_GET_FREE_MEMORY, Linux → MCU)**
+  - Petición: `SubscribeRequest` (vacío).
+  - Respuesta: mensaje Protobuf `FreeMemoryResponse` (`value`).
 
-- **`0x44` CMD_LINK_SYNC (Linux → MCU)**
-  - Petición: nonce de 16 bytes y tag de 16 bytes si hay secreto; tag vacío si la autenticación está explícitamente deshabilitada.
-  - Respuesta (`0x45 CMD_LINK_SYNC_RESP`, MCU → Linux): el mismo nonce y una prueba HMAC bajo un dominio separado; tag vacío en modo no autenticado.
+- **`rpc.pb.SystemService/LinkSync` (`0x44` CMD_LINK_SYNC, Linux ↔ MCU)**
+  - Petición: mensaje Protobuf `LinkSync` con `nonce` de 16 bytes y `tag` de 16 bytes si hay secreto; `tag` vacío si la autenticación está explícitamente deshabilitada.
+  - Respuesta (`PacketType.RESPONSE`, MCU → Linux): mensaje `LinkSync` con el mismo `nonce` y una prueba HMAC bajo un dominio HKDF separado (`"mcubridge-link-sync-resp-v2"`); `tag` vacío en modo no autenticado.
 
 #### Secuencia de autenticación `LinkSync`
 

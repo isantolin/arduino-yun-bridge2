@@ -9,10 +9,10 @@ The system is designed with a strict layering to separate the wire protocol from
 ### 1. The Protocol Contract & Runtime SSOT (`protocol/protocol.py`)
 - **Role:** Protocol Constants and Centralized Single Source of Truth (`PW_SERVICES` & `OPERATIONS`).
 - **Content:** Command IDs, Status Codes, Binary Format definitions, Magic Numbers, `PW_SERVICES` (`pw_rpc.descriptors.Services`), and the unified immutable `OPERATIONS` (`OperationSpec`) with $O(1)$ dispatch tables and topic resolution.
-- **Origin:** Auto-generated from `tools/protocol/mcubridge.proto` using `tools/protocol/generate.py`.
+- **Origin:** Auto-generated from `tools/protocol/config_schema.proto`, `tools/protocol/mcu_wire.proto`, and `tools/protocol/cloud_gateway.proto` using `tools/protocol/generate.py`.
 - **Modification Policy:** **DO NOT EDIT MANUALLY.**
 
-### 2. The Protobuf Runtime & Structures (`protocol/mcubridge_pb2.py` & `protocol/structures.py`)
+### 2. The Protobuf Runtime & Structures (`mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py` & `structures.py`)
 - **Role:** Typed Protobuf Bindings and Security/Policy Helpers.
 - **Content:** Native `google.protobuf` message classes, binary parsing utilities, and policy validation functions (`is_command_allowed`).
 - **Benefit:** Provides compile-time typing, binary parsing, and high-performance serialization via `google.protobuf`.

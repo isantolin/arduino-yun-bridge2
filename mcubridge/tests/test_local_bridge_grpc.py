@@ -16,8 +16,9 @@ from pytest_mock import MockerFixture
 from grpclib.server import Stream
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import BY_NAME, RPC_SPECS, Command
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import BY_NAME, RPC_SPECS
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ProcessContext, create_runtime_state
 from tools.testing.mock_stream import MockGrpcStream
@@ -34,7 +35,7 @@ class MockLocalBridgeClient:
         payload = req.SerializeToString() if req is not None else b""
         res_bytes = await self.service.execute_rpc(method_name, payload)
         spec = BY_NAME[method_name]
-        resp_cls = spec.response_type or pb.GenericResponse
+        resp_cls = spec.response_type or cloud_gateway_pb2.GenericResponse
         resp = resp_cls()
         if res_bytes:
             resp.ParseFromString(res_bytes)
@@ -71,11 +72,7 @@ def _make_mock_stream(req_msg: object) -> MockGrpcStream[Any, Any]:
 
 
 def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
-    service_desc = next(
-        dep.services_by_name["LocalBridge"]
-        for dep in [pb.DESCRIPTOR, *pb.DESCRIPTOR.dependencies]
-        if "LocalBridge" in dep.services_by_name
-    )
+    service_desc = cloud_gateway_pb2.DESCRIPTOR.services_by_name["LocalBridge"]
     methods = service_desc.methods
     unary_methods = {
         method.name: method for method in methods if not method.client_streaming and not method.server_streaming
@@ -96,9 +93,9 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
     # 1. SetPinMode
-    stream = _make_mock_stream(pb.PinMode(pin=13, mode=pb.PIN_OUTPUT))
+    stream = _make_mock_stream(mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT))
     await local_svc.SetPinMode(stream)
-    mock_serial.send.assert_called_with(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=13, mode=pb.PIN_OUTPUT))
+    mock_serial.send.assert_called_with(protocol.get_operation("SetPinMode"), mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT))
     sent = stream.sent_message
     assert sent.status == "ok"
 
@@ -107,22 +104,22 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     await local_svc.SetPinMode(stream_none)
 
     # 2. DigitalWrite
-    stream = _make_mock_stream(pb.DigitalWrite(pin=13, value=1))
+    stream = _make_mock_stream(mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     await local_svc.DigitalWrite(stream)
-    mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=1))
+    mock_serial.send.assert_called_with(protocol.get_operation("DigitalWrite"), mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     sent = stream.sent_message
     assert sent.status == "ok"
 
     # 3. DigitalRead (direct object)
-    mock_serial.send.return_value = pb.DigitalReadResponse(value=1)
-    stream = _make_mock_stream(pb.PinRead(pin=13))
+    mock_serial.send.return_value = mcu_wire_pb2.DigitalReadResponse(value=1)
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=13))
     await local_svc.DigitalRead(stream)
     sent = stream.sent_message
     assert sent.value == 1
 
     # DigitalRead (no serial)
     service.serial = None
-    stream = _make_mock_stream(pb.PinRead(pin=13))
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=13))
     await local_svc.DigitalRead(stream)
     sent = stream.sent_message
     assert sent.value == 0
@@ -130,15 +127,15 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     # 4. AnalogWrite
     service.serial = mock_serial
     mock_serial.send.return_value = True
-    stream = _make_mock_stream(pb.AnalogWrite(pin=9, value=128))
+    stream = _make_mock_stream(mcu_wire_pb2.AnalogWrite(pin=9, value=128))
     await local_svc.AnalogWrite(stream)
-    mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=9, value=128))
+    mock_serial.send.assert_called_with(protocol.get_operation("AnalogWrite"), mcu_wire_pb2.AnalogWrite(pin=9, value=128))
     sent = stream.sent_message
     assert sent.status == "ok"
 
     # 5. AnalogRead
-    mock_serial.send.return_value = pb.AnalogReadResponse(value=512)
-    stream = _make_mock_stream(pb.PinRead(pin=0))
+    mock_serial.send.return_value = mcu_wire_pb2.AnalogReadResponse(value=512)
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=0))
     await local_svc.AnalogRead(stream)
     sent = stream.sent_message
     assert sent.value == 512
@@ -147,9 +144,9 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     service.state.connection_fsm.connect()
     mock_serial.send.return_value = True
     stream = _make_mock_stream(
-        pb.PinSubscribeRequest(
+        mcu_wire_pb2.PinSubscribeRequest(
             pin=13,
-            mode=pb.PinModeType.PIN_INPUT_PULLUP,
+            mode=config_schema_pb2.PinModeType.PIN_INPUT_PULLUP,
             interval_ms=100,
             hysteresis=1,
             enabled=True,
@@ -162,7 +159,7 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
 
     # PinSubscribe (invalid mode enum fallback to INPUT)
     stream = _make_mock_stream(
-        pb.PinSubscribeRequest(
+        mcu_wire_pb2.PinSubscribeRequest(
             pin=13,
             mode=9999,
             interval_ms=100,
@@ -179,26 +176,26 @@ async def test_local_bridge_datastore_and_mailbox(tmp_path: Path) -> None:
     service, local_svc, _ = _make_service(_make_config(tmp_path))
 
     # 1. DatastorePut
-    stream = _make_mock_stream(pb.DatastorePut(key="mykey", value=b"myval"))
+    stream = _make_mock_stream(mcu_wire_pb2.DatastorePut(key="mykey", value=b"myval"))
     await local_svc.DatastorePut(stream)
     sent = stream.sent_message
     assert sent.status == "ok"
 
     # 2. DatastoreGet
-    stream = _make_mock_stream(pb.DatastoreGet(key="mykey"))
+    stream = _make_mock_stream(mcu_wire_pb2.DatastoreGet(key="mykey"))
     await local_svc.DatastoreGet(stream)
     sent = stream.sent_message
     assert sent.value == b"myval"
 
     # 3. MailboxPush
-    stream = _make_mock_stream(pb.MailboxPush(data=b"test_msg"))
+    stream = _make_mock_stream(mcu_wire_pb2.MailboxPush(data=b"test_msg"))
     await local_svc.MailboxPush(stream)
     sent = stream.sent_message
     assert sent.status == "ok"
 
     # 4. MailboxRead
     await service.state.mailbox_incoming_queue.append(b"incoming_data")
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.MailboxRead(stream)
     sent = stream.sent_message
     assert sent.content == b"incoming_data"
@@ -208,81 +205,81 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
     # 1. Local File Write
-    stream = _make_mock_stream(pb.FileWrite(path="test.txt", data=b"hello"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="test.txt", data=b"hello"))
     await local_svc.FileWrite(stream)
     sent = stream.sent_message
     assert sent.status == "ok"
 
     # 2. Local File Read
-    stream = _make_mock_stream(pb.FileRead(path="test.txt"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="test.txt"))
     await local_svc.FileRead(stream)
     sent = stream.sent_message
     assert sent.content == b"hello"
 
     # 3. Local File Remove
-    stream = _make_mock_stream(pb.FileRemove(path="test.txt"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="test.txt"))
     await local_svc.FileRemove(stream)
     sent = stream.sent_message
     assert sent.status == "ok"
 
     # 4. MCU File Operations
-    stream = _make_mock_stream(pb.FileWrite(path="mcu/eeprom.bin", data=b"data"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="mcu/eeprom.bin", data=b"data"))
     await local_svc.FileWrite(stream)
-    mock_serial.send.assert_called_with(Command.CMD_FILE_WRITE.value, pb.FileWrite(path="eeprom.bin", data=b"data"))
+    mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path="eeprom.bin", data=b"data"))
 
-    mock_file_read = AsyncMock(return_value=pb.FileReadResponse(content=b"mcu_data"))
+    mock_file_read = AsyncMock(return_value=mcu_wire_pb2.FileReadResponse(content=b"mcu_data"))
     service.file_read = mock_file_read
-    stream = _make_mock_stream(pb.FileRead(path="mcu/eeprom.bin"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="mcu/eeprom.bin"))
     await local_svc.FileRead(stream)
     sent = stream.sent_message
     assert sent.content == b"mcu_data"
-    mock_file_read.assert_awaited_once_with(pb.FileRead(path="mcu/eeprom.bin"))
+    mock_file_read.assert_awaited_once_with(mcu_wire_pb2.FileRead(path="mcu/eeprom.bin"))
 
-    stream = _make_mock_stream(pb.FileRemove(path="mcu/eeprom.bin"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/eeprom.bin"))
     await local_svc.FileRemove(stream)
-    mock_serial.send.assert_called_with(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path="eeprom.bin"))
+    mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path="eeprom.bin"))
 
 
 async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
     # 1. ProcessRunAsync (allowed) and Poll
-    stream = _make_mock_stream(pb.ProcessRunAsync(command="echo hi"))
+    stream = _make_mock_stream(mcu_wire_pb2.ProcessRunAsync(command="echo hi"))
     await local_svc.ProcessRunAsync(stream)
     sent = stream.sent_message
     assert sent.pid == IsPositiveInt
 
     # ProcessPoll
-    stream = _make_mock_stream(pb.ProcessPoll(pid=sent.pid))
+    stream = _make_mock_stream(mcu_wire_pb2.ProcessPoll(pid=sent.pid))
     await local_svc.ProcessPoll(stream)
     poll_resp = stream.sent_message
     assert poll_resp is not None
 
     # ProcessKill (known running process)
-    stream_sleep = _make_mock_stream(pb.ProcessRunAsync(command="sleep 10"))
+    stream_sleep = _make_mock_stream(mcu_wire_pb2.ProcessRunAsync(command="sleep 10"))
     await local_svc.ProcessRunAsync(stream_sleep)
     sent_sleep = stream_sleep.sent_message
     assert sent_sleep.pid == IsPositiveInt
 
-    stream = _make_mock_stream(pb.ProcessKill(pid=sent_sleep.pid))
+    stream = _make_mock_stream(mcu_wire_pb2.ProcessKill(pid=sent_sleep.pid))
     await local_svc.ProcessKill(stream)
     kill_resp = stream.sent_message
     assert kill_resp.status == "ok"
 
     # ProcessKill (unknown)
-    stream = _make_mock_stream(pb.ProcessKill(pid=99999))
+    stream = _make_mock_stream(mcu_wire_pb2.ProcessKill(pid=99999))
     await local_svc.ProcessKill(stream)
     kill_resp = stream.sent_message
     assert kill_resp.status == "error"
 
     # 2. SPI Transfer & Configure
-    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"\xaa\x55")
-    stream = _make_mock_stream(pb.SpiTransfer(data=b"\x01\x02"))
+    mock_serial.send.return_value = mcu_wire_pb2.SpiTransferResponse(data=b"\xaa\x55")
+    stream = _make_mock_stream(mcu_wire_pb2.SpiTransfer(data=b"\x01\x02"))
     await local_svc.SpiTransfer(stream)
     sent = stream.sent_message
     assert sent.data == b"\xaa\x55"
 
-    stream = _make_mock_stream(pb.SpiConfig(frequency=1000000, bit_order=1, data_mode=0))
+    stream = _make_mock_stream(mcu_wire_pb2.SpiConfig(frequency=1000000, bit_order=1, data_mode=0))
     await local_svc.SpiConfigure(stream)
     sent = stream.sent_message
     assert sent.status == "ok"
@@ -292,20 +289,20 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
     # 1. GetVersion (pb object, bytes, no serial, None request)
-    mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5)
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    mock_serial.send.return_value = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=5)
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetVersion(stream)
     sent = stream.sent_message
     assert sent.major == 2
 
     mock_serial.send.return_value = 12345  # unexpected type
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetVersion(stream)
     sent = stream.sent_message
     assert sent.major == 0
 
     service.serial = None
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetVersion(stream)
     sent = stream.sent_message
     assert sent.major == 0
@@ -314,20 +311,20 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
 
     # 2. GetFreeMemory (pb object, bytes, unexpected, no serial, None request)
     service.serial = mock_serial
-    mock_serial.send.return_value = pb.FreeMemoryResponse(value=1024)
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    mock_serial.send.return_value = mcu_wire_pb2.FreeMemoryResponse(value=1024)
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetFreeMemory(stream)
     sent = stream.sent_message
     assert sent.value == 1024
 
     mock_serial.send.return_value = "invalid"
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetFreeMemory(stream)
     sent = stream.sent_message
     assert sent.value == 0
 
     service.serial = None
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetFreeMemory(stream)
     sent = stream.sent_message
     assert sent.value == 0
@@ -336,7 +333,7 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
 
     # 3. GetStatus (normal & None request)
     service.serial = mock_serial
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.GetStatus(stream)
     sent = stream.sent_message
     assert sent.metrics is not None
@@ -367,92 +364,92 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     await local_svc.SubscribeConsole(_make_mock_stream(None))
 
     # AnalogRead branches
-    mock_serial.send.return_value = pb.AnalogReadResponse(value=100)
-    stream = _make_mock_stream(pb.PinRead(pin=0))
+    mock_serial.send.return_value = mcu_wire_pb2.AnalogReadResponse(value=100)
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=0))
     await local_svc.AnalogRead(stream)
     assert stream.sent_message.value == 100
 
     mock_serial.send.return_value = 999
-    stream = _make_mock_stream(pb.PinRead(pin=0))
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=0))
     await local_svc.AnalogRead(stream)
     assert stream.sent_message.value == 0
 
     service.serial = None
-    stream = _make_mock_stream(pb.PinRead(pin=0))
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=0))
     await local_svc.AnalogRead(stream)
     assert stream.sent_message.value == 0
 
     # DigitalRead unexpected object branch
     mock_serial.send.return_value = 999
     service.serial = mock_serial
-    stream = _make_mock_stream(pb.PinRead(pin=1))
+    stream = _make_mock_stream(mcu_wire_pb2.PinRead(pin=1))
     await local_svc.DigitalRead(stream)
     assert stream.sent_message.value == 0
 
     # Datastore cache None branch
     service.state.datastore_cache = None
-    stream = _make_mock_stream(pb.DatastorePut(key="k", value=b"v"))
+    stream = _make_mock_stream(mcu_wire_pb2.DatastorePut(key="k", value=b"v"))
     await local_svc.DatastorePut(stream)
-    stream = _make_mock_stream(pb.DatastoreGet(key="k"))
+    stream = _make_mock_stream(mcu_wire_pb2.DatastoreGet(key="k"))
     await local_svc.DatastoreGet(stream)
     assert stream.sent_message.value == b""
 
     # MailboxRead empty queue branch
     await service.state.mailbox_incoming_queue.clear()
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     await local_svc.MailboxRead(stream)
     assert stream.sent_message.content == b""
 
     # File operations with no serial on MCU path
     service.serial = None
-    stream = _make_mock_stream(pb.FileWrite(path="mcu/test.bin", data=b"abc"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="mcu/test.bin", data=b"abc"))
     await local_svc.FileWrite(stream)
     assert stream.sent_message.status == "error"
 
-    stream = _make_mock_stream(pb.FileRead(path="mcu/test.bin"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="mcu/test.bin"))
     await local_svc.FileRead(stream)
     assert stream.sent_message.content == b""
 
-    stream = _make_mock_stream(pb.FileRemove(path="mcu/test.bin"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/test.bin"))
     await local_svc.FileRemove(stream)
     assert stream.sent_message.status == "error"
 
     # File operations on path traversal (escapes root via ../)
-    stream = _make_mock_stream(pb.FileWrite(path="../../etc/shadow", data=b"bad"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="../../etc/shadow", data=b"bad"))
     await local_svc.FileWrite(stream)
     assert stream.sent_message.status == "error"
 
-    stream = _make_mock_stream(pb.FileRead(path="../../etc/nonexistent_file_abc"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="../../etc/nonexistent_file_abc"))
     await local_svc.FileRead(stream)
     assert stream.sent_message.content == b""
 
-    stream = _make_mock_stream(pb.FileRemove(path="../../etc/nonexistent_file_abc"))
+    stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="../../etc/nonexistent_file_abc"))
     await local_svc.FileRemove(stream)
     assert stream.sent_message.status == "error"
 
     # SPI branches (bytes, unexpected, no serial)
-    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"\x01")
+    mock_serial.send.return_value = mcu_wire_pb2.SpiTransferResponse(data=b"\x01")
     service.serial = mock_serial
-    stream = _make_mock_stream(pb.SpiTransfer(data=b"\x02"))
+    stream = _make_mock_stream(mcu_wire_pb2.SpiTransfer(data=b"\x02"))
     await local_svc.SpiTransfer(stream)
     assert stream.sent_message.data == b"\x01"
 
     mock_serial.send.return_value = None
-    stream = _make_mock_stream(pb.SpiTransfer(data=b"\x02"))
+    stream = _make_mock_stream(mcu_wire_pb2.SpiTransfer(data=b"\x02"))
     await local_svc.SpiTransfer(stream)
     assert stream.sent_message.data == b""
 
     service.serial = None
-    stream = _make_mock_stream(pb.SpiTransfer(data=b"\x02"))
+    stream = _make_mock_stream(mcu_wire_pb2.SpiTransfer(data=b"\x02"))
     await local_svc.SpiTransfer(stream)
     assert stream.sent_message.data == b""
 
-    stream = _make_mock_stream(pb.SpiConfig(frequency=1000))
+    stream = _make_mock_stream(mcu_wire_pb2.SpiConfig(frequency=1000))
     await local_svc.SpiConfigure(stream)
     assert stream.sent_message.status == "error"
 
     # ProcessRunAsync disallowed command (pid=0 for denied)
-    stream = _make_mock_stream(pb.ProcessRunAsync(command="rm -rf /"))
+    stream = _make_mock_stream(mcu_wire_pb2.ProcessRunAsync(command="rm -rf /"))
     await local_svc.ProcessRunAsync(stream)
     assert stream.sent_message.pid == 0
 
@@ -463,7 +460,7 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     service.state.running_processes[8888] = ProcessContext(
         handle=mock_handle,
     )
-    stream = _make_mock_stream(pb.ProcessKill(pid=8888))
+    stream = _make_mock_stream(mcu_wire_pb2.ProcessKill(pid=8888))
     await local_svc.ProcessKill(stream)
     assert stream.sent_message.status == "error"
 
@@ -472,17 +469,17 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
     # 1. Publish non-query message (returns empty ack CloudQueuedPublish)
-    stream = _make_mock_stream(pb.CloudQueuedPublish(topic_name="br/custom/test", payload=b"payload"))
+    stream = _make_mock_stream(cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/custom/test", payload=b"payload"))
     await local_svc.Publish(stream)
     sent = stream.sent_message
-    assert isinstance(sent, pb.CloudQueuedPublish)
+    assert isinstance(sent, cloud_gateway_pb2.CloudQueuedPublish)
     # Non-query messages return an empty ack (no topic echoed back)
     assert sent.topic_name == ""
 
     # 2. Publish query with correlation (simulate immediate reply)
     service.handle_request = AsyncMock()
     stream = _make_mock_stream(
-        pb.CloudQueuedPublish(
+        cloud_gateway_pb2.CloudQueuedPublish(
             topic_name="br/d/13/get",
             correlation_data=b"test_corr_12",
         )
@@ -492,7 +489,7 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
         await asyncio.sleep(0.01)
         queue = service.ipc_requests.get(b"test_corr_12")
         if queue:
-            await queue.put(pb.CloudQueuedPublish(topic_name="br/d/13/value", payload=b"1"))
+            await queue.put(cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/d/13/value", payload=b"1"))
 
     asyncio.create_task(_fulfill())
     await local_svc.Publish(stream)
@@ -508,12 +505,12 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
         # The SubscribeConsole method appends its queue to console_queues
         if service.console_queues:
             q = service.console_queues[-1]
-            await q.put(pb.CloudQueuedPublish(topic_name="console", payload=b"MCU log\n"))
+            await q.put(cloud_gateway_pb2.CloudQueuedPublish(topic_name="console", payload=b"MCU log\n"))
             await asyncio.sleep(0.05)
             stream.send_message.side_effect = OSError("stream closed")
-            await q.put(pb.CloudQueuedPublish())  # Trigger next iteration
+            await q.put(cloud_gateway_pb2.CloudQueuedPublish())  # Trigger next iteration
 
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
     asyncio.create_task(_push_console())
     with pytest.raises(OSError):
         await local_svc.SubscribeConsole(stream)
@@ -524,32 +521,32 @@ async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
 
     # 1. DigitalWrite
     mock_serial.send.return_value = True
-    req_dw = pb.DigitalWrite(pin=13, value=1)
+    req_dw = mcu_wire_pb2.DigitalWrite(pin=13, value=1)
     res_dw_bytes = await local_svc.execute_rpc("DigitalWrite", req_dw.SerializeToString())
-    res_dw = pb.GenericResponse.FromString(res_dw_bytes)
+    res_dw = cloud_gateway_pb2.GenericResponse.FromString(res_dw_bytes)
     assert res_dw.status == "ok"
 
     mock_serial.send.return_value = False
     res_dw_failed_bytes = await local_svc.execute_rpc("DigitalWrite", req_dw.SerializeToString())
-    assert pb.GenericResponse.FromString(res_dw_failed_bytes).status == "error"
+    assert cloud_gateway_pb2.GenericResponse.FromString(res_dw_failed_bytes).status == "error"
 
     mock_serial.send.return_value = True
 
     # 2. DigitalRead
-    mock_serial.send.return_value = pb.DigitalReadResponse(value=1)
-    req_dr = pb.PinRead(pin=13)
+    mock_serial.send.return_value = mcu_wire_pb2.DigitalReadResponse(value=1)
+    req_dr = mcu_wire_pb2.PinRead(pin=13)
     res_dr_bytes = await local_svc.execute_rpc("DigitalRead", req_dr.SerializeToString())
-    res_dr = pb.DigitalReadResponse.FromString(res_dr_bytes)
+    res_dr = mcu_wire_pb2.DigitalReadResponse.FromString(res_dr_bytes)
     assert res_dr.value == 1
 
     # 3. Datastore Put & Get
-    req_ds_put = pb.DatastorePut(key="k1", value=b"v1")
+    req_ds_put = mcu_wire_pb2.DatastorePut(key="k1", value=b"v1")
     res_put_bytes = await local_svc.execute_rpc("DatastorePut", req_ds_put.SerializeToString())
-    assert pb.GenericResponse.FromString(res_put_bytes).status == "ok"
+    assert cloud_gateway_pb2.GenericResponse.FromString(res_put_bytes).status == "ok"
 
-    req_ds_get = pb.DatastoreGet(key="k1")
+    req_ds_get = mcu_wire_pb2.DatastoreGet(key="k1")
     res_get_bytes = await local_svc.execute_rpc("DatastoreGet", req_ds_get.SerializeToString())
-    assert pb.DatastoreGetResponse.FromString(res_get_bytes).value == b"v1"
+    assert mcu_wire_pb2.DatastoreGetResponse.FromString(res_get_bytes).value == b"v1"
 
     # 4. Unknown method raises ValueError
     with pytest.raises(ValueError, match="Unknown RPC method"):
@@ -560,14 +557,14 @@ async def test_local_bridge_write_methods_report_failed_serial_send(tmp_path: Pa
     _, local_svc, mock_serial = _make_service(_make_config(tmp_path))
     mock_serial.send.return_value = False
 
-    pin_mode_response = pb.GenericResponse.FromString(
-        await local_svc.execute_rpc("SetPinMode", pb.PinMode(pin=13, mode=pb.PIN_OUTPUT).SerializeToString())
+    pin_mode_response = cloud_gateway_pb2.GenericResponse.FromString(
+        await local_svc.execute_rpc("SetPinMode", mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT).SerializeToString())
     )
-    digital_write_response = pb.GenericResponse.FromString(
-        await local_svc.execute_rpc("DigitalWrite", pb.DigitalWrite(pin=13, value=1).SerializeToString())
+    digital_write_response = cloud_gateway_pb2.GenericResponse.FromString(
+        await local_svc.execute_rpc("DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString())
     )
-    analog_write_response = pb.GenericResponse.FromString(
-        await local_svc.execute_rpc("AnalogWrite", pb.AnalogWrite(pin=9, value=128).SerializeToString())
+    analog_write_response = cloud_gateway_pb2.GenericResponse.FromString(
+        await local_svc.execute_rpc("AnalogWrite", mcu_wire_pb2.AnalogWrite(pin=9, value=128).SerializeToString())
     )
 
     assert pin_mode_response.status == "error"
@@ -584,16 +581,16 @@ async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
     await local_svc.Publish(stream_none.as_stream())
     stream_none.send_message.assert_not_called()
 
-    req_msg = pb.CloudQueuedPublish(
+    req_msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name="br/req/datastore.put",
-        payload=pb.DatastorePut(key="test_key", value=b"val").SerializeToString(),
+        payload=mcu_wire_pb2.DatastorePut(key="test_key", value=b"val").SerializeToString(),
         correlation_data=b"123456789012",
     )
     mock_stream = MockGrpcStream(request=req_msg)
     await local_svc.Publish(mock_stream.as_stream())
     mock_stream.send_message.assert_awaited_once()
     sent_msg = mock_stream.sent_message
-    assert isinstance(sent_msg, pb.CloudQueuedPublish)
+    assert isinstance(sent_msg, cloud_gateway_pb2.CloudQueuedPublish)
     assert sent_msg.correlation_data == b"123456789012"
 
 
@@ -601,11 +598,11 @@ async def test_local_bridge_service_subscribe_console(tmp_path: Path) -> None:
     svc, local_svc, _ = _make_service(_make_config(tmp_path))
 
     mock_stream = MockGrpcStream(
-        request=pb.SubscribeRequest(),
+        request=mcu_wire_pb2.SubscribeRequest(),
         send_exception=OSError("Connection reset"),
     )
 
-    q_msg = pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello console")
+    q_msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello console")
 
     async def _push() -> None:
         await asyncio.sleep(0.01)
@@ -619,13 +616,13 @@ async def test_local_bridge_service_subscribe_console(tmp_path: Path) -> None:
 
 async def test_local_bridge_service_subscribe_console_normal_close_and_adapter_cleanup(tmp_path: Path) -> None:
     svc, local_svc, _ = _make_service(_make_config(tmp_path))
-    stream = _make_mock_stream(pb.SubscribeRequest())
+    stream = _make_mock_stream(mcu_wire_pb2.SubscribeRequest())
 
     async def _producer() -> None:
         await asyncio.sleep(0.01)
         if svc.console_queues:
             adapter = svc.console_queues[-1]
-            await adapter.put(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"normal close"))
+            await adapter.put(cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/out", payload=b"normal close"))
             svc.console_queues.remove(adapter)
             adapter.close()
 
@@ -637,7 +634,7 @@ async def test_local_bridge_service_subscribe_console_normal_close_and_adapter_c
 async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, mocker: MockerFixture) -> None:
     svc, local_svc, _ = _make_service(_make_config(tmp_path))
 
-    req_msg = pb.CloudQueuedPublish(
+    req_msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name="br/file/read",
         payload=b"test",
         correlation_data=b"corr-timeout-1",
@@ -654,7 +651,7 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
     assert mock_stream.send_message.called
 
     # 2. Simulate OSError during response write
-    req_put = pb.CloudQueuedPublish(
+    req_put = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name="br/datastore/put/test_key",
         payload=b"val",
         correlation_data=b"corr-timeout-1",
@@ -680,14 +677,14 @@ def _make_property_service() -> tuple[BridgeService, MockLocalBridgeClient, Asyn
 
 
 @given(
-    pin_mode=st.from_type(pb.PinMode),
-    digital_write=st.from_type(pb.DigitalWrite),
-    analog_write=st.from_type(pb.AnalogWrite),
+    pin_mode=st.from_type(mcu_wire_pb2.PinMode),
+    digital_write=st.from_type(mcu_wire_pb2.DigitalWrite),
+    analog_write=st.from_type(mcu_wire_pb2.AnalogWrite),
 )
 async def test_local_bridge_pin_operations_property(
-    pin_mode: pb.PinMode,
-    digital_write: pb.DigitalWrite,
-    analog_write: pb.AnalogWrite,
+    pin_mode: mcu_wire_pb2.PinMode,
+    digital_write: mcu_wire_pb2.DigitalWrite,
+    analog_write: mcu_wire_pb2.AnalogWrite,
 ) -> None:
     service, local_svc, mock_serial = _make_property_service()
     try:
@@ -696,32 +693,32 @@ async def test_local_bridge_pin_operations_property(
         await local_svc.SetPinMode(stream_mode.as_stream())
         assert stream_mode.sent_message is not None
         assert stream_mode.sent_message.status == "ok"
-        mock_serial.send.assert_called_with(Command.CMD_SET_PIN_MODE.value, pin_mode)
+        mock_serial.send.assert_called_with(protocol.get_operation("SetPinMode"), pin_mode)
 
         # DigitalWrite
         stream_dw = _make_mock_stream(digital_write)
         await local_svc.DigitalWrite(stream_dw.as_stream())
         assert stream_dw.sent_message is not None
         assert stream_dw.sent_message.status == "ok"
-        mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, digital_write)
+        mock_serial.send.assert_called_with(protocol.get_operation("DigitalWrite"), digital_write)
 
         # AnalogWrite
         stream_aw = _make_mock_stream(analog_write)
         await local_svc.AnalogWrite(stream_aw.as_stream())
         assert stream_aw.sent_message is not None
         assert stream_aw.sent_message.status == "ok"
-        mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, analog_write)
+        mock_serial.send.assert_called_with(protocol.get_operation("AnalogWrite"), analog_write)
     finally:
         service.state.cleanup()
 
 
 @given(
-    datastore_put=st.from_type(pb.DatastorePut),
-    mailbox_push=st.from_type(pb.MailboxPush),
+    datastore_put=st.from_type(mcu_wire_pb2.DatastorePut),
+    mailbox_push=st.from_type(mcu_wire_pb2.MailboxPush),
 )
 async def test_local_bridge_datastore_and_mailbox_property(
-    datastore_put: pb.DatastorePut,
-    mailbox_push: pb.MailboxPush,
+    datastore_put: mcu_wire_pb2.DatastorePut,
+    mailbox_push: mcu_wire_pb2.MailboxPush,
 ) -> None:
     service, local_svc, _mock_serial = _make_property_service()
     try:
@@ -732,7 +729,7 @@ async def test_local_bridge_datastore_and_mailbox_property(
         assert stream_dp.sent_message.status == "ok"
 
         # DatastoreGet roundtrip from cache
-        stream_dg = _make_mock_stream(pb.DatastoreGet(key=datastore_put.key))
+        stream_dg = _make_mock_stream(mcu_wire_pb2.DatastoreGet(key=datastore_put.key))
         await local_svc.DatastoreGet(stream_dg.as_stream())
         assert stream_dg.sent_message is not None
         assert stream_dg.sent_message.value == datastore_put.value
@@ -748,20 +745,20 @@ async def test_local_bridge_datastore_and_mailbox_property(
 
 
 @given(
-    spi_req=st.from_type(pb.SpiTransfer),
+    spi_req=st.from_type(mcu_wire_pb2.SpiTransfer),
 )
 async def test_local_bridge_spi_transfer_property(
-    spi_req: pb.SpiTransfer,
+    spi_req: mcu_wire_pb2.SpiTransfer,
 ) -> None:
     service, local_svc, mock_serial = _make_property_service()
     try:
-        mock_serial.send.return_value = pb.SpiTransferResponse(
+        mock_serial.send.return_value = mcu_wire_pb2.SpiTransferResponse(
             data=spi_req.data,
         )
         stream_spi = _make_mock_stream(spi_req)
         await local_svc.SpiTransfer(stream_spi.as_stream())
         assert stream_spi.sent_message is not None
         assert stream_spi.sent_message.data == spi_req.data
-        mock_serial.send.assert_called_with(Command.CMD_SPI_TRANSFER.value, spi_req)
+        mock_serial.send.assert_called_with(protocol.get_operation("SpiTransfer"), spi_req)
     finally:
         service.state.cleanup()

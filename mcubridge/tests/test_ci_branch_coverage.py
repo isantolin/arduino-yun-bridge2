@@ -11,7 +11,7 @@ from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pytest_mock import MockerFixture
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher, verify_crypto_integrity
 from mcubridge.services.handshake import (
@@ -34,7 +34,7 @@ async def test_publish_cloud_message_debug_logging_branch(
     service.cloud_stream = stream
     mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
 
-    message = pb.CloudQueuedPublish(topic_name="bridge/status", payload=b"online")
+    message = cloud_gateway_pb2.CloudQueuedPublish(topic_name="bridge/status", payload=b"online")
     assert await service.publish_cloud_message(message)
     stream.send_message.assert_awaited_once()
 
@@ -120,21 +120,21 @@ async def test_handle_mcu_frame_without_serial_is_noop(
 ) -> None:
     mock_bridge_service.serial = None
 
-    await mock_bridge_service.handle_mcu_frame(protocol.Command.CMD_XOFF.value, 1, b"")
+    await mock_bridge_service.handle_mcu_frame("rpc.pb.SystemService/LinkSync", 1, b"")
 
     assert not mock_bridge_service.state.mcu_is_paused
 
 
-async def test_handle_mcu_frame_tuple_falls_back_to_command_id_alias(
+async def test_handle_mcu_frame_tuple_resolves_registered_handler(
     mock_bridge_service: BridgeService,
 ) -> None:
     service = mock_bridge_service
     service.state.state = "synchronized"
     handler = AsyncMock()
     service.mcu_registry.clear()
-    service.mcu_registry[protocol.Command.CMD_XOFF.value] = handler
+    service.mcu_registry[(0x1234, 0x5678)] = handler
 
-    await service.handle_mcu_frame((0x1234, protocol.Command.CMD_XOFF.value), 9, b"")
+    await service.handle_mcu_frame((0x1234, 0x5678), 9, b"")
 
     handler.assert_awaited_once_with(9, b"")
 
@@ -227,10 +227,14 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.serial_shared_secret = b"transport-secret"
+    sync_op = protocol.get_operation("rpc.pb.SystemService/LinkSync")
+    assert sync_op is not None
+    assert sync_op.service_id is not None
+    assert sync_op.method_id is not None
     service = MagicMock()
     service.handle_mcu_frame = AsyncMock()
     service.mcu_registry = {
-        protocol.Command.CMD_LINK_SYNC.value: AsyncMock(),
+        (sync_op.service_id, sync_op.method_id): AsyncMock(),
     }
     transport = SerialTransport(runtime_config, runtime_state, service)
     mock_serial = MagicMock()
@@ -246,14 +250,14 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     assert runtime_state.serial_decode_errors == 0
 
     # 2. Pre-handshake: non-LinkSync RPC frame is rejected and increments decode errors
-    ver_raw = protocol.encode_hdlc_rpc(protocol.Command.CMD_GET_VERSION.value, b"", call_id=1)
+    ver_raw = protocol.encode_hdlc_rpc("rpc.pb.SystemService/GetVersion", b"", call_id=1)
     ver_frame = next(iter(FrameDecoder().process(ver_raw)))
     await transport.process_hdlc_frame(ver_frame)
     assert runtime_state.serial_decode_errors == 1
 
     # 3. Pre-handshake: LinkSync response frame is accepted
     sync_resp_raw = protocol.encode_hdlc_rpc(
-        protocol.Command.CMD_LINK_SYNC.value,
+        "rpc.pb.SystemService/LinkSync",
         pb.LinkSync(
             nonce=b"\x01" * protocol.HANDSHAKE_NONCE_LENGTH,
             tag=b"\x02" * protocol.HANDSHAKE_TAG_LENGTH,
@@ -266,9 +270,9 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     assert runtime_state.serial_decode_errors == 1
 
     # 4. Pre-handshake send_raw guards when secret is configured and cipher is None
-    assert not await transport.send_raw(protocol.Command.CMD_CONSOLE_WRITE.value, b"console")
-    assert not await transport.send_raw(protocol.Command.CMD_GET_VERSION.value, b"")
-    assert await transport.send_raw(protocol.Command.CMD_LINK_RESET.value, b"")
+    assert not await transport.send_raw("ConsoleWrite", b"console")
+    assert not await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
+    assert await transport.send_raw("rpc.pb.SystemService/LinkReset", b"")
 
     # 5. Post-handshake (cipher installed): invalid encrypted frame is rejected
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
@@ -277,22 +281,22 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     await transport.process_hdlc_frame(bad_encrypted_frame)
     assert runtime_state.serial_decode_errors == 2
 
-    # 6. Post-handshake send_raw guards: CMD_LINK_SYNC rejected while cipher active; CMD_LINK_RESET sent cleartext
-    assert not await transport.send_raw(protocol.Command.CMD_LINK_SYNC.value, b"")
-    assert await transport.send_raw(protocol.Command.CMD_LINK_RESET.value, b"")
+    # 6. Post-handshake send_raw guards: LinkSync rejected while cipher active; LinkReset sent cleartext
+    assert not await transport.send_raw("rpc.pb.SystemService/LinkSync", b"")
+    assert await transport.send_raw("rpc.pb.SystemService/LinkReset", b"")
     assert await transport.send_raw(
-        protocol.Command.CMD_CONSOLE_WRITE.value,
+        "ConsoleWrite",
         pb.ConsoleWrite(data=b"encrypted-console"),
     )
 
     # 7. Cleartext console write when shared secret is empty and payload has no .data
     runtime_config.serial_shared_secret = b""
     runtime_state.link_cipher = None
-    assert await transport.send_raw(protocol.Command.CMD_CONSOLE_WRITE.value, pb.Empty())
+    assert await transport.send_raw("ConsoleWrite", pb.Empty())
 
 
 def test_get_operation_resolves_server_stream_packet() -> None:
-    pin_op = protocol.get_operation(protocol.Command.CMD_PIN_SUBSCRIBE.value)
+    pin_op = protocol.get_operation("rpc.pb.GpioService/SubscribePins")
     assert pin_op is not None
     assert pin_op.service_id is not None
     assert pin_op.method_id is not None

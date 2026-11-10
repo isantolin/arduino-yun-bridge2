@@ -25,9 +25,8 @@ import pytest
 import tenacity
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command
 from mcubridge.services.handshake import (
     HandshakeEvent,
     HandshakeMachine,
@@ -600,8 +599,12 @@ async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, 
     )
     sync_attempt: Callable[[], Awaitable[bool]] = hs.synchronize_attempt
 
-    async def _send_and_fault(command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
-        if command_id == Command.CMD_LINK_SYNC.value:
+    async def _send_and_fault(
+        command_id: int | str | protocol.OperationSpec | tuple[int, int],
+        payload: bytes | ProtobufMessage,
+        seq_id: int | None = None,
+    ) -> bool:
+        if command_id == "rpc.pb.SystemService/LinkSync":
             hs.fsm_state = HandshakeState.FAULT
         return True
 
@@ -771,12 +774,12 @@ async def test_handshake_send_failures_and_capabilities_branches(
     hs.retry_backoff_base = 0.001
     hs.retry_backoff_max = 0.002
 
-    # 1. synchronize_attempt fails when CMD_LINK_RESET send fails
+    # 1. synchronize_attempt fails when LinkReset send fails
     hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     assert not await hs.synchronize_attempt()
     assert runtime_state.last_handshake_error == "link_reset_send_failed"
 
-    # 2. synchronize_attempt fails when CMD_LINK_SYNC send fails
+    # 2. synchronize_attempt fails when LinkSync send fails
     send_mock.side_effect = [True, False]
     hs.fsm_state = HandshakeState.UNSYNCHRONIZED
     assert not await hs.synchronize_attempt()

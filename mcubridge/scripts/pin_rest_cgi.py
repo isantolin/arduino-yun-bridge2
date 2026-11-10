@@ -14,7 +14,7 @@ import typer
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2 as pb
 
 logger = structlog.get_logger("mcubridge.pin_rest")
 

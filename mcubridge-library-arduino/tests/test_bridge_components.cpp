@@ -636,11 +636,13 @@ void test_filesystem_edges() {
   ba.setTxEnabled(true);
 
   // 6. _onRead non-existent file
+  pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse> inactive_writer;
   rpc_pb_FileRead fread_nonexistent = {};
   const char* non_path = "non_existent_file.xyz";
   etl::copy_n(non_path, strlen(non_path), fread_nonexistent.path);
-  TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
-                    FileSystem._onRead(fread_nonexistent, rresp).code());
+  TEST_ASSERT_EQUAL(
+      pw::Status::NotFound().code(),
+      FileSystem._onRead(fread_nonexistent, inactive_writer).code());
 
   // 7. _onRead timeout via fault injection
   bridge::test::fault::enable(
@@ -649,19 +651,29 @@ void test_filesystem_edges() {
   const char* val_path = "test.txt";
   etl::copy_n(val_path, strlen(val_path), fread_valid.path);
   TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
-                    FileSystem._onRead(fread_valid, rresp).code());
+                    FileSystem._onRead(fread_valid, inactive_writer).code());
   bridge::test::fault::disable(
       bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
 
-  // 8. Large file multi-chunk reading
+  // 8. Large file multi-chunk reading via active ServerWriter
   etl::array<uint8_t, 100> large_data;
   large_data.fill(0xAA);
   auto res_w1 = bridge::hal::writeFile("test_large.txt", large_data);
   TEST_ASSERT_TRUE(res_w1.has_value());
   rpc_pb_FileRead req_large = {};
   strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
-  TEST_ASSERT_EQUAL(pw::Status::ResourceExhausted().code(),
-                    FileSystem._onRead(req_large, rresp).code());
+  uint8_t req_large_buf[80];
+  pb_ostream_t pos_large =
+      pb_ostream_from_buffer(req_large_buf, sizeof(req_large_buf));
+  TEST_ASSERT_TRUE(pb_encode(&pos_large, rpc_pb_FileRead_fields, &req_large));
+  etl::array<uint8_t, 128> fs_hdlc_buf;
+  const size_t fs_sz = build_hdlc_rpc_frame(
+      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
+      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+      pw::tokenizer::Hash("Read"),
+      etl::span<const uint8_t>(req_large_buf, pos_large.bytes_written),
+      fs_hdlc_buf);
+  ba.feedHdlcBytes(etl::span<const uint8_t>(fs_hdlc_buf.data(), fs_sz));
 
   // 9. Send-fail branches when tx disabled
   ba.clearSharedSecret();
@@ -669,8 +681,8 @@ void test_filesystem_edges() {
   uint8_t fsdata[] = {1, 2};
   FileSystem.write("send_fail.txt", etl::span<const uint8_t>(fsdata, 2));
   FileSystem.remove("send_fail.txt");
-  TEST_ASSERT_EQUAL(pw::Status::ResourceExhausted().code(),
-                    FileSystem._onRead(req_large, rresp).code());
+  TEST_ASSERT_EQUAL(pw::Status::Unavailable().code(),
+                    FileSystem._onRead(req_large, inactive_writer).code());
   ba.setTxEnabled(true);
 
   // 10. Empty file (to_copy == 0)
@@ -679,7 +691,7 @@ void test_filesystem_edges() {
   rpc_pb_FileRead fread_empty = {};
   const char* empty_path = "empty.txt";
   etl::copy_n(empty_path, strlen(empty_path), fread_empty.path);
-  TEST_ASSERT_TRUE(FileSystem._onRead(fread_empty, rresp).ok());
+  TEST_ASSERT_TRUE(FileSystem._onRead(fread_empty, inactive_writer).ok());
 
   // 11. Observer onLost
   FileSystem.onLost();
@@ -811,14 +823,14 @@ void test_mailbox_edges() {
 
   sz = build_hdlc_rpc_frame(
       1, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
-      pw::tokenizer::Hash("rpc.pb.MailboxService"),
-      pw::tokenizer::Hash("Read"), etl::span<const uint8_t>(), hdlc_buf);
+      pw::tokenizer::Hash("rpc.pb.MailboxService"), pw::tokenizer::Hash("Read"),
+      etl::span<const uint8_t>(), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
 
   sz = build_hdlc_rpc_frame(
       1, pw::rpc::internal::pwpb::PacketType::CLIENT_ERROR,
-      pw::tokenizer::Hash("rpc.pb.MailboxService"),
-      pw::tokenizer::Hash("Read"), etl::span<const uint8_t>(), hdlc_buf);
+      pw::tokenizer::Hash("rpc.pb.MailboxService"), pw::tokenizer::Hash("Read"),
+      etl::span<const uint8_t>(), hdlc_buf);
   ba.feedHdlcBytes(etl::span<const uint8_t>(hdlc_buf.data(), sz));
 
   // Unknown method_id fallthroughs in RPC services and _dispatchRpcResponse

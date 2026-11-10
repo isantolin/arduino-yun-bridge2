@@ -11,9 +11,8 @@ from google.protobuf.message import DecodeError as ProtobufDecodeError
 from statemachine import State, StateMachine
 
 from mcubridge.state.context import RuntimeState
-from ..protocol import mcubridge_pb2 as pb
+from ..protocol import mcu_wire_pb2 as pb
 from ..protocol import protocol
-from ..protocol.protocol import Command
 
 
 class ClockSyncRuntime(Protocol):
@@ -105,7 +104,7 @@ class ClockSyncService:
         # [SIL-2] Bounded response timeout: do not monopolize serial flow lock for 20s.
         timeout_seconds = float(protocol.DEFAULT_CLOCK_SYNC_TIMEOUT_MS) / 1000.0
         with structlog.contextvars.bound_contextvars(clock_state=self.fsm.current_state_value):
-            res = await serial.send(Command.CMD_CLOCK_SYNC.value, req, timeout=timeout_seconds)
+            res = await serial.send("rpc.pb.ClockSyncService/ClockSync", req, timeout=timeout_seconds)
             if isinstance(res, pb.ClockSyncResponse):
                 return self.record_sync(res)
 

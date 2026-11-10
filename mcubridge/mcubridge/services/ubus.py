@@ -18,9 +18,9 @@ import structlog
 import tenacity
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from ..protocol import mcubridge_pb2 as pb
+from ..protocol import config_schema_pb2, mcu_wire_pb2
 from ..protocol import protocol
-from ..protocol.protocol import Command, build_ubus_methods
+from ..protocol.protocol import build_ubus_methods
 
 logger = structlog.get_logger("mcubridge.service.ubus")
 
@@ -251,10 +251,14 @@ class UbusService:
         norm_msg = dict(msg)
         if "enabled" in norm_msg:
             norm_msg["enabled"] = bool(norm_msg["enabled"])
-        proto = pb.PinSubscribeRequest()
+        proto = mcu_wire_pb2.PinSubscribeRequest()
         ParseDict(norm_msg, proto, ignore_unknown_fields=True)
         pin = proto.pin
-        mode = proto.mode or str(msg.get("mode", pb.PinModeType.Name(pb.PinModeType.PIN_INPUT).removeprefix("PIN_")))
+        mode = proto.mode or str(
+            msg.get(
+                "mode", config_schema_pb2.PinModeType.Name(config_schema_pb2.PinModeType.PIN_INPUT).removeprefix("PIN_")
+            )
+        )
         interval_ms = proto.interval_ms or int(msg.get("interval_ms", protocol.DEFAULT_PIN_INTERVAL_MS))
         hysteresis = proto.hysteresis or int(msg.get("hysteresis", protocol.DEFAULT_PIN_HYSTERESIS))
         enabled = proto.enabled if "enabled" in msg else True
@@ -277,7 +281,7 @@ class UbusService:
 
     def _run_proto_rpc(
         self,
-        msg_cls: type[pb.ProcessRunAsync | pb.ProcessKill | pb.ProcessPoll],
+        msg_cls: type[mcu_wire_pb2.ProcessRunAsync | mcu_wire_pb2.ProcessKill | mcu_wire_pb2.ProcessPoll],
         coro_attr: str,
         _req: Any,
         msg: dict[str, Any],
@@ -285,7 +289,7 @@ class UbusService:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
         resp: Any = self.run_sync(getattr(self.runtime, coro_attr)(proto))
-        if isinstance(resp, pb.ProcessPollResponse):
+        if isinstance(resp, mcu_wire_pb2.ProcessPollResponse):
             data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
             data["status"] = "ok" if resp.status == 0 else "error"
             data["stdout"] = format_ubus_bytes(resp.stdout_data)
@@ -293,22 +297,30 @@ class UbusService:
             data.pop("stdout_data", None)
             data.pop("stderr_data", None)
             return data
-        if isinstance(proto, pb.ProcessKill):
+        if isinstance(proto, mcu_wire_pb2.ProcessKill):
             return {"status": resp.status, "pid": proto.pid}
         return {"status": "ok", "pid": resp.pid}
 
     def _handle_pin_write(
-        self, cmd: Command, msg_cls: type[pb.DigitalWrite | pb.AnalogWrite], _req: Any, msg: dict[str, Any]
+        self,
+        cmd: str,
+        msg_cls: type[mcu_wire_pb2.DigitalWrite | mcu_wire_pb2.AnalogWrite],
+        _req: Any,
+        msg: dict[str, Any],
     ) -> dict[str, Any]:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
         if not self.runtime.serial:
             return {"status": "error", "message": "Serial service unavailable"}
-        self.schedule_async(self.runtime.serial.send(cmd.value, proto))
+        self.schedule_async(self.runtime.serial.send(cmd, proto))
         return {"status": "accepted", "pin": proto.pin, "value": proto.value}
 
-    ubus_handle_digital_write = functools.partialmethod(_handle_pin_write, Command.CMD_DIGITAL_WRITE, pb.DigitalWrite)
-    ubus_handle_analog_write = functools.partialmethod(_handle_pin_write, Command.CMD_ANALOG_WRITE, pb.AnalogWrite)
+    ubus_handle_digital_write = functools.partialmethod(
+        _handle_pin_write, "rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite
+    )
+    ubus_handle_analog_write = functools.partialmethod(
+        _handle_pin_write, "rpc.pb.GpioService/AnalogWrite", mcu_wire_pb2.AnalogWrite
+    )
 
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
@@ -326,7 +338,7 @@ class UbusService:
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_get'."""
-        proto = pb.DatastoreGet()
+        proto = mcu_wire_pb2.DatastoreGet()
         ParseDict(msg, proto, ignore_unknown_fields=True)
         key = proto.key
         cache = self.runtime.state.datastore_cache
@@ -354,9 +366,9 @@ class UbusService:
         self.schedule_async(self.runtime.file_write(target_path, payload))
         return {"status": "accepted", "path": target_path, "bytes_requested": len(payload)}
 
-    ubus_handle_process_run = functools.partialmethod(_run_proto_rpc, pb.ProcessRunAsync, "process_run_async")
-    ubus_handle_process_kill = functools.partialmethod(_run_proto_rpc, pb.ProcessKill, "process_kill")
-    ubus_handle_process_poll = functools.partialmethod(_run_proto_rpc, pb.ProcessPoll, "process_poll")
+    ubus_handle_process_run = functools.partialmethod(_run_proto_rpc, mcu_wire_pb2.ProcessRunAsync, "process_run_async")
+    ubus_handle_process_kill = functools.partialmethod(_run_proto_rpc, mcu_wire_pb2.ProcessKill, "process_kill")
+    ubus_handle_process_poll = functools.partialmethod(_run_proto_rpc, mcu_wire_pb2.ProcessPoll, "process_poll")
 
     def run_sync(self, coro: Any) -> Any:
         """Await an async operation from the synchronous UBUS worker thread."""

@@ -24,7 +24,7 @@ from google.protobuf.descriptor import FieldDescriptor
 
 from ssl import TLSVersion
 
-from . import mcubridge_pb2 as pb
+from . import cloud_gateway_pb2, config_schema_pb2
 from . import protocol
 
 logger = structlog.get_logger(__name__)
@@ -41,7 +41,9 @@ def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
-_TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields)
+_TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(
+    f.name for f in config_schema_pb2.TopicAuthorization.DESCRIPTOR.fields
+)
 
 
 # =============================================================================
@@ -49,7 +51,7 @@ _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAutho
 # =============================================================================
 
 
-def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
+def is_command_allowed(policy: config_schema_pb2.AllowedCommandPolicy, command: str) -> bool:
     """Check if a shell/process command is allowed by the policy. [SIL-2]"""
     pieces = command.split()
     if not pieces:
@@ -57,11 +59,11 @@ def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
     return "*" in policy.entries or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in policy.entries)
 
 
-def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
+def create_allowed_policy(entries: Iterable[str]) -> config_schema_pb2.AllowedCommandPolicy:
     """Create a normalized AllowedCommandPolicy Protobuf message. [SIL-2]"""
     items = {item for c in entries if c for item in _TOKEN_SEP.split(c.strip().lower()) if item}
     normalised = ["*"] if "*" in items else sorted(items)
-    return pb.AllowedCommandPolicy(entries=normalised)
+    return config_schema_pb2.AllowedCommandPolicy(entries=normalised)
 
 
 # =============================================================================
@@ -69,8 +71,8 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
 # =============================================================================
 
 
-# Type alias — RuntimeConfig IS pb.RuntimeConfig, no proxy layer needed.
-RuntimeConfig = pb.RuntimeConfig
+# Type alias — RuntimeConfig IS config_schema_pb2.RuntimeConfig, no proxy layer needed.
+RuntimeConfig = config_schema_pb2.RuntimeConfig
 
 
 _NUMERIC_FIELD_TYPES: Final[frozenset[int]] = frozenset(
@@ -91,7 +93,7 @@ _NUMERIC_FIELD_TYPES: Final[frozenset[int]] = frozenset(
 )
 
 
-def _validate_metadata_bounds(cfg: pb.RuntimeConfig) -> None:
+def _validate_metadata_bounds(cfg: config_schema_pb2.RuntimeConfig) -> None:
     """Enforce scalar bounds declared in Protobuf field metadata (single source of truth)."""
     fields = cfg.DESCRIPTOR.fields_by_name
     for field_name, metadata in protocol.RUNTIME_CONFIG_METADATA.items():
@@ -118,7 +120,7 @@ def _validate_metadata_bounds(cfg: pb.RuntimeConfig) -> None:
             raise ValueError(f"{field_name}: must be <= {maximum} (got {value})")
 
 
-def validate_config(cfg: pb.RuntimeConfig) -> None:
+def validate_config(cfg: config_schema_pb2.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place natively. [SIL-2]"""
     # Validate required identifiers first, preserving actionable error precedence.
     if not cfg.serial_port:
@@ -152,7 +154,7 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
             setattr(cfg.topic_authorization, name, True)
 
 
-def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
+def get_ssl_context(cfg: config_schema_pb2.RuntimeConfig) -> ssl.SSLContext | None:
     """Create a standard ssl.SSLContext based on cfg. [SIL-2]"""
     if not cfg.cloud_tls:
         return None
@@ -188,12 +190,14 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> ssl.SSLContext | None:
 # --- CLOUD Spool Helpers ---
 
 
-def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -> pb.CloudQueuedPublish:
+def resolve_cloud_context(
+    message: cloud_gateway_pb2.CloudQueuedPublish, context: Any | None
+) -> cloud_gateway_pb2.CloudQueuedPublish:
     """Resolve CLOUD request-reply context into the publish message."""
     if context is None:
         return message
 
-    newpb_obj = pb.CloudQueuedPublish()
+    newpb_obj = cloud_gateway_pb2.CloudQueuedPublish()
     newpb_obj.CopyFrom(message)
 
     props = getattr(context, "properties", None)
@@ -232,14 +236,14 @@ def create_queued_publish(
     message_expiry_interval: int | None = None,
     user_properties: Iterable[tuple[str, str]] = (),
     qos: int = 1,
-) -> pb.CloudQueuedPublish:
+) -> cloud_gateway_pb2.CloudQueuedPublish:
     """Factory to create a CloudQueuedPublish message. [SIL-2]"""
-    msg = pb.CloudQueuedPublish(
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=topic_name,
         payload=payload,
         content_type=content_type or "",
         qos=qos,
-        user_properties=[pb.UserProperty(key=k, value=v) for k, v in user_properties],
+        user_properties=[cloud_gateway_pb2.UserProperty(key=k, value=v) for k, v in user_properties],
     )
     if message_expiry_interval is not None:
         msg.message_expiry_interval = message_expiry_interval
@@ -250,20 +254,20 @@ def create_queued_publish(
 
 
 class ConsoleQueueTarget(Protocol):
-    def put_nowait(self, item: pb.CloudQueuedPublish) -> None: ...
-    async def put(self, item: pb.CloudQueuedPublish) -> None: ...
+    def put_nowait(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None: ...
+    async def put(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None: ...
 
 
 class MemoryQueueAdapter:
     """Adapts an AnyIO MemoryObjectSendStream to queue-compatible API. [SIL-2]"""
 
     __slots__ = ("_send_stream",)
-    _send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
+    _send_stream: MemoryObjectSendStream[cloud_gateway_pb2.CloudQueuedPublish]
 
-    def __init__(self, send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]) -> None:
+    def __init__(self, send_stream: MemoryObjectSendStream[cloud_gateway_pb2.CloudQueuedPublish]) -> None:
         self._send_stream = send_stream
 
-    def put_nowait(self, item: pb.CloudQueuedPublish) -> None:
+    def put_nowait(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         try:
             self._send_stream.send_nowait(item)
         except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
@@ -271,7 +275,7 @@ class MemoryQueueAdapter:
         except anyio.WouldBlock as exc:
             logger.warning("Console stream subscriber buffer full, dropping message", error=str(exc))
 
-    async def put(self, item: pb.CloudQueuedPublish) -> None:
+    async def put(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None:
         try:
             await self._send_stream.send(item)
         except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:

@@ -4,67 +4,75 @@ from __future__ import annotations
 
 from typing import Any, Final
 
-from google.protobuf import descriptor_pb2
-
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from tools.protocol import generate
 
-EXPECTED_DISPATCH_NAMES: Final[set[str]] = {
-    "CMD_GET_VERSION",
-    "CMD_GET_FREE_MEMORY",
-    "CMD_LINK_SYNC",
-    "CMD_LINK_RESET",
-    "CMD_GET_CAPABILITIES",
-    "CMD_SET_BAUDRATE",
-    "CMD_ENTER_BOOTLOADER",
-    "CMD_XOFF",
-    "CMD_XON",
-    "CMD_SET_PIN_MODE",
-    "CMD_DIGITAL_WRITE",
-    "CMD_ANALOG_WRITE",
-    "CMD_DIGITAL_READ",
-    "CMD_ANALOG_READ",
-    "CMD_PIN_SUBSCRIBE",
-    "CMD_CONSOLE_WRITE",
-    "CMD_DATASTORE_GET",
-    "CMD_MAILBOX_PUSH",
-    "CMD_MAILBOX_READ",
-    "CMD_MAILBOX_AVAILABLE",
-    "CMD_FILE_WRITE",
-    "CMD_FILE_READ",
-    "CMD_FILE_REMOVE",
-    "CMD_PROCESS_KILL",
-    "CMD_PROCESS_RUN_ASYNC",
-    "CMD_PROCESS_POLL",
-    "CMD_SPI_BEGIN",
-    "CMD_SPI_TRANSFER",
-    "CMD_SPI_END",
-    "CMD_SPI_SET_CONFIG",
-    "CMD_CLOCK_SYNC",
+
+def _make_codegen_proto() -> Any:
+    class _UnifiedProto:
+        def __init__(self) -> None:
+            for m in (config_schema_pb2, mcu_wire_pb2, cloud_gateway_pb2):
+                for k in dir(m):
+                    if not k.startswith("__"):
+                        setattr(self, k, getattr(m, k))
+            self.DESCRIPTOR = cloud_gateway_pb2.DESCRIPTOR
+
+    return _UnifiedProto()
+
+
+EXPECTED_OPERATION_NAMES: Final[set[str]] = {
+    "rpc.pb.SystemService/GetVersion",
+    "rpc.pb.SystemService/GetFreeMemory",
+    "rpc.pb.SystemService/LinkSync",
+    "rpc.pb.SystemService/LinkReset",
+    "rpc.pb.SystemService/GetCapabilities",
+    "rpc.pb.SystemService/SetBaudrate",
+    "rpc.pb.SystemService/EnterBootloader",
+    "rpc.pb.GpioService/SetPinMode",
+    "rpc.pb.GpioService/DigitalWrite",
+    "rpc.pb.GpioService/AnalogWrite",
+    "rpc.pb.GpioService/DigitalRead",
+    "rpc.pb.GpioService/AnalogRead",
+    "rpc.pb.GpioService/SubscribePins",
+    "ConsoleWrite",
+    "rpc.pb.DataStoreService/Put",
+    "rpc.pb.DataStoreService/Get",
+    "rpc.pb.MailboxService/Push",
+    "rpc.pb.MailboxService/Read",
+    "rpc.pb.MailboxService/Available",
+    "rpc.pb.MailboxService/Processed",
+    "rpc.pb.FileSystemService/Write",
+    "rpc.pb.FileSystemService/Read",
+    "rpc.pb.FileSystemService/Remove",
+    "rpc.pb.ProcessService/Kill",
+    "rpc.pb.ProcessService/RunAsync",
+    "rpc.pb.ProcessService/Poll",
+    "rpc.pb.SpiService/Begin",
+    "rpc.pb.SpiService/Transfer",
+    "rpc.pb.SpiService/End",
+    "rpc.pb.SpiService/SetConfig",
+    "rpc.pb.ClockSyncService/ClockSync",
 }
 
 
-def test_commands_are_derived_from_protobuf_and_sorted() -> None:
-    context = generate.build_protocol_context(pb, "2.8.8")
-    commands: list[dict[str, Any]] = context["commands"]
+def test_operations_are_derived_from_protobuf_services() -> None:
+    context = generate.build_protocol_context(_make_codegen_proto(), "2.8.8")
+    operations: list[dict[str, Any]] = context["operations"]
 
-    command_names = {str(c["name"]) for c in commands}
-    assert EXPECTED_DISPATCH_NAMES.issubset(command_names)
+    op_names = {str(op["name"]) for op in operations}
+    assert EXPECTED_OPERATION_NAMES.issubset(op_names)
 
-    values: list[int] = [int(c["value"]) for c in commands]
-    assert values == sorted(set(values))
-
-    by_name: dict[str, dict[str, Any]] = {str(c["name"]): c for c in commands}
-    assert by_name["CMD_LINK_SYNC"]["pre_sync_allowed"] is True
-    assert by_name["CMD_LINK_SYNC"]["mcu_handler"] == "handshake.handle_link_sync_resp"
-    assert by_name["CMD_GET_VERSION"]["auth_field"] == "system_version"
+    by_name: dict[str, dict[str, Any]] = {str(op["name"]): op for op in operations}
+    assert by_name["rpc.pb.SystemService/LinkSync"]["pre_sync_allowed"] is True
+    assert by_name["rpc.pb.SystemService/LinkSync"]["mcu_handler"] == "handshake.handle_link_sync_resp"
+    assert by_name["rpc.pb.SystemService/GetVersion"]["auth_field"] == "system_version"
 
 
 def test_pigweed_rpc_method_mappings() -> None:
     from mcubridge.protocol import protocol
 
     assert len(protocol.BY_RPC) > 0
-    assert len(protocol.BY_COMMAND_ID) > 0
+    assert len(protocol.BY_NAME) > 0
     assert len(protocol.PW_SERVICES) >= 8
 
     for (srv_id, meth_id), spec in protocol.BY_RPC.items():
@@ -83,58 +91,54 @@ def test_pigweed_rpc_method_mappings() -> None:
         assert protocol.PW_SERVICES[srv_id].methods[meth_id].id == meth_id
 
     # Verify key Pigweed RPC service and method mappings via PW_SERVICES and get_operation
-    gpio_write = protocol.get_operation(protocol.Command.CMD_DIGITAL_WRITE.value)
+    gpio_write = protocol.get_operation("rpc.pb.GpioService/DigitalWrite")
     assert gpio_write is not None
     assert gpio_write.service_name == "rpc.pb.GpioService"
     assert gpio_write.method_name == "DigitalWrite"
 
-    sys_ver = protocol.get_operation(protocol.Command.CMD_GET_VERSION.value)
+    sys_ver = protocol.get_operation("rpc.pb.SystemService/GetVersion")
     assert sys_ver is not None
     assert sys_ver.service_name == "rpc.pb.SystemService"
     assert sys_ver.method_name == "GetVersion"
 
-    ds_put = protocol.get_operation(protocol.Command.CMD_DATASTORE_PUT.value)
+    ds_put = protocol.get_operation("rpc.pb.DataStoreService/Put")
     assert ds_put is not None
     assert ds_put.service_name == "rpc.pb.DataStoreService"
     assert ds_put.method_name == "Put"
+    assert protocol.get_operation(ds_put) is ds_put
+    assert protocol.get_operation("rpc.pb.DataStoreService/Put") is ds_put
 
 
-
-def test_every_mcu_rpc_method_has_an_explicit_command_binding() -> None:
-    """Every MCU-facing Pigweed RPC method must be bound to exactly one CMD_* ID."""
+def test_every_mcu_rpc_method_has_an_operation_spec() -> None:
+    """Every MCU-facing Pigweed RPC method must be registered in OPERATIONS and BY_RPC."""
     from mcubridge.protocol import protocol
 
-    descriptors = [pb.DESCRIPTOR, *pb.DESCRIPTOR.dependencies]
-    command_names = {value.name for value in pb.Command.DESCRIPTOR.values}
-    operations = {str(op["name"]): op for op in generate.build_protocol_context(pb, "2.8.8")["operations"]}
+    descriptors = [cloud_gateway_pb2.DESCRIPTOR, *cloud_gateway_pb2.DESCRIPTOR.dependencies]
 
-    seen_commands: set[str] = set()
+    operations = {
+        str(op["name"]): op for op in generate.build_protocol_context(_make_codegen_proto(), "2.8.8")["operations"]
+    }
+
+    seen_methods: set[str] = set()
     for file_descriptor in descriptors:
         for service in file_descriptor.services_by_name.values():
             if service.name in {"CloudBridge", "LocalBridge"}:
                 continue
             for method in service.methods:
-                options = method.GetOptions()
-                assert options.HasExtension(pb.rpc_command), f"{service.full_name}.{method.name}"
-                command_name = options.Extensions[pb.rpc_command]
-                assert command_name in command_names
-                assert command_name not in seen_commands, f"duplicate binding for {command_name}"
-                seen_commands.add(command_name)
+                full_key = f"{service.full_name}/{method.name}"
+                assert full_key not in seen_methods
+                seen_methods.add(full_key)
+                assert full_key in operations
 
-                operation = operations[command_name]
+                operation = operations[full_key]
                 assert operation["service_name"] == service.full_name
                 assert operation["method_name"] == method.name
-                resolved = protocol.get_operation(protocol.Command[command_name].value)
+                resolved = protocol.get_operation(full_key)
                 assert resolved is not None
                 assert resolved.service_name == service.full_name
                 assert resolved.method_name == method.name
+                assert resolved.service_id is not None
+                assert resolved.method_id is not None
+                assert protocol.get_operation((resolved.service_id, resolved.method_id)) is resolved
 
-    assert seen_commands, "no MCU-facing Pigweed RPC methods were audited"
-
-def test_removed_command_metadata_is_absent_not_reserved() -> None:
-    descriptor_file = descriptor_pb2.FileDescriptorProto()
-    descriptor_file.ParseFromString(pb.Command.DESCRIPTOR.file.serialized_pb)
-    cmd_opts = next(msg for msg in descriptor_file.message_type if msg.name == "CommandOptions")
-    assert {"category", "is_query"}.isdisjoint({f.name for f in cmd_opts.field} | set(cmd_opts.reserved_name))
-    reserved_nums = {num for r in cmd_opts.reserved_range for num in range(r.start, r.end)}
-    assert {1, 16}.isdisjoint(reserved_nums)
+    assert seen_methods, "no MCU-facing Pigweed RPC methods were audited"

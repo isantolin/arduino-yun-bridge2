@@ -19,7 +19,6 @@ from .protocol import (
 )
 from .spi import SpiDevice
 
-
 __all__ = [
     "Channel",
     "CLOUD_DEFAULT_TOPIC_PREFIX",

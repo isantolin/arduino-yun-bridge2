@@ -4,161 +4,6 @@ package rpc.pb;
 
 import "google/protobuf/descriptor.proto";
 
-option (rpc.pb.actions) = {
-  name: "FILE_READ"
-  value: "read"
-  description: "Read file content"
-};
-option (rpc.pb.actions) = {
-  name: "FILE_WRITE"
-  value: "write"
-  description: "Write file content"
-};
-option (rpc.pb.actions) = {
-  name: "FILE_REMOVE"
-  value: "remove"
-  description: "Remove file"
-};
-option (rpc.pb.actions) = {
-  name: "SPI_BEGIN"
-  value: "begin"
-  description: "Initialize SPI bus"
-};
-option (rpc.pb.actions) = {
-  name: "SPI_END"
-  value: "end"
-  description: "Deinitialize SPI bus"
-};
-option (rpc.pb.actions) = {
-  name: "SPI_TRANSFER"
-  value: "transfer"
-  description: "Full-duplex SPI transfer"
-};
-option (rpc.pb.actions) = {
-  name: "SPI_CONFIG"
-  value: "config"
-  description: "Configure SPI parameters"
-};
-option (rpc.pb.actions) = {
-  name: "SHELL_RUN_ASYNC"
-  value: "run_async"
-  description: "Run shell command asynchronously"
-};
-option (rpc.pb.actions) = {
-  name: "SHELL_POLL"
-  value: "poll"
-  description: "Poll shell command status"
-};
-option (rpc.pb.actions) = {
-  name: "SHELL_KILL"
-  value: "kill"
-  description: "Kill shell command"
-};
-option (rpc.pb.actions) = {
-  name: "MAILBOX_WRITE"
-  value: "write"
-  description: "Write to mailbox"
-};
-option (rpc.pb.actions) = {
-  name: "DATASTORE_GET"
-  value: "get"
-  description: "Get datastore value"
-};
-option (rpc.pb.actions) = {
-  name: "DATASTORE_PUT"
-  value: "put"
-  description: "Put datastore value"
-};
-option (rpc.pb.actions) = {
-  name: "PIN_MODE"
-  value: "mode"
-  description: "Set pin mode"
-};
-option (rpc.pb.actions) = {
-  name: "PIN_READ"
-  value: "read"
-  description: "Read pin value"
-};
-option (rpc.pb.actions) = {
-  name: "CONSOLE_IN"
-  value: "in"
-  description: "Console input"
-};
-option (rpc.pb.actions) = {
-  name: "CONSOLE_OUT"
-  value: "out"
-  description: "Console output"
-};
-option (rpc.pb.actions) = {
-  name: "MAILBOX_READ"
-  value: "read"
-  description: "Read from mailbox"
-};
-option (rpc.pb.actions) = {
-  name: "MAILBOX_INCOMING"
-  value: "incoming"
-  description: "Mailbox incoming messages"
-};
-option (rpc.pb.actions) = {
-  name: "MAILBOX_PROCESSED"
-  value: "processed"
-  description: "Mailbox processed notifications"
-};
-option (rpc.pb.actions) = {
-  name: "MAILBOX_ERRORS"
-  value: "errors"
-  description: "Mailbox error topic"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_FREE_MEMORY"
-  value: "free_memory"
-  description: "System free memory"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_VERSION"
-  value: "version"
-  description: "System version"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_BOOTLOADER"
-  value: "bootloader"
-  description: "Enter bootloader mode"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_GET"
-  value: "get"
-  description: "Get system info"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_VALUE"
-  value: "value"
-  description: "Value payload segment"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_METRICS"
-  value: "metrics"
-  description: "Metrics topic"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_BRIDGE"
-  value: "bridge"
-  description: "Bridge snapshots"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_HANDSHAKE"
-  value: "handshake"
-  description: "Handshake snapshot"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_SUMMARY"
-  value: "summary"
-  description: "Bridge summary snapshot"
-};
-option (rpc.pb.actions) = {
-  name: "SYSTEM_STATE"
-  value: "state"
-  description: "Bridge state snapshot"
-};
 option (rpc.pb.architectures) = {
   name: "avr"
   value: 1
@@ -371,64 +216,6 @@ option (rpc.pb.status_reasons) = {
   mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
   mcu_file_read_timeout: "mcu_file_read_timeout"
   pending_pin_overflow: "pending-pin-overflow"
-};
-option (rpc.pb.topics) = {
-  name: "ANALOG"
-  value: "a"
-  description: "Analog pin operations"
-  aliases: "analog"
-};
-option (rpc.pb.topics) = {
-  name: "CONSOLE"
-  value: "console"
-  description: "Remote console"
-};
-option (rpc.pb.topics) = {
-  name: "DATASTORE"
-  value: "datastore"
-  description: "Key-value storage"
-};
-option (rpc.pb.topics) = {
-  name: "DIGITAL"
-  value: "d"
-  description: "Digital pin operations"
-  aliases: "digital"
-};
-option (rpc.pb.topics) = {
-  name: "FILE"
-  value: "file"
-  description: "File system operations"
-};
-option (rpc.pb.topics) = {
-  name: "MAILBOX"
-  value: "mailbox"
-  description: "Message passing"
-};
-option (rpc.pb.topics) = {
-  name: "SHELL"
-  value: "sh"
-  description: "Shell command execution"
-  aliases: "shell"
-};
-option (rpc.pb.topics) = {
-  name: "SPI"
-  value: "spi"
-  description: "SPI bus operations"
-};
-option (rpc.pb.topics) = {
-  name: "STATUS"
-  value: "status"
-  description: "System status reporting"
-};
-option (rpc.pb.topics) = {
-  name: "SYSTEM"
-  value: "system"
-  description: "System control and info"
-};
-option (rpc.pb.topics) = {
-  name: "CLOCK"
-  value: "clock"
-  description: "Clock synchronization"
 };
 option (rpc.pb.ubus_methods) = {
   name: "status"
@@ -1063,21 +850,6 @@ message StatusReasons {
   string pending_pin_overflow = 21;
 }
 
-message TopicConfig {
-  reserved 5;
-  reserved "handler";
-  string name = 1;
-  string value = 2;
-  string description = 3;
-  repeated string aliases = 4;
-}
-
-message ActionConfig {
-  string name = 1;
-  string value = 2;
-  string description = 3;
-}
-
 message ArchConfig {
   string name = 1;
   uint32 value = 2;
@@ -1106,8 +878,6 @@ extend google.protobuf.MessageOptions {
 }
 
 extend google.protobuf.MethodOptions {
-  string rpc_topic = 1032;
-  repeated string rpc_aliases = 1033;
   bool is_custom_handler = 1036;
   string auth_field = 1039;
   string mcu_handler = 1040;
@@ -1174,8 +944,7 @@ extend google.protobuf.FileOptions {
   CloudSuffixes cloud_suffixes = 1005;
   CloudDefaults cloud_defaults = 1006;
   StatusReasons status_reasons = 1007;
-  repeated TopicConfig topics = 1009;
-  repeated ActionConfig actions = 1010;
+  // 1009, 1010: reserved for legacy topics and actions
   repeated ArchConfig architectures = 1011;
   repeated CapConfig capabilities = 1012;
   repeated UbusMethodConfig ubus_methods = 1035;
@@ -1206,7 +975,7 @@ extend google.protobuf.FieldOptions {
 
 enum Status {
   STATUS_UNSPECIFIED = 0;
-  option (enum_cloud_topic) = "system/status";
+  option (enum_cloud_topic) = "evt/SystemService/StatusReport";
   reserved "CMD_UNKNOWN";
   OK = 48 [(status_opts) = {description: "Operation completed successfully."}];
   ERROR = 49 [(status_opts) = {description: "Generic failure."}];

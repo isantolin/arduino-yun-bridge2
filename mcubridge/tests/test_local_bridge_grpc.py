@@ -95,7 +95,9 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     # 1. SetPinMode
     stream = _make_mock_stream(mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT))
     await local_svc.SetPinMode(stream)
-    mock_serial.send.assert_called_with(protocol.get_operation("SetPinMode"), mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT))
+    mock_serial.send.assert_called_with(
+        protocol.get_operation("SetPinMode"), mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT)
+    )
     sent = stream.sent_message
     assert sent.status == "ok"
 
@@ -106,7 +108,9 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     # 2. DigitalWrite
     stream = _make_mock_stream(mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     await local_svc.DigitalWrite(stream)
-    mock_serial.send.assert_called_with(protocol.get_operation("DigitalWrite"), mcu_wire_pb2.DigitalWrite(pin=13, value=1))
+    mock_serial.send.assert_called_with(
+        protocol.get_operation("DigitalWrite"), mcu_wire_pb2.DigitalWrite(pin=13, value=1)
+    )
     sent = stream.sent_message
     assert sent.status == "ok"
 
@@ -129,7 +133,9 @@ async def test_local_bridge_pin_operations(tmp_path: Path) -> None:
     mock_serial.send.return_value = True
     stream = _make_mock_stream(mcu_wire_pb2.AnalogWrite(pin=9, value=128))
     await local_svc.AnalogWrite(stream)
-    mock_serial.send.assert_called_with(protocol.get_operation("AnalogWrite"), mcu_wire_pb2.AnalogWrite(pin=9, value=128))
+    mock_serial.send.assert_called_with(
+        protocol.get_operation("AnalogWrite"), mcu_wire_pb2.AnalogWrite(pin=9, value=128)
+    )
     sent = stream.sent_message
     assert sent.status == "ok"
 
@@ -225,7 +231,9 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     # 4. MCU File Operations
     stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="mcu/eeprom.bin", data=b"data"))
     await local_svc.FileWrite(stream)
-    mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path="eeprom.bin", data=b"data"))
+    mock_serial.send.assert_called_with(
+        "rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path="eeprom.bin", data=b"data")
+    )
 
     mock_file_read = AsyncMock(return_value=mcu_wire_pb2.FileReadResponse(content=b"mcu_data"))
     service.file_read = mock_file_read
@@ -558,7 +566,9 @@ async def test_local_bridge_write_methods_report_failed_serial_send(tmp_path: Pa
     mock_serial.send.return_value = False
 
     pin_mode_response = cloud_gateway_pb2.GenericResponse.FromString(
-        await local_svc.execute_rpc("SetPinMode", mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT).SerializeToString())
+        await local_svc.execute_rpc(
+            "SetPinMode", mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PIN_OUTPUT).SerializeToString()
+        )
     )
     digital_write_response = cloud_gateway_pb2.GenericResponse.FromString(
         await local_svc.execute_rpc("DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString())
@@ -582,7 +592,7 @@ async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
     stream_none.send_message.assert_not_called()
 
     req_msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name="br/req/datastore.put",
+        topic_name="br/req/DataStoreService/Put",
         payload=mcu_wire_pb2.DatastorePut(key="test_key", value=b"val").SerializeToString(),
         correlation_data=b"123456789012",
     )
@@ -622,7 +632,9 @@ async def test_local_bridge_service_subscribe_console_normal_close_and_adapter_c
         await asyncio.sleep(0.01)
         if svc.console_queues:
             adapter = svc.console_queues[-1]
-            await adapter.put(cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/out", payload=b"normal close"))
+            await adapter.put(
+                cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/console/out", payload=b"normal close")
+            )
             svc.console_queues.remove(adapter)
             adapter.close()
 

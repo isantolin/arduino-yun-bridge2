@@ -66,7 +66,7 @@ Donde:
   - `req`: Comandos / solicitudes dirigidas al microcontrolador o daemon.
   - `res`: Respuestas directas a solicitudes previas.
   - `evt`: Eventos asíncronos y telemetría espontánea (`status_online`, `pin_event`, etc.).
-- `method`: Nombre canónico del método u operación (`gpio.write`, `file.read`, `datastore.put`, etc.).
+- `method`: Nombre canónico del servicio/método u operación (`GpioService/DigitalWrite`, `FileSystemService/Read`, `DataStoreService/Put`, etc.).
 
 Todo tópico que no respete esta estructura exacta de 3 segmentos es rechazado de inmediato.
 

@@ -44,9 +44,9 @@ class Topic:
     PREFIX: str = CLOUD_DEFAULT_TOPIC_PREFIX
 
     @staticmethod
-    def build(topic: str, *segments: str | int, prefix: str | None = None) -> str:
+    def build(*segments: str | int, prefix: str | None = None) -> str:
         """Build an CLOUD topic path. Identical algorithm to daemon topic_path()."""
-        parts = [str(s).strip("/") for s in (prefix or Topic.PREFIX, topic, *segments) if str(s).strip("/")]
+        parts = [str(s).strip("/") for s in (prefix or Topic.PREFIX, *segments) if str(s).strip("/")]
         return posixpath.join(*parts) if parts else ""
 
     @staticmethod
@@ -54,8 +54,3 @@ class Topic:
         """Check if a topic matches an CLOUD wildcard pattern."""
         import fnmatch
         return fnmatch.fnmatch(topic, pattern.replace("+", "*").replace("#", "*"))
-
-    # Common base topics as constants for convenience
-    {%- for topic in topics %}
-    {{ topic.name }}: Final[str] = "{{ topic.value }}"
-    {%- endfor %}

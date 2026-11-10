@@ -56,6 +56,7 @@ Reglas obligatorias:
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso de `etl::span` y `pw::span` | **Completada** |
 | 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |
+| 11 | Unificación Canónica de Tópicos y Manejadores | Erradicación total de `Topic.*` legacy (`"a"`, `"d"`, `"sh"`), unificación de `cloud_topic` y `mcu_handler` bajo descriptores Pigweed `{direction}/{Service}/{Method|Message}`, eliminación de `CommonAction`/`rpc.pb.actions`, y despacho gRPC canónico `rpc.pb.<Service>/<Method>` desde Gateway | **Completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
 
@@ -139,6 +140,29 @@ Cambios en el daemon y el contrato:
      - Flake8: 0 problemas.
      - Black: 100% formateado según PEP 8.
      - `codebase_auditor.py` (Semgrep + AST): 0 violaciones detectadas.
+
+## Detalle de la etapa 11: unificación canónica de tópicos, manejadores y erradicación de residuos
+
+1. **Unificación de `Topic.*` con servicios Pigweed:**
+   - Erradicación de los códigos cortos legacy (`"a"`, `"d"`, `"sh"`, `"file"`, etc.) en `config_schema.proto` y plantillas generadoras.
+   - Alineación 1:1 de `Topic` con los nombres canónicos de servicios Pigweed (`GpioService`, `DataStoreService`, `FileSystemService`, `MailboxService`, `ProcessService`, `SpiService`, `SystemService`, `ClockSyncService`, `ConsoleWrite`).
+   - Eliminación total de clases de acción huérfanas (`CommonAction`, `DigitalAction`, `DatastoreAction`, etc.) y de la opción `rpc.pb.actions` en Protobuf.
+
+2. **Unificación determinista de `cloud_topic` y `mcu_handler`:**
+   - Erradicación de strings ad-hoc dispersos en Protobuf (`system/version/value`, `system/bridge/handshake/value`, `console/out`, `mailbox/incoming`, `spi/transfer/resp`, etc.).
+   - Derivación canónica universal de tópicos según la regla 3-segmentos:
+     - Peticiones RPC: `{prefix}/req/{Service}/{Method}`
+     - Respuestas RPC: `{prefix}/res/{Service}/{Method}`
+     - Eventos y telemetría: `{prefix}/evt/{Service}/{Method|Message}`
+   - Unificación de manejadores (`mcu_handler` / `handler_name`) mediante derivación por convención `{servicio_snake}_{metodo_snake}` sobre `BridgeService`, eliminando opciones manuales redundantes en los `.proto`.
+
+3. **Paridad de tipos y despacho en Cloud Gateway:**
+   - En `GatewayLocalBridgeService._forward_rpc`, despacho de comandos utilizando la URI completa Pigweed (`spec.name` = `rpc.pb.<Service>/<Method>`), garantizando que tanto `LocalBridge` como `Gateway` operen sobre los mismos tipos tipados sin prefijos sintéticos `rpc/`.
+   - Compatibilidad bidireccional homogénea entre clientes, gateway y daemon.
+
+4. **Saneamiento de pruebas y documentación:**
+   - Actualización de todos los casos de prueba de integración, métricas, telemetría y propiedades de tópicos a las rutas canónicas.
+   - Sincronización estricta de `docs/PROTOCOL.md`, `mcubridge-gateway/README.md` y `mcubridge-client-examples/README.md`.
 
 ## Medición y reporte por etapa
 

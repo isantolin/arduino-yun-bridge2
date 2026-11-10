@@ -98,34 +98,6 @@ SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({Status.OK.value}
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
 
 
-class Topic(StrEnum):
-    {%- for topic in topics %}
-    {{ topic.name }} = "{{ topic.value }}"  # {{ topic.description }}
-    {%- endfor %}
-
-class CommonAction:
-    {%- set unique_items = [] %}
-    {%- for action in grouped_actions %}
-      {%- for item in action.action_items %}
-        {%- if item.name not in unique_items %}
-          {%- if unique_items.append(item.name) %}{% endif %}
-        {%- endif %}
-      {%- endfor %}
-    {%- endfor %}
-    {%- for name in unique_items|sort %}
-    {{ name }}: Final[str] = "{{ name|lower }}"
-    {%- endfor %}
-
-
-{% for action in grouped_actions %}
-class {{ action.class_name }}(StrEnum):
-    {%- for item in action.action_items %}
-    {{ item.name }} = CommonAction.{{ item.name }}  # {{ item.description }}
-    {%- endfor %}
-
-{% endfor %}
-
-
 @dataclass(slots=True, frozen=True)
 class TopicRoute:
     """Canonical representation of an enrouted topic targeting the daemon. [SIL-2]"""
@@ -139,7 +111,7 @@ class TopicRoute:
     @property
     def action(self) -> str | None:
         """Infer canonical action from method."""
-        return self.method.split(".", 1)[1] if "." in self.method else self.method or None
+        return self.method.rsplit("/", 1)[1] if "/" in self.method else self.method or None
 
 
 class MetricKind(StrEnum):
@@ -197,7 +169,6 @@ class OperationSpec:
     method_name: str | None = None
     method_id: int | None = None
     rpc_name: str | None = None
-    rpc_topic: str | None = None
     pb_class: type[Any] | None = None
     cloud_topic: str | None = None
     auth_field: str | None = None
@@ -254,9 +225,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- endif %}
         {%- if op.rpc_name %}
         rpc_name={{ op.rpc_name|tojson }},
-        {%- endif %}
-        {%- if op.rpc_topic %}
-        rpc_topic={{ op.rpc_topic|tojson }},
         {%- endif %}
         {%- if op.pb_class %}
         pb_class={{ op.pb_class }},
@@ -335,21 +303,6 @@ LINE_PROTOCOL_FIELDS: Final[tuple[LineProtocolFieldSpec, ...]] = (
     {%- endfor %}
 )
 
-RPC_ALIASES: Final[dict[str, str]] = {
-    {%- for alias, target_name in rpc_aliases.items()|sort %}
-    {{ alias|tojson }}: {{ target_name|tojson }},
-    {%- endfor %}
-}
-
-TOPIC_LOOKUP: Final[dict[str, Topic]] = {
-    {%- for topic in topics %}
-    {{ topic.value|tojson }}: Topic.{{ topic.name }},
-    {%- for alias in topic.aliases %}
-    {{ alias|tojson }}: Topic.{{ topic.name }},
-    {%- endfor %}
-    {%- endfor %}
-}
-
 UBUS_SIGNATURES: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (
     {%- for m in ubus_methods %}
     (
@@ -391,8 +344,12 @@ BY_TYPE: Final[dict[type[ProtobufMessage], OperationSpec]] = {}
 for _op in OPERATIONS:
     if _op.rpc_name:
         BY_NAME[_op.rpc_name] = _op
+        BY_NAME[f"rpc.pb.LocalBridge/{_op.rpc_name}"] = _op
+        BY_NAME[f"LocalBridge/{_op.rpc_name}"] = _op
     if _op.service_name and _op.method_name:
         BY_NAME[f"{_op.service_name}/{_op.method_name}"] = _op
+        _short_service = _op.service_name.removeprefix("rpc.pb.")
+        BY_NAME[f"{_short_service}/{_op.method_name}"] = _op
         BY_NAME.setdefault(_op.method_name, _op)
     if _op.pb_class is not None:
         BY_TYPE.setdefault(_op.pb_class, _op)
@@ -404,43 +361,6 @@ for _op in OPERATIONS:
     if _op.response_type is not None:
         BY_TYPE.setdefault(_op.response_type, _op)
         BY_NAME.setdefault(_op.response_type.DESCRIPTOR.name, _op)
-
-for _alias, _target_name in RPC_ALIASES.items():
-    if _target_op := BY_NAME.get(_target_name):
-        BY_NAME[_alias] = _target_op
-        BY_NAME[_alias.lower()] = _target_op
-        BY_NAME[_alias.replace(".", "_")] = _target_op
-        BY_NAME[_alias.replace(".", "/")] = _target_op
-
-TOPIC_AUTH_MAP: Final[dict[tuple[str, str], str]] = {}
-for _op in OPERATIONS:
-    if _op.auth_field and "_" in _op.auth_field:
-        _pfx, _sfx = _op.auth_field.split("_", 1)
-        TOPIC_AUTH_MAP.setdefault((_pfx.upper(), _sfx.upper()), _op.auth_field)
-        TOPIC_AUTH_MAP.setdefault((_pfx.lower(), _sfx.lower()), _op.auth_field)
-        for _alias_str, _topic_enum in TOPIC_LOOKUP.items():
-            if _topic_enum.name.lower() == _pfx.lower() or _topic_enum.value.lower() == _pfx.lower():
-                TOPIC_AUTH_MAP.setdefault((_alias_str.lower(), _sfx.lower()), _op.auth_field)
-                TOPIC_AUTH_MAP.setdefault((_alias_str.upper(), _sfx.upper()), _op.auth_field)
-
-
-def lookup_topic(segment: str) -> Topic | None:
-    return TOPIC_LOOKUP.get(segment.lower())
-
-
-def get_auth_field(topic: str, action: str) -> str | None:
-    norm_topic = lookup_topic(topic)
-    top_name = norm_topic.name if norm_topic is not None else topic.upper()
-    act_name = action.upper()
-    top_val = norm_topic.value if norm_topic is not None else topic.lower()
-    act_val = action.lower()
-    return (
-        TOPIC_AUTH_MAP.get((topic, action))
-        or TOPIC_AUTH_MAP.get((top_name, act_name))
-        or TOPIC_AUTH_MAP.get((top_val, act_val))
-        or TOPIC_AUTH_MAP.get((topic.lower(), action.lower()))
-        or TOPIC_AUTH_MAP.get((topic.upper(), action.upper()))
-    )
 
 
 def allows_method(auth: Any, spec: OperationSpec) -> bool:
@@ -472,9 +392,9 @@ def get_operation(key: Any) -> OperationSpec | None:
     return None
 
 
-def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
+def topic_path(prefix: str, *segments: str | int) -> str:
     """[SIL-2] Construct topic path using direct join/filter delegation."""
-    parts = [clean for s in (prefix, topic, *segments) if (clean := str(s).strip("/"))]
+    parts = [clean for s in (prefix, *segments) if (clean := str(s).strip("/"))]
     return posixpath.join(*parts) if parts else ""
 
 
@@ -558,8 +478,8 @@ def build_mcu_dispatch(
             if op.service_id is not None and op.method_id is not None:
                 dispatch[(op.service_id, op.method_id)] = fn
             if op.service_name and op.method_name:
-                dispatch[f"{op.service_name}.{op.method_name}"] = fn
                 dispatch[f"{op.service_name}/{op.method_name}"] = fn
+                dispatch[f"{op.service_name.removeprefix('rpc.pb.')}/{op.method_name}"] = fn
                 dispatch.setdefault(op.method_name, fn)
     return dispatch
 

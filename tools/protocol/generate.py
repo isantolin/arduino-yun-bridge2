@@ -296,19 +296,6 @@ def _extract_statuses(pb_module: Any, status_enum: Any) -> list[dict[str, Any]]:
 
 
 def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any) -> dict[str, Any]:
-    action_items: dict[str, list[dict[str, Any]]] = {}
-    for a in opts.Extensions[pb_module.actions]:
-        if "_" in a.name:
-            pfx, sfx = a.name.split("_", 1)
-            action_items.setdefault(pfx, []).append({"name": sfx, "value": a.value, "description": a.description})
-    grouped_actions = [
-        {"class_name": "DatastoreAction" if p == "DATASTORE" else f"{p.lower().title()}Action", "action_items": items}
-        for p, items in action_items.items()
-    ]
-    topics = [
-        {"name": t.name, "value": t.value, "description": t.description, "aliases": list(t.aliases)}
-        for t in opts.Extensions[pb_module.topics]
-    ]
     ubus_methods = [
         {
             "name": m.name,
@@ -329,8 +316,6 @@ def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: An
         for t in opts.Extensions[pb_module.daemon_tasks]
     ]
     return {
-        "grouped_actions": grouped_actions,
-        "topics": topics,
         "ubus_methods": ubus_methods,
         "daemon_tasks": daemon_tasks,
     }
@@ -351,20 +336,14 @@ def _resolve_pb_module_name(name: str, pb_module: Any) -> str | None:
     return None
 
 
-def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
+def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> list[dict[str, Any]]:
     rpc_specs: list[dict[str, Any]] = []
-    rpc_aliases: dict[str, str] = {}
     for m in svc_desc.methods:
         if m.client_streaming or m.server_streaming:
             continue
         mo = m.output_type.GetOptions()
         err_init = _opt_ext(mo, pb_module.msg_error_init, "")
         m_opts = m.GetOptions()
-        rt = _opt_ext(m_opts, pb_module.rpc_topic, "")
-        if rt:
-            rpc_aliases[rt] = m.name
-        for a in m_opts.Extensions[pb_module.rpc_aliases]:
-            rpc_aliases[a] = m.name
         is_custom = bool(_opt_ext(m_opts, pb_module.is_custom_handler, False))
         mod_target = _resolve_pb_module_name(m.output_type.name, pb_module) or f"mcu_wire_pb2.{m.output_type.name}"
         item: dict[str, Any] = {
@@ -373,7 +352,6 @@ def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, An
             "output_type": m.output_type.full_name,
             "default_factory": f"lambda: {mod_target}({err_init})" if err_init else None,
             "handler_name": _snake_case(m.name),
-            "rpc_topic": rt,
             "is_custom_handler": is_custom,
             "cloud_topic": _opt_ext(m_opts, pb_module.cloud_topic, ""),
             "auth_field": _opt_ext(m_opts, pb_module.auth_field, ""),
@@ -381,7 +359,7 @@ def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> tuple[list[dict[str, An
             "pre_sync_allowed": bool(_opt_ext(m_opts, pb_module.pre_sync_allowed, False)),
         }
         rpc_specs.append(item)
-    return rpc_specs, rpc_aliases
+    return rpc_specs
 
 
 def _match_local_bridge_rpc(
@@ -424,8 +402,6 @@ def _build_mcu_operation(
         op["handler_name"] = matched_rpc["handler_name"]
         if matched_rpc.get("default_factory"):
             op["default_factory"] = matched_rpc["default_factory"]
-        if matched_rpc.get("rpc_topic"):
-            op["rpc_topic"] = matched_rpc["rpc_topic"]
         if matched_rpc.get("is_custom_handler"):
             op["is_custom_handler"] = True
     return op
@@ -472,7 +448,6 @@ def _build_operations_catalog(
             "rpc_name": rpc["name"],
             "default_factory": rpc["default_factory"],
             "handler_name": rpc["handler_name"],
-            "rpc_topic": rpc.get("rpc_topic"),
             "is_custom_handler": rpc.get("is_custom_handler", False),
         }
         for str_key in ("cloud_topic", "auth_field", "mcu_handler"):
@@ -565,7 +540,7 @@ def _extract_operations_context(
     svc_desc: Any,
 ) -> dict[str, Any]:
     payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts)
-    rpc_specs, rpc_aliases = _extract_rpc_specs(pb_module, svc_desc)
+    rpc_specs = _extract_rpc_specs(pb_module, svc_desc)
 
     telem_map: dict[str, str] = {}
     default_telem: str | None = None
@@ -616,12 +591,9 @@ def _extract_operations_context(
 
     operations = _build_operations_catalog(mcu_methods, rpc_specs, msg_topics, telem_map, pb_module)
     return {
-        "grouped_actions": payload_ctx["grouped_actions"],
         "operations": operations,
         "metrics": _extract_metric_specs(pb_module, all_descs),
         "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
-        "rpc_aliases": rpc_aliases,
-        "topics": payload_ctx["topics"],
         "message_topics": msg_topics,
         "telemetry_topic_field_map": telem_map,
         "telemetry_default_field": default_telem,

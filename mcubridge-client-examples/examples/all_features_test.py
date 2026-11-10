@@ -47,7 +47,7 @@ async def run_test(
 
         # 4. Console test
         logger.info("Testing Console Write...")
-        topic_cw = Topic.build(Topic.CONSOLE, "write", prefix=topic_prefix)
+        topic_cw = Topic.build("req", "ConsoleWrite", prefix=topic_prefix)
         await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
         logger.info("Console ping written.")
 

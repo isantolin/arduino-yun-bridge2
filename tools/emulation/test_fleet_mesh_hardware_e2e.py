@@ -316,9 +316,9 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     return True
 
 
-def compile_fleet_firmwares() -> tuple[
-    tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]
-]:
+def compile_fleet_firmwares() -> (
+    tuple[tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]]
+):
     """Compile universal firmwares and extract metadata for all 3 targets."""
     sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
     fw_mega = ensure_firmware_compiled(

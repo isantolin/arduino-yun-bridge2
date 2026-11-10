@@ -109,7 +109,7 @@ Where:
   - `req`: Inbound RPC commands/requests destined for the edge daemon.
   - `res`: Outbound command execution returns/replies emitted by the edge daemon.
   - `evt`: Asynchronous telemetry reports and spontaneous event broadcasts (e.g. `status_online`, `pin_event`).
-- `{method}`: Canonical operation or event name matching `tools/protocol/mcubridge.proto` (e.g. `gpio.write`, `gpio.set_mode`, `file.read`, `system.version`, `datastore.put`, `mailbox.push`).
+- `{method}`: Canonical Pigweed service/method or operation name (e.g. `GpioService/DigitalWrite`, `GpioService/SetPinMode`, `FileSystemService/Read`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
 
 All routing is resolved declaratively via the protocol Single Source of Truth (`get_topic_for_message` and `parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
 

@@ -42,7 +42,6 @@ from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 
-
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Any, h_stateful
 ).run_state_machine_as_test

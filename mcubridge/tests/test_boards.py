@@ -60,6 +60,7 @@ def test_official_boards_metadata() -> None:
 
 def test_board_lookups() -> None:
     assert get_board_by_slug("arduino-avr-mega") == BOARD_MEGA
+    assert get_board_by_slug("arduino-avr-yun") == BOARD_YUN
     assert get_board_by_slug("arduino-samd-mkrwifi1010") == BOARD_MKRWIFI1010
     assert get_board_by_slug("arduino-esp32-nano_nora") == BOARD_NANO_ESP32
     assert get_board_by_slug("unknown-board") is None
@@ -104,7 +105,7 @@ def test_cli_fqbns() -> None:
 
     custom_delim = runner.invoke(cli, ["fqbns", "--delimiter", ","])
     assert custom_delim.exit_code == 0
-    assert custom_delim.stdout.strip() == "arduino:avr:mega,arduino:samd:mkrwifi1010,arduino:esp32:nano_nora"
+    assert custom_delim.stdout.strip() == "arduino:avr:mega,arduino:avr:yun,arduino:samd:mkrwifi1010,arduino:esp32:nano_nora"
 
 
 def test_cli_slugs() -> None:

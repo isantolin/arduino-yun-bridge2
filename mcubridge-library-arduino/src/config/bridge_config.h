@@ -44,6 +44,8 @@
 namespace bridge {
 namespace config {
 
+static_assert(RX_BUFFER_SIZE > 0);
+
 // Pin counts come from the selected Arduino core.
 #if !defined(NUM_DIGITAL_PINS) || !defined(NUM_ANALOG_INPUTS)
 #error "The Arduino core must define NUM_DIGITAL_PINS and NUM_ANALOG_INPUTS"

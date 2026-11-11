@@ -1,6 +1,10 @@
 #ifndef BRIDGE_FSM_H
 #define BRIDGE_FSM_H
 
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <etl/fsm.h>
 #include <etl/message.h>
 

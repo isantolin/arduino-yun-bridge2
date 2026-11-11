@@ -12,8 +12,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../config/bridge_config.h"
-
 namespace rpc {
 namespace security {
 
@@ -58,9 +56,7 @@ void secure_zero(pw::span<uint8_t> buf);
  * [SIL-2/AVR] Compiled only when BRIDGE_ENABLE_POST_TESTS=1.
  * @return true if all tests pass, false otherwise.
  */
-#if BRIDGE_ENABLE_POST_TESTS
 bool run_cryptographic_self_tests();
-#endif
 
 }  // namespace security
 }  // namespace rpc

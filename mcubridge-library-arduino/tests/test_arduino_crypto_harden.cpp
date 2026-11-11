@@ -22,6 +22,7 @@
 #include <wolfssl/wolfcrypt/misc.h>
 #include <wolfssl/wolfcrypt/settings.h>
 
+#include "protocol/rpc_protocol.h"
 #include "../src/security/security.h"
 
 namespace {

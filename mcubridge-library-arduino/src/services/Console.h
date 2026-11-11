@@ -1,6 +1,10 @@
 #ifndef SERVICES_CONSOLE_H
 #define SERVICES_CONSOLE_H
 
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <Stream.h>
 #include <etl/circular_buffer.h>
 #include <etl/vector.h>

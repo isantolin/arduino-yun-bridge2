@@ -24,6 +24,7 @@
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 
+#include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
 
 namespace rpc {
@@ -380,6 +381,10 @@ bool run_cryptographic_self_tests() {
   return ok;
 }
 
+#else
+bool run_cryptographic_self_tests() {
+  return true;
+}
 #endif  // BRIDGE_ENABLE_POST_TESTS
 
 }  // namespace security

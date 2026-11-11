@@ -1,3 +1,7 @@
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

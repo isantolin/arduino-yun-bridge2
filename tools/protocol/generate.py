@@ -931,7 +931,7 @@ def main(
         _dispatch_generated_file(
             proto_path.parent / f"{stem}.pb.h",
             cpp_targets,
-            lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
+            lambda t, s=stem: t.replace("#include <pb.h>", f'#include "../pb.h"\n\ntypedef pb_byte_t {s}_pb_byte_t;'),
         )
         _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
 

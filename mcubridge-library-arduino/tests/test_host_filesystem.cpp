@@ -1,4 +1,8 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 #include <etl/array.h>
 #include <unity.h>
 

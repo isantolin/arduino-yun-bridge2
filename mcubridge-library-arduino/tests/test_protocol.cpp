@@ -1,4 +1,8 @@
 #define BRIDGE_HOST_TEST 1
+
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 #include <Arduino.h>
 #include <PigweedAVR.h>
 #include <etl/array.h>

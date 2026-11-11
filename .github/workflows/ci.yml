@@ -34,6 +34,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-ccache
+        if: matrix.env == 'arduino'
       - uses: ./.github/actions/setup-arduino-cache
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
       - uses: ./.github/actions/setup-protoc
@@ -161,6 +163,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-ccache
       - uses: ./.github/actions/setup-arduino-cache
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
@@ -231,6 +234,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-ccache
       - uses: ./.github/actions/setup-arduino-cache
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
@@ -310,6 +314,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-ccache
       - uses: ./.github/actions/setup-arduino-cache
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
@@ -449,6 +454,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-ccache
       - uses: ./.github/actions/setup-arduino-cache
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox

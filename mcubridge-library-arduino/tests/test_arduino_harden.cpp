@@ -8,7 +8,6 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "services/Console.h"
 #include "test_support.h"
 
 // [SIL-2] Global stub definitions for host environment

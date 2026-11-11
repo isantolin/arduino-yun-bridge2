@@ -1,6 +1,5 @@
 #include "services/DataStore.h"
 
-#include <etl/algorithm.h>
 #include <pw_span/span.h>
 
 #include "Bridge.h"

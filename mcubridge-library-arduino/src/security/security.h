@@ -8,12 +8,11 @@
 #ifndef RPC_SECURITY_H
 #define RPC_SECURITY_H
 
-#include <etl/array.h>
 #include <pw_span/span.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include "protocol/rpc_protocol.h"
+#include "../config/bridge_config.h"
 
 namespace rpc {
 namespace security {

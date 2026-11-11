@@ -2,14 +2,10 @@
 #define SERVICES_CONSOLE_H
 
 #include <Stream.h>
-
-#undef min
-#undef max
 #include <etl/circular_buffer.h>
 #include <etl/vector.h>
 
 #include "Bridge.h"
-#include "protocol/mcu_wire.pb.h"
 
 class ConsoleClass : public Stream, public bridge::BridgeObserver {
  public:

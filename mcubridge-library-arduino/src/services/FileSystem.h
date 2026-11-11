@@ -1,8 +1,6 @@
 #ifndef SERVICES_FILESYSTEM_H
 #define SERVICES_FILESYSTEM_H
 
-#undef min
-#undef max
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/string_view.h>

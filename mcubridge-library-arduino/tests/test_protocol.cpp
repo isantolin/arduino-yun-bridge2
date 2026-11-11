@@ -5,8 +5,6 @@
 #include <pw_span/span.h>
 #include <unity.h>
 
-#include "protocol/mcu_wire.pb.h"
-#include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
 HardwareSerial Serial;

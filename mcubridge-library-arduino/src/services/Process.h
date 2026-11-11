@@ -1,8 +1,6 @@
 #ifndef SERVICES_PROCESS_H
 #define SERVICES_PROCESS_H
 
-#undef min
-#undef max
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/string_view.h>

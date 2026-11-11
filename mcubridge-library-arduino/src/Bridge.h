@@ -6,10 +6,12 @@
 #ifndef BRIDGE_H
 #define BRIDGE_H
 
-#include <Arduino.h>
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 
-#include <cstddef>
-#include <wolfssl.h>
+#include <Arduino.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -30,10 +32,7 @@
 #endif
 
 #include <PigweedAVR.h>
-
-#ifndef ETL_FORCE_STD_INITIALIZER_LIST
-#define ETL_FORCE_STD_INITIALIZER_LIST
-#endif
+#include <wolfssl.h>
 
 // clang-format off
 #if defined(ARDUINO_BOARD)
@@ -68,12 +67,9 @@
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
 #include "hal/hal.h"
-#include "pb_decode.h"
-#include "pb_encode.h"
 #include "protocol/mcu_wire.pb.h"
 #include "protocol/mcu_wire.rpc.pb.h"
 #include "protocol/rpc_protocol.h"
-#include "security/security.h"
 
 namespace bridge {
 

@@ -2,8 +2,6 @@
 
 #include <pw_span/span.h>
 
-#include "Bridge.h"
-
 #if BRIDGE_ENABLE_SPI
 
 /* [SIL-2] SPI implementation with timeout protection */

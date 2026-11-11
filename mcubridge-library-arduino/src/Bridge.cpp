@@ -2,11 +2,8 @@
 
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
-#include <etl/functional.h>
-#include <etl/iterator.h>
 #include <etl/utility.h>
 
-#include "hal/ArchTraits.h"
 #include "security/security.h"
 #include "services/Console.h"
 #include "services/DataStore.h"

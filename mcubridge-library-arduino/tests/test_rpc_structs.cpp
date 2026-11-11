@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -7,7 +8,6 @@
 #include "pb_encode.h"
 #include "protocol/mcu_wire.pb.h"
 #include "protocol/rpc_protocol.h"
-#include "test_support.h"
 
 // Global stubs
 Stream* g_arduino_stream_delegate = nullptr;

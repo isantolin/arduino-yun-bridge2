@@ -8,27 +8,29 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/string_view.h>
 #include <pw_span/span.h>
 
-#include <wolfssl/wolfcrypt/settings.h>
+#if defined(min)
+#undef min
+#endif
+#if defined(max)
+#undef max
+#endif
+
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
 #include <wolfssl/wolfcrypt/misc.h>
+#include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 
-#include "../config/bridge_config.h"
+#include "protocol/rpc_protocol.h"
 
 namespace rpc {
 namespace security {
 namespace {
 
 static uint8_t kEmptyBuffer = 0U;
-
-bool fits_wolfssl_length(size_t length) {
-  return length <= static_cast<size_t>(UINT32_MAX);
-}
 
 template <size_t N>
 static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
@@ -46,29 +48,17 @@ void derive_hkdf_sha256(pw::span<const uint8_t> secret,
                         pw::span<const uint8_t> info,
                         pw::span<uint8_t> output) {
   if (secret.empty() || output.empty() ||
-      output.size() > 255U * RPC_SHA256_DIGEST_SIZE ||
-      !fits_wolfssl_length(secret.size()) ||
-      !fits_wolfssl_length(salt.size()) || !fits_wolfssl_length(info.size()) ||
-      !fits_wolfssl_length(output.size())) {
+      output.size() > 255U * RPC_SHA256_DIGEST_SIZE) {
     secure_zero(output);
     return;
   }
 
   const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
   const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
-  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> pseudo_random_key = {};
-  bool ok =
-      wc_HKDF_Extract(WC_SHA256, salt_data, static_cast<word32>(salt.size()),
-                      secret.data(), static_cast<word32>(secret.size()),
-                      pseudo_random_key.data()) == 0;
-  if (ok) {
-    ok = wc_HKDF_Expand(WC_SHA256, pseudo_random_key.data(),
-                        static_cast<word32>(pseudo_random_key.size()),
-                        info_data, static_cast<word32>(info.size()),
-                        output.data(), static_cast<word32>(output.size())) == 0;
-  }
-  secure_zero(pw::span<uint8_t>(pseudo_random_key));
-  if (!ok) {
+  if (wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+              salt_data, static_cast<word32>(salt.size()), info_data,
+              static_cast<word32>(info.size()), output.data(),
+              static_cast<word32>(output.size())) != 0) {
     secure_zero(output);
   }
 }
@@ -76,55 +66,40 @@ void derive_hkdf_sha256(pw::span<const uint8_t> secret,
 bool compute_hmac_sha256(pw::span<const uint8_t> key,
                          pw::span<const uint8_t> input,
                          pw::span<uint8_t> output) {
-  if (key.empty() || !fits_wolfssl_length(key.size()) ||
-      !fits_wolfssl_length(input.size()) || output.empty()) {
+  if (key.empty() || output.empty()) {
     secure_zero(output);
     return false;
   }
 
   const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
   Hmac hmac;
-  if (wc_HmacInit(&hmac, nullptr, 0) != 0) {
-    secure_zero(output);
-    return false;
-  }
+  wc_HmacInit(&hmac, nullptr, 0);
 
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> full_digest = {};
-  const bool ok = (wc_HmacSetKey(&hmac, WC_SHA256, key.data(),
-                                 static_cast<word32>(key.size())) == 0) &&
-                  (wc_HmacUpdate(&hmac, input_data,
-                                 static_cast<word32>(input.size())) == 0) &&
-                  (wc_HmacFinal(&hmac, full_digest.data()) == 0);
+  wc_HmacSetKey(&hmac, WC_SHA256, key.data(), static_cast<word32>(key.size()));
+  wc_HmacUpdate(&hmac, input_data, static_cast<word32>(input.size()));
+  wc_HmacFinal(&hmac, full_digest.data());
   wc_HmacFree(&hmac);
 
-  if (ok) {
-    const size_t copy_len = etl::min(output.size(), full_digest.size());
-    etl::copy_n(full_digest.begin(), copy_len, output.begin());
-  } else {
-    secure_zero(output);
-  }
+  const size_t copy_len = etl::min(output.size(), full_digest.size());
+  etl::copy_n(full_digest.begin(), copy_len, output.begin());
   secure_zero(pw::span<uint8_t>(full_digest));
-  return ok;
+  return true;
 }
 
 bool verify_hmac_sha256(pw::span<const uint8_t> key,
                         pw::span<const uint8_t> input,
                         pw::span<const uint8_t> expected_mac) {
   if (key.empty() || expected_mac.empty() ||
-      !fits_wolfssl_length(key.size()) || !fits_wolfssl_length(input.size()) ||
-      !fits_wolfssl_length(expected_mac.size())) {
+      expected_mac.size() != RPC_HANDSHAKE_TAG_LENGTH) {
     return false;
   }
 
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> computed_mac = {};
-  if (!compute_hmac_sha256(key, input, pw::span<uint8_t>(computed_mac))) {
-    return false;
-  }
+  compute_hmac_sha256(key, input, pw::span<uint8_t>(computed_mac));
 
-  const bool ok =
-      (expected_mac.size() == computed_mac.size()) &&
-      (ConstantCompare(computed_mac.data(), expected_mac.data(),
-                       static_cast<int>(computed_mac.size())) == 0);
+  const bool ok = (ConstantCompare(computed_mac.data(), expected_mac.data(),
+                                   static_cast<int>(computed_mac.size())) == 0);
   secure_zero(pw::span<uint8_t>(computed_mac));
   return ok;
 }
@@ -149,11 +124,11 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
   secure_zero(out_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   derive_handshake_auth_key(secret, info, auth_key);
-  const bool ok = compute_hmac_sha256(
+  compute_hmac_sha256(
       auth_key, nonce,
       pw::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
   secure_zero(pw::span<uint8_t>(auth_key));
-  return ok;
+  return true;
 }
 
 #if BRIDGE_ENABLE_POST_TESTS
@@ -208,18 +183,11 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
   uint8_t* ciphertext_data =
       ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
-  const bool ok =
-      fits_wolfssl_length(aad.size()) &&
-      fits_wolfssl_length(plaintext.size()) &&
-      wc_ChaCha20Poly1305_Encrypt(
-          key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
-          plaintext_data, static_cast<word32>(plaintext.size()),
-          ciphertext_data, tag.data()) == 0;
-  if (!ok) {
-    secure_zero(ciphertext);
-    secure_zero(tag);
-  }
-  return ok;
+  wc_ChaCha20Poly1305_Encrypt(key.data(), nonce.data(), aad_data,
+                              static_cast<word32>(aad.size()), plaintext_data,
+                              static_cast<word32>(plaintext.size()),
+                              ciphertext_data, tag.data());
+  return true;
 }
 
 bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
@@ -238,12 +206,10 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
   uint8_t* plaintext_data =
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
   const bool ok =
-      fits_wolfssl_length(aad.size()) &&
-      fits_wolfssl_length(ciphertext.size()) &&
-      wc_ChaCha20Poly1305_Decrypt(
-          key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
-          ciphertext_data, static_cast<word32>(ciphertext.size()), tag.data(),
-          plaintext_data) == 0;
+      (wc_ChaCha20Poly1305_Decrypt(
+           key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
+           ciphertext_data, static_cast<word32>(ciphertext.size()), tag.data(),
+           plaintext_data) == 0);
   if (!ok) {
     secure_zero(plaintext);
   }
@@ -335,14 +301,11 @@ bool run_cryptographic_self_tests() {
   const auto sha_expected = copy_progmem(kat_sha256_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> digest = {};
   wc_Sha256 sha;
-  bool sha_init_ok = (wc_InitSha256(&sha) == 0);
-  if (sha_init_ok) {
-    wc_Sha256Update(&sha, sha_msg.data(), static_cast<word32>(sha_msg.size()));
-    wc_Sha256Final(&sha, digest.data());
-    wc_Sha256Free(&sha);
-  }
-  bool ok = sha_init_ok &&
-            etl::equal(digest.begin(), digest.end(), sha_expected.begin());
+  wc_InitSha256(&sha);
+  wc_Sha256Update(&sha, sha_msg.data(), static_cast<word32>(sha_msg.size()));
+  wc_Sha256Final(&sha, digest.data());
+  wc_Sha256Free(&sha);
+  bool ok = etl::equal(digest.begin(), digest.end(), sha_expected.begin());
 
   const auto hmac_key = copy_progmem(kat_hmac_key);
   const auto hmac_data = copy_progmem(kat_hmac_data);

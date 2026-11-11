@@ -1,8 +1,6 @@
 #ifndef SERVICES_MAILBOX_H
 #define SERVICES_MAILBOX_H
 
-#undef min
-#undef max
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/vector.h>

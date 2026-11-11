@@ -65,7 +65,7 @@ runs:
       if: inputs.install-system-deps == 'true'
       shell: bash
       run: |
-        sudo apt-get update
+        bash tools/ci/apt_update_with_fallback.sh
         sudo apt-get install -y libreadline-dev
 
     - name: Install pip + tox + tox-uv

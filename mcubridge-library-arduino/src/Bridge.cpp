@@ -267,7 +267,19 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
-      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)) {
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
+#if defined(ARDUINO_ARCH_AVR)
+      ,
+      _transfer_thread(
+          pw::ByteSpan(_transfer_chunk_storage.data(),
+                       _transfer_chunk_storage.size()),
+          pw::ByteSpan(_transfer_encode_storage.data(),
+                       _transfer_encode_storage.size())),
+      _transfer_service(_transfer_thread, 256),
+      _transfer_client(_rpc_client, 1, _transfer_thread, 256)
+#endif
+{
+
   _initObservers();
 }
 
@@ -286,6 +298,10 @@ BridgeClass::~BridgeClass() {
 #if BRIDGE_ENABLE_MAILBOX
                                 ,
                                 g_mailbox_service
+#endif
+#if defined(ARDUINO_ARCH_AVR)
+                                ,
+                                _transfer_service
 #endif
   );
 }
@@ -366,6 +382,10 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
+#if defined(ARDUINO_ARCH_AVR)
+                              ,
+                              _transfer_service
+#endif
   );
   _rpc_services_registered = true;
 }
@@ -420,6 +440,13 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
+#if defined(ARDUINO_ARCH_AVR)
+  const pw::Status transfer_status = _transfer_thread.Poll(2);
+  if (!transfer_status.ok() &&
+      transfer_status != pw::Status::Unavailable()) {
+    emitStatus(transfer_status);
+  }
+#endif
   _timerTask();
   _subscriptionTask();
 #if BRIDGE_ENABLE_CONSOLE

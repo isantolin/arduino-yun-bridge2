@@ -16,6 +16,7 @@ on:
       - 'requirements/runtime.toml'
       - 'tools/audit/sync_runtime_deps.py'
       - 'tools/protocol/**'
+      - 'tools/ci/apt_update_with_fallback.sh'
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 

@@ -138,6 +138,12 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
+      - name: Compile BridgeControl for Arduino Yún (ATmega32U4)
+        run: |
+          bash tools/ci/compile_firmware.sh \
+            mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino \
+            arduino:avr:yun \
+            arduino-yun-build
       - name: Profile Memory Usage
         if: always()
         run: |

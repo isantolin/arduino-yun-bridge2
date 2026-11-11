@@ -14,6 +14,7 @@ CompileFlags:
     "-DBRIDGE_ENABLE_FILESYSTEM=1",
     "-DBRIDGE_ENABLE_PROCESS=1",
     "-DBRIDGE_ENABLE_POST_TESTS=1",
+    "-DETL_FORCE_STD_INITIALIZER_LIST",
     "-DETL_NO_STL",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src/config",

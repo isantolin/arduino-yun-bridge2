@@ -1,3 +1,7 @@
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <errno.h>
 #include <etl/string.h>
 #include <stdio.h>
@@ -7,8 +11,8 @@
 #include <unistd.h>
 
 #include "BridgeFaultInjection.h"
-#include "config/bridge_config.h"
 #include "hal/hal.h"
+#include "protocol/rpc_hw_config.h"
 #include "protocol/rpc_protocol.h"
 
 bool g_host_has_sd = true;

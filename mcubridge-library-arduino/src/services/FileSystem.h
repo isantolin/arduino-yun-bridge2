@@ -1,8 +1,10 @@
 #ifndef SERVICES_FILESYSTEM_H
 #define SERVICES_FILESYSTEM_H
 
-#undef min
-#undef max
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/string_view.h>

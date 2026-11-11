@@ -4,6 +4,19 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#ifdef abs
+#undef abs
+#endif
+#ifdef round
+#undef round
+#endif
+
 #include "protocol/rpc_hw_config.h"
 #include "protocol/rpc_protocol.h"
 
@@ -30,6 +43,8 @@
 
 namespace bridge {
 namespace config {
+
+static_assert(RX_BUFFER_SIZE > 0);
 
 // Pin counts come from the selected Arduino core.
 #if !defined(NUM_DIGITAL_PINS) || !defined(NUM_ANALOG_INPUTS)

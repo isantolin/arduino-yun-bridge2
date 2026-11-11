@@ -1,15 +1,15 @@
 #ifndef SERVICES_CONSOLE_H
 #define SERVICES_CONSOLE_H
 
-#include <Stream.h>
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 
-#undef min
-#undef max
+#include <Stream.h>
 #include <etl/circular_buffer.h>
 #include <etl/vector.h>
 
 #include "Bridge.h"
-#include "protocol/mcu_wire.pb.h"
 
 class ConsoleClass : public Stream, public bridge::BridgeObserver {
  public:

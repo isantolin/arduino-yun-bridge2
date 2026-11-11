@@ -1,12 +1,14 @@
 #define BRIDGE_HOST_TEST 1
+
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 #include <Arduino.h>
 #include <PigweedAVR.h>
 #include <etl/array.h>
 #include <pw_span/span.h>
 #include <unity.h>
 
-#include "protocol/mcu_wire.pb.h"
-#include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
 HardwareSerial Serial;

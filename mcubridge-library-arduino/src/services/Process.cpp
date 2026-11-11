@@ -1,3 +1,7 @@
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include "services/Process.h"
 
 #include <etl/algorithm.h>

@@ -1,6 +1,9 @@
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include "services/DataStore.h"
 
-#include <etl/algorithm.h>
 #include <pw_span/span.h>
 
 #include "Bridge.h"

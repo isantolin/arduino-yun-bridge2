@@ -28,7 +28,8 @@
                 "BRIDGE_ENABLE_POST_TESTS=1",
                 "BRIDGE_ENABLE_TEST_INTERFACE=1",
                 "BRIDGE_FAULT_INJECTION=1",
-                "ETL_NO_STL"
+                "ETL_NO_STL",
+                "ETL_FORCE_STD_INITIALIZER_LIST"
             ],
             "compilerPath": "/usr/bin/g++",
             "cStandard": "c17",

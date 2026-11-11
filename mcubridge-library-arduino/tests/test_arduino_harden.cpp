@@ -1,3 +1,7 @@
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #ifndef BRIDGE_ENABLE_TEST_INTERFACE
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #endif
@@ -8,7 +12,6 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "services/Console.h"
 #include "test_support.h"
 
 // [SIL-2] Global stub definitions for host environment

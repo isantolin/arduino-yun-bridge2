@@ -5,6 +5,10 @@
 #ifndef BRIDGE_HAL_H
 #define BRIDGE_HAL_H
 
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <Arduino.h>
 #undef min
 #undef max

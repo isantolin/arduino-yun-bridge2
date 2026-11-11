@@ -3,16 +3,26 @@
  * Copyright (C) 2025-2026 Ignacio Santolin and contributors
  */
 
+#ifndef ETL_FORCE_STD_INITIALIZER_LIST
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
+
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/byte_stream.h>
 #include <pw_span/span.h>
-#include <wolfssl/wolfcrypt/settings.h>
-#include <wolfssl/wolfcrypt/misc.h>
-#include <unity.h>
 
-#include "../src/config/bridge_config.h"
-#include "../src/protocol/mcu_wire.pb.h"
+#if defined(min)
+#undef min
+#endif
+#if defined(max)
+#undef max
+#endif
+
+#include <unity.h>
+#include <wolfssl/wolfcrypt/misc.h>
+#include <wolfssl/wolfcrypt/settings.h>
+
+#include "protocol/rpc_protocol.h"
 #include "../src/security/security.h"
 
 namespace {
@@ -88,8 +98,8 @@ void test_handshake_tag_generation_and_verification(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> tampered_tag =
       generated_tag;
   tampered_tag[0] ^= 0x01U;
-  TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(kSecret, kHandshakeNonce,
-                                                        tampered_tag));
+  TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
+      kSecret, kHandshakeNonce, tampered_tag));
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> modified_nonce =
       kHandshakeNonce;

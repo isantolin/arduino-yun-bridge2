@@ -163,7 +163,7 @@ rationale = "Shell environment detection runtime required by Typer"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer==0.29.0"
+pip = "typer==0.29.1"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
@@ -176,7 +176,7 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 [[dependency]]
 name = "nanopb"
 openwrt = "nanopb"
-pip = "nanopb==0.4.9.1"
+pip = "nanopb==0.4.9.3"
 rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 
 [[dependency]]
@@ -211,7 +211,7 @@ rationale = "Host-based deterministic C/C++ unit testing harness for MCU compone
 name = "nanopb_core"
 github = "nanopb/nanopb"
 ref_type = "version"
-version = "0.4.9.2"
+version = "0.4.9.3"
 check_file = "pb.h"
 files = [
     "pb.h",
@@ -283,7 +283,7 @@ rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pi
 
 [[dev_dependency]]
 name = "types-psutil"
-pip = "types-psutil==7.2.2.20260906"
+pip = "types-psutil==7.2.2.20261111"
 rationale = "Type stubs for psutil required by pyrefly"
 
 [[dev_dependency]]
@@ -375,7 +375,7 @@ rationale = "Formal YAML parser for workflow frontmatter and configuration audit
 
 [[dev_dependency]]
 name = "types-pyyaml"
-pip = "types-PyYAML==6.0.12.20261103"
+pip = "types-PyYAML==6.0.12.20261111"
 rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
 
 [[dev_dependency]]

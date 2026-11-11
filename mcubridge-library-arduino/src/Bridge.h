@@ -225,6 +225,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
+#if defined(ARDUINO_ARCH_AVR)
+  // Upstream pw_transfer endpoints share one cooperative Thread<1, 1>.
+  // The port's role arbiter permits client/server transfers sequentially.
+  pw::transfer::Client& transferClient() { return _transfer_client; }
+  pw::transfer::TransferService& transferService() { return _transfer_service; }
+  pw::transfer::Thread<1, 1>& transferThread() { return _transfer_thread; }
+#endif
+
   void _onBaudrateChange();
   void _onHandshakeTimeout();
 
@@ -283,6 +291,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
+#if defined(ARDUINO_ARCH_AVR)
+  static constexpr size_t kTransferBufferSize = 128;
+  etl::array<pw::byte, kTransferBufferSize> _transfer_chunk_storage{};
+  etl::array<pw::byte, kTransferBufferSize> _transfer_encode_storage{};
+  pw::transfer::Thread<1, 1> _transfer_thread;
+  pw::transfer::TransferService _transfer_service;
+  pw::transfer::Client _transfer_client;
+#endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
   bool _rpc_plaintext_response{false};

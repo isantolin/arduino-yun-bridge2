@@ -11,6 +11,7 @@ APT_OPTIONS=(
 FALLBACK_MIRRORS=(
   "https://ubuntu.c3sl.ufpr.br/ubuntu"
   "https://mirrors.edge.kernel.org/ubuntu"
+  "https://mirror.units.it/ubuntu/ubuntu"
 )
 
 apt_update() {

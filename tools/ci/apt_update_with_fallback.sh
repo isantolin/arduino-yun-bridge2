@@ -22,7 +22,7 @@ apt_update() {
 
   # Only DNS resolution failures for Ubuntu repositories may trigger a mirror switch.
   local dns_failure=false
-  if grep -Eqi "(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution).*(ubuntu|archive|security)|(ubuntu|archive|security).*(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution)" "$apt_log"; then
+  if grep -Eqi "(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution).*(ubuntu|archive|security|c3sl\\.ufpr\\.br|kernel\\.org|mirror\\.units\\.it)|(ubuntu|archive|security|c3sl\\.ufpr\\.br|kernel\\.org|mirror\\.units\\.it).*(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution)" "$apt_log"; then
     dns_failure=true
   fi
   rm -f "$apt_log"
@@ -31,6 +31,9 @@ apt_update() {
   fi
   if (( apt_status != 0 )); then
     return "$apt_status"
+  fi
+  if grep -Eqi 'Failed to fetch|Some index files failed' "$apt_log"; then
+    return 1
   fi
   return 0
 }

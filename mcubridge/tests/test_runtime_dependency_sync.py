@@ -244,6 +244,8 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
     assert runtime["protobuf"]["pip"] == "protobuf==5.28.3"
     assert runtime["nanopb"]["pip"] == "nanopb==0.4.9.1"
     assert cpp["nanopb_core"]["version"] == "0.4.9.2"
+    assert not runtime["nanopb"]["check_latest"]
+    assert not cpp["nanopb_core"]["check_latest"]
 
     bootstrap_paths = (
         sync_runtime_deps.ROOT / ".github/actions/setup-python-tox/action.yml",

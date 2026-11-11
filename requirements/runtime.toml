@@ -176,7 +176,7 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 [[dependency]]
 name = "nanopb"
 openwrt = "nanopb"
-pip = "nanopb==0.4.9.2"
+pip = "nanopb==0.4.9.3"
 rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 
 [[dependency]]
@@ -211,7 +211,7 @@ rationale = "Host-based deterministic C/C++ unit testing harness for MCU compone
 name = "nanopb_core"
 github = "nanopb/nanopb"
 ref_type = "version"
-version = "0.4.9.2"
+version = "0.4.9.3"
 check_file = "pb.h"
 files = [
     "pb.h",

@@ -27,14 +27,14 @@ jobs:
 
       - name: Install System Dependencies & protoc
         run: |
-          sudo apt-get update && sudo apt-get install -y unzip
+          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y unzip
           PROTOC_VERSION=28.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
-          python -m pip install --upgrade pip build twine setuptools wheel protobuf nanopb jinja2 typer black mypy-protobuf grpclib packaging tenacity httpx
+          python -m pip install --upgrade pip build twine setuptools wheel 'protobuf==5.28.3' 'nanopb==0.4.9.1' 'pigweed==0.0.24' jinja2 typer black mypy-protobuf grpclib packaging tenacity httpx
 
       - name: Generate Protocol Bindings
         run: |

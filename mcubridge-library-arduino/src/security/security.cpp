@@ -6,16 +6,20 @@
 #include "security.h"
 
 #include <Arduino.h>
-#include <etl/algorithm.h>
-#include <etl/array.h>
-#include <pw_span/span.h>
 
+// Arduino.h defines function-like min/max macros. Remove them before ETL
+// headers are parsed; undefining them after ETL has already been included is
+// too late and breaks numeric_limits<T>::min()/max() declarations.
 #if defined(min)
 #undef min
 #endif
 #if defined(max)
 #undef max
 #endif
+
+#include <etl/algorithm.h>
+#include <etl/array.h>
+#include <pw_span/span.h>
 
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/hmac.h>

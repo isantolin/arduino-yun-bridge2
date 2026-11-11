@@ -233,3 +233,25 @@ def test_check_latest_versions_enforces_pigweed_constraints() -> None:
     ]
     outdated_satisfying = sync_runtime_deps.check_latest_versions(deps_satisfying)
     assert not any("violates authoritative Pigweed requirement" in item[0] for item in outdated_satisfying)
+
+
+def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
+    manifest = sync_runtime_deps.load_manifest()
+    runtime = {dep["name"]: dep for dep in manifest.runtime}
+    cpp = {dep["name"]: dep for dep in manifest.cpp}
+
+    assert runtime["pigweed"]["pip"] == "pigweed==0.0.24"
+    assert runtime["protobuf"]["pip"] == "protobuf==5.28.3"
+    assert runtime["nanopb"]["pip"] == "nanopb==0.4.9.1"
+    assert cpp["nanopb_core"]["version"] == "0.4.9.2"
+    assert not runtime["nanopb"]["check_latest"]
+    assert not cpp["nanopb_core"]["check_latest"]
+
+    bootstrap_paths = (
+        sync_runtime_deps.ROOT / ".github/actions/setup-python-tox/action.yml",
+        sync_runtime_deps.ROOT / ".github/workflows/build-apk.yml",
+        sync_runtime_deps.ROOT / ".github/workflows/ci.yml",
+        sync_runtime_deps.ROOT / ".github/workflows/publish-packages.yml",
+    )
+    for path in bootstrap_paths:
+        assert "nanopb==0.4.9.1" in path.read_text(encoding="utf-8"), str(path)

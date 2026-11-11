@@ -31,7 +31,7 @@ runs:
     - name: Install bootstrap packaging tools
       shell: bash
       run: |
-        python -m pip install packaging typer tenacity vulture pytest grpclib mypy-protobuf jinja2 nanopb psutil pyelftools black httpx
+        python -m pip install packaging typer tenacity vulture pytest grpclib mypy-protobuf jinja2 nanopb==0.4.9.1 psutil pyelftools black httpx
         python -m pip install pigweed==0.0.24
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         if command -v protoc-gen-grpclib_python >/dev/null 2>&1; then
@@ -65,7 +65,7 @@ runs:
       if: inputs.install-system-deps == 'true'
       shell: bash
       run: |
-        sudo apt-get update
+        bash tools/ci/apt_update_with_fallback.sh
         sudo apt-get install -y libreadline-dev
 
     - name: Install pip + tox + tox-uv

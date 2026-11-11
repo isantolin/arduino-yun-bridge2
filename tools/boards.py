@@ -37,6 +37,16 @@ BOARD_MEGA: Final[BoardSpec] = BoardSpec(
     emulator="simavr",
 )
 
+BOARD_YUN: Final[BoardSpec] = BoardSpec(
+    fqbn="arduino:avr:yun",
+    slug="arduino-avr-yun",
+    label="Arduino Yún",
+    detailed_name="Arduino Yún (ATmega32U4)",
+    max_flash=28_672,
+    max_ram=2_560,
+    emulator=None,
+)
+
 BOARD_MKRWIFI1010: Final[BoardSpec] = BoardSpec(
     fqbn="arduino:samd:mkrwifi1010",
     slug="arduino-samd-mkrwifi1010",
@@ -59,6 +69,7 @@ BOARD_NANO_ESP32: Final[BoardSpec] = BoardSpec(
 
 OFFICIAL_BOARDS: Final[tuple[BoardSpec, ...]] = (
     BOARD_MEGA,
+    BOARD_YUN,
     BOARD_MKRWIFI1010,
     BOARD_NANO_ESP32,
 )

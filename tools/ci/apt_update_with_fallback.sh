@@ -10,7 +10,19 @@ APT_OPTIONS=(
 )
 
 apt_update() {
-  sudo apt-get "${APT_OPTIONS[@]}" update
+  local apt_log
+  local apt_status=0
+  apt_log="$(mktemp)"
+  sudo apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
+
+  # apt-get update may exit zero while emitting warnings for unreachable
+  # repositories. Treat failed Ubuntu index downloads as a failed update.
+  if grep -Eqi 'Failed to fetch.*(ubuntu|archive|security)|Some index files failed|Temporary failure resolving.*(ubuntu|archive|security)' "$apt_log"; then
+    apt_status=1
+  fi
+
+  rm -f "$apt_log"
+  return "$apt_status"
 }
 
 echo "::group::APT update using the runner's configured Ubuntu mirrors"

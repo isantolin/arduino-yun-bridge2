@@ -252,3 +252,4 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
     )
     for path in bootstrap_paths:
         assert "nanopb==0.4.9.1" in path.read_text(encoding="utf-8"), str(path)
+

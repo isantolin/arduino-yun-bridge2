@@ -234,6 +234,7 @@ def test_check_latest_versions_enforces_pigweed_constraints() -> None:
     outdated_satisfying = sync_runtime_deps.check_latest_versions(deps_satisfying)
     assert not any("violates authoritative Pigweed requirement" in item[0] for item in outdated_satisfying)
 
+
 def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
     manifest = sync_runtime_deps.load_manifest()
     runtime = {dep["name"]: dep for dep in manifest.runtime}
@@ -252,4 +253,3 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
     )
     for path in bootstrap_paths:
         assert "nanopb==0.4.9.1" in path.read_text(encoding="utf-8"), str(path)
-

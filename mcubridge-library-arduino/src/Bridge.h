@@ -230,7 +230,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   // The port's role arbiter permits client/server transfers sequentially.
   pw::transfer::Client& transferClient() { return _transfer_client; }
   pw::transfer::TransferService& transferService() { return _transfer_service; }
-  pw::transfer::Thread<1, 1>& transferThread() { return _transfer_thread; }
 #endif
 
   void _onBaudrateChange();

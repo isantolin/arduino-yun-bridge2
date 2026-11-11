@@ -20,13 +20,19 @@ apt_update() {
   apt_log="$(mktemp)"
   sudo apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
 
-  # apt-get update can exit zero while warning about unreachable indexes.
-  if grep -Eqi 'Failed to fetch.*(ubuntu|archive|security)|Some index files failed|Temporary failure resolving.*(ubuntu|archive|security)' "$apt_log"; then
-    apt_status=1
+  # Only DNS resolution failures for Ubuntu repositories may trigger a mirror switch.
+  local dns_failure=false
+  if grep -Eqi "(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution).*(ubuntu|archive|security)|(ubuntu|archive|security).*(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution)" "$apt_log"; then
+    dns_failure=true
   fi
-
   rm -f "$apt_log"
-  return "$apt_status"
+  if [[ "$dns_failure" == true ]]; then
+    return 10
+  fi
+  if (( apt_status != 0 )); then
+    return "$apt_status"
+  fi
+  return 0
 }
 
 echo "::group::APT update using the runner's configured Ubuntu mirrors"
@@ -34,8 +40,14 @@ if apt_update; then
   echo "The configured Ubuntu mirrors are reachable."
   echo "::endgroup::"
   exit 0
+else
+  apt_status=$?
 fi
 echo "::endgroup::"
+if (( apt_status != 10 )); then
+  echo "::error::APT update failed for a reason other than Ubuntu DNS resolution; fallback mirrors were not changed."
+  exit "$apt_status"
+fi
 
 SOURCES_FILE="/etc/apt/sources.list.d/ubuntu.sources"
 
@@ -100,10 +112,16 @@ for mirror in "${FALLBACK_MIRRORS[@]}"; do
   if apt_update; then
     echo "APT indexes downloaded successfully from $mirror."
     exit 0
+  else
+    apt_status=$?
   fi
 
   sudo cp "$BACKUP_FILE" "$SOURCES_FILE"
-  echo "::warning::APT update failed through $mirror; trying the next fallback."
+  if (( apt_status != 10 )); then
+    echo "::error::APT failed through $mirror for a non-DNS reason; restored original Ubuntu sources."
+    exit "$apt_status"
+  fi
+  echo "::warning::DNS resolution failed through $mirror; trying the next fallback."
 done
 
 sudo cp "$BACKUP_FILE" "$SOURCES_FILE"

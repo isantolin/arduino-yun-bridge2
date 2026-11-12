@@ -786,8 +786,15 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
         outputs.append(repo_root / "mcubridge-library-arduino/src/protocol/mcu_wire.rpc.pb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
-        for stem in ("config_schema", "mcu_wire", "cloud_gateway", "gateway_control"):
+        for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
             outputs.extend((output_dir / f"{stem}_pb2.py", output_dir / f"{stem}_pb2.pyi"))
+        outputs.extend(
+            (
+                output_dir / "gateway" / "gateway_control_pb2.py",
+                output_dir / "gateway" / "gateway_control_pb2.pyi",
+                output_dir / "gateway" / "__init__.py",
+            )
+        )
         outputs.append(output_dir / "mcubridge_grpc.py")
 
     explicit_output_dirs = {path.parent for path in explicit_outputs}
@@ -808,8 +815,9 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
     input_paths = [
         proto_path.resolve(),
         Path(__file__).resolve(),
-        *sorted(proto_path.parent.glob("*.proto")),
-        *sorted(proto_path.parent.glob("*.options")),
+        *sorted(proto_path.parent.rglob("*.proto")),
+        *sorted(proto_path.parent.rglob("*.options")),
+        *sorted(proto_path.parent.rglob("*.pwpb_options")),
         proto_path.parent / "buf.yaml",
         proto_path.parent / "buf.gen.yaml",
         repo_root / ".github/actions/setup-protoc/action.yml",
@@ -936,9 +944,23 @@ def main(
         )
         _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
 
-    for stem in ("config_schema", "mcu_wire", "cloud_gateway", "gateway_control"):
+    for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.py", py_targets, _sanitize_pb2)
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.pyi", py_targets, _sanitize_pb2)
+
+    gateway_proto_dir = proto_path.parent / "gateway"
+    gateway_targets = [target / "gateway" if target else None for target in py_targets]
+    for target in filter(None, gateway_targets):
+        target.mkdir(parents=True, exist_ok=True)
+        init_file = target / "__init__.py"
+        if not init_file.exists():
+            init_file.write_text('"""Pigweed Gateway protocol bindings."""\\n', encoding="utf-8")
+    _dispatch_generated_file(
+        gateway_proto_dir / "gateway_control_pb2.py", gateway_targets, _sanitize_pb2
+    )
+    _dispatch_generated_file(
+        gateway_proto_dir / "gateway_control_pb2.pyi", gateway_targets, _sanitize_pb2
+    )
 
     _dispatch_generated_file(
         proto_path.parent / "cloud_gateway_grpc.py",
@@ -948,8 +970,10 @@ def main(
         ),
         dest_name="mcubridge_grpc.py",
     )
-    for grpc_file in proto_path.parent.glob("*_grpc.py"):
+    for grpc_file in proto_path.parent.rglob("*_grpc.py"):
         grpc_file.unlink(missing_ok=True)
+    for nanopb_file in (gateway_proto_dir / "gateway_control.pb.h", gateway_proto_dir / "gateway_control.pb.c"):
+        nanopb_file.unlink(missing_ok=True)
 
     py_context = context | {
         "constants": context["python_constants"],

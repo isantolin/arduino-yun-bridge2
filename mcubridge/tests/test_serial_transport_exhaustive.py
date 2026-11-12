@@ -37,6 +37,48 @@ def _install_test_cipher(transport: SerialTransport) -> None:
         transport.state.link_cipher = LinkCipher.for_host(transport.config.serial_shared_secret, nonce)
 
 
+async def test_pw_transfer_client_is_shared_and_nonblocking(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
+    instances: list[object] = []
+
+    class FakeTransferManager:
+        def __init__(self, service: object, *, max_chunk_size_bytes: int) -> None:
+            self.service = service
+            self.max_chunk_size_bytes = max_chunk_size_bytes
+            instances.append(self)
+
+        def read(self, resource_id: int, *, initial_offset: int = 0) -> bytes:
+            return f"{resource_id}:{initial_offset}".encode()
+
+        def write(self, resource_id: int, data: bytes, *, initial_offset: int = 0) -> None:
+            self.last_write = (resource_id, data, initial_offset)
+
+    monkeypatch.setattr("mcubridge.transport.serial.pw_transfer.Manager", FakeTransferManager)
+
+    data = await transport.transfer_read(0x4D454741, offset=7)
+    await transport.transfer_write(0x4D454741, b"data", offset=9)
+
+    assert data == b"1296389441:7"
+    assert len(instances) == 1
+    manager = instances[0]
+    assert isinstance(manager, FakeTransferManager)
+    assert manager.max_chunk_size_bytes == 128
+    assert manager.last_write == (0x4D454741, b"data", 9)
+
+
+async def test_pw_transfer_rejects_disconnected_link(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = False
+
+    with pytest.raises(ConnectionError, match="disconnected"):
+        await transport.transfer_read(0x4D454741)
+
+
 def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
     transport, _state, mock_serial = mock_serial_setup
     type(mock_serial).baudrate = PropertyMock(side_effect=OSError("Baudrate error"))

@@ -25,6 +25,13 @@ pw_add_library(pw_status STATIC
 pw_add_library(pw_status.check_if_used INTERFACE
   PUBLIC_DEFINES PW_STATUS_CFG_CHECK_IF_USED=1)
 
+# Pigweed 55873baa unconditionally emits optional RPC2 proto interface variants.
+# The Gateway uses RPC v1; these unused variants need only the upstream headers.
+add_library(pw_rpc2.cpp INTERFACE)
+target_include_directories(pw_rpc2.cpp INTERFACE "${PIGWEED_ROOT}/pw_rpc2/cpp/public")
+add_library(pw_rpc2.cpp._pwpb_serialize INTERFACE)
+target_include_directories(pw_rpc2.cpp._pwpb_serialize INTERFACE "${PIGWEED_ROOT}/pw_rpc2/cpp/public")
+
 # pw_log facade with the upstream null backend.
 pw_add_module_config(pw_log_CONFIG)
 pw_add_library(pw_log.config INTERFACE

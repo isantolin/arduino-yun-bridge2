@@ -58,7 +58,7 @@ The transfer service is registered with the upstream `pw_rpc::Server` by Bridge 
 
 ## Validation and release gates
 
-- The port is pinned to [avr_pigweed_port PR #8](https://github.com/isantolin/avr_pigweed_port/pull/8), HEAD `7d4ebbcff918e23639238e7ed30aeef197c1b902`.
+- The port is pinned to [avr_pigweed_port PR #8](https://github.com/isantolin/avr_pigweed_port/pull/8), HEAD `d442ca187a395df5b32409e559d54c95826776d9`.
 - CI compiles both BridgeControl and a dedicated `pw_transfer` API sketch for Arduino Mega 2560.
 - The port CI exercises upstream transfer reads/writes, retries, cancellation, timeout, bounded-queue saturation, and sequential role reuse under `simavr`.
 - The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.

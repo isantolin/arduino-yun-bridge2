@@ -223,7 +223,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
-        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_device_uri_san")
+        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
         self.assertNotIn("event=session_open", self.gateway.logs())
 
     def assert_tls_handshake_rejected(self, cert: Path | None, key: Path | None) -> None:
@@ -291,15 +291,27 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             client.close()
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_device_uri_san")
 
-    def test_client_role_certificate_is_not_a_device_identity(self) -> None:
+    def test_client_role_certificate_opens_northbound_session(self) -> None:
         client = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        self.gateway.wait_for("client=operator-01 event=session_open")
+        client.close()
+        self.gateway.wait_for("client=operator-01 event=session_closed")
+        self.assertNotIn("device=operator-01 event=session_open", self.gateway.logs())
+
+    def test_duplicate_client_session_is_rejected_and_released(self) -> None:
+        first = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        self.gateway.wait_for("client=operator-01 event=session_open")
+        second = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
         try:
-            client.recv(1)
+            second.recv(1)
         except (ssl.SSLError, OSError) as error:
             self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
-            client.close()
-        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_device_uri_san")
+            second.close()
+        self.gateway.wait_for("client=operator-01 event=session_rejected reason=duplicate_session")
+        first.close()
+        self.gateway.wait_for("client=operator-01 event=session_closed")
+        self.gateway.wait_for("client=operator-01 event=session_unregistered")
 
     def test_duplicate_device_session_is_rejected_and_released(self) -> None:
         first = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)

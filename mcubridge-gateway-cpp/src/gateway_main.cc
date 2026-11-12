@@ -489,7 +489,7 @@ int main(int argc, char** argv) {
         return;
       }
       SSL_set_fd(ssl, client_fd);
-      timeval handshake_timeout{10, 0};
+      timeval handshake_timeout{5, 0};
       setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
                  &handshake_timeout, sizeof(handshake_timeout));
       setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO,

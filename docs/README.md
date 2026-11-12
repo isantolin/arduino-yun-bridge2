@@ -199,7 +199,7 @@ EOF
 
 - `allowed_commands` controla los binarios que el daemon puede lanzar. Un valor vacío significa *ningún comando permitido*.
 - Cada acción sensible se puede permitir/denegar de forma granular con:
-	- `cloud_allow_file_read`, `cloud_allow_file_write`, `cloud_allow_file_remove`
+	- `cloud_allow_file_read` (MPU-local), `cloud_allow_file_write`, `cloud_allow_file_remove`
 	- `cloud_allow_datastore_get`, `cloud_allow_datastore_put`
 	- `cloud_allow_mailbox_read`, `cloud_allow_mailbox_write`
 	- `cloud_allow_shell_run`, `cloud_allow_shell_run_async`, `cloud_allow_shell_poll`, `cloud_allow_shell_kill`

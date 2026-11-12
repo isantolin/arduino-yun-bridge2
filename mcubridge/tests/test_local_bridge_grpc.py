@@ -235,12 +235,11 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     mock_serial.transfer_write.assert_awaited_once_with(0x4D454741, b"data")
     mock_serial.send.assert_not_called()
 
+    mock_serial.send.reset_mock()
     stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/eeprom"))
     await local_svc.FileRemove(stream)
-    mock_serial.send.assert_called_with(
-        "rpc.pb.FileSystemService/Remove",
-        mcu_wire_pb2.FileRemove(path="eeprom"),
-    )
+    assert stream.sent_message.status == "error"
+    mock_serial.send.assert_not_called()
 
     mock_serial.transfer_read = AsyncMock(return_value=b"eeprom-data")
     stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="mcu/eeprom"))

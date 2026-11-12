@@ -221,6 +221,15 @@ pw_add_library(pw_stream STATIC
   SOURCES "${PIGWEED_ROOT}/pw_stream/memory_stream.cc"
   PUBLIC_DEPS pw_assert pw_bytes pw_memory._sibling_cast pw_polyfill
     pw_result pw_span pw_status)
+pw_add_library(pw_stream.interval_reader STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_stream/public/pw_stream/interval_reader.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_stream/public"
+  PUBLIC_DEPS pw_assert pw_status pw_stream
+  SOURCES "${PIGWEED_ROOT}/pw_stream/interval_reader.cc")
+pw_add_library(pw_stream.limited_stream INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_stream/public/pw_stream/limited_stream.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_stream/public"
+  PUBLIC_DEPS pw_status pw_stream)
 
 # Minimal dependency closure using the upstream Pigweed target declarations.
 # The module-level pw_hdlc CMakeLists also registers an unrelated async router;

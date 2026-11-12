@@ -564,7 +564,15 @@ class SerialTransport:
             except RuntimeError as exc:
                 raise RuntimeError("Pigweed RPC output has no active asyncio event loop") from exc
             self._event_loop = loop
-        loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet)
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if current_loop is loop:
+            self._queue_rpc_packet_on_loop(packet)
+        else:
+            loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet)
 
     def _queue_rpc_packet_on_loop(self, packet: bytes) -> None:
         """Update RPC correlation state and create the serial writer task on its owning loop."""

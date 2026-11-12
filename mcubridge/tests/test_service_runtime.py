@@ -774,13 +774,13 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     res_loc_w = await svc.file_write(mcu_wire_pb2.FileWrite(path="../outside.txt", data=b"data"))
     assert res_loc_w.status == "error"
 
-    res_loc_r = await svc.file_read(mcu_wire_pb2.FileRead(path="not_a_file"))
+    res_loc_r = await svc.file_read(cloud_gateway_pb2.FileRead(path="not_a_file"))
     assert res_loc_r.content == b""
 
     real_file = tmp_path / "real.txt"
     real_file.write_text("hello")
     svc.config.file_system_root = str(tmp_path)
-    res_loc_r2 = await svc.file_read(mcu_wire_pb2.FileRead(path="real.txt"))
+    res_loc_r2 = await svc.file_read(cloud_gateway_pb2.FileRead(path="real.txt"))
     assert real_file.exists()
     assert res_loc_r2.content == b"hello"
 
@@ -1023,12 +1023,12 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     svc = mock_bridge_service
 
     svc.serial = None
-    res_f = await svc.file_read(mcu_wire_pb2.FileRead(path="test.txt"))
+    res_f = await svc.file_read(cloud_gateway_pb2.FileRead(path="test.txt"))
     assert not mock_serial.send.called
     assert res_f.content == b""
 
     svc.serial = mock_serial
-    res_unsafe = await svc.file_read(mcu_wire_pb2.FileRead(path="../../../etc/shadow"))
+    res_unsafe = await svc.file_read(cloud_gateway_pb2.FileRead(path="../../../etc/shadow"))
     assert not mock_serial.send.called
     assert res_unsafe.content == b""
 
@@ -1400,7 +1400,7 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
     assert res_unreg is None
 
     # 3. File read with unsafe path
-    res_file_unsafe = await svc.file_read(mcu_wire_pb2.FileRead(path="../../../etc/passwd"))
+    res_file_unsafe = await svc.file_read(cloud_gateway_pb2.FileRead(path="../../../etc/passwd"))
     assert res_file_unsafe.content == b""
 
     # 4. Process run with empty command

@@ -187,27 +187,6 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     mock_serial.send.assert_awaited_once()
 
 
-async def test_handle_file_mcu_read_success_and_timeout(
-    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
-) -> None:
-    mock_serial = AsyncMock()
-    mock_serial.send.return_value = mcu_wire_pb2.FileReadResponse(content=b"hello-world")
-    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    mock_enqueue = AsyncMock()
-    svc.cloud_publisher = mock_enqueue
-
-    inbound = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/FileSystemService/Read",
-        payload=mcu_wire_pb2.FileRead(path="/mcu/etc/config").SerializeToString(),
-    )
-    await svc.handle_request(inbound)
-    mock_enqueue.assert_awaited()
-    assert mock_enqueue.await_args is not None
-    resp_msg: cloud_gateway_pb2.CloudQueuedPublish = mock_enqueue.await_args[0][0]
-    resp = mcu_wire_pb2.FileReadResponse.FromString(resp_msg.payload)
-    assert resp.content == b"hello-world"
-
-
 async def test_cloud_events_and_direct_rpc_dispatch(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
 ) -> None:

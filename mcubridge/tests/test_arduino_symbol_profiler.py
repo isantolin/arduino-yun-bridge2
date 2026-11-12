@@ -14,6 +14,7 @@ from tools.profiling.arduino_symbol_profiler import (
     detect_board_label,
     extract_elf_memory_table,
     extract_symbols,
+    extract_stack_usage_report,
     find_matching_baseline_elf,
     format_delta,
     profile_elf,
@@ -198,3 +199,21 @@ def test_run_pw_bloat_handling(tmp_path: Path) -> None:
     # Should execute gracefully and return string or None without crashing
     out = run_pw_bloat(elf_path)
     assert out is None or isinstance(out, str)
+
+
+def test_extract_stack_usage_report(tmp_path: Path) -> None:
+    build_dir = tmp_path / "arduino-avr-mega"
+    build_dir.mkdir()
+    (build_dir / "BridgeControl.ino.su").write_text(
+        "Bridge.cpp:42:3:BridgeClass::process()\t96\tstatic\n"
+        "Bridge.cpp:88:3:BridgeClass::_serialTask()\t144\tdynamic,bounded\n"
+        "Bridge.cpp:99:3:BridgeClass::_watchdogTask()\t24\tstatic\n",
+        encoding="utf-8",
+    )
+
+    report = extract_stack_usage_report(build_dir)
+    assert report is not None
+    assert "Compiler Stack-Frame Estimates" in report
+    assert "144 B" in report
+    assert "dynamic,bounded" in report
+    assert "not a whole-program worst-case" in report

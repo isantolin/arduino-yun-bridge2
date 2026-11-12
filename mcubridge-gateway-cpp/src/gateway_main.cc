@@ -322,11 +322,14 @@ TlsContext CreateTlsContext(const std::string& certificate, const std::string& p
       SSL_CTX_use_certificate_chain_file(context.get(), certificate.c_str()) != 1 ||
       SSL_CTX_use_PrivateKey_file(context.get(), private_key.c_str(), SSL_FILETYPE_PEM) != 1 ||
       SSL_CTX_check_private_key(context.get()) != 1 ||
-      SSL_CTX_load_verify_locations(context.get(), client_ca.c_str(), nullptr) != 1) {
+      SSL_CTX_load_verify_locations(context.get(), client_ca.c_str(), nullptr) != 1 ||
+      SSL_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_CLIENT) != 1) {
     throw std::runtime_error("TLS certificate configuration failed");
   }
+  SSL_CTX_set_verify_depth(context.get(), 4);
+  SSL_CTX_set_session_cache_mode(context.get(), SSL_SESS_CACHE_OFF);
+  SSL_CTX_set_options(context.get(), SSL_OP_NO_RENEGOTIATION | SSL_OP_NO_TICKET);
   SSL_CTX_set_verify(context.get(), SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
-  SSL_CTX_set_options(context.get(), SSL_OP_NO_RENEGOTIATION);
   return context;
 }
 int CreateListener(const std::string& bind_address, const std::string& port) {

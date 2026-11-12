@@ -52,7 +52,7 @@ Notas:
 - Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
 - Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc.pb.LocalBridge/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
-- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`). La transferencia de archivos del MCU se realiza mediante upstream `pw_transfer`; el antiguo `FileSystemService/Read` Nanopb fue eliminado.
+- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`). El antiguo `FileSystemService/Read` Nanopb fue eliminado. La integración base de upstream `pw_transfer` existe, pero las transferencias de archivos no están operativas hasta implementar los handlers de almacenamiento MPU/MCU y migrar las APIs locales heredadas.
 - gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
 ```
 
@@ -746,9 +746,9 @@ Notas operativas:
 
 ### 5.6 Sistema de archivos (`rpc.pb.FileSystemService`)
 
-- **`rpc.pb.FileSystemService/Write` (Linux ↔ MCU, bidireccional)**: Payload `FileWrite { path, data }`. Retorna `AckPacket`.
-- **Lectura de archivos del MCU**: upstream `pw_transfer` (`pw.transfer.Transfer.Read`); no forma parte de `FileSystemService`.
-- **`rpc.pb.FileSystemService/Remove` (Linux ↔ MCU)**: Payload `FileRemove { path }`. Retorna `AckPacket`.
+- **Transferencia de contenido**: el objetivo es usar exclusivamente upstream `pw_transfer` (`pw.transfer.Transfer.Read/Write`) para archivos del MPU y MCU. La integración del servicio está presente en el firmware ATmega2560, pero los handlers de almacenamiento y el endpoint Linux todavía no están implementados; por tanto, no debe anunciarse como funcional de extremo a extremo.
+- **APIs locales MPU heredadas**: `LocalBridge.FileRead` y `LocalBridge.FileWrite` siguen temporalmente expuestas sobre gRPC mientras se implementa y valida el endpoint Linux `pw_transfer`. No son el diseño final.
+- **Administración MCU**: `rpc.pb.FileSystemService/Remove` sigue siendo una operación independiente de administración; no transfiere contenido. `FileSystemService.Write` también permanece temporalmente y debe retirarse al completar la migración a `pw_transfer`.
 
 ### 5.7 Gestión de procesos (`rpc.pb.ProcessService`)
 

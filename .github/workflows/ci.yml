@@ -540,6 +540,8 @@ jobs:
         run: |
           . .venv-gateway/bin/activate
           cmake --build build/mcubridge-gateway --parallel 2
+      - name: Test Gateway TLS identity and session isolation
+        run: python3 -m unittest discover -s mcubridge-gateway-cpp/tests -v
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min

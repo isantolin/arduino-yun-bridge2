@@ -281,6 +281,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.gateway.wait_for("device=device-01 event=session_rejected reason=duplicate_session")
         first.close()
         self.gateway.wait_for("device=device-01 event=session_closed")
+        self.gateway.wait_for("device=device-01 event=session_unregistered")
         third = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
         self.gateway.wait_for("device=device-01 event=session_open", count=2)
         third.close()

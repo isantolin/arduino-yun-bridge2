@@ -267,7 +267,10 @@ class GatewaySession {
       SessionRegistry& registry;
       const std::string& device_id;
       const void* session;
-      ~RegistrationGuard() { registry.Unregister(device_id, session); }
+      ~RegistrationGuard() {
+        registry.Unregister(device_id, session);
+        std::cerr << "device=" << device_id << " event=session_unregistered\\n";
+      }
     } registration{registry_, device_id_, this};
     rpc_client_server_.server().RegisterService(transfer_service_);
     pw::thread::stl::Options transfer_options;

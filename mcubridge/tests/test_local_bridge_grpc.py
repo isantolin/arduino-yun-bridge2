@@ -230,24 +230,24 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     sent = stream.sent_message
     assert sent.status == "ok"
 
-    # 4. MCU File Operations
-    stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="mcu/eeprom.bin", data=b"data"))
+    # 4. MCU EEPROM operations use upstream pw_transfer, not unary file RPCs.
+    stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="mcu/eeprom", data=b"data"))
     await local_svc.FileWrite(stream)
+    mock_serial.transfer_write.assert_awaited_once_with(0x4D454741, b"data")
+    mock_serial.send.assert_not_called()
+
+    stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/eeprom"))
+    await local_svc.FileRemove(stream)
     mock_serial.send.assert_called_with(
-        "rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path="eeprom.bin", data=b"data")
+        "rpc.pb.FileSystemService/Remove",
+        mcu_wire_pb2.FileRemove(path="eeprom"),
     )
 
-    stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/eeprom.bin"))
-    await local_svc.FileRemove(stream)
-    mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path="eeprom.bin"))
-
-    # MCU reads must not masquerade as successful empty local-file reads.
-    mock_serial.send.reset_mock()
-    stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="mcu/eeprom.bin"))
-    with pytest.raises(GRPCError) as exc_info:
-        await local_svc.FileRead(stream)
-    assert exc_info.value.status == GrpcStatus.UNIMPLEMENTED
-    mock_serial.send.assert_not_called()
+    mock_serial.transfer_read = AsyncMock(return_value=b"eeprom-data")
+    stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="mcu/eeprom"))
+    await local_svc.FileRead(stream)
+    assert stream.sent_message.content == b"eeprom-data"
+    mock_serial.transfer_read.assert_awaited_once_with(0x4D454741)
 
 
 async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:

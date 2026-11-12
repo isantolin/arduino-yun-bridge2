@@ -389,12 +389,20 @@ void test_observer_and_task_runtime_edges() {
   flow.avail = bridge::config::FLOW_CONTROL_XOFF_THRESHOLD + 1;
   ba_flow.invokeSerialTask();
   TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
+
+  // Keep XOFF latched while the receive queue remains above the XON threshold.
+  // This exercises the short-circuit false branch of the XON recovery check.
+  ba_flow.invokeSerialTask();
+  TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
+
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
   TEST_ASSERT_FALSE(ba_flow.isSerialXoffSent());
   ba_flow.setSynchronized();
   ba_flow.invokeSendFlowControl(true);
   ba_flow.invokeSendFlowControl(false);
+  ba_flow.setTxEnabled(false);
+  ba_flow.invokeSendFlowControl(true);
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
@@ -733,6 +741,16 @@ void test_architectural_extensions_edge_paths() {
   sub_req.enabled = false;
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
                        rpc_pb_PinSubscribeRequest_fields, sub_req);
+
+  // A live synchronized link without an active server-stream writer must
+  // reject unsolicited pin events.
+  reset_bridge_core(Bridge, stream);
+  auto& ba_no_writer = TestAccessor::create(Bridge);
+  ba_no_writer.setSynchronized();
+  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+
+  // Exercise begin() with baudrate zero: initialization must not restart UART.
+  Bridge.begin(0, nullptr);
 
   // Pin read out of bounds
   rpc_pb_PinRead bad_read = rpc_pb_PinRead_init_default;

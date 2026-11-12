@@ -124,6 +124,19 @@ void test_filesystem_on_remove() {
   TEST_ASSERT_FALSE(bridge::hal::removeFile("on_rem.bin").ok());
 }
 
+void test_filesystem_api_rejects_when_rpc_tx_is_unavailable() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setTxEnabled(false);
+  TEST_ASSERT_FALSE(Bridge.isRpcTxReady());
+
+  const uint8_t payload[] = {0x11U, 0x22U};
+  FileSystem.write("offline.bin", pw::span<const uint8_t>(payload));
+  FileSystem.remove("offline.bin");
+  TEST_ASSERT_FALSE(Bridge.isRpcTxReady());
+}
+
 void test_filesystem_api_empty_and_error_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -148,6 +161,7 @@ int main() {
   RUN_TEST(test_filesystem_api_remove);
   RUN_TEST(test_filesystem_on_write);
   RUN_TEST(test_filesystem_on_remove);
+  RUN_TEST(test_filesystem_api_rejects_when_rpc_tx_is_unavailable);
   RUN_TEST(test_filesystem_api_empty_and_error_paths);
   return UNITY_END();
 }

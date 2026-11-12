@@ -54,9 +54,11 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
                         pw::span<uint8_t> output) {
   constexpr size_t kMaxHkdfOutput = 255U * RPC_SHA256_DIGEST_SIZE;
   constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  if (secret.empty() || output.empty() || output.size() > kMaxHkdfOutput ||
-      secret.size() > kMaxWord32 || salt.size() > kMaxWord32 ||
-      info.size() > kMaxWord32 || output.size() > kMaxWord32) {
+  const bool invalid_dimensions =
+      secret.empty() | output.empty() | (output.size() > kMaxHkdfOutput) |
+      (secret.size() > kMaxWord32) | (salt.size() > kMaxWord32) |
+      (info.size() > kMaxWord32) | (output.size() > kMaxWord32);
+  if (invalid_dimensions) {
     secure_zero(output);
     return false;
   }
@@ -79,8 +81,10 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
                          pw::span<const uint8_t> input,
                          pw::span<uint8_t> digest_scratch) {
   constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  if (key.empty() || digest_scratch.size() != RPC_SHA256_DIGEST_SIZE ||
-      key.size() > kMaxWord32 || input.size() > kMaxWord32) {
+  const bool invalid_dimensions =
+      key.empty() | (digest_scratch.size() != RPC_SHA256_DIGEST_SIZE) |
+      (key.size() > kMaxWord32) | (input.size() > kMaxWord32);
+  if (invalid_dimensions) {
     secure_zero(digest_scratch);
     return false;
   }
@@ -124,8 +128,10 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
 bool verify_hmac_sha256(pw::span<uint8_t> key_and_digest,
                         pw::span<const uint8_t> input,
                         pw::span<const uint8_t> expected_mac) {
-  if (key_and_digest.size() != RPC_SHA256_DIGEST_SIZE ||
-      expected_mac.size() != RPC_HANDSHAKE_TAG_LENGTH) {
+  const bool invalid_dimensions =
+      (key_and_digest.size() != RPC_SHA256_DIGEST_SIZE) |
+      (expected_mac.size() != RPC_HANDSHAKE_TAG_LENGTH);
+  if (invalid_dimensions) {
     secure_zero(key_and_digest);
     return false;
   }
@@ -134,14 +140,10 @@ bool verify_hmac_sha256(pw::span<uint8_t> key_and_digest,
   // overwrites this caller-owned buffer with the digest.
   const bool computed = compute_hmac_sha256(
       pw::span<const uint8_t>(key_and_digest), input, key_and_digest);
-  if (!computed) {
-    secure_zero(key_and_digest);
-    return false;
-  }
-
-  const bool ok =
+  const bool matches =
       ConstantCompare(key_and_digest.data(), expected_mac.data(),
                       static_cast<int>(expected_mac.size())) == 0;
+  const bool ok = computed & matches;
   secure_zero(key_and_digest);
   return ok;
 }
@@ -157,20 +159,21 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
                           pw::span<const uint8_t> nonce,
                           pw::span<const uint8_t> info,
                           pw::span<uint8_t> out_tag) {
-  if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
-      out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH) {
+  const bool invalid_dimensions =
+      secret.empty() | (nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) |
+      (out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH);
+  if (invalid_dimensions) {
     secure_zero(out_tag);
     return false;
   }
 
   secure_zero(out_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
-  bool tag_ok = derive_handshake_auth_key(secret, info, auth_key);
-  if (tag_ok) {
-    // Reuse the HKDF output buffer for the full HMAC digest, then emit the
-    // protocol's existing 16-byte truncation without another 32-byte local.
-    tag_ok = compute_hmac_sha256(auth_key, nonce, auth_key);
-  }
+  const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
+  // Always execute the HMAC path. A failed HKDF clears auth_key, and the
+  // combined result remains false; this avoids a data-dependent early exit.
+  const bool hmac_ok = compute_hmac_sha256(auth_key, nonce, auth_key);
+  const bool tag_ok = key_ok & hmac_ok;
   if (tag_ok) {
     etl::copy_n(auth_key.begin(), RPC_HANDSHAKE_TAG_LENGTH, out_tag.begin());
   } else {
@@ -214,8 +217,12 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> plaintext,
                   pw::span<uint8_t> ciphertext, pw::span<uint8_t> tag) {
-  if (key.size() != RPC_AEAD_KEY_SIZE || nonce.size() != RPC_AEAD_NONCE_SIZE ||
-      ciphertext.size() < plaintext.size() || tag.size() != RPC_AEAD_TAG_SIZE) {
+  const bool invalid_dimensions =
+      (key.size() != RPC_AEAD_KEY_SIZE) |
+      (nonce.size() != RPC_AEAD_NONCE_SIZE) |
+      (ciphertext.size() < plaintext.size()) |
+      (tag.size() != RPC_AEAD_TAG_SIZE);
+  if (invalid_dimensions) {
     secure_zero(ciphertext);
     secure_zero(tag);
     return false;
@@ -248,8 +255,12 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> ciphertext,
                   pw::span<const uint8_t> tag, pw::span<uint8_t> plaintext) {
-  if (key.size() != RPC_AEAD_KEY_SIZE || nonce.size() != RPC_AEAD_NONCE_SIZE ||
-      ciphertext.size() > plaintext.size() || tag.size() != RPC_AEAD_TAG_SIZE) {
+  const bool invalid_dimensions =
+      (key.size() != RPC_AEAD_KEY_SIZE) |
+      (nonce.size() != RPC_AEAD_NONCE_SIZE) |
+      (ciphertext.size() > plaintext.size()) |
+      (tag.size() != RPC_AEAD_TAG_SIZE);
+  if (invalid_dimensions) {
     secure_zero(plaintext);
     return false;
   }
@@ -292,16 +303,17 @@ bool handshake_generate_response_tag(pw::span<const uint8_t> secret,
 bool handshake_verify_tag(pw::span<const uint8_t> secret,
                           pw::span<const uint8_t> nonce,
                           pw::span<const uint8_t> received_tag) {
-  if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
-      received_tag.size() != RPC_HANDSHAKE_TAG_LENGTH) {
-    return false;
-  }
+  const bool invalid_dimensions =
+      secret.empty() | (nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) |
+      (received_tag.size() != RPC_HANDSHAKE_TAG_LENGTH);
+  if (invalid_dimensions) return false;
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_AUTH);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
-  const bool ok =
-      key_ok && verify_hmac_sha256(pw::span<uint8_t>(auth_key), nonce, received_tag);
+  const bool hmac_ok =
+      verify_hmac_sha256(pw::span<uint8_t>(auth_key), nonce, received_tag);
+  const bool ok = key_ok & hmac_ok;
   secure_zero(pw::span<uint8_t>(auth_key));
   return ok;
 }

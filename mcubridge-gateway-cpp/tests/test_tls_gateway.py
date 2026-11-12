@@ -212,7 +212,11 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.gateway.wait_for("device=device-01 event=session_closed")
 
     def assert_client_rejected(self, cert: Path | None, key: Path | None) -> None:
-        client = self.gateway.connect(cert, key)
+        try:
+            client = self.gateway.connect(cert, key)
+        except (ssl.SSLError, OSError):
+            self.assertNotIn("event=session_open", self.gateway.logs())
+            return
         try:
             client.recv(1)
         except (ssl.SSLError, OSError):

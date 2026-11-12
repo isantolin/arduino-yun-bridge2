@@ -244,11 +244,16 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
 
 
 def test_pw_services_integrity() -> None:
-    """Verify that all canonical Pigweed services are registered and valid."""
+    """Verify application and upstream Pigweed transfer descriptors are registered."""
     assert len(protocol.PW_SERVICES) >= 6
     for service in protocol.PW_SERVICES:
-        assert service.full_name.startswith("rpc.pb.")
         assert len(service.methods) > 0
+
+    transfer = protocol.PW_SERVICES["pw.transfer.Transfer"]
+    assert set(transfer.methods) == {"Read", "Write", "GetResourceStatus"}
+    assert transfer.methods["Read"].type.name == "BIDIRECTIONAL_STREAMING"
+    assert transfer.methods["Write"].type.name == "BIDIRECTIONAL_STREAMING"
+    assert transfer.methods["GetResourceStatus"].type.name == "UNARY"
 
 
 def test_operation_specs_multidimensional_integrity() -> None:

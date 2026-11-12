@@ -56,7 +56,7 @@ Reglas obligatorias:
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
 | 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |
-| 11 | Unificación Canónica de Tópicos y Manejadores | Erradicación total de `Topic.*` legacy (`"a"`, `"d"`, `"sh"`), unificación de `cloud_topic` y `mcu_handler` bajo descriptores Pigweed `{direction}/{Service}/{Method|Message}`, eliminación de `CommonAction`/`rpc.pb.actions`, y despacho gRPC canónico `rpc.pb.<Service>/<Method>` desde Gateway | **Completada** |
+| 11 | Unificación Canónica de Tópicos y Manejadores | Erradicación total de `Topic.*` legacy (`"a"`, `"d"`, `"sh"`), unificación de `cloud_topic` y `mcu_handler` bajo descriptores Pigweed `{direction}/{Service}/{Method|Message}`, eliminación de `CommonAction`/`rpc.pb.actions`, y despacho Pigweed canónico mediante `pw_rpc::Server` en el Gateway C++ nuevo (sin gRPC ni `grpclib`) | **Completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
 

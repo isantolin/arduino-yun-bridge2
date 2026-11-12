@@ -309,9 +309,9 @@ class GatewaySession final : public SessionControl {
  public:
   GatewaySession(SSL* ssl, int fd, std::string device_id, SessionRegistry& registry)
       : socket_(ssl, fd), registry_(registry), channel_output_(tx_writer_, kRpcHdlcAddress),
-        channels_{pw::rpc::Channel::Create<1>(&channel_output_)}, rpc_server_(channels_),
+        channels_{pw::rpc::Channel::Create<1>(&channel_output_)}, rpc_client_(channels_),
         transfer_thread_(pw::ByteSpan(transfer_chunk_), pw::ByteSpan(transfer_encode_)),
-        transfer_service_(transfer_thread_, kTransferWindowBytes),
+        transfer_client_(rpc_client_, 1, transfer_thread_, kTransferWindowBytes),
         decoder_(pw::ByteSpan(decoder_storage_)), device_id_(std::move(device_id)) {}
   GatewaySession(const GatewaySession&) = delete;
   GatewaySession& operator=(const GatewaySession&) = delete;
@@ -330,7 +330,8 @@ class GatewaySession final : public SessionControl {
         std::cerr << "device=" << device_id << " event=session_unregistered\n";
       }
     } registration{registry_, device_id_, this};
-    rpc_server_.RegisterService(transfer_service_);
+    // The edge MPU is the pw_transfer server. The central Gateway owns only
+    // the upstream client endpoint and never registers a duplicate server.
     pw::thread::stl::Options transfer_options;
     transfer_worker_ = std::make_unique<pw::thread::Thread>(
         transfer_options, transfer_thread_.AsFunction());
@@ -371,7 +372,7 @@ class GatewaySession final : public SessionControl {
         auto frame = decoder_.Process(input[i]);
         if (frame.status() == pw::Status::Unavailable()) continue;
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        const pw::Status status = rpc_server_.ProcessPacket(frame->data());
+        const pw::Status status = rpc_client_.ProcessPacket(frame->data());
         if (!status.ok() && status != pw::Status::Unavailable()) {
           std::cerr << "device=" << device_id_ << " event=rpc_packet_rejected\n";
         }
@@ -383,11 +384,11 @@ class GatewaySession final : public SessionControl {
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> channels_;
-  pw::rpc::Server rpc_server_;
+  pw::rpc::Client rpc_client_;
   std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
   std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
-  pw::transfer::Thread<0, 4> transfer_thread_;
-  pw::transfer::TransferService transfer_service_;
+  pw::transfer::Thread<1, 1> transfer_thread_;
+  pw::transfer::Client transfer_client_;
   std::unique_ptr<pw::thread::Thread> transfer_worker_;
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
   pw::hdlc::Decoder decoder_;

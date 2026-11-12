@@ -285,6 +285,14 @@ class GatewayControlService final
     return pw::OkStatus();
   }
 
+  pw::Status Dispatch(const mcubridge::gateway::DispatchRequest::Message&,
+                      mcubridge::gateway::DispatchResponse::Message&) {
+    // Fail closed until device routing and client-to-device authorization are
+    // implemented. A client certificate authenticates the caller, not access
+    // to every device in the fleet.
+    return pw::Status::Unimplemented();
+  }
+
  private:
   SessionRegistry& devices_;
   SessionRegistry& clients_;

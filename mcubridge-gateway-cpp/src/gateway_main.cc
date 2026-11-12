@@ -508,7 +508,7 @@ int main(int argc, char** argv) {
         std::cerr << "event=client_rejected reason=missing_or_invalid_uri_san\n";
         SSL_shutdown(ssl);
         SSL_free(ssl);
-        close(task_ptr->fd);
+        close_task_fd();
         task_ptr->done.store(true);
         return;
       }

@@ -14,6 +14,10 @@ if(NOT EXISTS "${PIGWEED_ROOT}/pw_rpc/CMakeLists.txt")
 endif()
 set(ENV{PW_ROOT} "${PIGWEED_ROOT}")
 set(pw_unit_test_ENABLE_PW_ADD_TEST OFF CACHE BOOL "" FORCE)
+# Preserve the upstream header-only unit-test support target for test-only library declarations.
+# Test executables remain disabled.
+add_library(pw_unit_test INTERFACE)
+target_include_directories(pw_unit_test INTERFACE "${PIGWEED_ROOT}/pw_unit_test/public")
 set(pw_assert.assert_BACKEND pw_assert.print_and_abort_assert_backend CACHE STRING "" FORCE)
 set(pw_assert.check_BACKEND pw_assert.print_and_abort_check_backend CACHE STRING "" FORCE)
 set(pw_log_BACKEND pw_log_null CACHE STRING "" FORCE)

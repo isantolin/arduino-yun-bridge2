@@ -217,7 +217,7 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     assert sent.status == "ok"
 
     # 2. Local File Read
-    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="test.txt"))
+    stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="test.txt"))
     await local_svc.FileRead(stream)
     sent = stream.sent_message
     assert sent.content == b"hello"

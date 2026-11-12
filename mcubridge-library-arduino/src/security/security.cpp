@@ -77,23 +77,24 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
 
 bool compute_hmac_sha256(pw::span<const uint8_t> key,
                          pw::span<const uint8_t> input,
-                         pw::span<uint8_t> output) {
+                         pw::span<uint8_t> digest_scratch) {
   constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  if (key.empty() || output.empty() ||
-      output.size() > RPC_SHA256_DIGEST_SIZE || key.size() > kMaxWord32 ||
-      input.size() > kMaxWord32) {
-    secure_zero(output);
+  if (key.empty() || digest_scratch.size() != RPC_SHA256_DIGEST_SIZE ||
+      key.size() > kMaxWord32 || input.size() > kMaxWord32) {
+    secure_zero(digest_scratch);
     return false;
   }
 
   const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
   Hmac hmac{};
   if (wc_HmacInit(&hmac, nullptr, 0) != 0) {
-    secure_zero(output);
+    secure_zero(digest_scratch);
     return false;
   }
 
-  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> full_digest = {};
+  // wc_HmacSetKey copies the key into the HMAC context's ipad/opad. The
+  // caller can therefore reuse the same 32-byte buffer for the final digest.
+  // This avoids a second SHA-256-sized stack buffer on AVR.
   bool ok = wc_HmacSetKey(&hmac, WC_SHA256, key.data(),
                           static_cast<word32>(key.size())) == 0;
   if (ok) {
@@ -101,16 +102,11 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
                        static_cast<word32>(input.size())) == 0;
   }
   if (ok) {
-    ok = wc_HmacFinal(&hmac, full_digest.data()) == 0;
+    ok = wc_HmacFinal(&hmac, digest_scratch.data()) == 0;
   }
   wc_HmacFree(&hmac);
 
-  if (ok) {
-    etl::copy_n(full_digest.begin(), output.size(), output.begin());
-  } else {
-    secure_zero(output);
-  }
-  secure_zero(pw::span<uint8_t>(full_digest));
+  if (!ok) secure_zero(digest_scratch);
   return ok;
 }
 
@@ -122,17 +118,20 @@ bool verify_hmac_sha256(pw::span<const uint8_t> key,
     return false;
   }
 
-  etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> computed_mac = {};
-  const bool computed =
-      compute_hmac_sha256(key, input, pw::span<uint8_t>(computed_mac));
+  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> digest_scratch = {};
+  etl::copy(key.begin(), key.end(), digest_scratch.begin());
+  const bool computed = compute_hmac_sha256(
+      pw::span<const uint8_t>(digest_scratch), input,
+      pw::span<uint8_t>(digest_scratch));
   if (!computed) {
-    secure_zero(pw::span<uint8_t>(computed_mac));
+    secure_zero(pw::span<uint8_t>(digest_scratch));
     return false;
   }
 
-  const bool ok = (ConstantCompare(computed_mac.data(), expected_mac.data(),
-                                   static_cast<int>(computed_mac.size())) == 0);
-  secure_zero(pw::span<uint8_t>(computed_mac));
+  const bool ok =
+      ConstantCompare(digest_scratch.data(), expected_mac.data(),
+                      static_cast<int>(expected_mac.size())) == 0;
+  secure_zero(pw::span<uint8_t>(digest_scratch));
   return ok;
 }
 
@@ -155,14 +154,18 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
 
   secure_zero(out_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
-  const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
-  const bool tag_ok =
-      key_ok && compute_hmac_sha256(
-                    auth_key, nonce,
-                    pw::span<uint8_t>(out_tag.data(),
-                                      RPC_HANDSHAKE_TAG_LENGTH));
+  bool tag_ok = derive_handshake_auth_key(secret, info, auth_key);
+  if (tag_ok) {
+    // Reuse the HKDF output buffer for the full HMAC digest, then emit the
+    // protocol's existing 16-byte truncation without another 32-byte local.
+    tag_ok = compute_hmac_sha256(auth_key, nonce, auth_key);
+  }
+  if (tag_ok) {
+    etl::copy_n(auth_key.begin(), RPC_HANDSHAKE_TAG_LENGTH, out_tag.begin());
+  } else {
+    secure_zero(out_tag);
+  }
   secure_zero(pw::span<uint8_t>(auth_key));
-  if (!tag_ok) secure_zero(out_tag);
   return tag_ok;
 }
 

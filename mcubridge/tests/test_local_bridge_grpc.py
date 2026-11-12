@@ -13,6 +13,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
+from grpclib.const import Status as GrpcStatus
+from grpclib.exceptions import GRPCError
 from grpclib.server import Stream
 
 from mcubridge.config.settings import RuntimeConfig
@@ -240,9 +242,6 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path="eeprom.bin"))
 
     # MCU reads must not masquerade as successful empty local-file reads.
-    from grpclib.const import Status as GrpcStatus
-    from grpclib.exceptions import GRPCError
-
     mock_serial.send.reset_mock()
     stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="mcu/eeprom.bin"))
     with pytest.raises(GRPCError) as exc_info:

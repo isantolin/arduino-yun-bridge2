@@ -700,7 +700,7 @@ class SerialTransport:
             # could overlap the first on the AVR's single-role transfer thread.
             try:
                 await asyncio.shield(worker)
-            except (PwTransferError, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+            except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
                 logger.debug("pw_transfer worker ended after caller cancellation", error=str(exc))
             raise
 

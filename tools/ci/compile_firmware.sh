@@ -61,10 +61,13 @@ if [[ "$FQBN" == "arduino:avr:mega" ]]; then
         -DAVR_F_CPU=16000000UL \
         -DAVR_CRC32_IMPL=PW_CHECKSUM_CRC32_4BITS
     cmake --build "$TRANSFER_BUILD_DIR" --target pw_transfer_upstream_probe.elf
-    test -s "$TRANSFER_BUILD_DIR/pw_transfer" || {
-        echo "ERROR: pw_transfer CMake code generation did not produce its build tree." >&2
+    PWPB_HEADER="$(find "$TRANSFER_BUILD_DIR" -path '*/pwpb/pw_transfer/transfer.pwpb.h' -print -quit)"
+    RAW_RPC_HEADER="$(find "$TRANSFER_BUILD_DIR" -path '*/raw_rpc/pw_transfer/transfer.raw_rpc.pb.h' -print -quit)"
+    if [[ -z "$PWPB_HEADER" || -z "$RAW_RPC_HEADER" ]]; then
+        echo "ERROR: upstream pw_transfer PWPB/raw-RPC headers were not generated." >&2
+        find "$TRANSFER_BUILD_DIR" -name 'transfer*.h' -print >&2
         exit 1
-    }
+    fi
 fi
 
 echo "[compile_firmware] Generating protocol bindings..."

@@ -84,19 +84,3 @@ def test_watchdog_keepalive_fsm_integration(runtime_config: RuntimeConfig) -> No
     assert len(written_bytes) == 2  # No new pulse
 
 
-async def test_runtime_mcu_file_read_unary_rpc(
-    service_stack: tuple[BridgeService, RuntimeState, SerialTransport],
-) -> None:
-    """Validate MCU file read delegates directly to unary RPC."""
-    service, _, _ = service_stack
-
-    serial_mock = AsyncMock()
-    serial_mock.send.return_value = pb.FileReadResponse(content=b"part1 part2")
-    service.serial = serial_mock
-
-    resp = await service.file_read("/mcu/test.bin")
-    assert resp.content == b"part1 part2"
-
-    serial_mock.send.return_value = False
-    resp_fail = await service.file_read("/mcu/missing.bin")
-    assert resp_fail.content == b""

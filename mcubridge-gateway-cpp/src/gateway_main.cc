@@ -40,7 +40,7 @@
 #include "pw_thread_stl/options.h"
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"
-#include "mcubridge/gateway/gateway_control.rpc.pwpb.h"
+#include "gateway_control.rpc.pwpb.h"
 #include "mcu_wire.raw_rpc.pb.h"
 
 namespace {

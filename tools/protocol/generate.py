@@ -786,7 +786,7 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
         outputs.append(repo_root / "mcubridge-library-arduino/src/protocol/mcu_wire.rpc.pb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
-        for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
+        for stem in ("config_schema", "mcu_wire", "cloud_gateway", "gateway_control"):
             outputs.extend((output_dir / f"{stem}_pb2.py", output_dir / f"{stem}_pb2.pyi"))
         outputs.append(output_dir / "mcubridge_grpc.py")
 
@@ -919,13 +919,13 @@ def main(
 
     def _sanitize_pb2(text: str) -> str:
         text = re.sub(
-            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b",
+            r"^import (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|gateway_control_pb2)\b",
             r"from . import \1",
             text,
             flags=re.MULTILINE,
         )
         return re.sub(
-            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2)\b", r"from .\1", text, flags=re.MULTILINE
+            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|gateway_control_pb2)\b", r"from .\1", text, flags=re.MULTILINE
         )
 
     for stem in ("config_schema", "mcu_wire"):
@@ -936,7 +936,7 @@ def main(
         )
         _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
 
-    for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
+    for stem in ("config_schema", "mcu_wire", "cloud_gateway", "gateway_control"):
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.py", py_targets, _sanitize_pb2)
         _dispatch_generated_file(proto_path.parent / f"{stem}_pb2.pyi", py_targets, _sanitize_pb2)
 

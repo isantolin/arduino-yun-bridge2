@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import lmdb
 import pytest
+from grpclib.const import Status as GrpcStatus
+from grpclib.exceptions import GRPCError
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig

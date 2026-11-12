@@ -508,7 +508,7 @@ def st_file_write(draw: DrawFn) -> mcu_wire_pb2.FileWrite:
 
 
 @st.composite
-def st_file_read(draw: DrawFn) -> mcu_wire_pb2.FileRead:
+def st_file_read(draw: DrawFn) -> cloud_gateway_pb2.FileRead:
     """Canonical Hypothesis strategy for generating FileRead messages."""
     name = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,16}$", fullmatch=True))
     return mcu_wire_pb2.FileRead(path=f"/tmp/{name}")

@@ -25,6 +25,7 @@ from google.protobuf.message import (
     Message as ProtobufMessage,
 )
 from grpclib.client import Channel
+from grpclib.const import Status as GrpcStatus
 from grpclib.exceptions import GRPCError, ProtocolError, StreamTerminatedError
 from grpclib.server import Stream
 
@@ -700,8 +701,14 @@ class BridgeService:
         path = path_or_req.path if isinstance(path_or_req, cloud_gateway_pb2.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
-            logger.warning("MCU file reads require pw_transfer; legacy FileSystemService.Read is unavailable", path=path)
-            return cloud_gateway_pb2.FileReadResponse()
+            logger.warning(
+                "MCU file reads require pw_transfer; no MCU transfer client is configured",
+                path=path,
+            )
+            raise GRPCError(
+                GrpcStatus.UNIMPLEMENTED,
+                "MCU file reads require the pw_transfer client; legacy FileSystemService.Read was removed",
+            )
         safe_data = await self._safe_file_read(path)
         return cloud_gateway_pb2.FileReadResponse(content=safe_data or b"")
 

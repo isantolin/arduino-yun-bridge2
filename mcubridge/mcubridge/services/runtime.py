@@ -692,7 +692,7 @@ class BridgeService:
                 try:
                     await serial.transfer_write(_MCU_EEPROM_RESOURCE_ID, payload_data)
                     ok = True
-                except (PwTransferError, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
                     logger.warning("MCU EEPROM pw_transfer write failed", error=str(exc))
                     ok = False
         else:
@@ -715,7 +715,7 @@ class BridgeService:
                 raise GRPCError(GrpcStatus.UNAVAILABLE, "MCU serial link is disconnected")
             try:
                 content = await serial.transfer_read(_MCU_EEPROM_RESOURCE_ID)
-            except (PwTransferError, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+            except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
                 logger.warning("MCU EEPROM pw_transfer read failed", error=str(exc))
                 raise GRPCError(GrpcStatus.INTERNAL, "MCU EEPROM transfer failed") from exc
             return cloud_gateway_pb2.FileReadResponse(content=content)

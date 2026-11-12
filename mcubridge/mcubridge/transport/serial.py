@@ -687,41 +687,30 @@ class SerialTransport:
         request: ProtobufMessage,
         method_name: str,
         timeout: float,
-        *,
-        is_finite_stream: bool = False,
     ) -> bool | ProtobufMessage:
         for attempt in range(1, self.max_attempts + 1):
             loop = asyncio.get_running_loop()
             completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
             callback_state: dict[str, ProtobufMessage | None] = {"response": None}
-            stream_chunks: list[bytes] = []
 
             def _on_next(
                 _call: Any,
                 message: ProtobufMessage,
                 state: dict[str, ProtobufMessage | None] = callback_state,
-                chunks: list[bytes] = stream_chunks,
             ) -> None:
-                if is_finite_stream:
-                    chunks.append(bytes(getattr(message, "content", b"")))
-                else:
-                    state["response"] = message
+                state["response"] = message
 
             def _on_completed(
                 _call: Any,
                 status: Any,
                 future: asyncio.Future[bool | ProtobufMessage] = completion,
                 state: dict[str, ProtobufMessage | None] = callback_state,
-                chunks: list[bytes] = stream_chunks,
             ) -> None:
                 if future.done():
                     return
                 if status.ok():
-                    if is_finite_stream:
-                        future.set_result(pb.FileReadResponse(content=b"".join(chunks)))
-                    else:
-                        response_message = state["response"]
-                        future.set_result(response_message if response_message is not None else True)
+                    response_message = state["response"]
+                    future.set_result(response_message if response_message is not None else True)
                 else:
                     future.set_result(False)
 
@@ -843,14 +832,6 @@ class SerialTransport:
         pw_method = protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
         effective_timeout = timeout if timeout is not None else self._response_timeout
         if pw_method.type is PwRpcMethod.Type.SERVER_STREAMING:
-            if spec.response_type is pb.FileReadResponse:
-                return await self._invoke_rpc_with_retries(
-                    rpc_method,
-                    request,
-                    method_name,
-                    effective_timeout,
-                    is_finite_stream=True,
-                )
             return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 

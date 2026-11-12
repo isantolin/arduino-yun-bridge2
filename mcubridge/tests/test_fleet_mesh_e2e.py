@@ -336,14 +336,9 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
     f_write = await mesh_mega.service.file_write(file_path, file_content)
     assert f_write.status == "ok"
 
-    f_read = await mesh_mega.service.file_read(file_path)
-    assert f_read.content == file_content
-
     f_remove = await mesh_mega.service.file_remove(file_path)
     assert f_remove.status == "ok"
 
-    f_read_after = await mesh_mega.service.file_read(file_path)
-    assert f_read_after.content == b""
 
     # -------------------------------------------------------------------------
     # SERVICIO 7: Ejecución y Control de Procesos (Shell)

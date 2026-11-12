@@ -645,7 +645,7 @@ async def test_runtime_file_dispatch_local_methods_none_path(
     svc = mock_bridge_service
     req = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=f"{runtime_config.topic_prefix}/req/fs.read",
-        payload=mcu_wire_pb2.FileRead(path="../../secret").SerializeToString(),
+        payload=cloud_gateway_pb2.FileRead(path="../../secret").SerializeToString(),
     )
     await svc.handle_request(req)
     assert mock_serial.send.call_count == 0

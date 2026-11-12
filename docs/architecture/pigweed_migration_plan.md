@@ -18,9 +18,9 @@ Reglas obligatorias:
 2. **Usar Pigweed directamente:** preferir `pw_rpc.Client`, `pw_rpc.Server`, `pw_hdlc`, `pw_tokenizer`, Nanopb y los descriptores oficiales frente a codificadores, decodificadores, correladores o wrappers duplicados.
 3. **No añadir abstracciones sin necesidad:** un adaptador solo se justifica para integrar límites reales (asyncio, pyserial, AEAD, UBUS o HAL), no para volver a implementar una API Pigweed.
 4. **Compatibilidad de recursos:** AVR ATmega2560 con buffers y almacenamiento estáticos, Zero-STL y sin asignación dinámica. Medir Flash, SRAM y stack en vez de asumir que una abstracción es gratuita.
-5. **Preservar contratos externos:** mantener las firmas y respuestas de UBUS, LuCI, LocalBridge gRPC y CloudBridge mTLS.
+5. **Preservar comportamiento de borde, no APIs legacy:** mantener las firmas y respuestas UBUS/LuCI que sigan siendo necesarias en el MPU. `LocalBridge`/`CloudBridge` gRPC no son contratos a preservar: ADR-0003 ordena migrarlos a Pigweed y eliminarlos en el corte único del Gateway.
 6. **Preservar seguridad:** mantener AEAD, HKDF/HMAC, autenticación del handshake, anti-replay, límites de payload y errores explícitos.
-7. **Conservar el runtime actual:** asyncio permanece como runtime del daemon; no migrar a pw_async2 ni sustituir HAL/UBUS/procd.
+7. **Conservar el runtime del MPU:** asyncio permanece como runtime del daemon edge para HAL/UBUS/procd. El Gateway central es un servicio Linux C++ independiente; no se conserva el Gateway Python ni se introduce un sidecar.
 8. **Cambios de protocolo coordinados:** no reservar campos Protobuf eliminados; actualizar el contrato y todos sus consumidores conjuntamente. No prometer compatibilidad de firmware mixto si el wire format no la ofrece.
 9. **Validación por etapa:** pruebas unitarias, de contrato, emulación y CI antes de avanzar a la etapa siguiente. No fusionar una etapa con CI fallida.
 
@@ -34,7 +34,7 @@ Reglas obligatorias:
 | Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` desacoplado de IDs legacy; `BY_COMMAND_ID` eliminado | Ninguno |
 | Cliente RPC Python | `serial.py` invoca RPC unarios y streaming con `pw_rpc.Client`; correlation y call_id nativos de Pigweed | Ninguno |
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
-| API de aplicación | Servicios internos y UBUS invocan métodos RPC por nombre de servicio y método Protobuf; sin capas de compatibilidad legacy | Ninguno |
+| API de aplicación | Servicios internos y UBUS del MPU invocan métodos RPC por nombre de servicio y método Protobuf | Migrar clientes northbound desde `LocalBridge`/`CloudBridge` gRPC a Pigweed y retirar esos contratos en el corte definido por ADR-0003 |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
 | Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read` eliminado | reemplazo integral del Gateway Python/grpclib por un único Gateway Linux C++ con `pw_rpc::Server`, `pw_transfer::TransferService`, HDLC sobre TLS mutuo; migrar sesiones edge y clientes al protocolo Pigweed; backend remoto de archivos con chunks acotados; retirar `CloudBridge`, `LocalBridge`, `FileRead`/`FileWrite` y `FileSystemService.Write`; pruebas end-to-end y de aislamiento por identidad |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
@@ -96,7 +96,7 @@ Cambios en el daemon y el contrato:
    - Se eliminó `BY_COMMAND_ID` y `command_id` en `OperationSpec`. Toda la resolución de métodos en Python y C++ se realiza de forma directa mediante descriptores canónicos de Pigweed (`PW_SERVICES`) y Nanopb.
    - En `tools/protocol/generate.py` y sus plantillas Jinja2 (`protocol.py.j2`, `protocol_client.py.j2`, `rpc_protocol.h.j2`), se eliminaron las tablas de comandos estáticas y la lógica de catálogo paralela.
    - Los servicios de aplicación (`BridgeService`, `ClockSyncService`, `GpioService`, `RuntimeService`, `UbusService`, `FileSystemService`, etc.) y sus clientes invocan métodos nativos de `pw_rpc` por nombre de servicio y método Protobuf.
-   - Se preservaron íntegramente los contratos hacia el norte (UBUS OpenWrt, LuCI y gRPC `LocalBridge`).
+   - Se mantienen las interfaces UBUS/LuCI propias del MPU. El contrato gRPC `LocalBridge` no se preserva: sus consumidores deben migrarse a Pigweed antes de eliminarlo en el corte único de ADR-0003.
 
 ## Detalle de las etapas 6 y 7: Firmware y streaming de archivos (Opción 1)
 
@@ -155,9 +155,10 @@ Cambios en el daemon y el contrato:
      - Eventos y telemetría: `{prefix}/evt/{Service}/{Method|Message}`
    - Unificación de manejadores (`mcu_handler` / `handler_name`) mediante derivación por convención `{servicio_snake}_{metodo_snake}` sobre `BridgeService`, eliminando opciones manuales redundantes en los `.proto`.
 
-3. **Paridad de tipos y despacho en Cloud Gateway:**
-   - En `GatewayLocalBridgeService._forward_rpc`, despacho de comandos utilizando la URI completa Pigweed (`spec.name` = `rpc.pb.<Service>/<Method>`), garantizando que tanto `LocalBridge` como `Gateway` operen sobre los mismos tipos tipados sin prefijos sintéticos `rpc/`.
-   - Compatibilidad bidireccional homogénea entre clientes, gateway y daemon.
+3. **Migración northbound al Gateway Pigweed (ADR-0003):**
+   - El despacho actual mediante `GatewayLocalBridgeService`/`LocalBridge` es transitorio y no forma parte del diseño final.
+   - Migrar clientes, sesiones edge y operaciones northbound a servicios Pigweed generados; después eliminar `GatewayLocalBridgeService`, `LocalBridge`, `CloudBridge` y sus consumidores en el mismo corte coordinado.
+   - La identidad y autorización del dispositivo deben derivarse del principal autenticado por mTLS, nunca de `x-device-id` suministrado libremente por el cliente.
 
 4. **Saneamiento de pruebas y documentación:**
    - Actualización de todos los casos de prueba de integración, métricas, telemetría y propiedades de tópicos a las rutas canónicas.

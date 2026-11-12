@@ -48,48 +48,70 @@ static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
   return dst;
 }
 
-void derive_hkdf_sha256(pw::span<const uint8_t> secret,
+bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
                         pw::span<const uint8_t> salt,
                         pw::span<const uint8_t> info,
                         pw::span<uint8_t> output) {
-  if (secret.empty() || output.empty() ||
-      output.size() > 255U * RPC_SHA256_DIGEST_SIZE) {
+  constexpr size_t kMaxHkdfOutput = 255U * RPC_SHA256_DIGEST_SIZE;
+  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
+  if (secret.empty() || output.empty() || output.size() > kMaxHkdfOutput ||
+      secret.size() > kMaxWord32 || salt.size() > kMaxWord32 ||
+      info.size() > kMaxWord32 || output.size() > kMaxWord32) {
     secure_zero(output);
-    return;
+    return false;
   }
 
   const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
   const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
-  if (wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-              salt_data, static_cast<word32>(salt.size()), info_data,
-              static_cast<word32>(info.size()), output.data(),
-              static_cast<word32>(output.size())) != 0) {
+  const int status = wc_HKDF(
+      WC_SHA256, secret.data(), static_cast<word32>(secret.size()), salt_data,
+      static_cast<word32>(salt.size()), info_data,
+      static_cast<word32>(info.size()), output.data(),
+      static_cast<word32>(output.size()));
+  if (status != 0) {
     secure_zero(output);
+    return false;
   }
+  return true;
 }
 
 bool compute_hmac_sha256(pw::span<const uint8_t> key,
                          pw::span<const uint8_t> input,
                          pw::span<uint8_t> output) {
-  if (key.empty() || output.empty()) {
+  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
+  if (key.empty() || output.empty() ||
+      output.size() > RPC_SHA256_DIGEST_SIZE || key.size() > kMaxWord32 ||
+      input.size() > kMaxWord32) {
     secure_zero(output);
     return false;
   }
 
   const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
-  Hmac hmac;
-  wc_HmacInit(&hmac, nullptr, 0);
+  Hmac hmac{};
+  if (wc_HmacInit(&hmac, nullptr, 0) != 0) {
+    secure_zero(output);
+    return false;
+  }
 
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> full_digest = {};
-  wc_HmacSetKey(&hmac, WC_SHA256, key.data(), static_cast<word32>(key.size()));
-  wc_HmacUpdate(&hmac, input_data, static_cast<word32>(input.size()));
-  wc_HmacFinal(&hmac, full_digest.data());
+  bool ok = wc_HmacSetKey(&hmac, WC_SHA256, key.data(),
+                          static_cast<word32>(key.size())) == 0;
+  if (ok) {
+    ok = wc_HmacUpdate(&hmac, input_data,
+                       static_cast<word32>(input.size())) == 0;
+  }
+  if (ok) {
+    ok = wc_HmacFinal(&hmac, full_digest.data()) == 0;
+  }
   wc_HmacFree(&hmac);
 
-  const size_t copy_len = etl::min(output.size(), full_digest.size());
-  etl::copy_n(full_digest.begin(), copy_len, output.begin());
+  if (ok) {
+    etl::copy_n(full_digest.begin(), output.size(), output.begin());
+  } else {
+    secure_zero(output);
+  }
   secure_zero(pw::span<uint8_t>(full_digest));
-  return true;
+  return ok;
 }
 
 bool verify_hmac_sha256(pw::span<const uint8_t> key,
@@ -109,11 +131,11 @@ bool verify_hmac_sha256(pw::span<const uint8_t> key,
   return ok;
 }
 
-void derive_handshake_auth_key(pw::span<const uint8_t> secret,
+bool derive_handshake_auth_key(pw::span<const uint8_t> secret,
                                pw::span<const uint8_t> info,
                                pw::span<uint8_t> auth_key) {
   const auto salt = copy_progmem(RPC_HANDSHAKE_HKDF_SALT);
-  derive_hkdf_sha256(secret, salt, info, auth_key);
+  return derive_hkdf_sha256(secret, salt, info, auth_key);
 }
 
 bool derive_handshake_tag(pw::span<const uint8_t> secret,
@@ -128,12 +150,15 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
 
   secure_zero(out_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
-  derive_handshake_auth_key(secret, info, auth_key);
-  compute_hmac_sha256(
-      auth_key, nonce,
-      pw::span<uint8_t>(out_tag.data(), RPC_HANDSHAKE_TAG_LENGTH));
+  const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
+  const bool tag_ok =
+      key_ok && compute_hmac_sha256(
+                    auth_key, nonce,
+                    pw::span<uint8_t>(out_tag.data(),
+                                      RPC_HANDSHAKE_TAG_LENGTH));
   secure_zero(pw::span<uint8_t>(auth_key));
-  return true;
+  if (!tag_ok) secure_zero(out_tag);
+  return tag_ok;
 }
 
 #if BRIDGE_ENABLE_POST_TESTS
@@ -152,24 +177,18 @@ void secure_zero(pw::span<uint8_t> buf) {
 
 bool derive_session_keys(pw::span<const uint8_t> secret,
                          pw::span<const uint8_t> nonce,
-                         pw::span<uint8_t> host_to_mcu_key,
-                         pw::span<uint8_t> mcu_to_host_key) {
+                         pw::span<uint8_t> session_keys) {
+  constexpr size_t kSessionKeyBytes = RPC_AEAD_KEY_SIZE * 2U;
   if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
-      host_to_mcu_key.size() != RPC_AEAD_KEY_SIZE ||
-      mcu_to_host_key.size() != RPC_AEAD_KEY_SIZE) {
-    secure_zero(host_to_mcu_key);
-    secure_zero(mcu_to_host_key);
+      session_keys.size() != kSessionKeyBytes) {
+    secure_zero(session_keys);
     return false;
   }
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_SESSION);
-  etl::array<uint8_t, RPC_AEAD_KEY_SIZE * 2U> keys = {};
-  derive_hkdf_sha256(secret, nonce, info, pw::span<uint8_t>(keys));
-  etl::copy_n(keys.begin(), host_to_mcu_key.size(), host_to_mcu_key.begin());
-  etl::copy_n(keys.begin() + host_to_mcu_key.size(), mcu_to_host_key.size(),
-              mcu_to_host_key.begin());
-  secure_zero(pw::span<uint8_t>(keys));
-  return true;
+  // HKDF writes directly into the caller's contiguous RX||TX key storage.
+  // This removes the previous 64-byte local array and its copy operations.
+  return derive_hkdf_sha256(secret, nonce, info, session_keys);
 }
 
 bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
@@ -188,10 +207,21 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
   uint8_t* ciphertext_data =
       ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
-  wc_ChaCha20Poly1305_Encrypt(key.data(), nonce.data(), aad_data,
-                              static_cast<word32>(aad.size()), plaintext_data,
-                              static_cast<word32>(plaintext.size()),
-                              ciphertext_data, tag.data());
+  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
+  if (aad.size() > kMaxWord32 || plaintext.size() > kMaxWord32) {
+    secure_zero(ciphertext);
+    secure_zero(tag);
+    return false;
+  }
+  const int status = wc_ChaCha20Poly1305_Encrypt(
+      key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
+      plaintext_data, static_cast<word32>(plaintext.size()), ciphertext_data,
+      tag.data());
+  if (status != 0) {
+    secure_zero(ciphertext);
+    secure_zero(tag);
+    return false;
+  }
   return true;
 }
 
@@ -210,6 +240,11 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
       ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
   uint8_t* plaintext_data =
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
+  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
+  if (aad.size() > kMaxWord32 || ciphertext.size() > kMaxWord32) {
+    secure_zero(plaintext);
+    return false;
+  }
   const bool ok =
       (wc_ChaCha20Poly1305_Decrypt(
            key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
@@ -245,8 +280,9 @@ bool handshake_verify_tag(pw::span<const uint8_t> secret,
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_AUTH);
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
-  derive_handshake_auth_key(secret, info, auth_key);
-  const bool ok = verify_hmac_sha256(auth_key, nonce, received_tag);
+  const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
+  const bool ok =
+      key_ok && verify_hmac_sha256(auth_key, nonce, received_tag);
   secure_zero(pw::span<uint8_t>(auth_key));
   return ok;
 }

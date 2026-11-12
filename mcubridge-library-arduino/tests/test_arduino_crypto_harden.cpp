@@ -181,14 +181,14 @@ void test_long_handshake_secret_known_answer(void) {
       0x3FU, 0xB1U, 0x89U, 0xCCU, 0x5DU, 0x2CU, 0x41U, 0xD2U,
       0x4EU, 0x63U, 0xF7U, 0xEAU, 0x7AU, 0x64U, 0x2EU, 0x77U,
       0x64U, 0x78U, 0x81U, 0x6DU, 0x59U, 0xE8U, 0x3AU, 0xEEU};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> host_to_mcu = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
-      secret, kLongHandshakeNonce, host_to_mcu, mcu_to_host));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), host_to_mcu.data(),
-                                host_to_mcu.size());
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(), mcu_to_host.data(),
-                                mcu_to_host.size());
+      secret, kLongHandshakeNonce, session_keys));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(),
+                                session_keys.data(), kExpectedHostToMcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
+                                session_keys.data() + kExpectedHostToMcu.size(),
+                                kExpectedMcuToHost.size());
 }
 
 void test_session_key_derivation_known_answer(void) {
@@ -200,18 +200,20 @@ void test_session_key_derivation_known_answer(void) {
       0x6F, 0x91, 0xBF, 0x7D, 0x92, 0x38, 0x7A, 0x46, 0x0F, 0xE1, 0x37,
       0x37, 0xA3, 0x51, 0xF3, 0x3C, 0xF6, 0x3D, 0xFE, 0x26, 0xB2, 0xBC,
       0x68, 0x51, 0xA7, 0x80, 0x2C, 0x91, 0xF4, 0x3F, 0xEB, 0xBC};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> host_to_mcu = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
-      kVectorSecret, kVectorNonce, host_to_mcu, mcu_to_host));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), host_to_mcu.data(),
-                                host_to_mcu.size());
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(), mcu_to_host.data(),
-                                mcu_to_host.size());
+      kVectorSecret, kVectorNonce, session_keys));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(),
+                                session_keys.data(), kExpectedHostToMcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
+                                session_keys.data() + kExpectedHostToMcu.size(),
+                                kExpectedMcuToHost.size());
 }
 
 void test_crypto_public_api_rejects_invalid_dimensions(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> key{};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys{};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U - 1U> short_session_keys{};
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_key{};
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> aead_nonce{};
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_aead_nonce{};
@@ -226,13 +228,11 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH - 1U> short_handshake_tag{};
 
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      pw::span<const uint8_t>(), handshake_nonce, key, key));
+      pw::span<const uint8_t>(), handshake_nonce, session_keys));
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      kSecret, short_handshake_nonce, key, key));
-  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(kSecret, handshake_nonce,
-                                                       short_key, key));
-  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(kSecret, handshake_nonce,
-                                                       key, short_key));
+      kSecret, short_handshake_nonce, session_keys));
+  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
+      kSecret, handshake_nonce, short_session_keys));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
       pw::span<const uint8_t>(), handshake_nonce, handshake_tag));

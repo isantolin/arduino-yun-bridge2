@@ -316,8 +316,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
 
   etl::vector<uint8_t, 64> _shared_secret;
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _tx_aead_key{};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _rx_aead_key{};
+  // Contiguous RX||TX session keys let HKDF write directly into final storage.
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> _session_aead_keys{};
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
   bool _rx_plaintext_in_use{false};
   uint64_t _tx_aead_counter{0};

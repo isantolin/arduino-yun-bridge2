@@ -675,9 +675,15 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   auto tag =
       pw::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
                         rpc::RPC_AEAD_TAG_SIZE);
-  (void)rpc::security::aead_encrypt(
-      pw::span<const uint8_t>(_tx_aead_key), pw::span<const uint8_t>(nonce),
-      pw::span<const uint8_t>(aad), data, ciphertext, tag);
+  if (!rpc::security::aead_encrypt(
+          pw::span<const uint8_t>(_session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE, rpc::RPC_AEAD_KEY_SIZE),
+          pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad), data,
+          ciphertext, tag)) {
+    rpc::security::secure_zero(pw::span<uint8_t>(envelope));
+    rpc::security::secure_zero(pw::span<uint8_t>(nonce));
+    rpc::security::secure_zero(pw::span<uint8_t>(aad));
+    return false;
+  }
 
   const size_t envelope_size =
       rpc::RPC_AEAD_COUNTER_SIZE + data.size() + rpc::RPC_AEAD_TAG_SIZE;
@@ -727,7 +733,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   const uint8_t* ciphertext = envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
   const uint8_t* tag = ciphertext + ciphertext_size;
   const bool decrypted = rpc::security::aead_decrypt(
-      pw::span<const uint8_t>(_rx_aead_key), pw::span<const uint8_t>(nonce),
+      pw::span<const uint8_t>(_session_aead_keys.data(), rpc::RPC_AEAD_KEY_SIZE), pw::span<const uint8_t>(nonce),
       pw::span<const uint8_t>(aad),
       pw::span<const uint8_t>(ciphertext, ciphertext_size),
       pw::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
@@ -746,8 +752,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
 
 void BridgeClass::_clearLinkSession() {
   _pin_stream_writer = {};
-  rpc::security::secure_zero(pw::span<uint8_t>(_tx_aead_key));
-  rpc::security::secure_zero(pw::span<uint8_t>(_rx_aead_key));
+  rpc::security::secure_zero(pw::span<uint8_t>(_session_aead_keys));
   _tx_aead_counter = 0;
   _rx_aead_counter = 0;
   _session_keys_ready = false;
@@ -954,14 +959,21 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
       return;
     }
 
-    (void)rpc::security::handshake_generate_response_tag(
+    const bool response_tag_ok = rpc::security::handshake_generate_response_tag(
         pw::span<const uint8_t>(_shared_secret),
         pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
         pw::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
-    (void)rpc::security::derive_session_keys(
-        pw::span<const uint8_t>(_shared_secret),
-        pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
-        pw::span<uint8_t>(_rx_aead_key), pw::span<uint8_t>(_tx_aead_key));
+    const bool session_keys_ok = response_tag_ok &&
+        rpc::security::derive_session_keys(
+            pw::span<const uint8_t>(_shared_secret),
+            pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
+            pw::span<uint8_t>(_session_aead_keys));
+    if (!session_keys_ok) {
+      _clearLinkSession();
+      _fsm.receive(bridge::fsm::EvHandshakeFailed());
+      emitStatus(rpc::StatusCode::STATUS_INTERNAL);
+      return;
+    }
     response.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
     _tx_aead_counter = 0;
     _rx_aead_counter = 0;

@@ -61,6 +61,11 @@ pw_add_library(pw_containers.config INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/config.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
   PUBLIC_DEPS ${pw_containers_CONFIG})
+pw_add_library(pw_containers._common INTERFACE
+  HEADERS
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/traits.h"
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/wrap.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public")
 pw_add_library(pw_containers.iterator INTERFACE
   HEADERS
     "${PIGWEED_ROOT}/pw_containers/public/pw_containers/iterator.h"

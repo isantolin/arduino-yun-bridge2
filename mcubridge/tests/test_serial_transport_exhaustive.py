@@ -63,7 +63,7 @@ async def test_pw_transfer_client_is_shared_and_nonblocking(
         def write(self, resource_id: int, data: bytes, *, initial_offset: int = 0) -> None:
             self.last_write = (resource_id, data, initial_offset)
 
-    monkeypatch.setattr("mcubridge.transport.serial.pw_transfer.Manager", FakeTransferManager)
+    monkeypatch.setattr("mcubridge.transport.serial.PwTransferManager", FakeTransferManager)
 
     data = await transport.transfer_read(0x4D454741, offset=7)
     await transport.transfer_write(0x4D454741, b"data", offset=9)
@@ -108,7 +108,7 @@ async def test_pw_transfer_cancellation_keeps_role_lock_until_worker_finishes(
             assert initial_offset == 0
             writes.append((resource_id, data))
 
-    monkeypatch.setattr("mcubridge.transport.serial.pw_transfer.Manager", BlockingTransferManager)
+    monkeypatch.setattr("mcubridge.transport.serial.PwTransferManager", BlockingTransferManager)
 
     first = asyncio.create_task(transport.transfer_read(0x4D454741))
     assert await asyncio.to_thread(worker_started.wait, 1.0)

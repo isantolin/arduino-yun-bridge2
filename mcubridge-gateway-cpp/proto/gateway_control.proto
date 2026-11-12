@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package mcubridge.gateway;
+
+// Northbound control RPCs. Only a peer authenticated with the
+// spiffe://mcubridge/client/<principal> URI SAN may invoke this service.
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
+  uint32 active_device_sessions = 2;
+  uint32 active_client_sessions = 3;
+}
+
+service GatewayControl {
+  rpc Health(HealthRequest) returns (HealthResponse);
+}

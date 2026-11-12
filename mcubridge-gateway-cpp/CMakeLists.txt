@@ -36,6 +36,11 @@ set(pw_thread.sleep_BACKEND pw_thread_stl.sleep CACHE STRING "" FORCE)
 include("${PIGWEED_ROOT}/pw_build/pigweed.cmake")
 include("${PIGWEED_ROOT}/pw_protobuf_compiler/proto.cmake")
 set(pw_protobuf_compiler_PYTHON_OUT_DIR "${CMAKE_BINARY_DIR}/generated" CACHE PATH "Shared Pigweed generated Python proto modules" FORCE)
+
+pw_proto_library(gateway_control_proto
+  STRIP_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/proto"
+  PREFIX "mcubridge/gateway"
+  SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.proto")
 add_subdirectory("${PIGWEED_ROOT}/pw_build" pw_build)
 add_subdirectory("${PIGWEED_ROOT}/third_party/fuchsia" pw_third_party_fuchsia)
 add_subdirectory("${PIGWEED_ROOT}/pw_numeric" pw_numeric)
@@ -60,6 +65,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/pigweed_gateway.cmake")
 
 add_executable(mcubridge-gateway-cpp src/gateway_main.cc)
 target_link_libraries(mcubridge-gateway-cpp PRIVATE
+  gateway_control_proto.pwpb_rpc pw_rpc.pwpb.server_api pw_protobuf
   OpenSSL::SSL OpenSSL::Crypto Threads::Threads
   pw_hdlc pw_rpc.server pw_transfer
   pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.binary_semaphore

@@ -1,0 +1,37 @@
+#include <etl/algorithm.h>
+
+#include "Arduino.h"
+#include "BridgeFaultInjection.h"  // IWYU pragma: keep
+#include "SPI.h"
+
+ArduinoStubPinState g_arduino_stub_pin_states[NUM_DIGITAL_PINS]{};
+
+void resetArduinoStubPinStates() {
+  etl::fill(g_arduino_stub_pin_states,
+            g_arduino_stub_pin_states + NUM_DIGITAL_PINS,
+            ArduinoStubPinState{});
+}
+
+SPIClass SPI;
+HardwareSerial Serial __attribute__((weak));
+HardwareSerial Serial1 __attribute__((weak));
+
+Stream* g_arduino_stream_delegate __attribute__((weak)) = nullptr;
+
+#ifdef ARDUINO_STUB_CUSTOM_MILLIS
+unsigned long millis() __attribute__((weak));
+unsigned long millis() { return bridge::test::fault::clock_ms(); }
+
+unsigned long micros() __attribute__((weak));
+unsigned long micros() { return bridge::test::fault::clock_ms() * 1000UL; }
+
+void delay(unsigned long ms) __attribute__((weak));
+void delay(unsigned long ms) {
+  bridge::test::fault::advance_clock_ms(static_cast<uint32_t>(ms));
+}
+#endif
+
+#include <etl/exception.h>
+namespace etl {
+void __attribute__((weak)) handle_error(const etl::exception& e) { (void)e; }
+}  // namespace etl

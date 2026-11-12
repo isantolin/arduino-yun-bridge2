@@ -1,0 +1,141 @@
+#
+# This file is part of Arduino MCU Ecosystem v2.
+#
+# Copyright (C) 2025 Ignacio Santolin and contributors
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it is useful,
+# but WITHOUT ANY WARRANTY;
+# without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.
+# If not, see <https://www.gnu.org/licenses/>.
+#
+# OpenWRT package Makefile for mcubridge (consolidated daemon + core scripts)
+
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=mcubridge
+PKG_VERSION:=2.8.9
+PKG_RELEASE:=1
+PKG_LICENSE:=GPL-3.0-or-later
+PKG_LICENSE_FILES:=LICENSE
+PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
+
+PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
+HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
+PYTHON3 := $(if $(wildcard $(HOST_PYTHON3)),$(HOST_PYTHON3),python3)
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/$(PKG_NAME)
+	SECTION:=utils
+	CATEGORY:=Utilities
+	TITLE:=MCU Bridge Daemon and Core Scripts
+	PKG_ARCH:=all
+	PROVIDES:=mcubridge
+	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
+	DEPENDS+= \
+		+python3 \
+		+python3-pigweed \
+		+python3-protobuf \
+		+python3-pyserial \
+		+python3-tenacity \
+		+python3-uvloop \
+		+python3-cryptography \
+		+python3-structlog \
+		+python3-psutil \
+		+python3-statemachine \
+		+python3-anyio \
+		+python3-parse \
+		+python3-ubus \
+		+python3-hpack \
+		+python3-hyperframe \
+		+python3-h2 \
+		+python3-grpclib \
+		+python3-annotated-doc \
+		+python3-shellingham \
+		+python3-typer \
+		+python3-lmdb
+	# AUTO-GENERATED RUNTIME DEPENDS END
+endef
+
+define Package/$(PKG_NAME)/description
+ Python 3.13 daemon and core scripts for Arduino MCU Bridge v2 on OpenWrt.
+endef
+
+define Package/$(PKG_NAME)/config
+endef
+
+define Build/Compile
+	test -d $(PKG_BUILD_DIR)/mcubridge
+	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
+	[ ! -d $(PKG_BUILD_DIR)/scripts ] || python3 -m compileall -j 0 -q -b $(PKG_BUILD_DIR)/scripts
+	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
+endef
+
+define Build/Prepare
+	rm -rf $(PKG_BUILD_DIR)
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} +
+	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/99-mcubridge-defaults $(PKG_BUILD_DIR)/
+	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/ || true
+endef
+
+define Package/$(PKG_NAME)/install
+	$(INSTALL_DIR) $(1)/usr/libexec/mcubridge
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_DIR) $(1)/etc/mcubridge
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_DIR) $(1)/www/cgi-bin
+	
+	# Daemon
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/* $(1)/usr/libexec/mcubridge/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.init $(1)/etc/init.d/mcubridge
+	$(PYTHON3) -m compileall -o 2 -q $(1)/usr/libexec/mcubridge
+	
+	# Core config files
+	$(INSTALL_DIR) $(1)/usr/share/mcubridge
+	[ -f $(PKG_BUILD_DIR)/scripts/defaults.sh ] && $(INSTALL_DATA) $(PKG_BUILD_DIR)/scripts/defaults.sh $(1)/usr/share/mcubridge/defaults.sh || true
+	
+	# UCI defaults
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-defaults $(1)/etc/uci-defaults/
+	
+	# Global environment profile
+	$(INSTALL_DIR) $(1)/etc/profile.d
+	echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > $(1)/etc/profile.d/99-mcubridge-crypto.sh
+	chmod 0755 $(1)/etc/profile.d/99-mcubridge-crypto.sh
+
+	# Core scripts (install stripping .py extension and ensuring hyphenated command names)
+	if [ -d $(PKG_BUILD_DIR)/scripts ]; then \
+		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py' ! -name '__init__.py'); do \
+			cmd=$$(basename $$f .py | tr '_' '-'); \
+			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd" || exit $$?; \
+		done; \
+	fi
+	ln -sf /usr/bin/pin-rest-cgi $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge
+endef
+
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] || {
+	mkdir -p /etc/profile.d
+	echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > /etc/profile.d/99-mcubridge-crypto.sh
+	chmod 0755 /etc/profile.d/99-mcubridge-crypto.sh
+	[ -x /etc/uci-defaults/99-mcubridge-defaults ] && /etc/uci-defaults/99-mcubridge-defaults
+}
+exit 0
+endef
+
+$(eval $(call BuildPackage,$(PKG_NAME)))

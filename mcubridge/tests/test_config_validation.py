@@ -1,0 +1,115 @@
+"""Tests for RuntimeConfig normalization and validation. [SIL-2]"""
+
+from __future__ import annotations
+
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+from mcubridge.config import settings as config_settings
+from mcubridge.config.settings import RuntimeConfig, load_runtime_config
+from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import validate_config
+
+
+def _valid_base_config() -> RuntimeConfig:
+    return load_runtime_config(
+        overrides={
+            "serial_port": "/dev/null",
+            "topic_prefix": "mcubridge",
+            "file_system_root": "/tmp/fs",
+            "cloud_spool_dir": "/tmp/spool",
+            "serial_shared_secret": b"secret1234",
+            "allow_non_tmp_paths": True,
+        }
+    )
+
+
+def test_runtime_config_topic_and_paths() -> None:
+    raw = {
+        "serial_port": "/dev/null",
+        "topic_prefix": "/demo//prefix/",
+        "file_system_root": "/tmp/tests//bridge/test/..",
+        "cloud_spool_dir": "/tmp/spool",
+        "serial_shared_secret": b"secret1234",
+        "allow_non_tmp_paths": True,
+    }
+    config = config_settings.load_runtime_config(overrides=raw)
+    assert config.topic_prefix == "/demo//prefix/"
+    assert config.file_system_root == "/tmp/tests/bridge"
+
+
+def test_runtime_config_allows_explicit_empty_serial_secret() -> None:
+    cfg = _valid_base_config()
+    cfg.serial_shared_secret = b""
+    validate_config(cfg)
+    assert cfg.serial_shared_secret == b""
+
+
+def test_runtime_config_rejects_empty_topic() -> None:
+    raw = {
+        "serial_port": "/dev/null",
+        "topic_prefix": "//",
+        "file_system_root": "/tmp/fs",
+        "cloud_spool_dir": "/tmp/spool",
+        "serial_shared_secret": b"secret1234",
+        "allow_non_tmp_paths": True,
+    }
+    with pytest.raises(ValueError, match=r"topic_prefix: does not match regex pattern"):
+        config_settings.load_runtime_config(overrides=raw)
+
+
+def test_runtime_config_rejects_non_positive_status_interval() -> None:
+    cfg = _valid_base_config()
+    cfg.status_interval = 0
+    with pytest.raises(ValueError, match="status_interval"):
+        validate_config(cfg)
+
+
+def test_runtime_config_bounds_are_driven_by_protobuf_metadata() -> None:
+    cfg = _valid_base_config()
+    cfg.cloud_port = 0
+    with pytest.raises(ValueError, match=r"cloud_port: must be >= 1"):
+        validate_config(cfg)
+
+    cfg = _valid_base_config()
+    cfg.cloud_http3_port = 65536
+    with pytest.raises(ValueError, match=r"cloud_http3_port: must be <= 65535"):
+        validate_config(cfg)
+
+
+def test_runtime_config_rejects_unknown_metadata_field(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        protocol,
+        "RUNTIME_CONFIG_METADATA",
+        {"missing_field": {"min": 1, "max": None}},
+    )
+    with pytest.raises(RuntimeError, match="unknown field: missing_field"):
+        validate_config(_valid_base_config())
+
+
+@pytest.mark.parametrize("field_name", ["serial_port", "allowed_commands"])
+def test_runtime_config_rejects_invalid_numeric_metadata(field_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        protocol,
+        "RUNTIME_CONFIG_METADATA",
+        {field_name: {"min": 1, "max": None}},
+    )
+    with pytest.raises(RuntimeError, match="Numeric bounds declared for non-scalar numeric field"):
+        validate_config(_valid_base_config())
+
+
+@given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: x == x))
+def test_runtime_config_requires_watchdog_interval_when_enabled(interval: float) -> None:
+    cfg = _valid_base_config()
+    cfg.watchdog_enabled = True
+    cfg.watchdog_interval = interval
+    with pytest.raises(ValueError, match="watchdog_interval"):
+        validate_config(cfg)
+
+
+@given(port=st.one_of(st.just(0), st.integers(min_value=65536, max_value=200000)))
+def test_runtime_config_rejects_invalid_cloud_port(port: int) -> None:
+    cfg = _valid_base_config()
+    cfg.cloud_port = port
+    with pytest.raises(ValueError, match="cloud_port"):
+        validate_config(cfg)

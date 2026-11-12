@@ -1,0 +1,12 @@
+[run]
+branch = True
+source = mcubridge/mcubridge
+omit =
+    *_pb2.py
+    *_pb2.pyi
+    *_grpc.py
+
+[report]
+show_missing = True
+skip_covered = False
+fail_under = 90

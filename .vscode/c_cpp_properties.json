@@ -1,0 +1,41 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/mcubridge-library-arduino/src",
+                "${workspaceFolder}/mcubridge-library-arduino/src/**",
+                "${workspaceFolder}/mcubridge-library-arduino/tests",
+                "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
+                "${workspaceFolder}/tools/arduino_stub/include",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
+                "${workspaceFolder}/third_party/avr_pigweed_port/dist/PigweedAVR/src",
+                "${workspaceFolder}/.dummy_libs/Unity/src",
+                "${env:HOME}/Arduino/libraries/wolfssl/src",
+                "/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include",
+                "/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/arduino",
+                "/home/ignaciosantolin/Arduino/libraries/PigweedAVR/src"
+            ],
+            "defines": [
+                "ARDUINO=10800",
+                "BRIDGE_HOST_TEST=1",
+                "BRIDGE_ENABLE_SPI=1",
+                "BRIDGE_ENABLE_DATASTORE=1",
+                "BRIDGE_ENABLE_MAILBOX=1",
+                "BRIDGE_ENABLE_FILESYSTEM=1",
+                "BRIDGE_ENABLE_PROCESS=1",
+                "BRIDGE_ENABLE_POST_TESTS=1",
+                "BRIDGE_ENABLE_TEST_INTERFACE=1",
+                "BRIDGE_FAULT_INJECTION=1",
+                "ETL_NO_STL",
+                "ETL_FORCE_STD_INITIALIZER_LIST"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

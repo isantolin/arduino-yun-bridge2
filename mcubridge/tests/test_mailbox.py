@@ -1,0 +1,39 @@
+import tempfile
+
+from mcubridge.state.storage import LmdbDeque
+import pathlib
+
+
+async def test_mailbox_static_queue_overflow() -> None:
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+        path = tf.name
+
+    try:
+        q = LmdbDeque(path=path, maxlen=8)
+
+        # Fill the queue up to limit (0..7)
+        for i in range(8):
+            await q.append(f"message_{i}".encode())
+
+        assert len(q) == 8
+
+        # Push two more elements (8 and 9) causing overflow
+        await q.append(b"message_8")
+        await q.append(b"message_9")
+
+        assert len(q) == 8
+
+        # Verify deterministic drop: oldest messages (message_0, message_1) must be dropped
+        # resulting in message_2 as the first available
+        msg = await q.popleft()
+        assert msg == b"message_2"
+
+        # Verify the remaining elements up to message_9
+        for i in range(3, 10):
+            assert await q.popleft() == f"message_{i}".encode()
+
+        # Queue should be empty now
+        assert len(q) == 0
+    finally:
+        if pathlib.Path(path).exists():
+            pathlib.Path(path).unlink()

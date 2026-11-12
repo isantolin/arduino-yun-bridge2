@@ -1,0 +1,850 @@
+#!/bin/bash
+set -e
+#
+# This file is part of Arduino MCU Ecosystem v2.
+#
+# Copyright (C) 2025 Ignacio Santolin and contributors
+#
+# compile.sh - Compila todos los paquetes del ecosistema Arduino MCU v2
+# Target: OpenWrt 25.12.6 (APK System)
+#
+
+usage() {
+    cat <<'EOF'
+Usage: ./1_compile.sh [OPTIONS] [OPENWRT_VERSION] [OPENWRT_TARGET]
+
+Options:
+  --install-host-deps   Attempt to install missing host dependencies using
+                        the system package manager (requires sudo/root).
+  --skip-host-deps      Skip dependency installation (default behaviour).
+  --quiet               Disable build verbosity (V=s is ON by default).
+  -h, --help            Show this message and exit.
+EOF
+}
+
+# Default to installing host deps unless explicitly disabled
+INSTALL_HOST_DEPS=1
+VERBOSE=1
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --install-host-deps)
+            INSTALL_HOST_DEPS=1
+            shift
+            ;;
+        --skip-host-deps)
+            INSTALL_HOST_DEPS=0
+            shift
+            ;;
+        --quiet)
+            VERBOSE=0
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            while [[ $# -gt 0 ]]; do
+                POSITIONAL+=("$1")
+                shift
+            done
+            break
+            ;;
+        -* )
+            echo "[ERROR] Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+        * )
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+set -- "${POSITIONAL[@]}"
+
+# [CONFIG] Target Final OpenWrt 25.12.6
+OPENWRT_VERSION=${1:-"25.12.6"}
+OPENWRT_TARGET=${2:-"malta/be"}
+
+OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_SHA256_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/sha256sums"
+
+# Asegurar rutas absolutas
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SDK_DIR="$REPO_ROOT/openwrt-sdk"
+BIN_DIR="$REPO_ROOT/bin"
+
+sanitize_path() {
+    local original_path="$PATH"
+    local cleaned=""
+    local separator=""
+    local modified=0
+
+    IFS=':' read -r -a path_entries <<<"$original_path"
+    for entry in "${path_entries[@]}"; do
+        if [ -z "$entry" ] || [ "$entry" = "-" ]; then
+            modified=1
+            continue
+        fi
+        cleaned+="${separator}${entry}"
+        separator=":"
+    done
+
+    if [ $modified -eq 1 ]; then
+        export PATH="$cleaned"
+        echo "[INFO] Removed unsafe PATH entries (blank or '-') for build tooling."
+    fi
+}
+
+sanitize_path
+
+# Sincronización de dependencias de runtime se realiza más adelante con rutas absolutas
+
+# ==============================================================================
+# [FIX CRITICO] Rust/Cargo Bridge para CI (GitHub Actions)
+# ==============================================================================
+# Compilar Rust desde el SDK de OpenWrt toma >1 hora y falla en CI.
+# Si rustc y cargo están en el host Y soportan el target, los inyectamos.
+inject_rust_into_sdk() {
+    local sdk_host_bin="$SDK_DIR/staging_dir/host/bin"
+    local sdk_hostpkg_bin="$SDK_DIR/staging_dir/hostpkg/bin"
+    local target="mips-unknown-linux-musl"
+    local rustup_std_available=1
+    
+    # Limpiar inyecciones previas para evitar estados inconsistentes
+    rm -f "$sdk_host_bin/rustc" "$sdk_host_bin/cargo" "$sdk_host_bin/rustdoc"
+    rm -f "$sdk_hostpkg_bin/rustc" "$sdk_hostpkg_bin/cargo" "$sdk_hostpkg_bin/rustdoc"
+    rm -f "$sdk_hostpkg_bin/maturin" "$SDK_DIR/staging_dir/host/stamp/.rust_installed" "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
+
+    local can_inject=0
+    if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+        # rustup stable does not ship prebuilt std for this Tier-3 target.
+        # Skip the futile download attempt and keep the SDK-hosted fallback path.
+        case "$target" in
+            mips-unknown-linux-musl)
+                rustup_std_available=0
+                ;;
+        esac
+
+
+        # [FIX] Si rustup está presente, intentamos instalar el target faltante automáticamente
+        if command -v rustup >/dev/null 2>&1; then
+            if [ "$rustup_std_available" -eq 1 ] && ! rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
+                echo "[INFO] Attempting to install missing Rust target $target via rustup..."
+                rustup target add "$target" || echo "[WARN] Failed to install Rust target $target via rustup."
+            elif [ "$rustup_std_available" -eq 0 ]; then
+                echo "[INFO] Skipping rustup target add for $target: stable does not provide prebuilt rust-std."
+                
+                # [NUEVO] Instalar rust-src automáticamente si falta para Tier 3 targets
+                if ! rustup component list --installed 2>/dev/null | grep -q "^rust-src"; then
+                    echo "[INFO] Auto-installing 'rust-src' component needed for Tier-3 cross-compilation (build-std)..."
+                    rustup component add rust-src || echo "[WARN] Failed to auto-install rust-src via rustup."
+                fi
+            fi
+        fi
+
+        # Verificar si el target está instalado y es funcional (tiene std)
+        if rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
+            echo "[INFO] Host Rust fully supports $target. Injecting into SDK..."
+            can_inject=1
+        elif [ "$rustup_std_available" -eq 0 ] && rustup component list --installed 2>/dev/null | grep -q "^rust-src"; then
+            # [FIX CRÍTICO TIER 3] Para mips-unknown-linux-musl no hay binarios de rust-std en rustup.
+            # Al detectar el componente de código fuente "rust-src" en el host (Nightly), habilitamos
+            # la compilación al vuelo de std a través del compilador del host interceptando la inyección.
+            echo "[INFO] Host Rust has 'rust-src' component. Enabling build-std cross-compilation for Tier 3 target $target..."
+            export CARGO_UNSTABLE_BUILD_STD=std
+            can_inject=1
+        else
+            echo "[WARN] Host Rust missing 'std' library for $target (Tier 3 target) and 'rust-src' component is unavailable."
+            echo "[INFO] Falling back to SDK-internal Rust build (this will be slow but reliable)."
+        fi
+    fi
+
+    if [ "$can_inject" -eq 1 ]; then
+        mkdir -p "$sdk_host_bin" "$sdk_hostpkg_bin"
+        ln -sf "$(command -v rustc)" "$sdk_host_bin/rustc"
+        ln -sf "$(command -v cargo)" "$sdk_host_bin/cargo"
+        ln -sf "$(command -v rustdoc)" "$sdk_host_bin/rustdoc"
+        ln -sf "$(command -v rustc)" "$sdk_hostpkg_bin/rustc"
+        ln -sf "$(command -v cargo)" "$sdk_hostpkg_bin/cargo"
+        ln -sf "$(command -v rustdoc)" "$sdk_hostpkg_bin/rustdoc"
+        mkdir -p "$SDK_DIR/staging_dir/host/stamp" "$SDK_DIR/staging_dir/hostpkg/stamp"
+        touch "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
+        touch "$SDK_DIR/staging_dir/host/stamp/.package_rust_installed"
+        touch "$SDK_DIR/staging_dir/host/stamp/.rust_host_installed"
+        touch "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
+        touch "$SDK_DIR/staging_dir/hostpkg/stamp/.package_rust_installed"
+        touch "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_host_installed"
+        
+        # Inyectar maturin solo si Rust es funcional
+        if command -v maturin >/dev/null 2>&1; then
+            mkdir -p "$sdk_hostpkg_bin"
+            ln -sf "$(command -v maturin)" "$sdk_hostpkg_bin/maturin"
+        fi
+    fi
+}
+
+# [FIX] Compatibilidad Python 3.13 + Rust (PyO3)
+export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+# [FIX] Forzar linker BFD para MIPS (evita fallos con el linker por defecto de Rust)
+export CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_LINKER="mips-openwrt-linux-musl-gcc"
+# ==============================================================================
+
+# --- HOST DEPENDENCIES ---
+if [ "$INSTALL_HOST_DEPS" = "1" ]; then
+    echo "[INFO] Host dependency auto-install enabled."
+    if [ "$(uname -s)" = "Linux" ]; then
+        if [ -f /etc/debian_version ]; then
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1; then
+                    PKG_PREFIX=(sudo)
+                else
+                    echo "[WARN] sudo not found and not running as root; skipping automatic apt-get install."
+                    PKG_PREFIX=()
+                fi
+            else
+                PKG_PREFIX=()
+            fi
+
+            if [ ${#PKG_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
+                echo "[INFO] Installing packages for Ubuntu/Debian..."
+                "${PKG_PREFIX[@]}" apt-get update
+                "${PKG_PREFIX[@]}" apt-get install -y \
+                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-typer python3-tenacity \
+                    git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev libreadline-dev \
+                    zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
+                    libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
+                    libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
+                    uuid-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor \
+                    g++-multilib gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+            fi
+        elif [ -f /etc/fedora-release ]; then
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1; then
+                    PKG_PREFIX=(sudo)
+                else
+                    echo "[WARN] sudo not found and not running as root; skipping automatic dnf install."
+                    PKG_PREFIX=()
+                fi
+            else
+                PKG_PREFIX=()
+            fi
+
+            if [ ${#PKG_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
+                echo "[INFO] Installing packages for Fedora..."
+                "${PKG_PREFIX[@]}" dnf install -y \
+                    make automake gcc gcc-c++ kernel-devel \
+                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-typer python3-tenacity \
+                    git unzip tar gzip bzip2 xz coreutils ncurses-devel readline-devel zstd wget \
+                    python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
+                    libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
+                    libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
+                    tk-devel tcl-devel libuuid-devel xz-devel \
+                    bluez-libs-devel libbsd-devel binutils-devel asciidoctor \
+                    glibc-devel.i686 libstdc++-devel.i686 \
+                    mingw64-gcc mingw64-binutils libffi-devel openssl-devel
+            fi
+        else
+            echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."
+        fi
+    else
+        echo "[WARN] Operating system not supported for automatic dependency installation."
+    fi
+else
+    echo "[INFO] Host dependency auto-install disabled. Ensure prerequisites are installed or rerun with --install-host-deps."
+fi
+
+# --- BOOTSTRAP PYTHON CHECKS ---
+auto_install_python_module() {
+    local module="$1"
+    local package="python3-${module}"
+    local prefix=()
+    if [ "$INSTALL_HOST_DEPS" != "1" ]; then return 1; fi
+    if [ "$EUID" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then prefix=(sudo); else return 1; fi
+    fi
+    if [ -f /etc/debian_version ]; then
+        "${prefix[@]}" apt-get install -y "$package" && return 0
+    fi
+    return 1
+}
+
+check_python_module() {
+    local module="$1"
+    python3 -c "import ${module}" >/dev/null 2>&1 && return 0
+    if auto_install_python_module "$module" && python3 -c "import ${module}" >/dev/null 2>&1; then return 0; fi
+    # Fallback to pip install if apt module fails
+    python3 -m pip install "$module" >/dev/null 2>&1 && return 0
+    echo "[ERROR] Missing required Python module '${module}'." >&2
+    exit 1
+}
+
+check_python_module "setuptools"
+check_python_module "black"
+check_python_module "packaging"
+check_python_module "typer"
+check_python_module "tenacity"
+check_python_module "mypy_protobuf"
+check_python_module "grpclib"
+check_python_module "patch_ng" || python3 -m pip install "patch-ng" >/dev/null 2>&1 || true
+
+# --- PROTOCOL & DEPS SYNC ---
+PYTHON_BIN="${PYTHON_EXE:-python3}"
+echo "[INFO] Synchronizing runtime dependency manifests..."
+"$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" || exit 1
+
+# Pigweed is the source of pw_rpc; resolve its exact host pin from the runtime
+# manifest rather than duplicating a version in this bootstrap script.
+if ! "$PYTHON_BIN" -c "from pw_rpc.descriptors import Service" >/dev/null 2>&1; then
+    PIGWEED_REQUIREMENT="$("$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-pip | grep -m1 '^pigweed==' || true)"
+    if [ -z "$PIGWEED_REQUIREMENT" ]; then
+        echo "[ERROR] Pigweed is missing from requirements/runtime.toml." >&2
+        exit 1
+    fi
+    echo "[INFO] Installing host protocol generator from manifest: $PIGWEED_REQUIREMENT"
+    "$PYTHON_BIN" -m pip install "$PIGWEED_REQUIREMENT"
+fi
+"$PYTHON_BIN" -c "from pw_rpc.descriptors import Service" || {
+    echo "[ERROR] Pigweed pw_rpc is unavailable after host dependency installation." >&2
+    exit 1
+}
+
+echo "[INFO] Regenerating protocol files from spec..."
+"$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
+    --spec "$REPO_ROOT/tools/protocol/cloud_gateway.proto" \
+    --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
+    --py-client "$REPO_ROOT/mcubridge-client-examples/mcubridge_client/protocol.py" || exit 1
+
+# --- DOWNLOAD CACHE SYMLINK SETUP ---
+setup_dl_symlink() {
+    # Ensure repo dl directory exists
+    mkdir -p "$REPO_ROOT/dl"
+    
+    # If SDK directory exists, manage the symlink
+    if [ -d "$SDK_DIR" ]; then
+        if [ -d "$SDK_DIR/dl" ] && [ ! -L "$SDK_DIR/dl" ]; then
+            echo "[INFO] Moving existing files from SDK download directory to repo-wide cache..."
+            if [ "$(ls -A "$SDK_DIR/dl" 2>/dev/null)" ]; then
+                cp -a "$SDK_DIR/dl/." "$REPO_ROOT/dl/"
+            fi
+            rm -rf "$SDK_DIR/dl"
+        fi
+        
+        if [ ! -L "$SDK_DIR/dl" ]; then
+            echo "[INFO] Creating symlink from $SDK_DIR/dl to $REPO_ROOT/dl..."
+            ln -sf "$REPO_ROOT/dl" "$SDK_DIR/dl"
+        fi
+    fi
+}
+
+# --- PREPARE SDK ---
+if command -v unzstd >/dev/null 2>&1; then ZSTD_DECOMPRESSOR="unzstd"; 
+elif command -v zstd >/dev/null 2>&1; then ZSTD_DECOMPRESSOR="zstd -d"; 
+else echo "[ERROR] zstd not found."; exit 1; fi
+
+echo "[INFO] Preparing build environment..."
+mkdir -p "$BIN_DIR"
+
+if [ -d "$SDK_DIR" ] && [ ! -f "$SDK_DIR/scripts/feeds" ]; then
+    rm -rf "$SDK_DIR"
+fi
+
+# Ensure download symlink exists if SDK is already present
+setup_dl_symlink
+
+if [ ! -d "$SDK_DIR" ]; then
+    MAX_RETRIES=10; RETRY=0; SUCCESS=0
+    SDK_FILENAME="$(basename "$OPENWRT_URL")"
+    while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+        echo "[INFO] Downloading OpenWRT SDK (attempt $((RETRY+1))/$MAX_RETRIES)..."
+        
+        # Ensure a clean start by removing any partial/corrupt file
+        rm -f sdk.tar.zst
+
+        # Use wget with extreme persistence to overcome network truncation/flakiness
+        # --tries=0 (infinite), --timeout=15, --waitretry=5
+        if command -v wget >/dev/null 2>&1; then
+            echo "[INFO] Using wget with infinite retries for maximum resilience..."
+            wget --tries=0 --timeout=15 --waitretry=5 --retry-connrefused -O sdk.tar.zst "$OPENWRT_URL"
+        else
+            CURL_H3=""
+            if curl --version 2>&1 | grep -qi "HTTP3"; then
+                CURL_H3="--http3"
+            fi
+            curl -L $CURL_H3 --retry 10 --retry-delay 5 -o sdk.tar.zst "$OPENWRT_URL"
+        fi
+
+        # [SECURITY] SHA256 integrity verification of downloaded SDK
+        if wget -qO sha256sums "$OPENWRT_SHA256_URL"; then
+            EXPECTED_SHA=$(grep "$SDK_FILENAME" sha256sums | awk '{print $1}')
+            rm -f sha256sums
+            if [ -n "$EXPECTED_SHA" ]; then
+                ACTUAL_SHA=$(sha256sum sdk.tar.zst | awk '{print $1}')
+                if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+                    echo "[ERROR] SHA256 mismatch! Expected: $EXPECTED_SHA Got: $ACTUAL_SHA"
+                    rm -f sdk.tar.zst
+                    RETRY=$((RETRY+1)); sleep 5; continue
+                fi
+                echo "[INFO] SHA256 verified: $ACTUAL_SHA"
+            else
+                echo "[WARN] SDK filename not found in sha256sums, skipping verification."
+            fi
+        else
+            echo "[WARN] Could not download sha256sums, skipping verification."
+            rm -f sha256sums 2>/dev/null
+        fi
+        
+        echo "[INFO] Extracting SDK..."
+        if tar --use-compress-program="${ZSTD_DECOMPRESSOR}" -xf sdk.tar.zst; then
+            rm sdk.tar.zst; mv openwrt-sdk-* "$SDK_DIR"; SUCCESS=1;
+            # Ensure download symlink exists for freshly extracted SDK
+            setup_dl_symlink
+            # [FIX] Inyectamos Rust antes de cualquier compilación
+            inject_rust_into_sdk
+            break
+        else
+            echo "[ERROR] Extraction failed. SDK archive might be corrupt."
+            rm -f sdk.tar.zst; rm -rf openwrt-sdk-*; RETRY=$((RETRY+1)); sleep 5
+        fi
+    done
+    [ $SUCCESS -ne 1 ] && { echo "[FATAL] Failed to download and extract OpenWrt SDK after $MAX_RETRIES attempts."; exit 1; }
+fi
+
+# [FIX] Asegurar que Rust/Maturin estén inyectados incluso si el SDK ya existía
+inject_rust_into_sdk
+
+# NOTE: Build backends (pdm-backend, maturin, Cython) are installed into the
+# SDK's own Python 3.13 after it is built — see the inject step before the
+# package compile loop.  Previous attempts to bootstrap here failed because
+# the SDK Python does not exist yet and host-Python pip sees the packages as
+# "already satisfied" in the runner's ~/.local path.
+
+# 2. Package Sources
+# Prefer using the local feed (src-link) to avoid duplicated/copies drifting.
+# If you really need to copy sources directly into the SDK tree, set:
+#   SYNC_PACKAGES_TO_SDK=1
+SYNC_PACKAGES_TO_SDK="${SYNC_PACKAGES_TO_SDK:-0}"
+
+# --- FEEDS SETUP (FIXED FLAT STRUCTURE) ---
+LOCAL_FEED_ENABLED=0
+# [FIX] Ahora apunta a feeds/ directamente (estructura plana)
+LOCAL_FEED_PATH="$REPO_ROOT/feeds"
+
+if [ -d "$LOCAL_FEED_PATH" ]; then
+    # Sync overlay first
+    [ -f "$REPO_ROOT/tools/ci/sync_feed_overlay.py" ] && python3 "$REPO_ROOT/tools/ci/sync_feed_overlay.py" --dest "$LOCAL_FEED_PATH"
+    
+    FEEDS_CONF="$SDK_DIR/feeds.conf"
+    [ ! -f "$FEEDS_CONF" ] && cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
+
+    # [OPTIMIZATION] Aplicar Mirrors de GitHub para velocidad y estabilidad
+    echo "[INFO] Switching feeds to GitHub mirrors..."
+    sed -i 's|https://git.openwrt.org/openwrt/openwrt.git|https://github.com/openwrt/openwrt.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/feed/routing.git|https://github.com/openwrt/routing.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' "$FEEDS_CONF"
+    
+    # [FIX] Limpiar configuración antigua para forzar la ruta nova
+    if grep -q "src-link mcubridge" "$FEEDS_CONF"; then
+        sed -i '/src-link mcubridge/d' "$FEEDS_CONF"
+    fi
+    
+    echo "src-link mcubridge $LOCAL_FEED_PATH" >> "$FEEDS_CONF"
+    echo "[INFO] Configured local feed at $LOCAL_FEED_PATH"
+    LOCAL_FEED_ENABLED=1
+fi
+
+# Fallback: if local feed is NOT enabled, optionally copy package sources into the SDK.
+if [ "$LOCAL_FEED_ENABLED" -ne 1 ] && [ "$SYNC_PACKAGES_TO_SDK" -eq 1 ]; then
+    for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
+        if [ -d "$pkg" ]; then
+            echo "[INFO] Syncing $pkg to SDK..."
+            rm -rf "$SDK_DIR/package/$pkg"
+            cp -r "$pkg" "$SDK_DIR/package/"
+        fi
+    done
+fi
+
+# Update Feeds
+cd "$SDK_DIR" || exit 1
+MAX_RETRIES=5; RETRY=0; SUCCESS=0
+while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+    # [FIX] Pre-emptive cleanup of uboot-ath79 and nginx (recursive dependency in some SDKs)
+    [ -d "package/feeds/base/uboot-ath79" ] && rm -rf package/feeds/base/uboot-ath79
+    [ -d "package/feeds/packages/nginx" ] && rm -rf package/feeds/packages/nginx
+    
+    if ./scripts/feeds update -a; then
+        SUCCESS=1; break
+    else
+        rm -rf feeds/base feeds/packages feeds/luci feeds/routing feeds/telephony
+        RETRY=$((RETRY+1)); sleep 5
+    fi
+done
+[ $SUCCESS -ne 1 ] && exit 1
+
+# [FIX] SIL-2: Install ONLY required packages to avoid recursive dependency hell 
+# in unrelated packages like bigclown, nginx, asterisk, etc.
+echo "[INFO] Installing required packages and their dependencies..."
+./scripts/feeds install mcubridge luci-app-mcubridge mcubridge-gateway
+
+# ==============================================================================
+# [FIX CRITICO] Breaking Kconfig Recursive Dependencies (SDK 25.12.6)
+# ==============================================================================
+echo "[FIX] Breaking Kconfig recursive dependencies..."
+
+# 1. Break libcurl <-> LIBCURL_LDAP recursion via Makefile patch (Nuclear Option)
+LIBCURL_MAKEFILE="feeds/packages/net/curl/Makefile"
+if [ -f "$LIBCURL_MAKEFILE" ]; then
+    echo "[FIX] Removing LDAP from libcurl Makefile..."
+    sed -i 's/+LIBCURL_LDAP:libopenldap//g' "$LIBCURL_MAKEFILE"
+fi
+
+# 2. Total Purge to avoid duplicate definitions (python3-click, etc)
+echo "[INFO] Purging SDK metadata and redundant feeds..."
+rm -rf tmp/ feeds/*.index .config*
+# Remove ONLY the problematic symlinks in package/feeds to force fresh install
+rm -rf package/feeds/*
+
+# 3. Re-install only the essential feeds to minimize Kconfig surface
+echo "[INFO] Re-installing essential feeds..."
+./scripts/feeds update -a
+
+# [FIX] Remove duplicate/problematic upstream packages to avoid recursion
+echo "[FIX] Removing duplicate upstream packages (etc)..."
+rm -rf feeds/packages/lang/python/python-cryptography
+
+./scripts/feeds install python-psutil python-ubus python-cffi python-uci luci-base luci-light
+./scripts/feeds install -p mcubridge -a
+
+
+
+# [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
+# ... (rest of patches) ...
+PYTHON_UCI_MAKEFILE="package/feeds/packages/python-uci/Makefile"
+if [ -f "$PYTHON_UCI_MAKEFILE" ]; then
+    echo "[FIX] Patching python-uci build dependencies in $PYTHON_UCI_MAKEFILE..."
+    if ! grep -q "PKG_BUILD_DEPENDS:=python3-setuptools" "$PYTHON_UCI_MAKEFILE"; then
+        sed -i '/PKG_SOURCE_VERSION:=/a PKG_BUILD_DEPENDS:=python3-setuptools/host python3-build/host' "$PYTHON_UCI_MAKEFILE"
+    fi
+else 
+    echo "[WARN] python-uci Makefile not found at $PYTHON_UCI_MAKEFILE"
+fi
+
+# ==============================================================================
+# [FIX CRITICO] Patch python-cryptography para Cross-Compilation
+# ==============================================================================
+PYTHON_CRYPTO_MAKEFILE="package/feeds/packages/python-cryptography/Makefile"
+if [ -f "$PYTHON_CRYPTO_MAKEFILE" ]; then
+    echo "[FIX] Patching python-cryptography build flags in $PYTHON_CRYPTO_MAKEFILE..."
+    if ! grep -q "TARGET_CFLAGS += -I\$(STAGING_DIR)" "$PYTHON_CRYPTO_MAKEFILE"; then
+        sed -i '/include .*python3-package.mk/a TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)' "$PYTHON_CRYPTO_MAKEFILE"
+    fi
+else
+    echo "[WARN] python-cryptography Makefile not found at $PYTHON_CRYPTO_MAKEFILE"
+fi
+
+# ==============================================================================
+# [FIX CRITICO] Patch python-pyopenssl para Wheel Name Mismatch
+# ==============================================================================
+# PyOpenSSL genera un wheel en minúsculas (pyopenssl-*.whl), pero OpenWrt
+# espera MixedCase (pyOpenSSL-*.whl) basado en el nombre de PyPI.
+# Este parche fuerza el nombre esperado a minúsculas.
+PYTHON_OPENSSL_MAKEFILE="package/feeds/packages/python-pyopenssl/Makefile"
+if [ -f "$PYTHON_OPENSSL_MAKEFILE" ]; then
+    echo "[FIX] Patching python-pyopenssl wheel name in $PYTHON_OPENSSL_MAKEFILE..."
+    if ! grep -q "PYTHON3_PKG_WHEEL_NAME:=pyopenssl" "$PYTHON_OPENSSL_MAKEFILE"; then
+        # Insertamos la redefinición después de PKG_NAME
+        sed -i '/PKG_NAME:=/a PYTHON3_PKG_WHEEL_NAME:=pyopenssl' "$PYTHON_OPENSSL_MAKEFILE"
+    fi
+else
+    echo "[WARN] python-pyopenssl Makefile not found at $PYTHON_OPENSSL_MAKEFILE"
+fi
+# ==============================================================================
+# [FIX CRITICO] Patch python-setuptools para soportar paquetes con setuptools>=82 (hpack 4.2+, etc.)
+# ==============================================================================
+for st_mk in "feeds/packages/lang/python/python-setuptools/Makefile" "package/feeds/packages/python-setuptools/Makefile"; do
+    if [ -f "$st_mk" ]; then
+        echo "[FIX] Upgrading setuptools recipe to 84.0.0 in $st_mk..."
+        sed -i 's/PKG_VERSION:=.*/PKG_VERSION:=84.0.0/' "$st_mk"
+        sed -i 's/PKG_HASH:=.*/PKG_HASH:=f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73/' "$st_mk"
+    fi
+done
+# ==============================================================================
+
+
+if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
+    echo "[INFO] Installing mcubridge feed overrides..."
+    
+    # [FIX] Eliminar conflictos de paquetes Python (System vs Local)
+    # Estos paquetes existen en el feed oficial 'packages' pero necesitamos las versiones
+    # optimizadas o más recientes del feed 'mcubridge'.
+    for pkg_conflict in python-cryptography; do
+        if [ -d "package/feeds/packages/$pkg_conflict" ]; then
+            echo "[FIX] Removing upstream $pkg_conflict to prioritize local mcubridge version..."
+            rm -rf "package/feeds/packages/$pkg_conflict"
+        fi
+    done
+    
+    ./scripts/feeds install -f -p mcubridge -a
+fi
+
+# ==============================================================================
+# [FIX CRITICO] Rust host build on CI (LLVM download-ci-llvm)
+# ==============================================================================
+# Rust bootstrap (x.py) panics on CI if download-ci-llvm is 'true' or 'if-unchanged'
+# without a managed Git repo. Debe ser 'false' para GitHub Actions.
+for RUST_MAKEFILE in "package/feeds/packages/rust/Makefile" "feeds/packages/lang/rust/Makefile" "package/feeds/mcubridge/rust/Makefile"; do
+    if [ -f "$RUST_MAKEFILE" ]; then
+        if [ -f "$SDK_DIR/staging_dir/host/bin/rustc" ]; then
+            echo "[FIX] Host Rust injected. Stubbing out SDK Rust compilation macros in $RUST_MAKEFILE..."
+            python3 -c '
+import re, sys
+filepath = sys.argv[1]
+with open(filepath, "r") as f:
+    content = f.read()
+
+for macro in ["Host/Prepare", "Host/Configure", "Host/Compile", "Host/Install"]:
+    pattern = r"define\s+" + re.escape(macro) + r"[^\n]*\n.*?endef\n?"
+    content = re.sub(pattern, "", content, flags=re.DOTALL)
+
+stub_code = """
+define Host/Prepare
+\t@mkdir -p $(HOST_BUILD_DIR)
+\t@touch $(HOST_BUILD_DIR)/.prepared
+endef
+define Host/Configure
+\t@mkdir -p $(HOST_BUILD_DIR)
+\t@touch $(HOST_BUILD_DIR)/.configured
+endef
+define Host/Compile
+\t@mkdir -p $(HOST_BUILD_DIR) $(STAGING_DIR_HOST)/stamp $(STAGING_DIR_HOSTPKG)/stamp
+\t@touch $(HOST_BUILD_DIR)/.prepared $(HOST_BUILD_DIR)/.configured $(HOST_BUILD_DIR)/.built
+endef
+define Host/Install
+\t@mkdir -p $(STAGING_DIR_HOST)/bin $(STAGING_DIR_HOSTPKG)/bin $(STAGING_DIR_HOST)/stamp $(STAGING_DIR_HOSTPKG)/stamp
+\t@touch $(STAGING_DIR_HOST)/stamp/.rust_installed $(STAGING_DIR_HOST)/stamp/.package_rust_installed
+\t@touch $(STAGING_DIR_HOSTPKG)/stamp/.rust_installed $(STAGING_DIR_HOSTPKG)/stamp/.package_rust_installed
+endef
+"""
+if "$(eval $(call HostBuild))" in content:
+    content = content.replace("$(eval $(call HostBuild))", stub_code + "\n$(eval $(call HostBuild))")
+else:
+    content += "\n" + stub_code
+
+with open(filepath, "w") as f:
+    f.write(content)
+print(f"Successfully stubbed Host macros in {filepath}")
+' "$RUST_MAKEFILE"
+        else
+            echo "[FIX] Host Rust NOT injected. Patching rust host build config for CI..."
+            sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+            sed -i 's/llvm.download-ci-llvm=if-unchanged/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+        fi
+    fi
+done
+# ==============================================================================
+
+# [FIX] Cleanup uboot again
+[ -d "package/feeds/base/uboot-ath79" ] && rm -rf package/feeds/base/uboot-ath79
+
+# Apply Overlays
+FEEDS_PACKAGES_OVERLAY_DIR="$REPO_ROOT/openwrt-overlays/feeds/packages"
+if [ -d "$FEEDS_PACKAGES_OVERLAY_DIR" ]; then
+    mkdir -p feeds/packages
+    cp -a "$FEEDS_PACKAGES_OVERLAY_DIR/." feeds/packages/
+fi
+
+# Kernel Stubs Stripping (para evitar warnings)
+USB_MODULES_MK="package/kernel/linux/modules/usb.mk"
+if [ -f "$USB_MODULES_MK" ]; then
+    if grep -q "kmod-phy-bcm-ns-usb" "$USB_MODULES_MK"; then
+        sed -i '/kmod-phy-bcm-ns-usb2/d' "$USB_MODULES_MK"
+        sed -i '/kmod-phy-bcm-ns-usb3/d' "$USB_MODULES_MK"
+    fi
+fi
+
+# Enable Packages
+REQUIRED_PKGS="mcubridge luci-app-mcubridge mcubridge-gateway"
+# [FIX] Dependencias explícitas para asegurar selección en .config.
+REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio python3-psutil python3-ubus python3-cffi"
+
+# [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
+# heredados de escaneos previos del SDK.
+rm -rf tmp/ .config*
+touch .config
+
+for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do
+    if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
+        echo "CONFIG_PACKAGE_${pkg}=y" >> ".config"
+    fi
+done
+
+# [NUEVO FIX] Deshabilitar agresivamente la compilación de kmods en el SDK
+# El SDK no debe intentar compilar módulos del kernel (Video, USB, etc)
+echo "Deshabilitando kmods conflictivos en la configuración base..."
+echo "CONFIG_PACKAGE_kmod-usb-core=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-usb-xhci-hcd=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-video-core=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-video-uvc=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-w1=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-ieee802154=n" >> ".config"
+
+# Evitar que se compilen todos los kmods genéricamente
+sed -i 's/CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/g' .config 2>/dev/null || true
+
+make defconfig
+
+# Fail before the long package build if Kconfig discarded a required package,
+# which means one or more of its declared dependencies are unavailable.
+for pkg in $REQUIRED_PKGS; do
+    if ! grep -Fxq "CONFIG_PACKAGE_${pkg}=y" .config; then
+        echo "[ERROR] Required package '$pkg' was removed by defconfig; resolve its missing OpenWrt dependencies first." >&2
+        exit 1
+    fi
+done
+
+# 3. Compilation
+echo "[CLEANUP] Removing old .apk files..."
+find "$BIN_DIR" -type f -name '*.apk' -delete
+if [ -d "$SDK_DIR/bin" ]; then
+    echo "[CLEANUP] Removing stale .apk files from SDK bin/..."
+    find "$SDK_DIR/bin" -type f -name '*.apk' -delete
+fi
+
+# [FIX] Asegurar que estamos en el SDK antes de compilar
+cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
+
+# Build the SDK's host Python first so we can install build backends into it.
+# python3-typer needs pdm.backend, python3-cryptography needs maturin, python3-uvloop needs Cython.
+# Modern packages like hpack>=4.2.0 and h2>=4.4.1 require setuptools>=82 and wheel>=0.46.3.
+echo "[BUILD] Pre-building SDK host Python3..."
+set -o pipefail
+make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5
+make package/feeds/packages/python-setuptools/host/compile -j$(nproc) 2>&1 | tail -5 || true
+set +o pipefail
+
+_SDK_PY="$SDK_DIR/staging_dir/hostpkg/bin/python3"
+if [ -x "$_SDK_PY" ]; then
+    echo "[INFO] Injecting build backends (and CFFI dependency) into SDK Python ($($_SDK_PY --version))..."
+    "$_SDK_PY" -m pip install --no-cache-dir --ignore-installed --prefix "$SDK_DIR/staging_dir/hostpkg" \
+        "setuptools>=84.0.0" "wheel>=0.46.3" "build>=1.2.0" "installer>=0.7.0" \
+        "pdm-backend>=2.4.0" "maturin>=1.4" "Cython>=3.1" "hatchling" "hatch-vcs" "hatch-fancy-pypi-readme" "setuptools-rust" "setuptools-scm>=8.0" "vcs-versioning>=2.3.2" "cffi" 2>&1 | tail -5
+    # Clean up obsolete dist-info folders from previous base builds to avoid metadata version ambiguity
+    find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'wheel-0.4[0-5]*' -exec rm -rf {} + 2>/dev/null || true
+    find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'setuptools-[0-7]*' -exec rm -rf {} + 2>/dev/null || true
+    find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'setuptools-8[0-3]*' -exec rm -rf {} + 2>/dev/null || true
+else
+    echo "[WARN] SDK Python not found at $_SDK_PY after host build; build backends may be missing."
+fi
+
+# [FIX] Orden de compilación: Primero librerías críticas (extraídas dinámicamente)
+LIBS=$(python3 "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|python3-psutil|python3-ubus|mosquitto-client|xxd)$" | xargs)
+echo "[BUILD] Building libraries: $LIBS..."
+
+# Build all libraries in parallel with as many jobs as cores.
+for lib in $LIBS; do
+    # Only compile if the package exists in our feeds overlay
+    if [ ! -d "$REPO_ROOT/feeds/$lib" ]; then
+        echo "[SKIP] $lib is a system package (not in feeds overlay)."
+        continue
+    fi
+
+    echo "[BUILD] Building library $lib (.apk)..."
+    if [ "$VERBOSE" -eq 1 ]; then
+        make "package/feeds/mcubridge/$lib/compile" -j$(nproc) V=s || exit 1
+    else
+        if ! make "package/feeds/mcubridge/$lib/compile" -j$(nproc); then
+            echo "[RETRY] Build failed for $lib. Rerunning with -j1 V=s to expose error details..."
+            make "package/feeds/mcubridge/$lib/compile" -j1 V=s || exit 1
+        fi
+    fi
+    
+    # [FIX] Copiar artefactos .apk de librerías desde todo bin/
+    find bin/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
+done
+
+# Luego paquetes principales
+for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
+    echo "[CLEAN] Purging build stamps and artifacts for $pkg..."
+    make "package/feeds/mcubridge/$pkg/clean" 2>/dev/null || true
+    rm -rf "$SDK_DIR"/build_dir/target-*/"$pkg"-[0-9]* "$SDK_DIR"/build_dir/target-*/"$pkg"
+    rm -f "$SDK_DIR"/staging_dir/target-*/root-*/stamp/."$pkg"*
+    rm -f "$SDK_DIR"/staging_dir/target-*/stamp/."$pkg"*
+
+    echo "[BUILD] Building package $pkg (.apk)..."
+    PKG_PATH="package/feeds/mcubridge/$pkg"
+    if [ ! -d "$PKG_PATH" ] && [ -d "package/$pkg" ]; then
+        PKG_PATH="package/$pkg"
+    fi
+    if [ "$VERBOSE" -eq 1 ]; then
+        make "$PKG_PATH/compile" -j$(nproc) V=s || exit 1
+    else
+        if ! make "$PKG_PATH/compile" -j$(nproc); then
+            echo "[RETRY] Build failed for $pkg. Rerunning with -j1 V=s to expose error details..."
+            make "$PKG_PATH/compile" -j1 V=s || exit 1
+        fi
+    fi
+
+    # [FIX] Copiar artefactos .apk buscando en todo el árbol de salida bin/
+    find bin/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;
+done
+cd "$REPO_ROOT" || exit 1
+
+# [VALIDATION GATE] Validar que los paquetes esenciales del proyecto fueron generados con la versión exacta
+CURRENT_PROJECT_VERSION=$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')
+echo "[VALIDATION] Verifying generated APKs (v$CURRENT_PROJECT_VERSION) in $BIN_DIR..."
+MISSING_REQUIRED_PKGS=0
+for req in mcubridge mcubridge-gateway luci-app-mcubridge; do
+    expected_pattern="${req}-${CURRENT_PROJECT_VERSION}"
+    if ! ls "$BIN_DIR"/${expected_pattern}*.apk >/dev/null 2>&1; then
+        echo "[ERROR] Mandatory package '${expected_pattern}*.apk' was not found in $BIN_DIR!" >&2
+        MISSING_REQUIRED_PKGS=1
+    else
+        found_pkg=$(ls "$BIN_DIR"/${expected_pattern}*.apk | head -n 1)
+        echo "[OK] Found '${req}' package in $BIN_DIR: $(basename "$found_pkg")."
+    fi
+done
+
+if [ "$MISSING_REQUIRED_PKGS" -ne 0 ]; then
+    echo "[FATAL] Build failed: Core packages matching version $CURRENT_PROJECT_VERSION are missing from $BIN_DIR." >&2
+    exit 1
+fi
+
+# Build RPM package if rpmbuild is available
+if command -v rpmbuild >/dev/null 2>&1; then
+    echo "[INFO] rpmbuild detected. Building RPM package for mcubridge-gateway..."
+    if [ -f "$REPO_ROOT/mcubridge-gateway/build_rpm.py" ]; then
+        python3 "$REPO_ROOT/mcubridge-gateway/build_rpm.py" || echo "[WARN] RPM build failed"
+    else
+        echo "[WARN] build_rpm.py not found at $REPO_ROOT/mcubridge-gateway/build_rpm.py"
+    fi
+else
+    echo "[INFO] rpmbuild not found. Skipping RPM package build."
+fi
+
+# Checksums
+if ls "$BIN_DIR"/*.apk >/dev/null 2>&1; then
+    if command -v sha256sum >/dev/null 2>&1; then
+        echo "[INFO] Generating SHA256SUMS manifest..."
+        (cd "$BIN_DIR" && sha256sum *.apk > SHA256SUMS)
+    fi
+else
+    echo "[WARN] No .apk artifacts detected in $BIN_DIR."
+fi
+
+echo "\n[OK] Build finished. Check the bin/ directory."
+
+# Cleanup
+for pkg in mcubridge luci-app-mcubridge mcubridge-gateway; do
+    find "$pkg" -type d -name build -exec rm -rf {} +
+    find "$pkg" -type d -name bin -exec rm -rf {} +
+    find "$pkg" -type d -name dist -exec rm -rf {} +
+    find "$pkg" -type d -name '*.egg-info' -exec rm -rf {} +
+done

@@ -1,0 +1,170 @@
+import json
+from pathlib import Path
+from typing import Any, cast
+
+from dirty_equals import IsStr
+from pytest_mock import MockerFixture
+from typer.testing import CliRunner
+
+from tools.audit.audit_bridge_status import app, audit_status_dict
+
+runner = CliRunner()
+
+
+def test_audit_status_dict_clean() -> None:
+    data = {
+        "metrics": {
+            "cloud_spool_dropped_limit": 0,
+            "cloud_spool_trim_events": 0,
+            "queue_depths": {"mailbox_outgoing": 0},
+        },
+        "bridge": {
+            "serial_link": {"connected": True},
+            "handshake": {
+                "failures": 0,
+                "failure_streak": 0,
+                "last_error": "",
+                "fatal_count": 0,
+            },
+        },
+    }
+    errors = audit_status_dict(data)
+    assert errors == []
+
+
+def test_audit_status_dict_anomalies() -> None:
+    # 1. Invalid root types
+    assert "not a dictionary" in audit_status_dict({"metrics": "invalid"})[0]
+    assert "not a dictionary" in audit_status_dict({"metrics": {}, "bridge": "invalid"})[0]
+
+    # 2. Spool anomalies
+    spool_data = {
+        "metrics": {
+            "cloud_spool_dropped_limit": 5,
+            "cloud_spool_trim_events": 2,
+        },
+        "bridge": {},
+    }
+    spool_errors = audit_status_dict(spool_data)
+    assert spool_errors == [
+        IsStr(regex=r".*dropped messages.*"),
+        IsStr(regex=r".*trim events.*"),
+    ]
+
+    # 3. Serial link and handshake anomalies
+    link_data = {
+        "metrics": {},
+        "bridge": {
+            "serial_link": {"connected": False},
+            "handshake": {
+                "failures": 3,
+                "failure_streak": 3,
+                "last_error": "link_sync_timeout",
+                "fatal_count": 1,
+                "fatal_reason": "link_sync_timeout",
+                "fatal_detail": "streak_exceeded",
+            },
+        },
+    }
+    link_errors = audit_status_dict(link_data)
+    assert link_errors == [
+        IsStr(regex=r".*disconnected.*"),
+        IsStr(regex=r".*error: link_sync_timeout.*"),
+        IsStr(regex=r".*3 failure.*"),
+        IsStr(regex=r".*streak=3.*"),
+        IsStr(regex=r".*Fatal handshake.*"),
+    ]
+
+
+def test_audit_cli_raw_json_clean() -> None:
+    raw = json.dumps(
+        {
+            "metrics": {"cloud_spool_dropped_limit": 0},
+            "bridge": {"serial_link": {"connected": True}, "handshake": {"failures": 0}},
+        }
+    )
+    result = runner.invoke(cast(Any, app), ["--raw-json", raw])
+    assert result.exit_code == 0
+    assert "STATUS AUDIT PASS" in result.stdout
+
+
+def test_audit_cli_raw_json_with_errors() -> None:
+    raw = json.dumps(
+        {
+            "metrics": {"cloud_spool_dropped_limit": 12},
+            "bridge": {"handshake": {"last_error": "link_sync_timeout"}},
+        }
+    )
+    result = runner.invoke(cast(Any, app), ["--raw-json", raw])
+    assert result.exit_code == 1
+    assert "STATUS AUDIT FAIL" in result.stderr
+    assert "dropped messages" in result.stderr
+
+
+def test_audit_cli_file(tmp_path: Path) -> None:
+    clean_file = tmp_path / "status.json"
+    clean_file.write_text(
+        json.dumps(
+            {
+                "metrics": {},
+                "bridge": {"serial_link": {"connected": True}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(cast(Any, app), ["--status-path", str(clean_file)])
+    assert result.exit_code == 0
+
+    # Nonexistent file
+    missing = runner.invoke(cast(Any, app), ["--status-path", str(tmp_path / "nonexistent.json")])
+    assert missing.exit_code == 1
+    assert "not found" in missing.stderr
+
+    # Corrupt json file
+    corrupt = tmp_path / "corrupt.json"
+    corrupt.write_text("invalid json {{{", encoding="utf-8")
+    corrupt_res = runner.invoke(cast(Any, app), ["--status-path", str(corrupt)])
+    assert corrupt_res.exit_code == 1
+    assert "Failed to parse" in corrupt_res.stderr
+
+
+def test_audit_cli_ubus_success(mocker: MockerFixture) -> None:
+    from unittest.mock import MagicMock
+
+    import tools.audit.audit_bridge_status as audit_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.return_value = [{"connected": True, "synchronized": True, "capabilities": {}}]
+
+    mocker.patch.object(audit_mod, "ubus", mock_ubus)
+    result = runner.invoke(cast(Any, app), ["--ubus"])
+    assert result.exit_code == 0
+    assert "STATUS AUDIT PASS" in result.stdout
+    mock_ubus.connect.assert_called_once_with()
+    mock_ubus.call.assert_called_once_with("mcubridge", "status", {})
+
+
+def test_audit_cli_ubus_module_missing(mocker: MockerFixture) -> None:
+    import tools.audit.audit_bridge_status as audit_mod
+
+    mocker.patch.object(audit_mod, "ubus", None)
+    result = runner.invoke(cast(Any, app), ["--ubus"])
+    assert result.exit_code == 1
+    assert "STATUS AUDIT FAIL" in result.stderr
+    assert "Native python-ubus module is not installed" in result.stderr
+
+
+def test_audit_cli_ubus_failure(mocker: MockerFixture) -> None:
+    from unittest.mock import MagicMock
+
+    import tools.audit.audit_bridge_status as audit_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_ubus.connect.return_value = True
+    mock_ubus.call.side_effect = OSError("UBUS failure")
+
+    mocker.patch.object(audit_mod, "ubus", mock_ubus)
+    result = runner.invoke(cast(Any, app), ["--ubus"])
+    assert result.exit_code == 1
+    assert "STATUS AUDIT FAIL" in result.stderr

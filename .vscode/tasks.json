@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Compile Emulator (Base)",
+      "type": "shell",
+      "command": "./tools/compile_emulator.sh mcubridge-library-arduino/tests/bridge_emulator",
+      "group": "build",
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Compile All Host Tests",
+      "type": "shell",
+      "command": "./tools/ci_arduino_host_tests.sh --install-only",
+      "group": "build",
+      "problemMatcher": [
+        "$gcc"
+      ]
+    },
+    {
+      "label": "Run Python Tests (All)",
+      "type": "shell",
+      "command": "pytest mcubridge/tests",
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Run Emulation (Smoke Test)",
+      "type": "shell",
+      "command": "python3 tools/emulation_runner.py --firmware mcubridge-library-arduino/tests/bridge_emulator mcubridge-client-examples/client_tests/test_smoke_connection.py",
+      "dependsOn": "Compile Emulator (Base)",
+      "group": "test"
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+from pathlib import Path
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from grpclib.client import Channel
+from mcubridge_client import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from mcubridge_client import LocalBridgeStub
+from mcubridge_client.definitions import (
+    build_bridge_args,
+)
+from mcubridge_client.env import dump_client_env, is_openwrt, read_uci_general
+from mcubridge_client.protocol import CLOUD_DEFAULT_TOPIC_PREFIX, DEFAULT_CLOUD_HOST, DEFAULT_CLOUD_PORT, Topic
+from mcubridge_client.spi import SpiDevice
+
+
+@pytest.fixture
+def mock_grpc() -> tuple[MagicMock, MagicMock]:
+    mock_channel = MagicMock(spec=Channel)
+
+    mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
+    mock_stub.DigitalWrite = AsyncMock()
+    mock_stub.AnalogWrite = AsyncMock()
+    mock_stub.DatastorePut = AsyncMock()
+    mock_stub.FileWrite = AsyncMock()
+    mock_stub.AnalogRead = AsyncMock()
+    mock_stub.PinSubscribe = AsyncMock()
+    return mock_channel, mock_stub
+
+
+async def test_client_connect_disconnect(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    mock_channel, mock_stub = mock_grpc
+    assert mock_channel is not None
+    assert mock_stub is not None
+
+
+async def test_client_digital_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    msg = mcu_wire_pb2.DigitalWrite(pin=13, value=1)
+    await mock_stub.DigitalWrite(msg)
+    mock_fn = cast(AsyncMock, mock_stub.DigitalWrite)
+    mock_fn.assert_awaited_once_with(msg)
+    call_args = mock_fn.call_args
+    assert call_args is not None
+    sent = cast(mcu_wire_pb2.DigitalWrite, call_args[0][0])
+    assert sent.pin == 13
+    assert sent.value == 1
+
+
+async def test_client_analog_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    msg = mcu_wire_pb2.AnalogWrite(pin=3, value=128)
+    await mock_stub.AnalogWrite(msg)
+    mock_fn = cast(AsyncMock, mock_stub.AnalogWrite)
+    mock_fn.assert_awaited_once_with(msg)
+    call_args = mock_fn.call_args
+    assert call_args is not None
+    sent = cast(mcu_wire_pb2.AnalogWrite, call_args[0][0])
+    assert sent.pin == 3
+    assert sent.value == 128
+
+
+async def test_client_datastore_put(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    mock_fn = cast(AsyncMock, mock_stub.DatastorePut)
+    mock_fn.return_value = cloud_gateway_pb2.GenericResponse(status="ok")
+    msg = mcu_wire_pb2.DatastorePut(key="test_key", value=b"test_value")
+    res = cast(cloud_gateway_pb2.GenericResponse, await mock_stub.DatastorePut(msg))
+    mock_fn.assert_awaited_once_with(msg)
+    assert res.status == "ok"
+    call_args = mock_fn.call_args
+    assert call_args is not None
+    sent = cast(mcu_wire_pb2.DatastorePut, call_args[0][0])
+    assert sent.key == "test_key"
+    assert sent.value == b"test_value"
+
+
+async def test_client_file_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    msg = mcu_wire_pb2.FileWrite(path="test.txt", data=b"content")
+    await mock_stub.FileWrite(msg)
+    mock_fn = cast(AsyncMock, mock_stub.FileWrite)
+    mock_fn.assert_awaited_once_with(msg)
+    call_args = mock_fn.call_args
+    assert call_args is not None
+    sent = cast(mcu_wire_pb2.FileWrite, call_args[0][0])
+    assert sent.path == "test.txt"
+    assert sent.data == b"content"
+
+
+async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    mock_fn = cast(AsyncMock, mock_stub.AnalogRead)
+    mock_fn.side_effect = TimeoutError("RPC timeout")
+    msg = mcu_wire_pb2.PinRead(pin=0)
+    with pytest.raises(TimeoutError):
+        await mock_stub.AnalogRead(msg)
+
+
+async def test_client_pin_subscribe(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    mock_fn = cast(AsyncMock, mock_stub.PinSubscribe)
+    mock_fn.return_value = mcu_wire_pb2.PinSubscribeResponse(pin=13, success=True)
+    msg = mcu_wire_pb2.PinSubscribeRequest(
+        pin=13,
+        mode=config_schema_pb2.PinModeType.PIN_INPUT,
+        interval_ms=100,
+        hysteresis=1,
+        enabled=True,
+    )
+    res = cast(mcu_wire_pb2.PinSubscribeResponse, await mock_stub.PinSubscribe(msg))
+    mock_fn.assert_awaited_once_with(msg)
+    assert res.pin == 13
+    assert res.success is True
+    call_args = mock_fn.call_args
+    assert call_args is not None
+    sent = cast(mcu_wire_pb2.PinSubscribeRequest, call_args[0][0])
+    assert sent.pin == 13
+    assert sent.interval_ms == 100
+    assert sent.enabled is True
+
+
+def test_definitions_build_bridge_args() -> None:
+    # With topic_prefix
+    args1 = build_bridge_args(host="10.0.0.1", port=9000, device_id="dev1", topic_prefix="custom")
+    assert args1["topic_prefix"] == "custom"
+    assert args1["device_id"] == "dev1"
+
+    # Without topic_prefix (empty string triggers False branch)
+    args2 = build_bridge_args(host="10.0.0.1", port=9000, device_id="dev1", topic_prefix="")
+    assert "topic_prefix" not in args2
+    assert args2["device_id"] == "dev1"
+
+
+def test_client_defaults_match_generated_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MCUBRIDGE_GATEWAY_HOST", raising=False)
+    monkeypatch.delenv("MCUBRIDGE_CLOUD_HOST", raising=False)
+    monkeypatch.delenv("MCUBRIDGE_GATEWAY_PORT", raising=False)
+    monkeypatch.delenv("MCUBRIDGE_CLOUD_PORT", raising=False)
+
+    assert Topic.PREFIX == CLOUD_DEFAULT_TOPIC_PREFIX
+    args = build_bridge_args(device_id="dev1")
+    assert args["host"] == DEFAULT_CLOUD_HOST
+    assert args["port"] == DEFAULT_CLOUD_PORT
+    assert args["topic_prefix"] == CLOUD_DEFAULT_TOPIC_PREFIX
+
+
+def test_env_functions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # 1. is_openwrt with forced env and real file
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
+    assert is_openwrt() is True
+
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
+    fake_release = tmp_path / "openwrt_release"
+    fake_release.touch()
+    assert is_openwrt(release_file=fake_release) is True
+    assert is_openwrt(release_file=tmp_path / "nonexistent", version_file=tmp_path / "nonexistent2") is False
+
+    # 2. read_uci_general when not openwrt
+    assert read_uci_general() == {}
+
+    # 2b. read_uci_general when openwrt but find_spec is None
+    def _mock_find_spec(_name: str) -> None:
+        return None
+
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
+    monkeypatch.setattr("importlib.util.find_spec", _mock_find_spec)
+    assert read_uci_general() == {}
+
+    # 2c. read_uci_general when openwrt and mcubridge.config.common is loaded
+    monkeypatch.undo()
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
+    uci_res = read_uci_general()
+    assert isinstance(uci_res, dict)
+    assert "serial_baud" in uci_res
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
+
+    # 3. read_uci_general when get_uci_config is not callable
+    assert read_uci_general(config_getter=cast(Any, "not_callable")) == {}
+
+    # 4. read_uci_general when get_uci_config raises OSError
+    def _raise_oserror() -> dict[str, Any]:
+        raise OSError("disk error")
+
+    assert read_uci_general(config_getter=_raise_oserror) == {}
+
+    # 5. read_uci_general with valid config filtering internal keys
+    res = read_uci_general(config_getter=lambda: {"port": "50051", ".hidden": "x", "_priv": "y"})
+    assert res == {"port": "50051"}
+
+    # 6. dump_client_env
+    logs: list[str] = []
+    fake_logger = MagicMock()
+
+    def _capture_log(msg: str) -> None:
+        logs.append(msg)
+
+    fake_logger.info = _capture_log
+    dump_client_env(fake_logger)
+    assert len(logs) == 4
+    assert "MCU Bridge client configuration" in logs[0]
+
+
+async def test_spi_device_transfer() -> None:
+    mock_channel = MagicMock(spec=Channel)
+    mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
+    mock_spi_config = AsyncMock()
+    mock_stub.SpiConfigure = mock_spi_config
+    mock_stub.SpiTransfer = AsyncMock(return_value=mcu_wire_pb2.SpiTransfer(data=b"\xaa\xbb"))
+
+    dev = SpiDevice(mock_stub)
+
+    # Transfer with bytes while inactive (should call begin() automatically)
+    assert not dev.is_active
+    res1 = await dev.transfer(b"\x01\x02")
+    assert dev.is_active
+    assert res1 == b"\xaa\xbb"
+    mock_spi_config.assert_awaited_once()
+
+    # Transfer with sequence/list of ints while active
+    res2 = await dev.transfer([0x03, 0x04])
+    assert res2 == b"\xaa\xbb"
+
+    # End
+    await dev.end()
+    assert not dev.is_active

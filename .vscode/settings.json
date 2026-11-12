@@ -1,0 +1,134 @@
+{
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestPath": "pytest",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": [
+    "."
+  ],
+  "flake8.args": [
+    "--max-line-length=120",
+    "--extend-select=E501"
+  ],
+  "ruff.lint.args": [
+    "--extend-select=E501"
+  ],
+
+  "C_Cpp.default.includePath": [
+    "${workspaceFolder}/mcubridge-library-arduino/src",
+    "${workspaceFolder}/mcubridge-library-arduino/tests",
+    "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
+    "${workspaceFolder}/tools/arduino_stub/include",
+    "${env:HOME}/Arduino/libraries/wolfssl/src",
+    "~/Arduino/libraries/**"
+  ],
+  "C_Cpp.default.defines": [
+    "ARDUINO=100",
+    "BRIDGE_HOST_TEST=1",
+    "ETL_NO_STL",
+    "ETL_FORCE_STD_INITIALIZER_LIST",
+    "BRIDGE_ENABLE_CONSOLE=1",
+    "BRIDGE_ENABLE_DATASTORE=1",
+    "BRIDGE_ENABLE_MAILBOX=1",
+    "BRIDGE_ENABLE_FILESYSTEM=1",
+    "BRIDGE_ENABLE_PROCESS=1",
+    "BRIDGE_ENABLE_SPI=1",
+    "BRIDGE_ENABLE_TEST_INTERFACE=1",
+    "BRIDGE_FAULT_INJECTION=1"
+  ],
+  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.default.compilerPath": "/usr/bin/g++",
+  "makefile.configurations": [
+    {
+      "name": "mcubridge",
+      "makefilePath": "${workspaceFolder}/mcubridge/Makefile",
+      "makeDirectory": "${workspaceFolder}/mcubridge"
+    },
+    {
+      "name": "mcubridge-gateway",
+      "makefilePath": "${workspaceFolder}/mcubridge-gateway/Makefile",
+      "makeDirectory": "${workspaceFolder}/mcubridge-gateway"
+    },
+    {
+      "name": "luci-app-mcubridge",
+      "makefilePath": "${workspaceFolder}/luci-app-mcubridge/Makefile",
+      "makeDirectory": "${workspaceFolder}/luci-app-mcubridge"
+    }
+  ],
+  "makefile.defaultConfiguration": "mcubridge",
+  "makefile.makefilePath": "${workspaceFolder}/mcubridge/Makefile",
+  "makefile.makeDirectory": "${workspaceFolder}/mcubridge",
+  "makefile.configureOnOpen": true,
+  "makefile.configureAfterCommand": false,
+  "makefile.loggingLevel": "Normal",
+  "makefile.dryrunSwitches": [],
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.languageServerMode": "full",
+  "python.analysis.exclude": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py",
+    ".tox",
+    ".venv"
+  ],
+  "python.analysis.ignore": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**"
+  ],
+  "pyrefly.analysis.exclude": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**"
+  ],
+  "pyrefly.analysis.ignore": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**"
+  ],
+  "files.exclude": {
+    "**/_pyrefly_virtual__/**": true,
+    "**/__pyrefly_virtual__/**": true,
+    "**/inmemory/**": true
+  },
+  "files.watcherExclude": {
+    "**/_pyrefly_virtual__/**": true,
+    "**/__pyrefly_virtual__/**": true,
+    "**/inmemory/**": true
+  },
+  "markdown.validate.enabled": true,
+  "files.associations": {
+    "**/.github/actions/**/action.yml": "yaml",
+    "**/.github/actions/**/action.yaml": "yaml"
+  },
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-action.json": [
+      "/.github/actions/**/action.yml",
+      "/.github/actions/**/action.yaml",
+      ".github/actions/**/action.yml",
+      ".github/actions/**/action.yaml",
+      "**/.github/actions/**/action.yml",
+      "**/.github/actions/**/action.yaml",
+      "action.yml",
+      "action.yaml"
+    ],
+    "https://json.schemastore.org/github-workflow.json": [
+      "/.github/workflows/*.yml",
+      "/.github/workflows/*.yaml",
+      "**/.github/workflows/*.yml",
+      "**/.github/workflows/*.yaml"
+    ]
+  },
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+  "python.analysis.diagnosticsSource": "Pylance + Pyrefly",
+  "cmake.sourceDirectory": "/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/tests/Unity"
+}

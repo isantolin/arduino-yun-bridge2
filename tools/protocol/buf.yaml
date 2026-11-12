@@ -1,0 +1,19 @@
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - BASIC
+    - FILE_LOWER_SNAKE_CASE
+  except:
+    - PACKAGE_DIRECTORY_MATCH
+# Clean-break protocol evolution without reserved tombstones.
+breaking:
+  use:
+    - WIRE
+  except:
+    - FIELD_NO_DELETE_UNLESS_NUMBER_RESERVED
+    - ENUM_VALUE_NO_DELETE_UNLESS_NUMBER_RESERVED
+    - ENUM_NO_DELETE
+    - RESERVED_ENUM_NO_DELETE
+    - RPC_SAME_SERVER_STREAMING

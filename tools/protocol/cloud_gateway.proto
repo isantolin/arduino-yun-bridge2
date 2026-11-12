@@ -5,6 +5,14 @@ package rpc.pb;
 import "config_schema.proto";
 import "mcu_wire.proto";
 
+message FileRead {
+  string path = 1;
+}
+
+message FileReadResponse {
+  bytes content = 1;
+}
+
 message SystemStatus {
   float cpu_percent = 1;
   uint64 memory_total_bytes = 2;

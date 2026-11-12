@@ -354,6 +354,15 @@ jobs:
           name: simavr-logs
           path: simavr-logs
           if-no-files-found: ignore
+      - name: Upload AVR memory maps and stack usage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: avr-memory-analysis
+          path: |
+            build/simavr/**/*.map
+            build/simavr/**/*.su
+          if-no-files-found: ignore
 
   renode-emulation:
     name: Renode ARM Emulation (Arduino MKR WiFi 1010)

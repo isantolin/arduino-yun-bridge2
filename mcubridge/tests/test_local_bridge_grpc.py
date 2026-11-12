@@ -241,7 +241,7 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
 
     # MCU file reads are not routed through the removed Nanopb RPC.
     mock_serial.send.reset_mock()
-    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="mcu/eeprom.bin"))
+    stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="mcu/eeprom.bin"))
     await local_svc.FileRead(stream)
     assert stream.sent_message.content == b""
     mock_serial.send.assert_not_called()

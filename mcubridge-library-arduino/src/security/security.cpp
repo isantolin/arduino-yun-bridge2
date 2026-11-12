@@ -101,12 +101,23 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
     ok = wc_HmacUpdate(&hmac, input_data,
                        static_cast<word32>(input.size())) == 0;
   }
-  if (ok) {
-    ok = wc_HmacFinal(&hmac, digest_scratch.data()) == 0;
-  }
+#if defined(WOLF_CRYPTO_CB)
+  // Crypto callbacks may retain the key pointer; keep the caller's buffer
+  // unchanged until the provider has completed the final operation.
+  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> full_digest = {};
+  if (ok) ok = wc_HmacFinal(&hmac, full_digest.data()) == 0;
   wc_HmacFree(&hmac);
-
+  if (ok) {
+    etl::copy(full_digest.begin(), full_digest.end(), digest_scratch.begin());
+  } else {
+    secure_zero(digest_scratch);
+  }
+  secure_zero(pw::span<uint8_t>(full_digest));
+#else
+  if (ok) ok = wc_HmacFinal(&hmac, digest_scratch.data()) == 0;
+  wc_HmacFree(&hmac);
   if (!ok) secure_zero(digest_scratch);
+#endif
   return ok;
 }
 

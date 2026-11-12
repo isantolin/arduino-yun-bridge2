@@ -698,7 +698,7 @@ class BridgeService:
 
     async def file_read(self, path_or_req: str | cloud_gateway_pb2.FileRead) -> cloud_gateway_pb2.FileReadResponse:
         """Read a file from the MPU filesystem; MCU storage uses pw_transfer."""
-        path = path_or_req.path if isinstance(path_or_req, cloud_gateway_pb2.FileRead) else str(path_or_req)
+        path = path_or_req.path if isinstance(path_or_req, cloud_gateway_pb2.FileRead) else path_or_req
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
             logger.warning(

@@ -1,6 +1,6 @@
-# Upstream pw_transfer integration
+# Upstream pw_transfer integration (Arduino Mega 2560)
 
-The AVR build of McuBridge now exposes upstream Pigweed `pw_transfer` through the existing RPC/HDLC channel.
+The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. This is an optional application-resource API; it does not replace the existing file RPC.
 
 ## Runtime ownership
 
@@ -9,8 +9,9 @@ The AVR build of McuBridge now exposes upstream Pigweed `pw_transfer` through th
 - `Bridge.process()` polls the thread with a bounded event budget after receiving serial/HDLC packets.
 - Applications must not create another transfer thread or call `Poll()` themselves.
 - The port's role arbiter permits one active transfer role at a time. Client and server transfers can be reused sequentially, not simultaneously.
+- This integration is enabled only for the ATmega2560 target. Smaller AVR targets, including ATmega32U4, are not application targets.
 
-The API is available on AVR builds:
+The API is available when compiling for Arduino Mega 2560:
 
 ```cpp
 Bridge.transferService()
@@ -19,18 +20,18 @@ Bridge.transferClient()
 
 ## Registering an application resource
 
-Handlers must have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
+Handlers and their backing streams must have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
 
 ```cpp
-#include <array>
+#include <etl/array.h>
 #include <pw_stream/memory_stream.h>
 #include <pw_transfer/handler.h>
 
 namespace {
 constexpr uint32_t kResourceId = 0x1001;
-std::array<std::byte, 32> resource_bytes{};
+etl::array<std::byte, 32> resource_bytes{};
 pw::stream::MemoryReader resource_reader{
-    pw::ConstByteSpan(resource_bytes)};
+    pw::ConstByteSpan(resource_bytes.data(), resource_bytes.size())};
 pw::transfer::ReadOnlyHandler resource_handler{
     kResourceId, resource_reader};
 }
@@ -40,7 +41,7 @@ void setup() {
   const bool registered =
       Bridge.transferService().RegisterHandler(resource_handler);
   if (!registered) {
-    // Handle duplicate/invalid resource registration.
+    Bridge.enterSafeState();
   }
 }
 
@@ -49,16 +50,18 @@ void loop() {
 }
 ```
 
-The service is already registered with the upstream `pw_rpc::Server`; applications register individual resource handlers through `transferService()`.
-
-For an outgoing read or write, use `Bridge.transferClient()` and keep the stream reader/writer and completion callback alive until completion. The main loop must continue calling `Bridge.process()` so the cooperative transfer state machine advances.
+The transfer service is registered with the upstream `pw_rpc::Server` by Bridge initialization. Applications register resource handlers through `transferService()`. For an outgoing read or write, use `transferClient()` and keep the stream reader/writer and completion callback alive until completion.
 
 ## Existing file RPC behavior
 
-The existing `FileSystemService.Read` method remains Nanopb server-streaming. It already provides bounded chunked reads and is not replaced by `pw_transfer` merely for architectural uniformity. Use `pw_transfer` for resources that benefit from its transfer protocol, resumability/retry behavior, or application-defined handlers; avoid maintaining duplicate file-transfer paths without a concrete requirement.
+`FileSystemService.Read` remains Nanopb server-streaming. It already provides bounded chunked file reads and is not replaced by `pw_transfer`. Use `pw_transfer` for separate application resources that benefit from its transfer protocol, retries, or resumability. Do not maintain duplicate file-transfer paths without a concrete requirement.
 
-## Memory and validation
+## Validation and release gates
 
-The AVR port uses fixed-size buffers and a bounded cooperative event queue. The Bridge integration currently configures 128-byte thread buffers and a 256-byte transfer window. Validate the actual board's complete firmware SRAM/Flash and worst-case stack before enabling application handlers on a 32U4 with its 2.5 KiB SRAM budget.
+- The port is pinned to [avr_pigweed_port PR #8](https://github.com/isantolin/avr_pigweed_port/pull/8), HEAD `e0b3b74c089a3123030dfcf207633fbdf9713792`.
+- CI compiles both BridgeControl and a dedicated `pw_transfer` API sketch for Arduino Mega 2560.
+- The port CI exercises upstream transfer reads/writes, retries, cancellation, timeout, bounded-queue saturation, and sequential role reuse under `simavr`.
+- The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.
+- Hardware UART/HDLC transfer against a live MPU remains a separate release gate.
 
-The dependent port PR is [avr_pigweed_port PR #6](https://github.com/isantolin/avr_pigweed_port/pull/6). This Bridge change is intentionally a draft until the port's current-head CI and the Yún ATmega32U4 compile pass.
+The existing `FileSystemService.Read` and MPU contracts remain unchanged.

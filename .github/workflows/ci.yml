@@ -138,17 +138,25 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
-      - name: Compile BridgeControl for Arduino Yún (ATmega32U4)
+      - name: Compile BridgeControl for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino \
-            arduino:avr:yun \
-            arduino-yun-build
+            arduino:avr:mega \
+            arduino-mega2560-build
+      - name: Compile cooperative pw_transfer API for Arduino Mega 2560
+        run: |
+          bash tools/ci/compile_firmware.sh \
+            mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \
+            arduino:avr:mega \
+            arduino-pw-transfer-build
       - name: Profile Memory Usage
         if: always()
         run: |
           mkdir -p arduino-logs
           tox -e arduino-profile -- arduino-build --output arduino-logs/symbol_profile.md
+          tox -e arduino-profile -- arduino-mega2560-build --output arduino-logs/mega2560_bridge_profile.md
+          tox -e arduino-profile -- arduino-pw-transfer-build --output arduino-logs/mega2560_pw_transfer_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7

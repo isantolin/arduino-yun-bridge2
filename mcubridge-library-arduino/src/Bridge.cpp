@@ -268,7 +268,7 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(__AVR_ATmega2560__)
       ,
       _transfer_thread(
           pw::ByteSpan(_transfer_chunk_storage.data(),
@@ -299,7 +299,7 @@ BridgeClass::~BridgeClass() {
                                 ,
                                 g_mailbox_service
 #endif
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(__AVR_ATmega2560__)
                                 ,
                                 _transfer_service
 #endif
@@ -382,7 +382,7 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(__AVR_ATmega2560__)
                               ,
                               _transfer_service
 #endif
@@ -440,7 +440,7 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(__AVR_ATmega2560__)
   const pw::Status transfer_status = _transfer_thread.Poll(2);
   if (!transfer_status.ok() &&
       transfer_status != pw::Status::Unavailable()) {

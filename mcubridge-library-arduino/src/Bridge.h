@@ -225,7 +225,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(__AVR_ATmega2560__)
   // Upstream pw_transfer endpoints share one cooperative Thread<1, 1>.
   // The port's role arbiter permits client/server transfers sequentially.
   pw::transfer::Client& transferClient() { return _transfer_client; }
@@ -290,7 +290,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(__AVR_ATmega2560__)
   static constexpr size_t kTransferBufferSize = 128;
   etl::array<pw::byte, kTransferBufferSize> _transfer_chunk_storage{};
   etl::array<pw::byte, kTransferBufferSize> _transfer_encode_storage{};

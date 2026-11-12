@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
@@ -70,6 +71,44 @@ async def test_pw_transfer_client_is_shared_and_nonblocking(
     assert isinstance(manager, FakeTransferManager)
     assert manager.max_chunk_size_bytes == 128
     assert manager.last_write == (0x4D454741, b"data", 9)
+
+
+async def test_pw_transfer_cancellation_keeps_role_lock_until_worker_finishes(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    writes: list[tuple[int, bytes]] = []
+
+    class BlockingTransferManager:
+        def __init__(self, _service: object, *, max_chunk_size_bytes: int) -> None:
+            assert max_chunk_size_bytes == 128
+
+        def read(self, _resource_id: int) -> bytes:
+            worker_started.set()
+            release_worker.wait(timeout=2.0)
+            return b""
+
+        def write(self, resource_id: int, data: bytes) -> None:
+            writes.append((resource_id, data))
+
+    monkeypatch.setattr("mcubridge.transport.serial.pw_transfer.Manager", BlockingTransferManager)
+
+    first = asyncio.create_task(transport.transfer_read(0x4D454741))
+    assert await asyncio.to_thread(worker_started.wait, 1.0)
+    first.cancel()
+    second = asyncio.create_task(transport.transfer_write(0x4D454741, b"next"))
+    await asyncio.sleep(0.05)
+    assert writes == []
+
+    release_worker.set()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    await second
+    assert writes == [(0x4D454741, b"next")]
 
 
 async def test_pw_transfer_rejects_disconnected_link(

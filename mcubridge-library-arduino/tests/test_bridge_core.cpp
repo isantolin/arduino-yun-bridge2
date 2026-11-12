@@ -561,13 +561,16 @@ void test_bridge_authenticated_digital_write_frame() {
       rpc_packet, sizeof(rpc_packet));
   TEST_ASSERT_GREATER_THAN(0, rpc_packet_size);
 
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> host_to_mcu_key = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> mcu_to_host_key = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
+  const auto host_to_mcu_key =
+      pw::span<const uint8_t>(session_keys.data(), rpc::RPC_AEAD_KEY_SIZE);
+  const auto mcu_to_host_key = pw::span<const uint8_t>(
+      session_keys.data() + rpc::RPC_AEAD_KEY_SIZE, rpc::RPC_AEAD_KEY_SIZE);
   const auto secret =
       pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kSharedSecret),
                               sizeof(kSharedSecret) - 1U);
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
-      secret, handshake_nonce, host_to_mcu_key, mcu_to_host_key));
+      secret, handshake_nonce, session_keys));
 
   constexpr uint64_t kCounter = 1U;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
@@ -611,8 +614,7 @@ void test_bridge_authenticated_digital_write_frame() {
   TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
   TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
 
-  rpc::security::secure_zero(host_to_mcu_key);
-  rpc::security::secure_zero(mcu_to_host_key);
+  rpc::security::secure_zero(pw::span<uint8_t>(session_keys));
 }
 
 void test_bridge_receive_security_gate_variants() {

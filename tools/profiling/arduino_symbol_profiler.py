@@ -2,6 +2,7 @@
 """Deep profiling of Arduino ELF files to identify largest symbols using pyelftools."""
 
 from __future__ import annotations
+import re
 import shutil
 import subprocess
 import sys
@@ -190,8 +191,16 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
                 size = int(size_text)
             except ValueError:
                 continue
-            source, separator, function = location_and_function.rpartition(":")
-            if not separator:
+            location_match = re.match(
+                r"^(.*):(\\d+):(\\d+):(.*)$", location_and_function
+            )
+            if location_match:
+                source = (
+                    f"{location_match.group(1)}:"
+                    f"{location_match.group(2)}:{location_match.group(3)}"
+                )
+                function = location_match.group(4)
+            else:
                 source, function = str(usage_file), location_and_function
             entries.append((size, function, source, qualifier))
 

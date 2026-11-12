@@ -6,6 +6,8 @@ The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through
 
 - `BridgeClass` owns one `pw::transfer::Thread<1, 1>`.
 - The AVR thread uses a 128-byte chunk buffer and a 256-byte encode buffer, satisfying upstream's requirement that the encode buffer exceed the chunk buffer and cover the configured frame size.
+- The Python protocol generator registers the upstream `pw.transfer.Transfer` descriptor from Pigweed's `pw_transfer.transfer_pb2`, so the daemon RPC client can resolve `Read`, `Write`, and `GetResourceStatus`.
+- A Python consumer can create `pw_transfer.Manager(serial_transport.rpc_client.channel(1).rpcs.pw.transfer.Transfer, max_chunk_size_bytes=128)`; the 128-byte chunk cap matches the AVR staging buffer.
 - The same thread is shared by `Bridge.transferService()` and `Bridge.transferClient()`.
 - `Bridge.process()` polls the thread with a bounded event budget after receiving serial/HDLC packets.
 - Applications must not create another transfer thread or call `Poll()` themselves.

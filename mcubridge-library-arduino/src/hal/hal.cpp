@@ -1,6 +1,9 @@
 #include "hal.h"
 
 #include <etl/algorithm.h>
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/pgmspace.h>
+#endif
 
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
@@ -132,14 +135,22 @@ bool checkStackOverflow() {
 
 static bool run_sram_march_test() {
   etl::array<uint8_t, 32> march_probe{};
-  constexpr etl::array<uint8_t, 4> patterns = {0x55, 0xAA, 0x00, 0xFF};
-
-  return etl::all_of(
-      patterns.begin(), patterns.end(), [&march_probe](uint8_t pat) {
-        etl::fill(march_probe.begin(), march_probe.end(), pat);
-        return etl::all_of(march_probe.begin(), march_probe.end(),
-                           [pat](uint8_t v) { return v == pat; });
-      });
+#if defined(ARDUINO_ARCH_AVR)
+  static const uint8_t patterns[] PROGMEM = {0x55, 0xAA, 0x00, 0xFF};
+#else
+  static constexpr uint8_t patterns[] = {0x55, 0xAA, 0x00, 0xFF};
+#endif
+  for (size_t i = 0; i < sizeof(patterns) / sizeof(patterns[0]); ++i) {
+#if defined(ARDUINO_ARCH_AVR)
+    const uint8_t pat = pgm_read_byte(&patterns[i]);
+#else
+    const uint8_t pat = patterns[i];
+#endif
+    etl::fill(march_probe.begin(), march_probe.end(), pat);
+    if (!etl::all_of(march_probe.begin(), march_probe.end(),
+                     [pat](uint8_t v) { return v == pat; })) return false;
+  }
+  return true;
 }
 
 bool run_power_on_self_tests() {
@@ -214,23 +225,35 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
   caps.watchdog = bridge::config::ENABLE_WATCHDOG;
 
 #if defined(ARDUINO_AVR_MEGA2560) || defined(ARDUINO_AVR_MEGA)
-  const etl::string_view name = "MEGA2560";
+#define BRIDGE_BOARD_NAME "MEGA2560"
 #elif defined(ARDUINO_AVR_YUN)
-  const etl::string_view name = "YUN";
+#define BRIDGE_BOARD_NAME "YUN"
 #elif defined(ARDUINO_AVR_LEONARDO)
-  const etl::string_view name = "LEONARDO";
+#define BRIDGE_BOARD_NAME "LEONARDO"
 #elif defined(ARDUINO_AVR_UNO)
-  const etl::string_view name = "UNO";
+#define BRIDGE_BOARD_NAME "UNO"
 #elif defined(ARDUINO_ARCH_SAMD)
-  const etl::string_view name = "SAMD21";
+#define BRIDGE_BOARD_NAME "SAMD21"
 #elif defined(ARDUINO_ARCH_ESP32)
-  const etl::string_view name = "ESP32";
+#define BRIDGE_BOARD_NAME "ESP32"
 #else
-  const etl::string_view name = "GENERIC";
+#define BRIDGE_BOARD_NAME "GENERIC"
 #endif
-  const size_t len = etl::min(name.size(), sizeof(caps.board_name) - 1);
-  etl::copy_n(name.data(), len, caps.board_name);
+#if defined(ARDUINO_ARCH_AVR)
+static const char board_name[] PROGMEM = BRIDGE_BOARD_NAME;
+#else
+static constexpr char board_name[] = BRIDGE_BOARD_NAME;
+#endif
+  const size_t len = etl::min(sizeof(board_name) - 1, sizeof(caps.board_name) - 1);
+  for (size_t i = 0; i < len; ++i) {
+#if defined(ARDUINO_ARCH_AVR)
+    caps.board_name[i] = static_cast<char>(pgm_read_byte(&board_name[i]));
+#else
+    caps.board_name[i] = board_name[i];
+#endif
+  }
   caps.board_name[len] = '\0';
+#undef BRIDGE_BOARD_NAME
 
 #if defined(BRIDGE_ENABLE_DEBUG_FRAMES)
   caps.debug_frames = true;

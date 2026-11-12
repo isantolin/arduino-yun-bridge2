@@ -446,7 +446,7 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
   - `rpc.pb.ConsoleService/ConsoleWrite` (bidireccional)
   - `rpc.pb.DataStoreService/Put` (MCU → Linux)
   - `rpc.pb.MailboxService/Push` (bidireccional)
-  - `rpc.pb.FileSystemService/Write` (bidireccional)
+  - `rpc.pb.FileSystemService/Write` (MCU → MPU, unary legado)
 
 ## 2. Transporte y Multiplexación de Canales HDLC (`pw_hdlc`)
 
@@ -817,7 +817,7 @@ El servicio implementa 25 operaciones unarias y 1 endpoint de streaming (26 oper
 1. **Control de Pines (GPIO):** `SetPinMode`, `DigitalWrite`, `DigitalRead`, `AnalogWrite`, `AnalogRead`, `PinSubscribe`.
 2. **Datastore en Memoria:** `DatastorePut`, `DatastoreGet`.
 3. **Mailbox FIFO:** `MailboxPush`, `MailboxRead`.
-4. **Sistema de Archivos MPU:** `FileWrite`, `FileRead`, `FileRemove`; archivos del MCU mediante `pw_transfer`.
+4. **Sistema de Archivos MPU:** `FileWrite`, `FileRead`, `FileRemove`; recurso EEPROM del MCU mediante `pw_transfer` (no es un filesystem).
 5. **Gestión de Procesos:** `ProcessRunAsync`, `ProcessPoll`, `ProcessKill`.
 6. **Bus SPI:** `SpiTransfer`, `SpiConfigure`.
 7. **Introspección y Control de Sistema:** `GetVersion`, `GetFreeMemory`, `GetStatus`, `EnterBootloader`.

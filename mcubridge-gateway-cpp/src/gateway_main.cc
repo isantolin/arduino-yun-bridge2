@@ -24,6 +24,7 @@
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <unordered_map>
 #include <vector>
 #include "pw_bytes/span.h"
 #include "pw_hdlc/decoder.h"
@@ -228,10 +229,26 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
   std::mutex mutex_;
 };
 
+class SessionRegistry {
+ public:
+  bool Register(const std::string& device_id, const void* session) {
+    std::lock_guard lock(mutex_);
+    return sessions_.emplace(device_id, session).second;
+  }
+  void Unregister(const std::string& device_id, const void* session) {
+    std::lock_guard lock(mutex_);
+    const auto it = sessions_.find(device_id);
+    if (it != sessions_.end() && it->second == session) sessions_.erase(it);
+  }
+ private:
+  std::mutex mutex_;
+  std::unordered_map<std::string, const void*> sessions_;
+};
+
 class GatewaySession {
  public:
-  GatewaySession(SSL* ssl, int fd, std::string device_id)
-      : socket_(ssl, fd), channel_output_(tx_writer_, kRpcHdlcAddress),
+  GatewaySession(SSL* ssl, int fd, std::string device_id, SessionRegistry& registry)
+      : socket_(ssl, fd), registry_(registry), channel_output_(tx_writer_, kRpcHdlcAddress),
         channels_{pw::rpc::Channel::Create<1>(&channel_output_)}, rpc_client_server_(channels_),
         transfer_thread_(pw::ByteSpan(transfer_chunk_), pw::ByteSpan(transfer_encode_)),
         transfer_client_(rpc_client_server_.client(), kRpcHdlcAddress,
@@ -242,6 +259,16 @@ class GatewaySession {
   GatewaySession& operator=(const GatewaySession&) = delete;
   void Run() {
     if (!socket_.SetNonBlocking()) return;
+    if (!registry_.Register(device_id_, this)) {
+      std::cerr << "device=" << device_id_ << " event=session_rejected reason=duplicate_session\n";
+      return;
+    }
+    struct RegistrationGuard {
+      SessionRegistry& registry;
+      const std::string& device_id;
+      const void* session;
+      ~RegistrationGuard() { registry.Unregister(device_id, session); }
+    } registration{registry_, device_id_, this};
     rpc_client_server_.server().RegisterService(transfer_service_);
     pw::thread::stl::Options transfer_options;
     transfer_worker_ = std::make_unique<pw::thread::Thread>(
@@ -291,6 +318,7 @@ class GatewaySession {
     }
   }
   TlsSocket socket_;
+  SessionRegistry& registry_;
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> channels_;
@@ -413,6 +441,7 @@ int main(int argc, char** argv) {
   signal(SIGINT, HandleSignal);
   signal(SIGTERM, HandleSignal);
   signal(SIGPIPE, SIG_IGN);
+  SessionRegistry registry;
   std::vector<std::unique_ptr<SessionTask>> tasks;
   std::cerr << "event=gateway_listening bind=" << bind_address
             << " port=" << port << " tls=1.3 identity=uri_san\n";
@@ -441,24 +470,36 @@ int main(int argc, char** argv) {
     auto task = std::make_unique<SessionTask>();
     task->fd = client_fd;
     SessionTask* task_ptr = task.get();
-    task->worker = std::thread([task_ptr, context = tls_context.get()] {
+    task->worker = std::thread([task_ptr, context = tls_context.get(), &registry] {
+      const auto close_task_fd = [task_ptr] {
+        std::lock_guard lock(task_ptr->mutex);
+        if (task_ptr->fd >= 0) {
+          close(task_ptr->fd);
+          task_ptr->fd = -1;
+        }
+      };
+      int client_fd = -1;
+      {
+        std::lock_guard lock(task_ptr->mutex);
+        client_fd = task_ptr->fd;
+      }
       SSL* ssl = SSL_new(context);
       if (ssl == nullptr) {
-        close(task_ptr->fd);
+        close_task_fd();
         task_ptr->done.store(true);
         return;
       }
-      SSL_set_fd(ssl, task_ptr->fd);
+      SSL_set_fd(ssl, client_fd);
       timeval handshake_timeout{10, 0};
-      setsockopt(task_ptr->fd, SOL_SOCKET, SO_RCVTIMEO,
+      setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO,
                  &handshake_timeout, sizeof(handshake_timeout));
-      setsockopt(task_ptr->fd, SOL_SOCKET, SO_SNDTIMEO,
+      setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO,
                  &handshake_timeout, sizeof(handshake_timeout));
       SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
                             SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
       if (SSL_accept(ssl) != 1) {
         SSL_free(ssl);
-        close(task_ptr->fd);
+        close_task_fd();
         task_ptr->done.store(true);
         return;
       }
@@ -471,10 +512,11 @@ int main(int argc, char** argv) {
         task_ptr->done.store(true);
         return;
       }
-      auto session = std::make_shared<GatewaySession>(ssl, task_ptr->fd, std::move(*identity));
+      auto session = std::make_shared<GatewaySession>(ssl, client_fd, std::move(*identity), registry);
       {
         std::lock_guard lock(task_ptr->mutex);
         task_ptr->session = session;
+        task_ptr->fd = -1;
       }
       session->Run();
       task_ptr->done.store(true);

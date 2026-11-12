@@ -38,6 +38,7 @@
 #include "pw_thread_stl/options.h"
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"
+#include "mcubridge/gateway/gateway_control.rpc.pwpb.h"
 
 namespace {
 constexpr uint64_t kRpcHdlcAddress = 1;
@@ -47,12 +48,20 @@ constexpr size_t kRpcEncodeBytes = 2048U;
 constexpr size_t kHdlcDecodeBytes = 4096U;
 constexpr size_t kTxQueueBytes = 64U * 1024U;
 constexpr size_t kMaxSessions = 256U;
-constexpr std::string_view kIdentityPrefix = "spiffe://mcubridge/device/";
+constexpr std::string_view kDeviceIdentityPrefix = "spiffe://mcubridge/device/";
+constexpr std::string_view kClientIdentityPrefix = "spiffe://mcubridge/client/";
 std::atomic<bool> g_stopping{false};
 
 void HandleSignal(int) { g_stopping.store(true); }
 
-bool IsValidDeviceId(std::string_view id) {
+enum class PeerRole { kDevice, kClient };
+
+struct PeerIdentity {
+  PeerRole role;
+  std::string id;
+};
+
+bool IsValidPrincipalId(std::string_view id) {
   if (id.empty() || id.size() > 128U) return false;
   for (size_t i = 0; i < id.size(); ++i) {
     const unsigned char ch = static_cast<unsigned char>(id[i]);
@@ -65,13 +74,13 @@ bool IsValidDeviceId(std::string_view id) {
   return true;
 }
 
-std::optional<std::string> PeerDeviceIdentity(SSL* ssl) {
+std::optional<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
   if (SSL_get_verify_result(ssl) != X509_V_OK) return std::nullopt;
   X509* certificate = SSL_get1_peer_certificate(ssl);
   if (certificate == nullptr) return std::nullopt;
   auto* names = static_cast<GENERAL_NAMES*>(
       X509_get_ext_d2i(certificate, NID_subject_alt_name, nullptr, nullptr));
-  std::optional<std::string> identity;
+  std::optional<PeerIdentity> identity;
   size_t uri_san_count = 0;
   if (names != nullptr) {
     for (int i = 0; i < sk_GENERAL_NAME_num(names); ++i) {
@@ -83,11 +92,21 @@ std::optional<std::string> PeerDeviceIdentity(SSL* ssl) {
       const int raw_size = ASN1_STRING_length(uri);
       if (raw == nullptr || raw_size <= 0) continue;
       const std::string_view value(reinterpret_cast<const char*>(raw), static_cast<size_t>(raw_size));
-      if (value.compare(0, kIdentityPrefix.size(), kIdentityPrefix) != 0) continue;
+      PeerRole role;
+      std::string_view prefix;
+      if (value.compare(0, kDeviceIdentityPrefix.size(), kDeviceIdentityPrefix) == 0) {
+        role = PeerRole::kDevice;
+        prefix = kDeviceIdentityPrefix;
+      } else if (value.compare(0, kClientIdentityPrefix.size(), kClientIdentityPrefix) == 0) {
+        role = PeerRole::kClient;
+        prefix = kClientIdentityPrefix;
+      } else {
+        continue;
+      }
       if (identity.has_value()) { identity.reset(); break; }
-      const std::string_view device_id = value.substr(kIdentityPrefix.size());
-      if (!IsValidDeviceId(device_id)) { identity.reset(); break; }
-      identity = std::string(device_id);
+      const std::string_view principal_id = value.substr(prefix.size());
+      if (!IsValidPrincipalId(principal_id)) { identity.reset(); break; }
+      identity = PeerIdentity{role, std::string(principal_id)};
     }
   }
   GENERAL_NAMES_free(names);

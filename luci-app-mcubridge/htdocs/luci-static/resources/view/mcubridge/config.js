@@ -170,7 +170,7 @@ return view.extend({
 		o.rmempty = true;
 
 		var cloud_acl_options = [
-			['cloud_allow_file_read', _('Allow file reads'), _('Accept requests that read files via br/fs/read.')],
+			['cloud_allow_file_read', _('Allow MPU file reads'), _('Accept requests that read files from the MPU filesystem via br/fs/read. MCU file transfers use pw_transfer.')],
 			['cloud_allow_file_write', _('Allow file writes'), _('Accept requests that write files via br/fs/write.')],
 			['cloud_allow_file_remove', _('Allow file deletes'), _('Accept requests that delete files via br/fs/remove.')],
 			['cloud_allow_datastore_get', _('Allow datastore get'), _('Allow clients to read key/value pairs via br/datastore/get.')],

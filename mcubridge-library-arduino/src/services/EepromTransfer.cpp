@@ -4,8 +4,8 @@
 
 #include <EEPROM.h>
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <pw_stream/stream.h>
 #include <pw_transfer/handler.h>
@@ -59,7 +59,7 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
 
     for (size_t i = 0; i < data.size_bytes(); ++i) {
       EEPROM.update(static_cast<int>(position_ + i),
-                    std::to_integer<uint8_t>(data[i]));
+                    static_cast<uint8_t>(data[i]));
     }
     position_ += data.size_bytes();
     return pw::OkStatus();

@@ -17,9 +17,9 @@ import anyio
 import anyio.to_thread
 import lmdb
 import psutil
+import pw_transfer
 import structlog
 import tenacity
-import pw_transfer
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
     EncodeError as ProtobufSerializationError,

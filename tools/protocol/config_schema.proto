@@ -1008,6 +1008,7 @@ message AllowedCommandPolicy {
 }
 
 message TopicAuthorization {
+  bool file_read = 1;
   bool file_write = 2;
   bool file_remove = 3;
   bool datastore_get = 4;

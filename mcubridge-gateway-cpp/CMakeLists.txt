@@ -31,6 +31,7 @@ set(pw_thread.sleep_BACKEND pw_thread_stl.sleep CACHE STRING "" FORCE)
 
 include("${PIGWEED_ROOT}/pw_build/pigweed.cmake")
 include("${PIGWEED_ROOT}/pw_protobuf_compiler/proto.cmake")
+set(pw_protobuf_compiler_PYTHON_OUT_DIR "${CMAKE_BINARY_DIR}/generated" CACHE PATH "Shared Pigweed generated Python proto modules" FORCE)
 add_subdirectory("${PIGWEED_ROOT}/pw_build" pw_build)
 add_subdirectory("${PIGWEED_ROOT}/third_party/fuchsia" pw_third_party_fuchsia)
 add_subdirectory("${PIGWEED_ROOT}/pw_numeric" pw_numeric)

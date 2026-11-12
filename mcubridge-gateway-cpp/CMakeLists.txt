@@ -40,7 +40,8 @@ set(pw_protobuf_compiler_PYTHON_OUT_DIR "${CMAKE_BINARY_DIR}/generated" CACHE PA
 pw_proto_library(gateway_control_proto
   STRIP_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/proto"
   PREFIX "mcubridge/gateway"
-  SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.proto")
+  SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.proto"
+  INPUTS "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.pwpb_options")
 
 set(MCUBRIDGE_PROTOCOL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tools/protocol")
 pw_proto_library(mcu_wire_proto

@@ -12,6 +12,19 @@ message HealthResponse {
   uint32 active_client_sessions = 3;
 }
 
+message DispatchRequest {
+  string target_device_id = 1;
+  string service_name = 2;
+  string method_name = 3;
+  bytes request_payload = 4;
+  uint32 timeout_ms = 5;
+}
+
+message DispatchResponse {
+  bytes response_payload = 1;
+}
+
 service GatewayControl {
   rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Dispatch(DispatchRequest) returns (DispatchResponse);
 }

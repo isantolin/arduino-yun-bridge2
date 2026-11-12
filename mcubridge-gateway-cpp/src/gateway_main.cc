@@ -243,8 +243,9 @@ class GatewaySession {
   void Run() {
     if (!socket_.SetNonBlocking()) return;
     rpc_client_server_.server().RegisterService(transfer_service_);
+    pw::thread::stl::Options transfer_options;
     transfer_worker_ = std::make_unique<pw::thread::Thread>(
-        pw::thread::stl::Options{}, transfer_thread_);
+        transfer_options, transfer_thread_.AsFunction());
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "device=" << device_id_ << " event=session_open\n";
     ReceiveLoop();

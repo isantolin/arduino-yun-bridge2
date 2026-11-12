@@ -87,12 +87,14 @@ async def test_pw_transfer_cancellation_keeps_role_lock_until_worker_finishes(
         def __init__(self, _service: object, *, max_chunk_size_bytes: int) -> None:
             assert max_chunk_size_bytes == 128
 
-        def read(self, _resource_id: int) -> bytes:
+        def read(self, _resource_id: int, *, initial_offset: int = 0) -> bytes:
+            assert initial_offset == 0
             worker_started.set()
             release_worker.wait(timeout=2.0)
             return b""
 
-        def write(self, resource_id: int, data: bytes) -> None:
+        def write(self, resource_id: int, data: bytes, *, initial_offset: int = 0) -> None:
+            assert initial_offset == 0
             writes.append((resource_id, data))
 
     monkeypatch.setattr("mcubridge.transport.serial.pw_transfer.Manager", BlockingTransferManager)

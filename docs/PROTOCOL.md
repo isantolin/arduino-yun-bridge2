@@ -260,7 +260,7 @@ El protocolo erradica bucles de reintento manuales mediante el uso exclusivo de 
 ### 6. Asynchronous File I/O & Storage Subsystem (`pathlib.Path` + `asyncio.to_thread`)
 
 Las rutas locales se resuelven y validan con `pathlib.Path`; las operaciones de disco potencialmente bloqueantes se delegan fuera del event loop:
-- **Lectura/escritura local en el MPU**: `FileRead` / `FileWrite` operan sobre `file_system_root`, con validación de rutas y cuota.
+- **Lectura/escritura local en el MPU**: `FileRead` / `FileWrite` operan sobre `file_system_root`, con validación de rutas y cuota. `FileRead` no es un método de `FileSystemService` del MCU ni permite rutas `mcu/`.
 - **Transferencia de archivos del MCU**: debe usar upstream `pw_transfer` con handlers y streams acotados; no existe fallback al antiguo RPC Nanopb.
 - **Operaciones de disco**: `asyncio.to_thread` ejecuta filesystem y `psutil.disk_usage` sin bloquear `asyncio`/`uvloop`.
 - **Validación de rutas**: se comprueba que la ruta resuelta permanezca dentro de `file_system_root`; errores de acceso y filesystem se registran explícitamente.

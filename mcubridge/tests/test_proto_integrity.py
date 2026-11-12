@@ -250,10 +250,11 @@ def test_pw_services_integrity() -> None:
         assert len(service.methods) > 0
 
     transfer = protocol.PW_SERVICES["pw.transfer.Transfer"]
-    assert len(transfer.methods) == 3
-    assert transfer.methods["Read"].type.name == "BIDIRECTIONAL_STREAMING"
-    assert transfer.methods["Write"].type.name == "BIDIRECTIONAL_STREAMING"
-    assert transfer.methods["GetResourceStatus"].type.name == "UNARY"
+    methods = {method.name: method for method in transfer.methods}
+    assert set(methods) == {"Read", "Write", "GetResourceStatus"}
+    assert methods["Read"].type.name == "BIDIRECTIONAL_STREAMING"
+    assert methods["Write"].type.name == "BIDIRECTIONAL_STREAMING"
+    assert methods["GetResourceStatus"].type.name == "UNARY"
 
 
 def test_pw_transfer_service_resolves_through_daemon_rpc_client() -> None:

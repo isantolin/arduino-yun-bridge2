@@ -41,7 +41,7 @@
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"
 #include "mcubridge/gateway/gateway_control.rpc.pwpb.h"
-#include "mcubridge/protocol/mcu_wire.raw_rpc.pb.h"
+#include "mcu_wire.raw_rpc.pb.h"
 
 namespace {
 constexpr uint64_t kRpcHdlcAddress = 1;

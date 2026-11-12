@@ -44,9 +44,10 @@ pw_proto_library(gateway_control_proto
   INPUTS "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.pwpb_options")
 
 set(MCUBRIDGE_PROTOCOL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tools/protocol")
+# Keep both source protos at the same import root so mcu_wire.proto can
+# resolve its sibling import "config_schema.proto" in every generated language.
 pw_proto_library(mcu_wire_proto
   STRIP_PREFIX "${MCUBRIDGE_PROTOCOL_DIR}"
-  PREFIX "mcubridge/protocol"
   SOURCES
     "${MCUBRIDGE_PROTOCOL_DIR}/config_schema.proto"
     "${MCUBRIDGE_PROTOCOL_DIR}/mcu_wire.proto")

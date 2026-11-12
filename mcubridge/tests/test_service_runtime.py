@@ -781,7 +781,20 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
         await svc.file_read(cloud_gateway_pb2.FileRead(path="mcu/unknown"))
     assert unknown_mcu_resource.value.status == GrpcStatus.NOT_FOUND
 
+    mock_serial.transfer_write = AsyncMock()
+    res_unknown_write = await svc.file_write("mcu/unknown", b"data")
+    assert res_unknown_write.status == "error"
+    mock_serial.transfer_write.assert_not_awaited()
+
+    mock_serial.transfer_read = AsyncMock(side_effect=RuntimeError("transfer failed"))
+    with pytest.raises(GRPCError) as failed_mcu_read:
+        await svc.file_read(cloud_gateway_pb2.FileRead(path="mcu/eeprom"))
+    assert failed_mcu_read.value.status == GrpcStatus.INTERNAL
+
     svc.serial = None
+    with pytest.raises(GRPCError) as disconnected_mcu_read:
+        await svc.file_read(cloud_gateway_pb2.FileRead(path="mcu/eeprom"))
+    assert disconnected_mcu_read.value.status == GrpcStatus.UNAVAILABLE
     res_mcu_rm = await svc.file_remove(mcu_wire_pb2.FileRemove(path="/mcu/test.txt"))
     assert res_mcu_rm.status == "error"
     svc.serial = mock_serial

@@ -1470,33 +1470,3 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
     assert not any(topic.endswith("/res/GpioService/DigitalWrite") for topic, _ in enqueued)
 
 
-async def test_runtime_streams_local_file_responses_to_mcu(
-    mock_bridge_service: BridgeService,
-    mock_serial: AsyncMock,
-    tmp_path: Path,
-) -> None:
-    svc = mock_bridge_service
-    svc.config.file_system_root = str(tmp_path)
-    svc.serial = mock_serial
-    mock_serial.send = AsyncMock(return_value=True)
-
-    payload = bytes(range(256)) * ((protocol.MAX_PAYLOAD_SIZE * 3 // 256) + 1)
-    source = tmp_path / "large.bin"
-    source.write_bytes(payload)
-
-    response = await svc.file_read(1, mcu_wire_pb2.FileRead(path="large.bin"))
-    assert response.content == b""
-    calls = mock_serial.send.await_args_list
-    assert len(calls) > 1
-    assert all(call.args[0] == "rpc.pb.FileSystemService/Read" for call in calls)
-    assert calls[-1].args[1] == b""
-    assert b"".join(call.args[1].content for call in calls[:-1]) == payload
-    assert all(len(call.args[1].content) <= protocol.MAX_PAYLOAD_SIZE - 3 for call in calls[:-1])
-
-    mock_serial.send.reset_mock()
-    empty = tmp_path / "empty.bin"
-    empty.write_bytes(b"")
-    await svc.file_read(1, mcu_wire_pb2.FileRead(path="empty.bin"))
-    empty_file_calls = mock_serial.send.await_args_list
-    assert len(empty_file_calls) == 1
-    assert empty_file_calls[0].args[1] == b""

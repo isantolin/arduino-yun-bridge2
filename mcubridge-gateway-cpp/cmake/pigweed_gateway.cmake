@@ -385,6 +385,7 @@ pw_add_library(pw_transfer STATIC
   SOURCES "${PIGWEED_ROOT}/pw_transfer/transfer.cc"
   PUBLIC_DEPS pw_assert pw_bytes pw_result pw_status pw_stream pw_sync.mutex
     pw_transfer.core pw_transfer.proto.raw_rpc
+  PRIVATE_DEPS pw_log pw_log.rate_limited pw_transfer.proto.pwpb)
 
 pw_add_library(pw_enum
   HEADERS

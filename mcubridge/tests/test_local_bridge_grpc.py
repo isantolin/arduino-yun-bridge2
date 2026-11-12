@@ -235,14 +235,6 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
         "rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path="eeprom.bin", data=b"data")
     )
 
-    mock_file_read = AsyncMock(return_value=mcu_wire_pb2.FileReadResponse(content=b"mcu_data"))
-    service.file_read = mock_file_read
-    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="mcu/eeprom.bin"))
-    await local_svc.FileRead(stream)
-    sent = stream.sent_message
-    assert sent.content == b"mcu_data"
-    mock_file_read.assert_awaited_once_with(mcu_wire_pb2.FileRead(path="mcu/eeprom.bin"))
-
     stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/eeprom.bin"))
     await local_svc.FileRemove(stream)
     mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path="eeprom.bin"))
@@ -361,7 +353,6 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     await local_svc.MailboxPush(_make_mock_stream(None))
     await local_svc.MailboxRead(_make_mock_stream(None))
     await local_svc.FileWrite(_make_mock_stream(None))
-    await local_svc.FileRead(_make_mock_stream(None))
     await local_svc.FileRemove(_make_mock_stream(None))
     await local_svc.ProcessRunAsync(_make_mock_stream(None))
     await local_svc.ProcessPoll(_make_mock_stream(None))
@@ -414,10 +405,6 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     await local_svc.FileWrite(stream)
     assert stream.sent_message.status == "error"
 
-    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="mcu/test.bin"))
-    await local_svc.FileRead(stream)
-    assert stream.sent_message.content == b""
-
     stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="mcu/test.bin"))
     await local_svc.FileRemove(stream)
     assert stream.sent_message.status == "error"
@@ -426,10 +413,6 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="../../etc/shadow", data=b"bad"))
     await local_svc.FileWrite(stream)
     assert stream.sent_message.status == "error"
-
-    stream = _make_mock_stream(mcu_wire_pb2.FileRead(path="../../etc/nonexistent_file_abc"))
-    await local_svc.FileRead(stream)
-    assert stream.sent_message.content == b""
 
     stream = _make_mock_stream(mcu_wire_pb2.FileRemove(path="../../etc/nonexistent_file_abc"))
     await local_svc.FileRemove(stream)

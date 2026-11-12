@@ -4,6 +4,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
@@ -53,9 +54,13 @@ void HandleSignal(int) { g_stopping.store(true); }
 
 bool IsValidDeviceId(std::string_view id) {
   if (id.empty() || id.size() > 128U) return false;
-  for (const unsigned char ch : id) {
-    if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-          (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.')) return false;
+  for (size_t i = 0; i < id.size(); ++i) {
+    const unsigned char ch = static_cast<unsigned char>(id[i]);
+    const bool alpha_numeric = (ch >= 'a' && ch <= 'z') ||
+                               (ch >= 'A' && ch <= 'Z') ||
+                               (ch >= '0' && ch <= '9');
+    if (i == 0U && !alpha_numeric) return false;
+    if (!alpha_numeric && ch != '-' && ch != '_') return false;
   }
   return true;
 }

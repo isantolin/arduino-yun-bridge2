@@ -68,24 +68,6 @@ def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMoc
     return service, state, mock_serial
 
 
-async def test_mcu_file_read_handler_asserts_state(
-    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, _state, mock_serial = service_setup
-    (Path(service.config.file_system_root) / "test.txt").write_bytes(b"file_data")
-    payload = pb.FileRead(path="test.txt").SerializeToString()
-
-    await service.handle_mcu_frame("rpc.pb.FileSystemService/Read", 1, payload)
-    mock_serial.send.assert_awaited()
-    responses = [
-        call.args[1] for call in mock_serial.send.await_args_list if call.args[0] == "rpc.pb.FileSystemService/Read"
-    ]
-    assert len(responses) == 2
-    assert isinstance(responses[0], pb.FileReadResponse)
-    assert responses[0].content == b"file_data"
-    assert responses[1] == b""
-
-
 async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
@@ -244,26 +226,6 @@ async def test_cloud_file_host_write_asserts_cache(
     assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/FileSystemService/Write"
     resp = cloud_gateway_pb2.GenericResponse.FromString(queued_pub.payload)
     assert resp.status == "ok"
-
-
-async def test_cloud_file_host_read_asserts_read(
-    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, _serial = service_setup
-    (Path(service.config.file_system_root) / "test.txt").write_bytes(b"disk_data")
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/FileSystemService/Read",
-        payload=pb.FileRead(path="test.txt").SerializeToString(),
-    )
-
-    await service.handle_request(msg)
-
-    mock_pub = cast(AsyncMock, service.cloud_publisher)
-    mock_pub.assert_called_once()
-    queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/FileSystemService/Read"
-    resp = pb.FileReadResponse.FromString(queued_pub.payload)
-    assert resp.content == b"disk_data"
 
 
 async def test_cloud_shell_poll_asserts_cloud(

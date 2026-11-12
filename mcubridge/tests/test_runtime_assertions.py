@@ -72,18 +72,16 @@ async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = service_setup
-    serial.send.return_value = True
+    serial.transfer_write = AsyncMock()
     msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=f"{state.cloud_topic_prefix}/req/FileSystemService/Write",
-        payload=pb.FileWrite(path="mcu/test.txt", data=b"new_data").SerializeToString(),
+        payload=pb.FileWrite(path="mcu/eeprom", data=b"new_data").SerializeToString(),
     )
 
     await service.handle_request(msg)
 
-    serial.send.assert_called_once()
-    assert serial.send.call_args[0][0] == "rpc.pb.FileSystemService/Write"
-    assert isinstance(serial.send.call_args[0][1], pb.FileWrite)
-    assert serial.send.call_args[0][1].data == b"new_data"
+    serial.transfer_write.assert_awaited_once_with(0x4D454741, b"new_data")
+    serial.send.assert_not_called()
 
 
 async def test_cloud_datastore_put_asserts_cache(

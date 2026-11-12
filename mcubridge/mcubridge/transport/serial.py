@@ -23,6 +23,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Final, Protocol, cast
 
 import anyio
+import pw_transfer
 import serial
 from serial.urlhandler import protocol_socket
 import structlog
@@ -36,7 +37,6 @@ from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
 from pw_tokenizer.tokens import DatabaseFormatError
-import pw_transfer
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb

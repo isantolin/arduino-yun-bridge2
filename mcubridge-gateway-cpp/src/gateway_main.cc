@@ -170,7 +170,7 @@ class TlsSocket {
 class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
  public:
   explicit TlsQueueWriter(size_t capacity) : capacity_(capacity) {}
-  size_t ConservativeWriteLimit() const override {
+  size_t AvailableWriteBytes() const {
     std::lock_guard lock(mutex_);
     return capacity_ - queued_bytes_;
   }
@@ -189,6 +189,11 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
     { std::lock_guard lock(mutex_); stopped_ = true; }
     ready_.notify_all();
   }
+ protected:
+  size_t ConservativeLimit(LimitType type) const override {
+    return type == LimitType::kWrite ? AvailableWriteBytes() : 0U;
+  }
+
  private:
   pw::Status DoWrite(pw::ConstByteSpan data) override {
     std::lock_guard lock(mutex_);

@@ -198,11 +198,6 @@ class FileSystemRpcService final
     return pw::OkStatus();
   }
 
-  void Read(const rpc_pb_FileRead& request,
-            pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>& writer) {
-    (void)FileSystem._onRead(request, writer);
-  }
-
   pw::Status Remove(const rpc_pb_FileRemove& request, rpc_pb_Empty&) {
     FileSystem._onRemove(request);
     return pw::OkStatus();
@@ -264,9 +259,6 @@ void BridgeClass::_initObservers() {
 #endif
 #if BRIDGE_ENABLE_PROCESS
   add_observer(Process);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  add_observer(FileSystem);
 #endif
 #if BRIDGE_ENABLE_SPI
   add_observer(SPIService);

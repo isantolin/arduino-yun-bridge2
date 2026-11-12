@@ -23,7 +23,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Final, Protocol, cast
 
 import anyio
-import pw_transfer
+from pw_transfer.client import Error as PwTransferError, Manager as PwTransferManager
 import serial
 from serial.urlhandler import protocol_socket
 import structlog
@@ -677,7 +677,7 @@ class SerialTransport:
         """Return the single upstream pw_transfer manager for the MCU RPC channel."""
         if self._transfer_manager is None:
             transfer_service = self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
-            self._transfer_manager = pw_transfer.Manager(
+            self._transfer_manager = PwTransferManager(
                 transfer_service,
                 default_response_timeout_s=2.0,
                 initial_response_timeout_s=5.0,
@@ -700,7 +700,7 @@ class SerialTransport:
             # could overlap the first on the AVR's single-role transfer thread.
             try:
                 await asyncio.shield(worker)
-            except (pw_transfer.Error, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+            except (PwTransferError, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
                 logger.debug("pw_transfer worker ended after caller cancellation", error=str(exc))
             raise
 

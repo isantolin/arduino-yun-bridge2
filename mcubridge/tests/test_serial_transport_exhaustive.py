@@ -45,6 +45,8 @@ async def test_pw_transfer_client_is_shared_and_nonblocking(
     instances: list[object] = []
 
     class FakeTransferManager:
+        last_write: tuple[int, bytes, int] | None = None
+
         def __init__(self, service: object, *, max_chunk_size_bytes: int) -> None:
             self.service = service
             self.max_chunk_size_bytes = max_chunk_size_bytes

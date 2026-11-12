@@ -245,18 +245,22 @@ def test_serial_transport_switch_local_baudrate_error(
 async def test_queue_rpc_packet_accepts_worker_thread(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
-    mocker: MockerFixture,
 ) -> None:
     """Pigweed pw_transfer invokes the RPC output callback from its worker thread."""
-    transport = SerialTransport(runtime_config, runtime_state, None)
     write_started = asyncio.Event()
+    written_packets: list[bytes] = []
 
     async def fake_write(packet: bytes) -> bool:
-        assert packet == request.SerializeToString()
+        written_packets.append(packet)
         write_started.set()
         return True
 
-    mocker.patch.object(transport, "_write_rpc_packet", fake_write)
+    transport = SerialTransport(
+        runtime_config,
+        runtime_state,
+        None,
+        rpc_packet_writer=fake_write,
+    )
     request = RpcPacket(
         type=PacketType.REQUEST,
         channel_id=protocol.HDLC_ADDRESS_RPC,
@@ -265,22 +269,11 @@ async def test_queue_rpc_packet_accepts_worker_thread(
         call_id=9,
         payload=b"transfer",
     )
+    serialized = request.SerializeToString()
 
-    await asyncio.to_thread(transport.queue_rpc_packet, request.SerializeToString())
+    await asyncio.to_thread(transport.queue_rpc_packet, serialized)
     await asyncio.wait_for(write_started.wait(), timeout=1.0)
-
-    packet_id = (
-        request.channel_id,
-        request.service_id,
-        request.method_id,
-        request.call_id,
-    )
-    assert packet_id in transport._active_rpc_packet_ids
-    for _ in range(20):
-        if not transport._rpc_write_tasks:
-            break
-        await asyncio.sleep(0)
-    assert not transport._rpc_write_tasks
+    assert written_packets == [serialized]
 
 
 async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(

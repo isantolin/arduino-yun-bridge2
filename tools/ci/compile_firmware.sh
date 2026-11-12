@@ -125,9 +125,9 @@ if [ "$EMULATOR" = "simavr" ]; then
         "${AVR_PROPS[@]}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -fstack-usage $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 -fstack-usage $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref"
-        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref"
-        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref"
+        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
+        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
+        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then

@@ -362,6 +362,9 @@ jobs:
           path: |
             build/simavr/**/*.map
             build/simavr/**/*.su
+            build/simavr/**/*.elf
+            build/simavr/**/*.ltrans*.o
+            build/simavr/**/*.ltrans*.s
           if-no-files-found: ignore
 
   renode-emulation:

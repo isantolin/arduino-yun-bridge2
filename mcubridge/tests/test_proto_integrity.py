@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, cast
 
 from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
@@ -263,7 +263,7 @@ def test_pw_transfer_service_resolves_through_daemon_rpc_client() -> None:
     from pw_rpc.descriptors import Channel as PwRpcChannel
 
     client = PwRpcClient(
-        callback_client.Impl(),
+        cast(Any, callback_client).Impl(),
         [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, lambda _packet: None)],
         protocol.PW_SERVICES,
     )

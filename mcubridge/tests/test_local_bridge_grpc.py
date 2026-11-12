@@ -13,8 +13,6 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from pytest_mock import MockerFixture
-from grpclib.const import Status as GrpcStatus
-from grpclib.exceptions import GRPCError
 from grpclib.server import Stream
 
 from mcubridge.config.settings import RuntimeConfig

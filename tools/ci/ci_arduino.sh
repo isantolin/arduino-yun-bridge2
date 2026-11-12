@@ -57,6 +57,29 @@ if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ]; then
         --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 fi
 
+# The Arduino exporter only includes upstream pw_transfer when its generated
+# PWPB bindings exist. Build those bindings before installing/exporting the
+# library; otherwise the Mega 2560 header advertises pw_transfer but the
+# exported library silently omits the handler headers.
+if command -v avr-g++ >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
+    AVR_PORT_DIR="$PWD/third_party/avr_pigweed_port"
+    TRANSFER_BUILD_DIR="$AVR_PORT_DIR/build-transfer-1284p"
+    CMAKE_GENERATOR_ARGS=()
+    if command -v ninja >/dev/null 2>&1; then
+        CMAKE_GENERATOR_ARGS=(-G Ninja)
+    fi
+    echo "[ci_arduino] Generating upstream pw_transfer AVR bindings before library export..."
+    cmake -S "$AVR_PORT_DIR" -B "$TRANSFER_BUILD_DIR" "${CMAKE_GENERATOR_ARGS[@]}" \
+        -DCMAKE_TOOLCHAIN_FILE="$AVR_PORT_DIR/avr-toolchain.cmake" \
+        -DAVR_MCU=atmega1284p \
+        -DAVR_F_CPU=16000000UL \
+        -DAVR_CRC32_IMPL=PW_CHECKSUM_CRC32_4BITS
+    cmake --build "$TRANSFER_BUILD_DIR" --target pw_transfer_upstream_probe.elf
+else
+    echo "[ci_arduino] ERROR: avr-g++ and CMake are required to export Mega 2560 pw_transfer headers." >&2
+    exit 1
+fi
+
 if [ ! -d "$USER_LIB_DIR/PigweedAVR" ] || [ ! -d "$USER_LIB_DIR/Embedded_Template_Library" ]; then
     echo "Installing libraries..."
     # We pass USER_LIB_DIR to install.sh to ensure it installs there

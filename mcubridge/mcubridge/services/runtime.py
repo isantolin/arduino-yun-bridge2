@@ -729,11 +729,18 @@ class BridgeService:
         path = src.path if isinstance(src, mcu_wire_pb2.FileRemove) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
-            mcu_path = clean.removeprefix("mcu/")
+            mcu_path = clean.removeprefix("mcu/").strip("/")
             serial = self.serial
-            ok = bool(
-                serial and await serial.send("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path=mcu_path))
-            )
+            if mcu_path == _MCU_EEPROM_RESOURCE_PATH or serial is None:
+                # The EEPROM is a fixed-size raw transfer resource, not a file.
+                ok = False
+            else:
+                ok = bool(
+                    await serial.send(
+                        "rpc.pb.FileSystemService/Remove",
+                        mcu_wire_pb2.FileRemove(path=mcu_path),
+                    )
+                )
         else:
             if not (safe_path := self._get_safe_path(path)):
                 ok = False

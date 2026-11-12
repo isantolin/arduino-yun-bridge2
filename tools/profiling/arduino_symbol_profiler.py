@@ -179,10 +179,10 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
         try:
             lines = usage_file.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError as err:
-            sys.stderr.write(f"[WARN] Failed to read stack usage file {usage_file}: {err}\\n")
+            sys.stderr.write(f"[WARN] Failed to read stack usage file {usage_file}: {err}\n")
             continue
         for line in lines:
-            fields = line.rsplit("\\t", 2)
+            fields = line.rsplit("\t", 2)
             if len(fields) != 3:
                 continue
             location_and_function, size_text, qualifier = fields
@@ -210,7 +210,7 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
     for size, function, source, qualifier in entries[:limit]:
         rows.append(f"| {size:,} B | `{qualifier}` | `{function}` | `{source}` |")
     rows.append("")
-    return "\\n".join(rows) + "\\n"
+    return "\n".join(rows) + "\n"
 
 def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     """Extract board label from the build path."""

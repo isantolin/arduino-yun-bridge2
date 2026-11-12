@@ -522,16 +522,17 @@ int main(int argc, char** argv) {
         task_ptr->done.store(true);
         return;
       }
-      auto identity = PeerDeviceIdentity(ssl);
-      if (!identity.has_value()) {
-        std::cerr << "event=client_rejected reason=missing_or_invalid_uri_san\n";
+      auto identity = PeerIdentityFromCertificate(ssl);
+      if (!identity.has_value() || identity->role != PeerRole::kDevice) {
+        std::cerr << "event=client_rejected reason=missing_or_invalid_device_uri_san\n";
         SSL_shutdown(ssl);
         SSL_free(ssl);
         close_task_fd();
         task_ptr->done.store(true);
         return;
       }
-      auto session = std::make_shared<GatewaySession>(ssl, client_fd, std::move(*identity), registry);
+      auto session = std::make_shared<GatewaySession>(
+          ssl, client_fd, std::move(identity->id), registry);
       {
         std::lock_guard lock(task_ptr->mutex);
         task_ptr->session = session;

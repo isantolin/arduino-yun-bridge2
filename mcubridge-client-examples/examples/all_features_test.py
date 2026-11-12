@@ -56,7 +56,7 @@ async def run_test(
         test_file = "test_file_all.txt"
         test_data = b"e2e-data-all"
         await stub.FileWrite(mcu_wire_pb2.FileWrite(path=test_file, data=test_data))
-        file_res = await stub.FileRead(mcu_wire_pb2.FileRead(path=test_file))
+        file_res = await stub.FileRead(cloud_gateway_pb2.FileRead(path=test_file))
         assert file_res.content == test_data
         await stub.FileRemove(mcu_wire_pb2.FileRemove(path=test_file))
         logger.info("FileIO verified.")

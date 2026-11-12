@@ -290,6 +290,7 @@ class GatewayControlService final
 class SessionControl {
  public:
   virtual ~SessionControl() = default;
+  virtual void Run() = 0;
   virtual void Stop() = 0;
 };
 
@@ -303,7 +304,7 @@ class GatewaySession final : public SessionControl {
         decoder_(pw::ByteSpan(decoder_storage_)), device_id_(std::move(device_id)) {}
   GatewaySession(const GatewaySession&) = delete;
   GatewaySession& operator=(const GatewaySession&) = delete;
-  void Run() {
+  void Run() override {
     if (!socket_.SetNonBlocking()) return;
     if (!registry_.Register(device_id_, this)) {
       std::cerr << "device=" << device_id_ << " event=session_rejected reason=duplicate_session\n";
@@ -333,7 +334,7 @@ class GatewaySession final : public SessionControl {
     if (transfer_worker_ != nullptr && transfer_worker_->joinable()) transfer_worker_->join();
     std::cerr << "device=" << device_id_ << " event=session_closed\n";
   }
-  void Stop() {
+  void Stop() override {
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
@@ -401,7 +402,7 @@ class GatewayClientSession final : public SessionControl {
   GatewayClientSession(const GatewayClientSession&) = delete;
   GatewayClientSession& operator=(const GatewayClientSession&) = delete;
 
-  void Run() {
+  void Run() override {
     if (!socket_.SetNonBlocking()) return;
     if (!clients_.Register(client_id_, this)) {
       std::cerr << "client=" << client_id_

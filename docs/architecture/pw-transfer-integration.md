@@ -5,6 +5,7 @@ The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through
 ## Runtime ownership
 
 - `BridgeClass` owns one `pw::transfer::Thread<1, 1>`.
+- The AVR thread uses a 128-byte chunk buffer and a 256-byte encode buffer, satisfying upstream's requirement that the encode buffer exceed the chunk buffer and cover the configured frame size.
 - The same thread is shared by `Bridge.transferService()` and `Bridge.transferClient()`.
 - `Bridge.process()` polls the thread with a bounded event budget after receiving serial/HDLC packets.
 - Applications must not create another transfer thread or call `Poll()` themselves.

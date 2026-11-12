@@ -239,11 +239,15 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     await local_svc.FileRemove(stream)
     mock_serial.send.assert_called_with("rpc.pb.FileSystemService/Remove", mcu_wire_pb2.FileRemove(path="eeprom.bin"))
 
-    # MCU file reads are not routed through the removed Nanopb RPC.
+    # MCU reads must not masquerade as successful empty local-file reads.
+    from grpclib.const import Status as GrpcStatus
+    from grpclib.exceptions import GRPCError
+
     mock_serial.send.reset_mock()
     stream = _make_mock_stream(cloud_gateway_pb2.FileRead(path="mcu/eeprom.bin"))
-    await local_svc.FileRead(stream)
-    assert stream.sent_message.content == b""
+    with pytest.raises(GRPCError) as exc_info:
+        await local_svc.FileRead(stream)
+    assert exc_info.value.status == GrpcStatus.UNIMPLEMENTED
     mock_serial.send.assert_not_called()
 
 

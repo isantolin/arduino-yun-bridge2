@@ -6,9 +6,6 @@
 
 #include "security/security.h"
 #include "hal/hal.h"
-#if defined(BRIDGE_FAULT_INJECTION)
-#include <BridgeFaultInjection.h>
-#endif
 #if defined(ARDUINO_ARCH_AVR)
 #include "pw_assert_avr/assert_avr.h"
 #endif

@@ -30,9 +30,6 @@
 
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#if defined(BRIDGE_FAULT_INJECTION)
-#include <BridgeFaultInjection.h>
-#endif
 
 namespace rpc {
 namespace security {

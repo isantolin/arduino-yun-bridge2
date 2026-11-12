@@ -155,7 +155,6 @@ COMMON_DEFS=(
     -Wextra
     -Werror
     -Wno-unused-parameter
-    -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL

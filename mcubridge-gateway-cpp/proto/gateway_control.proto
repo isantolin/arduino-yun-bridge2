@@ -21,10 +21,35 @@ message DispatchRequest {
 }
 
 message DispatchResponse {
-  bytes response_payload = 1;
+  uint32 status_code = 1;
+  bytes response_payload = 2;
 }
+
+message PollCommandRequest {}
+
+message PollCommandResponse {
+  bool available = 1;
+  uint64 request_id = 2;
+  string service_name = 3;
+  string method_name = 4;
+  bytes request_payload = 5;
+  uint32 timeout_ms = 6;
+}
+
+message CompleteCommandRequest {
+  uint64 request_id = 1;
+  uint32 status_code = 2;
+  bytes response_payload = 3;
+}
+
+message CompleteCommandResponse {}
 
 service GatewayControl {
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc Dispatch(DispatchRequest) returns (DispatchResponse);
+}
+
+service EdgeControl {
+  rpc PollCommand(PollCommandRequest) returns (PollCommandResponse);
+  rpc CompleteCommand(CompleteCommandRequest) returns (CompleteCommandResponse);
 }

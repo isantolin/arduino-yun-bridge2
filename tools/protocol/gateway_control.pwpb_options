@@ -1,0 +1,9 @@
+mcubridge.gateway.DispatchRequest.target_device_id max_size:128
+mcubridge.gateway.DispatchRequest.service_name max_size:64
+mcubridge.gateway.DispatchRequest.method_name max_size:64
+mcubridge.gateway.DispatchRequest.request_payload max_size:2048
+mcubridge.gateway.DispatchResponse.response_payload max_size:2048
+mcubridge.gateway.PollCommandResponse.service_name max_size:64
+mcubridge.gateway.PollCommandResponse.method_name max_size:64
+mcubridge.gateway.PollCommandResponse.request_payload max_size:2048
+mcubridge.gateway.CompleteCommandRequest.response_payload max_size:2048

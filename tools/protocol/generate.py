@@ -568,7 +568,7 @@ def _extract_operations_context(
     )
 
     mcu_services = [
-        s for d in all_descs for s in d.services_by_name.values() if s.name not in ("CloudBridge", "LocalBridge")
+        s for d in all_descs for s in d.services_by_name.values() if s.name not in ("CloudBridge", "LocalBridge", "GatewayControl", "EdgeControl")
     ]
     mcu_methods: list[dict[str, Any]] = []
     for s_desc in mcu_services:

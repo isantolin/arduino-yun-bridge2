@@ -37,13 +37,11 @@ include("${PIGWEED_ROOT}/pw_build/pigweed.cmake")
 include("${PIGWEED_ROOT}/pw_protobuf_compiler/proto.cmake")
 set(pw_protobuf_compiler_PYTHON_OUT_DIR "${CMAKE_BINARY_DIR}/generated" CACHE PATH "Shared Pigweed generated Python proto modules" FORCE)
 
-pw_proto_library(gateway_control_proto
-  STRIP_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/proto"
-  PREFIX "mcubridge/gateway"
-  SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.proto"
-  INPUTS "${CMAKE_CURRENT_SOURCE_DIR}/proto/gateway_control.pwpb_options")
-
 set(MCUBRIDGE_PROTOCOL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tools/protocol")
+pw_proto_library(gateway_control_proto
+  STRIP_PREFIX "${MCUBRIDGE_PROTOCOL_DIR}"
+  SOURCES "${MCUBRIDGE_PROTOCOL_DIR}/gateway_control.proto"
+  INPUTS "${MCUBRIDGE_PROTOCOL_DIR}/gateway_control.pwpb_options")
 # Keep both source protos at the same import root so mcu_wire.proto can
 # resolve its sibling import "config_schema.proto" in every generated language.
 pw_proto_library(mcu_wire_proto

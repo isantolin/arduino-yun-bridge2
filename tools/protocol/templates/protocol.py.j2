@@ -26,11 +26,11 @@ from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_transfer import transfer_pb2
 import structlog
 
-from . import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from . import cloud_gateway_pb2, config_schema_pb2, gateway_control_pb2, mcu_wire_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
     PwRpcService.from_descriptor(desc)
-    for mod in (mcu_wire_pb2, cloud_gateway_pb2, transfer_pb2)
+    for mod in (mcu_wire_pb2, cloud_gateway_pb2, gateway_control_pb2, transfer_pb2)
     for desc in cast(Any, mod).DESCRIPTOR.services_by_name.values()
 )
 

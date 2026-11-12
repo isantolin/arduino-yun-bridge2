@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package mcubridge.gateway;
+
+// Northbound control RPCs. Only a peer authenticated with the
+// spiffe://mcubridge/client/<principal> URI SAN may invoke this service.
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
+  uint32 active_device_sessions = 2;
+  uint32 active_client_sessions = 3;
+}
+
+message DispatchRequest {
+  string target_device_id = 1;
+  string service_name = 2;
+  string method_name = 3;
+  bytes request_payload = 4;
+  uint32 timeout_ms = 5;
+}
+
+message DispatchResponse {
+  uint32 status_code = 1;
+  bytes response_payload = 2;
+}
+
+message PollCommandRequest {}
+
+message PollCommandResponse {
+  bool available = 1;
+  uint64 request_id = 2;
+  string service_name = 3;
+  string method_name = 4;
+  bytes request_payload = 5;
+  uint32 timeout_ms = 6;
+}
+
+message CompleteCommandRequest {
+  uint64 request_id = 1;
+  uint32 status_code = 2;
+  bytes response_payload = 3;
+}
+
+message CompleteCommandResponse {}
+
+service GatewayControl {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Dispatch(DispatchRequest) returns (DispatchResponse);
+}
+
+service EdgeControl {
+  rpc PollCommand(PollCommandRequest) returns (PollCommandResponse);
+  rpc CompleteCommand(CompleteCommandRequest) returns (CompleteCommandResponse);
+}

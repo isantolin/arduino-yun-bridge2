@@ -42,6 +42,7 @@ REQUIRED_DEPS = [
     "typer",
     "packaging",
     "pw_rpc",
+    "pw_transfer",
 ]
 MISSING_DEPS: list[str] = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep.split(".")[0]) is None]
 HAS_BUF: bool = shutil.which("buf") is not None

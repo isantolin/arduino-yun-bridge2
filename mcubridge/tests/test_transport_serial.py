@@ -251,7 +251,7 @@ async def test_pw_transfer_manager_reads_and_writes_with_offsets(
     manager.read.return_value = b"resource-data"
     manager.write.return_value = None
     manager_factory = mocker.patch(
-        "mcubridge.transport.serial.pw_transfer.Manager",
+        "mcubridge.transport.serial.PwTransferManager",
         return_value=manager,
     )
     transport = SerialTransport(runtime_config, runtime_state, None)

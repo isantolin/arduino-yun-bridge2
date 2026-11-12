@@ -664,6 +664,23 @@ static void dummy_status_cb(rpc::StatusCode, pw::span<const uint8_t>) {
   s_status_called = true;
 }
 
+void test_bridge_link_sync_session_key_failure_fails_closed() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream, 115200, "secret");
+  auto& ba = TestAccessor::create(Bridge);
+
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::BRIDGE_SESSION_KEY_DERIVE_FAIL);
+  const bool synchronized = perform_test_link_sync(ba, 0x42U);
+  bridge::test::fault::disable(
+      bridge::test::fault::FaultPoint::BRIDGE_SESSION_KEY_DERIVE_FAIL);
+
+  TEST_ASSERT_FALSE(synchronized);
+  TEST_ASSERT_FALSE(ba.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isSessionKeysReady());
+  reset_bridge_core(Bridge, stream);
+}
+
 void test_bridge_fault_injection_kat_and_post() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -745,6 +762,7 @@ int main() {
   RUN_TEST(test_bridge_dispatch_extra_branches);
   RUN_TEST(test_bridge_authenticated_digital_write_frame);
   RUN_TEST(test_bridge_receive_security_gate_variants);
+  RUN_TEST(test_bridge_link_sync_session_key_failure_fails_closed);
   RUN_TEST(test_bridge_fault_injection_kat_and_post);
   return UNITY_END();
 }

@@ -30,6 +30,9 @@
 
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
+#if defined(BRIDGE_FAULT_INJECTION)
+#include <BridgeFaultInjection.h>
+#endif
 
 namespace rpc {
 namespace security {
@@ -432,6 +435,18 @@ bool run_cryptographic_self_tests() {
   secure_zero(pw::span<uint8_t>(tag));
   secure_zero(pw::span<uint8_t>(decrypted));
   secure_zero(pw::span<uint8_t>(rejected_plaintext));
+#if defined(BRIDGE_FAULT_INJECTION)
+  // A KAT mismatch must prevent the Bridge from enabling the link. The
+  // injected fault is test-only and does not alter production firmware.
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH)) {
+    ok = false;
+  }
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::KAT_HMAC_MISMATCH)) {
+    ok = false;
+  }
+#endif
   return ok;
 }
 

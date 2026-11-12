@@ -251,7 +251,36 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
   std::mutex mutex_;
 };
 
-class SessionRegistry {
+class GatewaySession;
+
+class DeviceSessionRegistry {
+ public:
+  bool Register(const std::string& device_id, std::shared_ptr<GatewaySession> session) {
+    std::lock_guard lock(mutex_);
+    return sessions_.emplace(device_id, std::move(session)).second;
+  }
+  void Unregister(const std::string& device_id, const GatewaySession* session) {
+    std::lock_guard lock(mutex_);
+    const auto it = sessions_.find(device_id);
+    if (it != sessions_.end() && it->second.get() == session) {
+      sessions_.erase(it);
+    }
+  }
+  std::shared_ptr<GatewaySession> Lookup(const std::string& device_id) {
+    std::lock_guard lock(mutex_);
+    const auto it = sessions_.find(device_id);
+    return it != sessions_.end() ? it->second : nullptr;
+  }
+  size_t size() const {
+    std::lock_guard lock(mutex_);
+    return sessions_.size();
+  }
+ private:
+  mutable std::mutex mutex_;
+  std::unordered_map<std::string, std::shared_ptr<GatewaySession>> sessions_;
+};
+
+class ClientSessionRegistry {
  public:
   bool Register(const std::string& principal_id, const void* session) {
     std::lock_guard lock(mutex_);
@@ -271,34 +300,6 @@ class SessionRegistry {
   std::unordered_map<std::string, const void*> sessions_;
 };
 
-class GatewayControlService final
-    : public mcubridge::gateway::pw_rpc::pwpb::GatewayControl::Service<
-          GatewayControlService> {
- public:
-  GatewayControlService(SessionRegistry& devices, SessionRegistry& clients)
-      : devices_(devices), clients_(clients) {}
-
-  pw::Status Health(const mcubridge::gateway::HealthRequest::Message&,
-                    mcubridge::gateway::HealthResponse::Message& response) {
-    response.ready = true;
-    response.active_device_sessions = static_cast<uint32_t>(devices_.size());
-    response.active_client_sessions = static_cast<uint32_t>(clients_.size());
-    return pw::OkStatus();
-  }
-
-  pw::Status Dispatch(const mcubridge::gateway::DispatchRequest::Message&,
-                      mcubridge::gateway::DispatchResponse::Message&) {
-    // Fail closed until device routing and client-to-device authorization are
-    // implemented. A client certificate authenticates the caller, not access
-    // to every device in the fleet.
-    return pw::Status::Unimplemented();
-  }
-
- private:
-  SessionRegistry& devices_;
-  SessionRegistry& clients_;
-};
-
 class SessionControl {
  public:
   virtual ~SessionControl() = default;
@@ -306,31 +307,64 @@ class SessionControl {
   virtual void Stop() = 0;
 };
 
-class GatewaySession final : public SessionControl {
+class DeviceTelemetryService final
+    : public mcubridge::gateway::pw_rpc::pwpb::DeviceTelemetry::Service<
+          DeviceTelemetryService> {
  public:
-  GatewaySession(SSL* ssl, int fd, std::string device_id, SessionRegistry& registry)
+  explicit DeviceTelemetryService(const std::string& device_id)
+      : device_id_(device_id) {}
+
+  pw::Status ReportTelemetry(
+      const mcubridge::gateway::pwpb::TelemetryReport::Message& request,
+      mcubridge::gateway::pwpb::TelemetryResponse::Message& response) {
+    std::cerr << "device=" << device_id_
+              << " event=telemetry_reported metrics_bytes="
+              << request.daemon_metrics_blob.size()
+              << " status_bytes=" << request.system_status_blob.size()
+              << '\n';
+    response.acknowledged = true;
+    return pw::OkStatus();
+  }
+
+ private:
+  const std::string& device_id_;
+};
+
+class GatewaySession final : public SessionControl,
+                             public std::enable_shared_from_this<GatewaySession> {
+ public:
+  GatewaySession(SSL* ssl, int fd, std::string device_id, DeviceSessionRegistry& registry)
       : socket_(ssl, fd), registry_(registry), channel_output_(tx_writer_, kRpcHdlcAddress),
-        channels_{pw::rpc::Channel::Create<1>(&channel_output_)}, rpc_client_(channels_),
+        client_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
+        server_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
+        rpc_client_(client_channels_),
+        rpc_server_(server_channels_),
         transfer_thread_(pw::ByteSpan(transfer_chunk_), pw::ByteSpan(transfer_encode_)),
         transfer_client_(rpc_client_, 1, transfer_thread_, kTransferWindowBytes),
-        decoder_(pw::ByteSpan(decoder_storage_)), device_id_(std::move(device_id)) {}
+        decoder_(pw::ByteSpan(decoder_storage_)), device_id_(std::move(device_id)),
+        telemetry_service_(device_id_),
+        edge_control_client_(rpc_client_, 1) {}
   GatewaySession(const GatewaySession&) = delete;
   GatewaySession& operator=(const GatewaySession&) = delete;
+
   void Run() override {
     if (!socket_.SetNonBlocking()) return;
-    if (!registry_.Register(device_id_, this)) {
+    if (!registry_.Register(device_id_, shared_from_this())) {
       std::cerr << "device=" << device_id_ << " event=session_rejected reason=duplicate_session\n";
       return;
     }
     struct RegistrationGuard {
-      SessionRegistry& registry;
+      DeviceSessionRegistry& registry;
       const std::string& device_id;
-      const void* session;
+      const GatewaySession* session;
       ~RegistrationGuard() {
         registry.Unregister(device_id, session);
         std::cerr << "device=" << device_id << " event=session_unregistered\n";
       }
     } registration{registry_, device_id_, this};
+
+    rpc_server_.RegisterService(telemetry_service_);
+
     // The edge MPU is the pw_transfer server. The central Gateway owns only
     // the upstream client endpoint and never registers a duplicate server.
     pw::thread::stl::Options transfer_options;
@@ -347,11 +381,83 @@ class GatewaySession final : public SessionControl {
     if (transfer_worker_ != nullptr && transfer_worker_->joinable()) transfer_worker_->join();
     std::cerr << "device=" << device_id_ << " event=session_closed\n";
   }
+
   void Stop() override {
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
   }
+
+  pw::Status Dispatch(
+      const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
+      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
+    if (stopping_.load()) {
+      return pw::Status::Unavailable();
+    }
+
+    std::lock_guard session_lock(dispatch_mutex_);
+
+    mcubridge::gateway::pwpb::EdgeDispatchRequest::Message edge_req{};
+    edge_req.service_name = request.service_name;
+    edge_req.method_name = request.method_name;
+    edge_req.request_payload = request.request_payload;
+    edge_req.timeout_ms = request.timeout_ms;
+
+    struct DispatchContext {
+      std::mutex cv_mutex;
+      std::condition_variable cv;
+      bool completed = false;
+      pw::Status call_status = pw::OkStatus();
+      uint32_t status_code = 0;
+      std::vector<std::byte> response_payload;
+    } ctx;
+
+    auto call = edge_control_client_.Dispatch(
+        edge_req,
+        [&ctx](const mcubridge::gateway::pwpb::EdgeDispatchResponse::Message& edge_resp,
+               pw::Status status) {
+          std::lock_guard lock(ctx.cv_mutex);
+          ctx.call_status = status;
+          ctx.status_code = edge_resp.status_code;
+          ctx.response_payload.assign(edge_resp.response_payload.begin(),
+                                      edge_resp.response_payload.end());
+          ctx.completed = true;
+          ctx.cv.notify_one();
+        },
+        [&ctx](pw::Status status) {
+          std::lock_guard lock(ctx.cv_mutex);
+          ctx.call_status = status;
+          ctx.completed = true;
+          ctx.cv.notify_one();
+        });
+
+    if (!call.active()) {
+      return pw::Status::Unavailable();
+    }
+
+    const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 5000;
+    std::unique_lock lock(ctx.cv_mutex);
+    if (!ctx.cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] {
+          return ctx.completed || stopping_.load();
+        })) {
+      call.Cancel().IgnoreError();
+      return pw::Status::DeadlineExceeded();
+    }
+
+    if (stopping_.load() && !ctx.completed) {
+      call.Cancel().IgnoreError();
+      return pw::Status::Unavailable();
+    }
+
+    if (!ctx.call_status.ok()) {
+      return ctx.call_status;
+    }
+
+    response.status_code = ctx.status_code;
+    response.response_payload.assign(ctx.response_payload.begin(), ctx.response_payload.end());
+    return pw::OkStatus();
+  }
+
  private:
   void TransmitLoop() {
     std::vector<std::byte> frame;
@@ -364,6 +470,7 @@ class GatewaySession final : public SessionControl {
       }
     }
   }
+
   void ReceiveLoop() {
     std::array<std::byte, 4096> input{};
     while (!stopping_.load()) {
@@ -373,19 +480,35 @@ class GatewaySession final : public SessionControl {
         auto frame = decoder_.Process(input[i]);
         if (frame.status() == pw::Status::Unavailable()) continue;
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        const pw::Status status = rpc_client_.ProcessPacket(frame->data());
+        auto meta = pw::rpc::PacketMeta::FromBuffer(frame->data());
+        if (!meta.ok()) {
+          std::cerr << "device=" << device_id_ << " event=rpc_packet_corrupt\n";
+          continue;
+        }
+        pw::Status status;
+        if (meta->destination_is_client()) {
+          status = rpc_client_.ProcessPacket(frame->data());
+        } else if (meta->destination_is_server()) {
+          status = rpc_server_.ProcessPacket(frame->data());
+        } else {
+          status = pw::Status::InvalidArgument();
+        }
         if (!status.ok() && status != pw::Status::Unavailable()) {
-          std::cerr << "device=" << device_id_ << " event=rpc_packet_rejected\n";
+          std::cerr << "device=" << device_id_ << " event=rpc_packet_rejected status="
+                    << status.code() << "\n";
         }
       }
     }
   }
+
   TlsSocket socket_;
-  SessionRegistry& registry_;
+  DeviceSessionRegistry& registry_;
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
-  std::array<pw::rpc::Channel, 1> channels_;
+  std::array<pw::rpc::Channel, 1> client_channels_;
+  std::array<pw::rpc::Channel, 1> server_channels_;
   pw::rpc::Client rpc_client_;
+  pw::rpc::Server rpc_server_;
   std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
   std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
   pw::transfer::Thread<1, 1> transfer_thread_;
@@ -394,8 +517,41 @@ class GatewaySession final : public SessionControl {
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
   pw::hdlc::Decoder decoder_;
   std::string device_id_;
+  DeviceTelemetryService telemetry_service_;
+  mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
   std::atomic<bool> stopping_{false};
   std::thread tx_worker_;
+  std::mutex dispatch_mutex_;
+};
+
+class GatewayControlService final
+    : public mcubridge::gateway::pw_rpc::pwpb::GatewayControl::Service<
+          GatewayControlService> {
+ public:
+  GatewayControlService(DeviceSessionRegistry& devices, ClientSessionRegistry& clients)
+      : devices_(devices), clients_(clients) {}
+
+  pw::Status Health(const mcubridge::gateway::pwpb::HealthRequest::Message&,
+                    mcubridge::gateway::pwpb::HealthResponse::Message& response) {
+    response.ready = true;
+    response.active_device_sessions = static_cast<uint32_t>(devices_.size());
+    response.active_client_sessions = static_cast<uint32_t>(clients_.size());
+    return pw::OkStatus();
+  }
+
+  pw::Status Dispatch(const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
+                      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
+    const std::string target_id(request.target_device_id);
+    auto session = devices_.Lookup(target_id);
+    if (!session) {
+      return pw::Status::NotFound();
+    }
+    return session->Dispatch(request, response);
+  }
+
+ private:
+  DeviceSessionRegistry& devices_;
+  ClientSessionRegistry& clients_;
 };
 
 class GatewayClientSession final : public SessionControl {
@@ -403,8 +559,8 @@ class GatewayClientSession final : public SessionControl {
   GatewayClientSession(SSL* ssl,
                        int fd,
                        std::string client_id,
-                       SessionRegistry& devices,
-                       SessionRegistry& clients)
+                       DeviceSessionRegistry& devices,
+                       ClientSessionRegistry& clients)
       : socket_(ssl, fd), clients_(clients),
         control_service_(devices, clients),
         channel_output_(tx_writer_, kRpcHdlcAddress),
@@ -423,7 +579,7 @@ class GatewayClientSession final : public SessionControl {
       return;
     }
     struct RegistrationGuard {
-      SessionRegistry& registry;
+      ClientSessionRegistry& registry;
       const std::string& client_id;
       const void* session;
       ~RegistrationGuard() {
@@ -473,14 +629,15 @@ class GatewayClientSession final : public SessionControl {
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
         const pw::Status status = rpc_server_.ProcessPacket(frame->data());
         if (!status.ok() && status != pw::Status::Unavailable()) {
-          std::cerr << "client=" << client_id_ << " event=rpc_packet_rejected\n";
+          std::cerr << "client=" << client_id_ << " event=rpc_packet_rejected status="
+                    << status.code() << "\n";
         }
       }
     }
   }
 
   TlsSocket socket_;
-  SessionRegistry& clients_;
+  ClientSessionRegistry& clients_;
   GatewayControlService control_service_;
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
@@ -598,8 +755,8 @@ int main(int argc, char** argv) {
   signal(SIGINT, HandleSignal);
   signal(SIGTERM, HandleSignal);
   signal(SIGPIPE, SIG_IGN);
-  SessionRegistry registry;
-  SessionRegistry client_registry;
+  DeviceSessionRegistry device_registry;
+  ClientSessionRegistry client_registry;
   std::vector<std::unique_ptr<SessionTask>> tasks;
   std::cerr << "event=gateway_listening bind=" << bind_address
             << " port=" << port << " tls=1.3 identity=uri_san\n";
@@ -629,7 +786,7 @@ int main(int argc, char** argv) {
     task->fd = client_fd;
     SessionTask* task_ptr = task.get();
     task->worker = std::thread(
-        [task_ptr, context = tls_context.get(), &registry, &client_registry] {
+        [task_ptr, context = tls_context.get(), &device_registry, &client_registry] {
       const auto close_task_fd = [task_ptr] {
         std::lock_guard lock(task_ptr->mutex);
         if (task_ptr->fd >= 0) {
@@ -675,10 +832,10 @@ int main(int argc, char** argv) {
       std::shared_ptr<SessionControl> session;
       if (identity->role == PeerRole::kDevice) {
         session = std::make_shared<GatewaySession>(
-            ssl, client_fd, std::move(identity->id), registry);
+            ssl, client_fd, std::move(identity->id), device_registry);
       } else {
         session = std::make_shared<GatewayClientSession>(
-            ssl, client_fd, std::move(identity->id), registry, client_registry);
+            ssl, client_fd, std::move(identity->id), device_registry, client_registry);
       }
       {
         std::lock_guard lock(task_ptr->mutex);

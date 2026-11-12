@@ -37,9 +37,24 @@ message EdgeDispatchResponse {
   bytes response_payload = 2;
 }
 
+message TelemetryReport {
+  bytes daemon_metrics_blob = 1;
+  bytes system_status_blob = 2;
+  bytes bridge_snapshot_blob = 3;
+  bytes handshake_snapshot_blob = 4;
+}
+
+message TelemetryResponse {
+  bool acknowledged = 1;
+}
+
 service GatewayControl {
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc Dispatch(DispatchRequest) returns (DispatchResponse);
+}
+
+service DeviceTelemetry {
+  rpc ReportTelemetry(TelemetryReport) returns (TelemetryResponse);
 }
 
 service EdgeControl {

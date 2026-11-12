@@ -77,6 +77,8 @@ typings/*
 *~
 
 # Build outputs
+build-transfer-*/
+third_party/avr_pigweed_port/build*/
 mcubridge-library-arduino/build-coverage/
 mcubridge-library-arduino/build-host-local/
 mcubridge-library-arduino/coverage-report/

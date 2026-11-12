@@ -4,12 +4,28 @@ import os
 import socket
 import ssl
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT / "mcubridge") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
+
+import pw_hdlc.decode
+import pw_hdlc.encode
+import pw_hdlc.rpc
+import pw_rpc
+import pw_rpc.packets
+import pw_status
+from pw_rpc import callback_client
+from pw_rpc.client import Client as PwRpcClient
+from pw_rpc.descriptors import Channel as PwRpcChannel
+from mcubridge.protocol import protocol
+from mcubridge.protocol.gateway import gateway_control_pb2
 BINARY = Path(
     os.environ.get(
         "MCUBRIDGE_GATEWAY_BINARY",
@@ -371,6 +387,197 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.gateway.wait_for("device=device-01 event=session_open", count=2)
         third.close()
         self.gateway.wait_for("device=device-01 event=session_closed", count=2)
+
+    def test_gateway_control_health_rpc(self) -> None:
+        client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        decoder = pw_hdlc.decode.FrameDecoder()
+        rpc_client = PwRpcClient(
+            callback_client.Impl(),
+            [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        running = True
+
+        def reader() -> None:
+            while running:
+                try:
+                    data = client_sock.recv(4096)
+                    if not data:
+                        break
+                    for f in decoder.process(data):
+                        if f.ok() and f.address == 1:
+                            rpc_client.process_packet(f.data)
+                except Exception:
+                    break
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        try:
+            health_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Health
+            res = health_method()
+            self.assertEqual(res.status, pw_status.Status.OK)
+            self.assertTrue(res.response.ready)
+            self.assertEqual(res.response.active_device_sessions, 0)
+            self.assertEqual(res.response.active_client_sessions, 1)
+        finally:
+            running = False
+            client_sock.close()
+            t.join(timeout=2)
+
+    def test_device_telemetry_reporting(self) -> None:
+        dev_sock = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        decoder = pw_hdlc.decode.FrameDecoder()
+        rpc_client = PwRpcClient(
+            callback_client.Impl(),
+            [PwRpcChannel(1, lambda p: dev_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        running = True
+
+        def reader() -> None:
+            while running:
+                try:
+                    data = dev_sock.recv(4096)
+                    if not data:
+                        break
+                    for f in decoder.process(data):
+                        if f.ok() and f.address == 1:
+                            rpc_client.process_packet(f.data)
+                except Exception:
+                    break
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        try:
+            report_method = rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry
+            req = gateway_control_pb2.TelemetryReport(
+                daemon_metrics_blob=b"test_metrics_blob",
+                system_status_blob=b"test_status_blob",
+            )
+            res = report_method(req)
+            self.assertEqual(res.status, pw_status.Status.OK)
+            self.assertTrue(res.response.acknowledged)
+            self.gateway.wait_for("device=device-01 event=telemetry_reported metrics_bytes=17 status_bytes=16")
+        finally:
+            running = False
+            dev_sock.close()
+            t.join(timeout=2)
+
+    def test_gateway_control_dispatch_device_not_found(self) -> None:
+        client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        decoder = pw_hdlc.decode.FrameDecoder()
+        rpc_client = PwRpcClient(
+            callback_client.Impl(),
+            [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        running = True
+
+        def reader() -> None:
+            while running:
+                try:
+                    data = client_sock.recv(4096)
+                    if not data:
+                        break
+                    for f in decoder.process(data):
+                        if f.ok() and f.address == 1:
+                            rpc_client.process_packet(f.data)
+                except Exception:
+                    break
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        try:
+            dispatch_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
+            req = gateway_control_pb2.DispatchRequest(
+                target_device_id="missing-device",
+                service_name="SystemService",
+                method_name="Ping",
+                request_payload=b"",
+                timeout_ms=1000,
+            )
+            res = dispatch_method(req)
+            self.assertEqual(res.status, pw_status.Status.NOT_FOUND)
+        finally:
+            running = False
+            client_sock.close()
+            t.join(timeout=2)
+
+    def test_gateway_control_dispatch_end_to_end(self) -> None:
+        client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_decoder = pw_hdlc.decode.FrameDecoder()
+        client_rpc = PwRpcClient(
+            callback_client.Impl(),
+            [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+
+        dev_sock = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        dev_decoder = pw_hdlc.decode.FrameDecoder()
+
+        running = True
+
+        def client_reader() -> None:
+            while running:
+                try:
+                    data = client_sock.recv(4096)
+                    if not data:
+                        break
+                    for f in client_decoder.process(data):
+                        if f.ok() and f.address == 1:
+                            client_rpc.process_packet(f.data)
+                except Exception:
+                    break
+
+        def dev_reader() -> None:
+            while running:
+                try:
+                    data = dev_sock.recv(4096)
+                    if not data:
+                        break
+                    for f in dev_decoder.process(data):
+                        if f.ok() and f.address == 1:
+                            pkt = pw_rpc.packets.decode(f.data)
+                            edge_req = gateway_control_pb2.EdgeDispatchRequest()
+                            edge_req.ParseFromString(pkt.payload)
+                            edge_resp = gateway_control_pb2.EdgeDispatchResponse(
+                                status_code=0,
+                                response_payload=b"pong_payload_response",
+                            )
+                            resp_pkt = pw_rpc.packets.encode_response(
+                                pkt, response=edge_resp, status=pw_status.Status.OK
+                            )
+                            dev_sock.sendall(pw_hdlc.encode.ui_frame(1, resp_pkt))
+                except Exception:
+                    break
+
+        t_client = threading.Thread(target=client_reader, daemon=True)
+        t_dev = threading.Thread(target=dev_reader, daemon=True)
+        t_client.start()
+        t_dev.start()
+
+        self.gateway.wait_for("device=device-01 event=session_open")
+        self.gateway.wait_for("client=operator-01 event=session_open")
+
+        try:
+            dispatch_method = client_rpc.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
+            req = gateway_control_pb2.DispatchRequest(
+                target_device_id="device-01",
+                service_name="SystemService",
+                method_name="Ping",
+                request_payload=b"test_payload",
+                timeout_ms=3000,
+            )
+            res = dispatch_method(req)
+            self.assertEqual(res.status, pw_status.Status.OK)
+            self.assertEqual(res.response.status_code, 0)
+            self.assertEqual(res.response.response_payload, b"pong_payload_response")
+        finally:
+            running = False
+            client_sock.close()
+            dev_sock.close()
+            t_client.join(timeout=2)
+            t_dev.join(timeout=2)
 
 
 if __name__ == "__main__":

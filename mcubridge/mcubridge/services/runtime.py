@@ -695,7 +695,7 @@ class BridgeService:
             await self._send_mcu_status(ok, "Path not allowed or quota exceeded")
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
-    async def file_read(self, path_or_req: str | mcu_wire_pb2.FileRead) -> mcu_wire_pb2.FileReadResponse:
+    async def file_read(self, path_or_req: str | cloud_gateway_pb2.FileRead) -> cloud_gateway_pb2.FileReadResponse:
         """Read a file from the MPU filesystem; MCU storage uses pw_transfer."""
         path = path_or_req.path if isinstance(path_or_req, mcu_wire_pb2.FileRead) else str(path_or_req)
         clean = path.lstrip("/")

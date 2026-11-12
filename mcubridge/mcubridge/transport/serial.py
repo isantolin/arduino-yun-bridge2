@@ -132,6 +132,10 @@ class SerialTransport:
         self.tx_sequence_id = 0
 
         self._serial_write_lock = asyncio.Lock()
+        try:
+            self._event_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            self._event_loop = None
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: list[Any] = []
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
@@ -246,6 +250,7 @@ class SerialTransport:
             raise
 
     async def connect_and_run(self) -> None:
+        self._event_loop = asyncio.get_running_loop()
         url = resolve_serial_url(self.config.serial_port)
         is_network = url.startswith(("socket://", "tcp://", "wifi://", "rfc2217://"))
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
@@ -548,40 +553,45 @@ class SerialTransport:
         return await self.send_raw(spec if spec is not None else command_id, payload, seq_id)
 
     def queue_rpc_packet(self, packet: bytes) -> None:
-        """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
+        """Schedule Pigweed RPC output safely from the event loop or worker threads."""
+        loop = self._event_loop
+        if loop is None or loop.is_closed():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError as exc:
+                raise RuntimeError("Pigweed RPC output has no active asyncio event loop") from exc
+            self._event_loop = loop
+        loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet)
+
+    def _queue_rpc_packet_on_loop(self, packet: bytes) -> None:
+        """Update RPC correlation state and create the serial writer task on its owning loop."""
         try:
             rpc_packet = pw_packets.decode(packet)
+            packet_id = (
+                rpc_packet.channel_id,
+                rpc_packet.service_id,
+                rpc_packet.method_id,
+                rpc_packet.call_id,
+            )
             if rpc_packet.type == PacketType.REQUEST:
-                self._active_rpc_packet_ids.add(
-                    (
-                        rpc_packet.channel_id,
-                        rpc_packet.service_id,
-                        rpc_packet.method_id,
-                        rpc_packet.call_id,
-                    )
-                )
+                self._active_rpc_packet_ids.add(packet_id)
             elif rpc_packet.type == PacketType.CLIENT_ERROR:
-                self._active_rpc_packet_ids.discard(
-                    (
-                        rpc_packet.channel_id,
-                        rpc_packet.service_id,
-                        rpc_packet.method_id,
-                        rpc_packet.call_id,
-                    )
-                )
+                self._active_rpc_packet_ids.discard(packet_id)
         except (ProtobufDecodeError, ValueError) as exc:
             logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
             return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError as exc:
-            raise RuntimeError("Pigweed RPC output invoked outside the asyncio event loop") from exc
-        task = loop.create_task(self._write_rpc_packet(packet), name="mcubridge-pw-rpc-write")
+
+        task = asyncio.create_task(self._write_rpc_packet(packet), name="mcubridge-pw-rpc-write")
         self._rpc_write_tasks.add(task)
 
         def _finish(completed: asyncio.Task[bool]) -> None:
             self._rpc_write_tasks.discard(completed)
-            if not completed.result():
+            try:
+                written = completed.result()
+            except (asyncio.CancelledError, OSError, RuntimeError) as exc:
+                logger.error("Pigweed RPC packet write task failed", error=str(exc))
+                return
+            if not written:
                 logger.error("Pigweed RPC packet could not be written to serial")
 
         task.add_done_callback(_finish)

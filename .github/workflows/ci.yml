@@ -522,7 +522,9 @@ jobs:
     name: Final Summary
     runs-on: ubuntu-26.04
     needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
-    if: always()
+    # Preserve summaries for failed jobs, but do not keep obsolete runs alive
+    # after concurrency has cancelled them in favor of a newer PR/branch head.
+    if: ${{ !cancelled() }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7

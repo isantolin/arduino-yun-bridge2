@@ -2,6 +2,12 @@
 # These definitions retain the real upstream headers, sources, and dependency
 # edges while excluding unrelated optional modules and their test-only graphs.
 
+pw_add_library(pw_enum INTERFACE
+  HEADERS
+    "${PIGWEED_ROOT}/pw_enum/public/pw_enum/to_string.h"
+    "${PIGWEED_ROOT}/pw_enum/public/pw_enum/traits.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_enum/public")
+
 # pw_log facade with the upstream null backend.
 pw_add_module_config(pw_log_CONFIG)
 pw_add_library(pw_log.config INTERFACE

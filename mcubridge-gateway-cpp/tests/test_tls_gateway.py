@@ -115,6 +115,7 @@ class Certificates:
 
 class GatewayProcess:
     def __init__(self, root: Path, certs: Certificates) -> None:
+        self._certs = certs
         probe = socket.socket()
         probe.bind(("127.0.0.1", 0))
         self.port = probe.getsockname()[1]
@@ -182,19 +183,23 @@ class GatewayProcess:
 
 
 class GatewayTlsIdentityTests(unittest.TestCase):
-    def setUp(self) -> None:
+    @classmethod
+    def setUpClass(cls) -> None:
         if not BINARY.is_file():
-            self.fail(f"Gateway binary not found: {BINARY}")
-        self.temp = tempfile.TemporaryDirectory(prefix="mcubridge-gateway-test-")
-        self.root = Path(self.temp.name)
-        self.certs = Certificates(self.root)
-        self.gateway = GatewayProcess.__new__(GatewayProcess)
-        self.gateway._certs = self.certs
-        GatewayProcess.__init__(self.gateway, self.root, self.certs)
+            raise AssertionError(f"Gateway binary not found: {BINARY}")
+        cls.temp = tempfile.TemporaryDirectory(prefix="mcubridge-gateway-test-")
+        cls.root = Path(cls.temp.name)
+        cls.certs = Certificates(cls.root)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.temp.cleanup()
+
+    def setUp(self) -> None:
+        self.gateway = GatewayProcess(self.root, self.certs)
 
     def tearDown(self) -> None:
         self.gateway.stop()
-        self.temp.cleanup()
 
     def test_valid_device_certificate_opens_session(self) -> None:
         client = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
@@ -218,6 +223,10 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                 minimum=ssl.TLSVersion.TLSv1_2,
                 maximum=ssl.TLSVersion.TLSv1_2,
             )
+
+    def test_wrong_extended_key_usage_is_rejected(self) -> None:
+        with self.assertRaises((ssl.SSLError, OSError)):
+            self.gateway.connect(self.certs.wrong_eku_cert, self.certs.wrong_eku_key)
 
     def test_certificate_without_uri_san_is_rejected(self) -> None:
         client = self.gateway.connect(self.certs.no_san_cert, self.certs.no_san_key)

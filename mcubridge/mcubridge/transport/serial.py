@@ -679,9 +679,28 @@ class SerialTransport:
             transfer_service = self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
             self._transfer_manager = pw_transfer.Manager(
                 transfer_service,
+                default_response_timeout_s=2.0,
+                initial_response_timeout_s=5.0,
+                max_retries=3,
+                max_lifetime_retries=60,
                 max_chunk_size_bytes=_TRANSFER_CHUNK_SIZE_BYTES,
             )
         return self._transfer_manager
+
+    async def _run_transfer_in_worker(self, operation: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Keep the transfer lock until a blocking Pigweed operation really exits."""
+        worker = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # asyncio cannot stop a running thread. Wait for the Manager operation
+            # to finish before releasing the lock, otherwise a second transfer
+            # could overlap the first on the AVR's single-role transfer thread.
+            try:
+                await asyncio.shield(worker)
+            except Exception as exc:
+                logger.debug("pw_transfer worker ended after caller cancellation", error=str(exc))
+            raise
 
     async def transfer_read(self, resource_id: int, *, offset: int = 0) -> bytes:
         """Read an MCU transfer resource without blocking the asyncio serial loop."""
@@ -689,7 +708,7 @@ class SerialTransport:
             if self.serial is None or not self.serial.is_open:
                 raise ConnectionError("MCU transfer requested while the serial link is disconnected")
             manager = self._get_transfer_manager()
-            return await asyncio.to_thread(
+            return await self._run_transfer_in_worker(
                 manager.read,
                 resource_id,
                 initial_offset=offset,
@@ -701,7 +720,7 @@ class SerialTransport:
             if self.serial is None or not self.serial.is_open:
                 raise ConnectionError("MCU transfer requested while the serial link is disconnected")
             manager = self._get_transfer_manager()
-            await asyncio.to_thread(
+            await self._run_transfer_in_worker(
                 manager.write,
                 resource_id,
                 data,

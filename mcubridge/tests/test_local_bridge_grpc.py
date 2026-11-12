@@ -229,6 +229,7 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
     assert sent.status == "ok"
 
     # 4. MCU EEPROM operations use upstream pw_transfer, not unary file RPCs.
+    mock_serial.send.reset_mock()
     stream = _make_mock_stream(mcu_wire_pb2.FileWrite(path="mcu/eeprom", data=b"data"))
     await local_svc.FileWrite(stream)
     mock_serial.transfer_write.assert_awaited_once_with(0x4D454741, b"data")

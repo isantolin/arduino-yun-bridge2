@@ -268,9 +268,9 @@ def test_pw_transfer_service_resolves_through_daemon_rpc_client() -> None:
         protocol.PW_SERVICES,
     )
     transfer_service = client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
-    assert callable(transfer_service.Read)
-    assert callable(transfer_service.Write)
-    assert callable(transfer_service.GetResourceStatus)
+    assert callable(transfer_service.Read.invoke)
+    assert callable(transfer_service.Write.invoke)
+    assert callable(transfer_service.GetResourceStatus.invoke)
 
 
 def test_operation_specs_multidimensional_integrity() -> None:

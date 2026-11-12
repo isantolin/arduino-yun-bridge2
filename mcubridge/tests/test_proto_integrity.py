@@ -256,6 +256,23 @@ def test_pw_services_integrity() -> None:
     assert transfer.methods["GetResourceStatus"].type.name == "UNARY"
 
 
+def test_pw_transfer_service_resolves_through_daemon_rpc_client() -> None:
+    """Verify the daemon's generated Pigweed client can resolve upstream pw_transfer methods."""
+    from pw_rpc import callback_client
+    from pw_rpc.client import Client as PwRpcClient
+    from pw_rpc.descriptors import Channel as PwRpcChannel
+
+    client = PwRpcClient(
+        callback_client.Impl(),
+        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, lambda _packet: None)],
+        protocol.PW_SERVICES,
+    )
+    transfer_service = client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
+    assert callable(transfer_service.Read)
+    assert callable(transfer_service.Write)
+    assert callable(transfer_service.GetResourceStatus)
+
+
 def test_operation_specs_multidimensional_integrity() -> None:
     """Verify that every operation has a canonical OperationSpec matching Protobuf descriptors."""
     assert len(protocol.OPERATIONS) >= 30

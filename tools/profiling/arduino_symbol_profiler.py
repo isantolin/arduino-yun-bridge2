@@ -178,8 +178,8 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
     entries: list[tuple[int, str, str, str]] = []
     for usage_file in sorted(build_dir.rglob("*.su")):
         try:
-            lines = usage_file.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError as err:
+            lines = usage_file.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as err:
             sys.stderr.write(f"[WARN] Failed to read stack usage file {usage_file}: {err}\n")
             continue
         for line in lines:

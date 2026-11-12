@@ -17,7 +17,7 @@ import anyio
 import anyio.to_thread
 import lmdb
 import psutil
-import pw_transfer
+from pw_transfer.client import Error as PwTransferError
 import structlog
 import tenacity
 from google.protobuf.message import (
@@ -692,7 +692,7 @@ class BridgeService:
                 try:
                     await serial.transfer_write(_MCU_EEPROM_RESOURCE_ID, payload_data)
                     ok = True
-                except (pw_transfer.Error, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                except (PwTransferError, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
                     logger.warning("MCU EEPROM pw_transfer write failed", error=str(exc))
                     ok = False
         else:
@@ -715,7 +715,7 @@ class BridgeService:
                 raise GRPCError(GrpcStatus.UNAVAILABLE, "MCU serial link is disconnected")
             try:
                 content = await serial.transfer_read(_MCU_EEPROM_RESOURCE_ID)
-            except (pw_transfer.Error, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+            except (PwTransferError, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
                 logger.warning("MCU EEPROM pw_transfer read failed", error=str(exc))
                 raise GRPCError(GrpcStatus.INTERNAL, "MCU EEPROM transfer failed") from exc
             return cloud_gateway_pb2.FileReadResponse(content=content)

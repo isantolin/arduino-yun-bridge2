@@ -123,7 +123,12 @@ bool verify_hmac_sha256(pw::span<const uint8_t> key,
   }
 
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> computed_mac = {};
-  compute_hmac_sha256(key, input, pw::span<uint8_t>(computed_mac));
+  const bool computed =
+      compute_hmac_sha256(key, input, pw::span<uint8_t>(computed_mac));
+  if (!computed) {
+    secure_zero(pw::span<uint8_t>(computed_mac));
+    return false;
+  }
 
   const bool ok = (ConstantCompare(computed_mac.data(), expected_mac.data(),
                                    static_cast<int>(computed_mac.size())) == 0);

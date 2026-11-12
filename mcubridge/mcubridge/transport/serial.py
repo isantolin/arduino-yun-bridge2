@@ -557,42 +557,56 @@ class SerialTransport:
 
     def queue_rpc_packet(self, packet: bytes) -> None:
         """Schedule Pigweed RPC output safely from the event loop or worker threads."""
+        try:
+            rpc_packet = pw_packets.decode(packet)
+        except (ProtobufDecodeError, ValueError) as exc:
+            logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
+            return
+
         loop = self._event_loop
         if loop is None or loop.is_closed():
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError as exc:
-                raise RuntimeError("Pigweed RPC output has no active asyncio event loop") from exc
+                # Preserve the historical correlation-state update before
+                # reporting that a caller without an owning loop cannot write.
+                self._update_rpc_packet_ids(rpc_packet)
+                raise RuntimeError(
+                    "Pigweed RPC output called outside the asyncio event loop; "
+                    "no active loop is registered"
+                ) from exc
             self._event_loop = loop
+
         try:
             current_loop = asyncio.get_running_loop()
         except RuntimeError:
             current_loop = None
 
         if current_loop is loop:
-            self._queue_rpc_packet_on_loop(packet)
+            self._queue_rpc_packet_on_loop(packet, rpc_packet)
         else:
-            loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet)
-
-    def _queue_rpc_packet_on_loop(self, packet: bytes) -> None:
-        """Update RPC correlation state and create the serial writer task on its owning loop."""
-        try:
-            rpc_packet = pw_packets.decode(packet)
-            packet_id = (
-                rpc_packet.channel_id,
-                rpc_packet.service_id,
-                rpc_packet.method_id,
-                rpc_packet.call_id,
+            loop.call_soon_threadsafe(
+                self._queue_rpc_packet_on_loop, packet, rpc_packet
             )
-            if rpc_packet.type == PacketType.REQUEST:
-                self._active_rpc_packet_ids.add(packet_id)
-            elif rpc_packet.type == PacketType.CLIENT_ERROR:
-                self._active_rpc_packet_ids.discard(packet_id)
-        except (ProtobufDecodeError, ValueError) as exc:
-            logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
-            return
 
-        task = asyncio.create_task(self._rpc_packet_writer(packet), name="mcubridge-pw-rpc-write")
+    def _update_rpc_packet_ids(self, rpc_packet: Any) -> None:
+        packet_id = (
+            rpc_packet.channel_id,
+            rpc_packet.service_id,
+            rpc_packet.method_id,
+            rpc_packet.call_id,
+        )
+        if rpc_packet.type == PacketType.REQUEST:
+            self._active_rpc_packet_ids.add(packet_id)
+        elif rpc_packet.type == PacketType.CLIENT_ERROR:
+            self._active_rpc_packet_ids.discard(packet_id)
+
+    def _queue_rpc_packet_on_loop(self, packet: bytes, rpc_packet: Any) -> None:
+        """Update RPC correlation state and create the serial writer task on its owning loop."""
+        self._update_rpc_packet_ids(rpc_packet)
+        task = asyncio.create_task(
+            self._rpc_packet_writer(packet), name="mcubridge-pw-rpc-write"
+        )
         self._rpc_write_tasks.add(task)
 
         def _finish(completed: asyncio.Task[bool]) -> None:

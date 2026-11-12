@@ -13,13 +13,13 @@ namespace {
 constexpr uint32_t kLocalResourceId = 0x1001;
 constexpr uint32_t kRemoteResourceId = 0x1002;
 
-etl::array<std::byte, 32> resource_bytes{};
+etl::array<pw::byte, 32> resource_bytes{};
 pw::stream::MemoryReader resource_reader{
     pw::ConstByteSpan(resource_bytes.data(), resource_bytes.size())};
 pw::transfer::ReadOnlyHandler resource_handler{
     kLocalResourceId, resource_reader};
 
-etl::array<std::byte, 64> client_output_bytes{};
+etl::array<pw::byte, 64> client_output_bytes{};
 pw::stream::MemoryWriter client_output{
     pw::ByteSpan(client_output_bytes.data(), client_output_bytes.size())};
 

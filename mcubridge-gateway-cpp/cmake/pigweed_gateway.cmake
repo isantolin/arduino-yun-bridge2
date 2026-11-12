@@ -8,6 +8,23 @@ pw_add_library(pw_enum INTERFACE
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/traits.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_enum/public")
 
+pw_add_module_config(pw_status_CONFIG)
+pw_add_library(pw_status.config INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_status/public/pw_status/internal/config.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_status/public"
+  PUBLIC_DEPS ${pw_status_CONFIG})
+pw_add_library(pw_status STATIC
+  HEADERS
+    "${PIGWEED_ROOT}/pw_status/public/pw_status/status.h"
+    "${PIGWEED_ROOT}/pw_status/public/pw_status/status_base.h"
+    "${PIGWEED_ROOT}/pw_status/public/pw_status/status_with_size.h"
+    "${PIGWEED_ROOT}/pw_status/public/pw_status/try.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_status/public"
+  PUBLIC_DEPS pw_enum pw_status.config
+  SOURCES "${PIGWEED_ROOT}/pw_status/status.cc")
+pw_add_library(pw_status.check_if_used INTERFACE
+  PUBLIC_DEFINES PW_STATUS_CFG_CHECK_IF_USED=1)
+
 # pw_log facade with the upstream null backend.
 pw_add_module_config(pw_log_CONFIG)
 pw_add_library(pw_log.config INTERFACE

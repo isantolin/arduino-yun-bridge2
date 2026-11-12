@@ -955,7 +955,7 @@ async def _assert_local_bridge_rpc_matrix(local_svc: GatewayLocalBridgeService, 
             mcu_wire_pb2.FileWrite(path="f", data=b"d"),
             cloud_gateway_pb2.GenericResponse(status="ok"),
         ),
-        (local_svc.FileRead, cloud_gateway_pb2.FileRead(path="f"), mcu_wire_pb2.FileReadResponse(content=b"d")),
+        (local_svc.FileRead, cloud_gateway_pb2.FileRead(path="f"), cloud_gateway_pb2.FileReadResponse(content=b"d")),
         (local_svc.FileRemove, mcu_wire_pb2.FileRemove(path="f"), cloud_gateway_pb2.GenericResponse(status="ok")),
         (
             local_svc.ProcessRunAsync,

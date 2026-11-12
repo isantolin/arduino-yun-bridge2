@@ -122,6 +122,15 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
   return ok;
 }
 
+// Combine results without short-circuiting: both cryptographic paths must
+// execute regardless of the first result. Use integer operands so static
+// analyzers do not mistake this constant-time intent for a boolean typo.
+bool combine_ok(bool lhs, bool rhs) {
+  const uint8_t lhs_value = lhs ? 1U : 0U;
+  const uint8_t rhs_value = rhs ? 1U : 0U;
+  return (lhs_value & rhs_value) != 0U;
+}
+
 bool verify_hmac_sha256(pw::span<uint8_t> key_and_digest,
                         pw::span<const uint8_t> input,
                         pw::span<const uint8_t> expected_mac) {
@@ -134,7 +143,7 @@ bool verify_hmac_sha256(pw::span<uint8_t> key_and_digest,
   const bool matches =
       ConstantCompare(key_and_digest.data(), expected_mac.data(),
                       static_cast<int>(expected_mac.size())) == 0;
-  const bool ok = computed & matches;
+  const bool ok = combine_ok(computed, matches);
   secure_zero(key_and_digest);
   return ok;
 }
@@ -164,7 +173,7 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
   // Always execute the HMAC path. A failed HKDF clears auth_key, and the
   // combined result remains false; this avoids a data-dependent early exit.
   const bool hmac_ok = compute_hmac_sha256(auth_key, nonce, auth_key);
-  const bool tag_ok = key_ok & hmac_ok;
+  const bool tag_ok = combine_ok(key_ok, hmac_ok);
   if (tag_ok) {
     etl::copy_n(auth_key.begin(), RPC_HANDSHAKE_TAG_LENGTH, out_tag.begin());
   } else {
@@ -173,12 +182,6 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
   secure_zero(pw::span<uint8_t>(auth_key));
   return tag_ok;
 }
-
-#if BRIDGE_ENABLE_POST_TESTS
-bool combine_ok(bool lhs, bool rhs) {
-  return (static_cast<unsigned>(lhs) & static_cast<unsigned>(rhs)) != 0U;
-}
-#endif
 
 }  // namespace
 
@@ -293,7 +296,7 @@ bool handshake_verify_tag(pw::span<const uint8_t> secret,
   const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
   const bool hmac_ok =
       verify_hmac_sha256(pw::span<uint8_t>(auth_key), nonce, received_tag);
-  const bool ok = key_ok & hmac_ok;
+  const bool ok = combine_ok(key_ok, hmac_ok);
   secure_zero(pw::span<uint8_t>(auth_key));
   return ok;
 }

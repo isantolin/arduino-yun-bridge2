@@ -75,9 +75,7 @@ pw_add_library(pw_sync_stl.binary_semaphore_backend STATIC
   PUBLIC_DEPS pw_sync.binary_semaphore.facade
   SOURCES "${PIGWEED_ROOT}/pw_sync_stl/binary_semaphore.cc"
   PRIVATE_DEPS pw_assert pw_chrono.system_clock)
-pw_add_library(pw_sync.interrupt_spin_lock INTERFACE
-
-pw_add_library(pw_enum INTERFACE
+pw_add_library(pw_enum
   HEADERS
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/to_string.h"
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/traits.h"

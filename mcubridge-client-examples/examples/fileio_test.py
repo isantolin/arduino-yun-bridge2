@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import mcu_wire_pb2
+from mcubridge_client import cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -38,7 +38,7 @@ async def run_test(
             # --- Test File Read ---
             logger.info("Reading file", filename=test_filename)
             res = await stub.FileRead(
-                mcu_wire_pb2.FileRead(
+                cloud_gateway_pb2.FileRead(
                     path=test_filename,
                 )
             )

@@ -387,7 +387,7 @@ pw_add_library(pw_transfer STATIC
     pw_transfer.core pw_transfer.proto.raw_rpc
   PRIVATE_DEPS pw_log pw_log.rate_limited pw_transfer.proto.pwpb)
 
-pw_add_library(pw_enum
+pw_add_library(pw_enum INTERFACE
   HEADERS
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/to_string.h"
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/traits.h"

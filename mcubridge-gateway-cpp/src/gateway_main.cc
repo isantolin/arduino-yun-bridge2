@@ -31,7 +31,9 @@
 #include "pw_hdlc/encoded_size.h"
 #include "pw_hdlc/encoder.h"
 #include "pw_rpc/channel.h"
+#include "pw_rpc/client.h"
 #include "pw_rpc/server.h"
+#include "pw_rpc/packet_meta.h"
 #include "pw_status/status.h"
 #include "pw_stream/stream.h"
 #include "pw_thread/thread.h"
@@ -39,6 +41,7 @@
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"
 #include "mcubridge/gateway/gateway_control.rpc.pwpb.h"
+#include "mcubridge/protocol/mcu_wire.raw_rpc.pb.h"
 
 namespace {
 constexpr uint64_t kRpcHdlcAddress = 1;

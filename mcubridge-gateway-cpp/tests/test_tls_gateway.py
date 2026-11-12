@@ -175,10 +175,6 @@ class GatewayProcess:
     def ca_cert(self) -> Path:
         return self._certs.ca_cert
 
-    @ca_cert.setter
-    def ca_cert(self, value: Path) -> None:
-        self._ca_cert = value
-
     def stop(self) -> None:
         if self.process.poll() is None:
             self.process.terminate()
@@ -210,21 +206,6 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.gateway.wait_for("device=device-01 event=session_open")
         client.close()
         self.gateway.wait_for("device=device-01 event=session_closed")
-
-    def assert_client_rejected(self, cert: Path | None, key: Path | None) -> None:
-        try:
-            client = self.gateway.connect(cert, key)
-        except (ssl.SSLError, OSError):
-            self.assertNotIn("event=session_open", self.gateway.logs())
-            return
-        try:
-            client.recv(1)
-        except (ssl.SSLError, OSError) as error:
-            self.assertIsInstance(error, (ssl.SSLError, OSError))
-        finally:
-            client.close()
-        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
-        self.assertNotIn("event=session_open", self.gateway.logs())
 
     def assert_tls_handshake_rejected(self, cert: Path | None, key: Path | None) -> None:
         client: ssl.SSLSocket | None = None

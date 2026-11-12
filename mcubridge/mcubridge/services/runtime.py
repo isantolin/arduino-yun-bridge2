@@ -695,53 +695,15 @@ class BridgeService:
             await self._send_mcu_status(ok, "Path not allowed or quota exceeded")
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
-    async def file_read(
-        self,
-        path_or_req: str | mcu_wire_pb2.FileRead | int,
-        p: mcu_wire_pb2.FileRead | None = None,
-    ) -> mcu_wire_pb2.FileReadResponse:
-        if p is not None:
-            serial = self.serial
-            safe_path = self._get_safe_path(p.path)
-            if safe_path is None:
-                if serial is not None:
-                    await self.send_mcu_error("Read failed")
-                return mcu_wire_pb2.FileReadResponse()
-            if serial is None:
-                data = await self._safe_file_read(p.path)
-                return mcu_wire_pb2.FileReadResponse(content=data or b"")
-
-            try:
-                chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
-                async with await anyio.Path(safe_path).open("rb") as source:
-                    while chunk := await source.read(chunk_size):
-                        response = mcu_wire_pb2.FileReadResponse(content=chunk)
-                        if not await serial.send("rpc.pb.FileSystemService/Read", response):
-                            logger.error("MCU file read response send failed", path=p.path)
-                            return mcu_wire_pb2.FileReadResponse()
-                if not await serial.send("rpc.pb.FileSystemService/Read", b""):
-                    logger.error("MCU file read stream completion send failed", path=p.path)
-            except OSError as exc:
-                logger.warning("Safe file streaming failed", path=p.path, error=str(exc))
-                await self.send_mcu_error("Read failed")
-            return mcu_wire_pb2.FileReadResponse()
+    async def file_read(self, path_or_req: str | mcu_wire_pb2.FileRead) -> mcu_wire_pb2.FileReadResponse:
+        """Read a file from the MPU filesystem; MCU storage uses pw_transfer."""
         path = path_or_req.path if isinstance(path_or_req, mcu_wire_pb2.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
-            serial = self.serial
-            res = (
-                await serial.send(
-                    "rpc.pb.FileSystemService/Read",
-                    mcu_wire_pb2.FileRead(path=clean.removeprefix("mcu/")),
-                )
-                if serial
-                else None
-            )
-            content = res.content if isinstance(res, mcu_wire_pb2.FileReadResponse) else b""
-        else:
-            safe_data = await self._safe_file_read(path)
-            content = safe_data if safe_data is not None else b""
-        return mcu_wire_pb2.FileReadResponse(content=content)
+            logger.warning("MCU file reads require pw_transfer; legacy FileSystemService.Read is unavailable", path=path)
+            return mcu_wire_pb2.FileReadResponse()
+        safe_data = await self._safe_file_read(path)
+        return mcu_wire_pb2.FileReadResponse(content=safe_data or b"")
 
     async def file_remove(
         self, path_or_req: str | mcu_wire_pb2.FileRemove | int, p: mcu_wire_pb2.FileRemove | None = None

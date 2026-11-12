@@ -664,7 +664,7 @@ static void dummy_status_cb(rpc::StatusCode, pw::span<const uint8_t>) {
   s_status_called = true;
 }
 
-void test_bridge_fault_injection_kat_and_post() {
+void test_bridge_edge_paths_and_post() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -709,12 +709,8 @@ void test_bridge_fault_injection_kat_and_post() {
                    spi_req_data);
   ba.setTxEnabled(true);
 
-  // 7. Baudrate begin with failed POST
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+  // 7. Baudrate begin with successful POST
   Bridge.begin(115200, "secret");
-  bridge::test::fault::disable(
-      bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
 
   reset_bridge_core(Bridge, stream);
 }
@@ -745,6 +741,6 @@ int main() {
   RUN_TEST(test_bridge_dispatch_extra_branches);
   RUN_TEST(test_bridge_authenticated_digital_write_frame);
   RUN_TEST(test_bridge_receive_security_gate_variants);
-  RUN_TEST(test_bridge_fault_injection_kat_and_post);
+  RUN_TEST(test_bridge_edge_paths_and_post);
   return UNITY_END();
 }

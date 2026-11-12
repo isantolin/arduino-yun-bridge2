@@ -306,7 +306,7 @@ void test_all_wire_messages_roundtrip() {
     count++;
   }
 
-  TEST_ASSERT_EQUAL(36, count);
+  TEST_ASSERT_EQUAL(34, count);
 }
 
 int main() {

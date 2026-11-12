@@ -5,6 +5,10 @@
 #include <etl/utility.h>
 
 #include "security/security.h"
+#include "hal/hal.h"
+#if defined(ARDUINO_ARCH_AVR)
+#include "pw_assert_avr/assert_avr.h"
+#endif
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -24,6 +28,14 @@ uint32_t NowMillis() {
   return static_cast<uint32_t>(
       pw::chrono::SystemClock::now().time_since_epoch().count());
 }
+
+#if defined(ARDUINO_ARCH_AVR)
+void BridgePanicHook(int) {
+  // Assertions are fatal. Put all application outputs into their configured
+  // safe state before the backend halts; never write raw bytes to the HDLC UART.
+  bridge::hal::forceSafeState();
+}
+#endif
 
 bool isLinkSyncRequest(const pw::rpc::PacketMeta& meta) {
   return meta.destination_is_server() &&
@@ -279,7 +291,9 @@ BridgeClass::BridgeClass(Stream& stream)
       _transfer_client(_rpc_client, 1, _transfer_thread, 256)
 #endif
 {
-
+#if defined(ARDUINO_ARCH_AVR)
+  pw_assert_avr_SetPanicHook(BridgePanicHook);
+#endif
   _initObservers();
 }
 

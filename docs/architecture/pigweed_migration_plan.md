@@ -41,6 +41,19 @@ Reglas obligatorias:
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
 | CI y validación | Baseline de `main` previamente validada; PR #84 requiere repetir toda la matriz después de los cambios de transferencia | CI de PR #84 en HEAD actual, emulación, perfiles Flash/SRAM/stack y validación física UART/HDLC |
 
+## Residuos activos que bloquean el corte sin legado
+
+El inventario al HEAD de PR #84 confirma que estos elementos siguen siendo código activo y **no deben borrarse antes de migrar sus consumidores**:
+
+- Gateway anterior: `mcubridge-gateway/gateway.py`, su paquete OpenWrt/RPM/Docker/systemd y sus pruebas.
+- Transporte y contratos gRPC: `grpclib` en `pyproject.toml`, `requirements/runtime.toml`, Makefiles y feeds; stubs generados desde `cloud_gateway.proto`; `CloudBridge` y `LocalBridge`.
+- Clientes y runtime: `mcubridge/services/runtime.py`, ejemplos CLI y clientes que abren `grpclib.Channel`.
+- Automatización: scripts de emulación, `tox.ini`, bootstrap de CI y pruebas que inician el Gateway Python.
+- Operaciones northbound de archivos: `LocalBridge.FileRead/FileWrite/FileRemove`. Deben migrarse a una apertura autenticada de recurso y luego a upstream `pw_transfer`; no confundir el recurso EEPROM MCU de 4 KiB con el filesystem del MPU.
+- Gateway Pigweed C++: el binario actual autentica TLS 1.3/mTLS, identifica el peer por URI SAN y transporta `pw_rpc`/HDLC. Aún no tiene handlers de archivos ni los servicios de control, telemetría, consola, mailbox y sesiones requeridos para sustituir el Gateway anterior.
+
+**Regla de eliminación:** cada dependencia, stub, proceso, contrato y prueba de gRPC se elimina en el mismo corte coordinado, después de que el reemplazo Pigweed y todos sus consumidores pasen pruebas de integración. No se permite mantener un sidecar, doble ejecución ni fallback. La presencia de `pw_transfer::TransferService` sin handlers no satisface el criterio de transferencia de archivos.
+
 ## Orden de ejecución
 
 | Orden | Etapa | Trabajo y criterio de salida | Estado |
@@ -55,8 +68,8 @@ Reglas obligatorias:
 | 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **En curso — handler EEPROM MCU y cliente Python integrados; reemplazo completo del Gateway y migración de sesiones/clientes pendientes** |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
-| 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |
-| 11 | Unificación Canónica de Tópicos y Manejadores | Erradicación total de `Topic.*` legacy (`"a"`, `"d"`, `"sh"`), unificación de `cloud_topic` y `mcu_handler` bajo descriptores Pigweed `{direction}/{Service}/{Method|Message}`, eliminación de `CommonAction`/`rpc.pb.actions`, y despacho Pigweed canónico mediante `pw_rpc::Server` en el Gateway C++ nuevo (sin gRPC ni `grpclib`) | **Completada** |
+| 10 | Validación integral | Las métricas históricas citadas son un baseline anterior, no una validación del HEAD actual. PR #84 debe superar la matriz completa, incluida cobertura Python/C++, AVR Mega 2560, Renode, QEMU, fuzzing, OpenWrt y el Gateway C++ | **Pendiente de CI verde en HEAD** |
+| 11 | Unificación Canónica de Tópicos y Manejadores | Los contratos MCU usan descriptores Pigweed, pero la migración northbound no está terminada: el Gateway C++ solo tiene transporte TLS/HDLC y registra `pw_transfer` sin handlers ni servicios de aplicación. Los clientes, sesiones edge y servicios siguen dependiendo de `CloudBridge`/`LocalBridge` y `grpclib` | **En curso — no declarar completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
 

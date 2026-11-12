@@ -215,5 +215,6 @@ def test_extract_stack_usage_report(tmp_path: Path) -> None:
     assert report is not None
     assert "Compiler Stack-Frame Estimates" in report
     assert "144 B" in report
+    assert "BridgeClass::process()" in report
     assert "dynamic,bounded" in report
     assert "not a whole-program worst-case" in report

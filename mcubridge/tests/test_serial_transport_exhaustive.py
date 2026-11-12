@@ -49,9 +49,12 @@ async def test_pw_transfer_client_is_shared_and_nonblocking(
     class FakeTransferManager:
         last_write: tuple[int, bytes, int] | None = None
 
-        def __init__(self, service: object, *, max_chunk_size_bytes: int) -> None:
+        def __init__(
+            self, service: object, *, max_chunk_size_bytes: int, **manager_options: object
+        ) -> None:
             self.service = service
             self.max_chunk_size_bytes = max_chunk_size_bytes
+            self.manager_options = manager_options
             instances.append(self)
 
         def read(self, resource_id: int, *, initial_offset: int = 0) -> bytes:
@@ -70,6 +73,12 @@ async def test_pw_transfer_client_is_shared_and_nonblocking(
     manager = instances[0]
     assert isinstance(manager, FakeTransferManager)
     assert manager.max_chunk_size_bytes == 128
+    assert manager.manager_options == {
+        "default_response_timeout_s": 2.0,
+        "initial_response_timeout_s": 5.0,
+        "max_retries": 3,
+        "max_lifetime_retries": 60,
+    }
     assert manager.last_write == (0x4D454741, b"data", 9)
 
 
@@ -84,7 +93,9 @@ async def test_pw_transfer_cancellation_keeps_role_lock_until_worker_finishes(
     writes: list[tuple[int, bytes]] = []
 
     class BlockingTransferManager:
-        def __init__(self, _service: object, *, max_chunk_size_bytes: int) -> None:
+        def __init__(
+            self, _service: object, *, max_chunk_size_bytes: int, **_manager_options: object
+        ) -> None:
             assert max_chunk_size_bytes == 128
 
         def read(self, _resource_id: int, *, initial_offset: int = 0) -> bytes:

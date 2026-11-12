@@ -36,7 +36,7 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos y UBUS invocan métodos RPC por nombre de servicio y método Protobuf; sin capas de compatibilidad legacy | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Upstream `pw_transfer` integrado; handler EEPROM de 4 KiB en MCU; endpoint Linux y migración de APIs CloudGateway aún pendientes | Backend Linux, backend MCU por bloques, clientes y pruebas end-to-end |
+| Transferencia de archivos | Upstream `pw_transfer` integrado; handler EEPROM de 4 KiB en MCU; endpoint Linux y migración de APIs CloudGateway aún pendientes | Endpoint Linux y clientes MPU; pruebas end-to-end del recurso EEPROM MCU |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
 | CI y validación | Matriz de pruebas completa verde; cobertura C++ >= 97.8% ramas y 99.8% líneas; cobertura Python 97.81% líneas y 96.86% ramas; 0 warnings linters/estáticos | Ninguno |

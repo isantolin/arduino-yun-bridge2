@@ -62,7 +62,7 @@ async def test_file_read_unsafe_path_without_serial_returns_empty(
 ) -> None:
     mock_bridge_service.serial = None
 
-    response = await mock_bridge_service.file_read(1, cloud_gateway_pb2.FileRead(path="../../../etc/passwd"))
+    response = await mock_bridge_service.file_read(cloud_gateway_pb2.FileRead(path="../../../etc/passwd"))
 
     assert response.content == b""
 

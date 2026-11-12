@@ -1,6 +1,6 @@
 # Upstream pw_transfer integration (Arduino Mega 2560)
 
-The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. This is an optional application-resource API; it does not replace the existing file RPC.
+The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. `pw_transfer` is the only supported streaming-transfer protocol; the legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
 
 ## Runtime ownership
 
@@ -55,9 +55,11 @@ void loop() {
 
 The transfer service is registered with the upstream `pw_rpc::Server` by Bridge initialization. Applications register resource handlers through `transferService()`. For an outgoing read or write, use `transferClient()` and keep the stream reader/writer and completion callback alive until completion.
 
-## Existing file RPC behavior
+## Filesystem transfer boundary
 
-`FileSystemService.Read` remains Nanopb server-streaming. It already provides bounded chunked file reads and is not replaced by `pw_transfer`. Use `pw_transfer` for separate application resources that benefit from its transfer protocol, retries, or resumability. Do not maintain duplicate file-transfer paths without a concrete requirement.
+`FileSystemService.Read` and its `FileRead` / `FileReadResponse` messages no longer exist. The Nanopb client reader, server writer, callbacks, observer cleanup, and RPC tests for that path have been removed. The remaining `FileSystemService` RPCs are the existing bounded unary `Write` operation and `Remove` operation.
+
+Large-file reads and writes must use upstream `pw_transfer` with a resource handler backed by a bounded stream. The current integration exposes the upstream transfer service/client and does not silently fall back to the removed Nanopb stream. A concrete SD-card file handler (open/read/write/close, path validation, and atomic replacement for writes) is a separate implementation requirement; do not advertise filesystem `pw_transfer` as operational until that backend and its end-to-end tests are present.
 
 ## Validation and release gates
 

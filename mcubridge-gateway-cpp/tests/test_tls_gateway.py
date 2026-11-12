@@ -269,7 +269,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
-        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_device_uri_san")
+        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
 
     def test_multiple_uri_sans_are_rejected(self) -> None:
         client = self.gateway.connect(self.certs.multi_san_cert, self.certs.multi_san_key)
@@ -279,7 +279,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
-        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_device_uri_san")
+        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
 
     def test_invalid_device_id_is_rejected(self) -> None:
         client = self.gateway.connect(self.certs.invalid_id_cert, self.certs.invalid_id_key)
@@ -289,7 +289,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
-        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_device_uri_san")
+        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
 
     def test_client_role_certificate_opens_northbound_session(self) -> None:
         client = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)

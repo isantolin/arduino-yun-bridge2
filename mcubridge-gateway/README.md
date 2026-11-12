@@ -1,5 +1,7 @@
 # MCU Bridge Protobuf Cloud Gateway (Dedicated Central Server)
 
+> **Estado de migración — implementación transitoria.** Este README describe el Gateway Python/`grpclib` que todavía está presente en el árbol; no describe la arquitectura objetivo. ADR-0003 exige sustituirlo por un único servicio Linux C++ con upstream Pigweed `pw_rpc::Server`, `pw_transfer::TransferService` y `pw_hdlc` sobre TLS mutuo. No añadir sidecar, listener de compatibilidad, modo dual ni fallback. La identidad del peer debe derivarse exclusivamente del certificado mTLS; el fallback actual a `x-device-id` en modo inseguro no se debe trasladar al reemplazo. Este paquete, sus contratos gRPC y sus consumidores se eliminarán en el corte coordinado cuando el reemplazo y sus pruebas de paridad estén completos.
+
 The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub designed to run on a **dedicated central server or cloud instance** (Linux x86_64 / ARM64, VM, or Docker container). It acts as the central command, telemetry ingestion, Northbound RPC routing, and observability plane for $N$ distributed Arduino Yún (McuBridge) edge devices.
 
 ## Key Capabilities

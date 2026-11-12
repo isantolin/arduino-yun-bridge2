@@ -211,8 +211,10 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
     rows = [
         "### Compiler Stack-Frame Estimates (GCC -fstack-usage)",
         "",
-        "Largest individual function frames. These are not a whole-program worst-case "
-        "call-chain bound; dynamic frames and indirect calls require separate analysis.",
+        (
+            "Largest individual function frames. These are not a whole-program worst-case "
+            "call-chain bound; dynamic frames and indirect calls require separate analysis."
+        ),
         "",
         "| Stack frame | GCC classification | Function | Source |",
         "| ---: | :--- | :--- | :--- |",

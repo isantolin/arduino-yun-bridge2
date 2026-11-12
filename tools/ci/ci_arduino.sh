@@ -80,11 +80,26 @@ else
     exit 1
 fi
 
-if [ ! -d "$USER_LIB_DIR/PigweedAVR" ] || [ ! -d "$USER_LIB_DIR/Embedded_Template_Library" ]; then
-    echo "Installing libraries..."
-    # We pass USER_LIB_DIR to install.sh to ensure it installs there
-    ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
-fi
+# Always refresh the generated Arduino exports after the Pigweed probe.
+# The cached library directory may exist but predate pw_transfer, Nanopb
+# headers, or the pinned submodule revision. Existence is not a validity check.
+echo "[ci_arduino] Refreshing Arduino libraries from the pinned source tree..."
+./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
+
+# Fail at the export boundary instead of producing confusing sketch-level
+# include errors when an incomplete/cached library was selected.
+for required_header in \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/handler.h" \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer_thread.h" \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer.h" \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/client.h" \
+    "$PWD/mcubridge-library-arduino/src/pb.h" \
+    "$USER_LIB_DIR/McuBridge/src/pb.h"; do
+    if [ ! -f "$required_header" ]; then
+        echo "[ci_arduino] ERROR: incomplete generated Arduino library; missing $required_header" >&2
+        exit 1
+    fi
+done
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"

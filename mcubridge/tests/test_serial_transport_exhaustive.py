@@ -38,7 +38,8 @@ def _install_test_cipher(transport: SerialTransport) -> None:
 
 
 async def test_pw_transfer_client_is_shared_and_nonblocking(
-    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock], monkeypatch: pytest.MonkeyPatch
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
     mock_serial.is_open = True

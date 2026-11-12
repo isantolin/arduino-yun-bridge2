@@ -385,12 +385,8 @@ pw_add_library(pw_transfer STATIC
   SOURCES "${PIGWEED_ROOT}/pw_transfer/transfer.cc"
   PUBLIC_DEPS pw_assert pw_bytes pw_result pw_status pw_stream pw_sync.mutex
     pw_transfer.core pw_transfer.proto.raw_rpc
-  PRIVATE_DEPS pw_log pw_log.rate_limited pw_transfer.proto.pwpb)
-  HEADERS "${PIGWEED_ROOT}/pw_sync/public/pw_sync/interrupt_spin_lock.h"
-  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public"
-  PUBLIC_DEPS pw_sync.lock_annotations pw_sync.virtual_basic_lockable pw_preprocessor)
 
-pw_add_library(pw_enum INTERFACE
+pw_add_library(pw_enum
   HEADERS
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/to_string.h"
     "${PIGWEED_ROOT}/pw_enum/public/pw_enum/traits.h"

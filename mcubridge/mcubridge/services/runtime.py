@@ -697,13 +697,13 @@ class BridgeService:
 
     async def file_read(self, path_or_req: str | cloud_gateway_pb2.FileRead) -> cloud_gateway_pb2.FileReadResponse:
         """Read a file from the MPU filesystem; MCU storage uses pw_transfer."""
-        path = path_or_req.path if isinstance(path_or_req, mcu_wire_pb2.FileRead) else str(path_or_req)
+        path = path_or_req.path if isinstance(path_or_req, cloud_gateway_pb2.FileRead) else str(path_or_req)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
             logger.warning("MCU file reads require pw_transfer; legacy FileSystemService.Read is unavailable", path=path)
-            return mcu_wire_pb2.FileReadResponse()
+            return cloud_gateway_pb2.FileReadResponse()
         safe_data = await self._safe_file_read(path)
-        return mcu_wire_pb2.FileReadResponse(content=safe_data or b"")
+        return cloud_gateway_pb2.FileReadResponse(content=safe_data or b"")
 
     async def file_remove(
         self, path_or_req: str | mcu_wire_pb2.FileRemove | int, p: mcu_wire_pb2.FileRemove | None = None

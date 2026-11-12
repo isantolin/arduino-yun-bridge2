@@ -192,7 +192,7 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
             except ValueError:
                 continue
             location_match = re.match(
-                r"^(.*):(\\d+):(\\d+):(.*)$", location_and_function
+                r"^(.*):(\d+):(\d+):(.*)$", location_and_function
             )
             if location_match:
                 source = (

@@ -243,7 +243,7 @@ rationale = "GPL-3.0-or-later wolfCrypt unified cryptographic provider (HKDF-SHA
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.2"
+pip = "coverage==7.17.3"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]

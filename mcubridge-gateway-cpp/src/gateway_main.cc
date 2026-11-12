@@ -20,7 +20,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -318,17 +317,23 @@ struct SessionTask {
 struct TlsContextDeleter { void operator()(SSL_CTX* context) const { SSL_CTX_free(context); } };
 using TlsContext = std::unique_ptr<SSL_CTX, TlsContextDeleter>;
 
-TlsContext CreateTlsContext(const std::string& certificate, const std::string& private_key,
-                            const std::string& client_ca) {
+TlsContext CreateTlsContext(const std::string& certificate,
+                            const std::string& private_key,
+                            const std::string& client_ca,
+                            std::string& error) {
   TlsContext context(SSL_CTX_new(TLS_server_method()));
-  if (!context) throw std::runtime_error("SSL_CTX_new failed");
+  if (!context) {
+    error = "SSL_CTX_new failed";
+    return {};
+  }
   if (SSL_CTX_set_min_proto_version(context.get(), TLS1_3_VERSION) != 1 ||
       SSL_CTX_use_certificate_chain_file(context.get(), certificate.c_str()) != 1 ||
       SSL_CTX_use_PrivateKey_file(context.get(), private_key.c_str(), SSL_FILETYPE_PEM) != 1 ||
       SSL_CTX_check_private_key(context.get()) != 1 ||
       SSL_CTX_load_verify_locations(context.get(), client_ca.c_str(), nullptr) != 1 ||
       SSL_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_CLIENT) != 1) {
-    throw std::runtime_error("TLS certificate configuration failed");
+    error = "TLS certificate configuration failed";
+    return {};
   }
   SSL_CTX_set_verify_depth(context.get(), 4);
   SSL_CTX_set_session_cache_mode(context.get(), SSL_SESS_CACHE_OFF);
@@ -336,7 +341,9 @@ TlsContext CreateTlsContext(const std::string& certificate, const std::string& p
   SSL_CTX_set_verify(context.get(), SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
   return context;
 }
-int CreateListener(const std::string& bind_address, const std::string& port) {
+int CreateListener(const std::string& bind_address,
+                   const std::string& port,
+                   std::string& error) {
   addrinfo hints{};
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -344,7 +351,10 @@ int CreateListener(const std::string& bind_address, const std::string& port) {
   addrinfo* addresses = nullptr;
   const char* host = bind_address == "*" ? nullptr : bind_address.c_str();
   const int lookup = getaddrinfo(host, port.c_str(), &hints, &addresses);
-  if (lookup != 0) throw std::runtime_error(gai_strerror(lookup));
+  if (lookup != 0) {
+    error = gai_strerror(lookup);
+    return -1;
+  }
   int listener = -1;
   for (addrinfo* address = addresses; address != nullptr; address = address->ai_next) {
     listener = socket(address->ai_family, address->ai_socktype, address->ai_protocol);
@@ -357,7 +367,7 @@ int CreateListener(const std::string& bind_address, const std::string& port) {
     listener = -1;
   }
   freeaddrinfo(addresses);
-  if (listener < 0) throw std::runtime_error("unable to bind TCP listener");
+  if (listener < 0) error = "unable to bind TCP listener";
   return listener;
 }
 std::string Argument(int argc, char** argv, std::string_view name, std::string fallback = {}) {
@@ -378,96 +388,105 @@ void ReapTasks(std::vector<std::unique_ptr<SessionTask>>& tasks) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  try {
-    const std::string certificate = Argument(argc, argv, "--cert");
-    const std::string private_key = Argument(argc, argv, "--key");
-    const std::string client_ca = Argument(argc, argv, "--client-ca");
-    const std::string bind_address = Argument(argc, argv, "--bind", "*");
-    const std::string port = Argument(argc, argv, "--port", "8443");
-    if (certificate.empty() || private_key.empty() || client_ca.empty()) {
-      std::cerr << "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
-                   "--client-ca FILE [--bind ADDRESS] [--port PORT]\n";
-      return 2;
-    }
-    auto tls_context = CreateTlsContext(certificate, private_key, client_ca);
-    const int listener = CreateListener(bind_address, port);
-    signal(SIGINT, HandleSignal);
-    signal(SIGTERM, HandleSignal);
-    signal(SIGPIPE, SIG_IGN);
-    std::vector<std::unique_ptr<SessionTask>> tasks;
-    std::cerr << "event=gateway_listening bind=" << bind_address
-              << " port=" << port << " tls=1.3 identity=uri_san\n";
-    while (!g_stopping.load()) {
-      ReapTasks(tasks);
-      pollfd descriptor{listener, POLLIN, 0};
-      const int ready = poll(&descriptor, 1, 500);
-      if (ready < 0) {
-        if (errno == EINTR) continue;
-        throw std::runtime_error("listener poll failed");
-      }
-      if (ready == 0 || (descriptor.revents & POLLIN) == 0) continue;
-      sockaddr_storage peer{};
-      socklen_t peer_size = sizeof(peer);
-      const int client_fd = accept(listener, reinterpret_cast<sockaddr*>(&peer), &peer_size);
-      if (client_fd < 0) {
-        if (errno == EINTR || errno == EAGAIN) continue;
-        throw std::runtime_error("accept failed");
-      }
-      if (tasks.size() >= kMaxSessions) { close(client_fd); continue; }
-      auto task = std::make_unique<SessionTask>();
-      task->fd = client_fd;
-      SessionTask* task_ptr = task.get();
-      task->worker = std::thread([task_ptr, context = tls_context.get()] {
-        SSL* ssl = SSL_new(context);
-        if (ssl == nullptr) {
-          close(task_ptr->fd);
-          task_ptr->done.store(true);
-          return;
-        }
-        SSL_set_fd(ssl, task_ptr->fd);
-        timeval handshake_timeout{10, 0};
-        setsockopt(task_ptr->fd, SOL_SOCKET, SO_RCVTIMEO,
-                   &handshake_timeout, sizeof(handshake_timeout));
-        setsockopt(task_ptr->fd, SOL_SOCKET, SO_SNDTIMEO,
-                   &handshake_timeout, sizeof(handshake_timeout));
-        SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
-                              SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-        if (SSL_accept(ssl) != 1) {
-          SSL_free(ssl);
-          close(task_ptr->fd);
-          task_ptr->done.store(true);
-          return;
-        }
-        auto identity = PeerDeviceIdentity(ssl);
-        if (!identity.has_value()) {
-          std::cerr << "event=client_rejected reason=missing_or_invalid_uri_san\n";
-          SSL_shutdown(ssl);
-          SSL_free(ssl);
-          close(task_ptr->fd);
-          task_ptr->done.store(true);
-          return;
-        }
-        auto session = std::make_shared<GatewaySession>(ssl, task_ptr->fd, std::move(*identity));
-        {
-          std::lock_guard lock(task_ptr->mutex);
-          task_ptr->session = session;
-        }
-        session->Run();
-        task_ptr->done.store(true);
-      });
-      tasks.push_back(std::move(task));
-    }
-    close(listener);
-    for (auto& task : tasks) {
-      std::lock_guard lock(task->mutex);
-      if (task->session != nullptr) task->session->Stop();
-      else shutdown(task->fd, SHUT_RDWR);
-    }
-    for (auto& task : tasks) if (task->worker.joinable()) task->worker.join();
-    std::cerr << "event=gateway_stopped\n";
-    return 0;
-  } catch (const std::exception& error) {
-    std::cerr << "fatal=" << error.what() << '\n';
+  const std::string certificate = Argument(argc, argv, "--cert");
+  const std::string private_key = Argument(argc, argv, "--key");
+  const std::string client_ca = Argument(argc, argv, "--client-ca");
+  const std::string bind_address = Argument(argc, argv, "--bind", "*");
+  const std::string port = Argument(argc, argv, "--port", "8443");
+  if (certificate.empty() || private_key.empty() || client_ca.empty()) {
+    std::cerr << "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
+                 "--client-ca FILE [--bind ADDRESS] [--port PORT]\n";
+    return 2;
+  }
+  std::string error;
+  auto tls_context = CreateTlsContext(certificate, private_key, client_ca, error);
+  if (!tls_context) {
+    std::cerr << "fatal=" << error << '\n';
     return 1;
   }
+  const int listener = CreateListener(bind_address, port, error);
+  if (listener < 0) {
+    std::cerr << "fatal=" << error << '\n';
+    return 1;
+  }
+  signal(SIGINT, HandleSignal);
+  signal(SIGTERM, HandleSignal);
+  signal(SIGPIPE, SIG_IGN);
+  std::vector<std::unique_ptr<SessionTask>> tasks;
+  std::cerr << "event=gateway_listening bind=" << bind_address
+            << " port=" << port << " tls=1.3 identity=uri_san\n";
+  while (!g_stopping.load()) {
+    ReapTasks(tasks);
+    pollfd descriptor{listener, POLLIN, 0};
+    const int ready = poll(&descriptor, 1, 500);
+    if (ready < 0) {
+      if (errno == EINTR) continue;
+      std::cerr << "fatal=listener poll failed\n";
+      break;
+    }
+    if (ready == 0 || (descriptor.revents & POLLIN) == 0) continue;
+    sockaddr_storage peer{};
+    socklen_t peer_size = sizeof(peer);
+    const int client_fd = accept(listener, reinterpret_cast<sockaddr*>(&peer), &peer_size);
+    if (client_fd < 0) {
+      if (errno == EINTR || errno == EAGAIN) continue;
+      std::cerr << "event=accept_failed errno=" << errno << '\n';
+      continue;
+    }
+    if (tasks.size() >= kMaxSessions) {
+      close(client_fd);
+      continue;
+    }
+    auto task = std::make_unique<SessionTask>();
+    task->fd = client_fd;
+    SessionTask* task_ptr = task.get();
+    task->worker = std::thread([task_ptr, context = tls_context.get()] {
+      SSL* ssl = SSL_new(context);
+      if (ssl == nullptr) {
+        close(task_ptr->fd);
+        task_ptr->done.store(true);
+        return;
+      }
+      SSL_set_fd(ssl, task_ptr->fd);
+      timeval handshake_timeout{10, 0};
+      setsockopt(task_ptr->fd, SOL_SOCKET, SO_RCVTIMEO,
+                 &handshake_timeout, sizeof(handshake_timeout));
+      setsockopt(task_ptr->fd, SOL_SOCKET, SO_SNDTIMEO,
+                 &handshake_timeout, sizeof(handshake_timeout));
+      SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
+                            SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+      if (SSL_accept(ssl) != 1) {
+        SSL_free(ssl);
+        close(task_ptr->fd);
+        task_ptr->done.store(true);
+        return;
+      }
+      auto identity = PeerDeviceIdentity(ssl);
+      if (!identity.has_value()) {
+        std::cerr << "event=client_rejected reason=missing_or_invalid_uri_san\n";
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        close(task_ptr->fd);
+        task_ptr->done.store(true);
+        return;
+      }
+      auto session = std::make_shared<GatewaySession>(ssl, task_ptr->fd, std::move(*identity));
+      {
+        std::lock_guard lock(task_ptr->mutex);
+        task_ptr->session = session;
+      }
+      session->Run();
+      task_ptr->done.store(true);
+    });
+    tasks.push_back(std::move(task));
+  }
+  close(listener);
+  for (auto& task : tasks) {
+    std::lock_guard lock(task->mutex);
+    if (task->session != nullptr) task->session->Stop();
+    else if (task->fd >= 0) shutdown(task->fd, SHUT_RDWR);
+  }
+  for (auto& task : tasks) if (task->worker.joinable()) task->worker.join();
+  std::cerr << "event=gateway_stopped\n";
+  return 0;
 }

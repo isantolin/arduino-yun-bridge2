@@ -165,7 +165,11 @@ class GatewayProcess:
             context.load_cert_chain(str(cert), str(key))
         raw = socket.create_connection(("127.0.0.1", self.port), timeout=4)
         raw.settimeout(4)
-        return context.wrap_socket(raw, server_hostname="localhost")
+        try:
+            return context.wrap_socket(raw, server_hostname="localhost")
+        except Exception:
+            raw.close()
+            raise
 
     @property
     def ca_cert(self) -> Path:
@@ -207,13 +211,22 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         client.close()
         self.gateway.wait_for("device=device-01 event=session_closed")
 
+    def assert_client_rejected(self, cert: Path | None, key: Path | None) -> None:
+        client = self.gateway.connect(cert, key)
+        try:
+            client.recv(1)
+        except (ssl.SSLError, OSError):
+            pass
+        finally:
+            client.close()
+        self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
+        self.assertNotIn("event=session_open", self.gateway.logs())
+
     def test_missing_client_certificate_is_rejected(self) -> None:
-        with self.assertRaises((ssl.SSLError, OSError)):
-            self.gateway.connect(None, None)
+        self.assert_client_rejected(None, None)
 
     def test_untrusted_client_ca_is_rejected(self) -> None:
-        with self.assertRaises((ssl.SSLError, OSError)):
-            self.gateway.connect(self.certs.untrusted_cert, self.certs.untrusted_key)
+        self.assert_client_rejected(self.certs.untrusted_cert, self.certs.untrusted_key)
 
     def test_tls_12_is_rejected(self) -> None:
         with self.assertRaises((ssl.SSLError, OSError)):
@@ -225,8 +238,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             )
 
     def test_wrong_extended_key_usage_is_rejected(self) -> None:
-        with self.assertRaises((ssl.SSLError, OSError)):
-            self.gateway.connect(self.certs.wrong_eku_cert, self.certs.wrong_eku_key)
+        self.assert_client_rejected(self.certs.wrong_eku_cert, self.certs.wrong_eku_key)
 
     def test_certificate_without_uri_san_is_rejected(self) -> None:
         client = self.gateway.connect(self.certs.no_san_cert, self.certs.no_san_key)

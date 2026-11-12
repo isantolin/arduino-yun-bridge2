@@ -1,0 +1,289 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcubridge"
+version = "2.8.9"
+description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
+requires-python = ">=3.13"
+dependencies = [
+    "annotated-doc==0.0.6",
+    "anyio==4.16.0",
+    "cryptography==50.0.2",
+    "grpclib==0.4.9",
+    "h2==4.4.1",
+    "hpack==4.2.0",
+    "hyperframe==6.1.0",
+    "lmdb==3.0.0",
+    "parse==1.22.4",
+    "pigweed==0.0.24",
+    "protobuf==5.28.3",
+    "psutil==7.2.2",
+    "pyserial==3.5",
+    "python-statemachine==3.2.2",
+    "shellingham==1.5.4",
+    "structlog==26.1.0",
+    "tenacity==9.2.1",
+    "typer==0.29.1",
+    "uvloop==0.23.0",
+]
+
+[tool.pyrefly.errors]
+missing-import = "error"
+untyped-import = "error"
+missing-source-for-stubs = "ignore"
+missing-source = "ignore"
+
+[tool.setuptools.packages.find]
+where = ["mcubridge"]
+include = ["mcubridge*"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -vv -n 5 --dist=loadscope --timeout=60 --timeout_method=thread -p no:platformdirs"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = [
+    "mcubridge/tests",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway/tests",
+]
+pythonpath = [
+    ".",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-gateway",
+]
+norecursedirs = [
+    "openwrt-sdk",
+    "feeds",
+    ".git",
+    ".tox",
+    ".venv*",
+    ".tmp_tests",
+    ".*",
+]
+markers = [
+    "fuzz: mark a test as a fuzz test",
+    "timeout: timeout marker accepted during IDE discovery even when pytest-timeout is absent",
+    "xdist_group: mark test to run in an isolated xdist worker group",
+]
+filterwarnings = ["error", "ignore::pytest.PytestExperimentalApiWarning"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.14"
+stubPath = "typings"
+extraPaths = [
+    "typings/stubs",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+]
+include = [
+    "mcubridge/mcubridge",
+    "mcubridge/tests",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+    "mcubridge/scripts",
+    "tools",
+]
+strict = [
+    "mcubridge/mcubridge",
+    "mcubridge/tests",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+    "mcubridge/scripts",
+    "tools",
+]
+exclude = [
+    "openwrt-sdk",
+    "tools/protocol/templates",
+    ".tox",
+    ".venv",
+    ".venv_debug",
+    "**/__pycache__",
+    "**/node_modules",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py",
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "*_pyrefly_virtual_*",
+    "*__pyrefly_virtual_*",
+    "**/.*",
+]
+ignore = [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "*_pyrefly_virtual_*",
+    "*__pyrefly_virtual_*",
+]
+reportMissingImports = true
+reportMissingTypeStubs = true
+reportMissingModuleSource = false
+reportPrivateUsage = true
+
+[tool.black]
+line-length = 120
+fast = true
+exclude = '''
+/(
+    \.git
+  | \.tox
+  | \.venv
+  | \.venv_debug
+  | \.tmp_tests
+  | typings
+  | openwrt-sdk.*
+  | tools/protocol/templates
+  | .*_pb2\.py
+  | .*_pb2\.pyi
+  | .*_grpc\.py
+  | third_party
+)/
+'''
+
+[tool.ruff]
+line-length = 120
+exclude = [
+    "*_pb2.py",
+    "*_pb2.pyi",
+    "*_grpc.py",
+    "typings",
+    "tools/protocol/templates",
+    ".tmp_tests",
+    "third_party",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "C90",
+    "A",
+    "PLW",
+    "BLE",
+    "E501",
+    "B018",
+    "PT",
+    "PGH",
+    "UP",
+    "C4",
+    "PIE",
+    "RET",
+    "SIM",
+    "B",
+    "ISC",
+    "PTH",
+    "ERA",
+    "PERF",
+    "FURB",
+]
+extend-select = ["E226", "E501"]
+preview = true
+explicit-preview-rules = true
+
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 120
+
+
+[tool.ruff.lint.mccabe]
+# [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability
+max-complexity = 25
+
+[tool.coverage.run]
+branch = true
+concurrency = ["multiprocessing", "thread"]
+relative_files = true
+source = [
+    "mcubridge/mcubridge",
+    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge-gateway",
+]
+omit = [
+    "*/tests/*",
+    "**/tests/*",
+    "mcubridge/tests/*",
+    "mcubridge-client-examples/tests/*",
+    "mcubridge-gateway/tests/*",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
+
+[tool.vulture]
+min_confidence = 80
+paths = [
+    "mcubridge/mcubridge",
+    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge-gateway",
+    "tools",
+]
+exclude = [
+    "*_pb2.py",
+    "*_pb2.pyi",
+    "*_grpc.py",
+    "openwrt-sdk",
+    ".tox",
+    ".tmp_tests",
+    "third_party",
+]
+
+[tool.pyrefly]
+project-includes = [
+    "mcubridge/mcubridge",
+    "mcubridge/tests",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+    "mcubridge/scripts",
+    "tools",
+]
+project-excludes = [
+    "openwrt-sdk",
+    "tools/protocol/templates",
+    ".tox",
+    ".venv",
+    ".venv_debug",
+    "**/__pycache__",
+    "**/node_modules",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py",
+    "**/_pyrefly_virtual__/**/*",
+    "**/__pyrefly_virtual__/**/*",
+    "**/inmemory/**/*",
+    "*_pyrefly_virtual_*",
+    "*__pyrefly_virtual_*",
+    "**/.*",
+]
+search-path = [
+    "typings/stubs",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+]
+python-version = "3.14.0"
+site-package-path = ["typings"]
+infer-with-first-use = false
+min-severity = "warn"

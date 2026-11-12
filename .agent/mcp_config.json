@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "podman",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server"
+      ]
+    },
+    "semgrep": {
+      "command": "semgrep",
+      "args": [
+        "mcp"
+      ]
+    },
+    "serial-mcp-server": {
+      "command": "serial-mcp-server",
+      "args": [
+        "serve"
+      ]
+    },
+    "grpcurl-mcp": {
+      "command": "grpcurl-mcp",
+      "env": {
+        "ADDRESS": "127.0.0.1:8443"
+      }
+    }
+  }
+}

@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Modernized Pin REST CGI and Typer CLI helper for MCU Bridge (SIL-2)."""
+
+from __future__ import annotations
+
+import importlib
+import os
+from typing import Annotated, Any, Final, cast
+from wsgiref.handlers import CGIHandler
+
+import parse
+import structlog
+import typer
+from google.protobuf import json_format
+from mcubridge.config.logging import configure_logging
+from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol import cloud_gateway_pb2 as pb
+
+logger = structlog.get_logger("mcubridge.pin_rest")
+
+try:
+    ubus: Any = importlib.import_module("ubus")
+except ImportError as exc:
+    logger.debug("Native OpenWrt UBUS module unavailable", error=str(exc))
+    ubus = None
+
+_PIN_SEARCH_PATTERNS: Final = (
+    parse.compile("pin/{pin:d}"),
+    parse.compile("digital/{pin:d}"),
+)
+
+
+def extract_pin_from_path(path: str) -> int | None:
+    """Extract pin integer from REST URI using compiled parse patterns. [SIL-2]"""
+    path_only = path.split("?", 1)[0].strip("/")
+    for pattern in _PIN_SEARCH_PATTERNS:
+        res = pattern.search(path_only)
+        if res is not None and isinstance(res["pin"], int):
+            return res["pin"]
+    return None
+
+
+app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
+
+
+def set_pin_digital_sync(pin: int, value: int) -> None:
+    """Synchronous digital write via native OpenWrt UBUS. [SIL-2]"""
+    if ubus is None:
+        logger.error("Native OpenWrt UBUS module unavailable")
+        raise RuntimeError("Native OpenWrt UBUS module unavailable")
+    try:
+        if ubus.connect() is not True:
+            raise OSError("ubus.connect() did not return True")
+        result = ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+        if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+            raise RuntimeError("UBUS digital_write returned no response")
+        response = cast(dict[str, Any], result[0])
+        if response.get("status") != "accepted":
+            raise RuntimeError(f"UBUS digital_write was not accepted: {response}")
+    except (OSError, RuntimeError, AttributeError) as exc:
+        logger.error("Failed to write digital pin via UBUS", pin=pin, value=value, error=str(exc))
+        raise
+
+
+def json_res(start_response: Any, status: str, response: pb.PinControlResponse) -> list[bytes]:
+    """Serialize PinControlResponse Protobuf message to JSON for CGI output."""
+    body = json_format.MessageToJson(cast(Any, response), preserving_proto_field_name=True).encode("utf-8")
+    headers = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", str(len(body))),
+        ("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+        ("Access-Control-Allow-Headers", "Content-Type"),
+    ]
+    start_response(status, headers)
+    return [body]
+
+
+def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
+    """WSGI application for pin control."""
+    try:
+        if environ.get("REQUEST_METHOD") == "OPTIONS":
+            start_response(
+                "204 No Content",
+                [
+                    ("Access-Control-Allow-Origin", "*"),
+                    ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+                    ("Access-Control-Allow-Headers", "Content-Type"),
+                ],
+            )
+            return [b""]
+
+        config = load_runtime_config()
+        configure_logging(config)
+
+        path = environ.get("PATH_INFO") or environ.get("REQUEST_URI") or ""
+        pin = extract_pin_from_path(path)
+
+        if pin is None:
+            return json_res(
+                start_response,
+                "400 Bad Request",
+                pb.PinControlResponse(status="error", message="Invalid path"),
+            )
+        if environ.get("REQUEST_METHOD") != "POST":
+            return json_res(
+                start_response,
+                "405 Method Not Allowed",
+                pb.PinControlResponse(status="error", message="Method not allowed"),
+            )
+
+        body_len = int(environ.get("CONTENT_LENGTH", "0"))
+        body_data = environ["wsgi.input"].read(body_len)
+
+        # [SIL-2] Parse request and validate using Protobuf model natively
+        req = pb.PinControlRequest()
+        if body_len:
+            json_format.Parse(body_data, cast(Any, req))
+
+        if not (0 <= pin <= 100):
+            return json_res(
+                start_response,
+                "400 Bad Request",
+                pb.PinControlResponse(status="error", message=f"Invalid pin: {pin}"),
+            )
+
+        state = req.state.upper()
+        if state and state not in ("ON", "OFF", "HIGH", "LOW", "1", "0"):
+            return json_res(
+                start_response,
+                "400 Bad Request",
+                pb.PinControlResponse(status="error", message=f"Invalid state: {req.state}"),
+            )
+
+        normalized_state = "ON" if state in ("ON", "HIGH", "1") else "OFF"
+        pin_data = pb.PinControlData(pin=pin, state=normalized_state)
+
+        set_pin_digital_sync(pin_data.pin, 1 if pin_data.state == "ON" else 0)
+
+        return json_res(
+            start_response,
+            "200 OK",
+            pb.PinControlResponse(
+                status="accepted",
+                data=pin_data,
+            ),
+        )
+
+    except (ValueError, KeyError, TypeError, OSError, json_format.ParseError, AttributeError) as e:
+        logger.exception("CGI Error")
+        return json_res(
+            start_response,
+            "500 Internal Server Error",
+            pb.PinControlResponse(status="error", message=str(e)),
+        )
+
+
+@app.command()
+def control(
+    pin: Annotated[int, typer.Option("--pin", "-p", help="Pin number to set")] = 13,
+    state: Annotated[str, typer.Option("--state", "-s", help="State (ON/OFF)")] = "ON",
+) -> None:
+    """CLI entry point for direct pin control."""
+    config = load_runtime_config()
+    configure_logging(config)
+    normalized_state = state.upper()
+    if normalized_state not in ("ON", "OFF", "HIGH", "LOW", "1", "0"):
+        raise ValueError(f"Invalid state: {state}")
+    pin_data = pb.PinControlData(pin=pin, state="ON" if normalized_state in ("ON", "HIGH", "1") else "OFF")
+    set_pin_digital_sync(pin_data.pin, 1 if pin_data.state == "ON" else 0)
+    print(f"Pin {pin} request accepted for {pin_data.state} via UBUS")
+
+
+@app.command()
+def cgi() -> None:
+    """Execute as CGI WSGI script."""
+    CGIHandler().run(application)
+
+
+def run_cgi() -> None:
+    """Entry point for CGI execution."""
+    if "GATEWAY_INTERFACE" in os.environ or "REQUEST_METHOD" in os.environ:
+        CGIHandler().run(application)
+    else:
+        app()
+
+
+if __name__ == "__main__":
+    run_cgi()

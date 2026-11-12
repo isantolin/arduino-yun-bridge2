@@ -1,0 +1,15 @@
+name: Setup Arduino Cache
+description: Cache Arduino CLI cores, package downloads, and pinned external libraries.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Arduino CLI packages and libraries
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.arduino15
+          ~/Arduino/libraries
+        key: arduino-${{ runner.os }}-cli-1.5.1-${{ hashFiles('tools/ci/install_arduino_cli.sh', 'mcubridge-library-arduino/tools/install.sh', '.github/workflows/ci.yml') }}
+        restore-keys: |
+          arduino-${{ runner.os }}-cli-1.5.1-

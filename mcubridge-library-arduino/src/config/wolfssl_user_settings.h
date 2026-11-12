@@ -1,0 +1,74 @@
+#ifndef MCUBRIDGE_WOLFSSL_USER_SETTINGS_H
+#define MCUBRIDGE_WOLFSSL_USER_SETTINGS_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#define WOLFCRYPT_ONLY
+#define SINGLE_THREADED
+#define NO_INLINE
+#define WOLFSSL_NO_ATOMIC 1
+#define WOLFSSL_NO_ATOMICS 1
+#define WOLFSSL_NO_FENCE 1
+#define WOLFSSL_NO_MALLOC
+#define WOLFSSL_USER_IO
+#define WOLFSSL_API
+#define USE_SLOW_SHA256
+
+#if defined(ARDUINO_ARCH_SAMD)
+#undef WOLFSSL_ARDUINO
+#endif
+
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+#define WC_16BIT_CPU
+#define SIZEOF_INT 2
+#define SIZEOF_SHORT 2
+#define SIZEOF_LONG 4
+#define SIZEOF_LONG_LONG 8
+#define NO_64BIT
+#define CHACHA_AEAD_SLOW
+#endif
+
+#define WOLFSSL_SHA256
+#define WOLFSSL_HMAC
+#define HAVE_HKDF
+#define WOLFSSL_HKDF
+#define HAVE_CHACHA
+#define HAVE_POLY1305
+
+#define WOLFSSL_SMALL_FOOTPRINT 1
+#define NO_CHACHA_UNROLL 1
+#define POLY1305_NO_UNROLL 1
+#define NO_OLD_POLY1305 1
+#define NO_ERROR_STRINGS
+#define NO_WOLFSSL_MEMORY
+#define WC_NO_ASYNC
+#define NO_CODING
+#define NO_CERTS
+#define WOLFSSL_NO_MUTEX
+
+#define NO_AES
+#define NO_RSA
+#define NO_DSA
+#define NO_DH
+#define NO_ECC
+#define NO_CURVE25519
+#define NO_ED25519
+#define NO_PWDBASED
+#define NO_DES3
+#define NO_MD5
+#define NO_MD4
+#define NO_SHA
+#define NO_RC4
+#define NO_ASN
+#define NO_FILESYSTEM
+#define NO_MAIN_DRIVER
+#define WC_NO_RNG
+#define NO_BIG_INT
+
+#define NO_ASN_TIME
+#define TIME_OVERRIDES
+#define XTIME(t) ((uint32_t)0)
+#define XGMTIME(c, t) ((void*)0)
+
+#endif

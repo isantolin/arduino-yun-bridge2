@@ -1,0 +1,425 @@
+#!/bin/sh
+set -eu
+
+# This file is part of Arduino MCU Ecosystem v2.
+# Copyright (C) 2025 Ignacio Santolin and contributors
+# Target: OpenWrt 25.12.6 (APK System)
+
+# Always run relative paths from the repository root
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_ROOT"
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: este script debe ejecutarse como root." >&2
+    exit 1
+fi
+
+#  --- Configuration Variables ---
+INIT_SCRIPT="/etc/init.d/mcubridge"
+REQUIRED_SWAP_KB=1048576
+MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
+TMPDIR=/overlay/upper/tmp
+
+# [FIX] Removed --force-reinstall as it is not supported by OpenWrt's apk
+LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
+
+SERIAL_SECRET_PLACEHOLDER="changeme123"
+BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
+
+# [SSOT] Load canonical defaults generated from config_schema.proto
+if [ -f "$PROJECT_ROOT/mcubridge/scripts/defaults.sh" ]; then
+    . "$PROJECT_ROOT/mcubridge/scripts/defaults.sh"
+elif [ -f /usr/share/mcubridge/defaults.sh ]; then
+    . /usr/share/mcubridge/defaults.sh
+fi
+
+# [FIX] Flexible pattern to match standard OpenWrt APK naming convention (pkg_version...)
+PROJECT_APK_PATTERNS="\
+python3*.apk \
+mcubridge*.apk \
+mcubridge-gateway*.apk \
+luci-app-mcubridge*.apk"
+
+UCI_GENERAL_DIRTY=0
+
+#  --- Helper Functions ---
+mkdir -p "$TMPDIR"
+
+stop_daemon() {
+    if [ ! -x "$INIT_SCRIPT" ]; then
+        echo "[INFO] McuBridge daemon not installed, skipping stop."
+        return
+    fi
+
+    echo "[INFO] Stopping mcubridge daemon if active..."
+    $INIT_SCRIPT stop 2>/dev/null || true
+    sleep 1
+
+    pids=$(ps w | grep -E 'python[0-9.]*.*mcubridge' | grep -v grep | awk '{print $1}')
+
+    if [ -n "$pids" ]; then
+        echo "[WARN] Daemon still running. Sending SIGTERM..."
+        kill $pids 2>/dev/null || true
+        sleep 2
+        pids2=$(ps w | grep -E 'python[0-9.]*.*mcubridge' | grep -v grep | awk '{print $1}')
+        if [ -n "$pids2" ]; then
+            echo "[WARN] Process will not die. Sending SIGKILL..."
+            kill -9 $pids2 2>/dev/null || true
+        fi
+    else
+        echo "[INFO] No running mcubridge daemon process found."
+    fi
+}
+
+read_swap_total_kb() {
+    awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps 2>/dev/null
+}
+
+read_swap_total_with_fallback() {
+    total=$(read_swap_total_kb)
+    if [ "${total:-0}" -eq 0 ]; then
+        # BusyBox swapon may vary
+        total=$(swapon -s 2>/dev/null | awk 'NR>1 {sum+=$3} END {print sum+0}')
+    fi
+    echo "${total:-0}"
+}
+
+install_dependency() {
+    pkg="$1"
+    
+    # Check for local bundled APK first
+    local local_apk=""
+    # [FIX] Flexible pattern: allow underscore or hyphen after package name
+    # to match standard OpenWrt/APK naming (pkg_version or pkg-version)
+    for candidate in "bin/${pkg}"[_-]*.apk; do
+        if [ -f "$candidate" ]; then
+            local_apk="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$local_apk" ]; then
+        echo "[INFO] Installing $pkg from bundled APK ($local_apk)..."
+        # [FIX] removed --force-reinstall
+        if apk add $LOCAL_APK_INSTALL_FLAGS "./$local_apk" bin/*.apk; then
+            return 0
+        fi
+        echo "[WARN] Failed to install $pkg from bundled APK; trying configured feeds." >&2
+    fi
+
+    # Fallback to feed installation.
+    echo "[INFO] Ensuring $pkg is installed/updated from feeds..."
+    
+    # [FIX] Self-healing logic for broken APK state
+    if apk add "$pkg"; then
+        return 0
+    else
+        echo "[WARN] 'apk add $pkg' failed. The package database might be inconsistent."
+        echo "[INFO] Attempting 'apk fix' to repair system state..."
+        apk fix || true
+        
+        echo "[INFO] Retrying installation of $pkg..."
+        if apk add "$pkg"; then
+            echo "[INFO] Installation successful after repair."
+            return 0
+        fi
+    fi
+
+    # [FIX] Last resort: check if it's installed anyway
+    if apk info -e "$pkg" >/dev/null 2>&1; then
+        echo "[WARN] Installation command failed, but '$pkg' appears to be present. Continuing..."
+        return 0
+    fi
+
+    echo "[ERROR] Failed to install dependency $pkg from feeds or bin/." >&2
+    exit 1
+}
+
+
+
+# Ensure UCI config file exists before trying to access it
+ensure_uci_config() {
+    if [ ! -f /etc/config/mcubridge ]; then
+        echo "[WARN] /etc/config/mcubridge not found (package not installed?). Creating default..."
+        touch /etc/config/mcubridge
+        uci set mcubridge.general=settings
+        uci set mcubridge.general.enabled='1'
+        UCI_GENERAL_DIRTY=1
+    fi
+}
+
+uci_get_general() {
+    local key="$1"
+    uci -q get "mcubridge.general.${key}" 2>/dev/null || true
+}
+
+uci_set_general() {
+    local key="$1" value="$2"
+    ensure_uci_config
+    uci set "mcubridge.general.${key}=$value"
+    UCI_GENERAL_DIRTY=1
+}
+
+uci_commit_general() {
+    if [ "${UCI_GENERAL_DIRTY:-0}" -ne 0 ]; then
+        uci commit mcubridge
+        UCI_GENERAL_DIRTY=0
+    fi
+}
+
+ensure_general_default() {
+    local key="$1" default_value="$2"
+    local current
+    current=$(uci_get_general "$key")
+    if [ -z "$current" ]; then
+        echo "[INFO] Setting default ${key}=$default_value in UCI." >&2
+        uci_set_general "$key" "$default_value"
+        current="$default_value"
+    fi
+    printf '%s\n' "$current"
+}
+
+generate_random_hex() {
+    local length="$1" value=""
+    if command -v python3 >/dev/null 2>&1; then
+        value=$(python3 - "$length" <<'PY'
+import binascii, os, sys
+print(binascii.hexlify(os.urandom(int(sys.argv[1]))).decode("utf-8"), end="")
+PY
+        )
+    fi
+    if [ -z "$value" ]; then
+        value=$(head -c "$length" /dev/urandom | hexdump -v -e '/1 "%02x"')
+    fi
+    printf '%s\n' "$value"
+}
+
+generate_random_b64() {
+    local length="$1" value=""
+    if command -v python3 >/dev/null 2>&1; then
+        value=$(python3 - "$length" <<'PY'
+import base64, os, sys
+print(base64.b64encode(os.urandom(int(sys.argv[1]))).decode("utf-8").rstrip('='), end="")
+PY
+        )
+    fi
+    if [ -z "$value" ]; then
+        value=$(generate_random_hex "$length")
+    fi
+    printf '%s\n' "$value"
+}
+
+ensure_secure_serial_secret() {
+    ensure_uci_config
+    
+    local current_secret
+    current_secret=$(uci_get_general serial_shared_secret)
+    if [ -n "$current_secret" ] \
+        && [ "$current_secret" != "$SERIAL_SECRET_PLACEHOLDER" ] \
+        && [ "$current_secret" != "$BOOTSTRAP_SERIAL_SECRET" ] \
+        && [ "$current_secret" != "${MCUBRIDGE_DEFAULT_SERIAL_SHARED_SECRET:-failsafe_secret_mode}" ]; then
+        return
+    fi
+
+    echo "[INFO] Generating secure serial shared secret via UCI..."
+    local final_secret=""
+    local rotation_ok=0
+
+    # Try helper if exists
+    if command -v mcubridge-rotate-credentials >/dev/null 2>&1; then
+        if OUTPUT=$(mcubridge-rotate-credentials --force --no-restart 2>&1); then
+            rotation_ok=1
+            final_secret=$(printf '%s\n' "$OUTPUT" | sed -n 's/^SERIAL_SECRET=//p' | tail -n 1)
+        fi
+    fi
+
+    if [ "$rotation_ok" -ne 1 ] || [ -z "$final_secret" ]; then
+        final_secret=$(generate_random_hex 32)
+        local cloud_pass cloud_user
+        cloud_pass=$(generate_random_b64 32)
+        cloud_user=$(uci_get_general cloud_user)
+        [ -z "$cloud_user" ] && cloud_user="mcubridge"
+
+        uci_set_general serial_shared_secret "$final_secret"
+        uci_set_general cloud_user "$cloud_user"
+        uci_set_general cloud_pass "$cloud_pass"
+        uci_commit_general
+    fi
+
+    local final_current
+    final_current=$(uci_get_general serial_shared_secret)
+    echo "[INFO] Serial shared secret refreshed in UCI."
+}
+
+set_serial_uci_value() {
+    local key="$1" default_value="$2"
+    ensure_general_default "$key" "$default_value" >/dev/null
+}
+
+configure_serial_link_settings() {
+    set_serial_uci_value "serial_retry_timeout" "${MCUBRIDGE_DEFAULT_SERIAL_RETRY_TIMEOUT:-10.0}"
+    set_serial_uci_value "serial_retry_attempts" "${MCUBRIDGE_DEFAULT_SERIAL_RETRY_ATTEMPTS:-5}"
+    set_serial_uci_value "serial_response_timeout" "${MCUBRIDGE_DEFAULT_SERIAL_RESPONSE_TIMEOUT:-20.0}"
+    set_serial_uci_value "serial_handshake_min_interval" "${MCUBRIDGE_DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL:-0.0}"
+    set_serial_uci_value "serial_handshake_fatal_failures" "${MCUBRIDGE_DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES:-15}"
+    uci_commit_general
+}
+
+#  --- Main Script Execution ---
+echo "[STEP 1/6] Checking swap availability..."
+swap_total_kb=$(read_swap_total_with_fallback)
+echo "[INFO] Detected swap total: ${swap_total_kb} KB"
+if [ "${swap_total_kb:-0}" -lt "$MIN_SWAP_KB" ]; then
+    if [ "${swap_total_kb:-0}" -eq 0 ] && [ -f /overlay/swapfile ]; then
+        if swapon /overlay/swapfile 2>/dev/null; then
+            swap_total_kb=$(read_swap_total_with_fallback)
+        fi
+    fi
+    if [ "${swap_total_kb:-0}" -lt "$MIN_SWAP_KB" ]; then
+        if [ "${FORCE:-0}" = "1" ]; then
+            echo "[WARN] System swap below 1GB. FORCE=1 bypasses this check."
+        else
+            echo "[ERROR] System swap below 1GB. Run './2_expand.sh' first." >&2
+            exit 1
+        fi
+    fi
+fi
+
+echo "[STEP 2/6] Checking for conflicting PPP/DHCP packages..."
+# [FIX] Conflict removal: tolerate errors if package is missing
+CONFLICT_PKGS="ppp ppp-mod-pppoe pppoe odhcp6c odhcpd"
+found_conflicts=""
+for pkg in $CONFLICT_PKGS; do
+    # Check if exact package is installed
+    if apk info -e "$pkg" >/dev/null 2>&1; then
+        found_conflicts="$found_conflicts $pkg"
+    fi
+done
+
+if [ -n "$found_conflicts" ]; then
+    echo "[WARN] Packages locking serial port found: $found_conflicts"
+    printf "Remove these packages? [y/N]: "
+    if [ "${FORCE:-0}" = "1" ]; then
+        remove_answer="y"
+        echo "y (forced)"
+    else
+        read remove_answer || remove_answer=""
+    fi
+    case "$remove_answer" in
+        y|Y)
+            echo "[INFO] Removing conflicting packages..."
+            # [FIX] Added || true to prevent script exit if a package is not found
+            apk del $found_conflicts || true
+            ;;
+        *)
+            echo "[INFO] Keeping existing PPP/DHCP packages." ;;
+    esac
+fi
+
+stop_daemon
+
+echo "[STEP 3/6] Updating system packages..."
+# [FIX] Convert repository URLs to HTTP to bypass SSL verification issues in unprovisioned systems
+for f in /etc/apk/repositories /etc/apk/repositories.d/*.list; do
+    if [ -f "$f" ]; then
+        echo "[INFO] Patching $f to use HTTP..."
+        sed -i 's/https:/http:/g' "$f" || true
+    fi
+done
+
+apk update || echo "[WARN] Failed to update package feeds. Continuing with local packages..."
+
+# [FIX] Removed 'apk upgrade' option entirely to prevent SELinux breakage on RCs
+echo "[INFO] Skipping system upgrade to maintain stability."
+
+echo "[STEP 4/6] Installing essential dependencies..."
+# Note: python3-pyserial removed - replaced by built-in termios
+ESSENTIAL_PACKAGES="\
+python3 \
+python3-asyncio \
+python3-uci \
+python3-pyserial \
+python3-typer \
+openssl-util \
+coreutils-stty \
+xxd \
+luci-light \
+avrdude"
+
+for pkg in $ESSENTIAL_PACKAGES; do
+    install_dependency "$pkg"
+done
+
+# --- Install Prebuilt Packages ---
+echo "[STEP 5/6] Installing project .apk packages..."
+project_apk_globs=$(uci_get_general installer_project_apk_globs)
+[ -z "$project_apk_globs" ] && project_apk_globs="$PROJECT_APK_PATTERNS"
+project_apk_installed=0
+apks_to_install=""
+for glob in $project_apk_globs; do
+    for apk in bin/$glob; do
+        [ -e "$apk" ] || continue
+        apks_to_install="$apks_to_install ./$apk"
+    done
+done
+
+if [ -n "$apks_to_install" ]; then
+    echo "[INFO] Installing prebuilt APK packages:$apks_to_install"
+    # [FIX] Install all local packages in a single apk add command to resolve dependencies cleanly
+    if ! apk add $LOCAL_APK_INSTALL_FLAGS $apks_to_install; then
+        echo "[ERROR] Failed to add project APKs." >&2
+        exit 1
+    fi
+    project_apk_installed=1
+fi
+
+if [ "$project_apk_installed" -eq 0 ]; then
+    echo "[ERROR] No project .apk files found in bin/. 'mcubridge' package was NOT installed." >&2
+    echo "[HINT] Run './1_compile.sh' first to build the packages." >&2
+    exit 1
+else
+    # Only configure secrets if the package installed successfully
+    ensure_secure_serial_secret
+    configure_serial_link_settings
+
+    # Detach active console on the target serial port from inittab if present
+    target_serial="$(uci_get_general serial_port)"
+    [ -z "$target_serial" ] && target_serial="${MCUBRIDGE_DEFAULT_SERIAL_PORT:-/dev/ttyATH0}"
+    target_base="$(basename "$target_serial")"
+    if [ -n "$target_base" ] && [ -f /etc/inittab ]; then
+        if grep -q "^${target_base}:" /etc/inittab 2>/dev/null || grep -q "::askconsole:" /etc/inittab 2>/dev/null; then
+            echo "[INFO] Detaching active console on $target_base from /etc/inittab..."
+            sed -i -e "/^${target_base}:/d" -e "/::askconsole:/d" /etc/inittab
+        fi
+    fi
+fi
+
+# --- System & LuCI Configuration ---
+echo "[STEP 6/6] Finalizing system configuration..."
+[ -f /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart
+# Force reload of procd/rpcd to pick up new service files
+[ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
+/etc/init.d/system reload || true
+
+echo "[FINAL] Finalizing setup..."
+
+# The daemon is configured via UCI (environment variables are ignored).
+if command -v uci >/dev/null 2>&1; then
+    uci set mcubridge.general.debug='1' >/dev/null 2>&1 || true
+    uci commit mcubridge >/dev/null 2>&1 || true
+fi
+
+if [ -f "$INIT_SCRIPT" ]; then
+    echo "[INFO] Enabling and starting mcubridge daemon..."
+    # Ensure init script is executable
+    chmod +x "$INIT_SCRIPT"
+    
+    # Enable service
+    "$INIT_SCRIPT" enable || { echo "[ERROR] Failed to enable mcubridge service in procd." >&2; exit 1; }
+    "$INIT_SCRIPT" restart || echo "[WARN] Failed to start service (non-fatal in environments without physical serial hardware)"
+else
+    echo "[ERROR] mcubridge init script not found at $INIT_SCRIPT. Installation incomplete!" >&2
+    exit 1
+fi
+
+echo -e "\n--- Installation Complete! ---"

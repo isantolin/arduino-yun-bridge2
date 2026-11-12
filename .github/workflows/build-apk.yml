@@ -1,0 +1,239 @@
+name: Build OpenWrt APK Packages
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '1_compile.sh'
+      - 'mcubridge/Makefile'
+      - 'feeds/**'
+      - 'requirements/runtime.toml'
+      - 'tools/audit/sync_runtime_deps.py'
+      - 'tools/protocol/**'
+      - 'tools/ci/apt_update_with_fallback.sh'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build-apk:
+    name: Compile APKs for OpenWrt 25.12.6
+    runs-on: ubuntu-26.04
+    timeout-minutes: 330
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup Python 3.14 with Pip Cache
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
+      - name: Cache Downloads
+        uses: actions/cache@v6
+        with:
+          path: dl
+          key: ${{ runner.os }}-openwrt-dl-25.12.6
+          restore-keys: |
+            ${{ runner.os }}-openwrt-dl-
+
+      # Cache layer 2: Host toolchain (SDK Python, host tools — expensive to rebuild, rarely changes)
+      - name: Cache Host Toolchain
+        uses: actions/cache@v6
+        with:
+          path: |
+            openwrt-sdk/staging_dir/hostpkg
+            openwrt-sdk/staging_dir/host
+          key: ${{ runner.os }}-openwrt-host-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge-gateway/Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-host-25.12.6-
+
+      # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
+      - name: Cache OpenWrt SDK
+        uses: actions/cache@v6
+        with:
+          path: openwrt-sdk
+          key: ${{ runner.os }}-openwrt-sdk-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-sdk-25.12.6-
+
+      # [FIX CRÍTICO] Instalar la rama Nightly con el componente de código fuente "rust-src".
+      # Esto nos permite compilar la biblioteca estándar de Rust ("std") al vuelo para la arquitectura MIPS
+      # omitiendo la construcción nativa y pesada de LLVM del SDK (que causa bloqueos por Out-Of-Memory).
+      - name: Install Rust Toolchain (Host Nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Install Host Dependencies
+        run: |
+          bash tools/ci/apt_update_with_fallback.sh
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
+          gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler rpm
+          sudo npm install -g @bufbuild/buf
+          python3 -m pip install jinja2 pdm-backend hatchling "protobuf==5.28.3" "nanopb==0.4.9.1" maturin setuptools-rust grpclib black packaging typer tenacity "wheel>=0.46.3" "setuptools>=84.0.0" build installer patch-ng mypy-protobuf httpx
+
+      - name: Generate runtime dependency lockfiles
+        run: |
+          python3 tools/audit/sync_runtime_deps.py
+
+      - name: Install Pigweed host protocol generator
+        run: |
+          PIGWEED_REQUIREMENT="$(python3 tools/audit/sync_runtime_deps.py --print-pip | grep '^pigweed==')"
+          test -n "$PIGWEED_REQUIREMENT"
+          python3 -m pip install "$PIGWEED_REQUIREMENT"
+          python3 -c "from pw_rpc.descriptors import Service; import google.protobuf; print('Pigweed pw_rpc host generator ready')"
+
+      - name: Pre-download Python feed dependencies to bypass PyPI mirror issues
+        run: |
+          mkdir -p dl
+          pip download --no-binary=:all: --no-deps -d dl -r requirements/runtime.txt
+          pip download --no-binary=:all: --no-deps -d dl "setuptools==84.2.1"
+
+      - name: Compile Packages
+        run: |
+          ./1_compile.sh --skip-host-deps
+
+      - name: Prune Transient SDK Artifacts for Cache Optimization
+        run: |
+          if [ -d openwrt-sdk ]; then
+            echo "[PRUNE] Removing transient tmp/, logs/, and bin/ from openwrt-sdk to minimize cache footprint..."
+            rm -rf openwrt-sdk/tmp openwrt-sdk/logs openwrt-sdk/bin
+          fi
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: openwrt-apk-packages
+          path: bin/
+          if-no-files-found: error
+
+  verify-apk:
+    name: Verify APK Installation (QEMU MIPS)
+    needs: build-apk
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Setup Python 3.14 with Pip Cache
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Cache OpenWrt QEMU Images
+        uses: actions/cache@v6
+        with:
+          path: |
+            openwrt-25.12.6-malta-be-vmlinux.elf
+            openwrt-malta-rootfs.img
+            sys-apks
+          key: ${{ runner.os }}-openwrt-qemu-images-25.12.6
+
+      - name: Install Verification Dependencies
+        run: |
+          bash tools/ci/apt_update_with_fallback.sh
+          sudo apt-get install -y qemu-system-mips python3-pexpect wget e2fsprogs
+          pip install typer pexpect tenacity
+
+      - name: Download APK Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: openwrt-apk-packages
+          path: bin-download/
+
+      - name: Run OpenWrt Smoke Test
+        run: |
+          # Flatten APKs into a single directory for the test script
+          mkdir -p apks-flat
+          find bin-download/ -name "*.apk" -exec cp {} apks-flat/ \;
+          python3 tools/emulation/openwrt_smoke_test.py apks-flat/
+
+  publish-apk-feed-oci:
+    name: Publish OpenWrt APK Feed to GHCR
+    needs: verify-apk
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Download APK Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: openwrt-apk-packages
+          path: bin/
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Dockerfile for OpenWrt APK Feed
+        run: |
+          cat << 'EOF' > Dockerfile.apk-feed
+          FROM nginx:alpine
+          COPY bin/ /usr/share/nginx/html/
+          EXPOSE 80
+          EOF
+
+      - name: Extract Metadata & Version Tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/mcubridge-openwrt-apk-feed
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=OpenWrt 25.12.6 APK Package Feed for Arduino Yun Bridge 2
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: Build and Push OCI Container to GHCR
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.apk-feed
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Flatten APKs for Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p release-apks
+          find bin/ -name "*.apk" -exec cp {} release-apks/ \;
+
+      - name: Attach Verified APKs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: release-apks/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

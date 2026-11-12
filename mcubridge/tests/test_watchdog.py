@@ -1,0 +1,136 @@
+"""Watchdog tests with strict typing."""
+
+from __future__ import annotations
+
+import asyncio
+import pytest
+
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.state.context import RuntimeState
+from mcubridge.watchdog import WatchdogKeepalive
+
+
+def test_watchdog_keepalive_emits_pulses(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Verify watchdog emits pulses at the configured interval."""
+    runtime_config.watchdog_enabled = True
+    runtime_config.watchdog_interval = 0.05
+    pulses: list[bytes] = []
+
+    def capture(data: bytes) -> None:
+        pulses.append(data)
+
+    async def _runner() -> None:
+        keepalive = WatchdogKeepalive(
+            interval=runtime_config.watchdog_interval,
+            state=runtime_state,
+            write=capture,
+        )
+
+        task = asyncio.create_task(keepalive.run())
+        await asyncio.sleep(0.12)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(_runner())
+
+    assert len(pulses) >= 1
+    assert runtime_state.watchdog_beats == len(pulses)
+    assert runtime_state.last_watchdog_beat > 0
+
+
+def test_watchdog_interval_updates(runtime_state: RuntimeState) -> None:
+    """Verify interval updates and clamping."""
+    keepalive = WatchdogKeepalive(state=runtime_state)
+    keepalive.interval = 3.5
+    assert keepalive.interval == 3.5
+    keepalive.interval = 0.2
+    assert keepalive.interval == 0.5
+
+
+def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState) -> None:
+    """Watchdog should log and continue when the writer fails."""
+
+    def broken_writer(_: bytes) -> None:
+        raise OSError("boom")
+
+    keepalive = WatchdogKeepalive(state=runtime_state, write=broken_writer)
+    keepalive.kick()
+
+    assert runtime_state.watchdog_beats == 0
+    assert runtime_state.last_watchdog_beat == 0
+
+
+def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
+    """Verify cancellation is handled gracefully."""
+    runtime_state.watchdog_enabled = True
+    runtime_state.watchdog_interval = 0.05
+
+    async def _runner() -> None:
+        keepalive = WatchdogKeepalive(
+            interval=runtime_state.watchdog_interval,
+            state=runtime_state,
+        )
+        task = asyncio.create_task(keepalive.run())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(_runner())
+
+    assert runtime_state.watchdog_beats > 0
+
+
+def test_watchdog_uncovered_branch_hardening(runtime_state: RuntimeState) -> None:
+    wd = WatchdogKeepalive(interval=10.0, state=runtime_state)
+    runtime_state.fatal_count = 1
+    assert wd.is_healthy() is False
+    assert wd.fsm.critical_inhibit.is_active
+
+    wd2 = WatchdogKeepalive(interval=10.0, state=None)
+    wd2.kick()
+
+
+def test_watchdog_state_transitions_and_edge_branches(runtime_state: RuntimeState) -> None:
+    wd = WatchdogKeepalive(interval=1.0, state=runtime_state)
+    # 1. recover when not degraded (line 119 -> exit)
+    assert wd.fsm.initializing.is_active
+    wd.recover()
+    assert not wd.fsm.degraded.is_active
+
+    # 2. degrade from initializing to degraded
+    wd.degrade("reason 1")
+    assert wd.fsm.degraded.is_active
+    # degrade when already degraded (line 113 -> exit)
+    wd.degrade("reason 2")
+    assert wd.fsm.degraded.is_active
+
+    # 3. recover from degraded back to healthy
+    wd.recover()
+    assert wd.fsm.healthy.is_active
+
+    # 4. trip_inhibit
+    wd.trip_inhibit("critical fault")
+    assert wd.fsm.critical_inhibit.is_active
+    # trip_inhibit when already in critical_inhibit (line 107 -> exit)
+    wd.trip_inhibit("second fault")
+    assert wd.fsm.critical_inhibit.is_active
+
+    # 5. kick when not healthy (line 125 -> exit)
+    assert not wd.is_healthy()
+    beats_before = runtime_state.watchdog_beats
+    wd.kick()
+    assert runtime_state.watchdog_beats == beats_before
+
+    # 6. run when already in shutdown state (line 151 -> exit)
+    wd.fsm.stop()
+    assert wd.fsm.shutdown.is_active
+
+    async def _run_shutdown() -> None:
+        await wd.run()
+
+    asyncio.run(_run_shutdown())

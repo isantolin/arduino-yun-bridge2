@@ -1,0 +1,86 @@
+// Microchip ATSAMD21G18A (ARM Cortex-M0+) Platform Description
+// Target Board: Arduino MKR WiFi 1010
+// CPU: Cortex-M0+ @ 48 MHz, 256 KB Flash, 32 KB SRAM
+
+flash: Memory.MappedMemory @ sysbus 0x00000000
+    size: 0x40000
+
+dwt: Miscellaneous.DWT @ sysbus 0xE0001000
+    frequency: 48000000
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x8000
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    priorityMask: 0xFF
+    systickFrequency: 48000000
+    -> cpu@0
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m0+"
+    nvic: nvic
+    init:
+        PerformanceInMips 48
+
+rtc: Timers.SAMD21_RTC @ sysbus 0x40001400
+    IRQ -> nvic@3
+
+gpio_a: Memory.ArrayMemory @ sysbus 0x41004400
+    size: 0x80
+
+gpio_b: Memory.ArrayMemory @ sysbus 0x41004480
+    size: 0x80
+
+// Serial Communication Interface (SERCOM5) for Arduino Serial1 (Bridge communication)
+uart0: UART.SAMD5_UART @ sysbus 0x42001C00
+    -> nvic@14
+
+gclk: Memory.ArrayMemory @ sysbus 0x40000C00
+    size: 0x20
+
+pm: Memory.ArrayMemory @ sysbus 0x40000400
+    size: 0x80
+
+sysctrl: Memory.ArrayMemory @ sysbus 0x40000800
+    size: 0x80
+
+nvmctrl: Memory.ArrayMemory @ sysbus 0x41004000
+    size: 0x80
+
+usb: Memory.ArrayMemory @ sysbus 0x41005000
+    size: 0x1000
+
+adc: Memory.ArrayMemory @ sysbus 0x42004000
+    size: 0x80
+
+dac: Memory.ArrayMemory @ sysbus 0x42004800
+    size: 0x80
+
+nvm_calib: Memory.MappedMemory @ sysbus 0x00806000
+    size: 0x1000
+
+sysbus:
+    init:
+        Tag <0x40000000 0x08> "Peripheral Access Controller 0"
+        Tag <0x40001000 0x10> "Watchdog Timer"
+        Tag <0x40001800 0x40> "External Interrupt Controller"
+        Tag <0x41000000 0x08> "Peripheral Access Controller 1"
+        Tag <0x41002000 0x2000> "Device Service Unit"
+        Tag <0x41004800 0x80> "Direct Memory Access Controller"
+        Tag <0x41006000 0x1000> "Cortex-M0+ Micro-Trace Buffer"
+        Tag <0x42000000 0x08> "Peripheral Access Controller 2"
+        Tag <0x42000400 0x80> "Event System Interface"
+        Tag <0x42000800 0x40> "Serial Communication Interface 0"
+        Tag <0x42000C00 0x40> "Serial Communication Interface 1"
+        Tag <0x42001000 0x40> "Serial Communication Interface 2"
+        Tag <0x42001400 0x40> "Serial Communication Interface 3"
+        Tag <0x42001800 0x40> "Serial Communication Interface 4"
+        Tag <0x42002000 0x090> "Timer Counter Control 0"
+        Tag <0x42002400 0x090> "Timer Counter Control 1"
+        Tag <0x42002800 0x090> "Timer Counter Control 2"
+        Tag <0x42002C00 0x040> "Basic Timer Counter 3"
+        Tag <0x42003000 0x040> "Basic Timer Counter 4"
+        Tag <0x42003400 0x040> "Basic Timer Counter 5"
+        Tag <0x42004400 0x40> "Analog Comparators"
+        Tag <0x42004C00 0x40> "Peripheral Touch Controller"
+        Tag <0x42005000 0x40> "Inter-IC Sound Interface"

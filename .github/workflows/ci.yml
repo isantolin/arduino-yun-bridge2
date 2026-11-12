@@ -537,7 +537,9 @@ jobs:
           . .venv-gateway/bin/activate
           cmake -S mcubridge-gateway-cpp -B build/mcubridge-gateway -G Ninja
       - name: Build standalone Gateway
-        run: cmake --build build/mcubridge-gateway --parallel 2
+        run: |
+          . .venv-gateway/bin/activate
+          cmake --build build/mcubridge-gateway --parallel 2
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min

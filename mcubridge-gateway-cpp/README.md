@@ -8,19 +8,28 @@ standalone Linux C++ process, not a sidecar to the Python Gateway.
 - TLS 1.3 with mandatory client-certificate verification.
 - Device identity is accepted only from one URI SAN:
   spiffe://mcubridge/device/DEVICE_ID.
+- Northbound client identity is accepted only from one URI SAN:
+  spiffe://mcubridge/client/PRINCIPAL_ID.
 - Common Name and client-supplied device identifiers are never identity sources.
+- Device and client principals use separate session registries; duplicate
+  sessions for the same principal are rejected.
+- Only client-role sessions register the northbound GatewayControl service.
+  Its current Health RPC reports readiness and active session counts.
 - Pigweed RPC packets use upstream pw_hdlc framing on HDLC address 1.
 - The upstream pw_transfer::TransferService is registered on the per-peer
   upstream pw_rpc::Server.
-- Each authenticated peer owns its RPC channel, transfer thread, service and
-  transport buffers. Session teardown terminates and joins the transfer worker.
+- Each authenticated peer owns its RPC channel and transport buffers.
+  Device sessions additionally own a transfer thread and TransferService.
+  Session teardown terminates and joins the device transfer worker.
 - TX framing is serialized and passed through a bounded queue; a full queue
   fails the send with RESOURCE_EXHAUSTED rather than dropping bytes.
 
 The transfer service is intentionally registered without file handlers in
-this first transport slice. Filesystem handlers must be attached only after
-the MPU resource broker enforces per-device roots, path confinement, quotas,
-seek/resume and atomic-write rules. No arbitrary host path is exposed.
+this first service slice. GatewayControl currently exposes only Health; it is
+not yet a replacement for telemetry, commands, console, mailbox or sessions.
+Filesystem handlers must be attached only after the MPU resource broker
+enforces per-device roots, path confinement, quotas, seek/resume and
+atomic-write rules. No arbitrary host path is exposed.
 
 ## Build
 

@@ -50,7 +50,7 @@ El inventario al HEAD de PR #84 confirma que estos elementos siguen siendo códi
 - Clientes y runtime: `mcubridge/services/runtime.py`, ejemplos CLI y clientes que abren `grpclib.Channel`.
 - Automatización: scripts de emulación, `tox.ini`, bootstrap de CI y pruebas que inician el Gateway Python.
 - Operaciones northbound de archivos: `LocalBridge.FileRead/FileWrite/FileRemove`. Deben migrarse a una apertura autenticada de recurso y luego a upstream `pw_transfer`; no confundir el recurso EEPROM MCU de 4 KiB con el filesystem del MPU.
-- Gateway Pigweed C++: el binario actual autentica TLS 1.3/mTLS, identifica el peer por URI SAN y transporta `pw_rpc`/HDLC. Aún no tiene handlers de archivos ni los servicios de control, telemetría, consola, mailbox y sesiones requeridos para sustituir el Gateway anterior.
+- Gateway Pigweed C++: el binario autentica TLS 1.3/mTLS, separa principales `device` y `client`, impide sesiones duplicadas por principal y ofrece `GatewayControl.Health` a clientes. `pw_transfer::TransferService` sigue registrado sin handlers. Faltan handlers de archivos y los servicios de telemetría, comandos, consola, mailbox y sesiones necesarios para sustituir el Gateway anterior.
 
 **Regla de eliminación:** cada dependencia, stub, proceso, contrato y prueba de gRPC se elimina en el mismo corte coordinado, después de que el reemplazo Pigweed y todos sus consumidores pasen pruebas de integración. No se permite mantener un sidecar, doble ejecución ni fallback. La presencia de `pw_transfer::TransferService` sin handlers no satisface el criterio de transferencia de archivos.
 
@@ -69,7 +69,7 @@ El inventario al HEAD de PR #84 confirma que estos elementos siguen siendo códi
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
 | 10 | Validación integral | Las métricas históricas citadas son un baseline anterior, no una validación del HEAD actual. PR #84 debe superar la matriz completa, incluida cobertura Python/C++, AVR Mega 2560, Renode, QEMU, fuzzing, OpenWrt y el Gateway C++ | **Pendiente de CI verde en HEAD** |
-| 11 | Unificación Canónica de Tópicos y Manejadores | Los contratos MCU usan descriptores Pigweed, pero la migración northbound no está terminada: el Gateway C++ solo tiene transporte TLS/HDLC y registra `pw_transfer` sin handlers ni servicios de aplicación. Los clientes, sesiones edge y servicios siguen dependiendo de `CloudBridge`/`LocalBridge` y `grpclib` | **En curso — no declarar completada** |
+| 11 | Unificación Canónica de Tópicos y Manejadores | Los contratos MCU usan descriptores Pigweed, pero la migración northbound no está terminada: el Gateway C++ solo tiene transporte TLS/HDLC y registra `pw_transfer` sin handlers ni servicios de aplicación. El health RPC northbound ya está disponible para principales `client`, pero los clientes, sesiones edge y servicios de aplicación siguen dependiendo de `CloudBridge`/`LocalBridge` y `grpclib` | **En curso — no declarar completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
 

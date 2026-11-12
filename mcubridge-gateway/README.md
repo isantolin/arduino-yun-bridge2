@@ -78,7 +78,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 | **Mailbox** | `MailboxPush` | `MailboxPush` | `GenericResponse` | Pushes a message into the MCU mailbox FIFO queue. |
 | | `MailboxRead` | `SubscribeRequest` | `MailboxReadResponse` | Reads messages from the MCU mailbox queue. |
 | **Filesystem** | `FileWrite` | `FileWrite` | `GenericResponse` | Writes data to a file on the storage partition. |
-| | `FileRead` | `FileRead` | `FileReadResponse` | Reads files from the MPU filesystem. MCU file transfers use upstream `pw_transfer`. |
+| | `FileRead` | `FileRead` | `FileReadResponse` | Reads files from the MPU filesystem. The MCU EEPROM raw resource is exposed as `mcu/eeprom` through upstream `pw_transfer`; it is not a filesystem. |
 | | `FileRemove` | `FileRemove` | `GenericResponse` | Deletes a file from the storage partition. |
 | **Processes** | `ProcessRunAsync` | `ProcessRunAsync` | `ProcessRunAsyncResponse` | Spawns an asynchronous sub-process on the MPU. |
 | | `ProcessPoll` | `ProcessPoll` | `ProcessPollResponse` | Polls execution status and stdout/stderr of a process. |

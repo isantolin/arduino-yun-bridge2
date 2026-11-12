@@ -36,6 +36,7 @@ from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
 from pw_tokenizer.tokens import DatabaseFormatError
+import pw_transfer
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb
@@ -64,6 +65,7 @@ _HANDSHAKE_RAW_NAMES: Final[frozenset[str]] = frozenset(
     }
 )
 _STREAM_EVENT_QUEUE_MAX: Final[int] = 64
+_TRANSFER_CHUNK_SIZE_BYTES: Final[int] = 128
 
 # Register wifi:// and tcp:// scheme aliases in pyserial
 sys.modules["serial.urlhandler.protocol_wifi"] = protocol_socket
@@ -146,6 +148,8 @@ class SerialTransport:
         self._stream_call: Any | None = None
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
+        self._transfer_manager: Any | None = None
+        self._transfer_lock = asyncio.Lock()
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self.queue_rpc_packet)],
@@ -668,6 +672,41 @@ class SerialTransport:
                 return None
         logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
         return None
+
+    def _get_transfer_manager(self) -> Any:
+        """Return the single upstream pw_transfer manager for the MCU RPC channel."""
+        if self._transfer_manager is None:
+            transfer_service = self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
+            self._transfer_manager = pw_transfer.Manager(
+                transfer_service,
+                max_chunk_size_bytes=_TRANSFER_CHUNK_SIZE_BYTES,
+            )
+        return self._transfer_manager
+
+    async def transfer_read(self, resource_id: int, *, offset: int = 0) -> bytes:
+        """Read an MCU transfer resource without blocking the asyncio serial loop."""
+        async with self._transfer_lock:
+            if self.serial is None or not self.serial.is_open:
+                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
+            manager = self._get_transfer_manager()
+            return await asyncio.to_thread(
+                manager.read,
+                resource_id,
+                initial_offset=offset,
+            )
+
+    async def transfer_write(self, resource_id: int, data: bytes, *, offset: int = 0) -> None:
+        """Write an MCU transfer resource without blocking the asyncio serial loop."""
+        async with self._transfer_lock:
+            if self.serial is None or not self.serial.is_open:
+                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
+            manager = self._get_transfer_manager()
+            await asyncio.to_thread(
+                manager.write,
+                resource_id,
+                data,
+                initial_offset=offset,
+            )
 
     def _get_rpc_method(self, spec: Any) -> Any | None:
         method_name = f"{spec.service_name}/{spec.method_name}"

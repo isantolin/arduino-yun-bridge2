@@ -250,7 +250,7 @@ def test_pw_services_integrity() -> None:
         assert len(service.methods) > 0
 
     transfer = protocol.PW_SERVICES["pw.transfer.Transfer"]
-    assert set(transfer.methods) == {"Read", "Write", "GetResourceStatus"}
+    assert {method.name for method in transfer.methods} == {"Read", "Write", "GetResourceStatus"}
     assert transfer.methods["Read"].type.name == "BIDIRECTIONAL_STREAMING"
     assert transfer.methods["Write"].type.name == "BIDIRECTIONAL_STREAMING"
     assert transfer.methods["GetResourceStatus"].type.name == "UNARY"

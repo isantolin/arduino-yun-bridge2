@@ -78,7 +78,7 @@ The Protobuf Cloud Gateway is a high-performance, enterprise-grade gRPC hub desi
 | **Mailbox** | `MailboxPush` | `MailboxPush` | `GenericResponse` | Pushes a message into the MCU mailbox FIFO queue. |
 | | `MailboxRead` | `SubscribeRequest` | `MailboxReadResponse` | Reads messages from the MCU mailbox queue. |
 | **Filesystem** | `FileWrite` | `FileWrite` | `GenericResponse` | Writes data to a file on the storage partition. |
-| | `FileRead` | `FileRead` | `FileReadResponse` | Reads content from a stored file. |
+| | `FileRead` | `FileRead` | `FileReadResponse` | Reads files from the MPU filesystem. MCU file transfers use upstream `pw_transfer`. |
 | | `FileRemove` | `FileRemove` | `GenericResponse` | Deletes a file from the storage partition. |
 | **Processes** | `ProcessRunAsync` | `ProcessRunAsync` | `ProcessRunAsyncResponse` | Spawns an asynchronous sub-process on the MPU. |
 | | `ProcessPoll` | `ProcessPoll` | `ProcessPollResponse` | Polls execution status and stdout/stderr of a process. |
@@ -109,7 +109,7 @@ Where:
   - `req`: Inbound RPC commands/requests destined for the edge daemon.
   - `res`: Outbound command execution returns/replies emitted by the edge daemon.
   - `evt`: Asynchronous telemetry reports and spontaneous event broadcasts (e.g. `status_online`, `pin_event`).
-- `{method}`: Canonical Pigweed service/method or operation name (e.g. `GpioService/DigitalWrite`, `GpioService/SetPinMode`, `FileSystemService/Read`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
+- `{method}`: Canonical Pigweed service/method or operation name (e.g. `GpioService/DigitalWrite`, `GpioService/SetPinMode`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
 
 All routing is resolved declaratively via the protocol Single Source of Truth (`get_topic_for_message` and `parse_topic`). Any message arriving with legacy paths or unrecognized structures is immediately rejected with `INVALID_ARGUMENT`.
 

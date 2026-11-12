@@ -112,6 +112,11 @@ pw_add_library(pw_rpc.client STATIC
   PUBLIC_DEPS pw_result pw_rpc.common pw_span
   SOURCES "${PIGWEED_ROOT}/pw_rpc/client.cc" "${PIGWEED_ROOT}/pw_rpc/client_call.cc"
   PRIVATE_DEPS pw_log pw_rpc.log_config)
+pw_add_library(pw_rpc.client_server STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_rpc/public/pw_rpc/client_server.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_rpc/public"
+  PUBLIC_DEPS pw_rpc.client pw_rpc.server
+  SOURCES "${PIGWEED_ROOT}/pw_rpc/client_server.cc")
 pw_add_library(pw_rpc.raw.server_api STATIC
   HEADERS
     "${PIGWEED_ROOT}/pw_rpc/raw/public/pw_rpc/raw/internal/method.h"

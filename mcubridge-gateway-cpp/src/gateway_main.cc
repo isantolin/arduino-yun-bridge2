@@ -31,11 +31,12 @@
 #include "pw_hdlc/encoded_size.h"
 #include "pw_hdlc/encoder.h"
 #include "pw_rpc/channel.h"
-#include "pw_rpc/server.h"
+#include "pw_rpc/client_server.h"
 #include "pw_status/status.h"
 #include "pw_stream/stream.h"
 #include "pw_thread/thread.h"
 #include "pw_thread_stl/options.h"
+#include "pw_transfer/client.h"
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"
 
@@ -232,15 +233,17 @@ class GatewaySession {
  public:
   GatewaySession(SSL* ssl, int fd, std::string device_id)
       : socket_(ssl, fd), channel_output_(tx_writer_, kRpcHdlcAddress),
-        channels_{pw::rpc::Channel::Create<1>(&channel_output_)}, rpc_server_(channels_),
+        channels_{pw::rpc::Channel::Create<1>(&channel_output_)}, rpc_client_server_(channels_),
         transfer_thread_(pw::ByteSpan(transfer_chunk_), pw::ByteSpan(transfer_encode_)),
+        transfer_client_(rpc_client_server_.client(), kRpcHdlcAddress,
+                         transfer_thread_, kTransferWindowBytes),
         transfer_service_(transfer_thread_, kTransferWindowBytes),
         decoder_(pw::ByteSpan(decoder_storage_)), device_id_(std::move(device_id)) {}
   GatewaySession(const GatewaySession&) = delete;
   GatewaySession& operator=(const GatewaySession&) = delete;
   void Run() {
     if (!socket_.SetNonBlocking()) return;
-    rpc_server_.RegisterService(transfer_service_);
+    rpc_client_server_.server().RegisterService(transfer_service_);
     transfer_worker_ = std::make_unique<pw::thread::Thread>(
         pw::thread::stl::Options{}, transfer_thread_);
     tx_worker_ = std::thread([this] { TransmitLoop(); });
@@ -280,7 +283,7 @@ class GatewaySession {
         auto frame = decoder_.Process(input[i]);
         if (frame.status() == pw::Status::Unavailable()) continue;
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        const pw::Status status = rpc_server_.ProcessPacket(frame->data());
+        const pw::Status status = rpc_client_server_.ProcessPacket(frame->data());
         if (!status.ok() && status != pw::Status::Unavailable()) {
           std::cerr << "device=" << device_id_ << " event=rpc_packet_rejected\n";
         }
@@ -291,10 +294,11 @@ class GatewaySession {
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> channels_;
-  pw::rpc::Server rpc_server_;
+  pw::rpc::ClientServer rpc_client_server_;
   std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
   std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
-  pw::transfer::Thread<0, 4> transfer_thread_;
+  pw::transfer::Thread<4, 4> transfer_thread_;
+  pw::transfer::Client transfer_client_;
   pw::transfer::TransferService transfer_service_;
   std::unique_ptr<pw::thread::Thread> transfer_worker_;
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};

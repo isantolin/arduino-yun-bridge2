@@ -9,7 +9,7 @@ The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through
 - `Bridge.process()` polls the thread with a bounded event budget after receiving serial/HDLC packets.
 - Applications must not create another transfer thread or call `Poll()` themselves.
 - The port's role arbiter permits one active transfer role at a time. Client and server transfers can be reused sequentially, not simultaneously.
-- This integration is enabled only for the ATmega2560 target. Smaller AVR targets, including ATmega32U4, are not application targets.
+- This integration is enabled only for the ATmega2560 application target; smaller AVR boards are excluded.
 
 The API is available when compiling for Arduino Mega 2560:
 

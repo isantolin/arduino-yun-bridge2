@@ -7,7 +7,8 @@ The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through
 - `BridgeClass` owns one `pw::transfer::Thread<1, 1>`.
 - The AVR thread uses a 128-byte chunk buffer and a 256-byte encode buffer, satisfying upstream's requirement that the encode buffer exceed the chunk buffer and cover the configured frame size.
 - The Python protocol generator registers the upstream `pw.transfer.Transfer` descriptor from Pigweed's `pw_transfer.transfer_pb2`, so the daemon RPC client can resolve `Read`, `Write`, and `GetResourceStatus`.
-- A Python consumer can create `pw_transfer.Manager(serial_transport.rpc_client.channel(1).rpcs.pw.transfer.Transfer, max_chunk_size_bytes=128)`; the 128-byte chunk cap matches the AVR staging buffer.
+- `SerialTransport` lazily owns one `pw_transfer.Manager` for that RPC channel. Its `transfer_read()` and `transfer_write()` methods run the blocking Manager calls in worker threads and serialize them with one asyncio lock; the Manager's 128-byte chunk cap matches the AVR staging buffer.
+- The runtime maps the explicit path `mcu/eeprom` to resource `0x4D454741`. Other `mcu/*` paths are rejected instead of falling back to the removed path-based MCU RPC. Non-`mcu/*` paths continue to use the MPU's local filesystem.
 - The same thread is shared by `Bridge.transferService()` and `Bridge.transferClient()`.
 - `Bridge.process()` polls the thread with a bounded event budget after receiving serial/HDLC packets.
 - Applications must not create another transfer thread or call `Poll()` themselves.
@@ -69,4 +70,4 @@ Large-file reads and writes must use upstream `pw_transfer` with a resource hand
 - The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.
 - Hardware UART/HDLC transfer against a live MPU remains a separate release gate.
 
-This PR removes only the MCU `FileSystemService.Read` RPC. The MPU CloudGateway `FileRead` / `FileWrite` / `FileRemove` methods are still present and are not yet migrated to `pw_transfer`. Replacing those methods requires a Linux-side upstream `pw_transfer` service endpoint and migrated clients; until that endpoint and its end-to-end tests exist, the MPU API migration is incomplete.
+This PR removes only the MCU `FileSystemService.Read` RPC. The MPU CloudGateway `FileRead` / `FileWrite` / `FileRemove` methods remain as public APIs. Their `mcu/eeprom` route now uses upstream `pw_transfer`; ordinary paths still operate on the MPU Linux filesystem. Replacing the Linux filesystem path transfer with `pw_transfer` requires a Linux-side upstream `pw_transfer` service endpoint and migrated Gateway clients; that portion remains incomplete.

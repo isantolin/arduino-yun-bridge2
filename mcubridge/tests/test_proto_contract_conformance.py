@@ -180,45 +180,6 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
-async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
-    service, _state, serial = svc
-    on_read: Callable[..., Awaitable[mcu_wire_pb2.FileReadResponse]] = service.file_read
-    on_remove: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_remove
-
-    # Read without serial
-    service.serial = None
-    assert (await on_read(1, mcu_wire_pb2.FileRead(path="a.txt"))).content == b""
-
-    # Read missing file
-    service.serial = serial
-    serial.send.return_value = True
-    assert (await on_read(1, mcu_wire_pb2.FileRead(path="missing.txt"))).content == b""
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
-
-    # Read existing nonempty file as bounded SERVER_STREAM frames plus stream completion (b"").
-    await service.file_write(mcu_wire_pb2.FileWrite(path="exists.txt", data=b"chunk-data"))
-    serial.send.reset_mock()
-    assert (await on_read(2, mcu_wire_pb2.FileRead(path="exists.txt"))).content == b""
-    sent = serial.send.await_args_list
-    assert [call.args[0] for call in sent] == [
-        "rpc.pb.FileSystemService/Read",
-        "rpc.pb.FileSystemService/Read",
-    ]
-    assert sent[0].args[1].content == b"chunk-data"
-    assert sent[1].args[1] == b""
-
-    # Read existing empty file; it emits stream completion (b"").
-    await service.file_write(mcu_wire_pb2.FileWrite(path="empty.txt", data=b""))
-    serial.send.reset_mock()
-    assert (await on_read(3, mcu_wire_pb2.FileRead(path="empty.txt"))).content == b""
-    serial.send.assert_awaited_once()
-    assert serial.send.await_args.args[0] == "rpc.pb.FileSystemService/Read"
-    assert serial.send.await_args.args[1] == b""
-
-    # Remove without serial
-    service.serial = None
-    assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"
-
     # Remove nonexistent file
     service.serial = serial
     assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"

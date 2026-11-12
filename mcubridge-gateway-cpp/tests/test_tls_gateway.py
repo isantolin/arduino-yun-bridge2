@@ -227,17 +227,19 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.assertNotIn("event=session_open", self.gateway.logs())
 
     def assert_tls_handshake_rejected(self, cert: Path | None, key: Path | None) -> None:
+        client: ssl.SSLSocket | None = None
         try:
             client = self.gateway.connect(cert, key)
         except (ssl.SSLError, OSError):
-            pass
-        else:
+            client = None
+        if client is not None:
             try:
-                client.recv(1)
+                received = client.recv(1)
             except (ssl.SSLError, OSError):
-                pass
+                received = b""
             finally:
                 client.close()
+            self.assertEqual(received, b"")
         self.gateway.wait_for("event=client_rejected reason=tls_handshake_failed")
         self.assertNotIn("event=session_open", self.gateway.logs())
 

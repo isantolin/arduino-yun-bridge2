@@ -57,7 +57,7 @@ The transfer service is registered with the upstream `pw_rpc::Server` by Bridge 
 
 ## Filesystem transfer boundary
 
-`FileSystemService.Read` and its `FileRead` / `FileReadResponse` messages no longer exist. The Nanopb client reader, server writer, callbacks, observer cleanup, and RPC tests for that path have been removed. The remaining `FileSystemService` RPCs are the existing bounded unary `Write` operation and `Remove` operation.
+`FileSystemService.Read` and its `FileRead` / `FileReadResponse` messages no longer exist. The Nanopb client reader, server writer, callbacks, observer cleanup, and RPC tests for that path have been removed. The remaining `FileSystemService` RPCs are the existing bounded unary `Write` operation and `Remove` operation. The obsolete `file_read` authorization bit and MCU read-stream error codes were removed from the configuration schema.
 
 Large-file reads and writes must use upstream `pw_transfer` with a resource handler backed by a bounded stream. The current integration exposes the upstream transfer service/client and does not silently fall back to the removed Nanopb stream. A concrete SD-card file handler (open/read/write/close, path validation, and atomic replacement for writes) is a separate implementation requirement; do not advertise filesystem `pw_transfer` as operational until that backend and its end-to-end tests are present.
 

@@ -761,10 +761,23 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
         )
     )
 
-    mock_serial.send = AsyncMock(return_value=False)
-    res_mcu_w = await svc.file_write(mcu_wire_pb2.FileWrite(path="/mcu/test.txt", data=b"data"))
-    assert mock_serial.send.called
-    assert res_mcu_w.status == "error"
+    mock_serial.transfer_write = AsyncMock()
+    res_mcu_w = await svc.file_write("mcu/eeprom", b"data")
+    mock_serial.transfer_write.assert_awaited_once_with(0x4D454741, b"data")
+    assert res_mcu_w.status == "ok"
+
+    mock_serial.transfer_write = AsyncMock(side_effect=RuntimeError("transfer failed"))
+    res_mcu_w_failed = await svc.file_write("mcu/eeprom", b"data")
+    assert res_mcu_w_failed.status == "error"
+
+    mock_serial.transfer_read = AsyncMock(return_value=b"eeprom-data")
+    res_mcu_r = await svc.file_read(cloud_gateway_pb2.FileRead(path="mcu/eeprom"))
+    mock_serial.transfer_read.assert_awaited_once_with(0x4D454741)
+    assert res_mcu_r.content == b"eeprom-data"
+
+    with pytest.raises(GRPCError) as unknown_mcu_resource:
+        await svc.file_read(cloud_gateway_pb2.FileRead(path="mcu/unknown"))
+    assert unknown_mcu_resource.value.status == GrpcStatus.NOT_FOUND
 
     svc.serial = None
     res_mcu_rm = await svc.file_remove(mcu_wire_pb2.FileRemove(path="/mcu/test.txt"))

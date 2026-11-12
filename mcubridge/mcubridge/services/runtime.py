@@ -19,6 +19,7 @@ import lmdb
 import psutil
 import structlog
 import tenacity
+import pw_transfer
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
     EncodeError as ProtobufSerializationError,
@@ -85,6 +86,8 @@ from ..transport.serial import SerialTransport
 logger = structlog.get_logger("mcubridge.service")
 
 _STATUS_VALUES: Final = {s.value for s in Status}
+_MCU_EEPROM_RESOURCE_ID: Final = 0x4D454741
+_MCU_EEPROM_RESOURCE_PATH: Final = "eeprom"
 
 
 class BridgeService:
@@ -681,14 +684,17 @@ class BridgeService:
         payload_data = src.data if isinstance(src, mcu_wire_pb2.FileWrite) else cast(bytes, data)
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
-            mcu_path = clean.removeprefix("mcu/")
+            mcu_path = clean.removeprefix("mcu/").strip("/")
             serial = self.serial
-            ok = bool(
-                serial
-                and await serial.send(
-                    "rpc.pb.FileSystemService/Write", mcu_wire_pb2.FileWrite(path=mcu_path, data=payload_data)
-                )
-            )
+            if mcu_path != _MCU_EEPROM_RESOURCE_PATH or serial is None:
+                ok = False
+            else:
+                try:
+                    await serial.transfer_write(_MCU_EEPROM_RESOURCE_ID, payload_data)
+                    ok = True
+                except (pw_transfer.Error, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                    logger.warning("MCU EEPROM pw_transfer write failed", error=str(exc))
+                    ok = False
         else:
             safe_path = self._get_safe_path(path)
             ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
@@ -701,14 +707,18 @@ class BridgeService:
         path = path_or_req.path if isinstance(path_or_req, cloud_gateway_pb2.FileRead) else path_or_req
         clean = path.lstrip("/")
         if clean.startswith("mcu/"):
-            logger.warning(
-                "MCU file reads require pw_transfer; no MCU transfer client is configured",
-                path=path,
-            )
-            raise GRPCError(
-                GrpcStatus.UNIMPLEMENTED,
-                "MCU file reads require the pw_transfer client; legacy FileSystemService.Read was removed",
-            )
+            mcu_path = clean.removeprefix("mcu/").strip("/")
+            if mcu_path != _MCU_EEPROM_RESOURCE_PATH:
+                raise GRPCError(GrpcStatus.NOT_FOUND, "Unknown MCU transfer resource")
+            serial = self.serial
+            if serial is None:
+                raise GRPCError(GrpcStatus.UNAVAILABLE, "MCU serial link is disconnected")
+            try:
+                content = await serial.transfer_read(_MCU_EEPROM_RESOURCE_ID)
+            except (pw_transfer.Error, ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                logger.warning("MCU EEPROM pw_transfer read failed", error=str(exc))
+                raise GRPCError(GrpcStatus.INTERNAL, "MCU EEPROM transfer failed") from exc
+            return cloud_gateway_pb2.FileReadResponse(content=content)
         safe_data = await self._safe_file_read(path)
         return cloud_gateway_pb2.FileReadResponse(content=safe_data or b"")
 

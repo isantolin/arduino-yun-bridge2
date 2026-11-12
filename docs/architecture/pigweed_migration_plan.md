@@ -1,6 +1,6 @@
 # Plan de migración a Pigweed: ejecución consolidada
 
-- **Estado:** ejecución aprobada; CI estabilizada en `main`.
+- **Estado:** migración RPC integrada; etapa `pw_transfer` en curso en PR #84. PR abierto y sin merge; la CI del HEAD debe aprobarse antes de considerar validada esta revisión.
 - **Base:** ADR-0002 — `docs/architecture/decisions/0002-pigweed-hdlc-rpc-migration.md`.
 - **Protocolo canónico:** `tools/protocol/mcu_wire.proto` y `tools/protocol/config_schema.proto`.
 - **Integración MCU:** submódulo `third_party/avr_pigweed_port`, exportado como biblioteca Arduino `PigweedAVR`.
@@ -36,10 +36,10 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos y UBUS invocan métodos RPC por nombre de servicio y método Protobuf; sin capas de compatibilidad legacy | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Upstream `pw_transfer` integrado; handler EEPROM de 4 KiB en MCU; endpoint Linux y migración de APIs CloudGateway aún pendientes | Endpoint Linux y clientes MPU; pruebas end-to-end del recurso EEPROM MCU |
+| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read` eliminado | Endpoint Linux upstream; cliente `pw_transfer` del MCU para transferencias MCU→Linux; migrar transferencias MPU→MCU; retirar `FileSystemService.Write`; pruebas end-to-end EEPROM y filesystem |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
-| CI y validación | Matriz de pruebas completa verde; cobertura C++ >= 97.8% ramas y 99.8% líneas; cobertura Python 97.81% líneas y 96.86% ramas; 0 warnings linters/estáticos | Ninguno |
+| CI y validación | Baseline de `main` previamente validada; PR #84 requiere repetir toda la matriz después de los cambios de transferencia | CI de PR #84 en HEAD actual, emulación, perfiles Flash/SRAM/stack y validación física UART/HDLC |
 
 ## Orden de ejecución
 
@@ -52,7 +52,7 @@ Reglas obligatorias:
 | 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, sin `CMD_*`; mantener UBUS y contratos externos sin capas de compatibilidad innecesarias | **Completada** |
 | 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y tablas `commands` | **Completada** |
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
-| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes y retirar APIs FileRead/FileWrite antiguas | **En curso — EEPROM MCU integrada; endpoint Linux y clientes pendientes** |
+| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **En curso — handler EEPROM MCU y cliente Python integrados; endpoint Linux, cliente MCU y eliminación de `FileSystemService.Write` pendientes** |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
 | 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |

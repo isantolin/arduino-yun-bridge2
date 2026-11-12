@@ -344,10 +344,10 @@ def test_file_write_roundtrip_property(file_write: mcu_wire_pb2.FileWrite) -> No
 
 
 @given(file_read=st.from_type(cloud_gateway_pb2.FileRead))
-def test_file_read_roundtrip_property(file_read: mcu_wire_pb2.FileRead) -> None:
+def test_file_read_roundtrip_property(file_read: cloud_gateway_pb2.FileRead) -> None:
     """Property: FileRead message preserves fields across protobuf serialization."""
     encoded = file_read.SerializeToString()
-    decoded = mcu_wire_pb2.FileRead.FromString(encoded)
+    decoded = cloud_gateway_pb2.FileRead.FromString(encoded)
     assert decoded.path == file_read.path
 
 

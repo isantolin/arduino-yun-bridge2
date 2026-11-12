@@ -2,8 +2,8 @@
 
 #if defined(__AVR_ATmega2560__)
 
-#include <cstddef>
-#include <cstdint>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <pw_transfer/transfer.h>
 

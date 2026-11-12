@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any, Final, Protocol, cast
 
 import anyio
@@ -121,10 +122,12 @@ class SerialTransport:
         config: RuntimeConfig,
         state: RuntimeState,
         service: SerialBridgeService | None,
+        rpc_packet_writer: Callable[[bytes], Awaitable[bool]] | None = None,
     ) -> None:
         self.config = config
         self.state = state
         self.service: SerialBridgeService | None = service
+        self._rpc_packet_writer = rpc_packet_writer or self._write_rpc_packet
         self.serial: serial.Serial | None = None
 
         self.stop_event = asyncio.Event()
@@ -581,7 +584,7 @@ class SerialTransport:
             logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
             return
 
-        task = asyncio.create_task(self._write_rpc_packet(packet), name="mcubridge-pw-rpc-write")
+        task = asyncio.create_task(self._rpc_packet_writer(packet), name="mcubridge-pw-rpc-write")
         self._rpc_write_tasks.add(task)
 
         def _finish(completed: asyncio.Task[bool]) -> None:

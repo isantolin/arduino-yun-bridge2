@@ -66,7 +66,7 @@ Donde:
   - `req`: Comandos / solicitudes dirigidas al microcontrolador o daemon.
   - `res`: Respuestas directas a solicitudes previas.
   - `evt`: Eventos asíncronos y telemetría espontánea (`status_online`, `pin_event`, etc.).
-- `method`: Nombre canónico del servicio/método u operación (`GpioService/DigitalWrite`, `FileSystemService/Read`, `DataStoreService/Put`, etc.).
+- `method`: Nombre canónico del servicio/método u operación (`GpioService/DigitalWrite`, `DataStoreService/Put`, etc.).
 
 Todo tópico que no respete esta estructura exacta de 3 segmentos es rechazado de inmediato.
 
@@ -111,7 +111,7 @@ Si se omite `--device-id` y no se ha definido `MCUBRIDGE_DEVICE_ID`, el script f
 | `bootloader_test.py` | Reinicio controlado del MCU hacia el bootloader de programación. | `Publish` (`SYS_RESET`) |
 | `console_test.py` | Streaming bidireccional en tiempo real de la consola del MCU. | `SubscribeConsole` |
 | `datastore_test.py` | Lectura, escritura y verificación de pares clave-valor en RAM. | `DatastorePut`, `DatastoreGet` |
-| `fileio_test.py` | Operaciones de sistema de archivos (escritura, lectura, borrado). | `FileWrite`, `FileRead`, `FileRemove` |
+| `fileio_test.py` | Operaciones de archivos del MPU (escritura, lectura y borrado). Los archivos del MCU se transfieren mediante `pw_transfer`. | `FileWrite`, `FileRead`, `FileRemove` |
 | `led13_test.py` | Alternancia periódica de encendido y apagado del LED Pin 13. | `DigitalWrite` |
 | `mailbox_read_test.py` | Lectura no destructiva y consumo FIFO de la cola de mensajes. | `MailboxRead` |
 | `pin_subscribe_test.py` | Suscripción asíncrona a cambios de estado de pines digitales. | `PinSubscribe` |

@@ -167,6 +167,51 @@ def extract_elf_memory_table(build_dir: Path, baseline_dir: Path | None = None) 
     return "\n".join(header + rows) + "\n\n"
 
 
+def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
+    """Report largest GCC per-function stack frames from -fstack-usage files.
+
+    These are individual frame estimates, not a whole-program worst-case call
+    chain. Dynamic/unbounded entries are identified rather than treated as
+    static upper bounds.
+    """
+    entries: list[tuple[int, str, str, str]] = []
+    for usage_file in sorted(build_dir.rglob("*.su")):
+        try:
+            lines = usage_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as err:
+            sys.stderr.write(f"[WARN] Failed to read stack usage file {usage_file}: {err}\\n")
+            continue
+        for line in lines:
+            fields = line.rsplit("\\t", 2)
+            if len(fields) != 3:
+                continue
+            location_and_function, size_text, qualifier = fields
+            try:
+                size = int(size_text)
+            except ValueError:
+                continue
+            source, separator, function = location_and_function.rpartition(":")
+            if not separator:
+                source, function = str(usage_file), location_and_function
+            entries.append((size, function, source, qualifier))
+
+    if not entries:
+        return None
+
+    entries.sort(key=lambda item: item[0], reverse=True)
+    rows = [
+        "### Compiler Stack-Frame Estimates (GCC -fstack-usage)",
+        "",
+        "Largest individual function frames. These are not a whole-program worst-case call-chain bound; dynamic frames and indirect calls require separate analysis.",
+        "",
+        "| Stack frame | GCC classification | Function | Source |",
+        "| ---: | :--- | :--- | :--- |",
+    ]
+    for size, function, source, qualifier in entries[:limit]:
+        rows.append(f"| {size:,} B | `{qualifier}` | `{function}` | `{source}` |")
+    rows.append("")
+    return "\\n".join(rows) + "\\n"
+
 def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     """Extract board label from the build path."""
     for part in reversed(elf_path.parts):
@@ -263,7 +308,8 @@ def main(
         return
 
     symbol_section = ("### 🛠️ C++ Advanced Profiling (Top Symbols)\n\n" + "\n".join(reports)) if reports else ""
-    full_report = mem_report + bloat_section + symbol_section
+    stack_report = extract_stack_usage_report(build_dir) or ""
+    full_report = mem_report + stack_report + bloat_section + symbol_section
 
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)

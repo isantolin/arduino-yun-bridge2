@@ -8,7 +8,6 @@
 #include <etl/string_view.h>
 #include <pw_span/span.h>
 
-#include "Bridge.h"
 #include "protocol/mcu_wire.pb.h"
 
 class FileSystemClass {

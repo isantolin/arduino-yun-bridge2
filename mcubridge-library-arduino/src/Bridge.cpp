@@ -968,14 +968,6 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
             pw::span<const uint8_t>(_shared_secret),
             pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
             pw::span<uint8_t>(_session_aead_keys));
-#if defined(BRIDGE_FAULT_INJECTION)
-    // Exercise the fail-closed branch after a successful KDF operation.
-    // This hook is absent from production firmware builds.
-    if (bridge::test::fault::consume(
-            bridge::test::fault::FaultPoint::BRIDGE_SESSION_KEY_DERIVE_FAIL)) {
-      session_keys_ok = false;
-    }
-#endif
     if (!session_keys_ok) {
       _clearLinkSession();
       _fsm.receive(bridge::fsm::EvHandshakeFailed());

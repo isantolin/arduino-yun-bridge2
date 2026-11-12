@@ -419,7 +419,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
 
-if (secret_too_long) {
+  if (secret_too_long) {
     emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
     enterSafeState();
     return;

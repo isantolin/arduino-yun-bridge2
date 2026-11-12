@@ -497,7 +497,7 @@ int main(int argc, char** argv) {
       SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
                             SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
       if (SSL_accept(ssl) != 1) {
-        std::cerr << "event=client_rejected reason=tls_handshake_failed\\n";
+        std::cerr << "event=client_rejected reason=tls_handshake_failed\n";
         SSL_free(ssl);
         close_task_fd();
         task_ptr->done.store(true);

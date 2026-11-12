@@ -105,6 +105,10 @@ pw_add_library(pw_hdlc.rpc_channel_output INTERFACE
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_hdlc/public"
   PUBLIC_DEPS pw_hdlc pw_rpc.server pw_span)
 
+pw_proto_library(pw_tokenizer.proto
+  STRIP_PREFIX "${PIGWEED_ROOT}/pw_tokenizer"
+  SOURCES "${PIGWEED_ROOT}/pw_tokenizer/pw_tokenizer_proto/options.proto")
+
 # Upstream pw_rpc config and core.
 pw_add_module_config(pw_rpc_CONFIG)
 pw_add_library(pw_rpc.config INTERFACE

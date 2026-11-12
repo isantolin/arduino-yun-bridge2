@@ -213,8 +213,6 @@ option (rpc.pb.status_reasons) = {
   mailbox_processed_failed: "mailbox_processed_failed"
   sync_auth_mismatch: "sync_auth_mismatch"
   sync_length_mismatch: "sync_length_mismatch"
-  mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
-  mcu_file_read_timeout: "mcu_file_read_timeout"
   pending_pin_overflow: "pending-pin-overflow"
 };
 option (rpc.pb.ubus_methods) = {
@@ -843,8 +841,6 @@ message StatusReasons {
   string mailbox_processed_failed = 16;
   string sync_auth_mismatch = 17;
   string sync_length_mismatch = 18;
-  string mcu_file_read_dispatch_failed = 19;
-  string mcu_file_read_timeout = 20;
   reserved 22, 23;
   reserved "unsupported_digital_read", "unsupported_analog_read";
   string pending_pin_overflow = 21;
@@ -1012,7 +1008,6 @@ message AllowedCommandPolicy {
 }
 
 message TopicAuthorization {
-  bool file_read = 1;
   bool file_write = 2;
   bool file_remove = 3;
   bool datastore_get = 4;

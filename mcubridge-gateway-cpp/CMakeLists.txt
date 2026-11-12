@@ -84,7 +84,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/pigweed_gateway.cmake")
 add_executable(mcubridge-gateway-cpp src/gateway_main.cc)
 target_link_libraries(mcubridge-gateway-cpp PRIVATE
   OpenSSL::SSL OpenSSL::Crypto Threads::Threads
-  pw_hdlc pw_hdlc.rpc_channel_output pw_rpc.server pw_transfer
+  pw_hdlc pw_rpc.client_server pw_rpc.server pw_transfer
   pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.binary_semaphore
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )

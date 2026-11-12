@@ -69,4 +69,4 @@ Large-file reads and writes must use upstream `pw_transfer` with a resource hand
 - The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.
 - Hardware UART/HDLC transfer against a live MPU remains a separate release gate.
 
-The existing `FileSystemService.Read` and MPU contracts remain unchanged.
+This PR removes only the MCU `FileSystemService.Read` RPC. The MPU CloudGateway `FileRead` / `FileWrite` / `FileRemove` methods are still present and are not yet migrated to `pw_transfer`. Replacing those methods requires a Linux-side upstream `pw_transfer` service endpoint and migrated clients; until that endpoint and its end-to-end tests exist, the MPU API migration is incomplete.

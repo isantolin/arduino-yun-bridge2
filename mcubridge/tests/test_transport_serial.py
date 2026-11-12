@@ -242,6 +242,54 @@ def test_serial_transport_switch_local_baudrate_error(
         switch_baud(99999999)
 
 
+async def test_pw_transfer_manager_reads_and_writes_with_offsets(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    mocker: MockerFixture,
+) -> None:
+    manager = MagicMock()
+    manager.read.return_value = b"resource-data"
+    manager.write.return_value = None
+    manager_factory = mocker.patch(
+        "mcubridge.transport.serial.pw_transfer.Manager",
+        return_value=manager,
+    )
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    data = await transport.transfer_read(0x4D454741, offset=17)
+    assert data == b"resource-data"
+    manager.read.assert_called_once_with(0x4D454741, initial_offset=17)
+
+    await transport.transfer_write(0x4D454741, b"payload", offset=23)
+    manager.write.assert_called_once_with(
+        0x4D454741,
+        b"payload",
+        initial_offset=23,
+    )
+    manager_factory.assert_called_once_with(
+        transport.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer,
+        max_chunk_size_bytes=128,
+    )
+
+
+async def test_pw_transfer_rejects_disconnected_serial_link(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = False
+    transport.serial = mock_serial
+
+    with pytest.raises(ConnectionError, match="serial link is disconnected"):
+        await transport.transfer_read(0x4D454741)
+    with pytest.raises(ConnectionError, match="serial link is disconnected"):
+        await transport.transfer_write(0x4D454741, b"payload")
+
+
 async def test_queue_rpc_packet_accepts_worker_thread(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,

@@ -523,6 +523,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - uses: ./.github/actions/setup-protoc
       - name: Install Gateway build dependencies
         run: |
           bash tools/ci/apt_update_with_fallback.sh

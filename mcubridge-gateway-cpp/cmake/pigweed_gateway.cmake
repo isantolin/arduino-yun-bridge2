@@ -157,6 +157,23 @@ pw_add_library(pw_containers.config INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/config.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
   PUBLIC_DEPS ${pw_containers_CONFIG})
+pw_add_library(pw_containers.algorithm INTERFACE
+  HEADERS
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/algorithm.h"
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/algorithm_internal.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public")
+pw_add_library(pw_containers.storage INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/storage.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS pw_containers.algorithm)
+pw_add_library(pw_toolchain.constexpr_tag INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_toolchain/public/pw_toolchain/constexpr_tag.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_toolchain/public")
+pw_add_library(pw_containers.vector INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/vector.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS pw_assert pw_containers.storage pw_preprocessor
+    pw_toolchain.constexpr_tag)
 pw_add_library(pw_containers._common INTERFACE
   HEADERS
     "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/traits.h"

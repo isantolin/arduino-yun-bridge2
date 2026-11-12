@@ -110,28 +110,28 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
   return ok;
 }
 
-bool verify_hmac_sha256(pw::span<const uint8_t> key,
+bool verify_hmac_sha256(pw::span<uint8_t> key_and_digest,
                         pw::span<const uint8_t> input,
                         pw::span<const uint8_t> expected_mac) {
-  if (key.empty() || expected_mac.empty() ||
+  if (key_and_digest.size() != RPC_SHA256_DIGEST_SIZE ||
       expected_mac.size() != RPC_HANDSHAKE_TAG_LENGTH) {
+    secure_zero(key_and_digest);
     return false;
   }
 
-  etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> digest_scratch = {};
-  etl::copy(key.begin(), key.end(), digest_scratch.begin());
+  // The HMAC provider has already copied the key into its context before it
+  // overwrites this caller-owned buffer with the digest.
   const bool computed = compute_hmac_sha256(
-      pw::span<const uint8_t>(digest_scratch), input,
-      pw::span<uint8_t>(digest_scratch));
+      pw::span<const uint8_t>(key_and_digest), input, key_and_digest);
   if (!computed) {
-    secure_zero(pw::span<uint8_t>(digest_scratch));
+    secure_zero(key_and_digest);
     return false;
   }
 
   const bool ok =
-      ConstantCompare(digest_scratch.data(), expected_mac.data(),
+      ConstantCompare(key_and_digest.data(), expected_mac.data(),
                       static_cast<int>(expected_mac.size())) == 0;
-  secure_zero(pw::span<uint8_t>(digest_scratch));
+  secure_zero(key_and_digest);
   return ok;
 }
 
@@ -290,7 +290,7 @@ bool handshake_verify_tag(pw::span<const uint8_t> secret,
   etl::array<uint8_t, RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> auth_key = {};
   const bool key_ok = derive_handshake_auth_key(secret, info, auth_key);
   const bool ok =
-      key_ok && verify_hmac_sha256(auth_key, nonce, received_tag);
+      key_ok && verify_hmac_sha256(pw::span<uint8_t>(auth_key), nonce, received_tag);
   secure_zero(pw::span<uint8_t>(auth_key));
   return ok;
 }

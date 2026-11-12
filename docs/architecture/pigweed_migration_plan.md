@@ -36,7 +36,7 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos y UBUS invocan métodos RPC por nombre de servicio y método Protobuf; sin capas de compatibilidad legacy | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read` eliminado | Endpoint Linux upstream; cliente `pw_transfer` del MCU para transferencias MCU→Linux; migrar transferencias MPU→MCU; retirar `FileSystemService.Write`; pruebas end-to-end EEPROM y filesystem |
+| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read` eliminado | Servidor C++ upstream embebido en el proceso existente `mcubridge-gateway` (sin sidecar); stream de paquetes gRPC; proxy seguro al filesystem del MPU por la sesión CloudBridge; cliente `pw_transfer` del MCU para transferencias MCU→Linux; retirar `FileSystemService.Write`; pruebas end-to-end EEPROM y filesystem |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
 | CI y validación | Baseline de `main` previamente validada; PR #84 requiere repetir toda la matriz después de los cambios de transferencia | CI de PR #84 en HEAD actual, emulación, perfiles Flash/SRAM/stack y validación física UART/HDLC |

@@ -419,6 +419,12 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
 
+if (secret_too_long) {
+    emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
+    enterSafeState();
+    return;
+  }
+
 #if defined(__AVR_ATmega2560__)
   if (!_eeprom_transfer_registered) {
     _eeprom_transfer_registered =
@@ -430,12 +436,6 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     }
   }
 #endif
-
-  if (secret_too_long) {
-    emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
-    enterSafeState();
-    return;
-  }
 
   _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
   if (!_state_flags.test(FLAG_POST_PASSED)) {

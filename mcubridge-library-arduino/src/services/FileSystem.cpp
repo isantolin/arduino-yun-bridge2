@@ -4,7 +4,6 @@
 
 #include "services/FileSystem.h"
 
-#include <etl/algorithm.h>
 #include <etl/string_view.h>
 #include <pw_span/span.h>
 

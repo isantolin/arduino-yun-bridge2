@@ -61,7 +61,7 @@ async def test_pw_transfer_client_is_shared_and_nonblocking(
     data = await transport.transfer_read(0x4D454741, offset=7)
     await transport.transfer_write(0x4D454741, b"data", offset=9)
 
-    assert data == b"1296389441:7"
+    assert data == b"1296385857:7"
     assert len(instances) == 1
     manager = instances[0]
     assert isinstance(manager, FakeTransferManager)

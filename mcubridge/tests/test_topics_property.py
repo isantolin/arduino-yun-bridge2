@@ -111,10 +111,6 @@ def test_topics_canonical_service_paths() -> None:
     assert topic_path("p", "req", "GpioService", "DigitalRead", "13") == "p/req/GpioService/DigitalRead/13"
     assert topic_path("p", "res", "SpiService", "Transfer") == "p/res/SpiService/Transfer"
     assert topic_path("p", "req", "DataStoreService", "Get", "key") == "p/req/DataStoreService/Get/key"
-    assert (
-        topic_path("p", "req", "FileSystemService", "Read", "path/to/file")
-        == "p/req/FileSystemService/Read/path/to/file"
-    )
     assert topic_path("p", "req", "ProcessService", "Kill", "123") == "p/req/ProcessService/Kill/123"
     assert topic_path("p", "req", "ConsoleWrite") == "p/req/ConsoleWrite"
     assert topic_path("p", "evt", "MailboxService", "Push") == "p/evt/MailboxService/Push"

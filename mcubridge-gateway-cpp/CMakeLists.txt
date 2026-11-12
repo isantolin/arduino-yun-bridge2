@@ -47,6 +47,8 @@ target_include_directories(pw_toolchain.constexpr_tag INTERFACE "${PIGWEED_ROOT}
 add_library(pw_allocator INTERFACE)
 target_include_directories(pw_allocator INTERFACE "${PIGWEED_ROOT}/pw_allocator/public")
 add_library(pw_rpc2.cpp INTERFACE)
+# Optional protobuf RPC2 serialization target referenced by tokenizer metadata.
+add_library(pw_rpc2.cpp._pwpb_serialize INTERFACE)
 add_subdirectory("${PIGWEED_ROOT}/pw_enum" pw_enum)
 add_subdirectory("${PIGWEED_ROOT}/pw_assert" pw_assert)
 add_subdirectory("${PIGWEED_ROOT}/pw_status" pw_status)

@@ -38,6 +38,7 @@ pw_add_library(pw_rpc.log_config INTERFACE
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_rpc/public"
   PUBLIC_DEPS pw_rpc.config)
 pw_proto_library(pw_rpc.protos
+  STRIP_PREFIX "${PIGWEED_ROOT}/pw_rpc"
   SOURCES
     "${PIGWEED_ROOT}/pw_rpc/benchmark.proto"
     "${PIGWEED_ROOT}/pw_rpc/internal/packet.proto"
@@ -153,6 +154,7 @@ pw_add_library(pw_transfer.config INTERFACE
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_transfer/public"
   PUBLIC_DEPS ${pw_transfer_CONFIG} pw_chrono.system_timer)
 pw_proto_library(pw_transfer.proto
+  STRIP_PREFIX "${PIGWEED_ROOT}/pw_transfer"
   SOURCES "${PIGWEED_ROOT}/pw_transfer/transfer.proto"
   PREFIX pw_transfer)
 pw_add_library(pw_transfer.core STATIC

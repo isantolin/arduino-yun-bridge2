@@ -19,7 +19,7 @@ import os
 from pathlib import Path
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from typing import Any, Final, Protocol, cast
 
 import anyio
@@ -122,7 +122,7 @@ class SerialTransport:
         config: RuntimeConfig,
         state: RuntimeState,
         service: SerialBridgeService | None,
-        rpc_packet_writer: Callable[[bytes], Awaitable[bool]] | None = None,
+        rpc_packet_writer: Callable[[bytes], Coroutine[Any, Any, bool]] | None = None,
     ) -> None:
         self.config = config
         self.state = state

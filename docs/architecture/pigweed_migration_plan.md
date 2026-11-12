@@ -78,14 +78,14 @@ Criterios de aceptación:
 6. Las pruebas demuestran equivalencia funcional y no dependen de mocks que reimplementen internamente Pigweed.
 7. El código manual retirado y el código nuevo se cuantifican; no se acepta una capa adicional que aumente la complejidad sin reemplazar lógica.
 
-## Detalle de la etapa 3: streaming GPIO y lectura de archivos (`SERVER_STREAMING`)
+## Detalle de la etapa 3: streaming GPIO (`SERVER_STREAMING`)
 
-El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) ya expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. Asimismo, `FileSystemService::Read` (`rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse)`) utiliza `pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>` y `pw::rpc::NanopbClientReader<rpc_pb_FileReadResponse>` para transferir archivos multi-chunk en ambas direcciones sin requerir `pw_thread` / `pw_transfer` en AVR bare-metal.
+El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. La transferencia de archivos no usa server-streaming Nanopb: el antiguo `FileSystemService.Read` fue eliminado y el protocolo de transferencia es upstream `pw_transfer`.
 
 Cambios en el daemon y el contrato:
 
-1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` y `rpc.pb.FileSystemService/Read` como métodos `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
-2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo del stream se entregan a `rpc_client.process_packet`, encolando `PinUpdateEvent` en una cola acotada (`_stream_event_queue`) con política de backpressure (descarta el evento más antiguo si la cola se llena) antes de despachar a `GpioService.handle_pin_update_event`, o acumulando fragmentos `FileReadResponse` hasta recibir el paquete terminal `PacketType.RESPONSE`.
+1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` como método `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
+2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo se entregan a `rpc_client.process_packet`; `PinUpdateEvent` se encola en una cola acotada (`_stream_event_queue`) con política de backpressure antes de despachar a `GpioService.handle_pin_update_event`.
 3. Se eliminan `CMD_PIN_SUBSCRIBE_RESP`, `CMD_PIN_UPDATE_EVENT`, `BY_SERVER_STREAM`, `GpioService.on_subscribe_resp`, `PendingCommand` y `SerialTransport.correlate_frame`.
 4. `GpioService` cancela explícitamente el stream (`cancel_pin_stream`) al deshabilitar la última suscripción activa y restaura las suscripciones activas (`resubscribe_pins`) tras reconectar y sincronizar el enlace serie.
 
@@ -103,11 +103,10 @@ Cambios en el daemon y el contrato:
 1. **Firmware C++ Nanopb y Pigweed RPC:**
    - Se eliminó el dispatch manual de comandos numéricos y sus estructuras intermedias en `Bridge.cpp`.
    - Registro y ciclo de vida de servicios mediante `pw::rpc::Server` y `pw::rpc::Client`.
-2. **Transferencias de archivos (Opción 1 nativa Pigweed RPC):**
-   - Implementado `FileSystemService.Read` como RPC `SERVER_STREAMING` nativo (`rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse)`).
-   - En MCU (`mcubridge-library-arduino/src/Bridge.cpp` y `FileSystem.cpp`), el firmware emite fragmentos de archivo con `pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>` y recibe archivos mediante `pw::rpc::NanopbClientReader<rpc_pb_FileReadResponse>`.
-   - Cero dependencias de `pw_thread` o memoria dinámica, garantizando compatibilidad total con AVR ATmega2560 bare-metal (Zero-STL, buffers estáticos).
-   - Se eliminaron shims y artificios legacy (`FileReadResponse(content=b"")`).
+2. **Transferencias de archivos (upstream `pw_transfer`):**
+   - `pw_transfer` es el único protocolo de streaming de archivos; el RPC `FileSystemService.Read`, los lectores/escritores Nanopb, sus callbacks y la ruta Python de server-streaming se eliminaron.
+   - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados para ATmega2560.
+   - La integración del protocolo no implica que exista ya un backend SD de archivos: el handler de archivos con apertura, lectura/escritura acotada, validación de rutas y reemplazo atómico sigue siendo una tarea de implementación y una condición para declarar transferencias de archivos operativas.
 
 ## Detalle de las etapas 8 y 9: Estructura C++, cero supresiones NOLINT y gestión estática de memoria
 

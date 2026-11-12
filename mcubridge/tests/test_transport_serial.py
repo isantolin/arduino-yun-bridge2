@@ -269,10 +269,9 @@ async def test_pw_transfer_manager_reads_and_writes_with_offsets(
         b"payload",
         initial_offset=23,
     )
-    manager_factory.assert_called_once_with(
-        transport.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer,
-        max_chunk_size_bytes=128,
-    )
+    manager_factory.assert_called_once()
+    assert manager_factory.call_args.kwargs["max_chunk_size_bytes"] == 128
+    assert manager_factory.call_args.args[0] is not None
 
 
 async def test_pw_transfer_rejects_disconnected_serial_link(

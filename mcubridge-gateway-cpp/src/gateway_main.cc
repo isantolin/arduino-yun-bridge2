@@ -249,21 +249,51 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
 
 class SessionRegistry {
  public:
-  bool Register(const std::string& device_id, const void* session) {
+  bool Register(const std::string& principal_id, const void* session) {
     std::lock_guard lock(mutex_);
-    return sessions_.emplace(device_id, session).second;
+    return sessions_.emplace(principal_id, session).second;
   }
-  void Unregister(const std::string& device_id, const void* session) {
+  void Unregister(const std::string& principal_id, const void* session) {
     std::lock_guard lock(mutex_);
-    const auto it = sessions_.find(device_id);
+    const auto it = sessions_.find(principal_id);
     if (it != sessions_.end() && it->second == session) sessions_.erase(it);
   }
+  size_t size() const {
+    std::lock_guard lock(mutex_);
+    return sessions_.size();
+  }
  private:
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
   std::unordered_map<std::string, const void*> sessions_;
 };
 
-class GatewaySession {
+class GatewayControlService final
+    : public mcubridge::gateway::pw_rpc::pwpb::GatewayControl::Service<
+          GatewayControlService> {
+ public:
+  GatewayControlService(SessionRegistry& devices, SessionRegistry& clients)
+      : devices_(devices), clients_(clients) {}
+
+  pw::Status Health(const mcubridge::gateway::HealthRequest::Message&,
+                    mcubridge::gateway::HealthResponse::Message& response) {
+    response.ready = true;
+    response.active_device_sessions = static_cast<uint32_t>(devices_.size());
+    response.active_client_sessions = static_cast<uint32_t>(clients_.size());
+    return pw::OkStatus();
+  }
+
+ private:
+  SessionRegistry& devices_;
+  SessionRegistry& clients_;
+};
+
+class SessionControl {
+ public:
+  virtual ~SessionControl() = default;
+  virtual void Stop() = 0;
+};
+
+class GatewaySession final : public SessionControl {
  public:
   GatewaySession(SSL* ssl, int fd, std::string device_id, SessionRegistry& registry)
       : socket_(ssl, fd), registry_(registry), channel_output_(tx_writer_, kRpcHdlcAddress),
@@ -354,11 +384,106 @@ class GatewaySession {
   std::thread tx_worker_;
 };
 
+class GatewayClientSession final : public SessionControl {
+ public:
+  GatewayClientSession(SSL* ssl,
+                       int fd,
+                       std::string client_id,
+                       SessionRegistry& devices,
+                       SessionRegistry& clients)
+      : socket_(ssl, fd), clients_(clients),
+        control_service_(devices, clients),
+        channel_output_(tx_writer_, kRpcHdlcAddress),
+        channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
+        rpc_server_(channels_),
+        decoder_(pw::ByteSpan(decoder_storage_)),
+        client_id_(std::move(client_id)) {}
+  GatewayClientSession(const GatewayClientSession&) = delete;
+  GatewayClientSession& operator=(const GatewayClientSession&) = delete;
+
+  void Run() {
+    if (!socket_.SetNonBlocking()) return;
+    if (!clients_.Register(client_id_, this)) {
+      std::cerr << "client=" << client_id_
+                << " event=session_rejected reason=duplicate_session\n";
+      return;
+    }
+    struct RegistrationGuard {
+      SessionRegistry& registry;
+      const std::string& client_id;
+      const void* session;
+      ~RegistrationGuard() {
+        registry.Unregister(client_id, session);
+        std::cerr << "client=" << client_id << " event=session_unregistered\n";
+      }
+    } registration{clients_, client_id_, this};
+
+    rpc_server_.RegisterService(control_service_);
+    tx_worker_ = std::thread([this] { TransmitLoop(); });
+    std::cerr << "client=" << client_id_ << " event=session_open\n";
+    ReceiveLoop();
+    stopping_.store(true);
+    socket_.Stop();
+    tx_writer_.Stop();
+    if (tx_worker_.joinable()) tx_worker_.join();
+    std::cerr << "client=" << client_id_ << " event=session_closed\n";
+  }
+
+  void Stop() override {
+    stopping_.store(true);
+    socket_.Stop();
+    tx_writer_.Stop();
+  }
+
+ private:
+  void TransmitLoop() {
+    std::vector<std::byte> frame;
+    while (!stopping_.load()) {
+      if (!tx_writer_.Pop(frame, stopping_)) continue;
+      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
+        stopping_.store(true);
+        socket_.Stop();
+        break;
+      }
+    }
+  }
+
+  void ReceiveLoop() {
+    std::array<std::byte, 4096> input{};
+    while (!stopping_.load()) {
+      size_t received = 0;
+      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
+      for (size_t i = 0; i < received; ++i) {
+        auto frame = decoder_.Process(input[i]);
+        if (frame.status() == pw::Status::Unavailable()) continue;
+        if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
+        const pw::Status status = rpc_server_.ProcessPacket(frame->data());
+        if (!status.ok() && status != pw::Status::Unavailable()) {
+          std::cerr << "client=" << client_id_ << " event=rpc_packet_rejected\n";
+        }
+      }
+    }
+  }
+
+  TlsSocket socket_;
+  SessionRegistry& clients_;
+  GatewayControlService control_service_;
+  TlsQueueWriter tx_writer_{kTxQueueBytes};
+  HdlcChannelOutput channel_output_;
+  std::array<pw::rpc::Channel, 1> channels_;
+  pw::rpc::Server rpc_server_;
+  std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
+  pw::hdlc::Decoder decoder_;
+  std::string client_id_;
+  std::atomic<bool> stopping_{false};
+  std::thread tx_worker_;
+};
+
 struct SessionTask {
   int fd{-1};
   std::atomic<bool> done{false};
   std::mutex mutex;
-  std::shared_ptr<GatewaySession> session;
+  std::shared_ptr<SessionControl> session;
   std::thread worker;
 };
 struct TlsContextDeleter { void operator()(SSL_CTX* context) const { SSL_CTX_free(context); } };
@@ -460,6 +585,7 @@ int main(int argc, char** argv) {
   signal(SIGTERM, HandleSignal);
   signal(SIGPIPE, SIG_IGN);
   SessionRegistry registry;
+  SessionRegistry client_registry;
   std::vector<std::unique_ptr<SessionTask>> tasks;
   std::cerr << "event=gateway_listening bind=" << bind_address
             << " port=" << port << " tls=1.3 identity=uri_san\n";
@@ -488,7 +614,8 @@ int main(int argc, char** argv) {
     auto task = std::make_unique<SessionTask>();
     task->fd = client_fd;
     SessionTask* task_ptr = task.get();
-    task->worker = std::thread([task_ptr, context = tls_context.get(), &registry] {
+    task->worker = std::thread(
+        [task_ptr, context = tls_context.get(), &registry, &client_registry] {
       const auto close_task_fd = [task_ptr] {
         std::lock_guard lock(task_ptr->mutex);
         if (task_ptr->fd >= 0) {
@@ -523,16 +650,22 @@ int main(int argc, char** argv) {
         return;
       }
       auto identity = PeerIdentityFromCertificate(ssl);
-      if (!identity.has_value() || identity->role != PeerRole::kDevice) {
-        std::cerr << "event=client_rejected reason=missing_or_invalid_device_uri_san\n";
+      if (!identity.has_value()) {
+        std::cerr << "event=client_rejected reason=missing_or_invalid_uri_san\n";
         SSL_shutdown(ssl);
         SSL_free(ssl);
         close_task_fd();
         task_ptr->done.store(true);
         return;
       }
-      auto session = std::make_shared<GatewaySession>(
-          ssl, client_fd, std::move(identity->id), registry);
+      std::shared_ptr<SessionControl> session;
+      if (identity->role == PeerRole::kDevice) {
+        session = std::make_shared<GatewaySession>(
+            ssl, client_fd, std::move(identity->id), registry);
+      } else {
+        session = std::make_shared<GatewayClientSession>(
+            ssl, client_fd, std::move(identity->id), registry, client_registry);
+      }
       {
         std::lock_guard lock(task_ptr->mutex);
         task_ptr->session = session;

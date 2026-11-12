@@ -11,6 +11,9 @@
 #endif
 #include "services/Console.h"
 #include "services/DataStore.h"
+#if defined(__AVR_ATmega2560__)
+#include "services/EepromTransfer.h"
+#endif
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
@@ -415,6 +418,18 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   bridge::hal::init();
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
+
+#if defined(__AVR_ATmega2560__)
+  if (!_eeprom_transfer_registered) {
+    _eeprom_transfer_registered =
+        bridge::services::registerEepromTransferHandler(_transfer_service);
+    if (!_eeprom_transfer_registered) {
+      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+      enterSafeState();
+      return;
+    }
+  }
+#endif
 
   if (secret_too_long) {
     emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);

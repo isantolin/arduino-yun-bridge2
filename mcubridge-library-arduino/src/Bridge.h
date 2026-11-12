@@ -306,6 +306,9 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 #endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
+#if defined(__AVR_ATmega2560__)
+  bool _eeprom_transfer_registered{false};
+#endif
   bool _rpc_plaintext_response{false};
 
   StatusHandler _status_handler;

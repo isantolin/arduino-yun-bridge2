@@ -23,7 +23,7 @@ Bridge.transferClient()
 
 ## Registering an application resource
 
-Handlers and their backing streams must have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
+The EEPROM resource is registered automatically by `Bridge.begin()` on ATmega2560. Its stable resource ID is `0x4D454741` and its resource size is 4,096 bytes. Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
 
 ```cpp
 #include <etl/array.h>
@@ -57,9 +57,9 @@ The transfer service is registered with the upstream `pw_rpc::Server` by Bridge 
 
 ## Filesystem transfer boundary
 
-`FileSystemService.Read` no longer exists in the MCU service descriptor. Its Nanopb client reader, server writer, callbacks, observer cleanup, MCU read-stream error codes, and RPC tests were removed. `FileRead` / `FileReadResponse` remain only as message types for the MPU-local CloudBridge file API, along with its `file_read` authorization flag; that API does not forward `mcu/` paths over the removed serial RPC. The remaining MCU `FileSystemService` methods are bounded unary `Write` and `Remove`.
+`FileSystemService.Read` no longer exists in the MCU service descriptor. Its Nanopb client reader, server writer, callbacks, observer cleanup, MCU read-stream error codes, and RPC tests were removed. `FileRead` / `FileReadResponse` remain only as message types for the MPU-local CloudBridge file API, along with its `file_read` authorization flag; that API does not forward `mcu/` paths over the removed serial RPC. The MCU `FileSystemService` bounded unary `Write` and `Remove` remain transitional legacy APIs; they do not access the EEPROM transfer resource and must be removed after the MPU/client migration is completed.
 
-Large-file reads and writes must use upstream `pw_transfer` with a resource handler backed by a bounded stream. The current integration exposes the upstream transfer service/client and does not silently fall back to the removed Nanopb stream. A concrete SD-card file handler (open/read/write/close, path validation, and atomic replacement for writes) is a separate implementation requirement; do not advertise filesystem `pw_transfer` as operational until that backend and its end-to-end tests are present.
+Large-file reads and writes must use upstream `pw_transfer` with a resource handler backed by a bounded stream. The ATmega2560 application registers a built-in upstream `pw_transfer` read/write handler for the internal 4,096-byte EEPROM. It exposes the EEPROM as one fixed-size raw byte resource (resource ID `0x4D454741`), not as a filesystem: there are no directories, filenames, or per-file remove operations. The stream uses bounded random access and writes with `EEPROM.update`, avoiding physical writes when a byte is unchanged. To keep the UART receive path serviceable while the AVR EEPROM controller performs a byte write, the handler advertises a one-byte write window; reads retain normal chunked transfer behavior. EEPROM writes are not transactional: interruption can leave a partially updated image, and the internal EEPROM has finite per-cell endurance (nominally 100,000 write/erase cycles). This backend does not make the separate MPU Linux filesystem APIs operational; those still require the Linux-side `pw_transfer` endpoint and client migration.
 
 ## Validation and release gates
 

@@ -219,8 +219,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             return
         try:
             client.recv(1)
-        except (ssl.SSLError, OSError):
-            pass
+        except (ssl.SSLError, OSError) as error:
+            self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
@@ -248,8 +248,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         client = self.gateway.connect(self.certs.no_san_cert, self.certs.no_san_key)
         try:
             client.recv(1)
-        except (ssl.SSLError, OSError):
-            pass
+        except (ssl.SSLError, OSError) as error:
+            self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
@@ -258,8 +258,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         client = self.gateway.connect(self.certs.multi_san_cert, self.certs.multi_san_key)
         try:
             client.recv(1)
-        except (ssl.SSLError, OSError):
-            pass
+        except (ssl.SSLError, OSError) as error:
+            self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
@@ -268,8 +268,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         client = self.gateway.connect(self.certs.invalid_id_cert, self.certs.invalid_id_key)
         try:
             client.recv(1)
-        except (ssl.SSLError, OSError):
-            pass
+        except (ssl.SSLError, OSError) as error:
+            self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
@@ -278,8 +278,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         client = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
         try:
             client.recv(1)
-        except (ssl.SSLError, OSError):
-            pass
+        except (ssl.SSLError, OSError) as error:
+            self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             client.close()
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
@@ -290,8 +290,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         second = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
         try:
             second.recv(1)
-        except (ssl.SSLError, OSError):
-            pass
+        except (ssl.SSLError, OSError) as error:
+            self.assertIsInstance(error, (ssl.SSLError, OSError))
         finally:
             second.close()
         self.gateway.wait_for("device=device-01 event=session_rejected reason=duplicate_session")

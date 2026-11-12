@@ -42,7 +42,6 @@ EXPECTED_OPERATION_NAMES: Final[set[str]] = {
     "rpc.pb.MailboxService/Available",
     "rpc.pb.MailboxService/Processed",
     "rpc.pb.FileSystemService/Write",
-    "rpc.pb.FileSystemService/Read",
     "rpc.pb.FileSystemService/Remove",
     "rpc.pb.ProcessService/Kill",
     "rpc.pb.ProcessService/RunAsync",

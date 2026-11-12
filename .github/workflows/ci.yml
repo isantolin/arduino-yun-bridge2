@@ -522,9 +522,10 @@ jobs:
     name: Final Summary
     runs-on: ubuntu-26.04
     needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
-    # Preserve summaries for failed jobs, but do not keep obsolete runs alive
-    # after concurrency has cancelled them in favor of a newer PR/branch head.
-    if: ${{ !cancelled() }}
+    # Build the consolidated report on main/manual runs only. PR jobs already
+    # publish their individual artifacts; avoid a slow summary runner delaying
+    # the next head when concurrency cancels an obsolete PR run.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7

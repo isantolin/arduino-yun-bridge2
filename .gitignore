@@ -126,9 +126,11 @@ mcubridge-library-arduino/tests/bridge_control_emulator
 dl/
 # Auto-generated Protocol bindings & SSOT configurations
 mcubridge/mcubridge/protocol/protocol.py
+mcubridge/mcubridge/protocol/gateway/
 mcubridge-library-arduino/src/protocol/rpc_protocol.h
 mcubridge-library-arduino/src/protocol/rpc_hw_config.h
 mcubridge-client-examples/mcubridge_client/protocol.py
+mcubridge-client-examples/mcubridge_client/gateway/
 mcubridge/scripts/defaults.sh
 luci-app-mcubridge/htdocs/luci-static/resources/view/mcubridge/config_schema.json
 luci-app-mcubridge/root/etc/config/mcubridge

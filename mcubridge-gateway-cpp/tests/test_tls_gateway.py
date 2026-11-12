@@ -9,7 +9,6 @@ import time
 import unittest
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(
     os.environ.get(
@@ -29,21 +28,31 @@ class Certificates:
         self.ca_key = root / "ca.key"
         self.ca_cert = root / "ca.crt"
         _run(
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", str(self.ca_key), "-out", str(self.ca_cert),
-            "-subj", "/CN=MCUBridge Test CA", "-days", "2", "-sha256",
-            "-addext", "basicConstraints=critical,CA:TRUE",
-            "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(self.ca_key),
+            "-out",
+            str(self.ca_cert),
+            "-subj",
+            "/CN=MCUBridge Test CA",
+            "-days",
+            "2",
+            "-sha256",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
         )
-        self.server_cert, self.server_key = self._issue(
-            "gateway", "DNS:localhost", "serverAuth"
-        )
+        self.server_cert, self.server_key = self._issue("gateway", "DNS:localhost", "serverAuth")
         self.valid_cert, self.valid_key = self._issue(
             "valid-device", "URI:spiffe://mcubridge/device/device-01", "clientAuth"
         )
-        self.no_san_cert, self.no_san_key = self._issue(
-            "missing-san", None, "clientAuth"
-        )
+        self.no_san_cert, self.no_san_key = self._issue("missing-san", None, "clientAuth")
         self.multi_san_cert, self.multi_san_key = self._issue(
             "multiple-san",
             "URI:spiffe://mcubridge/device/device-01,URI:spiffe://mcubridge/device/device-02",
@@ -63,15 +72,33 @@ class Certificates:
         other_key = other / "ca.key"
         other_cert = other / "ca.crt"
         _run(
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", str(other_key), "-out", str(other_cert),
-            "-subj", "/CN=Untrusted Test CA", "-days", "2", "-sha256",
-            "-addext", "basicConstraints=critical,CA:TRUE",
-            "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(other_key),
+            "-out",
+            str(other_cert),
+            "-subj",
+            "/CN=Untrusted Test CA",
+            "-days",
+            "2",
+            "-sha256",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
         )
         self.untrusted_cert, self.untrusted_key = self._issue(
-            "untrusted", "URI:spiffe://mcubridge/device/untrusted", "clientAuth",
-            ca_cert=other_cert, ca_key=other_key, serial_dir=other,
+            "untrusted",
+            "URI:spiffe://mcubridge/device/untrusted",
+            "clientAuth",
+            ca_cert=other_cert,
+            ca_key=other_key,
+            serial_dir=other,
         )
 
     def _issue(
@@ -89,8 +116,18 @@ class Certificates:
         cert = self.root / f"{name}.crt"
         ext = self.root / f"{name}.ext"
         _run(
-            "openssl", "req", "-new", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", str(key), "-out", str(csr), "-subj", f"/CN={name}",
+            "openssl",
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key),
+            "-out",
+            str(csr),
+            "-subj",
+            f"/CN={name}",
         )
         lines = [
             "basicConstraints=critical,CA:FALSE",
@@ -104,11 +141,25 @@ class Certificates:
         issuer_key = ca_key or self.ca_key
         serial = serial_dir or self.root
         _run(
-            "openssl", "x509", "-req", "-in", str(csr),
-            "-CA", str(issuer_cert), "-CAkey", str(issuer_key),
-            "-CAcreateserial", "-CAserial", str(serial / "ca.srl"),
-            "-out", str(cert), "-days", "2", "-sha256",
-            "-extfile", str(ext),
+            "openssl",
+            "x509",
+            "-req",
+            "-in",
+            str(csr),
+            "-CA",
+            str(issuer_cert),
+            "-CAkey",
+            str(issuer_key),
+            "-CAcreateserial",
+            "-CAserial",
+            str(serial / "ca.srl"),
+            "-out",
+            str(cert),
+            "-days",
+            "2",
+            "-sha256",
+            "-extfile",
+            str(ext),
         )
         return cert, key
 
@@ -124,9 +175,17 @@ class GatewayProcess:
         self.log_file = self.log_path.open("w+", encoding="utf-8")
         self.process = subprocess.Popen(
             [
-                str(BINARY), "--cert", str(certs.server_cert),
-                "--key", str(certs.server_key), "--client-ca", str(certs.ca_cert),
-                "--bind", "127.0.0.1", "--port", str(self.port),
+                str(BINARY),
+                "--cert",
+                str(certs.server_cert),
+                "--key",
+                str(certs.server_key),
+                "--client-ca",
+                str(certs.ca_cert),
+                "--bind",
+                "127.0.0.1",
+                "--port",
+                str(self.port),
             ],
             stdout=subprocess.DEVNULL,
             stderr=self.log_file,

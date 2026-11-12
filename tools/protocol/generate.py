@@ -567,9 +567,8 @@ def _extract_operations_context(
         }
     )
 
-    mcu_services = [
-        s for d in all_descs for s in d.services_by_name.values() if s.name not in ("CloudBridge", "LocalBridge", "GatewayControl", "EdgeControl")
-    ]
+    excluded_services = ("CloudBridge", "LocalBridge", "GatewayControl", "EdgeControl")
+    mcu_services = [s for d in all_descs for s in d.services_by_name.values() if s.name not in excluded_services]
     mcu_methods: list[dict[str, Any]] = []
     for s_desc in mcu_services:
         svc = Service.from_descriptor(s_desc)
@@ -933,7 +932,10 @@ def main(
             flags=re.MULTILINE,
         )
         return re.sub(
-            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|gateway_control_pb2)\b", r"from .\1", text, flags=re.MULTILINE
+            r"^from (config_schema_pb2|mcu_wire_pb2|cloud_gateway_pb2|gateway_control_pb2)\b",
+            r"from .\1",
+            text,
+            flags=re.MULTILINE,
         )
 
     for stem in ("config_schema", "mcu_wire"):
@@ -953,14 +955,9 @@ def main(
     for target in filter(None, gateway_targets):
         target.mkdir(parents=True, exist_ok=True)
         init_file = target / "__init__.py"
-        if not init_file.exists():
-            init_file.write_text('"""Pigweed Gateway protocol bindings."""\\n', encoding="utf-8")
-    _dispatch_generated_file(
-        gateway_proto_dir / "gateway_control_pb2.py", gateway_targets, _sanitize_pb2
-    )
-    _dispatch_generated_file(
-        gateway_proto_dir / "gateway_control_pb2.pyi", gateway_targets, _sanitize_pb2
-    )
+        init_file.write_text('"""Pigweed Gateway protocol bindings."""\n', encoding="utf-8")
+    _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.py", gateway_targets, _sanitize_pb2)
+    _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.pyi", gateway_targets, _sanitize_pb2)
 
     _dispatch_generated_file(
         proto_path.parent / "cloud_gateway_grpc.py",

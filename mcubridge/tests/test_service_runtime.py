@@ -1496,5 +1496,3 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
     await svc.handle_request(pub_req)
     # Rejected -> nothing enqueued on res topic
     assert not any(topic.endswith("/res/GpioService/DigitalWrite") for topic, _ in enqueued)
-
-

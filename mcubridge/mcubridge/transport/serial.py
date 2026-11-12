@@ -576,8 +576,7 @@ class SerialTransport:
                 # reporting that a caller without an owning loop cannot write.
                 self._update_rpc_packet_ids(rpc_packet)
                 raise RuntimeError(
-                    "Pigweed RPC output called outside the asyncio event loop; "
-                    "no active loop is registered"
+                    "Pigweed RPC output called outside the asyncio event loop; no active loop is registered"
                 ) from exc
             self._event_loop = loop
 
@@ -589,9 +588,7 @@ class SerialTransport:
         if current_loop is loop:
             self._queue_rpc_packet_on_loop(packet, rpc_packet)
         else:
-            loop.call_soon_threadsafe(
-                self._queue_rpc_packet_on_loop, packet, rpc_packet
-            )
+            loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet, rpc_packet)
 
     def _update_rpc_packet_ids(self, rpc_packet: Any) -> None:
         packet_id = (
@@ -608,9 +605,7 @@ class SerialTransport:
     def _queue_rpc_packet_on_loop(self, packet: bytes, rpc_packet: Any) -> None:
         """Update RPC correlation state and create the serial writer task on its owning loop."""
         self._update_rpc_packet_ids(rpc_packet)
-        task = asyncio.create_task(
-            self._rpc_packet_writer(packet), name="mcubridge-pw-rpc-write"
-        )
+        task = asyncio.create_task(self._rpc_packet_writer(packet), name="mcubridge-pw-rpc-write")
         self._rpc_write_tasks.add(task)
 
         def _finish(completed: asyncio.Task[bool]) -> None:
@@ -687,9 +682,7 @@ class SerialTransport:
             )
         return self._transfer_manager
 
-    async def _run_transfer_in_worker(
-        self, operation: Callable[..., Any], *args: Any, **kwargs: Any
-    ) -> Any:
+    async def _run_transfer_in_worker(self, operation: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Keep the transfer lock until a blocking Pigweed operation really exits."""
         worker = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
         try:

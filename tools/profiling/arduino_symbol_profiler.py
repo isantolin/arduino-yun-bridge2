@@ -191,14 +191,9 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
                 size = int(size_text)
             except ValueError:
                 continue
-            location_match = re.match(
-                r"^(.*):(\d+):(\d+):(.*)$", location_and_function
-            )
+            location_match = re.match(r"^(.*):(\d+):(\d+):(.*)$", location_and_function)
             if location_match:
-                source = (
-                    f"{location_match.group(1)}:"
-                    f"{location_match.group(2)}:{location_match.group(3)}"
-                )
+                source = f"{location_match.group(1)}:{location_match.group(2)}:{location_match.group(3)}"
                 function = location_match.group(4)
             else:
                 source, function = str(usage_file), location_and_function
@@ -223,6 +218,7 @@ def extract_stack_usage_report(build_dir: Path, limit: int = 20) -> str | None:
         rows.append(f"| {size:,} B | `{qualifier}` | `{function}` | `{source}` |")
     rows.append("")
     return "\n".join(rows) + "\n"
+
 
 def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     """Extract board label from the build path."""

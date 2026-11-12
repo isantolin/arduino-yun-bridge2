@@ -180,7 +180,6 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     assert (await on_write(2, mcu_wire_pb2.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
     assert serial.send.call_args[0][0] == Status.OK.value
 
-
     # Remove nonexistent file
     service.serial = serial
     assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"

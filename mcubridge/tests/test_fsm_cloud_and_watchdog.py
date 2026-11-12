@@ -2,16 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
-
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcu_wire_pb2 as pb
-from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import (
-    RuntimeState,
-    create_runtime_state,
-)
-from mcubridge.transport.serial import SerialTransport
+from mcubridge.state.context import create_runtime_state
 from mcubridge.watchdog import WatchdogKeepalive, WatchdogSupervisorMachine, WatchdogSupervisorState
 
 
@@ -82,5 +74,3 @@ def test_watchdog_keepalive_fsm_integration(runtime_config: RuntimeConfig) -> No
     # Kick while inhibited does NOT write pulse
     watchdog.kick()
     assert len(written_bytes) == 2  # No new pulse
-
-

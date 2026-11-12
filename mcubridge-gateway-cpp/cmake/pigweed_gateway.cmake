@@ -1,3 +1,81 @@
+# Minimal upstream Pigweed modules needed by the Gateway.
+# These definitions retain the real upstream headers, sources, and dependency
+# edges while excluding unrelated optional modules and their test-only graphs.
+
+# pw_log facade with the upstream null backend.
+pw_add_module_config(pw_log_CONFIG)
+pw_add_library(pw_log.config INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_log/public/pw_log/config.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_log/public"
+  PUBLIC_DEPS ${pw_log_CONFIG})
+pw_add_facade(pw_log INTERFACE
+  BACKEND pw_log_BACKEND
+  HEADERS
+    "${PIGWEED_ROOT}/pw_log/public/pw_log/levels.h"
+    "${PIGWEED_ROOT}/pw_log/public/pw_log/log.h"
+    "${PIGWEED_ROOT}/pw_log/public/pw_log/options.h"
+    "${PIGWEED_ROOT}/pw_log/public/pw_log/short.h"
+    "${PIGWEED_ROOT}/pw_log/public/pw_log/shorter.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_log/public"
+  PUBLIC_DEPS pw_log.config)
+pw_add_library(pw_log_null INTERFACE
+  HEADERS
+    "${PIGWEED_ROOT}/pw_log_null/public/pw_log_null/log_null.h"
+    "${PIGWEED_ROOT}/pw_log_null/public_overrides/pw_log_backend/log_backend.h"
+  PUBLIC_INCLUDES
+    "${PIGWEED_ROOT}/pw_log_null/public"
+    "${PIGWEED_ROOT}/pw_log_null/public_overrides"
+  PUBLIC_DEPS pw_preprocessor pw_log.facade)
+pw_add_library(pw_log.rate_limited STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_log/public/pw_log/rate_limited.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_log/public"
+  PUBLIC_DEPS pw_log pw_chrono.system_clock
+  SOURCES "${PIGWEED_ROOT}/pw_log/rate_limited.cc")
+
+# Only the intrusive-list container used by RPC and Transfer.
+pw_add_module_config(pw_containers_CONFIG)
+pw_add_library(pw_containers.config INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/config.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS ${pw_containers_CONFIG})
+pw_add_library(pw_containers.intrusive_item STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/intrusive_item.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  SOURCES "${PIGWEED_ROOT}/pw_containers/intrusive_item.cc"
+  PRIVATE_DEPS pw_assert)
+pw_add_library(pw_containers._intrusive_list_common INTERFACE
+  HEADERS
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/intrusive_list.h"
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/intrusive_list_item.h"
+    "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/intrusive_list_iterator.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS pw_containers.intrusive_item)
+pw_add_library(pw_containers.intrusive_forward_list INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/intrusive_forward_list.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS pw_containers.config pw_containers._intrusive_list_common)
+pw_add_library(pw_containers.legacy_intrusive_list INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/internal/legacy_intrusive_list.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS pw_containers.intrusive_forward_list)
+pw_add_library(pw_containers.intrusive_list INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/intrusive_list.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
+  PUBLIC_DEPS pw_containers.config pw_containers._intrusive_list_common
+    pw_containers.legacy_intrusive_list)
+
+# Upstream stream primitives; no sys_io or stdio adapters.
+pw_add_library(pw_stream STATIC
+  HEADERS
+    "${PIGWEED_ROOT}/pw_stream/public/pw_stream/memory_stream.h"
+    "${PIGWEED_ROOT}/pw_stream/public/pw_stream/null_stream.h"
+    "${PIGWEED_ROOT}/pw_stream/public/pw_stream/seek.h"
+    "${PIGWEED_ROOT}/pw_stream/public/pw_stream/stream.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_stream/public"
+  SOURCES "${PIGWEED_ROOT}/pw_stream/memory_stream.cc"
+  PUBLIC_DEPS pw_assert pw_bytes pw_memory._sibling_cast pw_polyfill
+    pw_result pw_span pw_status)
+
 # Minimal dependency closure using the upstream Pigweed target declarations.
 # The module-level pw_hdlc CMakeLists also registers an unrelated async router;
 # this Gateway intentionally builds only the decoder, encoder, and RPC output.

@@ -38,7 +38,6 @@ void tearDown() {}
 
 namespace {
 
-void on_fs_read(pw::span<const uint8_t>) {}
 void on_datastore_get(etl::string_view, pw::span<const uint8_t>) {}
 void on_process_run(int32_t) {}
 void on_process_poll(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,

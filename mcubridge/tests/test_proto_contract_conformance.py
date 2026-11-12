@@ -162,6 +162,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
     on_write: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_write
+    on_remove: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_remove
 
     # Without serial
     service.serial = None
@@ -186,7 +187,7 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     assert serial.send.call_args[0][0] == Status.INTERNAL.value
 
     # Remove existing file
-    assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="exists.txt"))).status == "ok"
+    assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="valid.txt"))).status == "ok"
     assert serial.send.call_args[0][0] == Status.OK.value
 
 

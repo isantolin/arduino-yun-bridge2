@@ -134,14 +134,6 @@ message FileWrite {
   bytes data = 2;
 }
 
-message FileRead {
-  string path = 1;
-}
-
-message FileReadResponse {
-  bytes content = 1;
-}
-
 message FileRemove {
   string path = 1;
 }

@@ -37,6 +37,18 @@ namespace {
 
 static uint8_t kEmptyBuffer = 0U;
 
+static_assert(RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH == RPC_SHA256_DIGEST_SIZE,
+              "Handshake HMAC scratch must hold one SHA-256 digest");
+static_assert(RPC_HANDSHAKE_TAG_LENGTH <= RPC_SHA256_DIGEST_SIZE,
+              "Handshake tag cannot exceed the HMAC digest");
+static_assert(RPC_AEAD_KEY_SIZE * 2U <= 255U * RPC_SHA256_DIGEST_SIZE,
+              "Session key output exceeds the HKDF-SHA256 limit");
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR) || \
+    defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_ESP32)
+static_assert(sizeof(size_t) <= sizeof(word32),
+              "Embedded span sizes must fit WolfCrypt word32 lengths");
+#endif
+
 template <size_t N>
 static etl::array<uint8_t, N> copy_progmem(const etl::array<uint8_t, N>& src) {
   etl::array<uint8_t, N> dst;
@@ -52,17 +64,9 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
                         pw::span<const uint8_t> salt,
                         pw::span<const uint8_t> info,
                         pw::span<uint8_t> output) {
-  constexpr size_t kMaxHkdfOutput = 255U * RPC_SHA256_DIGEST_SIZE;
-  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  const bool invalid_dimensions =
-      secret.empty() | output.empty() | (output.size() > kMaxHkdfOutput) |
-      (secret.size() > kMaxWord32) | (salt.size() > kMaxWord32) |
-      (info.size() > kMaxWord32) | (output.size() > kMaxWord32);
-  if (invalid_dimensions) {
-    secure_zero(output);
-    return false;
-  }
-
+  // All callers provide a non-empty secret and fixed, statically bounded
+  // output buffers (32-byte handshake key or 64-byte RX||TX key pair).
+  // Embedded size_t is at most word32; the static assertion above enforces it.
   const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
   const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
   const int status = wc_HKDF(
@@ -80,15 +84,8 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
 bool compute_hmac_sha256(pw::span<const uint8_t> key,
                          pw::span<const uint8_t> input,
                          pw::span<uint8_t> digest_scratch) {
-  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  const bool invalid_dimensions =
-      key.empty() | (digest_scratch.size() != RPC_SHA256_DIGEST_SIZE) |
-      (key.size() > kMaxWord32) | (input.size() > kMaxWord32);
-  if (invalid_dimensions) {
-    secure_zero(digest_scratch);
-    return false;
-  }
-
+  // Private call sites pass the 32-byte derived authentication key as both
+  // key storage and digest scratch, and a fixed-size handshake nonce as input.
   const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
   Hmac hmac{};
   if (wc_HmacInit(&hmac, nullptr, 0) != 0) {
@@ -128,14 +125,8 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
 bool verify_hmac_sha256(pw::span<uint8_t> key_and_digest,
                         pw::span<const uint8_t> input,
                         pw::span<const uint8_t> expected_mac) {
-  const bool invalid_dimensions =
-      (key_and_digest.size() != RPC_SHA256_DIGEST_SIZE) |
-      (expected_mac.size() != RPC_HANDSHAKE_TAG_LENGTH);
-  if (invalid_dimensions) {
-    secure_zero(key_and_digest);
-    return false;
-  }
-
+  // The public handshake verifier validates the fixed 16-byte tag length;
+  // key_and_digest is always the 32-byte HKDF output buffer.
   // The HMAC provider has already copied the key into its context before it
   // overwrites this caller-owned buffer with the digest.
   const bool computed = compute_hmac_sha256(
@@ -233,12 +224,6 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
   uint8_t* ciphertext_data =
       ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
-  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  if (aad.size() > kMaxWord32 || plaintext.size() > kMaxWord32) {
-    secure_zero(ciphertext);
-    secure_zero(tag);
-    return false;
-  }
   const int status = wc_ChaCha20Poly1305_Encrypt(
       key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),
       plaintext_data, static_cast<word32>(plaintext.size()), ciphertext_data,
@@ -270,11 +255,6 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
       ciphertext.empty() ? &kEmptyBuffer : ciphertext.data();
   uint8_t* plaintext_data =
       plaintext.empty() ? &kEmptyBuffer : plaintext.data();
-  constexpr size_t kMaxWord32 = static_cast<size_t>(UINT32_MAX);
-  if (aad.size() > kMaxWord32 || ciphertext.size() > kMaxWord32) {
-    secure_zero(plaintext);
-    return false;
-  }
   const bool ok =
       (wc_ChaCha20Poly1305_Decrypt(
            key.data(), nonce.data(), aad_data, static_cast<word32>(aad.size()),

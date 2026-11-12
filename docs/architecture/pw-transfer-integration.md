@@ -29,7 +29,7 @@ Handlers and their backing streams must have static or otherwise transfer-long l
 
 namespace {
 constexpr uint32_t kResourceId = 0x1001;
-etl::array<std::byte, 32> resource_bytes{};
+etl::array<pw::byte, 32> resource_bytes{};
 pw::stream::MemoryReader resource_reader{
     pw::ConstByteSpan(resource_bytes.data(), resource_bytes.size())};
 pw::transfer::ReadOnlyHandler resource_handler{

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Hardware-accurate AVR CPU Emulation Runner using simavr.
 
-Executes ATmega32u4 / ATmega328P / ATmega2560 ELF binaries compiled by avr-gcc
-inside simavr, binding the virtual UART to the mcubridge Python daemon and
+Executes AVR ELF binaries in simavr, using ATmega2560 as the supported application
+target, binding the virtual UART to the mcubridge Python daemon and
 running full E2E client verification suites.
 """
 
@@ -400,7 +400,7 @@ def _resolve_board_target(
         effective_uart = uart
     else:
         fw_str = str(effective_firmware).lower()
-        uses_uart1 = mcu == "atmega32u4" or (mcu == "atmega2560" and ("bluetooth" in fw_str or "wifi" in fw_str))
+        uses_uart1 = mcu == "atmega2560" and ("bluetooth" in fw_str or "wifi" in fw_str)
         effective_uart = "1" if uses_uart1 else "0"
     return effective_firmware, mcu, effective_frequency, effective_led_pin, effective_uart
 

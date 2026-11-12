@@ -2,8 +2,8 @@
  * simavr_harness.cpp - Cycle-Accurate AVR Hardware Simulation Harness (SIL-2 /
  * ETL-compliant)
  *
- * Bridges simulated AVR microcontroller (ATmega32u4 / ATmega2560 / ATmega328P)
- * UART to a Linux Pseudo-Terminal (PTY) using zero-heap ETL data structures,
+ * Bridges the simulated AVR application target (ATmega2560) UART to a Linux
+ * Pseudo-Terminal (PTY) using zero-heap ETL data structures,
  * STL-free algorithms, cycle-accurate UART ISR pacing, and deterministic RAII
  * lifecycle management.
  */
@@ -159,7 +159,7 @@ class SimavrHardwareBridge {
     if (uart_id >= '0' && uart_id <= '3') {
       uart_id_ = uart_id;
     } else {
-      uart_id_ = (mcu_name == "atmega32u4") ? '1' : '0';
+      uart_id_ = '0';
     }
 
     if (openpty(&master_fd_, &slave_fd_, slave_name_.data(), nullptr, nullptr) <

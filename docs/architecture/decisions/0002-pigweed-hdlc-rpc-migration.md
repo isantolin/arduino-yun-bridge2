@@ -37,7 +37,7 @@ The legacy MCU-MPU serial link in `arduino-yun-bridge2` relied on custom single-
 
 - Legacy `rpc_frame.h`, `rpc_structs.h`, and `rpc_dispatch_table.inc` are removed from the MCU firmware.
 - Console traffic (`HDLC_ADDRESS_CONSOLE = 3`) and tokenized logs (`HDLC_ADDRESS_LOG = 2`) are isolated from `pw_rpc` control traffic (`HDLC_ADDRESS_RPC = 1`) at the HDLC framing layer.
-- Both Python and C++ test suites maintain `>= 95.0%` line, function, and branch coverage with hardware-in-the-loop emulation verified across `simavr` (ATmega2560 / ATmega328P / ATmega32U4), `Renode` (SAMD21), and `QEMU` (ESP32-S3).
+- Both Python and C++ test suites maintain `>= 95.0%` line, function, and branch coverage with hardware-in-the-loop emulation verified across `simavr` (ATmega2560 application target), `Renode` (SAMD21), and `QEMU` (ESP32-S3).
 
 ## Migration and rollback
 

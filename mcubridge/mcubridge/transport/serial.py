@@ -687,7 +687,9 @@ class SerialTransport:
             )
         return self._transfer_manager
 
-    async def _run_transfer_in_worker(self, operation: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    async def _run_transfer_in_worker(
+        self, operation: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
         """Keep the transfer lock until a blocking Pigweed operation really exits."""
         worker = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
         try:

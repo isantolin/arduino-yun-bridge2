@@ -1060,6 +1060,32 @@ void test_set_stream_selects_hardware_serial_by_type() {
   TEST_ASSERT_EQUAL_PTR(&Serial, uart_ba.hardwareSerial());
 }
 
+// With a live stream but TX disabled (e.g. after entering the safe state) the
+// console must not emit frames.
+void test_console_stream_blocked_while_tx_disabled() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  const etl::array<uint8_t, 2> msg = {'h', 'i'};
+  TEST_ASSERT_TRUE(Bridge.sendConsoleStream(msg));
+
+  ba.setTxEnabled(false);
+  TEST_ASSERT_FALSE(Bridge.sendConsoleStream(msg));
+}
+
+// Pin events are only emitted on a synchronized link, even with TX enabled.
+void test_pin_event_blocked_while_unsynchronized() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setTxEnabled(true);
+  ba.clearSynchronized();
+  TEST_ASSERT_TRUE(ba.isTxEnabled());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
@@ -1080,5 +1106,7 @@ int main() {
   RUN_TEST(test_pin_subscription_reports_rising_edge);
   RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
   RUN_TEST(test_set_stream_selects_hardware_serial_by_type);
+  RUN_TEST(test_console_stream_blocked_while_tx_disabled);
+  RUN_TEST(test_pin_event_blocked_while_unsynchronized);
   return UNITY_END();
 }

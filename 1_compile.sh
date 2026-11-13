@@ -463,7 +463,7 @@ fi
 
 # Fallback: if local feed is NOT enabled, optionally copy package sources into the SDK.
 if [ "$LOCAL_FEED_ENABLED" -ne 1 ] && [ "$SYNC_PACKAGES_TO_SDK" -eq 1 ]; then
-    for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
+    for pkg in luci-app-mcubridge mcubridge; do
         if [ -d "$pkg" ]; then
             echo "[INFO] Syncing $pkg to SDK..."
             rm -rf "$SDK_DIR/package/$pkg"
@@ -492,7 +492,7 @@ done
 # [FIX] SIL-2: Install ONLY required packages to avoid recursive dependency hell 
 # in unrelated packages like bigclown, nginx, asterisk, etc.
 echo "[INFO] Installing required packages and their dependencies..."
-./scripts/feeds install mcubridge luci-app-mcubridge mcubridge-gateway
+./scripts/feeds install mcubridge luci-app-mcubridge
 
 # ==============================================================================
 # [FIX CRITICO] Breaking Kconfig Recursive Dependencies (SDK 25.12.6)
@@ -671,7 +671,7 @@ if [ -f "$USB_MODULES_MK" ]; then
 fi
 
 # Enable Packages
-REQUIRED_PKGS="mcubridge luci-app-mcubridge mcubridge-gateway"
+REQUIRED_PKGS="mcubridge luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
 REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio python3-psutil python3-ubus python3-cffi"
 
@@ -771,7 +771,7 @@ for lib in $LIBS; do
 done
 
 # Luego paquetes principales
-for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
+for pkg in luci-app-mcubridge mcubridge; do
     echo "[CLEAN] Purging build stamps and artifacts for $pkg..."
     make "package/feeds/mcubridge/$pkg/clean" 2>/dev/null || true
     rm -rf "$SDK_DIR"/build_dir/target-*/"$pkg"-[0-9]* "$SDK_DIR"/build_dir/target-*/"$pkg"
@@ -801,7 +801,7 @@ cd "$REPO_ROOT" || exit 1
 CURRENT_PROJECT_VERSION=$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')
 echo "[VALIDATION] Verifying generated APKs (v$CURRENT_PROJECT_VERSION) in $BIN_DIR..."
 MISSING_REQUIRED_PKGS=0
-for req in mcubridge mcubridge-gateway luci-app-mcubridge; do
+for req in mcubridge luci-app-mcubridge; do
     expected_pattern="${req}-${CURRENT_PROJECT_VERSION}"
     if ! ls "$BIN_DIR"/${expected_pattern}*.apk >/dev/null 2>&1; then
         echo "[ERROR] Mandatory package '${expected_pattern}*.apk' was not found in $BIN_DIR!" >&2
@@ -817,18 +817,6 @@ if [ "$MISSING_REQUIRED_PKGS" -ne 0 ]; then
     exit 1
 fi
 
-# Build RPM package if rpmbuild is available
-if command -v rpmbuild >/dev/null 2>&1; then
-    echo "[INFO] rpmbuild detected. Building RPM package for mcubridge-gateway..."
-    if [ -f "$REPO_ROOT/mcubridge-gateway/build_rpm.py" ]; then
-        python3 "$REPO_ROOT/mcubridge-gateway/build_rpm.py" || echo "[WARN] RPM build failed"
-    else
-        echo "[WARN] build_rpm.py not found at $REPO_ROOT/mcubridge-gateway/build_rpm.py"
-    fi
-else
-    echo "[INFO] rpmbuild not found. Skipping RPM package build."
-fi
-
 # Checksums
 if ls "$BIN_DIR"/*.apk >/dev/null 2>&1; then
     if command -v sha256sum >/dev/null 2>&1; then
@@ -842,7 +830,7 @@ fi
 echo "\n[OK] Build finished. Check the bin/ directory."
 
 # Cleanup
-for pkg in mcubridge luci-app-mcubridge mcubridge-gateway; do
+for pkg in mcubridge luci-app-mcubridge; do
     find "$pkg" -type d -name build -exec rm -rf {} +
     find "$pkg" -type d -name bin -exec rm -rf {} +
     find "$pkg" -type d -name dist -exec rm -rf {} +

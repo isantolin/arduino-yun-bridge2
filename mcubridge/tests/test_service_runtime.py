@@ -649,8 +649,12 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
 
     svc.serial = mock_serial
     svc.state.connection_fsm.synchronize()
+    unknown_before = svc.state.unknown_command_count
     await svc.handle_mcu_frame(9999, 1, b"")
-    assert mock_serial.send.called
+    # A bare integer key carries no service/method, so no call can be completed; it is only counted.
+    assert svc.state.unknown_command_count == unknown_before + 1
+    assert svc.state.unknown_command_last_id == 9999
+    mock_serial.send_status.assert_not_awaited()
 
     # Test synchronous (non-awaitable) handler path
     called_sync: list[int] = []
@@ -1670,3 +1674,98 @@ async def test_runtime_console_write_both_directions(
     )
     assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
     mock_serial.send.assert_awaited_once_with("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway"))
+
+
+async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_service: BridgeService) -> None:
+    """Gateway dispatch must honour the same cloud_allow_* ACL as the topic path (403, no execution)."""
+    svc = mock_bridge_service
+    svc.state.topic_authorization = config_schema_pb2.TopicAuthorization(digital_write=True)
+
+    written_frames: list[bytes] = []
+    mock_writer = MagicMock()
+    mock_writer.write = MagicMock(side_effect=written_frames.append)
+    mock_writer.drain = AsyncMock()
+
+    def _pkt(call_id: int, req: gateway_control_pb2.EdgeDispatchRequest) -> MagicMock:
+        pkt = MagicMock()
+        pkt.payload = req.SerializeToString()
+        pkt.call_id = call_id
+        pkt.service_id = 1
+        pkt.method_id = 1
+        pkt.channel_id = 1
+        return pkt
+
+    def _status_code() -> int:
+        frames = list(pw_hdlc.decode.FrameDecoder().process_valid_frames(written_frames[-1]))
+        assert len(frames) == 1
+        edge_resp = gateway_control_pb2.EdgeDispatchResponse()
+        edge_resp.ParseFromString(pw_rpc.packets.decode(frames[0].data).payload)
+        return edge_resp.status_code
+
+    with patch.object(svc, "execute_rpc", new=AsyncMock(return_value=b"")) as exec_mock:
+        # Forbidden: system_version is not granted.
+        await svc.handle_cloud_edge_dispatch(
+            _pkt(
+                1,
+                gateway_control_pb2.EdgeDispatchRequest(service_name="rpc.pb.SystemService", method_name="GetVersion"),
+            ),
+            mock_writer,
+        )
+        assert _status_code() == 403
+        exec_mock.assert_not_awaited()
+
+        # Allowed: digital_write is granted.
+        await svc.handle_cloud_edge_dispatch(
+            _pkt(
+                2,
+                gateway_control_pb2.EdgeDispatchRequest(
+                    service_name="rpc.pb.GpioService",
+                    method_name="DigitalWrite",
+                    request_payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
+                ),
+            ),
+            mock_writer,
+        )
+        assert _status_code() == 200
+        exec_mock.assert_awaited_once()
+
+
+async def test_write_with_quota_enforces_managed_root_quota(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
+    """file_storage_quota_bytes bounds the managed root, counting overwrites only once."""
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.state.file_write_max_bytes = 0
+    svc.state.file_storage_quota_bytes = 10
+    rejections = svc.state.file_storage_limit_rejections
+
+    assert await svc.write_with_quota(tmp_path / "a.bin", b"123456") is True
+    assert svc.state.file_storage_bytes_used == 0
+    # 6 existing + 6 new > 10 -> rejected and nothing written.
+    assert await svc.write_with_quota(tmp_path / "b.bin", b"abcdef") is False
+    assert not (tmp_path / "b.bin").exists()
+    assert svc.state.file_storage_limit_rejections == rejections + 1
+    # Overwriting the same file replaces its bytes: 6 - 6 + 9 <= 10.
+    assert await svc.write_with_quota(tmp_path / "a.bin", b"123456789") is True
+    assert svc.state.file_storage_bytes_used == 6
+
+
+async def test_mcu_file_write_status_is_bound_to_the_mcu_call(
+    mock_bridge_service: BridgeService, mock_serial: AsyncMock
+) -> None:
+    """MCU-initiated FileSystemService/Write completes its own call id with OK or PERMISSION_DENIED."""
+    svc = mock_bridge_service
+    svc.serial = mock_serial
+    spec = protocol.BY_NAME["rpc.pb.FileSystemService/Write"]
+
+    await svc.file_write(17, mcu_wire_pb2.FileWrite(path="../../etc/shadow", data=b"x"))
+    mock_serial.send_status.assert_awaited_once_with(Status.PERMISSION_DENIED, 17, spec.service_id, spec.method_id)
+
+
+async def test_unknown_mcu_rpc_reports_unimplemented_on_its_call(
+    mock_bridge_service: BridgeService, mock_serial: AsyncMock
+) -> None:
+    svc = mock_bridge_service
+    svc.serial = mock_serial
+    svc.state.connection_fsm.synchronize()
+    await svc.handle_mcu_frame((0x1234, 0x5678), 9, b"")
+    mock_serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 9, 0x1234, 0x5678)

@@ -8,6 +8,7 @@ import inspect
 import logging
 import secrets
 import shlex
+import stat
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
@@ -90,6 +91,20 @@ _MCU_EEPROM_RESOURCE_ID: Final = 0x4D454741
 _MCU_EEPROM_RESOURCE_PATH: Final = "eeprom"
 
 
+def _directory_usage_bytes(root: str) -> int:
+    """Sum regular-file sizes under the managed storage root without following symlinks. [SIL-2]"""
+    total = 0
+    for dirpath, _dirnames, filenames in Path(root).walk(follow_symlinks=False):
+        for name in filenames:
+            try:
+                st = (dirpath / name).lstat()
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                total += st.st_size
+    return total
+
+
 class BridgeService:
     """Consolidated Service Façade Eradicating Component Wrappers. [SIL-2]"""
 
@@ -170,14 +185,13 @@ class BridgeService:
         # [SIL-2] O(1) MCU Dispatch Table
         self.mcu_registry = protocol.build_mcu_dispatch(self)
 
-    async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
-        return bool(self.serial and await self.serial.send(Status.OK.value, payload))
-
-    async def send_mcu_error(self, message: str) -> bool:
-        return bool(self.serial and await self.serial.send(Status.INTERNAL.value, b""))
-
-    async def _send_mcu_status(self, ok: bool, error_message: str = "") -> bool:
-        return await (self.send_mcu_ok() if ok else self.send_mcu_error(error_message))
+    async def send_mcu_status(self, status: Status, seq_id: int, request_or_key: Any) -> bool:
+        """Complete an MCU-initiated RPC with a status bound to its service, method and call id. [SIL-2]"""
+        serial = self.serial
+        spec = protocol.get_operation(request_or_key)
+        if serial is None or spec is None or spec.service_id is None or spec.method_id is None:
+            return False
+        return await serial.send_status(status, seq_id, spec.service_id, spec.method_id)
 
     # --- External Interface ---
 
@@ -439,7 +453,7 @@ class BridgeService:
                     except ProtobufDecodeError as exc:
                         logger.error("Failed to decode MCU Protobuf payload", error=str(exc))
                         self.state.serial_decode_errors += 1
-                        await serial.send(Status.INVALID_ARGUMENT.value, b"")
+                        await self.send_mcu_status(Status.INVALID_ARGUMENT, sequence_id, spec)
                         return
 
                 res = handler(sequence_id, p)
@@ -452,7 +466,8 @@ class BridgeService:
                     if isinstance(operation_key, int)
                     else (operation_key[1] if isinstance(operation_key, tuple) else 0)
                 )
-                await serial.send(Status.UNIMPLEMENTED.value, b"")
+                if isinstance(operation_key, tuple):
+                    await serial.send_status(Status.UNIMPLEMENTED, sequence_id, operation_key[0], operation_key[1])
 
     @staticmethod
     def _coerce_inbound_request(inbound: Any) -> CloudQueuedPublish:
@@ -660,7 +675,7 @@ class BridgeService:
             safe_path = self._get_safe_path(path)
             ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
         if from_mcu:
-            await self._send_mcu_status(ok, "Path not allowed or quota exceeded")
+            await self.send_mcu_status(Status.OK if ok else Status.PERMISSION_DENIED, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     async def file_remove(
@@ -693,7 +708,7 @@ class BridgeService:
                     logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
                     ok = False
         if p is not None:
-            await self._send_mcu_status(ok, "Path not allowed or not found")
+            await self.send_mcu_status(Status.OK if ok else Status.NOT_FOUND, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     def _get_safe_path(self, p_str: str) -> Path | None:
@@ -718,9 +733,14 @@ class BridgeService:
                 self.state.file_write_limit_rejections += 1
                 return False
             try:
+                used = await anyio.to_thread.run_sync(_directory_usage_bytes, self.config.file_system_root)
+                self.state.file_storage_bytes_used = used
+                existing = path.stat().st_size if path.is_file() else 0
+                quota = self.state.file_storage_quota_bytes
+                if quota > 0 and used - existing + len(data) > quota:
+                    self.state.file_storage_limit_rejections += 1
+                    return False
                 usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
-                self.state.file_storage_bytes_used = usage.used
-
                 if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False
@@ -739,7 +759,8 @@ class BridgeService:
         src = p if p is not None else req_or_cmd
         command = src.command if isinstance(src, mcu_wire_pb2.ProcessRunAsync) else str(req_or_cmd)
         pid = 0
-        if command and is_command_allowed(self.state.allowed_policy, command):
+        allowed = bool(command) and is_command_allowed(self.state.allowed_policy, command)
+        if allowed:
             with structlog.contextvars.bound_contextvars(command=command):
                 await self._process_slots.acquire()
                 try:
@@ -758,9 +779,12 @@ class BridgeService:
                     self._process_slots.release()
         resp = mcu_wire_pb2.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:
-            await (
-                self.serial.send("rpc.pb.ProcessService/RunAsync", resp) if pid else self.send_mcu_error("Exec failed")
-            )
+            if pid:
+                await self.serial.send("rpc.pb.ProcessService/RunAsync", resp)
+            else:
+                await self.send_mcu_status(
+                    Status.INTERNAL if allowed else Status.PERMISSION_DENIED, cast(int, req_or_cmd), src
+                )
         return resp
 
     async def process_poll(
@@ -1135,8 +1159,17 @@ class BridgeService:
         try:
             edge_req.ParseFromString(pkt.payload)
             target = f"{edge_req.service_name}/{edge_req.method_name}"
-            resp_payload = await self.execute_rpc(target, edge_req.request_payload)
-            status_code = 200
+            spec = protocol.BY_NAME.get(target)
+            if spec is None:
+                raise ValueError(f"Unknown RPC method: {target}")
+            if self.state.topic_authorization and not protocol.allows_method(self.state.topic_authorization, spec):
+                # Same ACL as the topic path: cloud_allow_* flags apply to Gateway dispatch too.
+                logger.warning("RPC method forbidden by topic authorization", method=target)
+                resp_payload = b""
+                status_code = 403
+            else:
+                resp_payload = await self.execute_rpc(target, edge_req.request_payload)
+                status_code = 200
         except (ValueError, ProtobufDecodeError) as exc:
             logger.warning("Unknown or invalid RPC method from cloud", error=str(exc))
             resp_payload = b""

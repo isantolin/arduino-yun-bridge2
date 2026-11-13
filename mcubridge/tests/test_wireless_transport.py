@@ -274,3 +274,29 @@ def test_close_serial_port_releases_leaked_socket() -> None:
     finally:
         server_sock.close()
         client_sock.close()
+
+
+async def test_send_status_emits_call_bound_server_error(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    """send_status must answer the MCU's call with its service/method/call ids, not a bare status packet."""
+    from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+
+    written: list[bytes] = []
+
+    async def _writer(packet: bytes) -> bool:
+        written.append(packet)
+        return True
+
+    transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=_writer)
+    assert await transport.send_status(protocol.Status.NOT_FOUND, 42, 0xAAAA, 0xBBBB)
+    assert await transport.send_status(protocol.Status.OK, 43, 0xAAAA, 0xBBBB)
+    err, ok = (RpcPacket.FromString(p) for p in written)
+    assert (err.type, err.status, err.call_id, err.service_id, err.method_id) == (
+        PacketType.SERVER_ERROR,
+        protocol.Status.NOT_FOUND.value,
+        42,
+        0xAAAA,
+        0xBBBB,
+    )
+    assert (ok.type, ok.status, ok.call_id) == (PacketType.RESPONSE, 0, 43)

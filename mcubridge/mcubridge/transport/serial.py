@@ -906,6 +906,21 @@ class SerialTransport:
             return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 
+    async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
+        """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""
+        packet_type = PacketType.RESPONSE if status is Status.OK else PacketType.SERVER_ERROR
+        packet = protocol.encode_rpc_packet(
+            1,
+            service_id,
+            method_id,
+            call_id=call_id,
+            payload=b"",
+            packet_type=int(packet_type),
+            status=status.value,
+        )
+        self._active_server_call_ids.pop((service_id, method_id), None)
+        return await self._rpc_packet_writer(packet)
+
     async def send_raw(
         self,
         command_id: int | str | protocol.OperationSpec | tuple[int, int],

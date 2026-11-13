@@ -85,11 +85,11 @@ async def test_unsupported_mcu_request(
     assert dr_op.service_id is not None
     assert dr_op.method_id is not None
     await service.handle_mcu_frame((dr_op.service_id, dr_op.method_id), 1, b"")
-    assert serial.send.await_count == expected_calls
+    assert serial.send_status.await_count == expected_calls
     if has_serial:
         assert state.unknown_command_count == 1
         assert state.unknown_command_last_id == dr_op.method_id
-        assert serial.send.call_args[0][0] == Status.UNIMPLEMENTED.value
+        serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 1, dr_op.service_id, dr_op.method_id)
 
 
 # -----------------------------------------------------------------------------
@@ -174,20 +174,22 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     service.config.file_system_root = "/tmp/fs"
     serial.send.return_value = True
     assert (await on_write(1, mcu_wire_pb2.FileWrite(path="../../../etc/shadow", data=b"evil"))).status == "error"
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
+    fw_spec = protocol.BY_NAME["rpc.pb.FileSystemService/Write"]
+    serial.send_status.assert_awaited_with(Status.PERMISSION_DENIED, 1, fw_spec.service_id, fw_spec.method_id)
 
     # Successful write
     assert (await on_write(2, mcu_wire_pb2.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
-    assert serial.send.call_args[0][0] == Status.OK.value
+    serial.send_status.assert_awaited_with(Status.OK, 2, fw_spec.service_id, fw_spec.method_id)
 
     # Remove nonexistent file
     service.serial = serial
     assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
+    fr_spec = protocol.BY_NAME["rpc.pb.FileSystemService/Remove"]
+    serial.send_status.assert_awaited_with(Status.NOT_FOUND, 1, fr_spec.service_id, fr_spec.method_id)
 
     # Remove existing file
     assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="valid.txt"))).status == "ok"
-    assert serial.send.call_args[0][0] == Status.OK.value
+    serial.send_status.assert_awaited_with(Status.OK, 2, fr_spec.service_id, fr_spec.method_id)
 
 
 # -----------------------------------------------------------------------------
@@ -209,7 +211,8 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
     service.serial = serial
     serial.send.return_value = True
     assert (await on_run(1, mcu_wire_pb2.ProcessRunAsync(command="rm -rf /"))).pid == 0
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
+    run_spec = protocol.BY_NAME["rpc.pb.ProcessService/RunAsync"]
+    serial.send_status.assert_awaited_with(Status.PERMISSION_DENIED, 1, run_spec.service_id, run_spec.method_id)
 
     # Allowed command
     assert (await on_run(2, mcu_wire_pb2.ProcessRunAsync(command="echo test_exec"))).pid == IsPositiveInt
@@ -289,7 +292,8 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     await service.handle_mcu_frame("rpc.pb.DataStoreService/Put", 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
-    mock_serial.send.assert_awaited_with(Status.INVALID_ARGUMENT.value, b"")
+    put_spec = protocol.BY_NAME["rpc.pb.DataStoreService/Put"]
+    mock_serial.send_status.assert_awaited_with(Status.INVALID_ARGUMENT, 10, put_spec.service_id, put_spec.method_id)
 
 
 @given(pin_mode=st.from_type(mcu_wire_pb2.PinMode))

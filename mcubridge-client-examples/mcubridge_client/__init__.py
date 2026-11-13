@@ -1,14 +1,12 @@
-"""Minimalistic Async Client for MCU Bridge."""
+"""Minimalistic Async Client for MCU Bridge using Pigweed. [SIL-2]"""
 
 from __future__ import annotations
 
-from grpclib.client import Channel as Channel
-
 from . import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from .client import GatewayClient, GatewayConnection
 from .cloud_gateway_pb2 import CloudQueuedPublish
 from .definitions import build_bridge_args
 from .env import dump_client_env
-from .mcubridge_grpc import LocalBridgeStub
 from .protocol import (
     CLOUD_DEFAULT_TOPIC_PREFIX,
     DEFAULT_CLOUD_HOST,
@@ -20,12 +18,12 @@ from .protocol import (
 from .spi import SpiDevice
 
 __all__ = [
-    "Channel",
     "CLOUD_DEFAULT_TOPIC_PREFIX",
     "CloudQueuedPublish",
     "DEFAULT_CLOUD_HOST",
     "DEFAULT_CLOUD_PORT",
-    "LocalBridgeStub",
+    "GatewayClient",
+    "GatewayConnection",
     "SpiBitOrder",
     "SpiDataMode",
     "SpiDevice",

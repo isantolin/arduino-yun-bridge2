@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified e2e feature test for mcubridge using direct LocalBridgeStub through Gateway."""
+"""Unified e2e feature test for mcubridge using direct GatewayClient through Gateway."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def main(
     asyncio.run(run_test(led_builtin_pin, host, port, device_id, topic_prefix))
 
 
-cli = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub through Gateway.", add_completion=False)
+cli = typer.Typer(help="Unified e2e feature test using direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal connectivity smoke test for LocalBridgeStub and Channel using bridge_session."""
+"""Minimal connectivity smoke test for GatewayClient and Channel using bridge_session."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ async def run_test(
 executor_fn: Callable[..., Any] = run_test
 
 cli = typer.Typer(
-    help="Minimal connectivity smoke test for LocalBridgeStub and Channel through Gateway.",
+    help="Minimal connectivity smoke test for GatewayClient and Channel through Gateway.",
     add_completion=False,
 )
 

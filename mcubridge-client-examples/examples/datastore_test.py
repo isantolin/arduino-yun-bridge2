@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise datastore interactions using direct LocalBridgeStub and Channel."""
+"""Exercise datastore interactions using direct GatewayClient and Channel."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def main(
 
 
 cli = typer.Typer(
-    help="Exercise datastore interactions using direct LocalBridgeStub through Gateway.", add_completion=False
+    help="Exercise datastore interactions using direct GatewayClient through Gateway.", add_completion=False
 )
 
 

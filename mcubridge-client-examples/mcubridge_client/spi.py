@@ -6,14 +6,14 @@ from collections.abc import Sequence
 from typing import cast
 
 from . import mcu_wire_pb2
-from .mcubridge_grpc import LocalBridgeStub
+from .client import GatewayClient
 from .protocol import SpiBitOrder, SpiDataMode
 
 SpiBuffer = bytes | bytearray | Sequence[int]
 
 
 class SpiDevice:
-    """A high-level SPI device interface interacting directly with LocalBridgeStub.
+    """A high-level SPI device interface interacting directly with GatewayClient.
 
     Handles automatic initialization (begin/end) and provides a clean
     API for full-duplex transfers.
@@ -21,7 +21,7 @@ class SpiDevice:
 
     def __init__(
         self,
-        stub: LocalBridgeStub,
+        stub: GatewayClient,
         frequency: int = 4000000,
         bit_order: SpiBitOrder = SpiBitOrder.SPI_BIT_ORDER_MSB_FIRST,
         mode: SpiDataMode = SpiDataMode.SPI_DATA_MODE_0,

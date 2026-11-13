@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Test file I/O using direct LocalBridgeStub Publish calls."""
+"""Example: Test file I/O using direct GatewayClient Publish calls."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def main(
     asyncio.run(run_test(host, port, device_id))
 
 
-cli = typer.Typer(help="Test file I/O using direct LocalBridgeStub through Gateway.", add_completion=False)
+cli = typer.Typer(help="Test file I/O using direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()

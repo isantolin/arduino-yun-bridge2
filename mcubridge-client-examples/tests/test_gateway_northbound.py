@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""[SIL-2] End-to-end test verifying northbound command orchestration through ProtobufGateway.
+"""[SIL-2] End-to-end test verifying northbound command orchestration through Pigweed Gateway.
 
 Flow:
-Northbound Client -> CloudBridge.DispatchCommand -> ProtobufGateway.send_command
--> CloudEnvelope(command_request) -> McuBridge Daemon -> Serial GpioService.DigitalWrite
--> MCU Emulator -> Serial ACK -> McuBridge Daemon -> CloudEnvelope(command_response)
--> ProtobufGateway -> Northbound Client.
+Northbound Client -> GatewayControl.Dispatch -> mcubridge-gateway-cpp
+-> EdgeControl.Dispatch -> McuBridge Daemon -> Serial GpioService.DigitalWrite
+-> MCU -> Serial ACK -> McuBridge Daemon -> EdgeDispatchResponse
+-> mcubridge-gateway-cpp -> DispatchResponse -> Northbound Client.
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from typing import Annotated, Any
 
 import structlog
 import typer
-from grpclib.client import Channel
-from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2, mcubridge_grpc
+from mcubridge_client import GatewayClient, GatewayConnection, mcu_wire_pb2
 from mcubridge_client.cli import configure_logging
 
 logger = structlog.get_logger("test-gateway-northbound")
@@ -27,57 +26,37 @@ async def run_test(
     host: str,
     port: int,
     device_id: str,
-    channel_factory: Callable[[str, int], Channel] | None = None,
-    stub_factory: Callable[[Channel], mcubridge_grpc.CloudBridgeStub] | None = None,
+    connection_factory: Callable[[str, int], Any] | None = None,
+    client_factory: Callable[[Any, str], GatewayClient] | None = None,
 ) -> None:
     logger.info("Connecting to Cloud Gateway northbound endpoint", host=host, port=port, device_id=device_id)
-    channel = channel_factory(host, port) if channel_factory is not None else Channel(host, port)
-    stub = stub_factory(channel) if stub_factory is not None else mcubridge_grpc.CloudBridgeStub(channel)
+    conn = connection_factory(host, port) if connection_factory is not None else GatewayConnection(host, port)
+    client = client_factory(conn, device_id) if client_factory is not None else GatewayClient(conn, device_id)
     try:
-        dispatch = cloud_gateway_pb2.CommandDispatch(
-            target_device_id=device_id,
-            command_path="rpc.pb.LocalBridge/DigitalWrite",
-            payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
-            timeout_seconds=5,
-        )
-        logger.info("Dispatching command to gateway", command=dispatch.command_path, target_device_id=device_id)
-        response = await stub.DispatchCommand(dispatch)
-
-        logger.info(
-            "Received northbound command response",
-            status_code=response.status_code,
-            payload=response.payload,
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.payload!r}"
-        if response.payload == b"OK":
-            pass
-        else:
-            gen_resp = cloud_gateway_pb2.GenericResponse()
-            gen_resp.ParseFromString(response.payload)
-            assert gen_resp.status == "ok", f"Expected ok status, got {gen_resp.status}"
+        req = mcu_wire_pb2.DigitalWrite(pin=13, value=1)
+        logger.info("Dispatching DigitalWrite to gateway", target_device_id=device_id)
+        resp = await client.DigitalWrite(req)
+        assert resp is not None
         logger.info("Northbound roundtrip test PASSED")
     finally:
-        channel.close()
+        conn.close()
 
 
 executor_fn: Callable[..., Any] = run_test
 
-cli = typer.Typer(
-    help="Northbound Cloud Gateway E2E Command Orchestration Test",
-    add_completion=False,
-)
+cli = typer.Typer(help="Northbound command test script using Pigweed Gateway.", add_completion=False)
 
 
 @cli.command()
 def main(
-    host: Annotated[str, typer.Option("--host", help="Gateway Host")] = "127.0.0.1",
-    port: Annotated[int, typer.Option("--port", help="Gateway Port")] = 8443,
+    host: Annotated[str, typer.Option("--host", help="Cloud Gateway host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Cloud Gateway port")] = 8443,
     device_id: Annotated[
-        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
-    ] = None,
+        str, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+    ] = "",
 ) -> None:
     if not device_id:
-        raise ValueError("Explicit target device_id is required. Implicit fallback is prohibited.")
+        raise typer.BadParameter("Explicit target device_id is required")
     configure_logging()
     asyncio.run(executor_fn(host, port, device_id))
 

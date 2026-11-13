@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bootloader trigger test script using direct LocalBridgeStub through Gateway."""
+"""Bootloader trigger test script using direct GatewayClient through Gateway."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ async def run_test(
     log.info("Waiting 5s for link readiness...")
     await asyncio.sleep(5)
 
-    log.info("Triggering bootloader via LocalBridgeStub...")
+    log.info("Triggering bootloader via GatewayClient...")
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
-        topic_bl = Topic.build("req", "SystemService", "EnterBootloader", prefix=topic_prefix)
+        topic_bl = Topic.build("req", "rpc.pb.SystemService", "EnterBootloader", prefix=topic_prefix)
         await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_bl, payload=b"", qos=1))
         log.info("Bootloader command sent.")
 
@@ -44,7 +44,7 @@ def main(
 
 
 cli = typer.Typer(
-    help="Bootloader trigger test script using direct LocalBridgeStub through Gateway.", add_completion=False
+    help="Bootloader trigger test script using direct GatewayClient through Gateway.", add_completion=False
 )
 
 

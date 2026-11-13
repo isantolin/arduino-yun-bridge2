@@ -12,7 +12,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from mcubridge_client import (
     CLOUD_DEFAULT_TOPIC_PREFIX,
-    LocalBridgeStub,
+    GatewayClient,
     SpiBitOrder,
     SpiDataMode,
     SpiDevice,
@@ -38,26 +38,20 @@ def test_cli_configure_logging() -> None:
 
 
 async def test_cli_bridge_session() -> None:
-    """bridge_session context manager yields Channel and LocalBridgeStub."""
-    mock_chan = MagicMock()
-    mock_chan.__dispatch__ = MagicMock()
+    """bridge_session context manager yields connection and GatewayClient."""
+    mock_conn = MagicMock()
 
     async with bridge_session(
         host="127.0.0.1",
         port=8443,
         device_id="yun-01",
-        channel_factory=lambda _h, _p: mock_chan,
-    ) as (chan, stub):
-        assert chan is mock_chan
-        assert isinstance(stub, LocalBridgeStub)
-        mock_chan.__dispatch__.add_listener.assert_called_once()
-        callback = mock_chan.__dispatch__.add_listener.call_args[0][1]
-        event = MagicMock()
-        event.metadata = {}
-        await callback(event)
-        assert event.metadata["x-device-id"] == "yun-01"
+        connection_factory=lambda _h, _p: mock_conn,
+    ) as (conn, client):
+        assert conn is mock_conn
+        assert isinstance(client, GatewayClient)
+        assert client.target_device_id == "yun-01"
 
-    mock_chan.close.assert_called_once()
+    mock_conn.close.assert_called_once()
 
 
 def test_env_is_openwrt_force_uci(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,7 +123,7 @@ def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def test_spi_device_lifecycle_and_transfer() -> None:
     """SpiDevice context manager, properties, begin/end, and transfer."""
-    mock_stub = MagicMock(spec=LocalBridgeStub)
+    mock_stub = MagicMock(spec=GatewayClient)
     mock_stub.SpiConfigure = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok"))
 
     def _mock_spi_transfer(req: mcu_wire_pb2.SpiTransfer) -> mcu_wire_pb2.SpiTransferResponse:
@@ -240,21 +234,21 @@ def test_smoke_connection_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 async def test_gateway_northbound_run_test() -> None:
-    """Verify test_gateway_northbound.run_test calls DispatchCommand correctly."""
+    """Verify test_gateway_northbound.run_test calls DigitalWrite correctly."""
     import test_gateway_northbound
 
-    mock_chan = MagicMock()
-    mock_stub = MagicMock()
-    mock_stub.DispatchCommand = AsyncMock(return_value=MagicMock(status_code=200, payload=b"OK"))
+    mock_conn = MagicMock()
+    mock_client = MagicMock()
+    mock_client.DigitalWrite = AsyncMock(return_value=MagicMock())
 
     await test_gateway_northbound.run_test(
         host="127.0.0.1",
         port=8443,
         device_id="yun-01",
-        channel_factory=lambda _h, _p: mock_chan,
-        stub_factory=lambda _c: mock_stub,
+        connection_factory=lambda _h, _p: mock_conn,
+        client_factory=lambda _c, _d: mock_client,
     )
-    mock_stub.DispatchCommand.assert_awaited_once()
+    mock_client.DigitalWrite.assert_awaited_once()
 
 
 def test_gateway_northbound_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> None:

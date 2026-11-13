@@ -171,7 +171,12 @@ def run_qemu_emulation(
             return False
 
         time.sleep(1.0)
-        drain_pty_nonblocking(pty_link)
+        boot_output = drain_pty_nonblocking(pty_link)
+        logger.info(
+            "ESP32 boot output before daemon start",
+            bytes=len(boot_output),
+            text=boot_output[-4096:].decode("utf-8", errors="replace"),
+        )
 
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
         logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)

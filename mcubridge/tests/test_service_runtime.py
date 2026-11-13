@@ -1661,7 +1661,7 @@ async def test_runtime_console_write_both_directions(
     mock_serial.send = AsyncMock(return_value=True)
     outbound = await svc.console_write(mcu_wire_pb2.ConsoleWrite(data=b"ping"))
     assert isinstance(outbound, mcu_wire_pb2.Empty)
-    mock_serial.send.assert_awaited_once_with("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=b"ping"))
+    mock_serial.send.assert_awaited_once_with("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"ping"))
     assert len(svc.state.console_to_mcu_queue) == 0
 
     # The cloud dispatch path reaches the same handler through the canonical operation name.
@@ -1670,7 +1670,7 @@ async def test_runtime_console_write_both_directions(
         "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway").SerializeToString()
     )
     assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
-    mock_serial.send.assert_awaited_once_with("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway"))
+    mock_serial.send.assert_awaited_once_with("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway"))
 
 
 async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_service: BridgeService) -> None:

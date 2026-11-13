@@ -112,7 +112,7 @@ async def test_mcu_datastore_put_asserts_cloud(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/DataStoreService/Get"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.DataStoreService/Get"
     assert queued_pub.payload == b"mcu_val"
 
 
@@ -132,7 +132,7 @@ async def test_local_bridge_datastore_put_persists_and_publishes(
     publish_call = mock_pub.await_args
     assert publish_call is not None
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, publish_call.args[0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/DataStoreService/Get"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.DataStoreService/Get"
     assert queued_pub.payload == b"local_value"
 
 

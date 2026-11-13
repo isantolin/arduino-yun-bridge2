@@ -233,8 +233,10 @@ async def test_spi_device_transfer() -> None:
 
 
 class FakeCall:
-    def __init__(self, status: PwStatus) -> None:
-        self.status = status
+    """Stand-in for pw_rpc's callback_client Call: the unary response lives on the call."""
+
+    def __init__(self, response: Any = None) -> None:
+        self.response = response
 
 
 def _fake_create_connection(sock: Any) -> Callable[..., Any]:
@@ -314,7 +316,7 @@ async def test_gateway_client_dispatch_lifecycle() -> None:
             response_payload=mcu_wire_pb2.Empty().SerializeToString(),
         )
         if on_completed:
-            on_completed(FakeCall(PwStatus.OK), resp)
+            on_completed(FakeCall(resp), PwStatus.OK)
 
     mock_dispatch = MagicMock()
     mock_dispatch.invoke = _invoke_success
@@ -326,7 +328,7 @@ async def test_gateway_client_dispatch_lifecycle() -> None:
     # 2. Error dispatch (status not ok)
     def _invoke_error(req: Any, on_completed: Any = None, on_error: Any = None) -> None:
         if on_error:
-            on_error(FakeCall(PwStatus.INTERNAL))
+            on_error(FakeCall(), PwStatus.INTERNAL)
 
     mock_dispatch.invoke = _invoke_error
     with pytest.raises(RuntimeError, match="Pigweed RPC dispatch failed"):
@@ -341,7 +343,7 @@ async def test_gateway_client_health() -> None:
     def _invoke_health_ok(on_completed: Any = None, on_error: Any = None) -> None:
         resp = gateway_control_pb2.HealthResponse(ready=True, active_device_sessions=1, active_client_sessions=1)
         if on_completed:
-            on_completed(FakeCall(PwStatus.OK), resp)
+            on_completed(FakeCall(resp), PwStatus.OK)
 
     mock_health = MagicMock()
     mock_health.invoke = _invoke_health_ok
@@ -355,7 +357,7 @@ async def test_gateway_client_health() -> None:
     # 2. Health error
     def _invoke_health_err(on_completed: Any = None, on_error: Any = None) -> None:
         if on_error:
-            on_error(FakeCall(PwStatus.UNAVAILABLE))
+            on_error(FakeCall(), PwStatus.UNAVAILABLE)
 
     mock_health.invoke = _invoke_health_err
     with pytest.raises(RuntimeError, match="Health check failed"):
@@ -520,14 +522,13 @@ async def test_gateway_client_duplicate_callbacks() -> None:
     assert captured_completed is not None
     assert captured_error is not None
 
-    mock_call = MagicMock()
-    mock_call.status.ok.return_value = True
     mock_resp = MagicMock()
     mock_resp.response_payload = b"ok"
+    call = FakeCall(mock_resp)
 
-    captured_completed(mock_call, mock_resp)
-    captured_completed(mock_call, mock_resp)
-    captured_error(mock_call)
+    captured_completed(call, PwStatus.OK)
+    captured_completed(call, PwStatus.OK)
+    captured_error(call, PwStatus.INTERNAL)
 
     res = await task
     assert res == b"ok"
@@ -552,13 +553,12 @@ async def test_gateway_client_health_duplicate_callbacks() -> None:
     task = asyncio.create_task(client.Health())
     await asyncio.sleep(0.01)
 
-    mock_call = MagicMock()
-    mock_call.status.ok.return_value = True
     mock_resp = MagicMock()
+    call = FakeCall(mock_resp)
 
-    captured_completed(mock_call, mock_resp)
-    captured_completed(mock_call, mock_resp)
-    captured_error(mock_call)
+    captured_completed(call, PwStatus.OK)
+    captured_completed(call, PwStatus.OK)
+    captured_error(call, PwStatus.INTERNAL)
 
     res = await task
     assert res == mock_resp

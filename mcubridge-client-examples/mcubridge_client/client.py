@@ -105,13 +105,15 @@ class GatewayClient:
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()
 
-        def _on_completed(call: Any, resp: Any) -> None:
+        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
+        # final Status (the unary response is call.response); on_error the error Status.
+        def _on_completed(call: Any, status: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, resp))
+                fut.set_result((status, call.response))
 
-        def _on_error(call: Any) -> None:
+        def _on_error(_call: Any, error: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, None))
+                fut.set_result((error, None))
 
         dispatch_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
         status, resp = await asyncio.wait_for(fut, timeout=max(float(timeout_ms) / 1000.0, 1.0) + 2.0)
@@ -124,13 +126,15 @@ class GatewayClient:
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()
 
-        def _on_completed(call: Any, resp: Any) -> None:
+        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
+        # final Status (the unary response is call.response); on_error the error Status.
+        def _on_completed(call: Any, status: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, resp))
+                fut.set_result((status, call.response))
 
-        def _on_error(call: Any) -> None:
+        def _on_error(_call: Any, error: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, None))
+                fut.set_result((error, None))
 
         health_method.invoke(on_completed=_on_completed, on_error=_on_error)
         status, resp = await asyncio.wait_for(fut, timeout=5.0)

@@ -17,13 +17,16 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
    [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ] || \
    [ ! -f "$SRC_DIR/pb_common.h" ] || \
    [ ! -f "$SRC_DIR/pb_decode.h" ] || \
-   [ ! -f "$SRC_DIR/pb_encode.h" ]; then
+   [ ! -f "$SRC_DIR/pb_encode.h" ] || \
+   [ ! -f "$ARDUINO_LIBS/Pigweed/src/Pigweed.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
-PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
+# clang-tidy analyzes the host (non-AVR) branch of the headers, which uses the
+# mainstream Pigweed export, exactly like the host test build.
+PIGWEED_INC="$ARDUINO_LIBS/Pigweed/src"
 WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
 
 INCLUDES=(
@@ -34,7 +37,7 @@ INCLUDES=(
     "-I${STUB_DIR}"
     "-isystem${ETL_INC}"
     "-isystem${PIGWEED_INC}"
-    "-isystem${ARDUINO_LIBS}/PigweedAVR"
+    "-isystem${ARDUINO_LIBS}/Pigweed"
     "-isystem${WOLFSSL_INC}"
     "-isystem${ARDUINO_LIBS}/wolfssl"
 )

@@ -536,6 +536,9 @@ jobs:
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-protoc
+      - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: gateway
       - name: Install Gateway build dependencies
         run: |
           bash tools/ci/apt_update_with_fallback.sh
@@ -544,6 +547,8 @@ jobs:
           . .venv-gateway/bin/activate
           python -m pip install --upgrade pip
           python -m pip install "pigweed==0.0.24" "protobuf==5.28.3"
+      - name: Generate daemon protocol bindings for Gateway tests
+        run: tox -e protocol
       - name: Configure standalone Gateway
         run: |
           . .venv-gateway/bin/activate
@@ -554,9 +559,8 @@ jobs:
           cmake --build build/mcubridge-gateway --parallel 2
       - name: Test Gateway TLS identity and session isolation
         run: |
-          . .venv-gateway/bin/activate
-          export PYTHONPATH=.
-          python3 -m unittest discover -s mcubridge-gateway-cpp/tests -v
+          export PYTHONPATH=.:mcubridge
+          .tox/protocol/bin/python -m unittest discover -s mcubridge-gateway-cpp/tests -v
       - name: Generate Gateway Coverage Report
         run: |
           . .venv-gateway/bin/activate

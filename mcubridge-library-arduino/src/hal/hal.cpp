@@ -175,8 +175,18 @@ void init() {
 #endif
     } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
-      esp_task_wdt_init(4, true);
-      esp_task_wdt_add(nullptr);
+      // ESP-IDF 5 (Espressif Arduino core 3.x) configures the task watchdog
+      // with a struct. The core usually starts the TWDT already, so reconfigure
+      // it and fall back to init only when it is not running yet.
+      const esp_task_wdt_config_t twdt_config = {
+          .timeout_ms = 4000U,
+          .idle_core_mask = 0U,
+          .trigger_panic = true,
+      };
+      if (esp_task_wdt_reconfigure(&twdt_config) != ESP_OK) {
+        (void)esp_task_wdt_init(&twdt_config);
+      }
+      (void)esp_task_wdt_add(nullptr);
 #endif
     }
   }

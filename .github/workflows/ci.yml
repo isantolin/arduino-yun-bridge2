@@ -116,7 +116,7 @@ jobs:
           # Arduino package mirrors intermittently return HTTP 5xx for large toolchains.
           # Retry the idempotent core installation; do not skip a missing platform.
           for attempt in 1 2 3 4 5; do
-            if arduino-cli core install arduino:avr arduino:samd arduino:esp32; then
+            if arduino-cli core install arduino:avr arduino:samd && bash tools/ci/install_espressif_core.sh; then
               break
             fi
             if [ "$attempt" -eq 5 ]; then
@@ -454,7 +454,7 @@ jobs:
       - name: Install Arduino ESP32 Core & Tools
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
-          arduino-cli core install arduino:esp32
+          bash tools/ci/install_espressif_core.sh
           python -m pip install pyserial esptool
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
@@ -524,7 +524,7 @@ jobs:
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
           arduino-cli core install arduino:samd
-          arduino-cli core install arduino:esp32
+          bash tools/ci/install_espressif_core.sh
           arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
           python -m pip install pyserial esptool
       - name: Install Renode

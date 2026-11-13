@@ -73,7 +73,7 @@ def test_generate_consolidated_markdown_from_json(tmp_path: Path) -> None:
                 "engine": "QEMU Espressif (Instruction-Accurate)",
                 "boards": [
                     {
-                        "board_fqbn": "arduino:esp32:nano_nora",
+                        "board_fqbn": "esp32:esp32:nano_nora",
                         "board_name": "Arduino Nano ESP32 (ESP32-S3)",
                         "architecture": "Xtensa LX7 (ESP32-S3)",
                         "compilation": "✅ Compiled",
@@ -94,7 +94,7 @@ def test_generate_consolidated_markdown_from_json(tmp_path: Path) -> None:
     assert "arduino:samd:mkrwifi1010" in content
     assert "Renode (Instruction-Accurate)" in content
     assert "Arduino Nano ESP32" in content
-    assert "arduino:esp32:nano_nora" in content
+    assert "esp32:esp32:nano_nora" in content
     assert "QEMU Espressif (Instruction-Accurate)" in content
     assert "✅ PASS" in content
 
@@ -120,7 +120,7 @@ def test_generate_consolidated_markdown_fallback_md(tmp_path: Path) -> None:
         "### QEMU Xtensa\n\n"
         "| Board | Arch | Comp | Emu | Result |\n"
         "| :--- | :---: | :---: | :---: | :---: |\n"
-        "| **Arduino Nano ESP32 (ESP32-S3)**<br>`arduino:esp32:nano_nora` | Xtensa LX7 (ESP32-S3) | ✅ Compiled | "
+        "| **Arduino Nano ESP32 (ESP32-S3)**<br>`esp32:esp32:nano_nora` | Xtensa LX7 (ESP32-S3) | ✅ Compiled | "
         "✅ Passed (100% E2E) | **✅ PASS** |\n"
     )
     (q_dir / "qemu_summary.md").write_text(qemu_md, encoding="utf-8")

@@ -315,7 +315,7 @@ def main(
     board: Annotated[
         str,
         typer.Option("--board", "-b", help="Target board FQBN"),
-    ] = "arduino:esp32:nano_nora",
+    ] = "esp32:esp32:nano_nora",
     sketch: Annotated[
         Path | None,
         typer.Option("--sketch", "-s", help="Path to Arduino sketch (.ino) to compile and emulate"),

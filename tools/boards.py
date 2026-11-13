@@ -48,8 +48,8 @@ BOARD_MKRWIFI1010: Final[BoardSpec] = BoardSpec(
 )
 
 BOARD_NANO_ESP32: Final[BoardSpec] = BoardSpec(
-    fqbn="arduino:esp32:nano_nora",
-    slug="arduino-esp32-nano_nora",
+    fqbn="esp32:esp32:nano_nora",
+    slug="esp32-esp32-nano_nora",
     label="Arduino Nano ESP32",
     detailed_name="Arduino Nano ESP32",
     max_flash=3_145_728,

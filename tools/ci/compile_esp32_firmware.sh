@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKETCH_PATH="${1:-${SCRIPT_DIR}/../../mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino}"
-FQBN="${2:-arduino:esp32:nano_nora}"
+FQBN="${2:-esp32:esp32:nano_nora}"
 OUTPUT_DIR="${3:-}"
 
 exec "${SCRIPT_DIR}/compile_firmware.sh" "$SKETCH_PATH" "$FQBN" ${OUTPUT_DIR:+"$OUTPUT_DIR"}

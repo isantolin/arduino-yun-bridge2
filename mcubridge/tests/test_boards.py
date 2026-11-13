@@ -43,8 +43,8 @@ def test_official_boards_metadata() -> None:
     assert BOARD_MKRWIFI1010.max_flash == 262_144
     assert BOARD_MKRWIFI1010.max_ram == 32_768
 
-    assert BOARD_NANO_ESP32.fqbn == "arduino:esp32:nano_nora"
-    assert BOARD_NANO_ESP32.slug == "arduino-esp32-nano_nora"
+    assert BOARD_NANO_ESP32.fqbn == "esp32:esp32:nano_nora"
+    assert BOARD_NANO_ESP32.slug == "esp32-esp32-nano_nora"
     assert BOARD_NANO_ESP32.emulator == "qemu"
     assert BOARD_NANO_ESP32.max_flash == 3_145_728
     assert BOARD_NANO_ESP32.max_ram == 327_680
@@ -53,12 +53,12 @@ def test_official_boards_metadata() -> None:
 def test_board_lookups() -> None:
     assert get_board_by_slug("arduino-avr-mega") == BOARD_MEGA
     assert get_board_by_slug("arduino-samd-mkrwifi1010") == BOARD_MKRWIFI1010
-    assert get_board_by_slug("arduino-esp32-nano_nora") == BOARD_NANO_ESP32
+    assert get_board_by_slug("esp32-esp32-nano_nora") == BOARD_NANO_ESP32
     assert get_board_by_slug("unknown-board") is None
 
     assert get_board_by_fqbn("arduino:avr:mega") == BOARD_MEGA
     assert get_board_by_fqbn("arduino:samd:mkrwifi1010") == BOARD_MKRWIFI1010
-    assert get_board_by_fqbn("arduino:esp32:nano_nora") == BOARD_NANO_ESP32
+    assert get_board_by_fqbn("esp32:esp32:nano_nora") == BOARD_NANO_ESP32
     assert get_board_by_fqbn("unknown:fqbn") is None
 
     assert BOARDS_BY_SLUG["arduino-avr-mega"] == BOARD_MEGA
@@ -66,14 +66,14 @@ def test_board_lookups() -> None:
     assert get_official_fqbns() == (
         "arduino:avr:mega",
         "arduino:samd:mkrwifi1010",
-        "arduino:esp32:nano_nora",
+        "esp32:esp32:nano_nora",
     )
 
 
 def test_emulation_matrices() -> None:
     assert SIMAVR_BOARDS == [("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)")]
     assert RENODE_BOARDS == [("arduino:samd:mkrwifi1010", "Arduino MKR WiFi 1010 (ATSAMD21G18A)")]
-    assert QEMU_BOARDS == [("arduino:esp32:nano_nora", "Arduino Nano ESP32")]
+    assert QEMU_BOARDS == [("esp32:esp32:nano_nora", "Arduino Nano ESP32")]
 
 
 def test_section_names() -> None:
@@ -90,17 +90,17 @@ def test_section_names() -> None:
 def test_cli_fqbns() -> None:
     result = runner.invoke(cli, ["fqbns"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "arduino:avr:mega arduino:samd:mkrwifi1010 arduino:esp32:nano_nora"
+    assert result.stdout.strip() == "arduino:avr:mega arduino:samd:mkrwifi1010 esp32:esp32:nano_nora"
 
     custom_delim = runner.invoke(cli, ["fqbns", "--delimiter", ","])
     assert custom_delim.exit_code == 0
-    assert custom_delim.stdout.strip() == "arduino:avr:mega,arduino:samd:mkrwifi1010,arduino:esp32:nano_nora"
+    assert custom_delim.stdout.strip() == "arduino:avr:mega,arduino:samd:mkrwifi1010,esp32:esp32:nano_nora"
 
 
 def test_cli_slugs() -> None:
     result = runner.invoke(cli, ["slugs"])
     assert result.exit_code == 0
-    assert result.stdout.strip() == "arduino-avr-mega arduino-samd-mkrwifi1010 arduino-esp32-nano_nora"
+    assert result.stdout.strip() == "arduino-avr-mega arduino-samd-mkrwifi1010 esp32-esp32-nano_nora"
 
 
 def test_cli_list() -> None:
@@ -108,4 +108,4 @@ def test_cli_list() -> None:
     assert result.exit_code == 0
     assert "Arduino Mega 2560 | FQBN: arduino:avr:mega" in result.stdout
     assert "Arduino MKR WiFi 1010 | FQBN: arduino:samd:mkrwifi1010" in result.stdout
-    assert "Arduino Nano ESP32 | FQBN: arduino:esp32:nano_nora" in result.stdout
+    assert "Arduino Nano ESP32 | FQBN: esp32:esp32:nano_nora" in result.stdout

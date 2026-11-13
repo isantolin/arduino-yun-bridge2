@@ -16,7 +16,7 @@ if [[ "$FQBN" == arduino:avr:* ]]; then
     EMULATOR="simavr"
 elif [[ "$FQBN" == arduino:samd:* ]]; then
     EMULATOR="renode"
-elif [[ "$FQBN" == arduino:esp32:* || "$FQBN" == esp32:esp32:* ]]; then
+elif [[ "$FQBN" == esp32:esp32:* ]]; then
     EMULATOR="qemu"
 else
     echo "ERROR: Unsupported FQBN: $FQBN" >&2
@@ -147,26 +147,11 @@ elif [ "$EMULATOR" = "renode" ]; then
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "qemu" ]; then
-    ESPTOOL_BIN="$(find "${HOME}/.arduino15" -name esptool.py 2>/dev/null | head -n 1 || true)"
-    if [ -z "$ESPTOOL_BIN" ] && command -v esptool.py >/dev/null 2>&1; then
-        ESPTOOL_BIN="$(command -v esptool.py)"
-    fi
-    XTENSA_GCC="$(find "${HOME}/.arduino15" -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
-    if [ -z "$XTENSA_GCC" ] && command -v xtensa-esp32s3-elf-gcc >/dev/null 2>&1; then
-        XTENSA_GCC="$(command -v xtensa-esp32s3-elf-gcc)"
-    fi
-    BOOT_APP0="$(find "${HOME}/.arduino15" -name boot_app0.bin 2>/dev/null | head -n 1 || true)"
-
+    # The Espressif core (tools/install_espressif_core.sh) ships the modern
+    # xtensa-esp-elf toolchain; its esp32s3 driver is xtensa-esp32s3-elf-gcc.
+    XTENSA_GCC="$(find "${HOME}/.arduino15/packages/esp32" -type f -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
     if [ -z "$XTENSA_GCC" ]; then
-        echo "ERROR: xtensa-esp32s3-elf-gcc compiler not found in ~/.arduino15 or PATH" >&2
-        exit 1
-    fi
-    if [ -z "$ESPTOOL_BIN" ]; then
-        echo "ERROR: esptool.py not found in ~/.arduino15 or PATH" >&2
-        exit 1
-    fi
-    if [ -z "$BOOT_APP0" ]; then
-        echo "ERROR: boot_app0.bin partition image not found in ~/.arduino15" >&2
+        echo "ERROR: xtensa-esp32s3-elf-gcc not found; run tools/ci/install_espressif_core.sh" >&2
         exit 1
     fi
 
@@ -215,25 +200,16 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2
     cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
 
     if [ "$EMULATOR" = "qemu" ]; then
-        BIN_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.bin"
-        BOOT_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.bootloader.bin"
-        PART_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.partitions.bin"
-
-        if [ ! -f "$BIN_FILE" ] || [ ! -f "$BOOT_FILE" ] || [ ! -f "$PART_FILE" ]; then
-            echo "ERROR: Missing flash component binaries in $OUTPUT_DIR" >&2
+        # The Espressif core already emits a full-flash image (bootloader,
+        # partitions, boot_app0 and app) padded to the board flash size.
+        MERGED_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.merged.bin"
+        if [ ! -f "$MERGED_FILE" ]; then
+            echo "ERROR: Espressif core did not produce ${MERGED_FILE}" >&2
             exit 1
         fi
 
         FLASH_BIN="${OUTPUT_DIR}/firmware_flash.bin"
-        python3 "$ESPTOOL_BIN" \
-            --chip esp32s3 merge_bin \
-            --output "$FLASH_BIN" \
-            --fill-flash-size 16MB \
-            0x0 "$BOOT_FILE" \
-            0x8000 "$PART_FILE" \
-            0xe000 "$BOOT_APP0" \
-            0x10000 "$BIN_FILE" >/dev/null 2>&1
-
+        cp "$MERGED_FILE" "$FLASH_BIN"
         cp "$FLASH_BIN" "${OUTPUT_DIR}/firmware.bin"
         echo "[compile_firmware] Successfully produced 16MB flash image: $FLASH_BIN"
     fi

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import pty
+from pathlib import Path
 
 from tools.emulation.process_utils import drain_pty_nonblocking
 
@@ -20,5 +21,5 @@ def test_drain_pty_returns_boot_output() -> None:
         os.close(slave)
 
 
-def test_drain_pty_missing_device_returns_empty(tmp_path: os.PathLike[str]) -> None:
-    assert drain_pty_nonblocking(os.path.join(tmp_path, "absent"), timeout=0.05) == b""
+def test_drain_pty_missing_device_returns_empty(tmp_path: Path) -> None:
+    assert drain_pty_nonblocking(tmp_path / "absent", timeout=0.05) == b""

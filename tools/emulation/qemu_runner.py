@@ -171,11 +171,16 @@ def run_qemu_emulation(
             return False
 
         time.sleep(1.0)
-        boot_output = drain_pty_nonblocking(pty_link)
+        boot_output = drain_pty_nonblocking(pty_link)[-4096:]
+        try:
+            boot_text: str | None = boot_output.decode("utf-8")
+        except UnicodeDecodeError:
+            boot_text = None
         logger.info(
             "ESP32 boot output before daemon start",
-            bytes=len(boot_output),
-            text=boot_output[-4096:].decode("utf-8", errors="replace"),
+            length=len(boot_output),
+            text=boot_text,
+            raw=boot_output if boot_text is None else b"",
         )
 
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]

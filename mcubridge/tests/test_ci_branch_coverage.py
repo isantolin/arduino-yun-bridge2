@@ -29,8 +29,8 @@ async def test_publish_cloud_message_debug_logging_branch(
     mocker: MockerFixture,
 ) -> None:
     service = mock_bridge_service
-    service._cloud_rpc_client = MagicMock()
-    service._cloud_writer = MagicMock()
+    service.cloud_rpc_client = MagicMock()
+    service.cloud_writer = MagicMock()
     service.send_cloud_telemetry = AsyncMock(return_value=True)
     mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
 
@@ -78,8 +78,8 @@ async def test_reset_link_without_serial_returns_false(mock_bridge_service: Brid
 async def test_send_cloud_event_without_cloud_stream_is_noop(
     mock_bridge_service: BridgeService,
 ) -> None:
-    mock_bridge_service._cloud_rpc_client = None
-    mock_bridge_service._cloud_writer = None
+    mock_bridge_service.cloud_rpc_client = None
+    mock_bridge_service.cloud_writer = None
     mock_bridge_service.send_cloud_telemetry = AsyncMock()
 
     await mock_bridge_service.send_cloud_event("status_online", "info", "Device online")
@@ -91,8 +91,8 @@ async def test_send_cloud_event_debug_logging_branch(
     mock_bridge_service: BridgeService,
     mocker: MockerFixture,
 ) -> None:
-    mock_bridge_service._cloud_rpc_client = MagicMock()
-    mock_bridge_service._cloud_writer = MagicMock()
+    mock_bridge_service.cloud_rpc_client = MagicMock()
+    mock_bridge_service.cloud_writer = MagicMock()
     mock_bridge_service.send_cloud_telemetry = AsyncMock(return_value=True)
     debug_log = mocker.patch("mcubridge.services.runtime.logger.debug")
     mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
@@ -327,7 +327,10 @@ def test_operation_spec_and_protocol_builder_branches(mock_bridge_service: Bridg
     assert spec_auto_fill.request_type is not None
 
     # 3. build_mcu_dispatch with status_handler provided explicitly
-    dispatch = protocol.build_mcu_dispatch(mock_bridge_service, status_handler=lambda status, seq, payload: None)
+    def _status_handler(_status: protocol.Status, _seq: int, _payload: bytes) -> None:
+        return None
+
+    dispatch = protocol.build_mcu_dispatch(mock_bridge_service, status_handler=_status_handler)
     assert isinstance(dispatch, dict)
 
     # 4. build_ubus_methods with backend=None and default handler_factory

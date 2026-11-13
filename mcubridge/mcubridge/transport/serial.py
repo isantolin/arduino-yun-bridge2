@@ -31,7 +31,8 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
-from pw_rpc import callback_client, packets as pw_packets
+from pw_rpc import packets as pw_packets
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
@@ -151,7 +152,7 @@ class SerialTransport:
         self._transfer_manager: Any | None = None
         self._transfer_lock = asyncio.Lock()
         self.rpc_client = PwRpcClient(
-            cast(Any, callback_client).Impl(),
+            PwCallbackClientImpl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self.queue_rpc_packet)],
             protocol.PW_SERVICES,
         )

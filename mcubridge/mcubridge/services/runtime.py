@@ -29,7 +29,7 @@ import pw_hdlc.decode
 import pw_hdlc.encode
 import pw_rpc.packets
 import pw_status
-from pw_rpc import callback_client
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal import packet_pb2
@@ -96,9 +96,9 @@ class BridgeService:
     config: RuntimeConfig
     state: RuntimeState
     serial: SerialTransport | None
-    _cloud_writer: asyncio.StreamWriter | None
+    cloud_writer: asyncio.StreamWriter | None
     _cloud_reader: asyncio.StreamReader | None
-    _cloud_rpc_client: Any | None
+    cloud_rpc_client: Any | None
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
@@ -127,7 +127,7 @@ class BridgeService:
         self.config, self.state, self.serial = config, state, serial
         self.lifecycle_fsm = DaemonLifecycleMachine()
         self.cloud_publisher = cloud_publisher
-        self._cloud_writer, self._cloud_reader, self._cloud_rpc_client = None, None, None
+        self.cloud_writer, self._cloud_reader, self.cloud_rpc_client = None, None, None
         self.watchdog = (
             WatchdogKeepalive(interval=config.watchdog_interval, state=state) if config.watchdog_enabled else None
         )
@@ -299,7 +299,7 @@ class BridgeService:
 
     async def flush_cloud_spool_locked(self) -> None:
         spool = self.cloud_spool
-        if not (self._cloud_rpc_client and self._cloud_writer) or spool is None:
+        if not (self.cloud_rpc_client and self.cloud_writer) or spool is None:
             return
 
         async def _pop_spool() -> bool:
@@ -352,7 +352,7 @@ class BridgeService:
             self.state.cloud_spool_failure_reason = str(exc)
 
     async def publish_cloud_message(self, message: CloudQueuedPublish) -> bool:
-        if not (self._cloud_rpc_client and self._cloud_writer):
+        if not (self.cloud_rpc_client and self.cloud_writer):
             return False
         telemetry_attr = next(
             (
@@ -1054,16 +1054,16 @@ class BridgeService:
             logger.warning("Cloud Gateway connection failed", error=str(exc))
             raise ConnectionError(f"Cloud Gateway connection failed: {exc}") from exc
 
-        self._cloud_writer = writer
+        self.cloud_writer = writer
         self._cloud_reader = reader
 
         def _send_channel_packet(packet: bytes) -> None:
-            if self._cloud_writer and not self._cloud_writer.is_closing():
+            if self.cloud_writer and not self.cloud_writer.is_closing():
                 frame = pw_hdlc.encode.ui_frame(1, packet)
-                self._cloud_writer.write(frame)
+                self.cloud_writer.write(frame)
 
-        self._cloud_rpc_client = PwRpcClient(
-            callback_client.Impl(),
+        self.cloud_rpc_client = PwRpcClient(
+            PwCallbackClientImpl(),
             [PwRpcChannel(1, _send_channel_packet)],
             protocol.PW_SERVICES,
         )
@@ -1091,13 +1091,13 @@ class BridgeService:
                         continue
 
                     if pkt.type == packet_pb2.PacketType.REQUEST:
-                        asyncio.create_task(self._handle_cloud_edge_dispatch(pkt, writer))
+                        asyncio.create_task(self.handle_cloud_edge_dispatch(pkt, writer))
                     elif pkt.type in (
                         packet_pb2.PacketType.RESPONSE,
                         packet_pb2.PacketType.SERVER_ERROR,
                         packet_pb2.PacketType.SERVER_STREAM,
                     ):
-                        self._cloud_rpc_client.process_packet(frame.data)
+                        self.cloud_rpc_client.process_packet(frame.data)
         except (ConnectionError, OSError, EOFError) as exc:
             cur_task = asyncio.current_task()
             if cur_task and cur_task.cancelling():
@@ -1107,16 +1107,16 @@ class BridgeService:
             raise ConnectionError(f"Cloud session stream disconnected: {exc}") from exc
         finally:
             self.state.cloud_fsm.degrade()
-            self._cloud_writer = None
+            self.cloud_writer = None
             self._cloud_reader = None
-            self._cloud_rpc_client = None
+            self.cloud_rpc_client = None
             try:
                 writer.close()
                 await writer.wait_closed()
             except OSError as exc:
                 logger.debug("Cloud session writer close error ignored", error=str(exc))
 
-    async def _handle_cloud_edge_dispatch(self, pkt: Any, writer: asyncio.StreamWriter) -> None:
+    async def handle_cloud_edge_dispatch(self, pkt: Any, writer: asyncio.StreamWriter) -> None:
         edge_req = gateway_control_pb2.EdgeDispatchRequest()
         try:
             edge_req.ParseFromString(pkt.payload)
@@ -1151,7 +1151,7 @@ class BridgeService:
         bridge_snapshot_blob: bytes = b"",
         handshake_snapshot_blob: bytes = b"",
     ) -> bool:
-        if not self._cloud_rpc_client or not self._cloud_writer:
+        if not self.cloud_rpc_client or not self.cloud_writer:
             return False
         try:
             req = gateway_control_pb2.TelemetryReport(
@@ -1160,7 +1160,7 @@ class BridgeService:
                 bridge_snapshot_blob=bridge_snapshot_blob,
                 handshake_snapshot_blob=handshake_snapshot_blob,
             )
-            report_method = self._cloud_rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry
+            report_method = self.cloud_rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry
             loop = asyncio.get_running_loop()
             fut: asyncio.Future[Any] = loop.create_future()
 
@@ -1173,7 +1173,7 @@ class BridgeService:
                     fut.set_result(call.status)
 
             report_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
-            await self._cloud_writer.drain()
+            await self.cloud_writer.drain()
             async with asyncio.timeout(5.0):
                 status = await fut
                 return bool(status.ok())
@@ -1189,7 +1189,7 @@ class BridgeService:
                 severity,
                 description,
             )
-        if self._cloud_rpc_client and self._cloud_writer:
+        if self.cloud_rpc_client and self.cloud_writer:
             event_blob = f"{event_type}:{severity}:{description}".encode()
             await self.send_cloud_telemetry(system_status_blob=event_blob)
 
@@ -1275,9 +1275,9 @@ class BridgeService:
                 return resp_cls().SerializeToString()
             if isinstance(res, ProtobufMessage):
                 return res.SerializeToString()
-            if res is False or res is None:
-                raise RuntimeError(f"Serial RPC invocation failed: {target}")
-            return res if isinstance(res, bytes) else b""
+            if isinstance(res, bytes):
+                return res
+            raise RuntimeError(f"Serial RPC invocation failed: {target}")
 
     async def Publish(self, stream: Any) -> None:
         if (req := await stream.recv_message()) is None:

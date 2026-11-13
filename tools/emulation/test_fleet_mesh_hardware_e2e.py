@@ -300,16 +300,18 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
             logger.info("Node GetFreeMemory verified", node=node.name, free_bytes=mem_resp.value)
 
             led_pin = node.metadata.led_builtin
-            write_resp = await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
-            if write_resp.status != "ok":
-                logger.error("DigitalWrite failed", node=node.name, pin=led_pin)
+            try:
+                await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
+            except RuntimeError as exc:
+                logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
                 return False
             await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
             logger.info("Node hardware actuation (LED) verified", node=node.name, pin=led_pin)
 
-            mb_resp = await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
-            if mb_resp.status != "ok":
-                logger.error("MailboxPush failed", node=node.name)
+            try:
+                await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
+            except RuntimeError as exc:
+                logger.error("MailboxPush failed", node=node.name, error=str(exc))
                 return False
             logger.info("Node MailboxPush verified", node=node.name)
 

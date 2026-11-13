@@ -104,10 +104,6 @@ _message_to_dict: Final = functools.partial(
 )
 
 
-def _snake_case(s: str) -> str:
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
-
-
 def _format_cpp_digit(v: object) -> str:
     """Format integers >= 10'000 with C++14 digit separators. [SIL-2]"""
     return f"{v:_}".replace("_", "'") if isinstance(v, int) and abs(v) >= 10_000 else str(v)

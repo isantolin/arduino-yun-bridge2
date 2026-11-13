@@ -54,10 +54,10 @@ async def test_pure_telemetry_push_mode(
     from collections.abc import Awaitable, Callable
 
     # Verify telemetry publication works directly via cloud RPC client
-    svc._cloud_rpc_client = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
     mock_writer = MagicMock()
     mock_writer.drain = AsyncMock()
-    svc._cloud_writer = mock_writer
+    svc.cloud_writer = mock_writer
     svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
     metrics = mcu_wire_pb2.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
@@ -72,5 +72,6 @@ async def test_pure_telemetry_push_mode(
     assert published is True
 
     svc.send_cloud_telemetry.assert_awaited_once()
+    assert svc.send_cloud_telemetry.await_args is not None
     kwargs = svc.send_cloud_telemetry.await_args.kwargs
     assert kwargs.get(telemetry_field) == payload

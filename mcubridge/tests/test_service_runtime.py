@@ -11,7 +11,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import lmdb
-import pw_hdlc
+import pw_hdlc.decode
 import pw_rpc.packets
 import pytest
 from hypothesis import given
@@ -174,8 +174,8 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
         mock_client = MagicMock()
         mock_writer = MagicMock()
         mock_writer.drain = AsyncMock()
-        service._cloud_rpc_client = mock_client
-        service._cloud_writer = mock_writer
+        service.cloud_rpc_client = mock_client
+        service.cloud_writer = mock_writer
         service.send_cloud_telemetry = AsyncMock(return_value=True)
         await service.flush_cloud_spool()
 
@@ -450,10 +450,10 @@ async def test_flush_cloud_spool_corrupt_and_index_error(
     mock_bridge_service: BridgeService,
 ) -> None:
     svc = mock_bridge_service
-    svc._cloud_rpc_client = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
     mock_writer = MagicMock()
     mock_writer.drain = AsyncMock()
-    svc._cloud_writer = mock_writer
+    svc.cloud_writer = mock_writer
     svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
     mock_spool = MagicMock(spec=LmdbDeque)
@@ -880,10 +880,10 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_bridge_service: BridgeService,
 ) -> None:
     svc = mock_bridge_service
-    svc._cloud_rpc_client = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
     mock_writer = MagicMock()
     mock_writer.drain = AsyncMock()
-    svc._cloud_writer = mock_writer
+    svc.cloud_writer = mock_writer
     svc.send_cloud_telemetry = AsyncMock(return_value=True)
     flush_locked: Callable[[], Awaitable[None]] = svc.flush_cloud_spool_locked
 
@@ -1124,22 +1124,22 @@ async def test_runtime_cloud_session_connection_failure(
     mocker.patch("asyncio.open_connection", side_effect=OSError("Network unreachable"))
     with pytest.raises(ConnectionError):
         await svc.connect_cloud_session(None)
-    assert svc._cloud_rpc_client is None
+    assert svc.cloud_rpc_client is None
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
 async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
 
-    service._cloud_rpc_client = None
-    service._cloud_writer = None
+    service.cloud_rpc_client = None
+    service.cloud_writer = None
     await service.send_cloud_event("heartbeat", "info", "test_msg")
 
     mock_client = MagicMock()
     mock_writer = MagicMock()
     mock_writer.drain = AsyncMock()
-    service._cloud_rpc_client = mock_client
-    service._cloud_writer = mock_writer
+    service.cloud_rpc_client = mock_client
+    service.cloud_writer = mock_writer
     service.send_cloud_telemetry = AsyncMock(return_value=True)
     await service.send_cloud_event("heartbeat", "info", "test_msg")
     service.send_cloud_telemetry.assert_awaited_once_with(system_status_blob=b"heartbeat:info:test_msg")
@@ -1207,7 +1207,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     mock_writer.write = MagicMock(side_effect=written_frames.append)
     mock_writer.drain = AsyncMock()
 
-    await svc._handle_cloud_edge_dispatch(mock_pkt_ok, mock_writer)
+    await svc.handle_cloud_edge_dispatch(mock_pkt_ok, mock_writer)
     assert len(written_frames) == 1
     frames = list(pw_hdlc.decode.FrameDecoder().process_valid_frames(written_frames[0]))
     assert len(frames) == 1
@@ -1231,7 +1231,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     mock_pkt_invalid.method_id = 1
     mock_pkt_invalid.channel_id = 1
 
-    await svc._handle_cloud_edge_dispatch(mock_pkt_invalid, mock_writer)
+    await svc.handle_cloud_edge_dispatch(mock_pkt_invalid, mock_writer)
     assert len(written_frames) == 1
     frames = list(pw_hdlc.decode.FrameDecoder().process_valid_frames(written_frames[0]))
     assert len(frames) == 1
@@ -1255,7 +1255,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     mock_pkt_err.method_id = 1
     mock_pkt_err.channel_id = 1
 
-    await svc._handle_cloud_edge_dispatch(mock_pkt_err, mock_writer)
+    await svc.handle_cloud_edge_dispatch(mock_pkt_err, mock_writer)
     assert len(written_frames) == 1
     frames = list(pw_hdlc.decode.FrameDecoder().process_valid_frames(written_frames[0]))
     assert len(frames) == 1
@@ -1564,8 +1564,8 @@ async def test_runtime_cloud_spool_and_subscribe_branches(mock_bridge_service: B
     svc = mock_bridge_service
 
     # 1. flush_cloud_spool exception
-    svc._cloud_rpc_client = MagicMock()
-    svc._cloud_writer = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
+    svc.cloud_writer = MagicMock()
     mock_spool = MagicMock()
     mock_spool.__len__.return_value = 0
     mock_spool.vacuum = AsyncMock(side_effect=lmdb.Error("disk full"))
@@ -1575,12 +1575,12 @@ async def test_runtime_cloud_spool_and_subscribe_branches(mock_bridge_service: B
     assert "disk full" in (svc.state.cloud_spool_failure_reason or "")
 
     # 2. publish_cloud_message without and with writer
-    svc._cloud_writer = None
+    svc.cloud_writer = None
     res_no = await svc.publish_cloud_message(cloud_gateway_pb2.CloudQueuedPublish(topic_name="test", payload=b"p"))
     assert res_no is False
 
-    svc._cloud_rpc_client = MagicMock()
-    svc._cloud_writer = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
+    svc.cloud_writer = MagicMock()
     with patch.object(svc, "send_cloud_telemetry", new=AsyncMock(return_value=True)):
         res_ok = await svc.publish_cloud_message(
             cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/console/stdout", payload=b"hello")
@@ -1589,7 +1589,7 @@ async def test_runtime_cloud_spool_and_subscribe_branches(mock_bridge_service: B
 
     # 3. pin_subscribe invalid mode and error
     with patch.object(svc.gpio, "subscribe_pin", new=AsyncMock(return_value={"status": "error"})):
-        resp = await svc.pin_subscribe(mcu_wire_pb2.PinSubscribeRequest(pin=13, mode=999))
+        resp = await svc.pin_subscribe(mcu_wire_pb2.PinSubscribeRequest(pin=13, mode=cast(Any, 999)))
         assert resp.success is False
 
 

@@ -2,6 +2,7 @@ import asyncio
 import socket
 import ssl
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -236,9 +237,16 @@ class FakeCall:
         self.status = status
 
 
+def _fake_create_connection(sock: Any) -> Callable[..., Any]:
+    def _connect(_address: Any, timeout: float = 10.0) -> Any:
+        return sock
+
+    return _connect
+
+
 def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None:
     sock_srv, sock_cli = socket.socketpair()
-    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: sock_cli)
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(sock_cli))
 
     # 1. Plain socket connection
     conn = GatewayConnection("127.0.0.1", 8443)
@@ -248,9 +256,9 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None
     assert len(raw) > 0
 
     # Test send_frame when sock is None
-    conn.sock = None
+    monkeypatch.setattr(conn, "sock", None)
     conn.send_frame(b"ping")
-    conn.sock = sock_cli
+    monkeypatch.setattr(conn, "sock", sock_cli)
 
     # Test reading valid HDLC frame with address 1
     mock_process = MagicMock()
@@ -276,7 +284,7 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None
     mock_sock = MagicMock()
     mock_sock.close.side_effect = OSError("close error")
     mock_sock.recv.side_effect = OSError("closed")
-    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: mock_sock)
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(mock_sock))
     conn_err = GatewayConnection("127.0.0.1", 8443)
     conn_err.close()
 
@@ -286,7 +294,7 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None
     mock_ssl_ctx.wrap_socket.return_value = mock_wrapped_sock
     mock_wrapped_sock.recv.side_effect = OSError("closed")
 
-    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: MagicMock())
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(MagicMock()))
     conn_ssl = GatewayConnection("127.0.0.1", 8443, ssl_context=mock_ssl_ctx)
     mock_ssl_ctx.wrap_socket.assert_called_once()
     conn_ssl.close()
@@ -354,11 +362,11 @@ async def test_gateway_client_health() -> None:
         await client.Health()
 
 
-async def test_gateway_client_all_convenience_methods() -> None:
+async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_conn = MagicMock()
     client = GatewayClient(mock_conn, target_device_id="yun-01")
 
-    responses: dict[tuple[str, str], Any] = {
+    responses: dict[tuple[str, str], Callable[[Any], bytes]] = {
         ("rpc.pb.GpioService", "DigitalWrite"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         ("rpc.pb.GpioService", "DigitalRead"): lambda _req: mcu_wire_pb2.DigitalReadResponse(
             value=1
@@ -404,7 +412,7 @@ async def test_gateway_client_all_convenience_methods() -> None:
             return factory(req)
         raise NotImplementedError(f"Unhandled {service}/{method}")
 
-    client.dispatch = _mock_dispatch
+    monkeypatch.setattr(client, "dispatch", _mock_dispatch)
 
     res_dw = await client.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     assert isinstance(res_dw, mcu_wire_pb2.Empty)
@@ -418,7 +426,7 @@ async def test_gateway_client_all_convenience_methods() -> None:
     res_ar = await client.AnalogRead(mcu_wire_pb2.PinRead(pin=0))
     assert res_ar.value == 512
 
-    res_pm = await client.SetPinMode(mcu_wire_pb2.PinMode(pin=13, mode=1))
+    res_pm = await client.SetPinMode(mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PinModeType.PIN_OUTPUT))
     assert isinstance(res_pm, mcu_wire_pb2.Empty)
 
     res_dp = await client.DatastorePut(mcu_wire_pb2.DatastorePut(key="k", value=b"v"))
@@ -470,7 +478,7 @@ async def test_gateway_client_all_convenience_methods() -> None:
 def test_gateway_connection_reader_eof(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_sock = MagicMock()
     mock_sock.recv.return_value = b""
-    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: mock_sock)
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(mock_sock))
     conn = GatewayConnection("127.0.0.1", 8443)
     conn.reader_thread.join(timeout=2)
     assert not conn.reader_thread.is_alive()

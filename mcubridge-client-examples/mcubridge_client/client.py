@@ -11,7 +11,7 @@ from typing import Any, Final, cast
 import pw_hdlc.decode
 import pw_hdlc.encode
 import structlog
-from pw_rpc import callback_client
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
 
@@ -46,7 +46,7 @@ class GatewayConnection:
         self.running = True
         self.decoder = pw_hdlc.decode.FrameDecoder()
         self.rpc_client = PwRpcClient(
-            callback_client.Impl(),
+            PwCallbackClientImpl(),
             [PwRpcChannel(1, self.send_frame)],
             PW_SERVICES,
         )

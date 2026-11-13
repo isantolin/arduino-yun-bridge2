@@ -292,6 +292,11 @@ BridgeClass::BridgeClass(Stream& stream)
   _initObservers();
 }
 
+BridgeClass::BridgeClass(HardwareSerial& serial)
+    : BridgeClass(static_cast<Stream&>(serial)) {
+  _hardware_serial = &serial;
+}
+
 BridgeClass::~BridgeClass() {
   if (!_rpc_services_registered) return;
   _rpc_server.UnregisterService(g_gpio_service, g_system_service,
@@ -326,39 +331,15 @@ pw::Status BridgeClass::RpcChannelOutput::Send(
 }
 
 void BridgeClass::setStream(Stream& stream) {
+  // Generic streams (USB CDC, sockets, emulator shims) have no baud rate.
   _stream = &stream;
   _arduino_stream.setStream(stream);
-#if defined(SERIAL_PORT_LINUXBRIDGE)
-  if (_stream == &SERIAL_PORT_LINUXBRIDGE) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(SERIAL_PORT_HARDWARE)
-  if (_stream == &SERIAL_PORT_HARDWARE) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(ARDUINO_ARCH_SAMD)
-  if (_stream == &Serial) {
-    _hardware_serial = nullptr;
-    return;
-  }
-#else
-  if (_stream == &Serial) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(Serial1) || defined(HAVE_HWSERIAL1) || \
-    (defined(SOC_UART_NUM) && SOC_UART_NUM > 1)
-  if (_stream == &Serial1) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
   _hardware_serial = nullptr;
+}
+
+void BridgeClass::setStream(HardwareSerial& serial) {
+  setStream(static_cast<Stream&>(serial));
+  _hardware_serial = &serial;
 }
 
 void BridgeClass::_initializeRuntime() {
@@ -366,10 +347,6 @@ void BridgeClass::_initializeRuntime() {
   _timer_last_tick_ms = 0;
   _state_flags.reset();
   _clearLinkSession();
-
-  if (_stream) {
-    setStream(*_stream);
-  }
 
   pw_log_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {

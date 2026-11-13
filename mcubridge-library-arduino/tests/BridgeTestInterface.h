@@ -119,6 +119,7 @@ class TestAccessor : public BridgeClass {
   }
   void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
+  HardwareSerial* hardwareSerial() const { return _hardware_serial; }
 
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
   void clearSharedSecret() { _shared_secret.clear(); }

@@ -55,6 +55,7 @@
 #include <pw_varint/varint.h>
 #endif
 #include <wolfssl.h>
+
 #include "hal/arduino_stream.h"
 
 // clang-format off
@@ -158,9 +159,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   };
 
   explicit BridgeClass(Stream& stream);
+  // Hardware UARTs are identified by type (overload resolution), never by
+  // comparing against global port objects: taking &Serial1 forces the linker
+  // to keep that port and its RX/TX buffers even when the sketch never uses it.
+  explicit BridgeClass(HardwareSerial& serial);
   ~BridgeClass();
 
   void setStream(Stream& stream);
+  void setStream(HardwareSerial& serial);
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
@@ -321,8 +327,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       bridge::config::RX_BUFFER_SIZE;
   static_assert(kTransferEncodeBufferSize > kTransferChunkBufferSize,
                 "pw_transfer encode buffer must exceed its chunk buffer");
-  etl::array<pw::ByteSpan::element_type, kTransferChunkBufferSize> _transfer_chunk_storage{};
-  etl::array<pw::ByteSpan::element_type, kTransferEncodeBufferSize> _transfer_encode_storage{};
+  etl::array<pw::ByteSpan::element_type, kTransferChunkBufferSize>
+      _transfer_chunk_storage{};
+  etl::array<pw::ByteSpan::element_type, kTransferEncodeBufferSize>
+      _transfer_encode_storage{};
   pw::transfer::Thread<1, 1> _transfer_thread;
   pw::transfer::TransferService _transfer_service;
   pw::transfer::Client _transfer_client;

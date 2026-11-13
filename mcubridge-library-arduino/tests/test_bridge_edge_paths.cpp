@@ -1041,6 +1041,25 @@ void test_plaintext_malformed_rpc_frame_is_rejected() {
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
+// Only HardwareSerial ports (selected by type) are re-clocked on baudrate
+// changes; generic streams must never be treated as a UART.
+void test_set_stream_selects_hardware_serial_by_type() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  TEST_ASSERT_NULL(ba.hardwareSerial());
+
+  Bridge.setStream(Serial);
+  TEST_ASSERT_EQUAL_PTR(&Serial, ba.hardwareSerial());
+
+  Bridge.setStream(stream);
+  TEST_ASSERT_NULL(ba.hardwareSerial());
+
+  BridgeClass uart_bridge(Serial);
+  auto& uart_ba = TestAccessor::create(uart_bridge);
+  TEST_ASSERT_EQUAL_PTR(&Serial, uart_ba.hardwareSerial());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
@@ -1060,5 +1079,6 @@ int main() {
   RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
   RUN_TEST(test_pin_subscription_reports_rising_edge);
   RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
+  RUN_TEST(test_set_stream_selects_hardware_serial_by_type);
   return UNITY_END();
 }

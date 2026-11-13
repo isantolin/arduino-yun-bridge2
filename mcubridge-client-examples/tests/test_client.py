@@ -277,18 +277,24 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None
     # Test reading frame with non-rpc address (should be ignored)
     sock_srv.sendall(pw_hdlc.encode.ui_frame(2, b"log_data"))
 
-    # Close connection
+    # Close connection: the peer (the Gateway) must observe EOF immediately so it
+    # releases the client principal before the next session with the same identity.
     conn.close()
+    sock_srv.settimeout(1.0)
+    assert sock_srv.recv(16) == b""
     sock_srv.close()
     sock_cli.close()
 
     # 2. Test close error handling
     mock_sock = MagicMock()
+    mock_sock.shutdown.side_effect = OSError("not connected")
     mock_sock.close.side_effect = OSError("close error")
     mock_sock.recv.side_effect = OSError("closed")
     monkeypatch.setattr(socket, "create_connection", _fake_create_connection(mock_sock))
     conn_err = GatewayConnection("127.0.0.1", 8443)
     conn_err.close()
+    mock_sock.shutdown.assert_called_once_with(socket.SHUT_RDWR)
+    mock_sock.close.assert_called_once_with()
 
     # 3. SSL wrapped connection
     mock_ssl_ctx = MagicMock(spec=ssl.SSLContext)

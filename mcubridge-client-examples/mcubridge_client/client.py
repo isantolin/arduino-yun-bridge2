@@ -72,6 +72,14 @@ class GatewayConnection:
 
     def close(self) -> None:
         self.running = False
+        # shutdown() wakes the reader thread blocked in recv() and sends EOF right
+        # away. Without it the descriptor stays open until the reader returns, and
+        # the Gateway keeps the client principal registered, rejecting the next
+        # session with the same identity as a duplicate.
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError as exc:
+            logger.debug("Socket shutdown error ignored", error=str(exc))
         try:
             self.sock.close()
         except OSError as exc:

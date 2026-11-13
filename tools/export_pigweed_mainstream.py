@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# File: tools/export_pigweed_mainstream.py
 """Packages upstream Google Pigweed into a standalone Arduino IDE / Arduino CLI library for 32-bit MCUs (SAMD & ESP32).
 
 [SIL-2 / Multi-Architecture Compilation]
@@ -10,9 +9,11 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
+from typing import Annotated
+
+import typer
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PW_ROOT = REPO_ROOT / "third_party" / "pigweed"
@@ -132,7 +133,7 @@ version=0.0.1
 author=Google Pigweed Authors
 maintainer=Ignacio Santolin <ignacio.santolin@gmail.com>
 sentence=Google Pigweed mainstream modules for 32-bit Arduino architectures.
-paragraph=Mainstream Google Pigweed RPC, HDLC, Tokenizer, Chrono, and serialization for 32-bit MCU platforms (SAMD21 and ESP32-S3).
+paragraph=Mainstream Pigweed RPC, HDLC, Tokenizer, Chrono and serialization for 32-bit MCUs (SAMD21, ESP32-S3).
 category=Communication
 url=https://pigweed.dev
 architectures=samd,esp32
@@ -337,7 +338,9 @@ int64_t GetSystemClockTickCount() {
 
 #define PW_HANDLE_CRASH(...) abort()
 #define PW_HANDLE_ASSERT_FAILURE(condition_string, ...) abort()
-#define PW_HANDLE_ASSERT_BINARY_COMPARE_FAILURE(arg_a_str, arg_a_val, comparison_op_str, arg_b_str, arg_b_val, type_fmt, message, ...) abort()
+#define PW_HANDLE_ASSERT_BINARY_COMPARE_FAILURE(arg_a_str, arg_a_val, comparison_op_str, \
+                                                arg_b_str, arg_b_val, type_fmt, message, ...) \
+  abort()
 """
     (assert_backend_dir / "assert_backend.h").write_text(assert_hdr, encoding="utf-8")
     (assert_backend_dir / "check_backend.h").write_text(check_hdr, encoding="utf-8")
@@ -477,11 +480,18 @@ void pw_log_HandleLog(uint8_t level, const uint8_t* log_data, size_t size) {
     print(f"[OK] Mainstream Pigweed Arduino Library exported to {dest_dir}")
 
 
-def main() -> int:
-    target_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO_ROOT / "dist" / "Pigweed"
+cli = typer.Typer(help="Export mainstream Pigweed as an Arduino library for 32-bit targets.", add_completion=False)
+
+
+@cli.command()
+def main(
+    target_dir: Annotated[Path, typer.Argument(help="Destination Arduino library directory")] = REPO_ROOT
+    / "dist"
+    / "Pigweed",
+) -> None:
+    """Export the pinned upstream Pigweed submodule as the `Pigweed` Arduino library."""
     export_mainstream_library(target_dir)
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    cli()

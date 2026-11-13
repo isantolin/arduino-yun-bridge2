@@ -10,7 +10,7 @@ import secrets
 import shlex
 import stat
 import time
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -1109,9 +1109,20 @@ class BridgeService:
         self.state.cloud_fsm.connect_http2()
         logger.info("Connected to Cloud Gateway via Pigweed HDLC over TLS.")
 
-        # Emit status online event
-        await self.send_cloud_event("status_online", "info", "Device online")
-        await self.flush_cloud_spool()
+        # The reader below is the only consumer of Gateway responses and EdgeControl
+        # requests, so nothing that awaits a Gateway response may run before it starts.
+        session_tasks: set[asyncio.Task[None]] = set()
+
+        def _spawn(coro: Coroutine[Any, Any, None], name: str) -> None:
+            task = asyncio.create_task(coro, name=name)
+            session_tasks.add(task)
+            task.add_done_callback(session_tasks.discard)
+
+        async def _announce_online() -> None:
+            await self.send_cloud_event("status_online", "info", "Device online")
+            await self.flush_cloud_spool()
+
+        _spawn(_announce_online(), "mcubridge-cloud-online")
 
         decoder = pw_hdlc.decode.FrameDecoder()
         try:
@@ -1129,7 +1140,7 @@ class BridgeService:
                         continue
 
                     if pkt.type == packet_pb2.PacketType.REQUEST:
-                        asyncio.create_task(self.handle_cloud_edge_dispatch(pkt, writer))
+                        _spawn(self.handle_cloud_edge_dispatch(pkt, writer), "mcubridge-edge-dispatch")
                     elif pkt.type in (
                         packet_pb2.PacketType.RESPONSE,
                         packet_pb2.PacketType.SERVER_ERROR,
@@ -1144,6 +1155,8 @@ class BridgeService:
             logger.warning("Cloud session stream disconnected", error=str(exc))
             raise ConnectionError(f"Cloud session stream disconnected: {exc}") from exc
         finally:
+            for task in tuple(session_tasks):
+                task.cancel()
             self.state.cloud_fsm.degrade()
             self.cloud_writer = None
             self._cloud_reader = None
@@ -1211,13 +1224,14 @@ class BridgeService:
             loop = asyncio.get_running_loop()
             fut: asyncio.Future[Any] = loop.create_future()
 
-            def _on_completed(call: Any, resp: Any) -> None:
+            def _on_completed(_call: Any, status: Any) -> None:
                 if not fut.done():
-                    fut.set_result(call.status)
+                    fut.set_result(status)
 
-            def _on_error(call: Any) -> None:
+            def _on_error(_call: Any, error: Any) -> None:
+                # pw_rpc invokes every callback as callback(call, arg); error is the failure Status.
                 if not fut.done():
-                    fut.set_result(call.status)
+                    fut.set_result(error)
 
             report_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
             await self.cloud_writer.drain()

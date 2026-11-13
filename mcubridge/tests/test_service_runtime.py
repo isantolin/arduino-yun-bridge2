@@ -1769,3 +1769,32 @@ async def test_unknown_mcu_rpc_reports_unimplemented_on_its_call(
     svc.state.connection_fsm.synchronize()
     await svc.handle_mcu_frame((0x1234, 0x5678), 9, b"")
     mock_serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 9, 0x1234, 0x5678)
+
+
+@pytest.mark.parametrize(
+    ("callback", "status", "expected"),
+    [("on_completed", "OK", True), ("on_error", "UNAVAILABLE", False)],
+)
+async def test_send_cloud_telemetry_resolves_pw_rpc_callbacks(
+    mock_bridge_service: BridgeService, callback: str, status: str, expected: bool
+) -> None:
+    """pw_rpc invokes every callback as callback(call, arg); both outcomes must resolve without waiting 5 s."""
+    import pw_status
+
+    svc = mock_bridge_service
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    svc.cloud_writer = writer
+
+    def _invoke(_req: Any, *, on_completed: Any, on_error: Any) -> None:
+        fn = on_completed if callback == "on_completed" else on_error
+        fn(MagicMock(), getattr(pw_status.Status, status))
+
+    method = MagicMock()
+    method.invoke.side_effect = _invoke
+    client = MagicMock()
+    client.channel.return_value.rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry = method
+    svc.cloud_rpc_client = client
+
+    async with asyncio.timeout(1.0):
+        assert await svc.send_cloud_telemetry(system_status_blob=b"x") is expected

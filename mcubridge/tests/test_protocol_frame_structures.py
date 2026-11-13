@@ -210,7 +210,8 @@ def test_get_ssl_context_insecure() -> None:
     ctx = structures.get_ssl_context(cfg_insecure)
     assert ctx is not None
     assert ctx.check_hostname is False
-    assert ctx.verify_mode == ssl.CERT_NONE
+    # Only hostname matching is relaxed; the certificate chain must still be verified.
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
 
 
 def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:

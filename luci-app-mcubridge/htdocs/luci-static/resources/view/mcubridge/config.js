@@ -107,7 +107,7 @@ return view.extend({
 		applySchemaDefault(o, 'cloud_tls', true);
 
 		o = s.option(form.Flag, 'cloud_tls_insecure', _('Disable TLS Hostname Verification'),
-			_('Equivalent to insecure TLS. Allows connecting via IP even when the certificate CN/SAN is a DNS name. Less secure; use only for trusted/self-hosted gateways.'));
+			_('Skips only hostname matching, so connecting via IP works when the certificate SAN is a DNS name. The certificate chain is still verified against the CA file.'));
 		o.depends('cloud_tls', '1');
 		o.rmempty = true;
 		applySchemaDefault(o, 'cloud_tls_insecure', true);
@@ -181,7 +181,7 @@ return view.extend({
 			['cloud_allow_shell_run_async', _('Allow shell run_async'), _('Allow asynchronous shell execution via br/sh/run_async.')],
 			['cloud_allow_shell_poll', _('Allow shell poll'), _('Allow polling of asynchronous shell jobs via br/sh/poll.')],
 			['cloud_allow_shell_kill', _('Allow shell kill'), _('Allow canceling asynchronous shell jobs via br/sh/kill.')],
-			['cloud_allow_console_input', _('Allow console input'), _('Permit writes to br/console/in to reach the MCU console.')],
+			['cloud_allow_console_input', _('Allow console input'), _('Permit ConsoleService/Write requests to reach the MCU console.')],
 			['cloud_allow_digital_write', _('Allow digital write'), _('Allow writes to br/d/<pin>/write.')],
 			['cloud_allow_digital_read', _('Allow digital read'), _('Allow reads via br/d/<pin>/read.')],
 			['cloud_allow_digital_mode', _('Allow digital mode'), _('Allow access to br/d/<pin>/mode.')],

@@ -580,7 +580,7 @@ def test_runtime_reject_cloud_topic_variants(action: str, topic_str: str) -> Non
         svc.enqueue_cloud_status_report = AsyncMock()
 
         reject_cloud_fn: Callable[..., Awaitable[None]] = BridgeService.reject_cloud
-        await reject_cloud_fn(svc, cloud_gateway_pb2.CloudQueuedPublish(), "GpioService", action)
+        await reject_cloud_fn(svc, cloud_gateway_pb2.CloudQueuedPublish(), "rpc.pb.GpioService/DigitalWrite", action)
         svc.enqueue_cloud_status_report.assert_awaited_once()
 
         svc.enqueue_cloud_status_report.reset_mock()
@@ -1195,8 +1195,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
 
     # 1. Successful RPC dispatch: rpc.pb.SystemService/GetVersion -> status_code 200
     req_ok = gateway_control_pb2.EdgeDispatchRequest(
-        service_name="rpc.pb.SystemService",
-        method_name="GetVersion",
+        operation="rpc.pb.SystemService/GetVersion",
         request_payload=b"",
     )
     mock_pkt_ok = MagicMock()
@@ -1224,8 +1223,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     # 2. Unknown RPC method: FakeService/UnknownMethod -> status_code 404
     written_frames.clear()
     req_invalid = gateway_control_pb2.EdgeDispatchRequest(
-        service_name="FakeService",
-        method_name="UnknownMethod",
+        operation="FakeService/UnknownMethod",
         request_payload=b"",
     )
     mock_pkt_invalid = MagicMock()
@@ -1248,8 +1246,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     # 3. Hardware IO error: rpc.pb.GpioService/SetPinMode -> status_code 500
     written_frames.clear()
     req_err = gateway_control_pb2.EdgeDispatchRequest(
-        service_name="rpc.pb.GpioService",
-        method_name="SetPinMode",
+        operation="rpc.pb.GpioService/SetPinMode",
         request_payload=mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PinModeType.PIN_OUTPUT).SerializeToString(),
     )
     mock_pkt_err = MagicMock()
@@ -1707,7 +1704,7 @@ async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_serv
         await svc.handle_cloud_edge_dispatch(
             _pkt(
                 1,
-                gateway_control_pb2.EdgeDispatchRequest(service_name="rpc.pb.SystemService", method_name="GetVersion"),
+                gateway_control_pb2.EdgeDispatchRequest(operation="rpc.pb.SystemService/GetVersion"),
             ),
             mock_writer,
         )
@@ -1719,8 +1716,7 @@ async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_serv
             _pkt(
                 2,
                 gateway_control_pb2.EdgeDispatchRequest(
-                    service_name="rpc.pb.GpioService",
-                    method_name="DigitalWrite",
+                    operation="rpc.pb.GpioService/DigitalWrite",
                     request_payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
                 ),
             ),

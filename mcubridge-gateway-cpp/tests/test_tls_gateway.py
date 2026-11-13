@@ -509,8 +509,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dispatch_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
             req = gateway_control_pb2.DispatchRequest(
                 target_device_id="missing-device",
-                service_name="rpc.pb.SystemService",
-                method_name="Ping",
+                operation="rpc.pb.SystemService/Ping",
                 request_payload=b"",
                 timeout_ms=1000,
             )
@@ -560,7 +559,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                             edge_req.ParseFromString(pkt.payload)
                             edge_resp = gateway_control_pb2.EdgeDispatchResponse(
                                 status_code=0,
-                                response_payload=b"pong_payload_response",
+                                response_payload=edge_req.operation.encode("utf-8"),
                             )
                             resp_pkt = pw_rpc.packets.encode_response(
                                 pkt, response=edge_resp, status=pw_status.Status.OK
@@ -581,15 +580,15 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dispatch_method = client_rpc.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
             req = gateway_control_pb2.DispatchRequest(
                 target_device_id="device-01",
-                service_name="rpc.pb.SystemService",
-                method_name="Ping",
+                operation="rpc.pb.SystemService/Ping",
                 request_payload=b"test_payload",
                 timeout_ms=3000,
             )
             res = dispatch_method(req)
             assert res.status == pw_status.Status.OK
             assert res.response.status_code == 0
-            assert res.response.response_payload == b"pong_payload_response"
+            # The canonical operation name reaches the device unchanged.
+            assert res.response.response_payload == b"rpc.pb.SystemService/Ping"
         finally:
             running = False
             client_sock.close()

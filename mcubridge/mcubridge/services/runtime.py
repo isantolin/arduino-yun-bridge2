@@ -585,7 +585,7 @@ class BridgeService:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(k, v)
         tp = getattr(reply_context, "response_topic", None) or protocol.topic_path(
-            self.state.cloud_topic_prefix, "res", "DataStoreService/Get"
+            self.state.cloud_topic_prefix, "res", "rpc.pb.DataStoreService/Get"
         )
         await self.enqueue_cloud_publish(
             tp,
@@ -911,7 +911,7 @@ class BridgeService:
             buf = self.state.console_to_mcu_queue.popleft()
 
             for chunk in iter_chunks(buf, protocol.MAX_PAYLOAD_SIZE):
-                if not await serial.send("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=chunk)):
+                if not await serial.send("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=chunk)):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
@@ -1171,7 +1171,7 @@ class BridgeService:
         edge_req = gateway_control_pb2.EdgeDispatchRequest()
         try:
             edge_req.ParseFromString(pkt.payload)
-            target = f"{edge_req.service_name}/{edge_req.method_name}"
+            target = edge_req.operation
             spec = protocol.BY_NAME.get(target)
             if spec is None:
                 raise ValueError(f"Unknown RPC method: {target}")
@@ -1327,8 +1327,7 @@ class BridgeService:
                 raise ConnectionError(f"Serial link disconnected for {target}")
 
             payload = b"" if isinstance(req, mcu_wire_pb2.SubscribeRequest) else req
-            cmd_key = f"{spec.service_name}/{spec.method_name}" if spec.service_name and spec.method_name else spec
-            res = await self.serial.send(cmd_key, payload)
+            res = await self.serial.send(spec.name, payload)
             if isinstance(res, mcu_wire_pb2.VersionResponse):
                 self.state.mcu_version = (res.major, res.minor, res.patch)
             if res is True:

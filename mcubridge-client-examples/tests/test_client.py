@@ -322,8 +322,7 @@ async def test_gateway_client_dispatch_lifecycle() -> None:
     # 1. Success dispatch
     def _invoke_success(req: Any, on_completed: Any = None, on_error: Any = None) -> None:
         assert req.target_device_id == "yun-01"
-        assert req.service_name == "GpioService"
-        assert req.method_name == "DigitalWrite"
+        assert req.operation == "rpc.pb.GpioService/DigitalWrite"
         resp = gateway_control_pb2.DispatchResponse(
             status_code=0,
             response_payload=mcu_wire_pb2.Empty().SerializeToString(),
@@ -335,7 +334,7 @@ async def test_gateway_client_dispatch_lifecycle() -> None:
     mock_dispatch.invoke = _invoke_success
     mock_conn.rpc_client.channel.return_value.rpcs.mcubridge.gateway.GatewayControl.Dispatch = mock_dispatch
 
-    res_bytes = await client.dispatch("GpioService", "DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1))
+    res_bytes = await client.dispatch("rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1))
     assert res_bytes == mcu_wire_pb2.Empty().SerializeToString()
 
     # 2. Error dispatch (status not ok)
@@ -345,7 +344,12 @@ async def test_gateway_client_dispatch_lifecycle() -> None:
 
     mock_dispatch.invoke = _invoke_error
     with pytest.raises(RuntimeError, match="Pigweed RPC dispatch failed"):
-        await client.dispatch("GpioService", "DigitalWrite")
+        await client.dispatch("rpc.pb.GpioService/DigitalWrite")
+
+    # Only canonical operation names are accepted; other spellings never reach the wire.
+    for bad in ("GpioService/DigitalWrite", "DigitalWrite", "rpc.pb.GpioService/Nope"):
+        with pytest.raises(ValueError, match="Unknown operation"):
+            await client.dispatch(bad)
 
 
 async def test_gateway_client_health() -> None:
@@ -381,57 +385,47 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
     mock_conn = MagicMock()
     client = GatewayClient(mock_conn, target_device_id="yun-01")
 
-    responses: dict[tuple[str, str], Callable[[Any], bytes]] = {
-        ("rpc.pb.GpioService", "DigitalWrite"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.GpioService", "DigitalRead"): lambda _req: mcu_wire_pb2.DigitalReadResponse(
-            value=1
-        ).SerializeToString(),
-        ("rpc.pb.GpioService", "AnalogWrite"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.GpioService", "AnalogRead"): lambda _req: mcu_wire_pb2.AnalogReadResponse(
-            value=512
-        ).SerializeToString(),
-        ("rpc.pb.GpioService", "SetPinMode"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.GpioService", "SubscribePins"): lambda req: mcu_wire_pb2.PinSubscribeResponse(
+    responses: dict[str, Callable[[Any], bytes]] = {
+        "rpc.pb.GpioService/DigitalWrite": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.GpioService/DigitalRead": lambda _req: mcu_wire_pb2.DigitalReadResponse(value=1).SerializeToString(),
+        "rpc.pb.GpioService/AnalogWrite": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.GpioService/AnalogRead": lambda _req: mcu_wire_pb2.AnalogReadResponse(value=512).SerializeToString(),
+        "rpc.pb.GpioService/SetPinMode": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.GpioService/SubscribePins": lambda req: mcu_wire_pb2.PinSubscribeResponse(
             pin=req.pin, success=True
         ).SerializeToString(),
-        ("rpc.pb.ConsoleService", "Write"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.DataStoreService", "Put"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.DataStoreService", "Get"): lambda _req: (
+        "rpc.pb.ConsoleService/Write": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.DataStoreService/Put": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.DataStoreService/Get": lambda _req: (
             mcu_wire_pb2.DatastoreGetResponse(value=b"stored").SerializeToString()
         ),
-        ("rpc.pb.MailboxService", "Push"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.MailboxService", "Read"): lambda _req: mcu_wire_pb2.MailboxReadResponse(
-            content=b"msg"
-        ).SerializeToString(),
-        ("rpc.pb.ProcessService", "RunAsync"): lambda _req: mcu_wire_pb2.ProcessRunAsyncResponse(
-            pid=42
-        ).SerializeToString(),
-        ("rpc.pb.ProcessService", "Poll"): lambda _req: mcu_wire_pb2.ProcessPollResponse(
+        "rpc.pb.MailboxService/Push": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.MailboxService/Read": lambda _req: mcu_wire_pb2.MailboxReadResponse(content=b"msg").SerializeToString(),
+        "rpc.pb.ProcessService/RunAsync": lambda _req: mcu_wire_pb2.ProcessRunAsyncResponse(pid=42).SerializeToString(),
+        "rpc.pb.ProcessService/Poll": lambda _req: mcu_wire_pb2.ProcessPollResponse(
             finished=True, exit_code=0
         ).SerializeToString(),
-        ("rpc.pb.ProcessService", "Kill"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.FileSystemService", "Write"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.FileSystemService", "Remove"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.SpiService", "Begin"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.SpiService", "End"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.SpiService", "SetConfig"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        ("rpc.pb.SpiService", "Transfer"): lambda req: mcu_wire_pb2.SpiTransferResponse(
-            data=req.data
-        ).SerializeToString(),
-        ("rpc.pb.SystemService", "GetVersion"): lambda _req: mcu_wire_pb2.VersionResponse(
+        "rpc.pb.ProcessService/Kill": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.FileSystemService/Write": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.FileSystemService/Remove": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.SpiService/Begin": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.SpiService/End": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.SpiService/SetConfig": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.SpiService/Transfer": lambda req: mcu_wire_pb2.SpiTransferResponse(data=req.data).SerializeToString(),
+        "rpc.pb.SystemService/GetVersion": lambda _req: mcu_wire_pb2.VersionResponse(
             major=2, minor=8, patch=9
         ).SerializeToString(),
-        ("rpc.pb.SystemService", "GetFreeMemory"): lambda _req: (
+        "rpc.pb.SystemService/GetFreeMemory": lambda _req: (
             mcu_wire_pb2.FreeMemoryResponse(value=1155).SerializeToString()
         ),
-        ("rpc.pb.SystemService", "EnterBootloader"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        "rpc.pb.SystemService/EnterBootloader": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
     }
 
-    async def _mock_dispatch(service: str, method: str, req: Any = None, timeout_ms: int = 5000) -> bytes:
-        factory = responses.get((service, method))
+    async def _mock_dispatch(operation: str, req: Any = None, timeout_ms: int = 5000) -> bytes:
+        factory = responses.get(operation)
         if factory is not None:
             return factory(req)
-        raise NotImplementedError(f"Unhandled {service}/{method}")
+        raise NotImplementedError(f"Unhandled {operation}")
 
     monkeypatch.setattr(client, "dispatch", _mock_dispatch)
 
@@ -533,7 +527,7 @@ async def test_gateway_client_duplicate_callbacks() -> None:
     client = GatewayClient(mock_conn, target_device_id="dev-test")
 
     async def call_dispatch() -> bytes:
-        return await client.dispatch("SystemService", "Ping", request=None)
+        return await client.dispatch("rpc.pb.SystemService/GetVersion", request=None)
 
     task = asyncio.create_task(call_dispatch())
     await asyncio.sleep(0.01)

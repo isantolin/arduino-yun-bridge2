@@ -398,8 +398,7 @@ class GatewaySession final : public SessionControl,
     std::lock_guard session_lock(dispatch_mutex_);
 
     mcubridge::gateway::pwpb::EdgeDispatchRequest::Message edge_req{};
-    edge_req.service_name = request.service_name;
-    edge_req.method_name = request.method_name;
+    edge_req.operation = request.operation;
     edge_req.request_payload = request.request_payload;
     edge_req.timeout_ms = request.timeout_ms;
 

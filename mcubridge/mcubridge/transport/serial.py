@@ -60,6 +60,8 @@ logger = structlog.get_logger("mcubridge.serial")
 
 _LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
 _LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
+# Console bytes travel on HDLC_ADDRESS_CONSOLE, not as pw_rpc packets to the MCU.
+_CONSOLE_WRITE_SPEC: Final = protocol.BY_NAME["rpc.pb.ConsoleService/Write"]
 _HANDSHAKE_RAW_NAMES: Final[frozenset[str]] = frozenset(
     {
         "rpc.pb.SystemService/LinkSync",
@@ -433,7 +435,7 @@ class SerialTransport:
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
-                await self.service.handle_mcu_frame("rpc.pb.ConsoleService/Write", 0, pb.ConsoleWrite(data=frame_data))
+                await self.service.handle_mcu_frame(_CONSOLE_WRITE_SPEC.name, 0, pb.ConsoleWrite(data=frame_data))
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
@@ -552,6 +554,8 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
+        if spec is _CONSOLE_WRITE_SPEC:
+            return await self.send_raw(spec, payload, seq_id)
         pw_method = (
             protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
             if spec is not None and spec.service_name and spec.method_name
@@ -741,7 +745,7 @@ class SerialTransport:
             )
 
     def _get_rpc_method(self, spec: Any) -> Any | None:
-        method_name = f"{spec.service_name}/{spec.method_name}"
+        method_name = spec.name
         try:
             return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(method_name)
         except (KeyError, ValueError) as exc:
@@ -899,7 +903,7 @@ class SerialTransport:
         rpc_method = self._get_rpc_method(spec)
         if rpc_method is None:
             return False
-        method_name = f"{spec.service_name}/{spec.method_name}"
+        method_name = spec.name
         pw_method = protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
         effective_timeout = timeout if timeout is not None else self._response_timeout
         if pw_method.type is PwRpcMethod.Type.SERVER_STREAMING:
@@ -980,7 +984,7 @@ class SerialTransport:
             target = spec if spec is not None else command_id
             is_link_reset = spec is _LINK_RESET_SPEC
             is_link_sync = spec is _LINK_SYNC_SPEC
-            is_console_write = (spec is not None and spec.name == "ConsoleWrite") or command_id == "ConsoleWrite"
+            is_console_write = spec is _CONSOLE_WRITE_SPEC
 
             if is_console_write:
                 if isinstance(payload, bytes):

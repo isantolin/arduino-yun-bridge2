@@ -104,6 +104,9 @@ done
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
 
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "$PWD/tools/ci/arduino_toolchains.sh"
+
 # Define memory-capable, library-supported target boards (SSOT: tools.boards).
 if command -v python3 >/dev/null 2>&1 && python3 -c "import tools.boards" >/dev/null 2>&1; then
     TARGET_BOARDS=($(python3 -m tools.boards fqbns))
@@ -158,6 +161,10 @@ compile_sketch() {
     local LINK_FLAGS=()
     local AVR_PROPS=()
     local AVR_STDCPP_INC=""
+    if [[ "$FQBN" == arduino:samd:* ]]; then
+        samd_toolchain_props || return 1
+        AVR_PROPS+=("${SAMD_TOOLCHAIN_PROPS[@]}")
+    fi
     if [[ "$FQBN" == arduino:avr:* ]]; then
         COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
         if command -v avr-gcc >/dev/null 2>&1; then

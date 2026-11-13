@@ -107,7 +107,7 @@ jobs:
       - uses: ./.github/actions/setup-protoc
       - name: Setup Arduino CLI
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores and Dependencies
@@ -400,7 +400,7 @@ jobs:
           cache-suffix: renode
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y socat
+          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y socat gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino SAMD Core & Libraries
@@ -516,7 +516,7 @@ jobs:
           cache-suffix: fleet-mesh
       - name: Setup System Packages & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores & Libraries

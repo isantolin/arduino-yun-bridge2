@@ -131,12 +131,16 @@ if [ "$EMULATOR" = "simavr" ]; then
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
+    # shellcheck source=tools/ci/arduino_toolchains.sh
+    source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+    samd_toolchain_props
     COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
+        "${SAMD_TOOLCHAIN_PROPS[@]}"
         "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"

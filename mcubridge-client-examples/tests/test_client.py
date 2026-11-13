@@ -212,6 +212,8 @@ async def test_spi_device_transfer() -> None:
     mock_stub = MagicMock(spec=GatewayClient)
     mock_spi_config = AsyncMock()
     mock_stub.SpiConfigure = mock_spi_config
+    mock_stub.SpiBegin = AsyncMock()
+    mock_stub.SpiEnd = AsyncMock()
     mock_stub.SpiTransfer = AsyncMock(return_value=mcu_wire_pb2.SpiTransfer(data=b"\xaa\xbb"))
 
     dev = SpiDevice(mock_stub)
@@ -221,15 +223,20 @@ async def test_spi_device_transfer() -> None:
     res1 = await dev.transfer(b"\x01\x02")
     assert dev.is_active
     assert res1 == b"\xaa\xbb"
+    # The bus must be started on the MCU before it is configured and used.
+    mock_stub.SpiBegin.assert_awaited_once()
     mock_spi_config.assert_awaited_once()
 
     # Transfer with sequence/list of ints while active
     res2 = await dev.transfer([0x03, 0x04])
     assert res2 == b"\xaa\xbb"
 
-    # End
+    # End releases the bus on the MCU exactly once.
     await dev.end()
     assert not dev.is_active
+    mock_stub.SpiEnd.assert_awaited_once()
+    await dev.end()
+    mock_stub.SpiEnd.assert_awaited_once()
 
 
 class FakeCall:
@@ -405,6 +412,8 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
         ("rpc.pb.ProcessService", "Kill"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         ("rpc.pb.FileSystemService", "Write"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         ("rpc.pb.FileSystemService", "Remove"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.SpiService", "Begin"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.SpiService", "End"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         ("rpc.pb.SpiService", "SetConfig"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         ("rpc.pb.SpiService", "Transfer"): lambda req: mcu_wire_pb2.SpiTransferResponse(
             data=req.data
@@ -475,6 +484,9 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
 
     res_fr = await client.FileRemove(mcu_wire_pb2.FileRemove(path="a.txt"))
     assert isinstance(res_fr, mcu_wire_pb2.Empty)
+
+    assert isinstance(await client.SpiBegin(mcu_wire_pb2.SubscribeRequest()), mcu_wire_pb2.Empty)
+    assert isinstance(await client.SpiEnd(mcu_wire_pb2.SubscribeRequest()), mcu_wire_pb2.Empty)
 
     res_sc = await client.SpiConfigure(mcu_wire_pb2.SpiConfig(frequency=1000000))
     assert isinstance(res_sc, mcu_wire_pb2.Empty)

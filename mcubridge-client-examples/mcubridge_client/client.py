@@ -246,6 +246,18 @@ class GatewayClient:
         resp.ParseFromString(resp_bytes)
         return resp
 
+    async def SpiBegin(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.Empty:
+        resp_bytes = await self.dispatch("rpc.pb.SpiService", "Begin", req)
+        resp = mcu_wire_pb2.Empty()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
+    async def SpiEnd(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.Empty:
+        resp_bytes = await self.dispatch("rpc.pb.SpiService", "End", req)
+        resp = mcu_wire_pb2.Empty()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
     async def SpiConfigure(self, req: mcu_wire_pb2.SpiConfig) -> mcu_wire_pb2.Empty:
         resp_bytes = await self.dispatch("rpc.pb.SpiService", "SetConfig", req)
         resp = mcu_wire_pb2.Empty()

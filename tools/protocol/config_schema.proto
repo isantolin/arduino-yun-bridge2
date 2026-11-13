@@ -473,7 +473,8 @@ message Constants {
     (cpp_name) = "RPC_BOOTLOADER_MAGIC",
     (cpp_type) = "uint32_t",
     (py_name) = "BOOTLOADER_MAGIC",
-    (py_type) = "int"
+    (py_type) = "int",
+    (client_constant) = true
   ];
   uint32 frame_delimiter = 32 [
     (cpp_name) = "RPC_FRAME_DELIMITER",

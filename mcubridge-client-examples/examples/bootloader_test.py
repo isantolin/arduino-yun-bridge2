@@ -8,8 +8,9 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, cloud_gateway_pb2
+from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.protocol import BOOTLOADER_MAGIC
 
 configure_logging()
 log = structlog.get_logger("bootloader_sim")
@@ -26,8 +27,7 @@ async def run_test(
 
     log.info("Triggering bootloader via GatewayClient...")
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
-        topic_bl = Topic.build("req", "rpc.pb.SystemService", "EnterBootloader", prefix=topic_prefix)
-        await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_bl, payload=b"", qos=1))
+        await stub.EnterBootloader(mcu_wire_pb2.EnterBootloader(magic=BOOTLOADER_MAGIC))
         log.info("Bootloader command sent.")
 
     log.info("Watching for MCU output (2s)...")

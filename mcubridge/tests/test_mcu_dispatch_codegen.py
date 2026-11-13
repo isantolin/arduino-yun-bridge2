@@ -34,7 +34,6 @@ EXPECTED_OPERATION_NAMES: Final[set[str]] = {
     "rpc.pb.GpioService/DigitalRead",
     "rpc.pb.GpioService/AnalogRead",
     "rpc.pb.GpioService/SubscribePins",
-    "ConsoleWrite",
     "rpc.pb.DataStoreService/Put",
     "rpc.pb.DataStoreService/Get",
     "rpc.pb.MailboxService/Push",

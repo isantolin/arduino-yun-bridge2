@@ -6,7 +6,6 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from google.protobuf.message import EncodeError as ProtobufSerializationError
@@ -19,8 +18,6 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 from pytest_mock import MockerFixture
-
-from tools.testing.mock_stream import MockGrpcStream
 
 
 def _make_config() -> RuntimeConfig:
@@ -47,14 +44,16 @@ async def test_enqueue_cloud_ipc_correlation(test_config: RuntimeConfig, mock_br
     correlation_bytes = b"corr-123"
     svc.ipc_requests[correlation_bytes] = q
 
+    prefix = mock_bridge_state.cloud_topic_prefix
+    canonical_topic = f"{prefix}/evt/DataStoreService/Data"
     msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name="mcu/data",
+        topic_name=canonical_topic,
         correlation_data=correlation_bytes,
         payload=b"test",
     )
     await svc.enqueue_cloud(msg)
     pushed = await q.get()
-    assert pushed.topic_name == "mcu/data"
+    assert pushed.topic_name == canonical_topic
 
 
 async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
@@ -62,7 +61,8 @@ async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_brid
     cq: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish] = asyncio.Queue()
     svc.console_queues.append(cq)
 
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/console/stdout", payload=b"hello")
+    prefix = mock_bridge_state.cloud_topic_prefix
+    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/SystemService/ConsoleWrite", payload=b"hello")
     svc.cloud_publisher = AsyncMock()
     await svc.enqueue_cloud(msg)
 
@@ -78,7 +78,8 @@ async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_b
     mock_spool.__len__.return_value = 5
     svc.cloud_spool = mock_spool
 
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/test", payload=b"data")
+    prefix = mock_bridge_state.cloud_topic_prefix
+    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/SystemService/Metrics", payload=b"data")
     spool_fn: Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[bool]] = svc.spool_cloud_message_locked
     res = await spool_fn(msg)
 
@@ -108,7 +109,8 @@ async def test_spool_cloud_message_exceptions(test_config: RuntimeConfig, mock_b
 async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_spool = MagicMock()
-    svc.cloud_stream = MagicMock()
+    svc._cloud_rpc_client = MagicMock()
+    svc._cloud_writer = MagicMock()
     svc.cloud_spool = mock_spool
 
     # Single garbage entry: peek decodes to ProtobufDecodeError, popleft drains it.
@@ -151,8 +153,8 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     svc.cloud_publisher = mock_publish
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    put_topic = f"{prefix}/req/DataStoreService/Put"
-    get_topic = f"{prefix}/req/DataStoreService/Get"
+    put_topic = f"{prefix}/req/rpc.pb.DataStoreService/Put"
+    get_topic = f"{prefix}/req/rpc.pb.DataStoreService/Get"
 
     # PUT Action
     msg_put = cloud_gateway_pb2.CloudQueuedPublish(
@@ -177,7 +179,7 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     svc.cloud_publisher = mock_enqueue
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    write_topic = f"{prefix}/req/MailboxService/Push"
+    write_topic = f"{prefix}/req/rpc.pb.MailboxService/Push"
 
     # WRITE Action
     msg_write = cloud_gateway_pb2.CloudQueuedPublish(
@@ -191,42 +193,29 @@ async def test_cloud_events_and_direct_rpc_dispatch(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.send = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok").SerializeToString())
+    mock_serial.send = AsyncMock(return_value=True)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    mock_stream = MockGrpcStream[Any, cloud_gateway_pb2.CloudEnvelope]()
-    svc.cloud_stream = mock_stream
+    mock_client = MagicMock()
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    svc._cloud_rpc_client = mock_client
+    svc._cloud_writer = mock_writer
+    svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
-    # _send_cloud_event test
-    send_event: Callable[..., Awaitable[None]] = svc.send_cloud_event
-    await send_event("test_event", "info", "Description")
-    mock_stream.send_message.assert_awaited_once()
-    assert mock_stream.sent_message.event.event_type == "test_event"
+    # send_cloud_event test
+    await svc.send_cloud_event("test_event", "info", "Description")
+    svc.send_cloud_telemetry.assert_awaited_once_with(system_status_blob=b"test_event:info:Description")
 
-    env = cloud_gateway_pb2.CloudEnvelope(
-        protocol_version=protocol.PROTOCOL_VERSION,
-        sequence_id=88,
-        command_request=cloud_gateway_pb2.CommandRequest(
-            command_path="rpc.pb.LocalBridge/DigitalWrite",
-            payload=mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
-        ),
+    # direct RPC dispatch test via execute_rpc
+    res_bytes = await svc.execute_rpc(
+        "rpc.pb.GpioService/DigitalWrite",
+        mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
     )
-
-    session_stream = MockGrpcStream[cloud_gateway_pb2.CloudEnvelope, cloud_gateway_pb2.CloudEnvelope](inbound=[env])
-    mocker.patch("mcubridge.services.runtime.Channel")
-    mock_stub = mocker.patch("mcubridge.services.runtime.CloudBridgeStub")
-    mock_stub.return_value.Session.open.return_value = session_stream
-
-    await svc.connect_cloud_session(None)
-
+    assert res_bytes is not None
     mock_serial.send.assert_awaited_once()
-    assert len(session_stream.sent_messages) == 2
-    assert session_stream.sent_messages[0].event.event_type == "status_online"
-    assert session_stream.sent_messages[1].sequence_id == 88
-    assert session_stream.sent_messages[1].command_response.status_code == 200
 
 
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
-    from mcubridge.protocol import protocol
 
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send.return_value = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=5)
@@ -235,14 +224,19 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     svc.cloud_publisher = mock_publisher
 
     # Bootloader action
-    t_bootloader = f"{mock_bridge_state.cloud_topic_prefix}/req/SystemService/EnterBootloader"
-    await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_bootloader, payload=b""))
+    t_bootloader = f"{mock_bridge_state.cloud_topic_prefix}/req/rpc.pb.SystemService/EnterBootloader"
+    await svc.handle_request(
+        cloud_gateway_pb2.CloudQueuedPublish(
+            topic_name=t_bootloader,
+            payload=mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
+        )
+    )
     mock_serial.send.assert_awaited_with(
         "rpc.pb.SystemService/EnterBootloader", mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC)
     )
 
     # Version action
-    t_version = f"{mock_bridge_state.cloud_topic_prefix}/req/SystemService/GetVersion"
+    t_version = f"{mock_bridge_state.cloud_topic_prefix}/req/rpc.pb.SystemService/GetVersion"
     await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_version, payload=b""))
     assert mock_bridge_state.mcu_version == (2, 8, 5)
 
@@ -291,9 +285,9 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    mock_stream = AsyncMock()
-    mock_stream.send_message.side_effect = OSError("Connection error")
-    svc.cloud_stream = mock_stream
+    svc._cloud_rpc_client = MagicMock()
+    svc._cloud_writer = MagicMock()
+    svc.publish_cloud_message = AsyncMock(return_value=False)
 
     spool = svc.cloud_spool
     assert spool is not None
@@ -301,14 +295,13 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
         cloud_gateway_pb2.CloudQueuedPublish(topic_name="spool/topic", payload=b"data").SerializeToString()
     )
 
-    # 1. _publish_cloud_message returns False when send_message raises OSError -> triggers break
+    # 1. _publish_cloud_message returns False -> triggers break
     flush_spool: Callable[[], Awaitable[None]] = svc.flush_cloud_spool_locked
     await flush_spool()
     assert len(spool) == 1
 
     mock_bridge_state.cloud_spool_degraded = False
     mock_bridge_state.cloud_spool_failure_reason = None
-    mock_stream.send_message.side_effect = None
     failing_peek = AsyncMock(side_effect=OSError("simulated_error"))
     spool.peek = failing_peek
     await flush_spool()
@@ -320,7 +313,9 @@ async def test_enqueue_cloud_disabled_noop(test_config: RuntimeConfig, mock_brid
     test_config.cloud_enabled = False
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/data", payload=b"test")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+    )
     await svc.enqueue_cloud(msg)
     assert mock_bridge_state.cloud_publish_queue.empty()
 
@@ -330,7 +325,9 @@ async def test_enqueue_cloud_publish_success(test_config: RuntimeConfig, mock_br
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.publish_cloud_message = AsyncMock(return_value=True)
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/data", payload=b"test")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+    )
     await svc.enqueue_cloud(msg)
     assert mock_bridge_state.cloud_publish_queue.empty()
 
@@ -349,11 +346,16 @@ async def test_spool_cloud_message_serialization_error(
 async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.cloud_stream = AsyncMock()
+    svc._cloud_rpc_client = MagicMock()
+    svc._cloud_writer = MagicMock()
+    svc.send_cloud_telemetry = AsyncMock(return_value=True)
     logging.getLogger("mcubridge.service").setLevel(logging.DEBUG)
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/telemetry", payload=b"test")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+    )
     success = await svc.publish_cloud_message(msg)
     assert success is True
+    svc.send_cloud_telemetry.assert_awaited_once()
 
 
 def test_bridge_service_lifecycle_fsm_properties(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
@@ -439,7 +441,9 @@ async def test_enqueue_cloud_queue_empty_in_finally(
         return True
 
     svc.spool_cloud_message_locked = mock_spool
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="mcu/data", payload=b"test")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+    )
     await svc.enqueue_cloud(msg)
     assert mock_bridge_state.cloud_publish_queue.empty()
 
@@ -448,7 +452,9 @@ async def test_handle_request_without_serial(test_config: RuntimeConfig, mock_br
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.serial = None
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/d/13/write", payload=b"1")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/rpc.pb.GpioService/DigitalWrite", payload=b"1"
+    )
     await svc.handle_request(msg)
     assert svc.serial is None
     assert len(mock_bridge_state.running_processes) == 0
@@ -458,7 +464,10 @@ async def test_on_mcu_console_write_no_queues(test_config: RuntimeConfig, mock_b
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.console_queues.clear()
-    await svc.console_write(1, mcu_wire_pb2.ConsoleWrite(data=b"hello mcu"))
+    msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/ConsoleWrite", payload=b"hello mcu"
+    )
+    await svc.enqueue_cloud(msg)
     assert len(svc.console_queues) == 0
     assert len(mock_bridge_state.console_to_mcu_queue) == 0
 

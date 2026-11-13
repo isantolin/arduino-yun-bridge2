@@ -337,57 +337,7 @@ def _resolve_pb_module_name(name: str, pb_module: Any) -> str | None:
     return None
 
 
-def _extract_rpc_specs(pb_module: Any, svc_desc: Any) -> list[dict[str, Any]]:
-    rpc_specs: list[dict[str, Any]] = []
-    for m in svc_desc.methods:
-        if m.client_streaming or m.server_streaming:
-            continue
-        mo = m.output_type.GetOptions()
-        err_init = _opt_ext(mo, pb_module.msg_error_init, "")
-        m_opts = m.GetOptions()
-        is_custom = bool(_opt_ext(m_opts, pb_module.is_custom_handler, False))
-        mod_target = _resolve_pb_module_name(m.output_type.name, pb_module) or f"mcu_wire_pb2.{m.output_type.name}"
-        item: dict[str, Any] = {
-            "name": m.name,
-            "input_type": m.input_type.full_name,
-            "output_type": m.output_type.full_name,
-            "default_factory": f"lambda: {mod_target}({err_init})" if err_init else None,
-            "handler_name": _snake_case(m.name),
-            "is_custom_handler": is_custom,
-            "cloud_topic": _opt_ext(m_opts, pb_module.cloud_topic, ""),
-            "auth_field": _opt_ext(m_opts, pb_module.auth_field, ""),
-            "mcu_handler": _opt_ext(m_opts, pb_module.mcu_handler, ""),
-            "pre_sync_allowed": bool(_opt_ext(m_opts, pb_module.pre_sync_allowed, False)),
-        }
-        rpc_specs.append(item)
-    return rpc_specs
-
-
-def _match_local_bridge_rpc(
-    mcu_method: dict[str, Any],
-    rpc_specs: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    method_name = mcu_method["method_name"]
-    input_type = mcu_method["input_type"]
-    output_type = mcu_method["output_type"]
-    for rpc in rpc_specs:
-        if rpc["name"] == method_name:
-            return rpc
-    if input_type != "rpc.pb.SubscribeRequest":
-        for rpc in rpc_specs:
-            if rpc["input_type"] == input_type:
-                return rpc
-    if output_type not in ("google.protobuf.Empty", "rpc.pb.GenericResponse"):
-        for rpc in rpc_specs:
-            if rpc["output_type"] == output_type:
-                return rpc
-    return None
-
-
-def _build_mcu_operation(
-    mcu_method: dict[str, Any],
-    matched_rpc: dict[str, Any] | None,
-) -> dict[str, Any]:
+def _build_mcu_operation(mcu_method: dict[str, Any]) -> dict[str, Any]:
     op: dict[str, Any] = {
         "name": mcu_method["name"],
         "service_name": mcu_method["service_name"],
@@ -398,13 +348,9 @@ def _build_mcu_operation(
             op[str_key] = mcu_method[str_key]
     if mcu_method.get("pre_sync_allowed"):
         op["pre_sync_allowed"] = True
-    if matched_rpc:
-        op["rpc_name"] = matched_rpc["name"]
-        op["handler_name"] = matched_rpc["handler_name"]
-        if matched_rpc.get("default_factory"):
-            op["default_factory"] = matched_rpc["default_factory"]
-        if matched_rpc.get("is_custom_handler"):
-            op["is_custom_handler"] = True
+    if mcu_method.get("mcu_handler"):
+        op["handler_name"] = mcu_method["mcu_handler"]
+        op["is_custom_handler"] = True
     return op
 
 
@@ -428,38 +374,12 @@ def _build_topic_or_payload_op(
 
 def _build_operations_catalog(
     mcu_methods: list[dict[str, Any]],
-    rpc_specs: list[dict[str, Any]],
     msg_topics: dict[str, str],
     telem_map: dict[str, str],
     pb_module: Any,
 ) -> list[dict[str, Any]]:
-    operations: list[dict[str, Any]] = []
-    matched_rpc_names: set[str] = set()
-    for mcu_m in mcu_methods:
-        matched_rpc = _match_local_bridge_rpc(mcu_m, rpc_specs)
-        if matched_rpc is not None:
-            matched_rpc_names.add(matched_rpc["name"])
-        operations.append(_build_mcu_operation(mcu_m, matched_rpc))
-
-    for rpc in rpc_specs:
-        if rpc["name"] in matched_rpc_names:
-            continue
-        rpc_op: dict[str, Any] = {
-            "name": rpc["name"],
-            "rpc_name": rpc["name"],
-            "default_factory": rpc["default_factory"],
-            "handler_name": rpc["handler_name"],
-            "is_custom_handler": rpc.get("is_custom_handler", False),
-        }
-        for str_key in ("cloud_topic", "auth_field", "mcu_handler"):
-            if rpc.get(str_key):
-                rpc_op[str_key] = rpc[str_key]
-        if rpc.get("pre_sync_allowed"):
-            rpc_op["pre_sync_allowed"] = True
-        operations.append(rpc_op)
-
+    operations: list[dict[str, Any]] = [_build_mcu_operation(mcu_m) for mcu_m in mcu_methods]
     seen_names = {op["name"] for op in operations}
-    seen_names.update(op["rpc_name"] for op in operations if "rpc_name" in op)
 
     for msg_name, topic in msg_topics.items():
         act_name = msg_name.removesuffix("_ENUM")
@@ -538,10 +458,8 @@ def _extract_operations_context(
     pb_module: Any,
     all_descs: list[Any],
     opts: Any,
-    svc_desc: Any,
 ) -> dict[str, Any]:
     payload_ctx = _extract_payloads_and_actions(pb_module, all_descs, opts)
-    rpc_specs = _extract_rpc_specs(pb_module, svc_desc)
 
     telem_map: dict[str, str] = {}
     default_telem: str | None = None
@@ -589,7 +507,7 @@ def _extract_operations_context(
                 }
             )
 
-    operations = _build_operations_catalog(mcu_methods, rpc_specs, msg_topics, telem_map, pb_module)
+    operations = _build_operations_catalog(mcu_methods, msg_topics, telem_map, pb_module)
     return {
         "operations": operations,
         "metrics": _extract_metric_specs(pb_module, all_descs),
@@ -666,11 +584,9 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
     all_descs: list[Any] = [pb_module.DESCRIPTOR, *pb_module.DESCRIPTOR.dependencies]
     opts: Any = next(d.GetOptions() for d in all_descs if d.GetOptions().HasExtension(pb_module.constants))
     status_enum: Any = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
-    svc_desc: Any = next(d.services_by_name["LocalBridge"] for d in all_descs if "LocalBridge" in d.services_by_name)
-
     consts_ctx = _extract_constants_and_handshake(pb_module, opts, parsed.major, parsed.minor, parsed.micro)
     statuses = _extract_statuses(pb_module, status_enum)
-    ops_ctx = _extract_operations_context(pb_module, all_descs, opts, svc_desc)
+    ops_ctx = _extract_operations_context(pb_module, all_descs, opts)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
 
     return (
@@ -794,7 +710,6 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
                 output_dir / "gateway" / "__init__.py",
             )
         )
-        outputs.append(output_dir / "mcubridge_grpc.py")
 
     explicit_output_dirs = {path.parent for path in explicit_outputs}
     outputs.extend(
@@ -959,14 +874,6 @@ def main(
     _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.py", gateway_targets, _sanitize_pb2)
     _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.pyi", gateway_targets, _sanitize_pb2)
 
-    _dispatch_generated_file(
-        proto_path.parent / "cloud_gateway_grpc.py",
-        py_targets,
-        lambda t: _sanitize_pb2(t).replace(
-            "if typing.TYPE_CHECKING:\n    import grpclib.server", "import grpclib.server"
-        ),
-        dest_name="mcubridge_grpc.py",
-    )
     for grpc_file in proto_path.parent.rglob("*_grpc.py"):
         grpc_file.unlink(missing_ok=True)
     for nanopb_file in (gateway_proto_dir / "gateway_control.pb.h", gateway_proto_dir / "gateway_control.pb.c"):

@@ -15,15 +15,15 @@ from mcubridge.protocol.protocol import TopicRoute, allows_method, get_operation
 
 def test_topic_route_properties() -> None:
     route = TopicRoute(
-        raw="devices/dev1/req/GpioService/DigitalWrite",
+        raw="devices/dev1/req/rpc.pb.GpioService/DigitalWrite",
         prefix="devices/dev1",
         device_id="dev1",
         direction="req",
-        method="GpioService/DigitalWrite",
+        method="rpc.pb.GpioService/DigitalWrite",
     )
     assert route.device_id == "dev1"
     assert route.direction == "req"
-    assert route.method == "GpioService/DigitalWrite"
+    assert route.method == "rpc.pb.GpioService/DigitalWrite"
     assert route.action == "DigitalWrite"
 
     route_empty = TopicRoute()

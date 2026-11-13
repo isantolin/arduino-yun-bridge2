@@ -66,7 +66,6 @@ option (rpc.pb.constants) = {
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
-  cloud_expiry_console: 5
   cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
@@ -494,10 +493,7 @@ message Constants {
     (py_name) = "CLOUD_EXPIRY_PIN",
     (py_type) = "int"
   ];
-  uint32 cloud_expiry_console = 58 [
-    (py_name) = "CLOUD_EXPIRY_CONSOLE",
-    (py_type) = "int"
-  ];
+  reserved 58;
   uint32 cloud_expiry_datastore = 59 [
     (py_name) = "CLOUD_EXPIRY_DATASTORE",
     (py_type) = "int"

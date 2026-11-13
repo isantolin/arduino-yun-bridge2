@@ -32,14 +32,6 @@ rationale = "Pinned to protobuf 5.28.3 commanded by Google Pigweed priority (pig
 
 
 [[dependency]]
-name = "prometheus-client"
-openwrt = "python3-prometheus-client"
-pip = "prometheus-client==0.26.0"
-gateway = true
-edge = false
-rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client on mcubridge-gateway"
-
-[[dependency]]
 name = "pyserial"
 openwrt = "python3-pyserial"
 pip = "pyserial==3.5"
@@ -114,37 +106,6 @@ openwrt = "xxd"
 pip = ""
 rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
 
-
-[[dependency]]
-name = "hpack"
-openwrt = "python3-hpack"
-pip = "hpack==4.2.0"
-gateway = true
-rationale = "Pure-Python HTTP/2 header encoding (HPACK) logic required by h2"
-
-
-[[dependency]]
-name = "hyperframe"
-openwrt = "python3-hyperframe"
-pip = "hyperframe==6.1.0"
-gateway = true
-rationale = "HTTP/2 framing layer required by h2"
-
-
-[[dependency]]
-name = "h2"
-openwrt = "python3-h2"
-pip = "h2==4.4.1"
-gateway = true
-rationale = "Pure Python HTTP/2 protocol implementation for grpclib"
-
-
-[[dependency]]
-name = "grpclib"
-openwrt = "python3-grpclib"
-pip = "grpclib==0.4.9"
-gateway = true
-rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 
 [[dependency]]
 name = "annotated-doc"

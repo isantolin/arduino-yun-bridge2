@@ -555,7 +555,7 @@ class SerialTransport:
 
         spec = get_operation(command_id)
         if spec is _CONSOLE_WRITE_SPEC:
-            return await self.send_raw(spec, payload, seq_id)
+            return await self.send_raw(_CONSOLE_WRITE_SPEC, payload, seq_id)
         pw_method = (
             protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
             if spec is not None and spec.service_name and spec.method_name

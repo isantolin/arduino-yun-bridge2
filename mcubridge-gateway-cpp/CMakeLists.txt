@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(mcubridge_gateway_cpp LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS SSL Crypto)
@@ -81,3 +81,9 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )
 target_compile_options(mcubridge-gateway-cpp PRIVATE -Wall -Wextra -Wpedantic)
+
+option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
+if(ENABLE_COVERAGE)
+  target_compile_options(mcubridge-gateway-cpp PRIVATE --coverage -O0 -g)
+  target_link_options(mcubridge-gateway-cpp PRIVATE --coverage)
+endif()

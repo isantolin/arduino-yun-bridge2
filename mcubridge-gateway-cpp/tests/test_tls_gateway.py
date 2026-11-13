@@ -1,31 +1,29 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import socket
 import ssl
 import subprocess
-import sys
 import tempfile
 import threading
 import time
 import unittest
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT / "mcubridge") not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
-
+from mcubridge.protocol import protocol
+from mcubridge.protocol.gateway import gateway_control_pb2
 import pw_hdlc.decode
 import pw_hdlc.encode
-import pw_hdlc.rpc
-import pw_rpc
 import pw_rpc.packets
 import pw_status
 from pw_rpc import callback_client
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
-from mcubridge.protocol import protocol
-from mcubridge.protocol.gateway import gateway_control_pb2
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
 BINARY = Path(
     os.environ.get(
         "MCUBRIDGE_GATEWAY_BINARY",
@@ -295,9 +293,9 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                 received = b""
             finally:
                 client.close()
-            self.assertEqual(received, b"")
+            assert received == b""
         self.gateway.wait_for("event=client_rejected reason=tls_handshake_failed")
-        self.assertNotIn("event=session_open", self.gateway.logs())
+        assert "event=session_open" not in self.gateway.logs()
 
     def test_missing_client_certificate_is_rejected(self) -> None:
         self.assert_tls_handshake_rejected(None, None)
@@ -306,7 +304,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.assert_tls_handshake_rejected(self.certs.untrusted_cert, self.certs.untrusted_key)
 
     def test_tls_12_is_rejected(self) -> None:
-        with self.assertRaises((ssl.SSLError, OSError)):
+        with pytest.raises((ssl.SSLError, OSError)):
             self.gateway.connect(
                 self.certs.valid_cert,
                 self.certs.valid_key,
@@ -319,32 +317,44 @@ class GatewayTlsIdentityTests(unittest.TestCase):
 
     def test_certificate_without_uri_san_is_rejected(self) -> None:
         client = self.gateway.connect(self.certs.no_san_cert, self.certs.no_san_key)
+        client_err: Exception | None = None
         try:
-            client.recv(1)
+            data = client.recv(1)
+            assert data == b""
         except (ssl.SSLError, OSError) as error:
-            self.assertIsInstance(error, (ssl.SSLError, OSError))
+            client_err = error
         finally:
             client.close()
+        if client_err is not None:
+            assert isinstance(client_err, (ssl.SSLError, OSError))
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
 
     def test_multiple_uri_sans_are_rejected(self) -> None:
         client = self.gateway.connect(self.certs.multi_san_cert, self.certs.multi_san_key)
+        client_err: Exception | None = None
         try:
-            client.recv(1)
+            data = client.recv(1)
+            assert data == b""
         except (ssl.SSLError, OSError) as error:
-            self.assertIsInstance(error, (ssl.SSLError, OSError))
+            client_err = error
         finally:
             client.close()
+        if client_err is not None:
+            assert isinstance(client_err, (ssl.SSLError, OSError))
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
 
     def test_invalid_device_id_is_rejected(self) -> None:
         client = self.gateway.connect(self.certs.invalid_id_cert, self.certs.invalid_id_key)
+        client_err: Exception | None = None
         try:
-            client.recv(1)
+            data = client.recv(1)
+            assert data == b""
         except (ssl.SSLError, OSError) as error:
-            self.assertIsInstance(error, (ssl.SSLError, OSError))
+            client_err = error
         finally:
             client.close()
+        if client_err is not None:
+            assert isinstance(client_err, (ssl.SSLError, OSError))
         self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
 
     def test_client_role_certificate_opens_northbound_session(self) -> None:
@@ -352,18 +362,22 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.gateway.wait_for("client=operator-01 event=session_open")
         client.close()
         self.gateway.wait_for("client=operator-01 event=session_closed")
-        self.assertNotIn("device=operator-01 event=session_open", self.gateway.logs())
+        assert "device=operator-01 event=session_open" not in self.gateway.logs()
 
     def test_duplicate_client_session_is_rejected_and_released(self) -> None:
         first = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
         self.gateway.wait_for("client=operator-01 event=session_open")
         second = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_err: Exception | None = None
         try:
-            second.recv(1)
+            data = second.recv(1)
+            assert data == b""
         except (ssl.SSLError, OSError) as error:
-            self.assertIsInstance(error, (ssl.SSLError, OSError))
+            client_err = error
         finally:
             second.close()
+        if client_err is not None:
+            assert isinstance(client_err, (ssl.SSLError, OSError))
         self.gateway.wait_for("client=operator-01 event=session_rejected reason=duplicate_session")
         first.close()
         self.gateway.wait_for("client=operator-01 event=session_closed")
@@ -373,12 +387,16 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         first = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
         self.gateway.wait_for("device=device-01 event=session_open")
         second = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        client_err: Exception | None = None
         try:
-            second.recv(1)
+            data = second.recv(1)
+            assert data == b""
         except (ssl.SSLError, OSError) as error:
-            self.assertIsInstance(error, (ssl.SSLError, OSError))
+            client_err = error
         finally:
             second.close()
+        if client_err is not None:
+            assert isinstance(client_err, (ssl.SSLError, OSError))
         self.gateway.wait_for("device=device-01 event=session_rejected reason=duplicate_session")
         first.close()
         self.gateway.wait_for("device=device-01 event=session_closed")
@@ -407,7 +425,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                     for f in decoder.process(data):
                         if f.ok() and f.address == 1:
                             rpc_client.process_packet(f.data)
-                except Exception:
+                except (OSError, ssl.SSLError):
                     break
 
         t = threading.Thread(target=reader, daemon=True)
@@ -415,10 +433,10 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         try:
             health_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Health
             res = health_method()
-            self.assertEqual(res.status, pw_status.Status.OK)
-            self.assertTrue(res.response.ready)
-            self.assertEqual(res.response.active_device_sessions, 0)
-            self.assertEqual(res.response.active_client_sessions, 1)
+            assert res.status == pw_status.Status.OK
+            assert res.response.ready
+            assert res.response.active_device_sessions == 0
+            assert res.response.active_client_sessions == 1
         finally:
             running = False
             client_sock.close()
@@ -443,7 +461,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                     for f in decoder.process(data):
                         if f.ok() and f.address == 1:
                             rpc_client.process_packet(f.data)
-                except Exception:
+                except (OSError, ssl.SSLError):
                     break
 
         t = threading.Thread(target=reader, daemon=True)
@@ -455,8 +473,8 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                 system_status_blob=b"test_status_blob",
             )
             res = report_method(req)
-            self.assertEqual(res.status, pw_status.Status.OK)
-            self.assertTrue(res.response.acknowledged)
+            assert res.status == pw_status.Status.OK
+            assert res.response.acknowledged
             self.gateway.wait_for("device=device-01 event=telemetry_reported metrics_bytes=17 status_bytes=16")
         finally:
             running = False
@@ -482,7 +500,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                     for f in decoder.process(data):
                         if f.ok() and f.address == 1:
                             rpc_client.process_packet(f.data)
-                except Exception:
+                except (OSError, ssl.SSLError):
                     break
 
         t = threading.Thread(target=reader, daemon=True)
@@ -491,13 +509,13 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dispatch_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
             req = gateway_control_pb2.DispatchRequest(
                 target_device_id="missing-device",
-                service_name="SystemService",
+                service_name="rpc.pb.SystemService",
                 method_name="Ping",
                 request_payload=b"",
                 timeout_ms=1000,
             )
             res = dispatch_method(req)
-            self.assertEqual(res.status, pw_status.Status.NOT_FOUND)
+            assert res.status == pw_status.Status.NOT_FOUND
         finally:
             running = False
             client_sock.close()
@@ -526,7 +544,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                     for f in client_decoder.process(data):
                         if f.ok() and f.address == 1:
                             client_rpc.process_packet(f.data)
-                except Exception:
+                except (OSError, ssl.SSLError):
                     break
 
         def dev_reader() -> None:
@@ -548,7 +566,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
                                 pkt, response=edge_resp, status=pw_status.Status.OK
                             )
                             dev_sock.sendall(pw_hdlc.encode.ui_frame(1, resp_pkt))
-                except Exception:
+                except (OSError, ssl.SSLError):
                     break
 
         t_client = threading.Thread(target=client_reader, daemon=True)
@@ -563,15 +581,15 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dispatch_method = client_rpc.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
             req = gateway_control_pb2.DispatchRequest(
                 target_device_id="device-01",
-                service_name="SystemService",
+                service_name="rpc.pb.SystemService",
                 method_name="Ping",
                 request_payload=b"test_payload",
                 timeout_ms=3000,
             )
             res = dispatch_method(req)
-            self.assertEqual(res.status, pw_status.Status.OK)
-            self.assertEqual(res.response.status_code, 0)
-            self.assertEqual(res.response.response_payload, b"pong_payload_response")
+            assert res.status == pw_status.Status.OK
+            assert res.response.status_code == 0
+            assert res.response.response_payload == b"pong_payload_response"
         finally:
             running = False
             client_sock.close()

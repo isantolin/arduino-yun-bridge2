@@ -65,10 +65,10 @@ def _start_gateway_if_needed() -> None:
         return
 
     print("  -> Starting McuBridge Gateway on port 8443 in background...")
-    gateway_script = REPO_ROOT / "mcubridge-gateway" / "gateway.py"
+    gateway_bin = REPO_ROOT / "build/mcubridge-gateway/mcubridge-gateway-cpp"
     with Path(GATEWAY_LOG_FILE).open("a", encoding="utf-8") as log_f:
         proc = subprocess.Popen(
-            [sys.executable, str(gateway_script), "--no-tls", "--port", "8443"],
+            [str(gateway_bin), "--port", "8443"],
             stdout=log_f,
             stderr=log_f,
             cwd=str(REPO_ROOT),

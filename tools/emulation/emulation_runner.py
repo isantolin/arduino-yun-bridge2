@@ -107,11 +107,9 @@ def ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
         logger.info("Starting Managed Cloud Gateway...")
         gateway_env = dict(os.environ)
         gateway_env["PYTHONUNBUFFERED"] = "1"
+        gateway_bin = repo_root / "build/mcubridge-gateway/mcubridge-gateway-cpp"
         gateway_cmd = [
-            sys.executable,
-            "-u",
-            str(repo_root / "mcubridge-gateway" / "gateway.py"),
-            "--no-tls",
+            str(gateway_bin),
             "--port",
             str(CLOUD_PORT),
         ]

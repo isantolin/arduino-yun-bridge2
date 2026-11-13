@@ -257,7 +257,7 @@ jobs:
       - name: Install Python Dependencies
         run: |
           pip install -r requirements/runtime.txt
-          pip install -r mcubridge-gateway/requirements.txt nanopb==0.4.9.1 black
+          pip install nanopb==0.4.9.1 black
       - name: Install Emulation Tools
         run: |
           bash tools/ci/apt_update_with_fallback.sh
@@ -547,13 +547,28 @@ jobs:
       - name: Configure standalone Gateway
         run: |
           . .venv-gateway/bin/activate
-          cmake -S mcubridge-gateway-cpp -B build/mcubridge-gateway -G Ninja
+          cmake -S mcubridge-gateway-cpp -B build/mcubridge-gateway -G Ninja -DENABLE_COVERAGE=ON
       - name: Build standalone Gateway
         run: |
           . .venv-gateway/bin/activate
           cmake --build build/mcubridge-gateway --parallel 2
       - name: Test Gateway TLS identity and session isolation
-        run: python3 -m unittest discover -s mcubridge-gateway-cpp/tests -v
+        run: |
+          . .venv-gateway/bin/activate
+          python3 -m unittest discover -s mcubridge-gateway-cpp/tests -v
+      - name: Generate Gateway Coverage Report
+        run: |
+          . .venv-gateway/bin/activate
+          python -m pip install "gcovr==8.8"
+          mkdir -p coverage/gateway
+          gcovr -r . build/mcubridge-gateway --filter 'mcubridge-gateway-cpp/src/' --txt coverage/gateway/summary.txt --html-details coverage/gateway/index.html --print-summary
+      - name: Upload Gateway Coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-gateway
+          path: coverage/gateway
+          if-no-files-found: ignore
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
@@ -561,7 +576,7 @@ jobs:
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-26.04
-    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
+    needs: [unified-tests, gateway-cpp, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
     # Build the consolidated report on main/manual runs only. PR jobs already
     # publish their individual artifacts; avoid a slow summary runner delaying
     # the next head when concurrency cancels an obsolete PR run.
@@ -588,6 +603,13 @@ jobs:
         with:
           name: coverage-arduino-host
           path: coverage/arduino
+        continue-on-error: true
+
+      - name: Download Gateway Coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-gateway
+          path: coverage/gateway
         continue-on-error: true
 
       - name: Download Arduino Logs
@@ -654,6 +676,13 @@ jobs:
             echo "### ⚡ Arduino MCU C++ Coverage (gcovr)" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             cat coverage/arduino/summary.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f coverage/gateway/summary.txt ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### 🌐 Gateway C++ Coverage (gcovr)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat coverage/gateway/summary.txt >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 

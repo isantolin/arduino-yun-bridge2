@@ -89,12 +89,26 @@ def _buf_check(buf_bin: str, label: str, cwd: Path, *arguments: str) -> str | No
 
 def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
     if isinstance(node, (ast.Try, ast.TryStar)):
-        return [
+        violations = [
             f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - Catching exceptions with 'pass' is strictly prohibited."
             for handler in node.handlers
             for stmt in handler.body
             if isinstance(stmt, ast.Pass)
         ]
+        for handler in node.handlers:
+            is_broad = handler.type is None or (
+                isinstance(handler.type, ast.Name) and handler.type.id in ("Exception", "BaseException")
+            )
+            for stmt in handler.body:
+                if isinstance(stmt, (ast.Break, ast.Continue)) and is_broad:
+                    name = handler.type.id if handler.type else "bare except"
+                    action = stmt.__class__.__name__.lower()
+                    violations.append(
+                        f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "
+                        f"Catching broad '{name}' with '{action}' is strictly prohibited. "
+                        "Catch specific exceptions or log explicitly."
+                    )
+        return violations
     if isinstance(node, ast.match_case):
         return [
             f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - Match case with 'pass' is strictly prohibited."
@@ -152,8 +166,17 @@ def audit_ast_integrity() -> list[str]:
         if ignored_parts.intersection(rel_path.parts[:-1]):
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError, OSError) as exc:
+            raw_bytes = path.read_bytes()
+            tree = ast.parse(raw_bytes, filename=str(path))
+            tokens = tokenize.tokenize(io.BytesIO(raw_bytes).readline)
+            findings.extend(
+                f"Rule 4 Violation: {rel_path}:{tok.start[0]} - "
+                f"{'# ' + 'noqa: E402'} comment suppression is strictly prohibited."
+                for tok in tokens
+                if tok.type == tokenize.COMMENT and re.search(r"noqa\b.*?\bE402\b", tok.string, re.IGNORECASE)
+            )
+
+        except (SyntaxError, UnicodeDecodeError, OSError, tokenize.TokenError) as exc:
             findings.append(f"AST Parse Error: {rel_path} - {exc}")
             continue
         for node in ast.walk(tree):
@@ -338,7 +361,6 @@ def _collect_identifier_suffixes() -> set[str]:
         ROOT / "mcubridge" / "scripts",
         ROOT / "mcubridge" / "tests",
         ROOT / "mcubridge-client-examples",
-        ROOT / "mcubridge-gateway",
         ROOT / "mcubridge-library-arduino",
         ROOT / "luci-app-mcubridge",
         ROOT / "tools",

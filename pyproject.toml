@@ -11,10 +11,6 @@ dependencies = [
     "annotated-doc==0.0.6",
     "anyio==4.16.0",
     "cryptography==50.0.2",
-    "grpclib==0.4.9",
-    "h2==4.4.1",
-    "hpack==4.2.0",
-    "hyperframe==6.1.0",
     "lmdb==3.0.0",
     "parse==1.22.4",
     "pigweed==0.0.24",
@@ -46,17 +42,8 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_cli_level = "INFO"
-testpaths = [
-    "mcubridge/tests",
-    "mcubridge-client-examples/tests",
-    "mcubridge-gateway/tests",
-]
-pythonpath = [
-    ".",
-    "mcubridge",
-    "mcubridge-client-examples",
-    "mcubridge-gateway",
-]
+testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests"]
+pythonpath = [".", "mcubridge", "mcubridge-client-examples"]
 norecursedirs = [
     "openwrt-sdk",
     "feeds",
@@ -82,14 +69,12 @@ extraPaths = [
     "mcubridge",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
 ]
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
     "mcubridge/scripts",
     "tools",
 ]
@@ -98,7 +83,6 @@ strict = [
     "mcubridge/tests",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
     "mcubridge/scripts",
     "tools",
 ]
@@ -206,17 +190,12 @@ max-complexity = 25
 branch = true
 concurrency = ["multiprocessing", "thread"]
 relative_files = true
-source = [
-    "mcubridge/mcubridge",
-    "mcubridge-client-examples/mcubridge_client",
-    "mcubridge-gateway",
-]
+source = ["mcubridge/mcubridge", "mcubridge-client-examples/mcubridge_client"]
 omit = [
     "*/tests/*",
     "**/tests/*",
     "mcubridge/tests/*",
     "mcubridge-client-examples/tests/*",
-    "mcubridge-gateway/tests/*",
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "**/*_grpc.py",
@@ -224,6 +203,7 @@ omit = [
 
 [tool.coverage.report]
 show_missing = true
+fail_under = 95.0
 exclude_lines = [
     "def __repr__",
     "raise AssertionError",
@@ -235,7 +215,6 @@ min_confidence = 80
 paths = [
     "mcubridge/mcubridge",
     "mcubridge-client-examples/mcubridge_client",
-    "mcubridge-gateway",
     "tools",
 ]
 exclude = [
@@ -254,7 +233,6 @@ project-includes = [
     "mcubridge/tests",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
     "mcubridge/scripts",
     "tools",
 ]
@@ -281,7 +259,6 @@ search-path = [
     "mcubridge",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
 ]
 python-version = "3.14.0"
 site-package-path = ["typings"]

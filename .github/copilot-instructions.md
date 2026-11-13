@@ -12,7 +12,7 @@ Treat the root GEMINI.md / AGENTS.md as the permanent engineering guide. This fi
 ## Repository facts
 
 - Python daemon: mcubridge/
-- Cloud gateway: mcubridge-gateway/
+- Cloud gateway: mcubridge-gateway-cpp/
 - Client examples: mcubridge-client-examples/
 - Arduino library and firmware: mcubridge-library-arduino/
 - LuCI application: luci-app-mcubridge/

@@ -2,6 +2,12 @@ rules:
   # ==============================================================================
   # RULE 4: UNIVERSAL ABSOLUTE SUPPRESSION BAN (PYTHON)
   # ==============================================================================
+  - id: sil2-ban-noqa-e402
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: '# noqa: E402' suppression is strictly prohibited. Imports must be organized cleanly at the top of the file without suppression directives."
+    pattern-regex: '(?i)#\s*noqa\b.*?\bE402\b'
+
   - id: sil2-ban-contextlib-suppress
     languages: [python]
     severity: ERROR
@@ -45,6 +51,42 @@ rules:
         ...
       except ...:
         pass
+
+  - id: sil2-ban-broad-except-control-flow
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: Catching broad Exception with silent 'break' or 'continue' is strictly forbidden. Catch specific exceptions or log errors explicitly."
+    pattern-either:
+      - pattern: |
+          try:
+            ...
+          except Exception:
+            break
+      - pattern: |
+          try:
+            ...
+          except:
+            break
+      - pattern: |
+          try:
+            ...
+          except BaseException:
+            break
+      - pattern: |
+          try:
+            ...
+          except Exception:
+            continue
+      - pattern: |
+          try:
+            ...
+          except:
+            continue
+      - pattern: |
+          try:
+            ...
+          except BaseException:
+            continue
 
   - id: sil2-ban-type-checking
     languages: [python]

@@ -20,7 +20,7 @@ app = typer.Typer(
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_COVERAGE_ROOT = ROOT_DIR / "coverage" / "python"
-DEFAULT_TARGETS = ("mcubridge/tests", "mcubridge-client-examples/tests", "mcubridge-gateway/tests")
+DEFAULT_TARGETS = ("mcubridge/tests", "mcubridge-client-examples/tests")
 
 
 @app.command()
@@ -47,7 +47,6 @@ def main(
         str(ROOT_DIR),
         str(ROOT_DIR / "mcubridge"),
         str(ROOT_DIR / "mcubridge-client-examples"),
-        str(ROOT_DIR / "mcubridge-gateway"),
     ]
     cur_pythonpath = os.environ.get("PYTHONPATH", "")
     os.environ["PYTHONPATH"] = ":".join(pythonpath_dirs + ([cur_pythonpath] if cur_pythonpath else []))
@@ -64,7 +63,6 @@ def main(
         "--timeout-method=thread",
         f"--cov={ROOT_DIR / 'mcubridge' / 'mcubridge'}",
         f"--cov={ROOT_DIR / 'mcubridge-client-examples' / 'mcubridge_client'}",
-        f"--cov={ROOT_DIR / 'mcubridge-gateway' / 'gateway.py'}",
         "--cov-branch",
         f"--cov-fail-under={min_coverage:.1f}",
         f"--cov-report=xml:{output_root / 'coverage.xml'}",

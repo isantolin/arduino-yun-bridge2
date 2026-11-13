@@ -29,14 +29,14 @@ async def test_publish_cloud_message_debug_logging_branch(
     mocker: MockerFixture,
 ) -> None:
     service = mock_bridge_service
-    stream = MagicMock()
-    stream.send_message = AsyncMock()
-    service.cloud_stream = stream
+    service._cloud_rpc_client = MagicMock()
+    service._cloud_writer = MagicMock()
+    service.send_cloud_telemetry = AsyncMock(return_value=True)
     mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
 
     message = cloud_gateway_pb2.CloudQueuedPublish(topic_name="bridge/status", payload=b"online")
     assert await service.publish_cloud_message(message)
-    stream.send_message.assert_awaited_once()
+    service.send_cloud_telemetry.assert_awaited_once()
 
 
 def test_cleanup_without_serial_transport(mock_bridge_service: BridgeService) -> None:
@@ -57,27 +57,16 @@ async def test_on_serial_connected_rejects_unsynchronized_link(
         await mock_bridge_service.on_serial_connected()
 
 
-async def test_file_read_unsafe_path_without_serial_returns_empty(
+async def test_file_write_unsafe_path_returns_error(
     mock_bridge_service: BridgeService,
 ) -> None:
-    mock_bridge_service.serial = None
-
-    response = await mock_bridge_service.file_read(cloud_gateway_pb2.FileRead(path="../../../etc/passwd"))
-
-    assert response.content == b""
+    response = await mock_bridge_service.file_write(pb.FileWrite(path="../../../etc/passwd", data=b"secret"))
+    assert response.status == "error"
 
 
-async def test_console_write_empty_payload_is_noop(mock_bridge_service: BridgeService) -> None:
-    response = await mock_bridge_service.console_write(pb.ConsoleWrite(data=b""))
-
-    assert response.status == "ok"
+async def test_flush_console_queue_empty_is_noop(mock_bridge_service: BridgeService) -> None:
+    await mock_bridge_service.flush_console_queue()
     assert len(mock_bridge_service.state.console_to_mcu_queue) == 0
-
-
-async def test_console_write_from_mcu_empty_payload_is_noop(mock_bridge_service: BridgeService) -> None:
-    response = await mock_bridge_service.console_write(0, pb.ConsoleWrite(data=b""))
-
-    assert response.status == "ok"
 
 
 async def test_reset_link_without_serial_returns_false(mock_bridge_service: BridgeService) -> None:
@@ -88,31 +77,32 @@ async def test_reset_link_without_serial_returns_false(mock_bridge_service: Brid
 
 async def test_send_cloud_event_without_cloud_stream_is_noop(
     mock_bridge_service: BridgeService,
-    mocker: MockerFixture,
 ) -> None:
-    mock_bridge_service.cloud_stream = None
-    debug_log = mocker.patch("mcubridge.services.runtime.logger.debug")
-    mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
+    mock_bridge_service._cloud_rpc_client = None
+    mock_bridge_service._cloud_writer = None
+    mock_bridge_service.send_cloud_telemetry = AsyncMock()
 
     await mock_bridge_service.send_cloud_event("status_online", "info", "Device online")
 
-    debug_log.assert_not_called()
+    mock_bridge_service.send_cloud_telemetry.assert_not_called()
 
 
 async def test_send_cloud_event_debug_logging_branch(
     mock_bridge_service: BridgeService,
     mocker: MockerFixture,
 ) -> None:
-    stream = MagicMock()
-    stream.send_message = AsyncMock()
-    mock_bridge_service.cloud_stream = stream
+    mock_bridge_service._cloud_rpc_client = MagicMock()
+    mock_bridge_service._cloud_writer = MagicMock()
+    mock_bridge_service.send_cloud_telemetry = AsyncMock(return_value=True)
     debug_log = mocker.patch("mcubridge.services.runtime.logger.debug")
     mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=True)
 
     await mock_bridge_service.send_cloud_event("status_online", "info", "Device online")
 
     debug_log.assert_called_once()
-    stream.send_message.assert_awaited_once()
+    mock_bridge_service.send_cloud_telemetry.assert_awaited_once_with(
+        system_status_blob=b"status_online:info:Device online"
+    )
 
 
 async def test_handle_mcu_frame_without_serial_is_noop(
@@ -313,3 +303,46 @@ def test_get_operation_resolves_server_stream_packet() -> None:
     assert protocol.get_operation(req_pkt) == pin_op
     stream_op = protocol.get_operation(stream_pkt)
     assert stream_op == pin_op
+
+
+def test_operation_spec_and_protocol_builder_branches(mock_bridge_service: BridgeService) -> None:
+    # 1. OperationSpec branch where method is not in service
+    spec_invalid_m = protocol.OperationSpec(
+        name="test_invalid",
+        service_name="rpc.pb.GpioService",
+        method_name="NonExistentMethod",
+    )
+    assert spec_invalid_m.service_id is None
+
+    # 2. OperationSpec branches with None response/request/factory
+    spec_auto_fill = protocol.OperationSpec(
+        name="test_autofill",
+        service_name="rpc.pb.GpioService",
+        method_name="DigitalRead",
+        response_type=None,
+        request_type=None,
+        default_factory=None,
+    )
+    assert spec_auto_fill.response_type is not None
+    assert spec_auto_fill.request_type is not None
+
+    # 3. build_mcu_dispatch with status_handler provided explicitly
+    dispatch = protocol.build_mcu_dispatch(mock_bridge_service, status_handler=lambda status, seq, payload: None)
+    assert isinstance(dispatch, dict)
+
+    # 4. build_ubus_methods with backend=None and default handler_factory
+    from mcubridge.services.ubus import UbusService
+
+    ubus_svc = UbusService(mock_bridge_service)
+    ubus_defs = protocol.build_ubus_methods(ubus_svc, None)
+    assert isinstance(ubus_defs, dict)
+
+    # 5. encode_rpc_packet branches: server streaming response with empty payload, tuple target, and int target
+    stream_resp_pkt = protocol.encode_rpc_packet("rpc.pb.GpioService/SubscribePins", b"", call_id=1)
+    assert stream_resp_pkt is not None
+
+    tuple_target_pkt = protocol.encode_rpc_packet((123, 456), b"data", call_id=1)
+    assert tuple_target_pkt is not None
+
+    int_target_pkt = protocol.encode_rpc_packet(789, b"data", call_id=1)
+    assert int_target_pkt is not None

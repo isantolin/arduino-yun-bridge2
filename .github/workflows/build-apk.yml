@@ -64,7 +64,7 @@ jobs:
           path: |
             openwrt-sdk/staging_dir/hostpkg
             openwrt-sdk/staging_dir/host
-          key: ${{ runner.os }}-openwrt-host-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge-gateway/Makefile') }}
+          key: ${{ runner.os }}-openwrt-host-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-host-25.12.6-
 
@@ -73,7 +73,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: openwrt-sdk
-          key: ${{ runner.os }}-openwrt-sdk-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}
+          key: ${{ runner.os }}-openwrt-sdk-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-sdk-25.12.6-
 

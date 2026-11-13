@@ -69,7 +69,6 @@ ALLOWLIST_PY_HELPERS = {
     "register_methods",
     "build_serial_pipeline_snapshot",
     "write_status_file",
-    "safe_after_configure",
     "resolve_serial_url",
     "switch_local_baudrate",
     "toggle_dtr",
@@ -77,7 +76,6 @@ ALLOWLIST_PY_HELPERS = {
     "feed_data",
     "check_baudrate_fallback",
     "is_healthy",
-    "lookup_topic",
     "request_mcu_version",
     "normalize_config_dict",
     "vacuum_lmdb_env",
@@ -86,6 +84,8 @@ ALLOWLIST_PY_HELPERS = {
     "detect_ubus_fd",
     "pump_events",
     "process_hdlc_frame",
+    "transfer_read",
+    "transfer_write",
 }
 
 
@@ -149,7 +149,6 @@ def audit_python_tests() -> list[str]:
     print("Auditing Python test integrity...")
     search_dirs = [
         ROOT / "mcubridge" / "tests",
-        ROOT / "mcubridge-gateway" / "tests",
         ROOT / "mcubridge-client-examples" / "tests",
     ]
     for d in search_dirs:
@@ -230,7 +229,6 @@ def audit_boolean_identity_assertions() -> list[str]:
     print("Auditing boolean identity comparisons in assertions...")
     search_dirs = [
         ROOT / "mcubridge" / "tests",
-        ROOT / "mcubridge-gateway" / "tests",
         ROOT / "mcubridge-client-examples" / "tests",
     ]
     for d in search_dirs:

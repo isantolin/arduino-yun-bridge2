@@ -15,7 +15,7 @@ app = typer.Typer(
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DEST = REPO_ROOT / "feeds"
-MANAGED_PACKAGES = ("luci-app-mcubridge", "mcubridge", "mcubridge-gateway")
+MANAGED_PACKAGES = ("luci-app-mcubridge", "mcubridge")
 
 
 @app.command()

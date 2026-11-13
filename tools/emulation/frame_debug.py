@@ -53,8 +53,6 @@ for _op in protocol.OPERATIONS:
         ENUM_BY_NAME[_op.name.upper()] = _op.method_id
         if _op.method_name:
             ENUM_BY_NAME[_op.method_name.upper()] = _op.method_id
-        if _op.rpc_name:
-            ENUM_BY_NAME[_op.rpc_name.upper()] = _op.method_id
 ENUM_BY_VALUE: dict[int, str] = {entry.value: entry.name for entry in protocol.Status}
 for _op in protocol.OPERATIONS:
     if _op.method_id is not None:

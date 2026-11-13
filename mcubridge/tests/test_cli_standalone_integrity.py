@@ -22,7 +22,6 @@ def get_standalone_scripts() -> list[Path]:
     search_dirs = [
         repo_root / "tools",
         repo_root / "mcubridge" / "scripts",
-        repo_root / "mcubridge-gateway",
         repo_root / "mcubridge-client-examples" / "examples",
     ]
 
@@ -46,7 +45,6 @@ def test_script_standalone_execution_and_help(script_path: Path) -> None:
         str(repo_root),
         str(repo_root / "mcubridge"),
         str(repo_root / "mcubridge-client-examples"),
-        str(repo_root / "mcubridge-gateway"),
     ]
     current_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = os.pathsep.join(workspace_paths + ([current_pp] if current_pp else []))

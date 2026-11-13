@@ -1338,7 +1338,12 @@ class BridgeService:
             if adapter in self.console_queues:
                 self.console_queues.remove(adapter)
 
-    async def pin_subscribe(self, req: mcu_wire_pb2.PinSubscribeRequest) -> mcu_wire_pb2.PinSubscribeResponse:
+    async def pin_subscribe(
+        self,
+        req_or_seq: mcu_wire_pb2.PinSubscribeRequest | int,
+        p: mcu_wire_pb2.PinSubscribeRequest | None = None,
+    ) -> mcu_wire_pb2.PinSubscribeResponse:
+        req = p if p is not None else cast(mcu_wire_pb2.PinSubscribeRequest, req_or_seq)
         try:
             mode_str = config_schema_pb2.PinModeType.Name(req.mode).removeprefix("PIN_")
         except (ValueError, KeyError) as exc:

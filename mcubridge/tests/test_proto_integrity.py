@@ -481,7 +481,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     from mcubridge.services.runtime import BridgeService
 
     mcu_handlers = {op.name: op.mcu_handler for op in protocol.OPERATIONS if op.mcu_handler}
-    assert len(mcu_handlers) == 14
+    assert len(mcu_handlers) == 15
     for name, handler_path in mcu_handlers.items():
         assert isinstance(name, str)
         root_attr = handler_path.split(".", 1)[0]

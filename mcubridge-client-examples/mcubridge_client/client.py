@@ -162,6 +162,12 @@ class GatewayClient:
         resp.ParseFromString(resp_bytes)
         return resp
 
+    async def PinSubscribe(self, req: mcu_wire_pb2.PinSubscribeRequest) -> mcu_wire_pb2.PinSubscribeResponse:
+        resp_bytes = await self.dispatch("rpc.pb.GpioService", "SubscribePins", req)
+        resp = mcu_wire_pb2.PinSubscribeResponse()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
     async def SetPinMode(self, req: mcu_wire_pb2.PinMode) -> mcu_wire_pb2.Empty:
         resp_bytes = await self.dispatch("rpc.pb.GpioService", "SetPinMode", req)
         resp = mcu_wire_pb2.Empty()

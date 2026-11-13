@@ -54,14 +54,6 @@ async def run_test(
 
         logger.info("Subscription active on MCU", pin=resp.pin, success=resp.success)
 
-        # Introspect bridge status snapshot
-        status = await stub.GetStatus(mcu_wire_pb2.SubscribeRequest())
-        logger.info(
-            "Bridge status verified",
-            is_synchronized=status.bridge.handshake.synchronised,
-            failure_streak=status.bridge.handshake.failure_streak,
-        )
-
         logger.info("Observing active subscription window", duration_seconds=duration)
         await asyncio.sleep(duration)
 

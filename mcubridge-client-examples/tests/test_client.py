@@ -376,6 +376,9 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
             value=512
         ).SerializeToString(),
         ("rpc.pb.GpioService", "SetPinMode"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.GpioService", "SubscribePins"): lambda req: mcu_wire_pb2.PinSubscribeResponse(
+            pin=req.pin, success=True
+        ).SerializeToString(),
         ("rpc.pb.DataStoreService", "Put"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         ("rpc.pb.DataStoreService", "Get"): lambda _req: (
             mcu_wire_pb2.DatastoreGetResponse(value=b"stored").SerializeToString()
@@ -428,6 +431,10 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
 
     res_pm = await client.SetPinMode(mcu_wire_pb2.PinMode(pin=13, mode=config_schema_pb2.PinModeType.PIN_OUTPUT))
     assert isinstance(res_pm, mcu_wire_pb2.Empty)
+
+    res_ps = await client.PinSubscribe(mcu_wire_pb2.PinSubscribeRequest(pin=7, enabled=True))
+    assert res_ps.pin == 7
+    assert res_ps.success is True
 
     res_dp = await client.DatastorePut(mcu_wire_pb2.DatastorePut(key="k", value=b"v"))
     assert isinstance(res_dp, mcu_wire_pb2.Empty)

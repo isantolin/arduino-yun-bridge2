@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Test file I/O using direct GatewayClient Publish calls."""
+"""Example: Test MPU file write/remove through the Gateway (file read is not yet in the GatewayControl contract)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import cloud_gateway_pb2, mcu_wire_pb2
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -34,20 +34,7 @@ async def run_test(
                     data=test_content.encode("utf-8"),
                 )
             )
-
-            # --- Test File Read ---
-            logger.info("Reading file", filename=test_filename)
-            res = await stub.FileRead(
-                cloud_gateway_pb2.FileRead(
-                    path=test_filename,
-                )
-            )
-            content = res.content if res else b""
-            logger.info("Read file content", content=content.decode("utf-8"))
-            if content != test_content.encode("utf-8"):
-                raise AssertionError(
-                    f"File content mismatch: expected {test_content!r}, got {content.decode('utf-8')!r}"
-                )
+            logger.info("File written; MPU file read is not exposed by the Gateway contract yet (ADR-0003)")
 
         finally:
             # --- Test File Remove ---

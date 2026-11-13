@@ -32,6 +32,7 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 from tools.arduino_core_metadata import read_metadata_json
 from tools.audit.audit_bridge_status import audit_status_dict
+from tools.emulation.emulation_pki import get_emulation_pki
 from tools.emulation.process_utils import (
     cleanup_paths,
     start_daemon_thread,
@@ -107,9 +108,30 @@ def ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
         logger.info("Starting Managed Cloud Gateway...")
         gateway_env = dict(os.environ)
         gateway_env["PYTHONUNBUFFERED"] = "1"
-        gateway_bin = repo_root / "build/mcubridge-gateway/mcubridge-gateway-cpp"
+        # Coverage-instrumented CI builds must not try to write .gcda files next to
+        # object paths from another job.
+        gateway_env.setdefault("GCOV_PREFIX", tempfile.mkdtemp(prefix="mcubridge_gw_gcov_"))
+        gateway_bin = Path(
+            os.environ.get("MCUBRIDGE_GATEWAY_BINARY") or repo_root / "build/mcubridge-gateway/mcubridge-gateway-cpp"
+        )
+        if not gateway_bin.is_file():
+            logger.error(
+                "Standalone Gateway binary not found; build mcubridge-gateway-cpp or set MCUBRIDGE_GATEWAY_BINARY",
+                path=str(gateway_bin),
+            )
+            return None
+        pki = get_emulation_pki()
+        pki.export_client_env()
         gateway_cmd = [
             str(gateway_bin),
+            "--cert",
+            str(pki.gateway.cert),
+            "--key",
+            str(pki.gateway.key),
+            "--client-ca",
+            str(pki.ca_cert),
+            "--bind",
+            CLOUD_HOST,
             "--port",
             str(CLOUD_PORT),
         ]
@@ -170,6 +192,10 @@ def setup_fake_uci(
         fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_uci_"))
         storage_path = Path(tempfile.mkdtemp(prefix="mcubridge_db_"))
 
+    # The Gateway authenticates edge daemons only by their SPIFFE device URI SAN.
+    pki = get_emulation_pki()
+    device_identity = pki.device(device_id)
+    pki.export_client_env()
     uci_config: dict[str, str] = {
         "serial_port": slave_name,
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
@@ -177,8 +203,11 @@ def setup_fake_uci(
         "cloud_enabled": "1",
         "cloud_host": CLOUD_HOST,
         "cloud_port": str(CLOUD_PORT),
-        "cloud_tls": "0",
-        "cloud_tls_insecure": "1",
+        "cloud_tls": "1",
+        "cloud_tls_insecure": "0",
+        "cloud_cafile": str(pki.ca_cert),
+        "cloud_certfile": str(device_identity.cert),
+        "cloud_keyfile": str(device_identity.key),
         "watchdog_enabled": "0",
         "serial_response_timeout": "30.0",
         "serial_shared_secret": shared_secret,
@@ -449,6 +478,9 @@ def run_emulation(
 ) -> None:
     state = EmulationState()
     gateway_proc = ensure_cloud_gateway(state)
+    if gateway_proc is None and not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+        logger.error("Standalone Gateway is not available; aborting emulation")
+        sys.exit(1)
 
     Path(SOCAT_PORT0).unlink(missing_ok=True)
     status_file = Path("/tmp/mcubridge_status.json")

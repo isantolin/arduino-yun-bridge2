@@ -137,9 +137,21 @@ paragraph=Mainstream Pigweed RPC, HDLC, Tokenizer, Chrono and serialization for 
 category=Communication
 url=https://pigweed.dev
 architectures=samd,esp32
-includes=pw_hdlc/encoder.h,pw_rpc/server.h,pw_chrono/system_clock.h
+includes=Pigweed.h
 """
     (dest_dir / "library.properties").write_text(lib_props, encoding="utf-8")
+
+    # arduino-cli resolves a library only from a header in the root of its src/ directory;
+    # nested includes such as <pw_bytes/span.h> are never matched. This umbrella header is
+    # the discovery anchor (the AVR port uses PigweedAVR.h for the same purpose).
+    (src_dir / "Pigweed.h").write_text(
+        "#pragma once\n"
+        "// Discovery anchor for the mainstream Pigweed Arduino library (generated).\n"
+        "#include <pw_bytes/span.h>\n"
+        "#include <pw_span/span.h>\n"
+        "#include <pw_status/status.h>\n",
+        encoding="utf-8",
+    )
 
     # 2. Copy Pigweed modules public headers and implementation sources
     modules = [

@@ -34,6 +34,7 @@
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
 #else
+#include <Pigweed.h>
 #include <pw_bytes/span.h>
 #include <pw_checksum/crc32.h>
 #include <pw_chrono/system_clock.h>

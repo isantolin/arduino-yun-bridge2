@@ -216,7 +216,7 @@ jobs:
   arduino-emulation:
     name: Arduino Emulation (${{ matrix.name }})
     runs-on: ubuntu-26.04
-    needs: [tox-checks]
+    needs: [tox-checks, gateway-cpp]
     strategy:
       fail-fast: false
       matrix:
@@ -280,6 +280,13 @@ jobs:
       - name: Install Arduino Dependencies
         run: |
           ./mcubridge-library-arduino/tools/install.sh
+      - name: Download standalone Gateway binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gateway-binary
+          path: build/mcubridge-gateway
+      - name: Make Gateway binary executable
+        run: chmod +x build/mcubridge-gateway/mcubridge-gateway-cpp
       - name: Compile & Run Emulation
         run: |
           ./tools/ci/compile_emulator.sh
@@ -319,7 +326,7 @@ jobs:
   simavr-emulation:
     name: simavr AVR Emulation (Multi-Board Matrix)
     runs-on: ubuntu-26.04
-    needs: [tox-checks]
+    needs: [tox-checks, gateway-cpp]
     timeout-minutes: 15
     env:
       SIMAVR_METRICS_DIR: simavr-logs
@@ -343,6 +350,13 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
+      - name: Download standalone Gateway binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gateway-binary
+          path: build/mcubridge-gateway
+      - name: Make Gateway binary executable
+        run: chmod +x build/mcubridge-gateway/mcubridge-gateway-cpp
       - name: Run simavr E2E Test Suite
         run: |
           mkdir -p simavr-logs
@@ -370,7 +384,7 @@ jobs:
   renode-emulation:
     name: Renode ARM Emulation (Arduino MKR WiFi 1010)
     runs-on: ubuntu-26.04
-    needs: [tox-checks]
+    needs: [tox-checks, gateway-cpp]
     timeout-minutes: 15
     env:
       RENODE_METRICS_DIR: renode-logs
@@ -396,6 +410,13 @@ jobs:
           arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
       - name: Install Renode
         uses: ./.github/actions/setup-renode
+      - name: Download standalone Gateway binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gateway-binary
+          path: build/mcubridge-gateway
+      - name: Make Gateway binary executable
+        run: chmod +x build/mcubridge-gateway/mcubridge-gateway-cpp
       - name: Run Renode E2E Test Suite
         run: |
           mkdir -p renode-logs
@@ -411,7 +432,7 @@ jobs:
   qemu-esp32-emulation:
     name: QEMU Xtensa Emulation (Arduino Nano ESP32)
     runs-on: ubuntu-26.04
-    needs: [tox-checks]
+    needs: [tox-checks, gateway-cpp]
     timeout-minutes: 15
     env:
       QEMU_METRICS_DIR: qemu-logs
@@ -457,6 +478,13 @@ jobs:
           if [ -d "/opt/qemu-esp32/bin" ]; then
             echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
           fi
+      - name: Download standalone Gateway binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gateway-binary
+          path: build/mcubridge-gateway
+      - name: Make Gateway binary executable
+        run: chmod +x build/mcubridge-gateway/mcubridge-gateway-cpp
       - name: Run QEMU ESP32-S3 E2E Test Suite
         run: |
           mkdir -p qemu-logs
@@ -472,7 +500,7 @@ jobs:
   fleet-mesh-emulation:
     name: Master Fleet Mesh Emulation (simavr + Renode + QEMU)
     runs-on: ubuntu-26.04
-    needs: [tox-checks]
+    needs: [tox-checks, gateway-cpp]
     timeout-minutes: 20
     env:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
@@ -523,6 +551,13 @@ jobs:
           if [ -d "/opt/qemu-esp32/bin" ]; then
             echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
           fi
+      - name: Download standalone Gateway binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gateway-binary
+          path: build/mcubridge-gateway
+      - name: Make Gateway binary executable
+        run: chmod +x build/mcubridge-gateway/mcubridge-gateway-cpp
       - name: Run Fleet Mesh Hardware E2E Suite
         run: |
           tox -e fleet-mesh-hardware
@@ -557,6 +592,13 @@ jobs:
         run: |
           . .venv-gateway/bin/activate
           cmake --build build/mcubridge-gateway --parallel 2
+      - name: Upload standalone Gateway binary for emulation jobs
+        uses: actions/upload-artifact@v7
+        with:
+          name: gateway-binary
+          path: build/mcubridge-gateway/mcubridge-gateway-cpp
+          if-no-files-found: error
+          retention-days: 1
       - name: Test Gateway TLS identity and session isolation
         run: |
           export PYTHONPATH=.:mcubridge

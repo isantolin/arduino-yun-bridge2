@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive console helper for the Arduino bridge using direct LocalBridgeStub through Gateway."""
+"""Interactive console helper for the Arduino bridge using direct GatewayClient through Gateway."""
 
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def main(
     asyncio.run(run_test(host, port, device_id, topic_prefix))
 
 
-cli = typer.Typer(help="Interactive console helper using direct LocalBridgeStub through Gateway.", add_completion=False)
+cli = typer.Typer(help="Interactive console helper using direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()

@@ -220,24 +220,9 @@ void test_all_wire_messages_roundtrip() {
   }
 
   {
-    rpc_pb_FileRead p = rpc_pb_FileRead_init_default;
-    strncpy(p.path, "/tmp/foo", sizeof(p.path) - 1);
-    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileRead_fields, p));
-    count++;
-  }
-
-  {
     rpc_pb_FileRemove p = rpc_pb_FileRemove_init_default;
     strncpy(p.path, "/tmp/foo", sizeof(p.path) - 1);
     TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileRemove_fields, p));
-    count++;
-  }
-
-  {
-    rpc_pb_FileReadResponse p = rpc_pb_FileReadResponse_init_default;
-    p.content.size = 3;
-    memcpy(p.content.bytes, "abc", 3);
-    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileReadResponse_fields, p));
     count++;
   }
 
@@ -321,7 +306,7 @@ void test_all_wire_messages_roundtrip() {
     count++;
   }
 
-  TEST_ASSERT_EQUAL(36, count);
+  TEST_ASSERT_EQUAL(34, count);
 }
 
 int main() {

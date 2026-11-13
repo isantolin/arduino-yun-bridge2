@@ -28,8 +28,8 @@ def test_resolve_command_numeric_property(val: int) -> None:
 
 
 def test_resolve_command_name() -> None:
-    get_version_op = protocol.get_operation("GetVersion")
-    get_free_memory_op = protocol.get_operation("GetFreeMemory")
+    get_version_op = protocol.get_operation("rpc.pb.SystemService/GetVersion")
+    get_free_memory_op = protocol.get_operation("rpc.pb.SystemService/GetFreeMemory")
     assert get_version_op is not None
     assert get_version_op.method_id is not None
     assert get_free_memory_op is not None
@@ -83,7 +83,7 @@ def test_parse_payload_invalid() -> None:
 
 
 def test_name_for_command() -> None:
-    get_version_op = protocol.get_operation("GetVersion")
+    get_version_op = protocol.get_operation("rpc.pb.SystemService/GetVersion")
     assert get_version_op is not None
     assert get_version_op.method_id is not None
     assert frame_debug.name_for_command(get_version_op.method_id) == get_version_op.name

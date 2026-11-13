@@ -162,9 +162,10 @@ def sync(
     push_file(init_src, "/etc/init.d/mcubridge", host=target_host, user=user, mode="0755")
 
     # 3. Sync gateway binary
-    gateway_src = REPO_ROOT / "mcubridge-gateway" / "gateway.py"
-    print(f"\n[3/7] Syncing Gateway: {gateway_src} -> /usr/bin/mcubridge-gateway")
-    push_file(gateway_src, "/usr/bin/mcubridge-gateway", host=target_host, user=user, mode="0755")
+    gateway_src = REPO_ROOT / "build/mcubridge-gateway/mcubridge-gateway-cpp"
+    if gateway_src.is_file():
+        print(f"\n[3/7] Syncing Gateway: {gateway_src} -> /usr/bin/mcubridge-gateway")
+        push_file(gateway_src, "/usr/bin/mcubridge-gateway", host=target_host, user=user, mode="0755")
 
     # 4. Sync helper scripts and default environment
     scripts_dir = REPO_ROOT / "mcubridge" / "scripts"

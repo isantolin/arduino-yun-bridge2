@@ -78,11 +78,6 @@ static void onDataStoreRead(etl::string_view key,
   Console.println();
 }
 
-static void onFileReadComplete(pw::span<const uint8_t> content) {
-  Console.print(F("[FILE_READ] size="));
-  Console.println(content.size());
-}
-
 static void onProcessRun(int32_t pid) {
   Console.print(F("[PROCESS_PID] "));
   Console.println(pid);

@@ -1,0 +1,13 @@
+mcubridge.gateway.DispatchRequest.target_device_id max_size:128
+mcubridge.gateway.DispatchRequest.service_name max_size:64
+mcubridge.gateway.DispatchRequest.method_name max_size:64
+mcubridge.gateway.DispatchRequest.request_payload max_size:2048
+mcubridge.gateway.DispatchResponse.response_payload max_size:2048
+mcubridge.gateway.EdgeDispatchRequest.service_name max_size:64
+mcubridge.gateway.EdgeDispatchRequest.method_name max_size:64
+mcubridge.gateway.EdgeDispatchRequest.request_payload max_size:2048
+mcubridge.gateway.EdgeDispatchResponse.response_payload max_size:2048
+mcubridge.gateway.TelemetryReport.daemon_metrics_blob max_size:2048
+mcubridge.gateway.TelemetryReport.system_status_blob max_size:2048
+mcubridge.gateway.TelemetryReport.bridge_snapshot_blob max_size:2048
+mcubridge.gateway.TelemetryReport.handshake_snapshot_blob max_size:2048

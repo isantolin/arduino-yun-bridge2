@@ -153,7 +153,7 @@ class TestAccessor : public BridgeClass {
   void setTxAeadCounter(uint64_t c) { _tx_aead_counter = c; }
   void setRxAeadCounter(uint64_t c) { _rx_aead_counter = c; }
   pw::span<const uint8_t> rxAeadKey() const {
-    return pw::span<const uint8_t>(_rx_aead_key);
+    return pw::span<const uint8_t>(_session_aead_keys.data(), rpc::RPC_AEAD_KEY_SIZE);
   }
   bool invokeWriteEncryptedHdlcFrameWithBuffer(uint64_t address,
                                                pw::span<const uint8_t> data,

@@ -155,7 +155,6 @@ COMMON_DEFS=(
     -Wextra
     -Werror
     -Wno-unused-parameter
-    -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS
     -DETL_NO_STL
@@ -182,6 +181,10 @@ if [ "$COVERAGE_MODE" = true ]; then
 else
     BASE_FLAGS=(
         -O2 -g
+        -DARDUINO=100 -DBRIDGE_HOST_TEST=1 -DBRIDGE_DEBUG_IO=1
+        -DBRIDGE_ENABLE_CONSOLE=1 -DBRIDGE_ENABLE_DATASTORE=1
+        -DBRIDGE_ENABLE_MAILBOX=1 -DBRIDGE_ENABLE_FILESYSTEM=1
+        -DBRIDGE_ENABLE_PROCESS=1 -DBRIDGE_ENABLE_SPI=1
         "${COMMON_DEFS[@]}"
         "${INC_FLAGS[@]}"
     )
@@ -200,6 +203,7 @@ fi
 # Compile common sources to objects in parallel
 echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
+COMPILE_PIDS=()
 for src in "${SOURCES[@]}"; do
     obj_name=$(basename "${src}").o
     if [[ "${src}" == "$WOLFSSL_PATH/"* ]]; then
@@ -218,8 +222,21 @@ for src in "${SOURCES[@]}"; do
     else
         g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     fi
+    COMPILE_PIDS+=("$!")
 done
-wait
+
+# Wait for every compiler process; plain "wait" only reports the last child
+# and can otherwise allow linking against missing object files.
+compile_failed=0
+for pid in "${COMPILE_PIDS[@]}"; do
+    if ! wait "${pid}"; then
+        compile_failed=1
+    fi
+done
+if [ "${compile_failed}" -ne 0 ]; then
+    echo "[host-cpp] COMMON SOURCE COMPILATION FAILED; refusing to link incomplete objects." >&2
+    exit 1
+fi
 
 # Test suites
 TEST_FILES=(

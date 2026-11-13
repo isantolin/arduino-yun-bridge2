@@ -1,6 +1,6 @@
 # Plan de migración a Pigweed: ejecución consolidada
 
-- **Estado:** ejecución aprobada; CI estabilizada en `main`.
+- **Estado:** migración RPC integrada; etapa `pw_transfer` en curso en PR #84. PR abierto y sin merge; la CI del HEAD debe aprobarse antes de considerar validada esta revisión.
 - **Base:** ADR-0002 — `docs/architecture/decisions/0002-pigweed-hdlc-rpc-migration.md`.
 - **Protocolo canónico:** `tools/protocol/mcu_wire.proto` y `tools/protocol/config_schema.proto`.
 - **Integración MCU:** submódulo `third_party/avr_pigweed_port`, exportado como biblioteca Arduino `PigweedAVR`.
@@ -18,9 +18,9 @@ Reglas obligatorias:
 2. **Usar Pigweed directamente:** preferir `pw_rpc.Client`, `pw_rpc.Server`, `pw_hdlc`, `pw_tokenizer`, Nanopb y los descriptores oficiales frente a codificadores, decodificadores, correladores o wrappers duplicados.
 3. **No añadir abstracciones sin necesidad:** un adaptador solo se justifica para integrar límites reales (asyncio, pyserial, AEAD, UBUS o HAL), no para volver a implementar una API Pigweed.
 4. **Compatibilidad de recursos:** AVR ATmega2560 con buffers y almacenamiento estáticos, Zero-STL y sin asignación dinámica. Medir Flash, SRAM y stack en vez de asumir que una abstracción es gratuita.
-5. **Preservar contratos externos:** mantener las firmas y respuestas de UBUS, LuCI, LocalBridge gRPC y CloudBridge mTLS.
+5. **Preservar comportamiento de borde, no APIs legacy:** mantener las firmas y respuestas UBUS/LuCI que sigan siendo necesarias en el MPU. `LocalBridge`/`CloudBridge` gRPC no son contratos a preservar: ADR-0003 ordena migrarlos a Pigweed y eliminarlos en el corte único del Gateway.
 6. **Preservar seguridad:** mantener AEAD, HKDF/HMAC, autenticación del handshake, anti-replay, límites de payload y errores explícitos.
-7. **Conservar el runtime actual:** asyncio permanece como runtime del daemon; no migrar a pw_async2 ni sustituir HAL/UBUS/procd.
+7. **Conservar el runtime del MPU:** asyncio permanece como runtime del daemon edge para HAL/UBUS/procd. El Gateway central es un servicio Linux C++ independiente; no se conserva el Gateway Python ni se introduce un sidecar.
 8. **Cambios de protocolo coordinados:** no reservar campos Protobuf eliminados; actualizar el contrato y todos sus consumidores conjuntamente. No prometer compatibilidad de firmware mixto si el wire format no la ofrece.
 9. **Validación por etapa:** pruebas unitarias, de contrato, emulación y CI antes de avanzar a la etapa siguiente. No fusionar una etapa con CI fallida.
 
@@ -34,12 +34,25 @@ Reglas obligatorias:
 | Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` desacoplado de IDs legacy; `BY_COMMAND_ID` eliminado | Ninguno |
 | Cliente RPC Python | `serial.py` invoca RPC unarios y streaming con `pw_rpc.Client`; correlation y call_id nativos de Pigweed | Ninguno |
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
-| API de aplicación | Servicios internos y UBUS invocan métodos RPC por nombre de servicio y método Protobuf; sin capas de compatibilidad legacy | Ninguno |
+| API de aplicación | Servicios internos y UBUS del MPU invocan métodos RPC por nombre de servicio y método Protobuf | Migrar clientes northbound desde `LocalBridge`/`CloudBridge` gRPC a Pigweed y retirar esos contratos en el corte definido por ADR-0003 |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | `FileSystemService.Read` implementado como `SERVER_STREAMING` nativo Pigweed (`NanopbServerWriter` y `NanopbClientReader`), multi-chunk, cero hilos | Ninguno |
+| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read` eliminado | reemplazo integral del Gateway Python/grpclib por un único Gateway Linux C++ con `pw_rpc::Server`, `pw_transfer::TransferService`, HDLC sobre TLS mutuo; migrar sesiones edge y clientes al protocolo Pigweed; backend remoto de archivos con chunks acotados; retirar `CloudBridge`, `LocalBridge`, `FileRead`/`FileWrite` y `FileSystemService.Write`; pruebas end-to-end y de aislamiento por identidad |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
-| CI y validación | Matriz de pruebas completa verde; cobertura C++ >= 97.8% ramas y 99.8% líneas; cobertura Python 97.81% líneas y 96.86% ramas; 0 warnings linters/estáticos | Ninguno |
+| CI y validación | Baseline de `main` previamente validada; PR #84 requiere repetir toda la matriz después de los cambios de transferencia | CI de PR #84 en HEAD actual, emulación, perfiles Flash/SRAM/stack y validación física UART/HDLC |
+
+## Residuos activos que bloquean el corte sin legado
+
+El inventario al HEAD de PR #84 confirma que estos elementos siguen siendo código activo y **no deben borrarse antes de migrar sus consumidores**:
+
+- Gateway anterior: `mcubridge-gateway/gateway.py`, su paquete OpenWrt/RPM/Docker/systemd y sus pruebas.
+- Transporte y contratos gRPC: `grpclib` en `pyproject.toml`, `requirements/runtime.toml`, Makefiles y feeds; stubs generados desde `cloud_gateway.proto`; `CloudBridge` y `LocalBridge`.
+- Clientes y runtime: `mcubridge/services/runtime.py`, ejemplos CLI y clientes que abren `grpclib.Channel`.
+- Automatización: scripts de emulación, `tox.ini`, bootstrap de CI y pruebas que inician el Gateway Python.
+- Operaciones northbound de archivos: `LocalBridge.FileRead/FileWrite/FileRemove`. Deben migrarse a una apertura autenticada de recurso y luego a upstream `pw_transfer`; no confundir el recurso EEPROM MCU de 4 KiB con el filesystem del MPU.
+- Gateway Pigweed C++: el binario autentica TLS 1.3/mTLS, separa principales `device` y `client`, impide sesiones duplicadas por principal y ofrece `GatewayControl.Health` a clientes. `pw_transfer::TransferService` sigue registrado sin handlers. Faltan handlers de archivos y los servicios de telemetría, comandos, consola, mailbox y sesiones necesarios para sustituir el Gateway anterior.
+
+**Regla de eliminación:** cada dependencia, stub, proceso, contrato y prueba de gRPC se elimina en el mismo corte coordinado, después de que el reemplazo Pigweed y todos sus consumidores pasen pruebas de integración. No se permite mantener un sidecar, doble ejecución ni fallback. La presencia de `pw_transfer::TransferService` sin handlers no satisface el criterio de transferencia de archivos.
 
 ## Orden de ejecución
 
@@ -52,11 +65,11 @@ Reglas obligatorias:
 | 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, sin `CMD_*`; mantener UBUS y contratos externos sin capas de compatibilidad innecesarias | **Completada** |
 | 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y tablas `commands` | **Completada** |
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
-| 7 | Transferencias | Opción 1 adoptada: `FileSystemService.Read` como `SERVER_STREAMING` multi-chunk nativo de Pigweed con `NanopbServerWriter` y `NanopbClientReader`, cero hilos para AVR bare-metal | **Completada** |
+| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **En curso — handler EEPROM MCU y cliente Python integrados; reemplazo completo del Gateway y migración de sesiones/clientes pendientes** |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
-| 10 | Validación integral | Validación completa: tests C++ (99.8% líneas, 97.8% ramas), Clang-Tidy (0 warnings, 0 NOLINT), Cppcheck (0 issues), tests Python (899 passed, 97.81% líneas, 96.86% ramas), auditoría AST y Semgrep (0 issues) | **Completada** |
-| 11 | Unificación Canónica de Tópicos y Manejadores | Erradicación total de `Topic.*` legacy (`"a"`, `"d"`, `"sh"`), unificación de `cloud_topic` y `mcu_handler` bajo descriptores Pigweed `{direction}/{Service}/{Method|Message}`, eliminación de `CommonAction`/`rpc.pb.actions`, y despacho gRPC canónico `rpc.pb.<Service>/<Method>` desde Gateway | **Completada** |
+| 10 | Validación integral | Las métricas históricas citadas son un baseline anterior, no una validación del HEAD actual. PR #84 debe superar la matriz completa, incluida cobertura Python/C++, AVR Mega 2560, Renode, QEMU, fuzzing, OpenWrt y el Gateway C++ | **Pendiente de CI verde en HEAD** |
+| 11 | Unificación Canónica de Tópicos y Manejadores | Los contratos MCU usan descriptores Pigweed. El Gateway C++ ya tiene sesiones mTLS separadas por rol y `GatewayControl.Health` para principales `client`; `pw_transfer` sigue registrado sin handlers y faltan los servicios de telemetría, comandos, consola, mailbox y sesiones. Los clientes y servicios de aplicación siguen dependiendo de `CloudBridge`/`LocalBridge` y `grpclib` | **En curso — no declarar completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
 
@@ -65,7 +78,7 @@ Implementación consolidada en `mcubridge/mcubridge/transport/serial.py`:
 - Usa `pw_hdlc.decode.FrameDecoder` y decodifica `RpcPacket` con `pw_rpc.packets`.
 - Sustituyó `PendingCommand`, la asignación manual de `call_id` y `correlate_frame` por `pw_rpc.Client.from_modules(callback_client.Impl(), ...)` alimentado por los descriptores oficiales de `PW_SERVICES`.
 - Enruta la cardinalidad del método (`Method.Type.UNARY` vs `Method.Type.SERVER_STREAMING`) directamente desde `pw_rpc.descriptors.Method`.
-- Preserva y consume el `call_id` entrante (`_active_server_call_ids`) al responder peticiones iniciadas por el MCU (`DataStore.get`, `FileSystem.read`, `Process.runAsync`, `Process.poll`).
+- Preserva y consume el `call_id` entrante (`_active_server_call_ids`) al responder peticiones iniciadas por el MCU (`DataStore.get`, `Process.runAsync`, `Process.poll`).
 - La escritura serial/AEAD y el procesamiento de HDLC permanecen como límites de transporte válidos sin reimplementar el motor RPC.
 
 Criterios de aceptación:
@@ -78,14 +91,14 @@ Criterios de aceptación:
 6. Las pruebas demuestran equivalencia funcional y no dependen de mocks que reimplementen internamente Pigweed.
 7. El código manual retirado y el código nuevo se cuantifican; no se acepta una capa adicional que aumente la complejidad sin reemplazar lógica.
 
-## Detalle de la etapa 3: streaming GPIO y lectura de archivos (`SERVER_STREAMING`)
+## Detalle de la etapa 3: streaming GPIO (`SERVER_STREAMING`)
 
-El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) ya expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. Asimismo, `FileSystemService::Read` (`rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse)`) utiliza `pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>` y `pw::rpc::NanopbClientReader<rpc_pb_FileReadResponse>` para transferir archivos multi-chunk en ambas direcciones sin requerir `pw_thread` / `pw_transfer` en AVR bare-metal.
+El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. La transferencia de archivos no usa server-streaming Nanopb: `FileSystemService.Read` fue eliminado. `pw_transfer` tiene un handler de lectura/escritura para la EEPROM interna de 4 KiB del ATmega2560 (recurso fijo `0x4D454741`, sin semántica de filesystem). El endpoint de almacenamiento Linux y la migración de las APIs locales `FileRead`/`FileWrite` siguen pendientes.
 
 Cambios en el daemon y el contrato:
 
-1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` y `rpc.pb.FileSystemService/Read` como métodos `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
-2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo del stream se entregan a `rpc_client.process_packet`, encolando `PinUpdateEvent` en una cola acotada (`_stream_event_queue`) con política de backpressure (descarta el evento más antiguo si la cola se llena) antes de despachar a `GpioService.handle_pin_update_event`, o acumulando fragmentos `FileReadResponse` hasta recibir el paquete terminal `PacketType.RESPONSE`.
+1. `SerialTransport` invoca `rpc.pb.GpioService/SubscribePins` como método `SERVER_STREAMING` a través de `pw_rpc.Client`, registrando callbacks `on_next`, `on_completed` y `on_error`.
+2. Los paquetes `PacketType.SERVER_STREAM`, `PacketType.RESPONSE` y `PacketType.SERVER_ERROR` asociados al `call_id` activo se entregan a `rpc_client.process_packet`; `PinUpdateEvent` se encola en una cola acotada (`_stream_event_queue`) con política de backpressure antes de despachar a `GpioService.handle_pin_update_event`.
 3. Se eliminan `CMD_PIN_SUBSCRIBE_RESP`, `CMD_PIN_UPDATE_EVENT`, `BY_SERVER_STREAM`, `GpioService.on_subscribe_resp`, `PendingCommand` y `SerialTransport.correlate_frame`.
 4. `GpioService` cancela explícitamente el stream (`cancel_pin_stream`) al deshabilitar la última suscripción activa y restaura las suscripciones activas (`resubscribe_pins`) tras reconectar y sincronizar el enlace serie.
 
@@ -96,18 +109,17 @@ Cambios en el daemon y el contrato:
    - Se eliminó `BY_COMMAND_ID` y `command_id` en `OperationSpec`. Toda la resolución de métodos en Python y C++ se realiza de forma directa mediante descriptores canónicos de Pigweed (`PW_SERVICES`) y Nanopb.
    - En `tools/protocol/generate.py` y sus plantillas Jinja2 (`protocol.py.j2`, `protocol_client.py.j2`, `rpc_protocol.h.j2`), se eliminaron las tablas de comandos estáticas y la lógica de catálogo paralela.
    - Los servicios de aplicación (`BridgeService`, `ClockSyncService`, `GpioService`, `RuntimeService`, `UbusService`, `FileSystemService`, etc.) y sus clientes invocan métodos nativos de `pw_rpc` por nombre de servicio y método Protobuf.
-   - Se preservaron íntegramente los contratos hacia el norte (UBUS OpenWrt, LuCI y gRPC `LocalBridge`).
+   - Se mantienen las interfaces UBUS/LuCI propias del MPU. El contrato gRPC `LocalBridge` no se preserva: sus consumidores deben migrarse a Pigweed antes de eliminarlo en el corte único de ADR-0003.
 
 ## Detalle de las etapas 6 y 7: Firmware y streaming de archivos (Opción 1)
 
 1. **Firmware C++ Nanopb y Pigweed RPC:**
    - Se eliminó el dispatch manual de comandos numéricos y sus estructuras intermedias en `Bridge.cpp`.
    - Registro y ciclo de vida de servicios mediante `pw::rpc::Server` y `pw::rpc::Client`.
-2. **Transferencias de archivos (Opción 1 nativa Pigweed RPC):**
-   - Implementado `FileSystemService.Read` como RPC `SERVER_STREAMING` nativo (`rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse)`).
-   - En MCU (`mcubridge-library-arduino/src/Bridge.cpp` y `FileSystem.cpp`), el firmware emite fragmentos de archivo con `pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>` y recibe archivos mediante `pw::rpc::NanopbClientReader<rpc_pb_FileReadResponse>`.
-   - Cero dependencias de `pw_thread` o memoria dinámica, garantizando compatibilidad total con AVR ATmega2560 bare-metal (Zero-STL, buffers estáticos).
-   - Se eliminaron shims y artificios legacy (`FileReadResponse(content=b"")`).
+2. **Transferencias de archivos (upstream `pw_transfer`):**
+   - `pw_transfer` es el único protocolo de streaming de archivos; el RPC `FileSystemService.Read`, los lectores/escritores Nanopb, sus callbacks y la ruta Python de server-streaming se eliminaron.
+   - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados para ATmega2560.
+   - La integración del protocolo no implica que exista ya un backend SD de archivos: el handler de archivos con apertura, lectura/escritura acotada, validación de rutas y reemplazo atómico sigue siendo una tarea de implementación y una condición para declarar transferencias de archivos operativas.
 
 ## Detalle de las etapas 8 y 9: Estructura C++, cero supresiones NOLINT y gestión estática de memoria
 
@@ -156,9 +168,10 @@ Cambios en el daemon y el contrato:
      - Eventos y telemetría: `{prefix}/evt/{Service}/{Method|Message}`
    - Unificación de manejadores (`mcu_handler` / `handler_name`) mediante derivación por convención `{servicio_snake}_{metodo_snake}` sobre `BridgeService`, eliminando opciones manuales redundantes en los `.proto`.
 
-3. **Paridad de tipos y despacho en Cloud Gateway:**
-   - En `GatewayLocalBridgeService._forward_rpc`, despacho de comandos utilizando la URI completa Pigweed (`spec.name` = `rpc.pb.<Service>/<Method>`), garantizando que tanto `LocalBridge` como `Gateway` operen sobre los mismos tipos tipados sin prefijos sintéticos `rpc/`.
-   - Compatibilidad bidireccional homogénea entre clientes, gateway y daemon.
+3. **Migración northbound al Gateway Pigweed (ADR-0003):**
+   - El despacho actual mediante `GatewayLocalBridgeService`/`LocalBridge` es transitorio y no forma parte del diseño final.
+   - Migrar clientes, sesiones edge y operaciones northbound a servicios Pigweed generados; después eliminar `GatewayLocalBridgeService`, `LocalBridge`, `CloudBridge` y sus consumidores en el mismo corte coordinado.
+   - La identidad y autorización del dispositivo deben derivarse del principal autenticado por mTLS, nunca de `x-device-id` suministrado libremente por el cliente.
 
 4. **Saneamiento de pruebas y documentación:**
    - Actualización de todos los casos de prueba de integración, métricas, telemetría y propiedades de tópicos a las rutas canónicas.

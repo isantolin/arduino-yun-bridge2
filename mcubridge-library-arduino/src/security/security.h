@@ -16,10 +16,11 @@ namespace rpc {
 namespace security {
 
 /** Derive host-to-MCU and MCU-to-host keys from the shared secret and nonce. */
+// Writes host-to-MCU (RX) followed by MCU-to-host (TX) into one contiguous
+// buffer. This avoids a 64-byte temporary stack buffer on small AVR targets.
 bool derive_session_keys(pw::span<const uint8_t> secret,
                          pw::span<const uint8_t> nonce,
-                         pw::span<uint8_t> host_to_mcu_key,
-                         pw::span<uint8_t> mcu_to_host_key);
+                         pw::span<uint8_t> session_keys);
 
 /** Encrypt plaintext with ChaCha20-Poly1305. */
 bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,

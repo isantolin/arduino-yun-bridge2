@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
@@ -35,6 +36,98 @@ def _install_test_cipher(transport: SerialTransport) -> None:
     if transport.config.serial_shared_secret:
         nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
         transport.state.link_cipher = LinkCipher.for_host(transport.config.serial_shared_secret, nonce)
+
+
+async def test_pw_transfer_client_is_shared_and_nonblocking(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
+    instances: list[object] = []
+
+    class FakeTransferManager:
+        last_write: tuple[int, bytes, int] | None = None
+
+        def __init__(self, service: object, *, max_chunk_size_bytes: int, **manager_options: object) -> None:
+            self.service = service
+            self.max_chunk_size_bytes = max_chunk_size_bytes
+            self.manager_options = manager_options
+            instances.append(self)
+
+        def read(self, resource_id: int, *, initial_offset: int = 0) -> bytes:
+            return f"{resource_id}:{initial_offset}".encode()
+
+        def write(self, resource_id: int, data: bytes, *, initial_offset: int = 0) -> None:
+            self.last_write = (resource_id, data, initial_offset)
+
+    monkeypatch.setattr("mcubridge.transport.serial.PwTransferManager", FakeTransferManager)
+
+    data = await transport.transfer_read(0x4D454741, offset=7)
+    await transport.transfer_write(0x4D454741, b"data", offset=9)
+
+    assert data == b"1296385857:7"
+    assert len(instances) == 1
+    manager = instances[0]
+    assert isinstance(manager, FakeTransferManager)
+    assert manager.max_chunk_size_bytes == 128
+    assert manager.manager_options == {
+        "default_response_timeout_s": 2.0,
+        "initial_response_timeout_s": 5.0,
+        "max_retries": 3,
+        "max_lifetime_retries": 60,
+    }
+    assert manager.last_write == (0x4D454741, b"data", 9)
+
+
+async def test_pw_transfer_cancellation_keeps_role_lock_until_worker_finishes(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+    writes: list[tuple[int, bytes]] = []
+
+    class BlockingTransferManager:
+        def __init__(self, _service: object, *, max_chunk_size_bytes: int, **_manager_options: object) -> None:
+            assert max_chunk_size_bytes == 128
+
+        def read(self, _resource_id: int, *, initial_offset: int = 0) -> bytes:
+            assert initial_offset == 0
+            worker_started.set()
+            release_worker.wait(timeout=2.0)
+            return b""
+
+        def write(self, resource_id: int, data: bytes, *, initial_offset: int = 0) -> None:
+            assert initial_offset == 0
+            writes.append((resource_id, data))
+
+    monkeypatch.setattr("mcubridge.transport.serial.PwTransferManager", BlockingTransferManager)
+
+    first = asyncio.create_task(transport.transfer_read(0x4D454741))
+    assert await asyncio.to_thread(worker_started.wait, 1.0)
+    first.cancel()
+    second = asyncio.create_task(transport.transfer_write(0x4D454741, b"next"))
+    await asyncio.sleep(0.05)
+    assert writes == []
+
+    release_worker.set()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    await second
+    assert writes == [(0x4D454741, b"next")]
+
+
+async def test_pw_transfer_rejects_disconnected_link(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = False
+
+    with pytest.raises(ConnectionError, match="disconnected"):
+        await transport.transfer_read(0x4D454741)
 
 
 def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:

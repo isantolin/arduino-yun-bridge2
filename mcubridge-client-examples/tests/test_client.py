@@ -1,11 +1,16 @@
+import asyncio
+import socket
+import ssl
+import time
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import pw_hdlc.encode
 import pytest
-from grpclib.client import Channel
-from mcubridge_client import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
-from mcubridge_client import LocalBridgeStub
+from mcubridge_client import GatewayClient, GatewayConnection, cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from mcubridge_client.gateway import gateway_control_pb2
+from pw_status import Status as PwStatus
 from mcubridge_client.definitions import (
     build_bridge_args,
 )
@@ -16,9 +21,9 @@ from mcubridge_client.spi import SpiDevice
 
 @pytest.fixture
 def mock_grpc() -> tuple[MagicMock, MagicMock]:
-    mock_channel = MagicMock(spec=Channel)
+    mock_channel = MagicMock(spec=GatewayConnection)
 
-    mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
+    mock_stub = MagicMock(spec=GatewayClient)
     mock_stub.DigitalWrite = AsyncMock()
     mock_stub.AnalogWrite = AsyncMock()
     mock_stub.DatastorePut = AsyncMock()
@@ -202,8 +207,8 @@ def test_env_functions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 async def test_spi_device_transfer() -> None:
-    mock_channel = MagicMock(spec=Channel)
-    mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
+    MagicMock(spec=GatewayConnection)
+    mock_stub = MagicMock(spec=GatewayClient)
     mock_spi_config = AsyncMock()
     mock_stub.SpiConfigure = mock_spi_config
     mock_stub.SpiTransfer = AsyncMock(return_value=mcu_wire_pb2.SpiTransfer(data=b"\xaa\xbb"))
@@ -224,3 +229,317 @@ async def test_spi_device_transfer() -> None:
     # End
     await dev.end()
     assert not dev.is_active
+
+
+class FakeCall:
+    def __init__(self, status: PwStatus) -> None:
+        self.status = status
+
+
+def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None:
+    sock_srv, sock_cli = socket.socketpair()
+    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: sock_cli)
+
+    # 1. Plain socket connection
+    conn = GatewayConnection("127.0.0.1", 8443)
+    assert conn.running is True
+    conn.send_frame(b"ping")
+    raw = sock_srv.recv(1024)
+    assert len(raw) > 0
+
+    # Test send_frame when sock is None
+    conn.sock = None
+    conn.send_frame(b"ping")
+    conn.sock = sock_cli
+
+    # Test reading valid HDLC frame with address 1
+    mock_process = MagicMock()
+    conn.rpc_client.process_packet = mock_process
+    sock_srv.sendall(pw_hdlc.encode.ui_frame(1, b"\x08\x01"))
+
+    # Give reader thread time to consume
+    for _ in range(50):
+        if mock_process.called:
+            break
+        time.sleep(0.01)
+    assert mock_process.called
+
+    # Test reading frame with non-rpc address (should be ignored)
+    sock_srv.sendall(pw_hdlc.encode.ui_frame(2, b"log_data"))
+
+    # Close connection
+    conn.close()
+    sock_srv.close()
+    sock_cli.close()
+
+    # 2. Test close error handling
+    mock_sock = MagicMock()
+    mock_sock.close.side_effect = OSError("close error")
+    mock_sock.recv.side_effect = OSError("closed")
+    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: mock_sock)
+    conn_err = GatewayConnection("127.0.0.1", 8443)
+    conn_err.close()
+
+    # 3. SSL wrapped connection
+    mock_ssl_ctx = MagicMock(spec=ssl.SSLContext)
+    mock_wrapped_sock = MagicMock()
+    mock_ssl_ctx.wrap_socket.return_value = mock_wrapped_sock
+    mock_wrapped_sock.recv.side_effect = OSError("closed")
+
+    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: MagicMock())
+    conn_ssl = GatewayConnection("127.0.0.1", 8443, ssl_context=mock_ssl_ctx)
+    mock_ssl_ctx.wrap_socket.assert_called_once()
+    conn_ssl.close()
+
+
+async def test_gateway_client_dispatch_lifecycle() -> None:
+    mock_conn = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="yun-01")
+
+    # 1. Success dispatch
+    def _invoke_success(req: Any, on_completed: Any = None, on_error: Any = None) -> None:
+        assert req.target_device_id == "yun-01"
+        assert req.service_name == "GpioService"
+        assert req.method_name == "DigitalWrite"
+        resp = gateway_control_pb2.DispatchResponse(
+            status_code=0,
+            response_payload=mcu_wire_pb2.Empty().SerializeToString(),
+        )
+        if on_completed:
+            on_completed(FakeCall(PwStatus.OK), resp)
+
+    mock_dispatch = MagicMock()
+    mock_dispatch.invoke = _invoke_success
+    mock_conn.rpc_client.channel.return_value.rpcs.mcubridge.gateway.GatewayControl.Dispatch = mock_dispatch
+
+    res_bytes = await client.dispatch("GpioService", "DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1))
+    assert res_bytes == mcu_wire_pb2.Empty().SerializeToString()
+
+    # 2. Error dispatch (status not ok)
+    def _invoke_error(req: Any, on_completed: Any = None, on_error: Any = None) -> None:
+        if on_error:
+            on_error(FakeCall(PwStatus.INTERNAL))
+
+    mock_dispatch.invoke = _invoke_error
+    with pytest.raises(RuntimeError, match="Pigweed RPC dispatch failed"):
+        await client.dispatch("GpioService", "DigitalWrite")
+
+
+async def test_gateway_client_health() -> None:
+    mock_conn = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="yun-01")
+
+    # 1. Health success
+    def _invoke_health_ok(on_completed: Any = None, on_error: Any = None) -> None:
+        resp = gateway_control_pb2.HealthResponse(ready=True, active_device_sessions=1, active_client_sessions=1)
+        if on_completed:
+            on_completed(FakeCall(PwStatus.OK), resp)
+
+    mock_health = MagicMock()
+    mock_health.invoke = _invoke_health_ok
+    mock_conn.rpc_client.channel.return_value.rpcs.mcubridge.gateway.GatewayControl.Health = mock_health
+
+    health = await client.Health()
+    assert health.ready is True
+    assert health.active_device_sessions == 1
+    assert health.active_client_sessions == 1
+
+    # 2. Health error
+    def _invoke_health_err(on_completed: Any = None, on_error: Any = None) -> None:
+        if on_error:
+            on_error(FakeCall(PwStatus.UNAVAILABLE))
+
+    mock_health.invoke = _invoke_health_err
+    with pytest.raises(RuntimeError, match="Health check failed"):
+        await client.Health()
+
+
+async def test_gateway_client_all_convenience_methods() -> None:
+    mock_conn = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="yun-01")
+
+    responses: dict[tuple[str, str], Any] = {
+        ("rpc.pb.GpioService", "DigitalWrite"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.GpioService", "DigitalRead"): lambda _req: mcu_wire_pb2.DigitalReadResponse(
+            value=1
+        ).SerializeToString(),
+        ("rpc.pb.GpioService", "AnalogWrite"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.GpioService", "AnalogRead"): lambda _req: mcu_wire_pb2.AnalogReadResponse(
+            value=512
+        ).SerializeToString(),
+        ("rpc.pb.GpioService", "SetPinMode"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.DataStoreService", "Put"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.DataStoreService", "Get"): lambda _req: (
+            mcu_wire_pb2.DatastoreGetResponse(value=b"stored").SerializeToString()
+        ),
+        ("rpc.pb.MailboxService", "Push"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.MailboxService", "Read"): lambda _req: mcu_wire_pb2.MailboxReadResponse(
+            content=b"msg"
+        ).SerializeToString(),
+        ("rpc.pb.ProcessService", "RunAsync"): lambda _req: mcu_wire_pb2.ProcessRunAsyncResponse(
+            pid=42
+        ).SerializeToString(),
+        ("rpc.pb.ProcessService", "Poll"): lambda _req: mcu_wire_pb2.ProcessPollResponse(
+            finished=True, exit_code=0
+        ).SerializeToString(),
+        ("rpc.pb.ProcessService", "Kill"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.FileSystemService", "Write"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.FileSystemService", "Remove"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.SpiService", "SetConfig"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+        ("rpc.pb.SpiService", "Transfer"): lambda req: mcu_wire_pb2.SpiTransferResponse(
+            data=req.data
+        ).SerializeToString(),
+        ("rpc.pb.SystemService", "GetVersion"): lambda _req: mcu_wire_pb2.VersionResponse(
+            major=2, minor=8, patch=9
+        ).SerializeToString(),
+        ("rpc.pb.SystemService", "GetFreeMemory"): lambda _req: (
+            mcu_wire_pb2.FreeMemoryResponse(value=1155).SerializeToString()
+        ),
+        ("rpc.pb.SystemService", "EnterBootloader"): lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
+    }
+
+    async def _mock_dispatch(service: str, method: str, req: Any = None, timeout_ms: int = 5000) -> bytes:
+        factory = responses.get((service, method))
+        if factory is not None:
+            return factory(req)
+        raise NotImplementedError(f"Unhandled {service}/{method}")
+
+    client.dispatch = _mock_dispatch
+
+    res_dw = await client.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=13, value=1))
+    assert isinstance(res_dw, mcu_wire_pb2.Empty)
+
+    res_dr = await client.DigitalRead(mcu_wire_pb2.PinRead(pin=13))
+    assert res_dr.value == 1
+
+    res_aw = await client.AnalogWrite(mcu_wire_pb2.AnalogWrite(pin=3, value=128))
+    assert isinstance(res_aw, mcu_wire_pb2.Empty)
+
+    res_ar = await client.AnalogRead(mcu_wire_pb2.PinRead(pin=0))
+    assert res_ar.value == 512
+
+    res_pm = await client.SetPinMode(mcu_wire_pb2.PinMode(pin=13, mode=1))
+    assert isinstance(res_pm, mcu_wire_pb2.Empty)
+
+    res_dp = await client.DatastorePut(mcu_wire_pb2.DatastorePut(key="k", value=b"v"))
+    assert isinstance(res_dp, mcu_wire_pb2.Empty)
+
+    res_dg = await client.DatastoreGet(mcu_wire_pb2.DatastoreGet(key="k"))
+    assert res_dg.value == b"stored"
+
+    res_mp = await client.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"hello"))
+    assert isinstance(res_mp, mcu_wire_pb2.Empty)
+
+    res_mr = await client.MailboxRead(mcu_wire_pb2.SubscribeRequest())
+    assert res_mr.content == b"msg"
+
+    res_pra = await client.ProcessRunAsync(mcu_wire_pb2.ProcessRunAsync(command="echo hi"))
+    assert res_pra.pid == 42
+
+    res_pp = await client.ProcessPoll(mcu_wire_pb2.ProcessPoll(pid=42))
+    assert res_pp.finished is True
+    assert res_pp.exit_code == 0
+
+    res_pk = await client.ProcessKill(mcu_wire_pb2.ProcessKill(pid=42))
+    assert isinstance(res_pk, mcu_wire_pb2.Empty)
+
+    res_fw = await client.FileWrite(mcu_wire_pb2.FileWrite(path="a.txt", data=b"data"))
+    assert isinstance(res_fw, mcu_wire_pb2.Empty)
+
+    res_fr = await client.FileRemove(mcu_wire_pb2.FileRemove(path="a.txt"))
+    assert isinstance(res_fr, mcu_wire_pb2.Empty)
+
+    res_sc = await client.SpiConfigure(mcu_wire_pb2.SpiConfig(frequency=1000000))
+    assert isinstance(res_sc, mcu_wire_pb2.Empty)
+
+    res_st = await client.SpiTransfer(mcu_wire_pb2.SpiTransfer(data=b"\xde\xad"))
+    assert res_st.data == b"\xde\xad"
+
+    res_ver = await client.GetVersion(mcu_wire_pb2.SubscribeRequest())
+    assert res_ver.major == 2
+    assert res_ver.minor == 8
+    assert res_ver.patch == 9
+
+    res_mem = await client.GetFreeMemory(mcu_wire_pb2.SubscribeRequest())
+    assert res_mem.value == 1155
+
+    res_boot = await client.EnterBootloader(mcu_wire_pb2.EnterBootloader(magic=0xDEADBEEF))
+    assert isinstance(res_boot, mcu_wire_pb2.Empty)
+
+
+def test_gateway_connection_reader_eof(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_sock = MagicMock()
+    mock_sock.recv.return_value = b""
+    monkeypatch.setattr(socket, "create_connection", lambda _hp, timeout=10.0: mock_sock)
+    conn = GatewayConnection("127.0.0.1", 8443)
+    conn.reader_thread.join(timeout=2)
+    assert not conn.reader_thread.is_alive()
+    conn.close()
+
+
+async def test_gateway_client_duplicate_callbacks() -> None:
+    mock_conn = MagicMock()
+    mock_rpcs = MagicMock()
+    mock_conn.rpc_client.channel.return_value.rpcs = mock_rpcs
+
+    captured_completed: Any = None
+    captured_error: Any = None
+
+    def mock_invoke(req: Any, on_completed: Any = None, on_error: Any = None) -> None:
+        nonlocal captured_completed, captured_error
+        captured_completed = on_completed
+        captured_error = on_error
+
+    mock_rpcs.mcubridge.gateway.GatewayControl.Dispatch.invoke.side_effect = mock_invoke
+    client = GatewayClient(mock_conn, target_device_id="dev-test")
+
+    async def call_dispatch() -> bytes:
+        return await client.dispatch("SystemService", "Ping", request=None)
+
+    task = asyncio.create_task(call_dispatch())
+    await asyncio.sleep(0.01)
+    assert captured_completed is not None
+    assert captured_error is not None
+
+    mock_call = MagicMock()
+    mock_call.status.ok.return_value = True
+    mock_resp = MagicMock()
+    mock_resp.response_payload = b"ok"
+
+    captured_completed(mock_call, mock_resp)
+    captured_completed(mock_call, mock_resp)
+    captured_error(mock_call)
+
+    res = await task
+    assert res == b"ok"
+
+
+async def test_gateway_client_health_duplicate_callbacks() -> None:
+    mock_conn = MagicMock()
+    mock_rpcs = MagicMock()
+    mock_conn.rpc_client.channel.return_value.rpcs = mock_rpcs
+
+    captured_completed: Any = None
+    captured_error: Any = None
+
+    def mock_invoke(on_completed: Any = None, on_error: Any = None) -> None:
+        nonlocal captured_completed, captured_error
+        captured_completed = on_completed
+        captured_error = on_error
+
+    mock_rpcs.mcubridge.gateway.GatewayControl.Health.invoke.side_effect = mock_invoke
+    client = GatewayClient(mock_conn, target_device_id="dev-test")
+
+    task = asyncio.create_task(client.Health())
+    await asyncio.sleep(0.01)
+
+    mock_call = MagicMock()
+    mock_call.status.ok.return_value = True
+    mock_resp = MagicMock()
+
+    captured_completed(mock_call, mock_resp)
+    captured_completed(mock_call, mock_resp)
+    captured_error(mock_call)
+
+    res = await task
+    assert res == mock_resp

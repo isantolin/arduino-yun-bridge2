@@ -162,6 +162,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
     on_write: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_write
+    on_remove: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_remove
 
     # Without serial
     service.serial = None
@@ -179,53 +180,13 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     assert (await on_write(2, mcu_wire_pb2.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
     assert serial.send.call_args[0][0] == Status.OK.value
 
-
-async def test_file_read_and_remove_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
-    service, _state, serial = svc
-    on_read: Callable[..., Awaitable[mcu_wire_pb2.FileReadResponse]] = service.file_read
-    on_remove: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_remove
-
-    # Read without serial
-    service.serial = None
-    assert (await on_read(1, mcu_wire_pb2.FileRead(path="a.txt"))).content == b""
-
-    # Read missing file
-    service.serial = serial
-    serial.send.return_value = True
-    assert (await on_read(1, mcu_wire_pb2.FileRead(path="missing.txt"))).content == b""
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
-
-    # Read existing nonempty file as bounded SERVER_STREAM frames plus stream completion (b"").
-    await service.file_write(mcu_wire_pb2.FileWrite(path="exists.txt", data=b"chunk-data"))
-    serial.send.reset_mock()
-    assert (await on_read(2, mcu_wire_pb2.FileRead(path="exists.txt"))).content == b""
-    sent = serial.send.await_args_list
-    assert [call.args[0] for call in sent] == [
-        "rpc.pb.FileSystemService/Read",
-        "rpc.pb.FileSystemService/Read",
-    ]
-    assert sent[0].args[1].content == b"chunk-data"
-    assert sent[1].args[1] == b""
-
-    # Read existing empty file; it emits stream completion (b"").
-    await service.file_write(mcu_wire_pb2.FileWrite(path="empty.txt", data=b""))
-    serial.send.reset_mock()
-    assert (await on_read(3, mcu_wire_pb2.FileRead(path="empty.txt"))).content == b""
-    serial.send.assert_awaited_once()
-    assert serial.send.await_args.args[0] == "rpc.pb.FileSystemService/Read"
-    assert serial.send.await_args.args[1] == b""
-
-    # Remove without serial
-    service.serial = None
-    assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"
-
     # Remove nonexistent file
     service.serial = serial
     assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"
     assert serial.send.call_args[0][0] == Status.INTERNAL.value
 
     # Remove existing file
-    assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="exists.txt"))).status == "ok"
+    assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="valid.txt"))).status == "ok"
     assert serial.send.call_args[0][0] == Status.OK.value
 
 
@@ -322,8 +283,10 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     assert resp_ds_put.status == "ok"
 
     # Corrupt Protobuf payload
+    state.state = "synchronized"
+    state.link_sync_event.set()
     initial_errors = state.serial_decode_errors
-    await service.handle_mcu_frame("ConsoleWrite", 10, b"\xff\xff\xff\xff")
+    await service.handle_mcu_frame("rpc.pb.DataStoreService/Put", 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
     mock_serial.send.assert_awaited_with(Status.INVALID_ARGUMENT.value, b"")
@@ -382,11 +345,11 @@ def test_file_write_roundtrip_property(file_write: mcu_wire_pb2.FileWrite) -> No
     assert decoded.data == file_write.data
 
 
-@given(file_read=st.from_type(mcu_wire_pb2.FileRead))
-def test_file_read_roundtrip_property(file_read: mcu_wire_pb2.FileRead) -> None:
+@given(file_read=st.from_type(cloud_gateway_pb2.FileRead))
+def test_file_read_roundtrip_property(file_read: cloud_gateway_pb2.FileRead) -> None:
     """Property: FileRead message preserves fields across protobuf serialization."""
     encoded = file_read.SerializeToString()
-    decoded = mcu_wire_pb2.FileRead.FromString(encoded)
+    decoded = cloud_gateway_pb2.FileRead.FromString(encoded)
     assert decoded.path == file_read.path
 
 

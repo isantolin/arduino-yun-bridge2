@@ -57,11 +57,49 @@ if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ]; then
         --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 fi
 
-if [ ! -d "$USER_LIB_DIR/PigweedAVR" ] || [ ! -d "$USER_LIB_DIR/Embedded_Template_Library" ]; then
-    echo "Installing libraries..."
-    # We pass USER_LIB_DIR to install.sh to ensure it installs there
-    ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
+# The Arduino exporter only includes upstream pw_transfer when its generated
+# PWPB bindings exist. Build those bindings before installing/exporting the
+# library; otherwise the Mega 2560 header advertises pw_transfer but the
+# exported library silently omits the handler headers.
+if command -v avr-g++ >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
+    AVR_PORT_DIR="$PWD/third_party/avr_pigweed_port"
+    TRANSFER_BUILD_DIR="$AVR_PORT_DIR/build-transfer-1284p"
+    CMAKE_GENERATOR_ARGS=()
+    if command -v ninja >/dev/null 2>&1; then
+        CMAKE_GENERATOR_ARGS=(-G Ninja)
+    fi
+    echo "[ci_arduino] Generating upstream pw_transfer AVR bindings before library export..."
+    cmake -S "$AVR_PORT_DIR" -B "$TRANSFER_BUILD_DIR" "${CMAKE_GENERATOR_ARGS[@]}" \
+        -DCMAKE_TOOLCHAIN_FILE="$AVR_PORT_DIR/avr-toolchain.cmake" \
+        -DAVR_MCU=atmega1284p \
+        -DAVR_F_CPU=16000000UL \
+        -DAVR_CRC32_IMPL=PW_CHECKSUM_CRC32_4BITS
+    cmake --build "$TRANSFER_BUILD_DIR" --target pw_transfer_upstream_probe.elf
+else
+    echo "[ci_arduino] ERROR: avr-g++ and CMake are required to export Mega 2560 pw_transfer headers." >&2
+    exit 1
 fi
+
+# Always refresh the generated Arduino exports after the Pigweed probe.
+# The cached library directory may exist but predate pw_transfer, Nanopb
+# headers, or the pinned submodule revision. Existence is not a validity check.
+echo "[ci_arduino] Refreshing Arduino libraries from the pinned source tree..."
+./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
+
+# Fail at the export boundary instead of producing confusing sketch-level
+# include errors when an incomplete/cached library was selected.
+for required_header in \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/handler.h" \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer_thread.h" \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer.h" \
+    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/client.h" \
+    "$PWD/mcubridge-library-arduino/src/pb.h" \
+    "$USER_LIB_DIR/McuBridge/src/pb.h"; do
+    if [ ! -f "$required_header" ]; then
+        echo "[ci_arduino] ERROR: incomplete generated Arduino library; missing $required_header" >&2
+        exit 1
+    fi
+done
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"

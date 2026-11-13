@@ -14,7 +14,6 @@ import posixpath
 from typing import Any, Final, cast
 
 from google.protobuf.message import Message as ProtobufMessage
-from grpclib.const import Cardinality, Handler
 import parse
 from pw_hdlc.encode import ui_frame
 from pw_rpc.descriptors import (
@@ -23,22 +22,17 @@ from pw_rpc.descriptors import (
     Services as PwRpcServices,
 )
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+from pw_transfer import transfer_pb2
 import structlog
 
 from . import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from .gateway import gateway_control_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
     PwRpcService.from_descriptor(desc)
-    for mod in (mcu_wire_pb2, cloud_gateway_pb2)
+    for mod in (mcu_wire_pb2, cloud_gateway_pb2, gateway_control_pb2, transfer_pb2)
     for desc in cast(Any, mod).DESCRIPTOR.services_by_name.values()
 )
-
-_PW_TO_GRPCLIB_CARDINALITY: Final[dict[PwRpcMethod.Type, Cardinality]] = {
-    PwRpcMethod.Type.UNARY: Cardinality.UNARY_UNARY,
-    PwRpcMethod.Type.SERVER_STREAMING: Cardinality.UNARY_STREAM,
-    PwRpcMethod.Type.CLIENT_STREAMING: Cardinality.STREAM_UNARY,
-    PwRpcMethod.Type.BIDIRECTIONAL_STREAMING: Cardinality.STREAM_STREAM,
-}
 
 type McuDispatchTable = dict[int | str | tuple[int, int], Callable[..., Any]]
 
@@ -170,7 +164,6 @@ class OperationSpec:
     service_id: int | None = None
     method_name: str | None = None
     method_id: int | None = None
-    rpc_name: str | None = None
     pb_class: type[Any] | None = None
     cloud_topic: str | None = None
     auth_field: str | None = None
@@ -181,30 +174,25 @@ class OperationSpec:
     handler_name: str | None = None
     mcu_handler: str | None = None
     metrics_blob_field: str | None = None
-    cardinality: Cardinality = Cardinality.UNARY_UNARY
+    cardinality: PwRpcMethod.Type = PwRpcMethod.Type.UNARY
     is_server_streaming: bool = False
     is_custom_handler: bool = False
 
     def __post_init__(self) -> None:
-        if self.rpc_name:
-            lb_m = PW_SERVICES["rpc.pb.LocalBridge"].methods[self.rpc_name]
-            object.__setattr__(self, "request_type", lb_m.request_type)
-            object.__setattr__(self, "response_type", lb_m.response_type)
-            object.__setattr__(self, "cardinality", _PW_TO_GRPCLIB_CARDINALITY[lb_m.type])
-            object.__setattr__(self, "is_server_streaming", lb_m.type is PwRpcMethod.Type.SERVER_STREAMING)
-            if self.default_factory is None:
-                object.__setattr__(self, "default_factory", lb_m.response_type)
-        if self.service_name and self.method_name:
+        if self.service_name and self.method_name and self.service_name in PW_SERVICES:
             svc = PW_SERVICES[self.service_name]
-            pw_m = svc.methods[self.method_name]
-            object.__setattr__(self, "service_id", svc.id)
-            object.__setattr__(self, "method_id", pw_m.id)
-            object.__setattr__(self, "cardinality", _PW_TO_GRPCLIB_CARDINALITY[pw_m.type])
-            object.__setattr__(self, "is_server_streaming", pw_m.type is PwRpcMethod.Type.SERVER_STREAMING)
-            if self.response_type is None:
-                object.__setattr__(self, "response_type", pw_m.response_type)
-            if self.request_type is None and self.pb_class in (None, pw_m.request_type):
-                object.__setattr__(self, "request_type", pw_m.request_type)
+            if self.method_name in svc.methods:
+                pw_m = svc.methods[self.method_name]
+                object.__setattr__(self, "service_id", svc.id)
+                object.__setattr__(self, "method_id", pw_m.id)
+                object.__setattr__(self, "cardinality", pw_m.type)
+                object.__setattr__(self, "is_server_streaming", pw_m.type is PwRpcMethod.Type.SERVER_STREAMING)
+                if self.response_type is None:
+                    object.__setattr__(self, "response_type", pw_m.response_type)
+                if self.request_type is None and self.pb_class in (None, pw_m.request_type):
+                    object.__setattr__(self, "request_type", pw_m.request_type)
+                if self.default_factory is None and pw_m.response_type:
+                    object.__setattr__(self, "default_factory", pw_m.response_type)
         if self.pb_class is None and self.request_type not in (None, mcu_wire_pb2.SubscribeRequest):
             object.__setattr__(self, "pb_class", self.request_type)
 
@@ -228,9 +216,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- if op.service_name %}
         service_name={{ op.service_name|tojson }},
         method_name={{ op.method_name|tojson }},
-        {%- endif %}
-        {%- if op.rpc_name %}
-        rpc_name={{ op.rpc_name|tojson }},
         {%- endif %}
         {%- if op.pb_class %}
         pb_class={{ op.pb_class }},
@@ -335,7 +320,6 @@ DAEMON_TASKS: Final[tuple[DaemonTaskSpec, ...]] = (
     {%- endfor %}
 )
 
-RPC_SPECS: Final[tuple[OperationSpec, ...]] = tuple(op for op in OPERATIONS if op.handler_name is not None)
 CUSTOM_HANDLERS: Final[frozenset[str]] = frozenset(
     op.handler_name for op in OPERATIONS if op.is_custom_handler and op.handler_name
 )
@@ -348,25 +332,13 @@ BY_NAME: Final[dict[str, OperationSpec]] = {op.name: op for op in OPERATIONS}
 BY_TYPE: Final[dict[type[ProtobufMessage], OperationSpec]] = {}
 
 for _op in OPERATIONS:
-    if _op.rpc_name:
-        BY_NAME[_op.rpc_name] = _op
-        BY_NAME[f"rpc.pb.LocalBridge/{_op.rpc_name}"] = _op
-        BY_NAME[f"LocalBridge/{_op.rpc_name}"] = _op
-    if _op.service_name and _op.method_name:
-        BY_NAME[f"{_op.service_name}/{_op.method_name}"] = _op
-        _short_service = _op.service_name.removeprefix("rpc.pb.")
-        BY_NAME[f"{_short_service}/{_op.method_name}"] = _op
-        BY_NAME.setdefault(_op.method_name, _op)
     if _op.pb_class is not None:
         BY_TYPE.setdefault(_op.pb_class, _op)
-        BY_NAME.setdefault(_op.pb_class.DESCRIPTOR.name, _op)
     if _op.request_type is not None:
         BY_TYPE.setdefault(_op.request_type, _op)
-        BY_NAME.setdefault(_op.request_type.DESCRIPTOR.name, _op)
 for _op in OPERATIONS:
     if _op.response_type is not None:
         BY_TYPE.setdefault(_op.response_type, _op)
-        BY_NAME.setdefault(_op.response_type.DESCRIPTOR.name, _op)
 
 
 def allows_method(auth: Any, spec: OperationSpec) -> bool:
@@ -394,7 +366,7 @@ def get_operation(key: Any) -> OperationSpec | None:
         if isinstance(srv, int) and isinstance(meth, int):
             return BY_RPC.get((srv, meth))
     if isinstance(key, ProtobufMessage):
-        return BY_TYPE.get(type(key)) or BY_NAME.get(key.DESCRIPTOR.name)
+        return BY_TYPE.get(type(key))
     return None
 
 
@@ -453,19 +425,6 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     return None
 
 
-def build_local_bridge_mapping(service: Any) -> dict[str, Handler]:
-    """Build grpclib route mapping for LocalBridge services from Pigweed descriptors. [SIL-2]"""
-    return {
-        f"/rpc.pb.LocalBridge/{m.name}": Handler(
-            getattr(service, m.name),
-            _PW_TO_GRPCLIB_CARDINALITY[m.type],
-            m.request_type,
-            m.response_type,
-        )
-        for m in PW_SERVICES["rpc.pb.LocalBridge"].methods
-    }
-
-
 def build_mcu_dispatch(
     target: Any,
     *,
@@ -483,10 +442,6 @@ def build_mcu_dispatch(
             dispatch[op.name] = fn
             if op.service_id is not None and op.method_id is not None:
                 dispatch[(op.service_id, op.method_id)] = fn
-            if op.service_name and op.method_name:
-                dispatch[f"{op.service_name}/{op.method_name}"] = fn
-                dispatch[f"{op.service_name.removeprefix('rpc.pb.')}/{op.method_name}"] = fn
-                dispatch.setdefault(op.method_name, fn)
     return dispatch
 
 

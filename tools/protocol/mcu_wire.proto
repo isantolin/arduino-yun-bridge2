@@ -134,16 +134,8 @@ message FileWrite {
   bytes data = 2;
 }
 
-message FileRead {
-  string path = 1;
-}
-
 message FileRemove {
   string path = 1;
-}
-
-message FileReadResponse {
-  bytes content = 1;
 }
 
 message ProcessRunAsync {
@@ -515,10 +507,6 @@ service FileSystemService {
   rpc Write(rpc.pb.FileWrite) returns (rpc.pb.Empty) {
     option (auth_field) = "file_write";
     option (mcu_handler) = "file_write";
-  }
-  rpc Read(rpc.pb.FileRead) returns (stream rpc.pb.FileReadResponse) {
-    option (auth_field) = "file_read";
-    option (mcu_handler) = "file_read";
   }
   rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty) {
     option (auth_field) = "file_remove";

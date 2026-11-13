@@ -36,6 +36,40 @@ fi
 USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"
 mkdir -p "$USER_LIB_DIR"
 
+# The AVR library exporter packages generated upstream pw_transfer PWPB and
+# raw-RPC bindings. Generate them from the pinned port before installing the
+# Arduino library; host/SAMD/ESP32 builds do not need this AVR-only probe.
+if [[ "$FQBN" == "arduino:avr:mega" ]]; then
+    AVR_PORT_DIR="${ROOT_DIR}/third_party/avr_pigweed_port"
+    TRANSFER_BUILD_DIR="${AVR_PORT_DIR}/build-transfer-1284p"
+    if ! command -v avr-g++ >/dev/null 2>&1; then
+        echo "ERROR: avr-g++ is required to generate the pinned pw_transfer bindings." >&2
+        exit 1
+    fi
+    if ! command -v cmake >/dev/null 2>&1; then
+        echo "ERROR: CMake 3.20+ is required to generate the pinned pw_transfer bindings." >&2
+        exit 1
+    fi
+    CMAKE_GENERATOR_ARGS=()
+    if command -v ninja >/dev/null 2>&1; then
+        CMAKE_GENERATOR_ARGS=(-G Ninja)
+    fi
+    echo "[compile_firmware] Generating upstream pw_transfer AVR bindings..."
+    cmake -S "$AVR_PORT_DIR" -B "$TRANSFER_BUILD_DIR" "${CMAKE_GENERATOR_ARGS[@]}" \
+        -DCMAKE_TOOLCHAIN_FILE="$AVR_PORT_DIR/avr-toolchain.cmake" \
+        -DAVR_MCU=atmega1284p \
+        -DAVR_F_CPU=16000000UL \
+        -DAVR_CRC32_IMPL=PW_CHECKSUM_CRC32_4BITS
+    cmake --build "$TRANSFER_BUILD_DIR" --target pw_transfer_upstream_probe.elf
+    PWPB_HEADER="$(find "$TRANSFER_BUILD_DIR" -path '*/pwpb/pw_transfer/transfer.pwpb.h' -print -quit)"
+    RAW_RPC_HEADER="$(find "$TRANSFER_BUILD_DIR" -path '*/raw_rpc/pw_transfer/transfer.raw_rpc.pb.h' -print -quit)"
+    if [[ -z "$PWPB_HEADER" || -z "$RAW_RPC_HEADER" ]]; then
+        echo "ERROR: upstream pw_transfer PWPB/raw-RPC headers were not generated." >&2
+        find "$TRANSFER_BUILD_DIR" -name 'transfer*.h' -print >&2
+        exit 1
+    fi
+fi
+
 echo "[compile_firmware] Generating protocol bindings..."
 python3 "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
@@ -62,7 +96,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [ "$EMULATOR" = "simavr" ]; then
-    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+    COMMON_FLAGS="-flto -fstack-usage -fno-strict-aliasing -Wno-lto-type-mismatch -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
     AVR_PROPS=()
     AVR_STDCPP_INC=""
     if command -v avr-gcc >/dev/null 2>&1; then
@@ -89,11 +123,11 @@ if [ "$EMULATOR" = "simavr" ]; then
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
         "${AVR_PROPS[@]}"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -fstack-usage $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 -fstack-usage $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
+        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
+        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
+        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then

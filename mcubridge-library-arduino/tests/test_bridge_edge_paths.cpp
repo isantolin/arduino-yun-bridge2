@@ -38,7 +38,6 @@ void tearDown() {}
 
 namespace {
 
-void on_fs_read(pw::span<const uint8_t>) {}
 void on_datastore_get(etl::string_view, pw::span<const uint8_t>) {}
 void on_process_run(int32_t) {}
 void on_process_poll(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
@@ -115,12 +114,6 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Write"),
                        rpc_pb_FileWrite_fields, fw_msg);
 
-  // 6. FileRead
-  rpc_pb_FileRead fr_msg = rpc_pb_FileRead_init_default;
-  strncpy(fr_msg.path, "edge.bin", sizeof(fr_msg.path));
-  feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Read"),
-                       rpc_pb_FileRead_fields, fr_msg);
-
   // 7. FileRemove
   rpc_pb_FileRemove frm_msg = rpc_pb_FileRemove_init_default;
   strncpy(frm_msg.path, "edge.bin", sizeof(frm_msg.path));
@@ -169,28 +162,6 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   ds_resp.value.bytes[3] = 4;
   invoke_response(ba, kDsSvc, pw::tokenizer::Hash("Get"),
                   rpc_pb_DatastoreGetResponse_fields, ds_resp);
-
-  // 14. FileRead server-streaming response (chunk + completion)
-  FileSystem.read("edge.bin",
-                  FileSystemType::FileSystemReadHandler::create<on_fs_read>());
-  rpc_pb_FileReadResponse fr_resp = rpc_pb_FileReadResponse_init_default;
-  fr_resp.content.size = 4;
-  fr_resp.content.bytes[0] = 1;
-  fr_resp.content.bytes[1] = 2;
-  fr_resp.content.bytes[2] = 3;
-  fr_resp.content.bytes[3] = 4;
-  {
-    uint8_t fr_buf[128];
-    pb_ostream_t pbos = pb_ostream_from_buffer(fr_buf, sizeof(fr_buf));
-    pb_encode(&pbos, rpc_pb_FileReadResponse_fields, &fr_resp);
-    pw::rpc::internal::Packet stream_pkt(
-        pw::rpc::internal::pwpb::PacketType::SERVER_STREAM, 1, kFsSvc,
-        pw::tokenizer::Hash("Read"), 0,
-        pw::as_bytes(pw::span(fr_buf, pbos.bytes_written)));
-    ba.invokeRpcResponse(stream_pkt);
-  }
-  invoke_response(ba, kFsSvc, pw::tokenizer::Hash("Read"),
-                  rpc_pb_FileReadResponse_fields, fr_resp);
 
   // 15. ProcessRunAsync response
   Process.runAsync("ls", pw::span<const etl::string_view>(),
@@ -243,7 +214,6 @@ void test_dispatch_malformed_payload_paths() {
   feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogRead"), bad_pl);
   feed_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"), bad_pl);
   feed_rpc_request(ba, kFsSvc, pw::tokenizer::Hash("Write"), bad_pl);
-  feed_rpc_request(ba, kFsSvc, pw::tokenizer::Hash("Read"), bad_pl);
   feed_rpc_request(ba, kFsSvc, pw::tokenizer::Hash("Remove"), bad_pl);
   feed_rpc_request(ba, kProcSvc, pw::tokenizer::Hash("Kill"), bad_pl);
   feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("SetConfig"), bad_pl);
@@ -253,8 +223,6 @@ void test_dispatch_malformed_payload_paths() {
   // Malformed responses
   DataStore.get("edge_key",
                 DataStoreType::GetHandler::create<on_datastore_get>());
-  FileSystem.read("edge.bin",
-                  FileSystemType::FileSystemReadHandler::create<on_fs_read>());
   Process.runAsync("ls", pw::span<const etl::string_view>(),
                    ProcessType::ProcessRunHandler::create<on_process_run>());
   Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
@@ -421,12 +389,20 @@ void test_observer_and_task_runtime_edges() {
   flow.avail = bridge::config::FLOW_CONTROL_XOFF_THRESHOLD + 1;
   ba_flow.invokeSerialTask();
   TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
+
+  // Keep XOFF latched while the receive queue remains above the XON threshold.
+  // This exercises the short-circuit false branch of the XON recovery check.
+  ba_flow.invokeSerialTask();
+  TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
+
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
   TEST_ASSERT_FALSE(ba_flow.isSerialXoffSent());
   ba_flow.setSynchronized();
   ba_flow.invokeSendFlowControl(true);
   ba_flow.invokeSendFlowControl(false);
+  ba_flow.setTxEnabled(false);
+  ba_flow.invokeSendFlowControl(true);
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
@@ -480,8 +456,6 @@ void test_service_capacity_and_send_fail_edges() {
   Console.process();
 
   Bridge.enterSafeState();
-  FileSystem.read("blocked.bin",
-                  FileSystemType::FileSystemReadHandler::create<on_fs_read>());
   DataStore.get(
       "key",
       etl::delegate<void(etl::string_view,
@@ -767,6 +741,16 @@ void test_architectural_extensions_edge_paths() {
   sub_req.enabled = false;
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
                        rpc_pb_PinSubscribeRequest_fields, sub_req);
+
+  // A live synchronized link without an active server-stream writer must
+  // reject unsolicited pin events.
+  reset_bridge_core(Bridge, stream);
+  auto& ba_no_writer = TestAccessor::create(Bridge);
+  ba_no_writer.setSynchronized();
+  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+
+  // Exercise begin() with baudrate zero: initialization must not restart UART.
+  Bridge.begin(0, nullptr);
 
   // Pin read out of bounds
   rpc_pb_PinRead bad_read = rpc_pb_PinRead_init_default;

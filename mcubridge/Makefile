@@ -57,10 +57,6 @@ define Package/$(PKG_NAME)
 		+python3-anyio \
 		+python3-parse \
 		+python3-ubus \
-		+python3-hpack \
-		+python3-hyperframe \
-		+python3-h2 \
-		+python3-grpclib \
 		+python3-annotated-doc \
 		+python3-shellingham \
 		+python3-typer \

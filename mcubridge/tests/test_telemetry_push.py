@@ -53,9 +53,12 @@ async def test_pure_telemetry_push_mode(
 
     from collections.abc import Awaitable, Callable
 
-    # Verify telemetry publication works directly via cloud stream
-    stream_mock = AsyncMock()
-    svc.cloud_stream = stream_mock
+    # Verify telemetry publication works directly via cloud RPC client
+    svc._cloud_rpc_client = MagicMock()
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    svc._cloud_writer = mock_writer
+    svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
     metrics = mcu_wire_pb2.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
     payload = metrics.SerializeToString() if telemetry_field == "daemon_metrics_blob" else b"telemetry-payload"
@@ -68,8 +71,6 @@ async def test_pure_telemetry_push_mode(
     published = await publish_cloud_msg(msg)
     assert published is True
 
-    stream_mock.send_message.assert_awaited_once()
-    envelope: cloud_gateway_pb2.CloudEnvelope = stream_mock.send_message.await_args[0][0]
-    assert envelope.WhichOneof("payload") == "telemetry"
-    assert getattr(envelope.telemetry, telemetry_field) == payload
-    assert {field.name for field, _ in envelope.telemetry.ListFields()} == {telemetry_field}
+    svc.send_cloud_telemetry.assert_awaited_once()
+    kwargs = svc.send_cloud_telemetry.await_args.kwargs
+    assert kwargs.get(telemetry_field) == payload

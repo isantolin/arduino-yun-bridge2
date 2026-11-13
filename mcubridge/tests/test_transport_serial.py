@@ -242,6 +242,87 @@ def test_serial_transport_switch_local_baudrate_error(
         switch_baud(99999999)
 
 
+async def test_pw_transfer_manager_reads_and_writes_with_offsets(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    mocker: MockerFixture,
+) -> None:
+    manager = MagicMock()
+    manager.read.return_value = b"resource-data"
+    manager.write.return_value = None
+    manager_factory = mocker.patch(
+        "mcubridge.transport.serial.PwTransferManager",
+        return_value=manager,
+    )
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    data = await transport.transfer_read(0x4D454741, offset=17)
+    assert data == b"resource-data"
+    manager.read.assert_called_once_with(0x4D454741, initial_offset=17)
+
+    await transport.transfer_write(0x4D454741, b"payload", offset=23)
+    manager.write.assert_called_once_with(
+        0x4D454741,
+        b"payload",
+        initial_offset=23,
+    )
+    manager_factory.assert_called_once()
+    assert manager_factory.call_args.kwargs["max_chunk_size_bytes"] == 128
+    assert manager_factory.call_args.args[0] is not None
+
+
+async def test_pw_transfer_rejects_disconnected_serial_link(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = False
+    transport.serial = mock_serial
+
+    with pytest.raises(ConnectionError, match="serial link is disconnected"):
+        await transport.transfer_read(0x4D454741)
+    with pytest.raises(ConnectionError, match="serial link is disconnected"):
+        await transport.transfer_write(0x4D454741, b"payload")
+
+
+async def test_queue_rpc_packet_accepts_worker_thread(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Pigweed pw_transfer invokes the RPC output callback from its worker thread."""
+    write_started = asyncio.Event()
+    written_packets: list[bytes] = []
+
+    async def fake_write(packet: bytes) -> bool:
+        written_packets.append(packet)
+        write_started.set()
+        return True
+
+    transport = SerialTransport(
+        runtime_config,
+        runtime_state,
+        None,
+        rpc_packet_writer=fake_write,
+    )
+    request = RpcPacket(
+        type=PacketType.REQUEST,
+        channel_id=protocol.HDLC_ADDRESS_RPC,
+        service_id=0x1234,
+        method_id=0x5678,
+        call_id=9,
+        payload=b"transfer",
+    )
+    serialized = request.SerializeToString()
+
+    await asyncio.to_thread(transport.queue_rpc_packet, serialized)
+    await asyncio.wait_for(write_started.wait(), timeout=1.0)
+    assert written_packets == [serialized]
+
+
 async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
@@ -1344,77 +1425,4 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     active_calls = cast(dict[tuple[int, int], int], _private_attribute(transport, "_active_server_call_ids"))
     assert (ds_get_spec.service_id, ds_get_spec.method_id) not in active_calls
 
-    file_read_spec = protocol.get_operation("rpc.pb.FileSystemService/Read")
-    assert file_read_spec is not None
-    assert file_read_spec.service_id is not None
-    assert file_read_spec.method_id is not None
-    mcu_read_frame = protocol.encode_hdlc_rpc(
-        1,
-        file_read_spec.service_id,
-        file_read_spec.method_id,
-        call_id=88,
-        payload=pb.FileRead(path="test.txt"),
-        packet_type=int(PacketType.REQUEST),
-    )
-    await transport.feed_data(mcu_read_frame)
-    assert await transport.send("rpc.pb.FileSystemService/Read", pb.FileReadResponse(content=b"chunk1"))
-    chunk_raw: bytes = mock_serial.write.call_args[0][0]
-    chunk_pkt = pw_packets.decode(next(iter(FrameDecoder().process(chunk_raw))).data)
-    assert chunk_pkt.type == PacketType.SERVER_STREAM
-    assert chunk_pkt.call_id == 88
-    assert (file_read_spec.service_id, file_read_spec.method_id) in active_calls
-
-    assert await transport.send("rpc.pb.FileSystemService/Read", b"")
-    eof_raw: bytes = mock_serial.write.call_args[0][0]
-    eof_pkt = pw_packets.decode(next(iter(FrameDecoder().process(eof_raw))).data)
-    assert eof_pkt.type == PacketType.RESPONSE
-    assert eof_pkt.payload == b""
-    assert eof_pkt.call_id == 88
-    assert (file_read_spec.service_id, file_read_spec.method_id) not in active_calls
-
-    def respond_file_stream(raw_rpc_packet: bytes) -> None:
-        transport.queue_rpc_packet(raw_rpc_packet)
-        req_pkt = pw_packets.decode(raw_rpc_packet)
-        if req_pkt.type == PacketType.REQUEST and req_pkt.method_id == file_read_spec.method_id:
-            c1 = protocol.encode_hdlc_rpc(
-                1,
-                req_pkt.service_id,
-                req_pkt.method_id,
-                call_id=req_pkt.call_id,
-                payload=pb.FileReadResponse(content=b"part1-"),
-                packet_type=int(PacketType.SERVER_STREAM),
-            )
-            c2 = protocol.encode_hdlc_rpc(
-                1,
-                req_pkt.service_id,
-                req_pkt.method_id,
-                call_id=req_pkt.call_id,
-                payload=pb.FileReadResponse(content=b"part2"),
-                packet_type=int(PacketType.SERVER_STREAM),
-            )
-            fin = protocol.encode_hdlc_rpc(
-                1,
-                req_pkt.service_id,
-                req_pkt.method_id,
-                call_id=req_pkt.call_id,
-                payload=b"",
-                status=0,
-                packet_type=int(PacketType.RESPONSE),
-            )
-            cast(Any, asyncio.get_running_loop()).call_soon(
-                asyncio.create_task,
-                transport.feed_data(c1 + c2 + fin),
-            )
-
-    transport.rpc_client = PwRpcClient(
-        cast(Any, callback_client).Impl(),
-        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, respond_file_stream)],
-        protocol.PW_SERVICES,
-    )
-    streamed_resp = await transport.send(
-        "rpc.pb.FileSystemService/Read",
-        pb.FileRead(path="mcu_file.bin"),
-    )
-    assert isinstance(streamed_resp, pb.FileReadResponse)
-    assert streamed_resp.content == b"part1-part2"
     await transport.reset()

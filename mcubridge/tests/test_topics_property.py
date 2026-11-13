@@ -74,7 +74,7 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     assert parse_topic(s, "") is None
     assert parse_topic("", "") is None
     assert parse_topic("prefix", "///") is None
-    assert parse_topic("///", "prefix/req/GpioService/DigitalWrite") is None
+    assert parse_topic("///", "prefix/req/rpc.pb.GpioService/DigitalWrite") is None
 
 
 @given(
@@ -108,15 +108,10 @@ def test_topics_canonical_service_paths() -> None:
         topic_path("prefix", "evt", "SystemService", "HandshakeSnapshot")
         == "prefix/evt/SystemService/HandshakeSnapshot"
     )
-    assert topic_path("p", "req", "GpioService", "DigitalRead", "13") == "p/req/GpioService/DigitalRead/13"
+    assert topic_path("p", "req", "rpc.pb.GpioService", "DigitalRead") == "p/req/rpc.pb.GpioService/DigitalRead"
     assert topic_path("p", "res", "SpiService", "Transfer") == "p/res/SpiService/Transfer"
-    assert topic_path("p", "req", "DataStoreService", "Get", "key") == "p/req/DataStoreService/Get/key"
-    assert (
-        topic_path("p", "req", "FileSystemService", "Read", "path/to/file")
-        == "p/req/FileSystemService/Read/path/to/file"
-    )
-    assert topic_path("p", "req", "ProcessService", "Kill", "123") == "p/req/ProcessService/Kill/123"
-    assert topic_path("p", "req", "ConsoleWrite") == "p/req/ConsoleWrite"
+    assert topic_path("p", "req", "rpc.pb.DataStoreService", "Get") == "p/req/rpc.pb.DataStoreService/Get"
+    assert topic_path("p", "req", "rpc.pb.ProcessService", "Kill") == "p/req/rpc.pb.ProcessService/Kill"
     assert topic_path("p", "evt", "MailboxService", "Push") == "p/evt/MailboxService/Push"
 
 
@@ -124,7 +119,7 @@ def test_topics_edge_cases() -> None:
     """Validate topic parsing and formatting edge cases."""
     assert parse_topic("br", "br/invalid_topic/foo") is None
     assert parse_topic("br", "br/only_one_segment") is None
-    assert parse_topic("br", "devices/arduino-01/invalid_dir/GpioService/DigitalWrite") is None
+    assert parse_topic("br", "devices/arduino-01/invalid_dir/rpc.pb.GpioService/DigitalWrite") is None
     assert parse_topic("", "foo") is None
     assert parse_topic("br", "") is None
     assert topic_path("", "SystemService") == "SystemService"
@@ -154,32 +149,39 @@ def test_registry_pigweed_descriptors_proto_ssot() -> None:
     spec_dw = get_operation("rpc.pb.GpioService/DigitalWrite")
     assert spec_dw is not None
     assert spec_dw.method_name == "DigitalWrite"
-    assert get_operation("GpioService/DigitalWrite") is spec_dw
-    assert get_operation("DigitalWrite") is spec_dw
+    assert get_operation("GpioService/DigitalWrite") is None
+    assert get_operation("DigitalWrite") is None
+    assert get_operation(pb.DigitalWrite) is spec_dw
+    if spec_dw.service_id and spec_dw.method_id:
+        assert get_operation((spec_dw.service_id, spec_dw.method_id)) is spec_dw
 
     spec_ds = get_operation("rpc.pb.DataStoreService/Put")
     assert spec_ds is not None
     assert spec_ds.method_name == "Put"
-    assert get_operation("DataStoreService/Put") is spec_ds
-    assert get_operation("Put") is spec_ds
+    assert get_operation("DataStoreService/Put") is None
+    assert get_operation("DatastorePut") is None
+    assert get_operation(pb.DatastorePut) is spec_ds
+    assert get_operation("Put") is None
+    if spec_ds.service_id and spec_ds.method_id:
+        assert get_operation((spec_ds.service_id, spec_ds.method_id)) is spec_ds
 
 
 def test_registry_fleet_and_direction_topic_parsing() -> None:
     """[SIL-2] Verify parsing of fleet and direction-based canonical topics."""
     # 1. Fleet topic: devices/{device_id}/{direction}/{method}
-    route_fleet = parse_topic("any_prefix", "devices/arduino-01/req/GpioService/DigitalWrite")
+    route_fleet = parse_topic("any_prefix", "devices/arduino-01/req/rpc.pb.GpioService/DigitalWrite")
     assert route_fleet is not None
     assert route_fleet.device_id == "arduino-01"
     assert route_fleet.direction == "req"
-    assert route_fleet.method == "GpioService/DigitalWrite"
+    assert route_fleet.method == "rpc.pb.GpioService/DigitalWrite"
     assert route_fleet.prefix == "devices/arduino-01"
     assert route_fleet.action == "DigitalWrite"
 
     # 2. Canonical Direction topic: {prefix}/{direction}/{method}
-    route_dir = parse_topic("yun/bridge", "yun/bridge/req/GpioService/DigitalWrite")
+    route_dir = parse_topic("yun/bridge", "yun/bridge/req/rpc.pb.GpioService/DigitalWrite")
     assert route_dir is not None
     assert route_dir.device_id == ""
     assert route_dir.direction == "req"
-    assert route_dir.method == "GpioService/DigitalWrite"
+    assert route_dir.method == "rpc.pb.GpioService/DigitalWrite"
     assert route_dir.prefix == "yun/bridge"
     assert route_dir.action == "DigitalWrite"

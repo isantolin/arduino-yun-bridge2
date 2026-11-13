@@ -66,7 +66,6 @@ option (rpc.pb.constants) = {
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
-  cloud_expiry_console: 5
   cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
@@ -213,8 +212,6 @@ option (rpc.pb.status_reasons) = {
   mailbox_processed_failed: "mailbox_processed_failed"
   sync_auth_mismatch: "sync_auth_mismatch"
   sync_length_mismatch: "sync_length_mismatch"
-  mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
-  mcu_file_read_timeout: "mcu_file_read_timeout"
   pending_pin_overflow: "pending-pin-overflow"
 };
 option (rpc.pb.ubus_methods) = {
@@ -496,10 +493,7 @@ message Constants {
     (py_name) = "CLOUD_EXPIRY_PIN",
     (py_type) = "int"
   ];
-  uint32 cloud_expiry_console = 58 [
-    (py_name) = "CLOUD_EXPIRY_CONSOLE",
-    (py_type) = "int"
-  ];
+  reserved 58;
   uint32 cloud_expiry_datastore = 59 [
     (py_name) = "CLOUD_EXPIRY_DATASTORE",
     (py_type) = "int"
@@ -843,8 +837,6 @@ message StatusReasons {
   string mailbox_processed_failed = 16;
   string sync_auth_mismatch = 17;
   string sync_length_mismatch = 18;
-  string mcu_file_read_dispatch_failed = 19;
-  string mcu_file_read_timeout = 20;
   reserved 22, 23;
   reserved "unsupported_digital_read", "unsupported_analog_read";
   string pending_pin_overflow = 21;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Run an async shell command via direct LocalBridgeStub Publish call."""
+"""Example: Run an async shell command via direct GatewayClient Publish call."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def main(
     asyncio.run(run_test(host, port, device_id))
 
 
-cli = typer.Typer(help="Run an async shell command via direct LocalBridgeStub through Gateway.", add_completion=False)
+cli = typer.Typer(help="Run an async shell command via direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()

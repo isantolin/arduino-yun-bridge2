@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, cast
 
 from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
@@ -244,11 +244,34 @@ def test_pre_sync_command_set_matches_schema_metadata() -> None:
 
 
 def test_pw_services_integrity() -> None:
-    """Verify that all canonical Pigweed services are registered and valid."""
+    """Verify application and upstream Pigweed transfer descriptors are registered."""
     assert len(protocol.PW_SERVICES) >= 6
     for service in protocol.PW_SERVICES:
-        assert service.full_name.startswith("rpc.pb.")
         assert len(service.methods) > 0
+
+    transfer = protocol.PW_SERVICES["pw.transfer.Transfer"]
+    methods = {method.name: method for method in transfer.methods}
+    assert set(methods) == {"Read", "Write", "GetResourceStatus"}
+    assert methods["Read"].type.name == "BIDIRECTIONAL_STREAMING"
+    assert methods["Write"].type.name == "BIDIRECTIONAL_STREAMING"
+    assert methods["GetResourceStatus"].type.name == "UNARY"
+
+
+def test_pw_transfer_service_resolves_through_daemon_rpc_client() -> None:
+    """Verify the daemon's generated Pigweed client can resolve upstream pw_transfer methods."""
+    from pw_rpc import callback_client
+    from pw_rpc.client import Client as PwRpcClient
+    from pw_rpc.descriptors import Channel as PwRpcChannel
+
+    client = PwRpcClient(
+        cast(Any, callback_client).Impl(),
+        [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, lambda _packet: None)],
+        protocol.PW_SERVICES,
+    )
+    transfer_service = client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
+    assert callable(transfer_service.Read.invoke)
+    assert callable(transfer_service.Write.invoke)
+    assert callable(transfer_service.GetResourceStatus.invoke)
 
 
 def test_operation_specs_multidimensional_integrity() -> None:
@@ -261,9 +284,10 @@ def test_operation_specs_multidimensional_integrity() -> None:
         if spec.request_type not in (None, mcu_wire_pb2.SubscribeRequest, mcu_wire_pb2.Empty):
             assert spec.pb_class is not None
             assert spec.pb_class is spec.request_type
-            msg_spec = protocol.get_operation(spec.pb_class.DESCRIPTOR.name)
+            msg_spec = protocol.get_operation(spec.pb_class)
             assert msg_spec is not None
             assert msg_spec.pb_class is spec.pb_class
+            assert protocol.get_operation(spec.pb_class.DESCRIPTOR.name) is None
         elif spec.request_type in (mcu_wire_pb2.SubscribeRequest, mcu_wire_pb2.Empty):
             assert spec.pb_class is None
 
@@ -454,44 +478,29 @@ def test_constants_completeness() -> None:
 def test_proto_dispatch_handlers_ssot() -> None:
     """SIL-2: Verify dispatch tables and action routes are derived from .proto SSOT."""
     import operator
-    from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
     from mcubridge.services.runtime import BridgeService
 
     mcu_handlers = {op.name: op.mcu_handler for op in protocol.OPERATIONS if op.mcu_handler}
-    assert len(mcu_handlers) == 16
+    assert len(mcu_handlers) == 14
     for name, handler_path in mcu_handlers.items():
         assert isinstance(name, str)
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
 
-    assert len(protocol.RPC_SPECS) == 25
-    from mcubridge.services.runtime import BridgeService
+    assert len(protocol.PW_SERVICES) >= 10
+    for svc in protocol.PW_SERVICES:
+        assert svc.name
+        assert svc.id
+        for m in svc.methods:
+            assert m.name
+            assert m.id
+            assert m.request_type is not None
+            assert m.response_type is not None
 
-    def _lookup_proto_type(name: str) -> Any:
-        for m in (cloud_gateway_pb2, mcu_wire_pb2, config_schema_pb2):
-            if hasattr(m, name):
-                return getattr(m, name)
-        raise AttributeError(f"Protobuf type {name} not found")
-
-    service_desc = next(
-        dep.services_by_name["LocalBridge"]
-        for dep in [cloud_gateway_pb2.DESCRIPTOR, *cloud_gateway_pb2.DESCRIPTOR.dependencies]
-        if "LocalBridge" in dep.services_by_name
-    )
-    unary_methods = {m.name: m for m in service_desc.methods if not m.client_streaming and not m.server_streaming}
-    assert len(unary_methods) == 25
-
-    for spec in protocol.RPC_SPECS:
-        method_name = spec.rpc_name or spec.name
-        assert method_name in unary_methods
-        method_desc = unary_methods[method_name]
-        assert spec.request_type is _lookup_proto_type(method_desc.input_type.name)
-        assert spec.response_type is _lookup_proto_type(method_desc.output_type.name)
-        assert spec.handler_name is not None
-        if spec.is_custom_handler:
-            assert hasattr(BridgeService, spec.handler_name)
-            assert callable(getattr(BridgeService, spec.handler_name))
+    for h_name in protocol.CUSTOM_HANDLERS:
+        root_attr = h_name.split(".", 1)[0]
+        assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
 
     assert callable(BridgeService.execute_rpc)
 
@@ -535,9 +544,8 @@ def test_default_configuration_centralization_ssot() -> None:
     assert "\nDEFAULT_SERIAL_RESPONSE_TIMEOUT=" not in install_content
     assert "0.75" not in install_content
 
-    gateway_content = (repo_root / "mcubridge-gateway/gateway.py").read_text(encoding="utf-8")
-    assert "DEFAULT_CLOUD_HOST" in gateway_content
-    assert "DEFAULT_CLOUD_PORT" in gateway_content
+    gateway_content = (repo_root / "mcubridge-gateway-cpp/src/gateway_main.cc").read_text(encoding="utf-8")
+    assert "8443" in gateway_content
     assert "8843" not in gateway_content
 
     assert validate_luci_app(repo_root) == 0

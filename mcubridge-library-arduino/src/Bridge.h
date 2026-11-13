@@ -225,6 +225,13 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
+#if defined(__AVR_ATmega2560__)
+  // Upstream pw_transfer endpoints share one cooperative Thread<1, 1>.
+  // The port's role arbiter permits client/server transfers sequentially.
+  pw::transfer::Client& transferClient() { return _transfer_client; }
+  pw::transfer::TransferService& transferService() { return _transfer_service; }
+#endif
+
   void _onBaudrateChange();
   void _onHandshakeTimeout();
 
@@ -283,8 +290,25 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
+#if defined(__AVR_ATmega2560__)
+  static constexpr size_t kTransferChunkBufferSize = 128;
+  // The encode buffer holds the outgoing RPC packet and must be larger than
+  // the chunk staging buffer. Use the complete configured receive-frame size.
+  static constexpr size_t kTransferEncodeBufferSize =
+      bridge::config::RX_BUFFER_SIZE;
+  static_assert(kTransferEncodeBufferSize > kTransferChunkBufferSize,
+                "pw_transfer encode buffer must exceed its chunk buffer");
+  etl::array<pw::byte, kTransferChunkBufferSize> _transfer_chunk_storage{};
+  etl::array<pw::byte, kTransferEncodeBufferSize> _transfer_encode_storage{};
+  pw::transfer::Thread<1, 1> _transfer_thread;
+  pw::transfer::TransferService _transfer_service;
+  pw::transfer::Client _transfer_client;
+#endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
+#if defined(__AVR_ATmega2560__)
+  bool _eeprom_transfer_registered{false};
+#endif
   bool _rpc_plaintext_response{false};
 
   StatusHandler _status_handler;
@@ -292,8 +316,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
 
   etl::vector<uint8_t, 64> _shared_secret;
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _tx_aead_key{};
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _rx_aead_key{};
+  // Contiguous RX||TX session keys let HKDF write directly into final storage.
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> _session_aead_keys{};
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
   bool _rx_plaintext_in_use{false};
   uint64_t _tx_aead_counter{0};

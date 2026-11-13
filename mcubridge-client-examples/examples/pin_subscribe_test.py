@@ -107,7 +107,7 @@ def main(
 
 
 cli = typer.Typer(
-    help="Autonomous hardware pin subscription test via LocalBridgeStub through Gateway.",
+    help="Autonomous hardware pin subscription test via GatewayClient through Gateway.",
     add_completion=False,
 )
 

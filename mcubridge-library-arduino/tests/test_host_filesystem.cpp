@@ -22,8 +22,6 @@ void tearDown(void) {}
 namespace {
 using bridge::test::TestAccessor;
 
-void fs_read_callback_handler(pw::span<const uint8_t>) {}
-
 void test_hal_roundtrip() {
   etl::array<uint8_t, 8> payload = {'m', 'c', 'u', '-', 'd', 'a', 't', 'a'};
   const etl::string_view path = "test_hal.bin";
@@ -91,17 +89,6 @@ void test_filesystem_api_write() {
   TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
 }
 
-void test_filesystem_api_read() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-  FileSystem.read("api_read.bin", FileSystemType::FileSystemReadHandler::create<
-                                      fs_read_callback_handler>());
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
-}
-
 void test_filesystem_api_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -123,76 +110,6 @@ void test_filesystem_on_write() {
   TEST_ASSERT_TRUE(bridge::hal::removeFile("on_write.bin").ok());
 }
 
-void test_filesystem_on_read() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-  const etl::string_view path = "on_read.bin";
-  etl::array<uint8_t, 1> data = {0xAA};
-  TEST_ASSERT_TRUE(bridge::hal::writeFile(
-                       path, pw::span<const uint8_t>(data.data(), data.size()))
-                       .ok());
-
-  rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
-  bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
-  uint8_t req_buf[80];
-  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
-  TEST_ASSERT_TRUE(pb_encode(&pos, rpc_pb_FileRead_fields, &msg));
-  etl::array<uint8_t, 128> hdlc_buf;
-  const size_t sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-      pw::tokenizer::Hash("Read"),
-      pw::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
-  stream.tx_buf.clear();
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
-  TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
-  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).ok());
-}
-
-void test_filesystem_on_read_multichunk() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-  const etl::string_view path = "multi_read.bin";
-  etl::array<uint8_t, 70> data = {};
-  etl::fill(data.begin(), data.end(), 0x55);
-  TEST_ASSERT_TRUE(bridge::hal::writeFile(
-                       path, pw::span<const uint8_t>(data.data(), data.size()))
-                       .ok());
-
-  rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
-  bridge::pb::copy_string(msg.path, sizeof(msg.path), path);
-  uint8_t req_buf[80];
-  pb_ostream_t pos = pb_ostream_from_buffer(req_buf, sizeof(req_buf));
-  TEST_ASSERT_TRUE(pb_encode(&pos, rpc_pb_FileRead_fields, &msg));
-  etl::array<uint8_t, 128> hdlc_buf;
-  const size_t sz = build_hdlc_rpc_frame(
-      1, pw::rpc::internal::pwpb::PacketType::REQUEST,
-      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-      pw::tokenizer::Hash("Read"),
-      pw::span<const uint8_t>(req_buf, pos.bytes_written), hdlc_buf);
-  stream.tx_buf.clear();
-  ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), sz));
-  TEST_ASSERT_TRUE(stream.tx_buf.len > 70U);
-  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).ok());
-}
-
-void test_filesystem_on_read_error() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-  rpc_pb_FileRead msg = rpc_pb_FileRead_init_default;
-  pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse> writer;
-  bridge::pb::copy_string(msg.path, sizeof(msg.path), "non_existent_file.bin");
-  TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
-                    FileSystem._onRead(msg, writer).code());
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
-}
-
 void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -207,6 +124,19 @@ void test_filesystem_on_remove() {
   TEST_ASSERT_FALSE(bridge::hal::removeFile("on_rem.bin").ok());
 }
 
+void test_filesystem_api_rejects_when_rpc_tx_is_unavailable() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setTxEnabled(false);
+  TEST_ASSERT_FALSE(Bridge.isRpcTxReady());
+
+  const uint8_t payload[] = {0x11U, 0x22U};
+  FileSystem.write("offline.bin", pw::span<const uint8_t>(payload));
+  FileSystem.remove("offline.bin");
+  TEST_ASSERT_FALSE(Bridge.isRpcTxReady());
+}
+
 void test_filesystem_api_empty_and_error_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -215,10 +145,6 @@ void test_filesystem_api_empty_and_error_paths() {
 
   // Empty write
   FileSystem.write("", pw::span<const uint8_t>());
-
-  // Empty read
-  FileSystem.read("", FileSystemType::FileSystemReadHandler::create<
-                          fs_read_callback_handler>());
 
   // Empty remove
   FileSystem.remove("");
@@ -232,13 +158,10 @@ int main() {
   RUN_TEST(test_hal_roundtrip);
   RUN_TEST(test_hal_chunked_read_roundtrip);
   RUN_TEST(test_filesystem_api_write);
-  RUN_TEST(test_filesystem_api_read);
   RUN_TEST(test_filesystem_api_remove);
   RUN_TEST(test_filesystem_on_write);
-  RUN_TEST(test_filesystem_on_read);
-  RUN_TEST(test_filesystem_on_read_multichunk);
-  RUN_TEST(test_filesystem_on_read_error);
   RUN_TEST(test_filesystem_on_remove);
+  RUN_TEST(test_filesystem_api_rejects_when_rpc_tx_is_unavailable);
   RUN_TEST(test_filesystem_api_empty_and_error_paths);
   return UNITY_END();
 }

@@ -18,7 +18,6 @@ def test_vulture_zero_dead_code_in_production() -> None:
     targets = [
         str(ROOT / "mcubridge" / "mcubridge"),
         str(ROOT / "mcubridge-client-examples" / "mcubridge_client"),
-        str(ROOT / "mcubridge-gateway"),
     ]
     excludes = ["*_pb2.py", "*_pb2.pyi", "*_grpc.py", "openwrt-sdk", ".tox", ".tmp_tests"]
     v.scavenge(targets, exclude=excludes)

@@ -34,8 +34,7 @@
     "BRIDGE_ENABLE_FILESYSTEM=1",
     "BRIDGE_ENABLE_PROCESS=1",
     "BRIDGE_ENABLE_SPI=1",
-    "BRIDGE_ENABLE_TEST_INTERFACE=1",
-    "BRIDGE_FAULT_INJECTION=1"
+    "BRIDGE_ENABLE_TEST_INTERFACE=1"
   ],
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.default.cppStandard": "c++17",

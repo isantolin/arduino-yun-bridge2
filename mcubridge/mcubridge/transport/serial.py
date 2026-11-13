@@ -19,9 +19,11 @@ import os
 from pathlib import Path
 import sys
 import time
+from collections.abc import Callable, Coroutine
 from typing import Any, Final, Protocol, cast
 
 import anyio
+from pw_transfer.client import Error as PwTransferError, Manager as PwTransferManager
 import serial
 from serial.urlhandler import protocol_socket
 import structlog
@@ -63,6 +65,7 @@ _HANDSHAKE_RAW_NAMES: Final[frozenset[str]] = frozenset(
     }
 )
 _STREAM_EVENT_QUEUE_MAX: Final[int] = 64
+_TRANSFER_CHUNK_SIZE_BYTES: Final[int] = 128
 
 # Register wifi:// and tcp:// scheme aliases in pyserial
 sys.modules["serial.urlhandler.protocol_wifi"] = protocol_socket
@@ -121,10 +124,12 @@ class SerialTransport:
         config: RuntimeConfig,
         state: RuntimeState,
         service: SerialBridgeService | None,
+        rpc_packet_writer: Callable[[bytes], Coroutine[Any, Any, bool]] | None = None,
     ) -> None:
         self.config = config
         self.state = state
         self.service: SerialBridgeService | None = service
+        self._rpc_packet_writer = rpc_packet_writer or self._write_rpc_packet
         self.serial: serial.Serial | None = None
 
         self.stop_event = asyncio.Event()
@@ -132,6 +137,10 @@ class SerialTransport:
         self.tx_sequence_id = 0
 
         self._serial_write_lock = asyncio.Lock()
+        try:
+            self._event_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            self._event_loop = None
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: list[Any] = []
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
@@ -139,6 +148,8 @@ class SerialTransport:
         self._stream_call: Any | None = None
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
+        self._transfer_manager: Any | None = None
+        self._transfer_lock = asyncio.Lock()
         self.rpc_client = PwRpcClient(
             cast(Any, callback_client).Impl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self.queue_rpc_packet)],
@@ -246,6 +257,7 @@ class SerialTransport:
             raise
 
     async def connect_and_run(self) -> None:
+        self._event_loop = asyncio.get_running_loop()
         url = resolve_serial_url(self.config.serial_port)
         is_network = url.startswith(("socket://", "tcp://", "wifi://", "rfc2217://"))
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
@@ -548,40 +560,62 @@ class SerialTransport:
         return await self.send_raw(spec if spec is not None else command_id, payload, seq_id)
 
     def queue_rpc_packet(self, packet: bytes) -> None:
-        """Queue a Pigweed-generated RPC packet for encrypted HDLC transmission."""
+        """Schedule Pigweed RPC output safely from the event loop or worker threads."""
         try:
             rpc_packet = pw_packets.decode(packet)
-            if rpc_packet.type == PacketType.REQUEST:
-                self._active_rpc_packet_ids.add(
-                    (
-                        rpc_packet.channel_id,
-                        rpc_packet.service_id,
-                        rpc_packet.method_id,
-                        rpc_packet.call_id,
-                    )
-                )
-            elif rpc_packet.type == PacketType.CLIENT_ERROR:
-                self._active_rpc_packet_ids.discard(
-                    (
-                        rpc_packet.channel_id,
-                        rpc_packet.service_id,
-                        rpc_packet.method_id,
-                        rpc_packet.call_id,
-                    )
-                )
         except (ProtobufDecodeError, ValueError) as exc:
             logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
             return
+
+        loop = self._event_loop
+        if loop is None or loop.is_closed():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError as exc:
+                # Preserve the historical correlation-state update before
+                # reporting that a caller without an owning loop cannot write.
+                self._update_rpc_packet_ids(rpc_packet)
+                raise RuntimeError(
+                    "Pigweed RPC output called outside the asyncio event loop; no active loop is registered"
+                ) from exc
+            self._event_loop = loop
+
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError as exc:
-            raise RuntimeError("Pigweed RPC output invoked outside the asyncio event loop") from exc
-        task = loop.create_task(self._write_rpc_packet(packet), name="mcubridge-pw-rpc-write")
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if current_loop is loop:
+            self._queue_rpc_packet_on_loop(packet, rpc_packet)
+        else:
+            loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet, rpc_packet)
+
+    def _update_rpc_packet_ids(self, rpc_packet: Any) -> None:
+        packet_id = (
+            rpc_packet.channel_id,
+            rpc_packet.service_id,
+            rpc_packet.method_id,
+            rpc_packet.call_id,
+        )
+        if rpc_packet.type == PacketType.REQUEST:
+            self._active_rpc_packet_ids.add(packet_id)
+        elif rpc_packet.type == PacketType.CLIENT_ERROR:
+            self._active_rpc_packet_ids.discard(packet_id)
+
+    def _queue_rpc_packet_on_loop(self, packet: bytes, rpc_packet: Any) -> None:
+        """Update RPC correlation state and create the serial writer task on its owning loop."""
+        self._update_rpc_packet_ids(rpc_packet)
+        task = asyncio.create_task(self._rpc_packet_writer(packet), name="mcubridge-pw-rpc-write")
         self._rpc_write_tasks.add(task)
 
         def _finish(completed: asyncio.Task[bool]) -> None:
             self._rpc_write_tasks.discard(completed)
-            if not completed.result():
+            try:
+                written = completed.result()
+            except (asyncio.CancelledError, OSError, RuntimeError) as exc:
+                logger.error("Pigweed RPC packet write task failed", error=str(exc))
+                return
+            if not written:
                 logger.error("Pigweed RPC packet could not be written to serial")
 
         task.add_done_callback(_finish)
@@ -634,6 +668,60 @@ class SerialTransport:
         logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
         return None
 
+    def _get_transfer_manager(self) -> Any:
+        """Return the single upstream pw_transfer manager for the MCU RPC channel."""
+        if self._transfer_manager is None:
+            transfer_service = self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
+            self._transfer_manager = PwTransferManager(
+                transfer_service,
+                default_response_timeout_s=2.0,
+                initial_response_timeout_s=5.0,
+                max_retries=3,
+                max_lifetime_retries=60,
+                max_chunk_size_bytes=_TRANSFER_CHUNK_SIZE_BYTES,
+            )
+        return self._transfer_manager
+
+    async def _run_transfer_in_worker(self, operation: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """Keep the transfer lock until a blocking Pigweed operation really exits."""
+        worker = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            # asyncio cannot stop a running thread. Wait for the Manager operation
+            # to finish before releasing the lock, otherwise a second transfer
+            # could overlap the first on the AVR's single-role transfer thread.
+            try:
+                await asyncio.shield(worker)
+            except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+                logger.debug("pw_transfer worker ended after caller cancellation", error=str(exc))
+            raise
+
+    async def transfer_read(self, resource_id: int, *, offset: int = 0) -> bytes:
+        """Read an MCU transfer resource without blocking the asyncio serial loop."""
+        async with self._transfer_lock:
+            if self.serial is None or not self.serial.is_open:
+                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
+            manager = self._get_transfer_manager()
+            return await self._run_transfer_in_worker(
+                manager.read,
+                resource_id,
+                initial_offset=offset,
+            )
+
+    async def transfer_write(self, resource_id: int, data: bytes, *, offset: int = 0) -> None:
+        """Write an MCU transfer resource without blocking the asyncio serial loop."""
+        async with self._transfer_lock:
+            if self.serial is None or not self.serial.is_open:
+                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
+            manager = self._get_transfer_manager()
+            await self._run_transfer_in_worker(
+                manager.write,
+                resource_id,
+                data,
+                initial_offset=offset,
+            )
+
     def _get_rpc_method(self, spec: Any) -> Any | None:
         method_name = f"{spec.service_name}/{spec.method_name}"
         try:
@@ -652,41 +740,30 @@ class SerialTransport:
         request: ProtobufMessage,
         method_name: str,
         timeout: float,
-        *,
-        is_finite_stream: bool = False,
     ) -> bool | ProtobufMessage:
         for attempt in range(1, self.max_attempts + 1):
             loop = asyncio.get_running_loop()
             completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
             callback_state: dict[str, ProtobufMessage | None] = {"response": None}
-            stream_chunks: list[bytes] = []
 
             def _on_next(
                 _call: Any,
                 message: ProtobufMessage,
                 state: dict[str, ProtobufMessage | None] = callback_state,
-                chunks: list[bytes] = stream_chunks,
             ) -> None:
-                if is_finite_stream:
-                    chunks.append(bytes(getattr(message, "content", b"")))
-                else:
-                    state["response"] = message
+                state["response"] = message
 
             def _on_completed(
                 _call: Any,
                 status: Any,
                 future: asyncio.Future[bool | ProtobufMessage] = completion,
                 state: dict[str, ProtobufMessage | None] = callback_state,
-                chunks: list[bytes] = stream_chunks,
             ) -> None:
                 if future.done():
                     return
                 if status.ok():
-                    if is_finite_stream:
-                        future.set_result(pb.FileReadResponse(content=b"".join(chunks)))
-                    else:
-                        response_message = state["response"]
-                        future.set_result(response_message if response_message is not None else True)
+                    response_message = state["response"]
+                    future.set_result(response_message if response_message is not None else True)
                 else:
                     future.set_result(False)
 
@@ -808,14 +885,6 @@ class SerialTransport:
         pw_method = protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
         effective_timeout = timeout if timeout is not None else self._response_timeout
         if pw_method.type is PwRpcMethod.Type.SERVER_STREAMING:
-            if spec.response_type is pb.FileReadResponse:
-                return await self._invoke_rpc_with_retries(
-                    rpc_method,
-                    request,
-                    method_name,
-                    effective_timeout,
-                    is_finite_stream=True,
-                )
             return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 

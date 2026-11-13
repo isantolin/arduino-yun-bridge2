@@ -26,8 +26,6 @@ MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
-GATEWAY_REQUIREMENTS_PATH = ROOT / "mcubridge-gateway" / "requirements.txt"
-GATEWAY_MAKEFILE_PATH = ROOT / "mcubridge-gateway" / "Makefile"
 FEEDS_DIR = ROOT / "feeds"
 TOX_PATH = ROOT / "tox.ini"
 ARDUINO_INSTALL_SCRIPT_PATH = ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
@@ -36,7 +34,6 @@ VERSION_TARGETS: tuple[tuple[str, str, str, int], ...] = (
     ("pyproject.toml", r'version\s*=\s*"[^"]+"', 'version = "{version}"', 1),
     ("mcubridge/mcubridge/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{version}"', 1),
     ("mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
-    ("mcubridge-gateway/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
     ("luci-app-mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
     ("mcubridge-library-arduino/library.properties", r"version=[^\n]+", "version={version}", 0),
 )
@@ -210,13 +207,6 @@ def write_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bo
     return _write_if_changed(REQUIREMENTS_PATH, "\n".join(lines) + "\n", dry_run=dry_run)
 
 
-def write_gateway_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
-    gw_deps = [dep for dep in deps if dep.get("gateway")]
-    specs = collect_pip_specs(gw_deps, gateway=True)
-    lines = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit.", *specs]
-    return _write_if_changed(GATEWAY_REQUIREMENTS_PATH, "\n".join(lines) + "\n", dry_run=dry_run)
-
-
 def update_pyproject(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     if not PYPROJECT_PATH.exists():
         return False
@@ -254,14 +244,6 @@ def _update_makefile(
 
 def update_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     return _update_makefile(MAKEFILE_PATH, deps, edge_only=True, dry_run=dry_run)
-
-
-def update_gateway_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
-    if not GATEWAY_MAKEFILE_PATH.exists():
-        return False
-    return _update_makefile(
-        GATEWAY_MAKEFILE_PATH, [d for d in deps if d.get("gateway")], dry_run=dry_run, label="Gateway Makefile"
-    )
 
 
 def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool = False) -> bool:
@@ -621,17 +603,15 @@ def main(
     no_write = check or dry_run
     version_str = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.is_file() else ECOSYSTEM_VERSION
     changed_paths = [str(p.relative_to(ROOT)) for p in sync_metadata(version_str, ROOT, dry_run=no_write)]
-    updates = (
+    updates = [
         (write_requirements(deps, dry_run=no_write), REQUIREMENTS_PATH),
         (update_makefile(deps, dry_run=no_write), MAKEFILE_PATH),
         (update_pyproject(deps, dry_run=no_write), PYPROJECT_PATH),
         (update_feeds(deps, dry_run=no_write, verify_hashes=check_latest or not no_write), FEEDS_DIR),
-        (write_gateway_requirements(deps, dry_run=no_write), GATEWAY_REQUIREMENTS_PATH),
-        (update_gateway_makefile(deps, dry_run=no_write), GATEWAY_MAKEFILE_PATH),
         (update_cpp_install_script(cpp_deps, dry_run=no_write), ARDUINO_INSTALL_SCRIPT_PATH),
         (update_tox_dev_deps(dev_deps, deps, dry_run=no_write), TOX_PATH),
         (update_workflows(deps, dry_run=no_write), ROOT / ".github" / "workflows"),
-    )
+    ]
     for updated, path in updates:
         rel_str = str(path.relative_to(ROOT))
         if updated and rel_str not in changed_paths:

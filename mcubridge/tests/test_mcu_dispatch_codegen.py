@@ -34,7 +34,6 @@ EXPECTED_OPERATION_NAMES: Final[set[str]] = {
     "rpc.pb.GpioService/DigitalRead",
     "rpc.pb.GpioService/AnalogRead",
     "rpc.pb.GpioService/SubscribePins",
-    "ConsoleWrite",
     "rpc.pb.DataStoreService/Put",
     "rpc.pb.DataStoreService/Get",
     "rpc.pb.MailboxService/Push",
@@ -42,7 +41,6 @@ EXPECTED_OPERATION_NAMES: Final[set[str]] = {
     "rpc.pb.MailboxService/Available",
     "rpc.pb.MailboxService/Processed",
     "rpc.pb.FileSystemService/Write",
-    "rpc.pb.FileSystemService/Read",
     "rpc.pb.FileSystemService/Remove",
     "rpc.pb.ProcessService/Kill",
     "rpc.pb.ProcessService/RunAsync",
@@ -61,6 +59,7 @@ def test_operations_are_derived_from_protobuf_services() -> None:
 
     op_names = {str(op["name"]) for op in operations}
     assert EXPECTED_OPERATION_NAMES.issubset(op_names)
+    assert "rpc.pb.FileSystemService/Read" not in op_names
 
     by_name: dict[str, dict[str, Any]] = {str(op["name"]): op for op in operations}
     assert by_name["rpc.pb.SystemService/LinkSync"]["pre_sync_allowed"] is True

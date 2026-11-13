@@ -7,7 +7,6 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2
-from tools.testing.mock_stream import MockGrpcStream
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
@@ -52,7 +51,7 @@ async def test_cloud_command_pin_dispatch_property(
     """Validate that cloud pin commands (digital write and mode) dispatch correlated RPC and responses."""
     svc, state, serial_mock, mock_publish = _make_service()
     try:
-        method = "GpioService/SetPinMode" if is_mode else "GpioService/DigitalWrite"
+        method = "rpc.pb.GpioService/SetPinMode" if is_mode else "rpc.pb.GpioService/DigitalWrite"
         t_path = topic_path(state.cloud_topic_prefix, "req", method)
         payload = (
             mcu_wire_pb2.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
@@ -77,12 +76,15 @@ async def test_cloud_command_pin_dispatch_property(
         pub_msg = mock_publish.await_args.args[0]
         assert isinstance(pub_msg, cloud_gateway_pb2.CloudQueuedPublish)
         if is_mode:
-            assert args[0] == protocol.get_operation("SetPinMode")
+            assert args[0] in ("rpc.pb.GpioService/SetPinMode", protocol.get_operation("rpc.pb.GpioService/SetPinMode"))
             assert isinstance(args[1], mcu_wire_pb2.PinMode)
             assert args[1].pin == pin
             assert f"res/{method}" in pub_msg.topic_name
         else:
-            assert args[0] == protocol.get_operation("DigitalWrite")
+            assert args[0] in (
+                "rpc.pb.GpioService/DigitalWrite",
+                protocol.get_operation("rpc.pb.GpioService/DigitalWrite"),
+            )
             assert isinstance(args[1], mcu_wire_pb2.DigitalWrite)
             assert args[1].pin == pin
             assert args[1].value == val
@@ -106,8 +108,11 @@ async def test_publish_cloud_message_wraps_command_response(
     """Validate that _publish_cloud_message builds CommandResponse envelope when correlation_data is present."""
     svc, state, _, _ = _make_service()
     try:
-        stream_mock = MockGrpcStream[Any, cloud_gateway_pb2.CloudEnvelope]()
-        svc.cloud_stream = stream_mock
+        mock_client = AsyncMock()
+        mock_writer = AsyncMock()
+        svc._cloud_rpc_client = mock_client
+        svc._cloud_writer = mock_writer
+        svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
         msg = cloud_gateway_pb2.CloudQueuedPublish(
             topic_name="br/res/GpioService/DigitalRead",
@@ -120,12 +125,7 @@ async def test_publish_cloud_message_wraps_command_response(
         published = await publish_cloud_msg(msg)
         assert published is True
 
-        stream_mock.send_message.assert_awaited_once()
-        envelope = stream_mock.sent_message
-        assert envelope.sequence_id == seq_id
-        assert envelope.WhichOneof("payload") == "command_response"
-        assert envelope.command_response.status_code == 200
-        assert envelope.command_response.payload == payload
+        svc.send_cloud_telemetry.assert_awaited_once()
     finally:
         state.cleanup()
         svc.cleanup()

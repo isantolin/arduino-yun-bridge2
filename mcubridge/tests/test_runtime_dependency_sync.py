@@ -171,7 +171,6 @@ def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
         "pyproject.toml": '[project]\nversion = "1.0.0"\ndescription = "keep"\n',
         "mcubridge/mcubridge/__init__.py": '__version__ = "1.0.0"\nOTHER = "1.0.0"\n',
         "mcubridge/Makefile": "PKG_VERSION:=1.0.0\nOTHER:=keep\n",
-        "mcubridge-gateway/Makefile": "PKG_VERSION:=1.0.0\n",
         "luci-app-mcubridge/Makefile": "PKG_VERSION:=1.0.0\n",
         "mcubridge-library-arduino/library.properties": "version=1.0.0\nname=Bridge\n",
     }

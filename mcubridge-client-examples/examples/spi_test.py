@@ -1,4 +1,4 @@
-"""Test script for SPI service using SpiDevice with direct LocalBridgeStub and bridge_session."""
+"""Test script for SPI service using SpiDevice with direct GatewayClient and bridge_session."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def main(
     asyncio.run(run_test(host, port, device_id))
 
 
-cli = typer.Typer(help="Test SPI service using direct LocalBridgeStub through Gateway.", add_completion=False)
+cli = typer.Typer(help="Test SPI service using direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()

@@ -252,7 +252,6 @@ void test_spi_data_modes_map_to_native_settings() {
   SPIService.end();
 }
 
-static void dummy_fs_read(pw::span<const uint8_t>) {}
 static void dummy_process_run(int32_t) {}
 static void dummy_process_poll(rpc::StatusCode, uint16_t,
                                pw::span<const uint8_t>,
@@ -271,15 +270,8 @@ void test_component_extended_operations() {
   Mailbox.signalProcessed(123);
 
   // FileSystem
-  FileSystem.read(
-      "test.txt",
-      etl::delegate<void(pw::span<const uint8_t>)>::create<dummy_fs_read>());
   FileSystem.write("test.txt", pw::span<const uint8_t>(mbox_data, 3));
   FileSystem.remove("test.txt");
-
-  rpc_pb_FileReadResponse fr_p = rpc_pb_FileReadResponse_init_default;
-  bridge::pb::copy_bytes(fr_p.content, mbox_data, 3);
-  FileSystem._onResponse(fr_p);
 
   // Process
   Process.runAsync("ls", pw::span<const etl::string_view>(),
@@ -551,98 +543,21 @@ void test_datastore_edges() {
   DataStore.onLost();
 }
 
-static void dummy_fs_edge_handler(pw::span<const uint8_t>) {}
-
 void test_filesystem_edges() {
   BiStream stream;
   reset_bridge_comp(stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  // 1. Unsynchronized / empty path send failure
   FileSystem.write(etl::string_view(), pw::span<const uint8_t>());
-  FileSystem.read(etl::string_view(), FileSystemClass::FileSystemReadHandler());
   FileSystem.remove(etl::string_view());
 
-  // 2. Read response with invalid handler
-  FileSystem.read(etl::string_view(), FileSystemClass::FileSystemReadHandler());
-  rpc_pb_FileReadResponse rresp = rpc_pb_FileReadResponse_init_default;
-  FileSystem._onResponse(rresp);
-
-  // 3. Read response with valid handler
-  FileSystem.read(
-      "test.txt",
-      FileSystemClass::FileSystemReadHandler::create<&dummy_fs_edge_handler>());
-  FileSystem._onResponse(rresp);
-
-  // 4. Synchronized write, read, remove
-  uint8_t data[] = {1, 2, 3};
-  FileSystem.write("test.txt", pw::span<const uint8_t>(data, 3));
-  FileSystem.read(
-      "test.txt",
-      FileSystemClass::FileSystemReadHandler::create<&dummy_fs_edge_handler>());
-  FileSystem.remove("test.txt");
-
-  // 5. _onWrite and _onRemove when sendFrame fails
   ba.setTxEnabled(false);
-  rpc_pb_FileWrite fw_msg = {};
-  FileSystem._onWrite(fw_msg);
-  rpc_pb_FileRemove fr_msg = {};
-  FileSystem._onRemove(fr_msg);
+  rpc_pb_FileWrite write_request = {};
+  FileSystem._onWrite(write_request);
+  rpc_pb_FileRemove remove_request = {};
+  FileSystem._onRemove(remove_request);
   ba.setTxEnabled(true);
 
-  // 6. _onRead non-existent file
-  pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse> inactive_writer;
-  rpc_pb_FileRead fread_nonexistent = {};
-  const char* non_path = "non_existent_file.xyz";
-  etl::copy_n(non_path, strlen(non_path), fread_nonexistent.path);
-  TEST_ASSERT_EQUAL(
-      pw::Status::NotFound().code(),
-      FileSystem._onRead(fread_nonexistent, inactive_writer).code());
-
-  // 7. _onRead timeout via fault injection
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
-  rpc_pb_FileRead fread_valid = {};
-  const char* val_path = "test.txt";
-  etl::copy_n(val_path, strlen(val_path), fread_valid.path);
-  TEST_ASSERT_EQUAL(pw::Status::NotFound().code(),
-                    FileSystem._onRead(fread_valid, inactive_writer).code());
-  bridge::test::fault::disable(
-      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
-
-  // 8. Large file multi-chunk reading via active ServerWriter
-  etl::array<uint8_t, 100> large_data;
-  large_data.fill(0xAA);
-  auto res_w1 = bridge::hal::writeFile(
-      "test_large.txt",
-      pw::span<const uint8_t>(large_data.data(), large_data.size()));
-  TEST_ASSERT_TRUE(res_w1.ok());
-  rpc_pb_FileRead req_large = {};
-  strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
-  send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-                   pw::tokenizer::Hash("Read"), rpc_pb_FileRead_fields,
-                   req_large);
-
-  // 9. Send-fail branches when tx disabled
-  ba.clearSharedSecret();
-  ba.setTxEnabled(false);
-  uint8_t fsdata[] = {1, 2};
-  FileSystem.write("send_fail.txt", pw::span<const uint8_t>(fsdata, 2));
-  FileSystem.remove("send_fail.txt");
-  TEST_ASSERT_EQUAL(pw::Status::Unavailable().code(),
-                    FileSystem._onRead(req_large, inactive_writer).code());
-  ba.setTxEnabled(true);
-
-  // 10. Empty file (to_copy == 0)
-  auto res_w2 = bridge::hal::writeFile("empty.txt", pw::span<const uint8_t>());
-  TEST_ASSERT_TRUE(res_w2.ok());
-  rpc_pb_FileRead fread_empty = {};
-  const char* empty_path = "empty.txt";
-  etl::copy_n(empty_path, strlen(empty_path), fread_empty.path);
-  TEST_ASSERT_TRUE(FileSystem._onRead(fread_empty, inactive_writer).ok());
-
-  // 11. Observer onLost
-  FileSystem.onLost();
   Bridge.enterSafeState();
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }

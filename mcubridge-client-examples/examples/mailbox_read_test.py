@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Send a mailbox message and read back any MCU-forwarded responses using direct LocalBridgeStub."""
+"""Example: Send a mailbox message and read back any MCU-forwarded responses using direct GatewayClient."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def main(
 
 
 cli = typer.Typer(
-    help="Send a mailbox message and read back responses using direct LocalBridgeStub through Gateway.",
+    help="Send a mailbox message and read back responses using direct GatewayClient through Gateway.",
     add_completion=False,
 )
 

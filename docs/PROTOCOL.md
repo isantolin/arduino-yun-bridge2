@@ -52,7 +52,7 @@ Notas:
 - Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
 - Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc.pb.LocalBridge/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
-- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent` y transferencia multi-chunk `FileSystemService/Read` vía `NanopbServerWriter` / `NanopbClientReader`).
+- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`). El antiguo `FileSystemService/Read` Nanopb fue eliminado. En ATmega2560, `Bridge.begin()` registra un handler upstream `pw_transfer` sobre los 4.096 bytes de EEPROM interna como recurso binario fijo `0x4D454741`. No es un filesystem: no hay rutas, nombres ni directorios. Las escrituras usan `EEPROM.update`, ventana de un byte y no son transaccionales. Esto habilita el recurso EEPROM MCU, pero no el filesystem del MPU. La ruta reservada `mcu/eeprom` de `LocalBridge.FileRead` / `FileWrite` accede a ese recurso binario mediante `pw_transfer`; no representa un archivo. El endpoint Linux `pw_transfer` para transferir archivos del MPU y la migración de esas APIs locales siguen pendientes.
 - gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
 ```
 
@@ -260,9 +260,9 @@ El protocolo erradica bucles de reintento manuales mediante el uso exclusivo de 
 ### 6. Asynchronous File I/O & Storage Subsystem (`pathlib.Path` + `asyncio.to_thread`)
 
 Las rutas locales se resuelven y validan con `pathlib.Path`; las operaciones de disco potencialmente bloqueantes se delegan fuera del event loop:
-- **Lectura progresiva hacia el MCU**: los archivos se leen en bloques de `MAX_PAYLOAD_SIZE - 3` y se envían a medida que se leen, sin materializar el archivo completo en RAM. Un fragmento vacío conserva el terminador de transferencia del protocolo.
-- **Lectura desde el MCU**: los fragmentos se agregan a un único `bytearray` y se materializan una sola vez para completar la respuesta unary `FileRead`.
-- **Escritura, lectura y cuota**: `asyncio.to_thread` ejecuta las llamadas de filesystem y `psutil.disk_usage` sin bloquear `asyncio`/`uvloop`.
+- **Lectura/escritura local en el MPU**: las rutas ordinarias de `FileRead` / `FileWrite` operan sobre `file_system_root`, con validación de rutas y cuota. La única ruta `mcu/` admitida es `mcu/eeprom`, que lee/escribe el recurso EEPROM fijo a través de `pw_transfer`; otras rutas `mcu/*` se rechazan. `FileRead` no es un método de `FileSystemService` del MCU.
+- **Transferencia de archivos del MCU**: debe usar upstream `pw_transfer` con handlers y streams acotados; no existe fallback al antiguo RPC Nanopb.
+- **Operaciones de disco**: `asyncio.to_thread` ejecuta filesystem y `psutil.disk_usage` sin bloquear `asyncio`/`uvloop`.
 - **Validación de rutas**: se comprueba que la ruta resuelta permanezca dentro de `file_system_root`; errores de acceso y filesystem se registran explícitamente.
 
 ---
@@ -446,7 +446,7 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
   - `rpc.pb.ConsoleService/ConsoleWrite` (bidireccional)
   - `rpc.pb.DataStoreService/Put` (MCU → Linux)
   - `rpc.pb.MailboxService/Push` (bidireccional)
-  - `rpc.pb.FileSystemService/Write` (bidireccional)
+  - `rpc.pb.FileSystemService/Write` (MCU → MPU, unary legado)
 
 ## 2. Transporte y Multiplexación de Canales HDLC (`pw_hdlc`)
 
@@ -746,9 +746,9 @@ Notas operativas:
 
 ### 5.6 Sistema de archivos (`rpc.pb.FileSystemService`)
 
-- **`rpc.pb.FileSystemService/Write` (Linux ↔ MCU, bidireccional)**: Payload `FileWrite { path, data }`. Retorna `AckPacket`.
-- **`rpc.pb.FileSystemService/Read` (Server-Streaming, Linux ↔ MCU)**: Payload `FileRead { path }`. Respuesta: stream `FileReadResponse { content }` con fragmentación multi-chunk sin memoria dinámica.
-- **`rpc.pb.FileSystemService/Remove` (Linux ↔ MCU)**: Payload `FileRemove { path }`. Retorna `AckPacket`.
+- **Transferencia de contenido**: upstream `pw_transfer` (`pw.transfer.Transfer.Read/Write`) es el único protocolo de transferencia de contenido. En Mega 2560 ya existe un handler de lectura/escritura para la EEPROM interna (4 KiB, recurso fijo `0x4D454741`); no implementa filesystem. El endpoint Linux para `file_system_root`, la migración de clientes MPU y las pruebas interoperables siguen pendientes; no existe todavía transferencia de archivos end-to-end.
+- **APIs locales MPU heredadas**: `LocalBridge.FileRead` y `LocalBridge.FileWrite` siguen temporalmente expuestas sobre gRPC mientras se implementa y valida el endpoint Linux `pw_transfer`. No son el diseño final.
+- **APIs MCU heredadas**: `rpc.pb.FileSystemService/Write` y `Remove` siguen temporalmente en el protocolo Nanopb; no acceden al recurso EEPROM. Deben retirarse cuando se complete la migración de clientes y se determine si queda alguna operación administrativa real que conservar.
 
 ### 5.7 Gestión de procesos (`rpc.pb.ProcessService`)
 
@@ -817,7 +817,7 @@ El servicio implementa 25 operaciones unarias y 1 endpoint de streaming (26 oper
 1. **Control de Pines (GPIO):** `SetPinMode`, `DigitalWrite`, `DigitalRead`, `AnalogWrite`, `AnalogRead`, `PinSubscribe`.
 2. **Datastore en Memoria:** `DatastorePut`, `DatastoreGet`.
 3. **Mailbox FIFO:** `MailboxPush`, `MailboxRead`.
-4. **Sistema de Archivos:** `FileWrite`, `FileRead`, `FileRemove`.
+4. **Sistema de Archivos MPU:** `FileWrite`, `FileRead`, `FileRemove`; recurso EEPROM del MCU mediante `pw_transfer` (no es un filesystem).
 5. **Gestión de Procesos:** `ProcessRunAsync`, `ProcessPoll`, `ProcessKill`.
 6. **Bus SPI:** `SpiTransfer`, `SpiConfigure`.
 7. **Introspección y Control de Sistema:** `GetVersion`, `GetFreeMemory`, `GetStatus`, `EnterBootloader`.
@@ -1042,11 +1042,10 @@ Utilizado por el daemon de borde cuando procesa rutas relativas a su propio pref
   - `req`: Peticiones / comandos RPC entrantes desde la nube o clientes hacia el daemon.
   - `res`: Respuestas y retornos generados por el daemon tras la ejecución del RPC.
   - `evt`: Eventos asíncronos y telemetría emitidos espontáneamente por el daemon hacia el Gateway (`status_online`, `pin_event`, etc.).
-- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `GpioService/DigitalWrite`, `FileSystemService/Read`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
+- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `GpioService/DigitalWrite`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
 
 Ejemplos:
 - Petición de escritura GPIO: `br/req/GpioService/DigitalWrite`
-- Respuesta a lectura de archivo: `br/res/FileSystemService/Read`
 - Evento de cambio de pin: `br/evt/gpio.event`
 
 #### 2. Formato Flota / Multi-Dispositivo (`devices/{device_id}/{direction}/{method}`)

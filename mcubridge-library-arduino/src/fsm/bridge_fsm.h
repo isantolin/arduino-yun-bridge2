@@ -122,7 +122,8 @@ class EnteringBootloaderState
 
 class ChangingBaudrateState
     : public BaseBridgeState<ChangingBaudrateState, StateId::CHANGING_BAUDRATE,
-                             false, EvBaudrateApplied, EvReset, EvTimeout> {
+                             false, EvBaudrateApplied, EvHandshakeFailed,
+                             EvReset, EvTimeout> {
  public:
   using BaseBridgeState::on_event;
   etl::fsm_state_id_t on_event(const EvBaudrateApplied&) {

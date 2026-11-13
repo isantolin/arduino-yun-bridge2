@@ -5,8 +5,15 @@
 #include <etl/utility.h>
 
 #include "security/security.h"
+#include "hal/hal.h"
+#if defined(ARDUINO_ARCH_AVR)
+#include "pw_assert_avr/assert_avr.h"
+#endif
 #include "services/Console.h"
 #include "services/DataStore.h"
+#if defined(__AVR_ATmega2560__)
+#include "services/EepromTransfer.h"
+#endif
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
@@ -24,6 +31,14 @@ uint32_t NowMillis() {
   return static_cast<uint32_t>(
       pw::chrono::SystemClock::now().time_since_epoch().count());
 }
+
+#if defined(ARDUINO_ARCH_AVR)
+void BridgePanicHook(int) {
+  // Assertions are fatal. Put all application outputs into their configured
+  // safe state before the backend halts; never write raw bytes to the HDLC UART.
+  bridge::hal::forceSafeState();
+}
+#endif
 
 bool isLinkSyncRequest(const pw::rpc::PacketMeta& meta) {
   return meta.destination_is_server() &&
@@ -186,11 +201,6 @@ class FileSystemRpcService final
     return pw::OkStatus();
   }
 
-  void Read(const rpc_pb_FileRead& request,
-            pw::rpc::NanopbServerWriter<rpc_pb_FileReadResponse>& writer) {
-    (void)FileSystem._onRead(request, writer);
-  }
-
   pw::Status Remove(const rpc_pb_FileRemove& request, rpc_pb_Empty&) {
     FileSystem._onRemove(request);
     return pw::OkStatus();
@@ -253,9 +263,6 @@ void BridgeClass::_initObservers() {
 #if BRIDGE_ENABLE_PROCESS
   add_observer(Process);
 #endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  add_observer(FileSystem);
-#endif
 #if BRIDGE_ENABLE_SPI
   add_observer(SPIService);
 #endif
@@ -267,7 +274,21 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
-      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)) {
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
+#if defined(__AVR_ATmega2560__)
+      ,
+      _transfer_thread(
+          pw::ByteSpan(_transfer_chunk_storage.data(),
+                       _transfer_chunk_storage.size()),
+          pw::ByteSpan(_transfer_encode_storage.data(),
+                       _transfer_encode_storage.size())),
+      _transfer_service(_transfer_thread, 256),
+      _transfer_client(_rpc_client, 1, _transfer_thread, 256)
+#endif
+{
+#if defined(ARDUINO_ARCH_AVR)
+  pw_assert_avr_SetPanicHook(BridgePanicHook);
+#endif
   _initObservers();
 }
 
@@ -286,6 +307,10 @@ BridgeClass::~BridgeClass() {
 #if BRIDGE_ENABLE_MAILBOX
                                 ,
                                 g_mailbox_service
+#endif
+#if defined(__AVR_ATmega2560__)
+                                ,
+                                _transfer_service
 #endif
   );
 }
@@ -366,6 +391,10 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
+#if defined(__AVR_ATmega2560__)
+                              ,
+                              _transfer_service
+#endif
   );
   _rpc_services_registered = true;
 }
@@ -396,6 +425,18 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
+#if defined(__AVR_ATmega2560__)
+  if (!_eeprom_transfer_registered) {
+    _eeprom_transfer_registered =
+        bridge::services::registerEepromTransferHandler(_transfer_service);
+    if (!_eeprom_transfer_registered) {
+      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+      enterSafeState();
+      return;
+    }
+  }
+#endif
+
   _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
   if (!_state_flags.test(FLAG_POST_PASSED)) {
     enterSafeState();
@@ -420,6 +461,13 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
+#if defined(__AVR_ATmega2560__)
+  const pw::Status transfer_status = _transfer_thread.Poll(2);
+  if (!transfer_status.ok() &&
+      transfer_status != pw::Status::Unavailable()) {
+    emitStatus(transfer_status);
+  }
+#endif
   _timerTask();
   _subscriptionTask();
 #if BRIDGE_ENABLE_CONSOLE
@@ -627,9 +675,15 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   auto tag =
       pw::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
                         rpc::RPC_AEAD_TAG_SIZE);
-  (void)rpc::security::aead_encrypt(
-      pw::span<const uint8_t>(_tx_aead_key), pw::span<const uint8_t>(nonce),
-      pw::span<const uint8_t>(aad), data, ciphertext, tag);
+  if (!rpc::security::aead_encrypt(
+          pw::span<const uint8_t>(_session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE, rpc::RPC_AEAD_KEY_SIZE),
+          pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad), data,
+          ciphertext, tag)) {
+    rpc::security::secure_zero(pw::span<uint8_t>(envelope));
+    rpc::security::secure_zero(pw::span<uint8_t>(nonce));
+    rpc::security::secure_zero(pw::span<uint8_t>(aad));
+    return false;
+  }
 
   const size_t envelope_size =
       rpc::RPC_AEAD_COUNTER_SIZE + data.size() + rpc::RPC_AEAD_TAG_SIZE;
@@ -679,7 +733,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   const uint8_t* ciphertext = envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
   const uint8_t* tag = ciphertext + ciphertext_size;
   const bool decrypted = rpc::security::aead_decrypt(
-      pw::span<const uint8_t>(_rx_aead_key), pw::span<const uint8_t>(nonce),
+      pw::span<const uint8_t>(_session_aead_keys.data(), rpc::RPC_AEAD_KEY_SIZE), pw::span<const uint8_t>(nonce),
       pw::span<const uint8_t>(aad),
       pw::span<const uint8_t>(ciphertext, ciphertext_size),
       pw::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
@@ -698,8 +752,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
 
 void BridgeClass::_clearLinkSession() {
   _pin_stream_writer = {};
-  rpc::security::secure_zero(pw::span<uint8_t>(_tx_aead_key));
-  rpc::security::secure_zero(pw::span<uint8_t>(_rx_aead_key));
+  rpc::security::secure_zero(pw::span<uint8_t>(_session_aead_keys));
   _tx_aead_counter = 0;
   _rx_aead_counter = 0;
   _session_keys_ready = false;
@@ -906,14 +959,21 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
       return;
     }
 
-    (void)rpc::security::handshake_generate_response_tag(
+    const bool response_tag_ok = rpc::security::handshake_generate_response_tag(
         pw::span<const uint8_t>(_shared_secret),
         pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
         pw::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
-    (void)rpc::security::derive_session_keys(
-        pw::span<const uint8_t>(_shared_secret),
-        pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
-        pw::span<uint8_t>(_rx_aead_key), pw::span<uint8_t>(_tx_aead_key));
+    bool session_keys_ok = response_tag_ok &&
+        rpc::security::derive_session_keys(
+            pw::span<const uint8_t>(_shared_secret),
+            pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
+            pw::span<uint8_t>(_session_aead_keys));
+    if (!session_keys_ok) {
+      _clearLinkSession();
+      _fsm.receive(bridge::fsm::EvHandshakeFailed());
+      emitStatus(rpc::StatusCode::STATUS_INTERNAL);
+      return;
+    }
     response.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
     _tx_aead_counter = 0;
     _rx_aead_counter = 0;

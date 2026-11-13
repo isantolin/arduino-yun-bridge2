@@ -14,7 +14,10 @@ python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
 
 # Ensure Arduino libraries are present
 if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
-   [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ]; then
+   [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ] || \
+   [ ! -f "$SRC_DIR/pb_common.h" ] || \
+   [ ! -f "$SRC_DIR/pb_decode.h" ] || \
+   [ ! -f "$SRC_DIR/pb_encode.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi

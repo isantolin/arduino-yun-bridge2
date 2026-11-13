@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Test generic pin control using direct LocalBridgeStub Publish calls."""
+"""Example: Test generic pin control using direct GatewayClient Publish calls."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def main(
     asyncio.run(run_test(led_builtin_pin, host, port, device_id))
 
 
-cli = typer.Typer(help="Test generic pin control using direct LocalBridgeStub through Gateway.", add_completion=False)
+cli = typer.Typer(help="Test generic pin control using direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()

@@ -977,6 +977,70 @@ void test_encrypted_hdlc_and_session_edge_paths() {
 
 }  // namespace
 
+namespace {
+rpc::StatusCode g_edge_last_status = rpc::StatusCode::STATUS_OK;
+size_t g_edge_status_calls = 0U;
+void capture_edge_status(rpc::StatusCode s, pw::span<const uint8_t>) {
+  g_edge_last_status = s;
+  ++g_edge_status_calls;
+}
+}  // namespace
+
+// A subscribed input that rises must be reported and become the new baseline.
+void test_pin_subscription_reports_rising_edge() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  constexpr uint8_t kPin = 7U;
+
+  g_arduino_stub_pin_states[kPin].value = LOW;
+  rpc_pb_PinSubscribeRequest sub = rpc_pb_PinSubscribeRequest_init_default;
+  sub.pin = kPin;
+  sub.mode = rpc_pb_PinModeType_PIN_INPUT;
+  sub.interval_ms = 10;
+  sub.hysteresis = 1;
+  sub.enabled = true;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub);
+  TEST_ASSERT_EQUAL_INT32(0, ba.subscriptionLastValueForPin(kPin));
+
+  g_arduino_stub_pin_states[kPin].value = HIGH;
+  bridge::test::fault::advance_clock_ms(20U);
+  ba.invokeSubscriptionTask();
+  TEST_ASSERT_EQUAL_INT32(1, ba.subscriptionLastValueForPin(kPin));
+
+  g_arduino_stub_pin_states[kPin].value = LOW;
+}
+
+// Without a shared secret, a plaintext RPC frame that is not a valid
+// pw_rpc packet must be rejected with INVALID_ARGUMENT and not dispatched.
+void test_plaintext_malformed_rpc_frame_is_rejected() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  g_edge_status_calls = 0U;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
+
+  const etl::array<uint8_t, 2> garbage = {0xFFU, 0xFFU};
+  pw::stream::MemoryWriterBuffer<32> frame;
+  TEST_ASSERT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
+                                          pw::as_bytes(pw::span(garbage)),
+                                          frame)
+                       .ok());
+  ba.feedHdlcBytes(pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
+
+  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(rpc::StatusCode::STATUS_INVALID_ARGUMENT),
+      static_cast<int>(g_edge_last_status));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
@@ -994,5 +1058,7 @@ int main() {
   RUN_TEST(test_all_timers_and_etl_error_coverage);
   RUN_TEST(test_bootloader_timer_and_hal_coverage);
   RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
+  RUN_TEST(test_pin_subscription_reports_rising_edge);
+  RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
   return UNITY_END();
 }

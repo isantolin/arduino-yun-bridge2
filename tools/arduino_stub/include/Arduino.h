@@ -105,7 +105,14 @@ inline void digitalWrite(uint8_t pin, uint8_t value) {
     g_arduino_stub_pin_states[pin].value = value;
   }
 }
-inline int digitalRead(uint8_t) { return LOW; }
+// Reads back the level last driven on the pin (tests drive inputs through the
+// same state); untouched pins (0xFF sentinel) read LOW.
+inline int digitalRead(uint8_t pin) {
+  return (pin < NUM_DIGITAL_PINS &&
+          g_arduino_stub_pin_states[pin].value == HIGH)
+             ? HIGH
+             : LOW;
+}
 
 inline void analogWrite(uint8_t, int) {}
 inline int analogRead(uint8_t) { return 0; }

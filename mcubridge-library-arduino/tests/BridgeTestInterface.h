@@ -74,7 +74,8 @@ class TestAccessor : public BridgeClass {
   }
 
   void feedHdlcByte(uint8_t b) {
-    auto res = _hdlc_decoder.Process(static_cast<pw::ByteSpan::element_type>(b));
+    auto res =
+        _hdlc_decoder.Process(static_cast<pw::ByteSpan::element_type>(b));
     if (res.ok()) {
       _handleReceivedHdlcFrame(res.value());
     }
@@ -137,6 +138,14 @@ class TestAccessor : public BridgeClass {
       _pin_subscriptions[idx].last_report_ms = ms;
     }
   }
+  // Last value reported for a subscribed pin, or -1 when the pin is not
+  // subscribed.
+  int32_t subscriptionLastValueForPin(uint8_t pin) const {
+    for (const auto& sub : _pin_subscriptions) {
+      if (sub.pin == pin) return static_cast<int32_t>(sub.last_value);
+    }
+    return -1;
+  }
   void setSubscriptionActive(size_t idx, bool active) {
     if (idx < _pin_subscriptions.size()) {
       _pin_subscriptions[idx].active = active;
@@ -153,7 +162,8 @@ class TestAccessor : public BridgeClass {
   void setTxAeadCounter(uint64_t c) { _tx_aead_counter = c; }
   void setRxAeadCounter(uint64_t c) { _rx_aead_counter = c; }
   pw::span<const uint8_t> rxAeadKey() const {
-    return pw::span<const uint8_t>(_session_aead_keys.data(), rpc::RPC_AEAD_KEY_SIZE);
+    return pw::span<const uint8_t>(_session_aead_keys.data(),
+                                   rpc::RPC_AEAD_KEY_SIZE);
   }
   bool invokeWriteEncryptedHdlcFrameWithBuffer(uint64_t address,
                                                pw::span<const uint8_t> data,

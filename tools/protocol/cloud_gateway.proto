@@ -204,3 +204,15 @@ message GenericResponse {
   string status = 1;
   string message = 2;
 }
+
+// Linux-side console service. It is not an MCU pw_rpc service: Linux -> MCU
+// requests are queued by the daemon and framed on HDLC_ADDRESS_CONSOLE, and
+// MCU -> Linux console frames are published on the method's cloud topic.
+service ConsoleService {
+  rpc Write(rpc.pb.ConsoleWrite) returns (rpc.pb.Empty) {
+    option (auth_field) = "console_input";
+    option (mcu_handler) = "console_write";
+    option (cloud_topic) = "evt/ConsoleService/Write";
+    option (method_description) = "Console bytes. Linux -> MCU writes are queued and framed on HDLC_ADDRESS_CONSOLE; MCU -> Linux console frames are published on the cloud topic.";
+  }
+}

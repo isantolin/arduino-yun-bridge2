@@ -1632,3 +1632,41 @@ async def test_runtime_execute_rpc_branches(mock_bridge_service: BridgeService) 
     mock_serial.send = AsyncMock(return_value=False)
     with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
         await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
+
+
+async def test_runtime_console_write_both_directions(
+    mock_bridge_service: BridgeService, mock_serial: AsyncMock
+) -> None:
+    svc = mock_bridge_service
+
+    # MCU -> Linux: console frames are published on the canonical cloud topic with the console expiry.
+    mock_pub = AsyncMock()
+    svc.cloud_publisher = mock_pub
+    inbound = await svc.console_write(0, mcu_wire_pb2.ConsoleWrite(data=b"hello from mcu"))
+    assert isinstance(inbound, mcu_wire_pb2.Empty)
+    assert mock_pub.await_count == 1
+    assert mock_pub.await_args is not None
+    published: cloud_gateway_pb2.CloudQueuedPublish = mock_pub.await_args.args[0]
+    assert published.topic_name == f"{svc.state.cloud_topic_prefix}/evt/ConsoleService/Write"
+    assert published.payload == b"hello from mcu"
+    assert published.message_expiry_interval == protocol.CLOUD_EXPIRY_CONSOLE
+
+    # Empty MCU frames are ignored without publishing.
+    await svc.console_write(0, mcu_wire_pb2.ConsoleWrite(data=b""))
+    assert mock_pub.await_count == 1
+
+    # Linux -> MCU: bytes are queued and flushed over the console HDLC channel.
+    svc.serial = mock_serial
+    mock_serial.send = AsyncMock(return_value=True)
+    outbound = await svc.console_write(mcu_wire_pb2.ConsoleWrite(data=b"ping"))
+    assert isinstance(outbound, mcu_wire_pb2.Empty)
+    mock_serial.send.assert_awaited_once_with("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=b"ping"))
+    assert len(svc.state.console_to_mcu_queue) == 0
+
+    # The cloud dispatch path reaches the same handler through the canonical operation name.
+    mock_serial.send.reset_mock()
+    resp_bytes = await svc.execute_rpc(
+        "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway").SerializeToString()
+    )
+    assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
+    mock_serial.send.assert_awaited_once_with("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway"))

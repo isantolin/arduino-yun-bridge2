@@ -174,6 +174,12 @@ class GatewayClient:
         resp.ParseFromString(resp_bytes)
         return resp
 
+    async def ConsoleWrite(self, req: mcu_wire_pb2.ConsoleWrite) -> mcu_wire_pb2.Empty:
+        resp_bytes = await self.dispatch("rpc.pb.ConsoleService", "Write", req)
+        resp = mcu_wire_pb2.Empty()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
     async def DatastorePut(self, req: mcu_wire_pb2.DatastorePut) -> mcu_wire_pb2.Empty:
         resp_bytes = await self.dispatch("rpc.pb.DataStoreService", "Put", req)
         resp = mcu_wire_pb2.Empty()

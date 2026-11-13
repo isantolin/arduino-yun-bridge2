@@ -83,7 +83,7 @@ async def test_feed_data_success_dispatches() -> None:
         transport = SerialTransport(config, state, service)
         await transport.feed_data(encoded)
 
-        service.handle_mcu_frame.assert_awaited_once_with("ConsoleWrite", 0, pb.ConsoleWrite(data=b"hi"))
+        service.handle_mcu_frame.assert_awaited_once_with("rpc.pb.ConsoleService/Write", 0, pb.ConsoleWrite(data=b"hi"))
     finally:
         state.cleanup()
 

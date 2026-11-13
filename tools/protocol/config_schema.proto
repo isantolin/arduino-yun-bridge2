@@ -66,6 +66,7 @@ option (rpc.pb.constants) = {
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
+  cloud_expiry_console: 5
   cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
@@ -633,6 +634,10 @@ message Constants {
     (cpp_name) = "RPC_AEAD_COUNTER_SIZE",
     (cpp_type) = "size_t",
     (py_name) = "AEAD_COUNTER_SIZE",
+    (py_type) = "int"
+  ];
+  uint32 cloud_expiry_console = 91 [
+    (py_name) = "CLOUD_EXPIRY_CONSOLE",
     (py_type) = "int"
   ];
 }

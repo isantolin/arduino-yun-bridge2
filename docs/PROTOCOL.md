@@ -443,7 +443,7 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
 - **Comandos ACK-only:** Son métodos unarios cuyo éxito se confirma mediante `RESPONSE` con `status = 0` (`Ok`) o `AckPacket` (`STATUS_ACK`):
   Esta lista está alineada con el spec (bindings Python: `OPERATIONS` con `requires_ack=True`):
   - `rpc.pb.GpioService/SetPinMode`, `rpc.pb.GpioService/DigitalWrite`, `rpc.pb.GpioService/AnalogWrite` (Linux → MCU)
-  - `rpc.pb.ConsoleService/ConsoleWrite` (bidireccional)
+  - `rpc.pb.ConsoleService/Write` (bidireccional; servicio del lado Linux, no un servicio `pw_rpc` del MCU)
   - `rpc.pb.DataStoreService/Put` (MCU → Linux)
   - `rpc.pb.MailboxService/Push` (bidireccional)
   - `rpc.pb.FileSystemService/Write` (MCU → MPU, unary legado)
@@ -724,8 +724,10 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 
 - **Stream HDLC Nativo (`HDLC_ADDRESS_CONSOLE = 3`, bidireccional):**
   - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`encode_hdlc_console`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
-- **`rpc.pb.ConsoleService/ConsoleWrite` (Linux ↔ MCU):**
-  - Payload: mensaje protobuf `ConsoleData { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `AckPacket`.
+- **`rpc.pb.ConsoleService/Write` (Linux ↔ MCU, definido en `cloud_gateway.proto`):**
+  - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `Empty`.
+  - Linux → MCU: el daemon encola los bytes (`console_to_mcu_queue`) y los emite en tramas HDLC sobre la dirección `3`; alcanzable desde el Gateway vía `GatewayControl.Dispatch` y autorizado por `cloud_allow_console_input`.
+  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/ConsoleService/Write` (expiración `CLOUD_EXPIRY_CONSOLE`). Todavía no existe un stream northbound Gateway → cliente para ese tópico.
 
 ### 5.4 Datastore (`rpc.pb.DataStoreService`)
 

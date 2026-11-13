@@ -891,6 +891,20 @@ class BridgeService:
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
+    async def console_write(
+        self, req_or_seq: mcu_wire_pb2.ConsoleWrite | int, p: mcu_wire_pb2.ConsoleWrite | None = None
+    ) -> mcu_wire_pb2.Empty:
+        """Bridge console bytes: MCU frames are published to the cloud, Linux requests are queued to the MCU."""
+        if p is not None:
+            if p.data:
+                await self.publish_mcu_message(p, p.data, message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE)
+            return mcu_wire_pb2.Empty()
+        req = cast(mcu_wire_pb2.ConsoleWrite, req_or_seq)
+        if req.data:
+            self.state.console_to_mcu_queue.append(req.data)
+            await self.flush_console_queue()
+        return mcu_wire_pb2.Empty()
+
     async def set_mcu_paused(self, paused: bool, _seq: int = 0, _payload: Any = None) -> None:
         self.state.mcu_is_paused = paused
         if paused:

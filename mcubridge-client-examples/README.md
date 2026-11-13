@@ -109,7 +109,7 @@ Si se omite `--device-id` y no se ha definido `MCUBRIDGE_DEVICE_ID`, el script f
 |---|---|---|
 | `all_features_test.py` | Suite integral de validación de las capacidades expuestas por `GatewayControl` (GPIO, Datastore, FileIO escritura/borrado). | `DigitalWrite`, `AnalogWrite`, `DatastorePut`, `DatastoreGet`, `FileWrite`, `FileRemove` |
 | `bootloader_test.py` | Reinicio controlado del MCU hacia el bootloader de programación. | `EnterBootloader` |
-| `console_test.py` | Streaming bidireccional en tiempo real de la consola del MCU. | `SubscribeConsole` |
+| `console_test.py` | Escritura hacia la consola del MCU (`ConsoleService/Write`). La salida MCU → Linux se publica como telemetría (`evt/ConsoleService/Write`); todavía no hay stream northbound hacia el cliente. | `ConsoleWrite` |
 | `datastore_test.py` | Lectura, escritura y verificación de pares clave-valor en RAM. | `DatastorePut`, `DatastoreGet` |
 | `fileio_test.py` | Escritura y borrado de archivos del MPU. La lectura de archivos del MPU todavía no forma parte del contrato `GatewayControl` (ADR-0003). El recurso EEPROM del MCU se transfiere mediante `pw_transfer` (ruta reservada `mcu/eeprom`); no existe un filesystem de MCU en esa interfaz. | `FileWrite`, `FileRemove` |
 | `led13_test.py` | Alternancia periódica de encendido y apagado del LED Pin 13. | `DigitalWrite` |

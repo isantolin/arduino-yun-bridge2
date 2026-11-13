@@ -416,7 +416,7 @@ class SerialTransport:
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
-                await self.service.handle_mcu_frame("ConsoleWrite", 0, pb.ConsoleWrite(data=frame_data))
+                await self.service.handle_mcu_frame("rpc.pb.ConsoleService/Write", 0, pb.ConsoleWrite(data=frame_data))
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:

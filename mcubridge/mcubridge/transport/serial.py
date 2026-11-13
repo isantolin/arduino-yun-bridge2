@@ -16,6 +16,7 @@ import asyncio
 from collections import deque
 import logging
 import os
+import socket
 from pathlib import Path
 import sys
 import time
@@ -109,6 +110,22 @@ def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
     """Thread target to write raw bytes to serial device and flush immediately. [SIL-2]"""
     ser.write(data)
     ser.flush()
+
+
+def close_serial_port(ser: serial.Serial) -> None:
+    """Thread target to close the port and release its raw socket deterministically. [SIL-2]
+
+    pyserial's socket:// handler drops its socket reference when shutdown() fails
+    (peer already gone) without calling close(), leaving the descriptor to the GC and
+    raising ResourceWarning. Closing the raw socket ourselves is idempotent and keeps
+    teardown deterministic for tcp:// and wifi:// links.
+    """
+    raw_socket = getattr(ser, "_socket", None)
+    try:
+        ser.close()
+    finally:
+        if isinstance(raw_socket, socket.socket):
+            raw_socket.close()
 
 
 class SerialTransport:
@@ -330,7 +347,7 @@ class SerialTransport:
                 except (AttributeError, OSError) as exc:
                     logger.debug("Failed to cancel pending serial I/O during cleanup", error=str(exc))
                 try:
-                    await asyncio.to_thread(self.serial.close)
+                    await asyncio.to_thread(close_serial_port, self.serial)
                 except (AttributeError, OSError) as exc:
                     logger.error("Failed to close serial port during cleanup", error=str(exc))
                 self.serial = None
@@ -359,7 +376,7 @@ class SerialTransport:
             except (AttributeError, OSError) as exc:
                 logger.debug("Failed to cancel pending serial I/O on stop", error=str(exc))
             try:
-                await asyncio.to_thread(self.serial.close)
+                await asyncio.to_thread(close_serial_port, self.serial)
             except (AttributeError, OSError) as exc:
                 logger.error("Failed to close serial port on stop", error=str(exc))
 

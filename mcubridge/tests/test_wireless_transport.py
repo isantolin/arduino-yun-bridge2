@@ -8,15 +8,18 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from typing import Any, cast
 import serial
 import structlog
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import (
+    close_serial_port,
     SerialTransport,
     resolve_serial_url,
 )
@@ -246,3 +249,28 @@ async def test_serial_transport_tcp_none_service_disconnect(
 
     server.close()
     await server.wait_closed()
+
+
+def test_close_serial_port_releases_leaked_socket() -> None:
+    """pyserial's socket handler may drop its socket without closing it; the transport must close it anyway."""
+    server_sock, client_sock = socket.socketpair()
+    try:
+
+        class LeakyPort:
+            def __init__(self, sock: socket.socket) -> None:
+                self._socket: socket.socket | None = sock
+                self.is_open = True
+
+            def close(self) -> None:
+                # Mirrors serial.urlhandler.protocol_socket.Serial.close() when shutdown() raises:
+                # the reference is dropped but the descriptor is never closed.
+                self._socket = None
+                self.is_open = False
+
+        port = LeakyPort(client_sock)
+        close_serial_port(cast(Any, port))
+        assert port.is_open is False
+        assert client_sock.fileno() == -1
+    finally:
+        server_sock.close()
+        client_sock.close()

@@ -74,7 +74,7 @@ class TestAccessor : public BridgeClass {
   }
 
   void feedHdlcByte(uint8_t b) {
-    auto res = _hdlc_decoder.Process(static_cast<pw::byte>(b));
+    auto res = _hdlc_decoder.Process(static_cast<pw::ByteSpan::element_type>(b));
     if (res.ok()) {
       _handleReceivedHdlcFrame(res.value());
     }
@@ -165,7 +165,7 @@ class TestAccessor : public BridgeClass {
                               pw::span<const uint8_t>& plaintext) {
     return _decryptHdlcFrame(address, envelope, plaintext);
   }
-  pw::Status invokeChannelSend(pw::span<const std::byte> packet) {
+  pw::Status invokeChannelSend(pw::ConstByteSpan packet) {
     return _rpc_channel_output.Send(packet);
   }
 };

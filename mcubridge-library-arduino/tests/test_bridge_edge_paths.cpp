@@ -969,9 +969,9 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
 
   ba.setNullStream();
-  const std::byte dummy_byte{0x01};
+  const uint8_t dummy_byte = 0x01;
   const pw::Status send_status =
-      ba.invokeChannelSend(pw::span<const std::byte>(&dummy_byte, 1U));
+      ba.invokeChannelSend(pw::as_bytes(pw::span(&dummy_byte, 1U)));
   TEST_ASSERT_FALSE(send_status.ok());
 }
 

@@ -555,6 +555,7 @@ jobs:
       - name: Test Gateway TLS identity and session isolation
         run: |
           . .venv-gateway/bin/activate
+          export PYTHONPATH=.
           python3 -m unittest discover -s mcubridge-gateway-cpp/tests -v
       - name: Generate Gateway Coverage Report
         run: |

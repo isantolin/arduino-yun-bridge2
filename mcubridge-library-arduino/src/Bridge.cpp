@@ -316,7 +316,7 @@ BridgeClass::~BridgeClass() {
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(
-    pw::span<const std::byte> packet) {
+    pw::ConstByteSpan packet) {
   const auto data = pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(packet.data()), packet.size());
   return bridge_._writeHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, data,
@@ -371,7 +371,7 @@ void BridgeClass::_initializeRuntime() {
     setStream(*_stream);
   }
 
-  pw_log_avr_SetLogSink(
+  pw_log_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
         (void)Bridge.sendLogStream(pw::span<const uint8_t>(log_data, size));
       });
@@ -491,12 +491,12 @@ void BridgeClass::_watchdogTask() {
 
 void BridgeClass::_serialTask() {
   if (!_stream) return;
-  etl::array<pw::byte, bridge::config::RX_BUFFER_SIZE> chunk;
+  etl::array<pw::ByteSpan::element_type, bridge::config::RX_BUFFER_SIZE> chunk;
   const auto read_result = _arduino_stream.Read(
       pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
   if (read_result.ok()) {
     const pw::ConstByteSpan rx_span = read_result.value();
-    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::byte b) {
+    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::ByteSpan::element_type b) {
       auto result = _hdlc_decoder.Process(b);
       if (result.ok()) {
         _handleReceivedHdlcFrame(result.value());

@@ -305,6 +305,11 @@ PYEOF
     fi
 fi
 
+# Mainstream Pigweed library for 32-bit MCU platforms (SAMD21, ESP32-S3) and Host
+if [ -d "${ROOT_DIR}/third_party/pigweed" ] && [ -f "${ROOT_DIR}/tools/export_pigweed_mainstream.py" ]; then
+    python3 "${ROOT_DIR}/tools/export_pigweed_mainstream.py" "$LIB_DIR/Pigweed"
+fi
+
 # Unity test framework (host tests only)
 install_dependency "Unity" \
     "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/${UNITY_VERSION}" \

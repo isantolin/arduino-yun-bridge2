@@ -64,7 +64,7 @@ mkdir -p "${ARDUINO_LIBS}"
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
+PIGWEED_PATH="$ARDUINO_LIBS/Pigweed"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
 if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
@@ -118,10 +118,8 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
-    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp"
-    "$PIGWEED_PATH/src/assert_avr.cpp"
-    "$PIGWEED_PATH/src/system_clock_avr.cpp"
-    "$PIGWEED_PATH/src/log_avr.cpp"
+    "$PIGWEED_PATH/src/system_clock_arduino.cpp"
+    "$PIGWEED_PATH/src/log_arduino.cpp"
     "${PIGWEED_RPC_SOURCES[@]}"
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc"
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc"

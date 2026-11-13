@@ -37,7 +37,6 @@ REQUIRED_DEPS = [
     "google.protobuf",
     "nanopb",
     "mypy_protobuf",
-    "grpclib",
     "black",
     "typer",
     "packaging",

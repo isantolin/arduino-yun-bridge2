@@ -468,11 +468,20 @@ void BridgeClass::_watchdogTask() {
 
 void BridgeClass::_serialTask() {
   if (!_stream) return;
-  etl::array<pw::ByteSpan::element_type, bridge::config::RX_BUFFER_SIZE> chunk;
-  const auto read_result = _arduino_stream.Read(
-      pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
-  if (read_result.ok()) {
+  // Drain up to RX_BUFFER_SIZE bytes per pass, but through a small stack
+  // chunk: a complete frame is dispatched (RPC handler + AEAD response) while
+  // this buffer is live, and on the ATmega2560 a full RX_BUFFER_SIZE copy here
+  // pushed that call chain past the stack into .bss.
+  constexpr size_t kReadChunkSize = 32U;
+  static_assert(kReadChunkSize <= bridge::config::RX_BUFFER_SIZE);
+  etl::array<pw::ByteSpan::element_type, kReadChunkSize> chunk;
+  size_t budget = bridge::config::RX_BUFFER_SIZE;
+  while (budget > 0U) {
+    const auto read_result = _arduino_stream.Read(
+        pw::ByteSpan(chunk.data(), etl::min(budget, kReadChunkSize)));
+    if (!read_result.ok() || read_result.value().empty()) break;
     const pw::ConstByteSpan rx_span = read_result.value();
+    budget -= rx_span.size();
     etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::ByteSpan::element_type b) {
       auto result = _hdlc_decoder.Process(b);
       if (result.ok()) {

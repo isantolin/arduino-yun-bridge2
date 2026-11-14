@@ -104,7 +104,7 @@ class GatewayClient:
         self,
         operation: str,
         request: Any = None,
-        timeout_ms: int = 5000,
+        timeout_ms: int = 15000,
     ) -> bytes:
         """Dispatch the canonical operation (e.g. "rpc.pb.GpioService/DigitalWrite") to the target device."""
         if operation not in OPERATIONS:

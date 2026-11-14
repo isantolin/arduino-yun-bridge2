@@ -302,7 +302,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
             led_pin = node.metadata.led_builtin
             try:
                 await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
-            except RuntimeError as exc:
+            except (RuntimeError, TimeoutError) as exc:
                 logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
                 return False
             await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
@@ -310,7 +310,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
 
             try:
                 await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
-            except RuntimeError as exc:
+            except (RuntimeError, TimeoutError) as exc:
                 logger.error("MailboxPush failed", node=node.name, error=str(exc))
                 return False
             logger.info("Node MailboxPush verified", node=node.name)
@@ -318,9 +318,9 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     return True
 
 
-def compile_fleet_firmwares() -> tuple[
-    tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]
-]:
+def compile_fleet_firmwares() -> (
+    tuple[tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]]
+):
     """Compile universal firmwares and extract metadata for all 3 targets."""
     sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
     fw_mega = ensure_firmware_compiled(

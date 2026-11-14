@@ -1016,7 +1016,7 @@ Para aplicaciones web ligeras, paneles de control HTML directos (`/mcubridge/ind
 - **Rutas HTTP Soportadas**:
   - `POST /cgi-bin/mcubridge-pin/pin/<pin>` con payload JSON `{"state": "ON"|"OFF"|1|0}`: Traduce la petición directamente a `ubus call mcubridge digital_write "{\"pin\": $PIN, \"value\": $VAL}"`.
   - `GET /cgi-bin/mcubridge-pin/status`: Devuelve el snapshot de estado en `/tmp/mcubridge_status.json` de forma atómica.
-- **Rendimiento**: Al evitar la carga de un intérprete Python con módulos complejos (`typer`, `pydantic`, `grpclib`), el tiempo de respuesta total bajo emulación MIPS desciende de >30 segundos a <500 ms (<50 ms en hardware nativo), con un consumo de memoria inferior a 200 KB.
+- **Rendimiento**: Al evitar la carga de un intérprete Python con módulos complejos (`typer`, `pydantic`), el tiempo de respuesta total bajo emulación MIPS desciende de >30 segundos a <500 ms (<50 ms en hardware nativo), con un consumo de memoria inferior a 200 KB.
 
 ### 10.6 Conducción Activa Hardware GPIO en Firmware MCU (`pinMode`)
 

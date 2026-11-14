@@ -637,6 +637,8 @@ class BridgeService:
         if p is not None:
             await self.state.mailbox_incoming_queue.append(p.data)
             await self.publish_mcu_message(p, p.data)
+            if self.serial:
+                await self.serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty())
             return mcu_wire_pb2.Empty()
         data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
         await self.state.mailbox_queue.append(data)

@@ -290,7 +290,6 @@ check_python_module "packaging"
 check_python_module "typer"
 check_python_module "tenacity"
 check_python_module "mypy_protobuf"
-check_python_module "grpclib"
 check_python_module "patch_ng" || python3 -m pip install "patch-ng" >/dev/null 2>&1 || true
 
 # --- PROTOCOL & DEPS SYNC ---
@@ -567,7 +566,7 @@ else
     echo "[WARN] python-pyopenssl Makefile not found at $PYTHON_OPENSSL_MAKEFILE"
 fi
 # ==============================================================================
-# [FIX CRITICO] Patch python-setuptools para soportar paquetes con setuptools>=82 (hpack 4.2+, etc.)
+# [FIX CRITICO] Patch python-setuptools para soportar paquetes con setuptools>=82
 # ==============================================================================
 for st_mk in "feeds/packages/lang/python/python-setuptools/Makefile" "package/feeds/packages/python-setuptools/Makefile"; do
     if [ -f "$st_mk" ]; then
@@ -723,7 +722,7 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # Build the SDK's host Python first so we can install build backends into it.
 # python3-typer needs pdm.backend, python3-cryptography needs maturin, python3-uvloop needs Cython.
-# Modern packages like hpack>=4.2.0 and h2>=4.4.1 require setuptools>=82 and wheel>=0.46.3.
+# Modern packages require setuptools>=82 and wheel>=0.46.3.
 echo "[BUILD] Pre-building SDK host Python3..."
 set -o pipefail
 make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5

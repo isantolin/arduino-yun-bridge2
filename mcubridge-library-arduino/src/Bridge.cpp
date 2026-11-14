@@ -478,7 +478,7 @@ void BridgeClass::_serialTask() {
   etl::array<pw::ByteSpan::element_type, kReadChunkSize> chunk;
   const etl::array<uint8_t, kReadPasses> passes{};
   // all_of stops at the first pass that finds no data.
-  etl::all_of(passes.begin(), passes.end(), [this, &chunk](uint8_t) {
+  (void)etl::all_of(passes.begin(), passes.end(), [this, &chunk](uint8_t) {
     const auto read_result =
         _arduino_stream.Read(pw::ByteSpan(chunk.data(), chunk.size()));
     if (!read_result.ok()) return false;  // no data: DoRead never returns 0 bytes OK

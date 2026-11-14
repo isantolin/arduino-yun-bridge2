@@ -59,7 +59,6 @@ inline WiFiClass WiFi;
 #endif
 
 #include <Bridge.h>
-#include <PigweedAVR.h>
 
 // Configuration
 constexpr const char* WIFI_SSID = "McuBridge_Network";

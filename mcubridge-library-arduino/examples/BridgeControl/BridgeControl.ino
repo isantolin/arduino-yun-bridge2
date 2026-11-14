@@ -10,9 +10,6 @@
  */
 
 #include <Bridge.h>
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
-#include <PigweedAVR.h>
-#endif
 #include <etl/string_view.h>
 #include <pw_span/span.h>
 #include <services/Console.h>

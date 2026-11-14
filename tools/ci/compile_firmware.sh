@@ -149,7 +149,7 @@ elif [ "$EMULATOR" = "renode" ]; then
 elif [ "$EMULATOR" = "qemu" ]; then
     # The Espressif core (tools/install_espressif_core.sh) ships the modern
     # xtensa-esp-elf toolchain; its esp32s3 driver is xtensa-esp32s3-elf-gcc.
-    XTENSA_GCC="$(find "${HOME}/.arduino15/packages/esp32" -type f -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
+    XTENSA_GCC="$(find "${HOME}/.arduino15/packages/esp32/tools/esp-x32" "${HOME}/.arduino15/packages/esp32" -type f -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
     if [ -z "$XTENSA_GCC" ]; then
         echo "ERROR: xtensa-esp32s3-elf-gcc not found; run tools/ci/install_espressif_core.sh" >&2
         exit 1
@@ -159,20 +159,19 @@ elif [ "$EMULATOR" = "qemu" ]; then
     STUBS_OBJ="$(mktemp /tmp/esp32_qemu_stubs_XXXXXX.o)"
     "$XTENSA_GCC" -c "$STUBS_SRC" -o "$STUBS_OBJ"
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
-        "--build-property" "build.extra_flags=-DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -DETL_NO_STL $COMMON_FLAGS"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
         "--build-property" "build.psram_type=qspi"
         "--build-property" "build.cdc_on_boot=0"
         "--build-property" "build.dfu_on_boot=0"
         "--build-property" "build.defines=-DBOARD_HAS_PIN_REMAP -DBOARD_USES_HW_GPIO_NUMBERS '-DUSB_MANUFACTURER=\"Arduino\"' '-DUSB_PRODUCT=\"Nano ESP32\"'"
-        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite"
+        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite -Wl,--wrap=analogRead -Wl,--wrap=adc_hal_self_calibration -Wl,--wrap=psramInit"
         "--build-path" "$OUTPUT_DIR"
     )
 fi

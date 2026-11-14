@@ -13,7 +13,6 @@
 
 #include <Arduino.h>
 #include <Bridge.h>
-#include <PigweedAVR.h>
 #include <etl/string_view.h>
 #include <pw_span/span.h>
 #include <services/Console.h>

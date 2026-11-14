@@ -1670,7 +1670,9 @@ async def test_runtime_console_write_both_directions(
         "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway").SerializeToString()
     )
     assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
-    mock_serial.send.assert_awaited_once_with("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway"))
+    mock_serial.send.assert_awaited_once_with(
+        "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway")
+    )
 
 
 async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_service: BridgeService) -> None:

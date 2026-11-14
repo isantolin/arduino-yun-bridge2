@@ -367,7 +367,7 @@ def get_topic_for_message(
     """Resolve canonical CLOUD topic for a given message, class, command ID or enum name. [SIL-2]"""
     spec = get_operation(message)
     if spec and spec.cloud_topic:
-        return topic_path(prefix, *spec.cloud_topic.split("/"))
+        return topic_path(prefix, spec.cloud_topic)
     return None
 
 

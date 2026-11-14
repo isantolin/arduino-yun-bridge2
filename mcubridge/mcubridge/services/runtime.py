@@ -633,18 +633,17 @@ class BridgeService:
 
     async def mailbox_push(
         self, req_or_data: bytes | mcu_wire_pb2.MailboxPush | int, p: mcu_wire_pb2.MailboxPush | None = None
-    ) -> cloud_gateway_pb2.GenericResponse:
+    ) -> mcu_wire_pb2.Empty:
         if p is not None:
             await self.state.mailbox_incoming_queue.append(p.data)
             await self.publish_mcu_message(p, p.data)
-            return cloud_gateway_pb2.GenericResponse(status="ok")
+            return mcu_wire_pb2.Empty()
         data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
         await self.state.mailbox_queue.append(data)
         serial = self.serial
-        res = (
-            (await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data))) if serial else False
-        )
-        return cloud_gateway_pb2.GenericResponse(status="ok" if res else "error")
+        if serial:
+            await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data))
+        return mcu_wire_pb2.Empty()
 
     async def mailbox_read(
         self, req_or_seq: mcu_wire_pb2.SubscribeRequest | int | None = None, _p: Any = None

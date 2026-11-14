@@ -5,19 +5,19 @@ package rpc.pb;
 import "config_schema.proto";
 
 message VersionResponse {
-  option (msg_cloud_topic) = "evt/SystemService/VersionResponse";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/VersionResponse";
   uint32 major = 1;
   uint32 minor = 2;
   uint32 patch = 3;
 }
 
 message FreeMemoryResponse {
-  option (msg_cloud_topic) = "evt/SystemService/FreeMemoryResponse";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/FreeMemoryResponse";
   uint32 value = 1;
 }
 
 message Capabilities {
-  option (msg_cloud_topic) = "evt/SystemService/Capabilities";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/Capabilities";
   uint32 ver = 1;
   uint32 arch = 2;
   uint32 dig = 3;
@@ -82,7 +82,7 @@ message PinSubscribeResponse {
 }
 
 message PinUpdateEvent {
-  option (msg_cloud_topic) = "evt/GpioService/PinUpdateEvent";
+  option (msg_cloud_topic) = "evt/rpc.pb.GpioService/PinUpdateEvent";
   uint32 pin = 1;
   uint32 value = 2;
   uint32 timestamp_micros = 3;
@@ -196,7 +196,7 @@ message SpiTransfer {
 }
 
 message SpiTransferResponse {
-  option (msg_cloud_topic) = "res/SpiService/Transfer";
+  option (msg_cloud_topic) = "res/rpc.pb.SpiService/Transfer";
   bytes data = 1;
 }
 
@@ -255,7 +255,7 @@ message McuStatusCount {
 }
 
 message DaemonMetrics {
-  option (msg_cloud_topic) = "evt/SystemService/Metrics";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/Metrics";
   uint32 cloud_queue_depth = 1 [(telemetry_metric) = {
     prometheus_name: "mcubridge_device_cloud_queue_depth"
     prometheus_help: "Current cloud queue depth on device"
@@ -511,7 +511,7 @@ service FileSystemService {
 
 service MailboxService {
   rpc Push(rpc.pb.MailboxPush) returns (rpc.pb.Empty) {
-    option (cloud_topic) = "evt/MailboxService/Push";
+    option (cloud_topic) = "evt/rpc.pb.MailboxService/Push";
     option (auth_field) = "mailbox_write";
   }
   rpc Read(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse) {
@@ -519,7 +519,7 @@ service MailboxService {
   }
   rpc Available(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxAvailableResponse);
   rpc Processed(rpc.pb.MailboxProcessed) returns (rpc.pb.Empty) {
-    option (cloud_topic) = "evt/MailboxService/Processed";
+    option (cloud_topic) = "evt/rpc.pb.MailboxService/Processed";
   }
 }
 

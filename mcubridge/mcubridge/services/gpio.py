@@ -131,7 +131,7 @@ class GpioService:
         # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
         await self._runtime.enqueue_cloud(
             create_queued_publish(
-                topic_path(state.cloud_topic_prefix, "evt", "GpioService", "PinUpdateEvent", str(event.pin)),
+                topic_path(state.cloud_topic_prefix, "evt", "rpc.pb.GpioService", "PinUpdateEvent", str(event.pin)),
                 str(event.value).encode("utf-8"),
                 message_expiry_interval=CLOUD_EXPIRY_PIN,
             )

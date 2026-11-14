@@ -153,7 +153,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
     on_proc: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_proc(1, mcu_wire_pb2.MailboxProcessed(message_id=42))
     assert len(captured) == 1
-    assert captured[0].topic_name == f"{state.cloud_topic_prefix}/evt/MailboxService/Processed"
+    assert captured[0].topic_name == f"{state.cloud_topic_prefix}/evt/rpc.pb.MailboxService/Processed"
 
 
 # -----------------------------------------------------------------------------
@@ -252,7 +252,7 @@ async def test_status_reporting_and_ack(
 
     # Status OK no payload
     await handle_status(Status.OK, 1, b"")
-    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/evt/SystemService/StatusReport"
+    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/evt/rpc.pb.SystemService/StatusReport"
 
     # Status with GenericResponse
     await handle_status(Status.INTERNAL, 2, cloud_gateway_pb2.GenericResponse(status="error", message="fault"))
@@ -278,7 +278,7 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     # SPI transfer response
     on_spi: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_spi(3, mcu_wire_pb2.SpiTransferResponse(data=b"\xaa\x55"))
-    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/res/SpiService/Transfer"
+    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.SpiService/Transfer"
     assert captured[-1].payload == b"\xaa\x55"
 
     # Datastore put with cache None

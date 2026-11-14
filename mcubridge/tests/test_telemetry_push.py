@@ -32,10 +32,10 @@ def mock_bridge_state(test_config: RuntimeConfig) -> RuntimeState:
 @pytest.mark.parametrize(
     ("topic_name", "telemetry_field"),
     [
-        ("br/evt/SystemService/Metrics", "daemon_metrics_blob"),
-        ("br/evt/SystemService/BridgeSnapshot", "bridge_snapshot_blob"),
-        ("br/evt/SystemService/HandshakeSnapshot", "handshake_snapshot_blob"),
-        ("br/evt/SystemService/StatusReport", "system_status_blob"),
+        ("br/evt/rpc.pb.SystemService/Metrics", "daemon_metrics_blob"),
+        ("br/evt/rpc.pb.SystemService/BridgeSnapshot", "bridge_snapshot_blob"),
+        ("br/evt/rpc.pb.SystemService/HandshakeSnapshot", "handshake_snapshot_blob"),
+        ("br/evt/rpc.pb.SystemService/StatusReport", "system_status_blob"),
         ("br/other/topic", "system_status_blob"),
     ],
 )

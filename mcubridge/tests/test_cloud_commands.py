@@ -115,7 +115,7 @@ async def test_publish_cloud_message_wraps_command_response(
         svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
         msg = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="br/res/GpioService/DigitalRead",
+            topic_name="br/res/rpc.pb.GpioService/DigitalRead",
             payload=payload,
             correlation_data=seq_id.to_bytes(8, "big"),
             response_topic="cloud",

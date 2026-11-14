@@ -1482,7 +1482,7 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
     svc.state.topic_authorization = auth
     await svc.handle_request(pub_req)
     # Rejected -> nothing enqueued on res topic
-    assert not any(topic.endswith("/res/GpioService/DigitalWrite") for topic, _ in enqueued)
+    assert not any(topic.endswith("/res/rpc.pb.GpioService/DigitalWrite") for topic, _ in enqueued)
 
 
 async def test_runtime_publish_and_subscribe_console(mock_bridge_service: BridgeService) -> None:
@@ -1525,7 +1525,7 @@ async def test_runtime_publish_and_subscribe_console(mock_bridge_service: Bridge
         q = svc.ipc_requests.get(b"corr1234")
         if q:
             await q.put(
-                cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/res/GpioService/DigitalWrite", payload=b"ok")
+                cloud_gateway_pb2.CloudQueuedPublish(topic_name="br/res/rpc.pb.GpioService/DigitalWrite", payload=b"ok")
             )
 
     with patch.object(svc, "handle_request", side_effect=_handle_and_reply):
@@ -1648,7 +1648,7 @@ async def test_runtime_console_write_both_directions(
     assert mock_pub.await_count == 1
     assert mock_pub.await_args is not None
     published: cloud_gateway_pb2.CloudQueuedPublish = mock_pub.await_args.args[0]
-    assert published.topic_name == f"{svc.state.cloud_topic_prefix}/evt/ConsoleService/Write"
+    assert published.topic_name == f"{svc.state.cloud_topic_prefix}/evt/rpc.pb.ConsoleService/Write"
     assert published.payload == b"hello from mcu"
     assert published.message_expiry_interval == protocol.CLOUD_EXPIRY_CONSOLE
 

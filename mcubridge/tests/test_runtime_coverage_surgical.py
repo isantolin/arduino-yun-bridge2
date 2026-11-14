@@ -62,7 +62,7 @@ async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_brid
     svc.console_queues.append(cq)
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/SystemService/ConsoleWrite", payload=b"hello")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/rpc.pb.ConsoleService/Write", payload=b"hello")
     svc.cloud_publisher = AsyncMock()
     await svc.enqueue_cloud(msg)
 
@@ -79,7 +79,7 @@ async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_b
     svc.cloud_spool = mock_spool
 
     prefix = mock_bridge_state.cloud_topic_prefix
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/SystemService/Metrics", payload=b"data")
+    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/rpc.pb.SystemService/Metrics", payload=b"data")
     spool_fn: Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[bool]] = svc.spool_cloud_message_locked
     res = await spool_fn(msg)
 
@@ -314,7 +314,7 @@ async def test_enqueue_cloud_disabled_noop(test_config: RuntimeConfig, mock_brid
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/rpc.pb.SystemService/Metrics", payload=b"test"
     )
     await svc.enqueue_cloud(msg)
     assert mock_bridge_state.cloud_publish_queue.empty()
@@ -326,7 +326,7 @@ async def test_enqueue_cloud_publish_success(test_config: RuntimeConfig, mock_br
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.publish_cloud_message = AsyncMock(return_value=True)
     msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/rpc.pb.SystemService/Metrics", payload=b"test"
     )
     await svc.enqueue_cloud(msg)
     assert mock_bridge_state.cloud_publish_queue.empty()
@@ -351,7 +351,7 @@ async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, m
     svc.send_cloud_telemetry = AsyncMock(return_value=True)
     logging.getLogger("mcubridge.service").setLevel(logging.DEBUG)
     msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/rpc.pb.SystemService/Metrics", payload=b"test"
     )
     success = await svc.publish_cloud_message(msg)
     assert success is True
@@ -442,7 +442,7 @@ async def test_enqueue_cloud_queue_empty_in_finally(
 
     svc.spool_cloud_message_locked = mock_spool
     msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/Metrics", payload=b"test"
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/rpc.pb.SystemService/Metrics", payload=b"test"
     )
     await svc.enqueue_cloud(msg)
     assert mock_bridge_state.cloud_publish_queue.empty()
@@ -465,7 +465,7 @@ async def test_on_mcu_console_write_no_queues(test_config: RuntimeConfig, mock_b
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.console_queues.clear()
     msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/SystemService/ConsoleWrite", payload=b"hello mcu"
+        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/rpc.pb.ConsoleService/Write", payload=b"hello mcu"
     )
     await svc.enqueue_cloud(msg)
     assert len(svc.console_queues) == 0

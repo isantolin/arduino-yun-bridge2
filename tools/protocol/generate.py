@@ -570,17 +570,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         if f.client_constant and f.default_value is not None
     ]
 
-    topic_auth_map: dict[tuple[str, str], str] = {}
-    for n in (f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields):
-        for prefix in ("bridge_", "gpio_", "system_", "shell_"):
-            if n.startswith(prefix):
-                topic_auth_map[(prefix.removesuffix("_").upper(), n.removeprefix(prefix).upper())] = n
-                break
-        else:
-            parts = n.split("_", 1)
-            if len(parts) == 2:
-                topic_auth_map[(parts[0].upper(), parts[1].upper())] = n
-
     status_reasons = _message_to_dict(opts.Extensions[pb_module.status_reasons])
     for f in pb_module.StatusReasons.DESCRIPTOR.fields:
         status_reasons.setdefault(f.name, f.name)
@@ -589,7 +578,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         "runtime_config_constants": rt_consts,
         "client_runtime_config_constants": cl_rt_consts,
         "runtime_config_fields": cfg_fields,
-        "topic_auth_map": topic_auth_map,
         "capabilities": {c.name: c.value for c in opts.Extensions[pb_module.capabilities]},
         "architectures": {a.name: a.value for a in opts.Extensions[pb_module.architectures]},
         "architecture_display_names": {

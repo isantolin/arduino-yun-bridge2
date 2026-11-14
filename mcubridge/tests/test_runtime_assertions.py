@@ -147,7 +147,7 @@ async def test_mcu_mailbox_push_asserts_cloud(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/evt/MailboxService/Push"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/evt/rpc.pb.MailboxService/Push"
     assert queued_pub.payload == b"pushed_msg"
 
 

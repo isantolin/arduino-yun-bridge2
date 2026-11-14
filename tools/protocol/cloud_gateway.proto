@@ -28,7 +28,7 @@ message SerialLinkSnapshot {
 }
 
 message HandshakeSnapshot {
-  option (msg_cloud_topic) = "evt/SystemService/HandshakeSnapshot";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/HandshakeSnapshot";
   bool synchronised = 1;
   uint32 attempts = 2;
   uint32 successes = 3;
@@ -74,7 +74,7 @@ message SerialFlowSnapshot {
 }
 
 message BridgeSnapshot {
-  option (msg_cloud_topic) = "evt/SystemService/BridgeSnapshot";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/BridgeSnapshot";
   SerialLinkSnapshot serial_link = 1;
   HandshakeSnapshot handshake = 2;
   SerialPipelineSnapshot serial_pipeline = 3;
@@ -126,7 +126,7 @@ message PinControlResponse {
 }
 
 message StatusReport {
-  option (msg_cloud_topic) = "evt/SystemService/StatusReport";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/StatusReport";
   uint32 status = 1;
   string name = 2;
   string description = 3;
@@ -211,7 +211,7 @@ message GenericResponse {
 service ConsoleService {
   rpc Write(rpc.pb.ConsoleWrite) returns (rpc.pb.Empty) {
     option (auth_field) = "console_input";
-    option (cloud_topic) = "evt/ConsoleService/Write";
+    option (cloud_topic) = "evt/rpc.pb.ConsoleService/Write";
     option (method_description) = "Console bytes. Linux -> MCU writes are queued and framed on HDLC_ADDRESS_CONSOLE; MCU -> Linux console frames are published on the cloud topic.";
   }
 }

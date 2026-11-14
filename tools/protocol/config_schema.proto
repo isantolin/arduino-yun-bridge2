@@ -982,7 +982,7 @@ extend google.protobuf.FieldOptions {
 }
 
 enum Status {
-  option (enum_cloud_topic) = "evt/SystemService/StatusReport";
+  option (enum_cloud_topic) = "evt/rpc.pb.SystemService/StatusReport";
   OK = 0 [(status_opts) = {description: "Operation completed successfully."}];
   CANCELLED = 1 [(status_opts) = {description: "Operation was cancelled."}];
   UNKNOWN = 2 [(status_opts) = {description: "Unknown error."}];

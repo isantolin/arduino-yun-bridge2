@@ -473,22 +473,24 @@ void BridgeClass::_serialTask() {
   // this buffer is live, and on the ATmega2560 a full RX_BUFFER_SIZE copy here
   // pushed that call chain past the stack into .bss.
   constexpr size_t kReadChunkSize = 32U;
-  static_assert(kReadChunkSize <= bridge::config::RX_BUFFER_SIZE);
+  static_assert(bridge::config::RX_BUFFER_SIZE % kReadChunkSize == 0U);
+  constexpr size_t kReadPasses = bridge::config::RX_BUFFER_SIZE / kReadChunkSize;
   etl::array<pw::ByteSpan::element_type, kReadChunkSize> chunk;
-  size_t budget = bridge::config::RX_BUFFER_SIZE;
-  while (budget > 0U) {
-    const auto read_result = _arduino_stream.Read(
-        pw::ByteSpan(chunk.data(), etl::min(budget, kReadChunkSize)));
-    if (!read_result.ok() || read_result.value().empty()) break;
+  const etl::array<uint8_t, kReadPasses> passes{};
+  // all_of stops at the first pass that finds no data.
+  etl::all_of(passes.begin(), passes.end(), [this, &chunk](uint8_t) {
+    const auto read_result =
+        _arduino_stream.Read(pw::ByteSpan(chunk.data(), chunk.size()));
+    if (!read_result.ok()) return false;  // no data: DoRead never returns 0 bytes OK
     const pw::ConstByteSpan rx_span = read_result.value();
-    budget -= rx_span.size();
     etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::ByteSpan::element_type b) {
       auto result = _hdlc_decoder.Process(b);
       if (result.ok()) {
         _handleReceivedHdlcFrame(result.value());
       }
     });
-  }
+    return true;
+  });
 
   const int avail = _stream->available();
   if (!_state_flags.test(FLAG_SERIAL_XOFF) &&

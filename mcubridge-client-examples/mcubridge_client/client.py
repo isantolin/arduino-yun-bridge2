@@ -101,10 +101,16 @@ class GatewayConnection:
 class GatewayClient:
     """Direct client communicating with the C++ Gateway via Pigweed GatewayControl."""
 
-    def __init__(self, connection: GatewayConnection, target_device_id: str) -> None:
+    def __init__(
+        self,
+        connection: GatewayConnection,
+        target_device_id: str,
+        *,
+        transfer_manager: PwTransferManager | None = None,
+    ) -> None:
         self.connection = connection
         self.target_device_id = target_device_id
-        self._transfer_manager: PwTransferManager | None = None
+        self._transfer_manager: PwTransferManager | None = transfer_manager
         self._transfer_lock = asyncio.Lock()
 
     def _get_transfer_manager(self) -> PwTransferManager:

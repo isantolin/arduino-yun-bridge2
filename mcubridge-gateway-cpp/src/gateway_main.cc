@@ -379,8 +379,7 @@ class GatewaySession final : public SessionControl,
     socket_.Stop();
     tx_writer_.Stop();
     if (tx_worker_.joinable()) tx_worker_.join();
-    transfer_thread_.Terminate();
-    if (transfer_worker_ != nullptr && transfer_worker_->joinable()) transfer_worker_->join();
+    TerminateTransfer();
     std::cerr << "device=" << device_id_ << " event=session_closed\n";
   }
 
@@ -388,6 +387,12 @@ class GatewaySession final : public SessionControl,
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
+    TerminateTransfer();
+  }
+
+  ~GatewaySession() override {
+    stopping_.store(true);
+    TerminateTransfer();
   }
 
   pw::Status Dispatch(
@@ -460,6 +465,18 @@ class GatewaySession final : public SessionControl,
   }
 
  private:
+  void TerminateTransfer() {
+    bool expected = false;
+    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
+      if (transfer_worker_ != nullptr) {
+        transfer_thread_.Terminate();
+        if (transfer_worker_->joinable()) {
+          transfer_worker_->join();
+        }
+      }
+    }
+  }
+
   void TransmitLoop() {
     std::vector<std::byte> frame;
     while (!stopping_.load()) {
@@ -521,6 +538,7 @@ class GatewaySession final : public SessionControl,
   DeviceTelemetryService telemetry_service_;
   mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
   std::atomic<bool> stopping_{false};
+  std::atomic<bool> transfer_terminated_{false};
   std::thread tx_worker_;
   std::mutex dispatch_mutex_;
 };
@@ -640,8 +658,7 @@ class GatewayClientSession final : public SessionControl {
     socket_.Stop();
     tx_writer_.Stop();
     if (tx_worker_.joinable()) tx_worker_.join();
-    transfer_thread_.Terminate();
-    if (transfer_worker_ != nullptr && transfer_worker_->joinable()) transfer_worker_->join();
+    TerminateTransfer();
     std::cerr << "client=" << client_id_ << " event=session_closed\n";
   }
 
@@ -649,18 +666,26 @@ class GatewayClientSession final : public SessionControl {
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
-    transfer_thread_.Terminate();
+    TerminateTransfer();
   }
 
   ~GatewayClientSession() override {
     stopping_.store(true);
-    transfer_thread_.Terminate();
-    if (transfer_worker_ != nullptr && transfer_worker_->joinable()) {
-      transfer_worker_->join();
-    }
+    TerminateTransfer();
   }
 
  private:
+  void TerminateTransfer() {
+    bool expected = false;
+    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
+      if (transfer_worker_ != nullptr) {
+        transfer_thread_.Terminate();
+        if (transfer_worker_->joinable()) {
+          transfer_worker_->join();
+        }
+      }
+    }
+  }
   void TransmitLoop() {
     std::vector<std::byte> frame;
     while (!stopping_.load()) {
@@ -711,6 +736,7 @@ class GatewayClientSession final : public SessionControl {
   pw::hdlc::Decoder decoder_;
   std::string client_id_;
   std::atomic<bool> stopping_{false};
+  std::atomic<bool> transfer_terminated_{false};
   std::thread tx_worker_;
 };
 

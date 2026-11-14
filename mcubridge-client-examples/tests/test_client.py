@@ -576,16 +576,14 @@ async def test_gateway_client_health_duplicate_callbacks() -> None:
     assert res == mock_resp
 
 
-async def test_gateway_client_transfer_read_and_write(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_gateway_client_transfer_read_and_write() -> None:
     mock_conn = MagicMock()
     mock_transfer_service = MagicMock()
     mock_conn.rpc_client.channel.return_value.rpcs.pw.transfer.Transfer = mock_transfer_service
-    client = GatewayClient(mock_conn, target_device_id="dev-test")
-
     mock_manager = MagicMock()
     mock_manager.read.return_value = b"transfer_data"
     mock_manager.write.return_value = None
-    monkeypatch.setattr(client, "_get_transfer_manager", lambda: mock_manager)
+    client = GatewayClient(mock_conn, target_device_id="dev-test", transfer_manager=mock_manager)
 
     read_data = await client.transfer_read(1)
     assert read_data == b"transfer_data"

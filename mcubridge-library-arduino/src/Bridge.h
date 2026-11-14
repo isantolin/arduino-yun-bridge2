@@ -31,29 +31,7 @@
 #undef round
 #endif
 
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
-#else
-#include <Pigweed.h>
-#include <pw_bytes/span.h>
-#include <pw_checksum/crc32.h>
-#include <pw_chrono/system_clock.h>
-#include <pw_containers/vector.h>
-#include <pw_function/function.h>
-#include <pw_hdlc/decoder.h>
-#include <pw_hdlc/encoder.h>
-#include <pw_hdlc/rpc_channel.h>
-#include <pw_log/log.h>
-#include <pw_log_backend/log_backend.h>
-#include <pw_result/result.h>
-#include <pw_status/status.h>
-#include <pw_status/try.h>
-#include <pw_stream/memory_stream.h>
-#include <pw_stream/stream.h>
-#include <pw_string/string.h>
-#include <pw_tokenizer/hash.h>
-#include <pw_varint/varint.h>
-#endif
 #include <wolfssl.h>
 
 #include "hal/arduino_stream.h"

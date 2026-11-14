@@ -13,14 +13,7 @@
 #undef min
 #undef max
 #undef round
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
-#else
-#include <Pigweed.h>
-#include <pw_result/result.h>
-#include <pw_span/span.h>
-#include <pw_status/status.h>
-#endif
 #include <etl/string_view.h>
 #include <stdint.h>
 

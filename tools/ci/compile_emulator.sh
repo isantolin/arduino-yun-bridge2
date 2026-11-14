@@ -34,7 +34,7 @@ echo "[emulator] Installing library dependencies..."
 "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-PIGWEED_PATH="$ARDUINO_LIBS/Pigweed"
+PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
 if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
@@ -116,8 +116,10 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
     "${WOLF_OBJECTS[@]}" \
-    "$PIGWEED_PATH/src/system_clock_arduino.cpp" \
-    "$PIGWEED_PATH/src/log_arduino.cpp" \
+    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
+    "$PIGWEED_PATH/src/assert_avr.cpp" \
+    "$PIGWEED_PATH/src/system_clock_avr.cpp" \
+    "$PIGWEED_PATH/src/log_avr.cpp" \
     "${PIGWEED_RPC_SOURCES[@]}" \
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
@@ -163,8 +165,10 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
     "${WOLF_OBJECTS[@]}" \
-    "$PIGWEED_PATH/src/system_clock_arduino.cpp" \
-    "$PIGWEED_PATH/src/log_arduino.cpp" \
+    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
+    "$PIGWEED_PATH/src/assert_avr.cpp" \
+    "$PIGWEED_PATH/src/system_clock_avr.cpp" \
+    "$PIGWEED_PATH/src/log_avr.cpp" \
     "${PIGWEED_RPC_SOURCES[@]}" \
     "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
     "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \

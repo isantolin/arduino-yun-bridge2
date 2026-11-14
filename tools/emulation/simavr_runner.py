@@ -91,10 +91,18 @@ def spawn_simavr(
     simavr_proc: subprocess.Popen[str] | None = None
 
     if harness_bin and harness_bin.exists():
-        simavr_cmd = [str(harness_bin), str(firmware_path), mcu, str(frequency)]
+        simavr_cmd = [
+            str(harness_bin),
+            "--firmware",
+            str(firmware_path),
+            "--mcu",
+            mcu,
+            "--frequency",
+            str(frequency),
+        ]
         if uart_id:
-            simavr_cmd.append(uart_id)
-        logger.info("Spawning simavr_harness", cmd=simavr_cmd)
+            simavr_cmd.extend(["--uart", uart_id])
+        logger.info("Spawning pw_emu_avr simavr_pty_runner", cmd=simavr_cmd)
         simavr_proc = subprocess.Popen(
             simavr_cmd,
             stdout=subprocess.PIPE,
@@ -137,8 +145,8 @@ def spawn_simavr(
 
 
 def build_simavr_harness() -> Path | None:
-    harness_src = repo_root / "tools" / "emulation" / "simavr_harness.cpp"
-    harness_bin = repo_root / "build" / "simavr" / "simavr_harness"
+    harness_src = repo_root / "third_party" / "avr_pigweed_port" / "tools" / "pw_emu_avr" / "simavr_pty_runner.c"
+    harness_bin = repo_root / "build" / "simavr" / "simavr_pty_runner"
     if not harness_src.exists():
         return None
 
@@ -147,40 +155,14 @@ def build_simavr_harness() -> Path | None:
 
     harness_bin.parent.mkdir(parents=True, exist_ok=True)
 
-    arduino_etl_include: Path | None = None
-    search_roots = [
-        Path.home() / "Arduino" / "libraries",
-        Path("/home/runner/Arduino/libraries"),
-        repo_root / ".dummy_libs",
-        Path.home() / ".local" / "include",
-        Path("/usr/local/include"),
-        Path("/usr/include"),
-    ]
-
-    for root in search_roots:
-        if not root.is_dir():
-            continue
-        if (root / "etl" / "algorithm.h").is_file():
-            arduino_etl_include = root
-            break
-        for match in root.rglob("etl/algorithm.h"):
-            candidate_dir = match.parent.parent
-            if (candidate_dir / "etl" / "algorithm.h").is_file():
-                arduino_etl_include = candidate_dir
-                break
-        if arduino_etl_include is not None:
-            break
-
-    if arduino_etl_include is None:
-        arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
-
     compile_cmd = [
-        "g++",
-        "-std=c++17",
+        "gcc",
+        "-std=c11",
         "-O2",
-        "-DETL_NO_STL",
-        "-I",
-        str(arduino_etl_include),
+        "-Wall",
+        "-Wextra",
+        "-I/usr/include/simavr",
+        "-I/usr/local/include/simavr",
         str(harness_src),
         "-lsimavr",
         "-lutil",
@@ -190,11 +172,11 @@ def build_simavr_harness() -> Path | None:
     try:
         res = subprocess.run(compile_cmd, capture_output=True, text=True, check=False)
         if res.returncode == 0 and harness_bin.exists():
-            logger.info("Compiled ETL-compliant simavr_harness binary", binary=str(harness_bin))
+            logger.info("Compiled pw_emu_avr simavr_pty_runner binary", binary=str(harness_bin))
             return harness_bin
-        logger.warning("Failed to compile simavr_harness via g++", stderr=res.stderr)
+        logger.warning("Failed to compile simavr_pty_runner via gcc", stderr=res.stderr)
     except (subprocess.SubprocessError, OSError) as exc:
-        logger.warning("g++ not available to build simavr_harness", error=str(exc))
+        logger.warning("gcc not available to build simavr_pty_runner", error=str(exc))
     return None
 
 

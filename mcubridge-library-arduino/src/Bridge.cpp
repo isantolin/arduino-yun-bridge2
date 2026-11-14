@@ -348,7 +348,7 @@ void BridgeClass::_initializeRuntime() {
   _state_flags.reset();
   _clearLinkSession();
 
-  pw_log_SetLogSink(
+  pw_log_avr_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
         (void)Bridge.sendLogStream(pw::span<const uint8_t>(log_data, size));
       });

@@ -352,7 +352,8 @@ def run_client_script(
         logger.error("Script exited with error", script=script_path.name, code=exc.code)
         return False
     except (OSError, RuntimeError, ValueError, TypeError, AssertionError) as exc:
-        logger.error("Script execution failed", script=script_path.name, error=str(exc))
+        err_msg = str(exc) or type(exc).__name__
+        logger.error("Script execution failed", script=script_path.name, error=err_msg, exc_info=True)
         return False
 
 

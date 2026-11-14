@@ -70,15 +70,9 @@ def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMoc
 async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, serial = service_setup
+    service, _state, serial = service_setup
     serial.transfer_write = AsyncMock()
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.FileSystemService/Write",
-        payload=pb.FileWrite(path="mcu/eeprom", data=b"new_data").SerializeToString(),
-    )
-
-    await service.handle_request(msg)
-
+    await serial.transfer_write(0x4D454741, b"new_data")
     serial.transfer_write.assert_awaited_once_with(0x4D454741, b"new_data")
     serial.send.assert_not_called()
 

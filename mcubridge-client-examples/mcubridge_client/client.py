@@ -14,13 +14,15 @@ import structlog
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
+from pw_transfer import transfer_pb2
+from pw_transfer.client import Manager as PwTransferManager
 
 from . import cloud_gateway_pb2, mcu_wire_pb2
 from .gateway import gateway_control_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
     PwRpcService.from_descriptor(desc)
-    for mod in (mcu_wire_pb2, cloud_gateway_pb2, gateway_control_pb2)
+    for mod in (mcu_wire_pb2, cloud_gateway_pb2, gateway_control_pb2, transfer_pb2)
     for desc in cast(Any, mod).DESCRIPTOR.services_by_name.values()
 )
 
@@ -44,12 +46,14 @@ class GatewayConnection:
         timeout: float = 10.0,
     ) -> None:
         raw_sock = socket.create_connection((host, port), timeout=timeout)
+        self.sock: socket.socket | ssl.SSLSocket
         if ssl_context is not None:
             self.sock = ssl_context.wrap_socket(raw_sock, server_hostname="localhost")
         else:
             self.sock = raw_sock
 
         self.running = True
+        self._send_lock = threading.Lock()
         self.decoder = pw_hdlc.decode.FrameDecoder()
         self.rpc_client = PwRpcClient(
             PwCallbackClientImpl(),
@@ -61,7 +65,8 @@ class GatewayConnection:
 
     def send_frame(self, data: bytes) -> None:
         if self.sock:
-            self.sock.sendall(pw_hdlc.encode.ui_frame(1, data))
+            with self._send_lock:
+                self.sock.sendall(pw_hdlc.encode.ui_frame(1, data))
 
     def _reader_loop(self) -> None:
         while self.running:
@@ -99,6 +104,33 @@ class GatewayClient:
     def __init__(self, connection: GatewayConnection, target_device_id: str) -> None:
         self.connection = connection
         self.target_device_id = target_device_id
+        self._transfer_manager: PwTransferManager | None = None
+        self._transfer_lock = asyncio.Lock()
+
+    def _get_transfer_manager(self) -> PwTransferManager:
+        if self._transfer_manager is None:
+            transfer_service = self.connection.rpc_client.channel(1).rpcs.pw.transfer.Transfer
+            self._transfer_manager = PwTransferManager(
+                transfer_service,
+                default_response_timeout_s=5.0,
+                initial_response_timeout_s=5.0,
+                max_retries=3,
+                max_lifetime_retries=60,
+                max_chunk_size_bytes=1024,
+            )
+        return self._transfer_manager
+
+    async def transfer_read(self, resource_id: int) -> bytes:
+        """Read a transfer resource using upstream Pigweed pw_transfer."""
+        async with self._transfer_lock:
+            manager = self._get_transfer_manager()
+            return await asyncio.to_thread(manager.read, resource_id)
+
+    async def transfer_write(self, resource_id: int, data: bytes) -> None:
+        """Write a transfer resource using upstream Pigweed pw_transfer."""
+        async with self._transfer_lock:
+            manager = self._get_transfer_manager()
+            await asyncio.to_thread(manager.write, resource_id, data)
 
     async def dispatch(
         self,

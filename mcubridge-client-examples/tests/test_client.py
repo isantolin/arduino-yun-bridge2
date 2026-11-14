@@ -574,3 +574,22 @@ async def test_gateway_client_health_duplicate_callbacks() -> None:
 
     res = await task
     assert res == mock_resp
+
+
+async def test_gateway_client_transfer_read_and_write() -> None:
+    mock_conn = MagicMock()
+    mock_transfer_service = MagicMock()
+    mock_conn.rpc_client.channel.return_value.rpcs.pw.transfer.Transfer = mock_transfer_service
+    client = GatewayClient(mock_conn, target_device_id="dev-test")
+
+    mock_manager = MagicMock()
+    mock_manager.read.return_value = b"transfer_data"
+    mock_manager.write.return_value = None
+    client._transfer_manager = mock_manager
+
+    read_data = await client.transfer_read(1)
+    assert read_data == b"transfer_data"
+    mock_manager.read.assert_called_once_with(1)
+
+    await client.transfer_write(1, b"new_data")
+    mock_manager.write.assert_called_once_with(1, b"new_data")

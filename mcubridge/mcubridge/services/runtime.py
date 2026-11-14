@@ -19,7 +19,6 @@ import anyio
 import anyio.to_thread
 import lmdb
 import psutil
-from pw_transfer.client import Error as PwTransferError
 import structlog
 import tenacity
 from google.protobuf.message import (
@@ -88,8 +87,6 @@ from ..transport.serial import SerialTransport
 logger = structlog.get_logger("mcubridge.service")
 
 _STATUS_VALUES: Final = {s.value for s in Status}
-_MCU_EEPROM_RESOURCE_ID: Final = 0x4D454741
-_MCU_EEPROM_RESOURCE_PATH: Final = "eeprom"
 
 
 def _directory_usage_bytes(root: str) -> int:
@@ -679,22 +676,8 @@ class BridgeService:
         src = data if from_mcu else path_or_req
         path = src.path if isinstance(src, mcu_wire_pb2.FileWrite) else str(path_or_req)
         payload_data = src.data if isinstance(src, mcu_wire_pb2.FileWrite) else cast(bytes, data)
-        clean = path.lstrip("/")
-        if clean.startswith("mcu/"):
-            mcu_path = clean.removeprefix("mcu/").strip("/")
-            serial = self.serial
-            if mcu_path != _MCU_EEPROM_RESOURCE_PATH or serial is None:
-                ok = False
-            else:
-                try:
-                    await serial.transfer_write(_MCU_EEPROM_RESOURCE_ID, payload_data)
-                    ok = True
-                except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
-                    logger.warning("MCU EEPROM pw_transfer write failed", error=str(exc))
-                    ok = False
-        else:
-            safe_path = self._get_safe_path(path)
-            ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
+        safe_path = self._get_safe_path(path)
+        ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
         if from_mcu:
             await self.send_mcu_status(Status.OK if ok else Status.PERMISSION_DENIED, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
@@ -704,30 +687,15 @@ class BridgeService:
     ) -> cloud_gateway_pb2.GenericResponse:
         src = p if p is not None else path_or_req
         path = src.path if isinstance(src, mcu_wire_pb2.FileRemove) else str(path_or_req)
-        clean = path.lstrip("/")
-        if clean.startswith("mcu/"):
-            mcu_path = clean.removeprefix("mcu/").strip("/")
-            serial = self.serial
-            if mcu_path == _MCU_EEPROM_RESOURCE_PATH or serial is None:
-                # The EEPROM is a fixed-size raw transfer resource, not a file.
-                ok = False
-            else:
-                ok = bool(
-                    await serial.send(
-                        "rpc.pb.FileSystemService/Remove",
-                        mcu_wire_pb2.FileRemove(path=mcu_path),
-                    )
-                )
+        if not (safe_path := self._get_safe_path(path)):
+            ok = False
         else:
-            if not (safe_path := self._get_safe_path(path)):
+            try:
+                await anyio.Path(safe_path).unlink()
+                ok = True
+            except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
+                logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
                 ok = False
-            else:
-                try:
-                    await anyio.Path(safe_path).unlink()
-                    ok = True
-                except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
-                    logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
-                    ok = False
         if p is not None:
             await self.send_mcu_status(Status.OK if ok else Status.NOT_FOUND, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")

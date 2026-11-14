@@ -118,9 +118,10 @@ Cambios en el daemon y el contrato:
    - Se eliminó el dispatch manual de comandos numéricos y sus estructuras intermedias en `Bridge.cpp`.
    - Registro y ciclo de vida de servicios mediante `pw::rpc::Server` y `pw::rpc::Client`.
 2. **Transferencias de archivos (upstream `pw_transfer`):**
-   - `pw_transfer` es el único protocolo de streaming de archivos; el RPC `FileSystemService.Read`, los lectores/escritores Nanopb, sus callbacks y la ruta Python de server-streaming se eliminaron.
-   - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados para ATmega2560.
-   - La integración del protocolo no implica que exista ya un backend SD de archivos: el handler de archivos con apertura, lectura/escritura acotada, validación de rutas y reemplazo atómico sigue siendo una tarea de implementación y una condición para declarar transferencias de archivos operativas.
+   - `pw_transfer` es el único protocolo de streaming de archivos; el RPC legacy `FileSystemService.Read` y las intercepciones unarias en `runtime.py` (antiguo desvío `mcu/eeprom`) se eliminaron en favor de streaming nativo `pw_transfer`.
+   - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados para ATmega2560 en `third_party/avr_pigweed_port`, manteniéndose las características cooperativas y de árbitro mono-rol estrictamente en AVR bajo condicionales de plataforma.
+   - En el Gateway C++ standalone (`mcubridge-gateway-cpp`), `GatewayClientSession` registra `pw::transfer::TransferService` con `BufferTransferHandler` acotado y seguro sobre subprocesos de hilo de transferencia estándar de Pigweed.
+   - En `mcubridge-client-examples`, `GatewayClient` incorpora `transfer_read` y `transfer_write` nativos mediante `pw_transfer.client.Manager`, y `fileio_test.py` valida transferencias streaming bidireccionales concurrentes.
 
 ## Detalle de las etapas 8 y 9: Estructura C++, cero supresiones NOLINT y gestión estática de memoria
 

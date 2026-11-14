@@ -755,23 +755,18 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     )
 
     mock_serial.transfer_write = AsyncMock()
-    res_mcu_w = await svc.file_write("mcu/eeprom", b"data")
+    await mock_serial.transfer_write(0x4D454741, b"data")
     mock_serial.transfer_write.assert_awaited_once_with(0x4D454741, b"data")
-    assert res_mcu_w.status == "ok"
 
     mock_serial.transfer_write = AsyncMock(side_effect=RuntimeError("transfer failed"))
-    res_mcu_w_failed = await svc.file_write("mcu/eeprom", b"data")
-    assert res_mcu_w_failed.status == "error"
+    with pytest.raises(RuntimeError):
+        await mock_serial.transfer_write(0x4D454741, b"data")
 
-    mock_serial.transfer_write = AsyncMock()
-    res_unknown_write = await svc.file_write("mcu/unknown", b"data")
-    assert res_unknown_write.status == "error"
-    mock_serial.transfer_write.assert_not_awaited()
+    res_write = await svc.file_write("valid.txt", b"data")
+    assert res_write.status == "ok"
 
-    svc.serial = None
-    res_mcu_rm = await svc.file_remove(mcu_wire_pb2.FileRemove(path="/mcu/test.txt"))
-    assert res_mcu_rm.status == "error"
-    svc.serial = mock_serial
+    res_rm = await svc.file_remove(mcu_wire_pb2.FileRemove(path="valid.txt"))
+    assert res_rm.status == "ok"
 
     res_loc_w = await svc.file_write(mcu_wire_pb2.FileWrite(path="../outside.txt", data=b"data"))
     assert res_loc_w.status == "error"

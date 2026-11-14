@@ -35,10 +35,12 @@
 #include "pw_rpc/server.h"
 #include "pw_rpc/packet_meta.h"
 #include "pw_status/status.h"
+#include "pw_stream/memory_stream.h"
 #include "pw_stream/stream.h"
 #include "pw_thread/thread.h"
 #include "pw_thread_stl/options.h"
 #include "pw_transfer/client.h"
+#include "pw_transfer/handler.h"
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"
 #include "gateway/gateway_control.rpc.pwpb.h"
@@ -553,6 +555,40 @@ class GatewayControlService final
   ClientSessionRegistry& clients_;
 };
 
+class BufferTransferHandler final : public pw::transfer::Handler {
+ public:
+  BufferTransferHandler(uint32_t resource_id, pw::ByteSpan storage)
+      : Handler(resource_id, static_cast<pw::stream::Reader*>(nullptr)),
+        storage_(storage) {}
+
+  pw::Status PrepareRead() override {
+    reader_.emplace(pw::ConstByteSpan(storage_.data(), valid_bytes_));
+    set_reader(*reader_);
+    return pw::OkStatus();
+  }
+
+  pw::Status PrepareWrite() override {
+    writer_.emplace(storage_);
+    set_writer(*writer_);
+    return pw::OkStatus();
+  }
+
+  pw::Status FinalizeWrite(pw::Status status) override {
+    if (status.ok() && writer_.has_value()) {
+      valid_bytes_ = writer_->bytes_written();
+    }
+    return status;
+  }
+
+  size_t ResourceSize() const override { return valid_bytes_; }
+
+ private:
+  pw::ByteSpan storage_;
+  size_t valid_bytes_{0};
+  std::optional<pw::stream::MemoryReader> reader_;
+  std::optional<pw::stream::MemoryWriter> writer_;
+};
+
 class GatewayClientSession final : public SessionControl {
  public:
   GatewayClientSession(SSL* ssl,
@@ -565,6 +601,8 @@ class GatewayClientSession final : public SessionControl {
         channel_output_(tx_writer_, kRpcHdlcAddress),
         channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         rpc_server_(channels_),
+        transfer_thread_(pw::ByteSpan(transfer_chunk_), pw::ByteSpan(transfer_encode_)),
+        transfer_service_(transfer_thread_, kTransferWindowBytes),
         decoder_(pw::ByteSpan(decoder_storage_)),
         client_id_(std::move(client_id)) {}
   GatewayClientSession(const GatewayClientSession&) = delete;
@@ -588,6 +626,13 @@ class GatewayClientSession final : public SessionControl {
     } registration{clients_, client_id_, this};
 
     rpc_server_.RegisterService(control_service_);
+    rpc_server_.RegisterService(transfer_service_);
+    transfer_service_.RegisterHandler(default_transfer_handler_);
+    transfer_service_.RegisterHandler(eeprom_transfer_handler_);
+
+    pw::thread::stl::Options transfer_options;
+    transfer_worker_ = std::make_unique<pw::thread::Thread>(
+        transfer_options, transfer_thread_.AsFunction());
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "client=" << client_id_ << " event=session_open\n";
     ReceiveLoop();
@@ -595,6 +640,8 @@ class GatewayClientSession final : public SessionControl {
     socket_.Stop();
     tx_writer_.Stop();
     if (tx_worker_.joinable()) tx_worker_.join();
+    transfer_thread_.Terminate();
+    if (transfer_worker_ != nullptr && transfer_worker_->joinable()) transfer_worker_->join();
     std::cerr << "client=" << client_id_ << " event=session_closed\n";
   }
 
@@ -602,6 +649,15 @@ class GatewayClientSession final : public SessionControl {
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
+    transfer_thread_.Terminate();
+  }
+
+  ~GatewayClientSession() override {
+    stopping_.store(true);
+    transfer_thread_.Terminate();
+    if (transfer_worker_ != nullptr && transfer_worker_->joinable()) {
+      transfer_worker_->join();
+    }
   }
 
  private:
@@ -642,6 +698,15 @@ class GatewayClientSession final : public SessionControl {
   HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> channels_;
   pw::rpc::Server rpc_server_;
+  std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
+  std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
+  pw::transfer::Thread<1, 1> transfer_thread_;
+  pw::transfer::TransferService transfer_service_;
+  std::unique_ptr<pw::thread::Thread> transfer_worker_;
+  std::array<std::byte, 64 * 1024> client_transfer_buffer_{};
+  BufferTransferHandler default_transfer_handler_{1, pw::ByteSpan(client_transfer_buffer_)};
+  std::array<std::byte, 4096> client_eeprom_buffer_{};
+  BufferTransferHandler eeprom_transfer_handler_{0x4D454741, pw::ByteSpan(client_eeprom_buffer_)};
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
   pw::hdlc::Decoder decoder_;
   std::string client_id_;

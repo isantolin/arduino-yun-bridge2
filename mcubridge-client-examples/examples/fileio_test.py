@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Test MPU file write/remove through the Gateway (file read is not yet in the GatewayControl contract)."""
+"""Example: Test pw_transfer streaming and MPU file write/remove through the Gateway."""
 
 from __future__ import annotations
 
@@ -22,11 +22,23 @@ async def run_test(
 ) -> None:
 
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
+        # --- 1. Test pw_transfer streaming read/write ---
+        transfer_resource_id: int = 1
+        transfer_payload: bytes = b"hello from pw_transfer streaming fileio_test"
+        logger.info("Writing resource via pw_transfer", resource_id=transfer_resource_id, size=len(transfer_payload))
+        await stub.transfer_write(transfer_resource_id, transfer_payload)
+
+        logger.info("Reading resource via pw_transfer", resource_id=transfer_resource_id)
+        read_back = await stub.transfer_read(transfer_resource_id)
+        logger.info("Resource read back successfully", size=len(read_back), matches=read_back == transfer_payload)
+        if read_back != transfer_payload:
+            raise RuntimeError(f"pw_transfer mismatch: expected {transfer_payload!r}, got {read_back!r}")
+
+        # --- 2. Test MPU File Write / Remove ---
         test_filename: str = "test_file.txt"
         test_content: str = "hello from async fileio_test"
 
         try:
-            # --- Test File Write ---
             logger.info("Writing file", filename=test_filename, content=test_content)
             await stub.FileWrite(
                 mcu_wire_pb2.FileWrite(
@@ -34,10 +46,8 @@ async def run_test(
                     data=test_content.encode("utf-8"),
                 )
             )
-            logger.info("File written; MPU file read is not exposed by the Gateway contract yet (ADR-0003)")
-
+            logger.info("File written to MPU safe path")
         finally:
-            # --- Test File Remove ---
             logger.info("Removing file", filename=test_filename)
             await stub.FileRemove(
                 mcu_wire_pb2.FileRemove(

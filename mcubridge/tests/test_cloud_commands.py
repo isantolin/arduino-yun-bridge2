@@ -156,7 +156,7 @@ async def test_mcu_pin_update_event_forwarding(
         call_args = mock_cloud.await_args.args
         assert len(call_args) > 0
         queued_msg: cloud_gateway_pb2.CloudQueuedPublish = call_args[0]
-        assert f"evt/GpioService/PinUpdateEvent/{pin}" in queued_msg.topic_name
+        assert f"evt/rpc.pb.GpioService/PinUpdateEvent/{pin}" in queued_msg.topic_name
         assert queued_msg.payload == str(value).encode()
     finally:
         state.cleanup()

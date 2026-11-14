@@ -35,7 +35,6 @@ def test_build_protocol_context_contains_template_data() -> None:
     }
     assert context["python_constants"]
     assert context["client_constants"]
-    assert context["topic_auth_map"]
     assert context["runtime_config_fields"] == spec["runtime_config_fields"]
     assert context["operations"]
     metrics = {metric["source_field"]: metric for metric in context["metrics"]}

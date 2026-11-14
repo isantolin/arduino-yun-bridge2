@@ -122,8 +122,6 @@ def test_every_mcu_rpc_method_has_an_operation_spec() -> None:
     seen_methods: set[str] = set()
     for file_descriptor in descriptors:
         for service in file_descriptor.services_by_name.values():
-            if service.name in {"CloudBridge", "LocalBridge"}:
-                continue
             for method in service.methods:
                 full_key = f"{service.full_name}/{method.name}"
                 assert full_key not in seen_methods

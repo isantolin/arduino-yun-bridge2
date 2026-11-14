@@ -5,10 +5,6 @@
 mcubridge-library-arduino/src/pw_rpc/
 *_pb2.py
 *_pb2.pyi
-mcubridge_grpc.py
-cloud_gateway_grpc.py
-config_schema_grpc.py
-mcu_wire_grpc.py
 validate.pb.c
 validate.pb.h
 validate_pb2.py

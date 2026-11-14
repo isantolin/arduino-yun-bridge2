@@ -22,8 +22,8 @@
 #include <wolfssl/wolfcrypt/misc.h>
 #include <wolfssl/wolfcrypt/settings.h>
 
-#include "protocol/rpc_protocol.h"
 #include "../src/security/security.h"
+#include "protocol/rpc_protocol.h"
 
 namespace {
 
@@ -184,8 +184,8 @@ void test_long_handshake_secret_known_answer(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
       secret, kLongHandshakeNonce, session_keys));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(),
-                                session_keys.data(), kExpectedHostToMcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), session_keys.data(),
+                                kExpectedHostToMcu.size());
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
                                 session_keys.data() + kExpectedHostToMcu.size(),
                                 kExpectedMcuToHost.size());
@@ -203,8 +203,8 @@ void test_session_key_derivation_known_answer(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
       kVectorSecret, kVectorNonce, session_keys));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(),
-                                session_keys.data(), kExpectedHostToMcu.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), session_keys.data(),
+                                kExpectedHostToMcu.size());
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
                                 session_keys.data() + kExpectedHostToMcu.size(),
                                 kExpectedMcuToHost.size());
@@ -231,8 +231,8 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
       pw::span<const uint8_t>(), handshake_nonce, session_keys));
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
       kSecret, short_handshake_nonce, session_keys));
-  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      kSecret, handshake_nonce, short_session_keys));
+  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(kSecret, handshake_nonce,
+                                                       short_session_keys));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
       pw::span<const uint8_t>(), handshake_nonce, handshake_tag));

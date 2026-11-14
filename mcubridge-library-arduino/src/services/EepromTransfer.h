@@ -2,10 +2,9 @@
 
 #if defined(__AVR_ATmega2560__)
 
+#include <pw_transfer/transfer.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include <pw_transfer/transfer.h>
 
 namespace bridge::services {
 

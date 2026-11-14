@@ -68,7 +68,6 @@ void test_fsm_handshake_timeout_to_fault() {
   TEST_ASSERT(ba.isFault());
 }
 
-
 void test_fsm_baudrate_change_round_trip() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -83,9 +82,8 @@ void test_fsm_baudrate_change_round_trip() {
   TEST_ASSERT(ba.isSynchronized());
 
   ba.trigger(bridge::fsm::EvBaudrateApplied());
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(bridge::fsm::StateId::SYNCHRONIZED),
-      static_cast<int>(ba.get_state_id()));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(bridge::fsm::StateId::SYNCHRONIZED),
+                        static_cast<int>(ba.get_state_id()));
   TEST_ASSERT(ba.isSynchronized());
 }
 

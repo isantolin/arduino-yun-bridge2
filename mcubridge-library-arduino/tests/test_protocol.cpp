@@ -36,7 +36,8 @@ void test_hdlc_roundtrip_and_crc() {
   pw::hdlc::DecoderBuffer<256> decoder;
   bool frame_found = false;
   for (size_t i = 0; i < encoded_len; ++i) {
-    auto res = decoder.Process(static_cast<pw::ByteSpan::element_type>(out_buf[i]));
+    auto res =
+        decoder.Process(static_cast<pw::ByteSpan::element_type>(out_buf[i]));
     if (res.ok()) {
       frame_found = true;
       TEST_ASSERT_EQUAL_UINT64(1, res.value().address());
@@ -53,7 +54,8 @@ void test_hdlc_roundtrip_and_crc() {
   // Corrupt payload byte
   out_buf[3] ^= 0xFF;
   for (size_t i = 0; i < encoded_len; ++i) {
-    auto res = corrupt_decoder.Process(static_cast<pw::ByteSpan::element_type>(out_buf[i]));
+    auto res = corrupt_decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(out_buf[i]));
     if (res.ok()) {
       frame_found = true;
     }
@@ -74,7 +76,8 @@ void test_hdlc_address_demux() {
     pw::hdlc::DecoderBuffer<256> decoder;
     bool found = false;
     for (size_t i = 0; i < len; ++i) {
-      auto res = decoder.Process(static_cast<pw::ByteSpan::element_type>(frame_buf[i]));
+      auto res = decoder.Process(
+          static_cast<pw::ByteSpan::element_type>(frame_buf[i]));
       if (res.ok()) {
         found = true;
         TEST_ASSERT_EQUAL_UINT64(addr, res.value().address());

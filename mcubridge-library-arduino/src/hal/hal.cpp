@@ -148,7 +148,8 @@ static bool run_sram_march_test() {
 #endif
     etl::fill(march_probe.begin(), march_probe.end(), pat);
     if (!etl::all_of(march_probe.begin(), march_probe.end(),
-                     [pat](uint8_t v) { return v == pat; })) return false;
+                     [pat](uint8_t v) { return v == pat; }))
+      return false;
   }
   return true;
 }
@@ -250,11 +251,12 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
 #define BRIDGE_BOARD_NAME "GENERIC"
 #endif
 #if defined(ARDUINO_ARCH_AVR)
-static const char board_name[] PROGMEM = BRIDGE_BOARD_NAME;
+  static const char board_name[] PROGMEM = BRIDGE_BOARD_NAME;
 #else
-static constexpr char board_name[] = BRIDGE_BOARD_NAME;
+  static constexpr char board_name[] = BRIDGE_BOARD_NAME;
 #endif
-  const size_t len = etl::min(sizeof(board_name) - 1, sizeof(caps.board_name) - 1);
+  const size_t len =
+      etl::min(sizeof(board_name) - 1, sizeof(caps.board_name) - 1);
   for (size_t i = 0; i < len; ++i) {
 #if defined(ARDUINO_ARCH_AVR)
     caps.board_name[i] = static_cast<char>(pgm_read_byte(&board_name[i]));

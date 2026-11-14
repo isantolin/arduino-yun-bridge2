@@ -17,14 +17,15 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
    [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ] || \
    [ ! -f "$SRC_DIR/pb_common.h" ] || \
    [ ! -f "$SRC_DIR/pb_decode.h" ] || \
-   [ ! -f "$SRC_DIR/pb_encode.h" ] || \
-   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/PigweedAVR.h" ]; then
+   [ ! -f "$SRC_DIR/pb_encode.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi
 
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
-PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
 WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
 
 INCLUDES=(
@@ -34,10 +35,9 @@ INCLUDES=(
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
     "-isystem${ETL_INC}"
-    "-isystem${PIGWEED_INC}"
-    "-isystem${ARDUINO_LIBS}/PigweedAVR"
     "-isystem${WOLFSSL_INC}"
     "-isystem${ARDUINO_LIBS}/wolfssl"
+    "${PW_INC_FLAGS[@]}"
 )
 
 COMPILE_FLAGS=(
@@ -47,6 +47,7 @@ COMPILE_FLAGS=(
     "-DETL_NO_STL"
     "-DETL_FORCE_STD_INITIALIZER_LIST"
     "-DWOLFSSL_USER_SETTINGS"
+    "-DPW_RPC_USE_GLOBAL_MUTEX=0"
     "${INCLUDES[@]}"
 )
 

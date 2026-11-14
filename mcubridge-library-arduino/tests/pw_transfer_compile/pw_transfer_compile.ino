@@ -22,23 +22,21 @@ constexpr uint32_t kRemoteResourceId = 0x1002;
 etl::array<pw::byte, 32> resource_bytes{};
 pw::stream::MemoryReader resource_reader{
     pw::ConstByteSpan(resource_bytes.data(), resource_bytes.size())};
-pw::transfer::ReadOnlyHandler resource_handler{
-    kLocalResourceId, resource_reader};
+pw::transfer::ReadOnlyHandler resource_handler{kLocalResourceId,
+                                               resource_reader};
 
 etl::array<pw::byte, 64> client_output_bytes{};
 pw::stream::MemoryWriter client_output{
     pw::ByteSpan(client_output_bytes.data(), client_output_bytes.size())};
 
-void OnClientReadComplete(pw::Status status) {
-  (void)status;
-}
+void OnClientReadComplete(pw::Status status) { (void)status; }
 
 // Retain a real upstream Client::Read call in this compile-only sketch. It is
 // not started during normal execution because Bridge's one Thread<1, 1> may
 // serve or initiate a transfer at a time, never both concurrently.
 void StartRemoteRead() {
-  auto result = Bridge.transferClient().Read(
-      kRemoteResourceId, client_output, OnClientReadComplete);
+  auto result = Bridge.transferClient().Read(kRemoteResourceId, client_output,
+                                             OnClientReadComplete);
   (void)result;
 }
 
@@ -54,6 +52,4 @@ void setup() {
   }
 }
 
-void loop() {
-  Bridge.process();
-}
+void loop() { Bridge.process(); }

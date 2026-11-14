@@ -159,7 +159,8 @@ inline bool extract_next_valid_hdlc_frame(
     const ByteBuffer<N>& buffer, size_t& cursor,
     pw::hdlc::DecoderBuffer<1024>& decoder, pw::hdlc::Frame& out_frame) {
   while (cursor < buffer.len) {
-    auto res = decoder.Process(static_cast<pw::ByteSpan::element_type>(buffer.data[cursor++]));
+    auto res = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(buffer.data[cursor++]));
     if (res.ok()) {
       out_frame = res.value();
       return true;
@@ -295,7 +296,8 @@ inline bool decode_tx_response(const BiStream& stream,
                                NanopbType& out_msg) {
   pw::hdlc::DecoderBuffer<1024> decoder;
   for (size_t i = 0; i < stream.tx_buf.len; ++i) {
-    auto frame = decoder.Process(static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+    auto frame = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
     if (!frame.ok()) continue;
     auto pkt = pw::rpc::internal::Packet::FromBuffer(frame.value().data());
     if (!pkt.ok() ||

@@ -118,7 +118,9 @@ void test_bridge_send_frame() {
       Bridge.sendConsoleStream(pw::span<const uint8_t>(payload.data(), 2)));
   TEST_ASSERT_TRUE(
       Bridge.sendLogStream(pw::span<const uint8_t>(payload.data(), 2)));
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   pw_log_avr_HandleLog(1, payload.data(), payload.size());
+#endif
 
   rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
   sub_req.pin = 13;

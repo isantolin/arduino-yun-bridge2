@@ -1,6 +1,8 @@
 # Protobuf and Nanopb Generated Files
 *.pb.c
 *.pb.h
+*.pwpb.h
+mcubridge-library-arduino/src/pw_rpc/
 *_pb2.py
 *_pb2.pyi
 mcubridge_grpc.py

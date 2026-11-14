@@ -28,8 +28,7 @@ void __attribute__((weak)) handle_error(const etl::exception&) {
 namespace {
 
 uint32_t NowMillis() {
-  return static_cast<uint32_t>(
-      pw::chrono::SystemClock::now().time_since_epoch().count());
+  return static_cast<uint32_t>(::millis());
 }
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -348,10 +347,12 @@ void BridgeClass::_initializeRuntime() {
   _state_flags.reset();
   _clearLinkSession();
 
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   pw_log_avr_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
         (void)Bridge.sendLogStream(pw::span<const uint8_t>(log_data, size));
       });
+#endif
 
   if (_rpc_services_registered) return;
   _rpc_server.RegisterService(g_gpio_service, g_system_service,

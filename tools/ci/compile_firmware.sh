@@ -86,11 +86,15 @@ OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 # Architecture-specific flags & build parameters
 TMP_LOG="$(mktemp /tmp/compile_firmware_XXXXXX.log)"
 STUBS_OBJ=""
+PW_LIB_ARCHIVE=""
 
 cleanup() {
     rm -f "$TMP_LOG"
     if [ -n "$STUBS_OBJ" ] && [ -f "$STUBS_OBJ" ]; then
         rm -f "$STUBS_OBJ"
+    fi
+    if [ -n "$PW_LIB_ARCHIVE" ] && [ -f "$PW_LIB_ARCHIVE" ]; then
+        rm -f "$PW_LIB_ARCHIVE"
     fi
 }
 trap cleanup EXIT
@@ -133,8 +137,12 @@ if [ "$EMULATOR" = "simavr" ]; then
 elif [ "$EMULATOR" = "renode" ]; then
     # shellcheck source=tools/ci/arduino_toolchains.sh
     source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
-    samd_toolchain_props
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    samd_toolchain_props || exit 1
+
+    PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_samd_XXXXXX.a)"
+    build_pigweed_archive_samd "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" || exit 1
+
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
@@ -142,36 +150,36 @@ elif [ "$EMULATOR" = "renode" ]; then
         "--warnings" "default"
         "${SAMD_TOOLCHAIN_PROPS[@]}"
         "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1 $PW_INC"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_INC"
+        "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "qemu" ]; then
-    # The Espressif core (tools/install_espressif_core.sh) ships the modern
-    # xtensa-esp-elf toolchain; its esp32s3 driver is xtensa-esp32s3-elf-gcc.
-    XTENSA_GCC="$(find "${HOME}/.arduino15/packages/esp32/tools/esp-x32" "${HOME}/.arduino15/packages/esp32" -type f -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
-    if [ -z "$XTENSA_GCC" ]; then
-        echo "ERROR: xtensa-esp32s3-elf-gcc not found; run tools/ci/install_espressif_core.sh" >&2
-        exit 1
-    fi
+    # shellcheck source=tools/ci/arduino_toolchains.sh
+    source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+    find_esp32_toolchain || exit 1
 
     STUBS_SRC="${ROOT_DIR}/tools/emulation/qemu/esp32_qemu_stubs.c"
     STUBS_OBJ="$(mktemp /tmp/esp32_qemu_stubs_XXXXXX.o)"
     "$XTENSA_GCC" -c "$STUBS_SRC" -o "$STUBS_OBJ"
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT"
+    PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_esp32_XXXXXX.a)"
+    build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" || exit 1
+
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT -DPW_RPC_USE_GLOBAL_MUTEX=0"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -DETL_NO_STL $COMMON_FLAGS"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -DETL_NO_STL $COMMON_FLAGS $PW_INC"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_INC"
         "--build-property" "build.psram_type=qspi"
         "--build-property" "build.cdc_on_boot=0"
         "--build-property" "build.dfu_on_boot=0"
         "--build-property" "build.defines=-DBOARD_HAS_PIN_REMAP -DBOARD_USES_HW_GPIO_NUMBERS '-DUSB_MANUFACTURER=\"Arduino\"' '-DUSB_PRODUCT=\"Nano ESP32\"'"
-        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite -Wl,--wrap=analogRead -Wl,--wrap=adc_hal_self_calibration -Wl,--wrap=psramInit"
+        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite -Wl,--wrap=analogRead -Wl,--wrap=adc_hal_self_calibration -Wl,--wrap=psramInit"
         "--build-path" "$OUTPUT_DIR"
     )
 fi

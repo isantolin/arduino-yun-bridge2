@@ -1391,10 +1391,10 @@ def test_runtime_action_dispatch_canonical_completeness(mock_bridge_service: Bri
     assert len(protocol.PW_SERVICES) >= 7
     for svc in protocol.PW_SERVICES:
         assert len(svc.methods) > 0
-    for op in protocol.OPERATIONS:
-        if op.is_custom_handler and op.handler_name:
-            handler = operator.attrgetter(op.handler_name)(mock_bridge_service)
-            assert callable(handler)
+    for rpc_name, handler_name in mock_bridge_service.LOCAL_RPC_HANDLERS.items():
+        assert rpc_name in protocol.BY_NAME
+        handler = operator.attrgetter(handler_name)(mock_bridge_service)
+        assert callable(handler)
     assert callable(mock_bridge_service.execute_rpc)
 
 

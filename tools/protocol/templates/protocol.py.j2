@@ -171,12 +171,9 @@ class OperationSpec:
     request_type: type[ProtobufMessage] | None = None
     response_type: type[ProtobufMessage] | None = None
     default_factory: Callable[[], ProtobufMessage] | None = None
-    handler_name: str | None = None
-    mcu_handler: str | None = None
     metrics_blob_field: str | None = None
     cardinality: PwRpcMethod.Type = PwRpcMethod.Type.UNARY
     is_server_streaming: bool = False
-    is_custom_handler: bool = False
 
     def __post_init__(self) -> None:
         if self.service_name and self.method_name and self.service_name in PW_SERVICES:
@@ -238,20 +235,11 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- if op.default_factory %}
         default_factory={{ op.default_factory }},
         {%- endif %}
-        {%- if op.handler_name %}
-        handler_name={{ op.handler_name|tojson }},
-        {%- endif %}
-        {%- if op.mcu_handler %}
-        mcu_handler={{ op.mcu_handler|tojson }},
-        {%- endif %}
         {%- if op.metrics_blob_field %}
         metrics_blob_field={{ op.metrics_blob_field|tojson }},
         {%- endif %}
         {%- if op.cardinality %}
         cardinality={{ op.cardinality }},
-        {%- endif %}
-        {%- if op.is_custom_handler %}
-        is_custom_handler=True,
         {%- endif %}
     ),
 {%- endfor %}
@@ -320,9 +308,6 @@ DAEMON_TASKS: Final[tuple[DaemonTaskSpec, ...]] = (
     {%- endfor %}
 )
 
-CUSTOM_HANDLERS: Final[frozenset[str]] = frozenset(
-    op.handler_name for op in OPERATIONS if op.is_custom_handler and op.handler_name
-)
 BY_RPC: Final[dict[tuple[int, int], OperationSpec]] = {
     (op.service_id, op.method_id): op
     for op in OPERATIONS
@@ -436,12 +421,18 @@ def build_mcu_dispatch(
     if status_fn is not None:
         for s in Status:
             dispatch[s.value] = functools.partial(status_fn, s)
+    handlers_map: dict[str, Any] = getattr(target, "LOCAL_RPC_HANDLERS", {})
     for op in OPERATIONS:
-        fn = operator.attrgetter(op.mcu_handler)(target) if op.mcu_handler else None
-        if fn is not None:
-            dispatch[op.name] = fn
-            if op.service_id is not None and op.method_id is not None:
-                dispatch[(op.service_id, op.method_id)] = fn
+        handler_ref = handlers_map.get(op.name)
+        if handler_ref is not None:
+            try:
+                fn = operator.attrgetter(handler_ref)(target) if isinstance(handler_ref, str) else handler_ref
+            except AttributeError:
+                fn = None
+            if fn is not None:
+                dispatch[op.name] = fn
+                if op.service_id is not None and op.method_id is not None:
+                    dispatch[(op.service_id, op.method_id)] = fn
     return dispatch
 
 

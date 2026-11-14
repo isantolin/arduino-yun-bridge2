@@ -64,9 +64,7 @@ def test_operations_are_derived_from_protobuf_services() -> None:
 
     by_name: dict[str, dict[str, Any]] = {str(op["name"]): op for op in operations}
     assert by_name["rpc.pb.SystemService/LinkSync"]["pre_sync_allowed"] is True
-    assert by_name["rpc.pb.SystemService/LinkSync"]["mcu_handler"] == "handshake.handle_link_sync_resp"
     assert by_name["rpc.pb.SystemService/GetVersion"]["auth_field"] == "system_version"
-    assert by_name["rpc.pb.ConsoleService/Write"]["mcu_handler"] == "console_write"
     assert by_name["rpc.pb.ConsoleService/Write"]["auth_field"] == "console_input"
 
 

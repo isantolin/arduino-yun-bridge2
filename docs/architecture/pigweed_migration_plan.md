@@ -160,13 +160,13 @@ Cambios en el daemon y el contrato:
    - Alineación 1:1 de `Topic` con los nombres canónicos de servicios Pigweed (`GpioService`, `DataStoreService`, `FileSystemService`, `MailboxService`, `ProcessService`, `SpiService`, `SystemService`, `ClockSyncService`, `ConsoleWrite`).
    - Eliminación total de clases de acción huérfanas (`CommonAction`, `DigitalAction`, `DatastoreAction`, etc.) y de la opción `rpc.pb.actions` en Protobuf.
 
-2. **Unificación determinista de `cloud_topic` y `mcu_handler`:**
+2. **Unificación determinista de `cloud_topic` y eliminación de `mcu_handler`:**
    - Erradicación de strings ad-hoc dispersos en Protobuf (`system/version/value`, `system/bridge/handshake/value`, `console/out`, `mailbox/incoming`, `spi/transfer/resp`, etc.).
    - Derivación canónica universal de tópicos según la regla 3-segmentos:
      - Peticiones RPC: `{prefix}/req/{Service}/{Method}`
      - Respuestas RPC: `{prefix}/res/{Service}/{Method}`
      - Eventos y telemetría: `{prefix}/evt/{Service}/{Method|Message}`
-   - Unificación de manejadores (`mcu_handler` / `handler_name`) mediante derivación por convención `{servicio_snake}_{metodo_snake}` sobre `BridgeService`, eliminando opciones manuales redundantes en los `.proto`.
+   - Eliminación total de la opción legacy `mcu_handler` en Protobuf y unificación del despacho canónico sobre `rpc.pb.<Service>/<Method>` y `(service_id, method_id)` en `BridgeService`.
 
 3. **Migración northbound al Gateway Pigweed (ADR-0003):**
    - El despacho actual mediante `GatewayLocalBridgeService`/`LocalBridge` es transitorio y no forma parte del diseño final.

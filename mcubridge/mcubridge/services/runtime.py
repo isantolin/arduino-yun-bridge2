@@ -6,13 +6,14 @@ import asyncio
 import functools
 import inspect
 import logging
+import operator
 import secrets
 import shlex
 import stat
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, ClassVar, Final, cast
 
 import anyio
 import anyio.to_thread
@@ -129,6 +130,25 @@ class BridgeService:
     _tg: asyncio.TaskGroup | None
     cloud_publisher: Callable[[CloudQueuedPublish], Awaitable[None]] | None
     lifecycle_fsm: DaemonLifecycleMachine
+
+    LOCAL_RPC_HANDLERS: ClassVar[dict[str, str]] = {
+        "rpc.pb.SystemService/LinkSync": "handshake.handle_link_sync_resp",
+        "rpc.pb.SystemService/Xoff": "mcu_xoff",
+        "rpc.pb.SystemService/Xon": "mcu_xon",
+        "rpc.pb.FileSystemService/Write": "file_write",
+        "rpc.pb.FileSystemService/Remove": "file_remove",
+        "rpc.pb.MailboxService/Push": "mailbox_push",
+        "rpc.pb.MailboxService/Read": "mailbox_read",
+        "rpc.pb.MailboxService/Available": "mailbox_available",
+        "rpc.pb.MailboxService/Processed": "publish_mcu_message",
+        "rpc.pb.ProcessService/RunAsync": "process_run_async",
+        "rpc.pb.ProcessService/Poll": "process_poll",
+        "rpc.pb.ProcessService/Kill": "process_kill",
+        "rpc.pb.DataStoreService/Put": "datastore_put",
+        "rpc.pb.DataStoreService/Get": "datastore_get",
+        "rpc.pb.ConsoleService/Write": "console_write",
+        "rpc.pb.GpioService/SubscribePins": "pin_subscribe",
+    }
 
     def __init__(
         self,
@@ -1319,8 +1339,11 @@ class BridgeService:
             req.ParseFromString(payload_bytes)
 
         with structlog.contextvars.bound_contextvars(rpc_method=target):
-            if spec.handler_name and spec.handler_name in protocol.CUSTOM_HANDLERS:
-                resp = await getattr(self, spec.handler_name)(req)
+            if target in self.LOCAL_RPC_HANDLERS:
+                handler_path = self.LOCAL_RPC_HANDLERS[target]
+                fn = operator.attrgetter(handler_path)(self)
+                res = fn(req)
+                resp = await res if inspect.isawaitable(res) else res
                 return resp.SerializeToString() if resp is not None else b""
 
             if self.serial is None:

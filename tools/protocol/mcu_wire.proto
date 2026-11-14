@@ -449,7 +449,6 @@ service GpioService {
   }
   rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (stream rpc.pb.PinUpdateEvent) {
     option (auth_field) = "gpio_subscribe";
-    option (mcu_handler) = "pin_subscribe";
   }
 }
 
@@ -463,7 +462,6 @@ service SystemService {
   rpc LinkSync(rpc.pb.LinkSync) returns (rpc.pb.LinkSync) {
     option (method_description) = "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)].";
     option (pre_sync_allowed) = true;
-    option (mcu_handler) = "handshake.handle_link_sync_resp";
   }
   rpc LinkReset(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
     option (method_description) = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters.";
@@ -475,11 +473,9 @@ service SystemService {
   }
   rpc Xoff(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
     option (method_description) = "Signal MCU RX buffer pressure (XOFF flow control). Linux pauses TX.";
-    option (mcu_handler) = "mcu_xoff";
   }
   rpc Xon(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
     option (method_description) = "Signal MCU RX buffer relief (XON flow control). Linux resumes TX.";
-    option (mcu_handler) = "mcu_xon";
   }
 }
 
@@ -507,11 +503,9 @@ service SpiService {
 service FileSystemService {
   rpc Write(rpc.pb.FileWrite) returns (rpc.pb.Empty) {
     option (auth_field) = "file_write";
-    option (mcu_handler) = "file_write";
   }
   rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty) {
     option (auth_field) = "file_remove";
-    option (mcu_handler) = "file_remove";
   }
 }
 
@@ -519,43 +513,33 @@ service MailboxService {
   rpc Push(rpc.pb.MailboxPush) returns (rpc.pb.Empty) {
     option (cloud_topic) = "evt/MailboxService/Push";
     option (auth_field) = "mailbox_write";
-    option (mcu_handler) = "mailbox_push";
   }
   rpc Read(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse) {
     option (auth_field) = "mailbox_read";
-    option (mcu_handler) = "mailbox_read";
   }
-  rpc Available(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxAvailableResponse) {
-    option (mcu_handler) = "mailbox_available";
-  }
+  rpc Available(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxAvailableResponse);
   rpc Processed(rpc.pb.MailboxProcessed) returns (rpc.pb.Empty) {
     option (cloud_topic) = "evt/MailboxService/Processed";
-    option (mcu_handler) = "publish_mcu_message";
   }
 }
 
 service ProcessService {
   rpc RunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse) {
     option (auth_field) = "shell_run_async";
-    option (mcu_handler) = "process_run_async";
   }
   rpc Poll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse) {
     option (auth_field) = "shell_poll";
-    option (mcu_handler) = "process_poll";
   }
   rpc Kill(rpc.pb.ProcessKill) returns (rpc.pb.Empty) {
     option (auth_field) = "shell_kill";
-    option (mcu_handler) = "process_kill";
   }
 }
 
 service DataStoreService {
   rpc Put(rpc.pb.DatastorePut) returns (rpc.pb.Empty) {
     option (auth_field) = "datastore_put";
-    option (mcu_handler) = "datastore_put";
   }
   rpc Get(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse) {
     option (auth_field) = "datastore_get";
-    option (mcu_handler) = "datastore_get";
   }
 }

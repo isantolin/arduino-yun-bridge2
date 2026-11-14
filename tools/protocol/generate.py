@@ -374,14 +374,11 @@ def _build_mcu_operation(mcu_method: dict[str, Any]) -> dict[str, Any]:
         "service_name": mcu_method["service_name"],
         "method_name": mcu_method["method_name"],
     }
-    for str_key in ("cloud_topic", "auth_field", "mcu_handler"):
+    for str_key in ("cloud_topic", "auth_field"):
         if mcu_method.get(str_key):
             op[str_key] = mcu_method[str_key]
     if mcu_method.get("pre_sync_allowed"):
         op["pre_sync_allowed"] = True
-    if mcu_method.get("mcu_handler"):
-        op["handler_name"] = mcu_method["mcu_handler"]
-        op["is_custom_handler"] = True
     return op
 
 
@@ -531,7 +528,6 @@ def _extract_operations_context(
                     "input_type": method_desc.input_type.full_name,
                     "output_type": method_desc.output_type.full_name,
                     "auth_field": _opt_ext(method_options, pb_module.auth_field, ""),
-                    "mcu_handler": _opt_ext(method_options, pb_module.mcu_handler, ""),
                     "cloud_topic": _opt_ext(method_options, pb_module.cloud_topic, ""),
                     "pre_sync_allowed": bool(_opt_ext(method_options, pb_module.pre_sync_allowed, False)),
                     "description": _opt_ext(method_options, pb_module.method_description, ""),
@@ -914,10 +910,13 @@ def main(
     _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.py", gateway_targets, _sanitize_pb2)
     _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.pyi", gateway_targets, _sanitize_pb2)
 
-    for grpc_file in proto_path.parent.rglob("*_grpc.py"):
-        grpc_file.unlink(missing_ok=True)
-    for nanopb_file in (gateway_proto_dir / "gateway_control.pb.h", gateway_proto_dir / "gateway_control.pb.c"):
-        nanopb_file.unlink(missing_ok=True)
+    for orphan_nanopb in (
+        gateway_proto_dir / "gateway_control.pb.h",
+        gateway_proto_dir / "gateway_control.pb.c",
+        proto_path.parent / "cloud_gateway.pb.h",
+        proto_path.parent / "cloud_gateway.pb.c",
+    ):
+        orphan_nanopb.unlink(missing_ok=True)
 
     py_context = context | {
         "constants": context["python_constants"],

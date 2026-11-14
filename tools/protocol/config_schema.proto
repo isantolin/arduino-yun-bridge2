@@ -888,9 +888,7 @@ extend google.protobuf.MessageOptions {
 }
 
 extend google.protobuf.MethodOptions {
-  bool is_custom_handler = 1036;
   string auth_field = 1039;
-  string mcu_handler = 1040;
   string cloud_topic = 1041;
   bool pre_sync_allowed = 1042;
   string method_description = 1043;

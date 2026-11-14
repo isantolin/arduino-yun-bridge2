@@ -58,9 +58,11 @@ def test_protocol_dispatch_coverage(svc: tuple[BridgeService, RuntimeState, Asyn
     """Certifies that all known Operations have defined handlers or default fallbacks."""
     service, _state, _serial = svc
     dispatch = build_mcu_dispatch(service)
-    for op in protocol.OPERATIONS:
-        if op.mcu_handler:
-            assert op.name in dispatch
+    for rpc_name in BridgeService.LOCAL_RPC_HANDLERS:
+        assert rpc_name in dispatch
+        op = protocol.BY_NAME[rpc_name]
+        if op.service_id is not None and op.method_id is not None:
+            assert (op.service_id, op.method_id) in dispatch
 
 
 # -----------------------------------------------------------------------------

@@ -125,9 +125,9 @@ if [ "$EMULATOR" = "simavr" ]; then
         "${AVR_PROPS[@]}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -fstack-usage $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 -fstack-usage $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
-        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
-        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
+        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
@@ -197,6 +197,15 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2
         fi
     fi
     cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
+
+    if [ "$EMULATOR" = "simavr" ] && command -v avr-size >/dev/null 2>&1; then
+        # Static RAM report: the ATmega2560 has 8 KiB SRAM shared by .data,
+        # .bss, heap and stack, so log what the image leaves for the stack.
+        echo "[compile_firmware] AVR memory usage for ${SKETCH_NAME}:"
+        grep -E "Serial1" "$TMP_LOG" || true
+        avr-size -A "${OUTPUT_DIR}/firmware.elf" | grep -E '^\.(data|bss|noinit) '
+        avr-nm --size-sort -S -C "${OUTPUT_DIR}/firmware.elf" | grep -E ' [bBdD] ' | tail -n 15
+    fi
 
     if [ "$EMULATOR" = "qemu" ]; then
         # The Espressif core already emits a full-flash image (bootloader,

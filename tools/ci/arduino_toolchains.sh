@@ -15,6 +15,7 @@ TOOLCHAIN_REPO_ROOT="$(cd "${TOOLCHAIN_SCRIPT_DIR}/../.." && pwd)"
 PW_ROOT="${TOOLCHAIN_REPO_ROOT}/third_party/pigweed"
 
 PW_INC_FLAGS=(
+    -I"${PW_ROOT}/pw_transfer/public"
     -I"${PW_ROOT}/pw_status/public"
     -I"${PW_ROOT}/pw_result/public"
     -I"${PW_ROOT}/pw_span/public"
@@ -94,7 +95,7 @@ samd_toolchain_props() {
     gcc_bin="$(command -v arm-none-eabi-gcc || true)"
     if [ -z "$gcc_bin" ]; then
         echo "ERROR: arm-none-eabi-gcc >= ${MCUBRIDGE_MIN_ARM_GCC_MAJOR} is required for SAMD builds" \
-            "(Debian/Ubuntu: apt-get install gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib)." >&2
+            "(Debian/Ubuntu: apt-get install gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib; Fedora: dnf install arm-none-eabi-gcc-cs-c++ arm-none-eabi-newlib)." >&2
         return 1
     fi
     local major

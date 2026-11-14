@@ -70,7 +70,7 @@ def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMoc
 async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, serial = service_setup
+    _service, _state, serial = service_setup
     serial.transfer_write = AsyncMock()
     await serial.transfer_write(0x4D454741, b"new_data")
     serial.transfer_write.assert_awaited_once_with(0x4D454741, b"new_data")

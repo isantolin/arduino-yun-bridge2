@@ -33,6 +33,10 @@
 
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
+#include <pw_transfer/client.h>
+#include <pw_transfer/handler.h>
+#include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
 #else
 #include <pw_bytes/span.h>
 #include <pw_checksum/crc32.h>
@@ -249,9 +253,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
-#if defined(__AVR_ATmega2560__)
-  // Upstream pw_transfer endpoints share one cooperative Thread<1, 1>.
-  // The port's role arbiter permits client/server transfers sequentially.
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+  // Upstream pw_transfer endpoints share one Thread<1, 1>.
+  // On AVR, the cooperative role arbiter permits client/server transfers
+  // sequentially.
   pw::transfer::Client& transferClient() { return _transfer_client; }
   pw::transfer::TransferService& transferService() { return _transfer_service; }
 #endif
@@ -314,7 +319,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   static constexpr size_t kTransferChunkBufferSize = 128;
   // The encode buffer holds the outgoing RPC packet and must be larger than
   // the chunk staging buffer. Use the complete configured receive-frame size.
@@ -332,7 +337,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 #endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   bool _eeprom_transfer_registered{false};
 #endif
   bool _rpc_plaintext_response{false};

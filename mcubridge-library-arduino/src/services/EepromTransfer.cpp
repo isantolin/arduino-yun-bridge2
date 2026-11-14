@@ -1,6 +1,6 @@
 #include "services/EepromTransfer.h"
 
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 
 #include <EEPROM.h>
 #include <pw_stream/stream.h>
@@ -149,4 +149,4 @@ bool registerEepromTransferHandler(pw::transfer::TransferService& service) {
 
 }  // namespace bridge::services
 
-#endif  // defined(__AVR_ATmega2560__)
+#endif  // defined(ARDUINO_ARCH_AVR) || defined(__AVR__)

@@ -85,10 +85,11 @@ def run_buf_generate(proto_dir: Path) -> None:
 
 
 def run_pw_rpc_packet_generate(repo_root: Path) -> None:
-    """Generate pw_rpc's internal packet type with Pigweed's PWPB compiler."""
+    """Generate pw_rpc's internal packet type and pw_transfer protos with Pigweed's PWPB compiler."""
     pw_root = repo_root / "third_party" / "pigweed"
     proto_path = pw_root / "pw_rpc" / "internal" / "packet.proto"
     plugin_path = pw_root / "pw_protobuf" / "py" / "pw_protobuf" / "plugin.py"
+    raw_rpc_plugin_path = pw_root / "pw_rpc" / "py" / "pw_rpc" / "plugin_raw.py"
     output_dir = repo_root / "build" / "pigweed_generated" / "include"
     output_dir.mkdir(parents=True, exist_ok=True)
     if not proto_path.is_file() or not plugin_path.is_file():
@@ -117,6 +118,26 @@ def run_pw_rpc_packet_generate(repo_root: Path) -> None:
         subprocess.run(command, check=True, capture_output=True, text=True, cwd=pw_root, env=env)
     except subprocess.CalledProcessError as e:
         sys.stderr.write(f"Error: pw_rpc packet generation failed:\n{e.stderr}\n")
+        sys.exit(1)
+
+    transfer_proto_dir = pw_root / "pw_transfer"
+    transfer_out_dir = output_dir / "pw_transfer"
+    transfer_out_dir.mkdir(parents=True, exist_ok=True)
+    transfer_command = [
+        "protoc",
+        "--experimental_allow_proto3_optional",
+        f"-I{transfer_proto_dir}",
+        f"--plugin=protoc-gen-pwpb={plugin_path}",
+        f"--pwpb_opt=-I{transfer_proto_dir}",
+        f"--pwpb_out={transfer_out_dir}",
+        f"--plugin=protoc-gen-raw_rpc={raw_rpc_plugin_path}",
+        f"--raw_rpc_out={transfer_out_dir}",
+        "transfer.proto",
+    ]
+    try:
+        subprocess.run(transfer_command, check=True, capture_output=True, text=True, cwd=transfer_proto_dir, env=env)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: pw_transfer proto generation failed:\n{e.stderr}\n")
         sys.exit(1)
 
 
@@ -715,6 +736,8 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
             outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
         outputs.append(repo_root / "mcubridge-library-arduino/src/protocol/mcu_wire.rpc.pb.h")
         outputs.append(repo_root / "build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_transfer/transfer.pwpb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_transfer/transfer.raw_rpc.pb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
         for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
@@ -760,6 +783,9 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
         input_paths.append(packet_proto)
         for package in ("pw_protobuf/py/pw_protobuf", "pw_rpc/py/pw_rpc", "pw_codegen/py/pw_codegen"):
             input_paths.extend(sorted((pw_root / package).rglob("*.py")))
+    transfer_proto = pw_root / "pw_transfer" / "transfer.proto"
+    if transfer_proto.is_file():
+        input_paths.append(transfer_proto)
     version_path = repo_root / "VERSION"
     if version_path.is_file():
         input_paths.append(version_path)

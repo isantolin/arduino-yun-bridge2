@@ -11,7 +11,7 @@
 #endif
 #include "services/Console.h"
 #include "services/DataStore.h"
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include "services/EepromTransfer.h"
 #endif
 #include "services/FileSystem.h"
@@ -273,7 +273,7 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
       ,
       _transfer_thread(pw::ByteSpan(_transfer_chunk_storage.data(),
                                     _transfer_chunk_storage.size()),
@@ -310,7 +310,7 @@ BridgeClass::~BridgeClass() {
                                 ,
                                 g_mailbox_service
 #endif
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
                                 ,
                                 _transfer_service
 #endif
@@ -366,7 +366,7 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
                               ,
                               _transfer_service
 #endif
@@ -400,7 +400,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   if (!_eeprom_transfer_registered) {
     _eeprom_transfer_registered =
         bridge::services::registerEepromTransferHandler(_transfer_service);
@@ -436,7 +436,7 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   const pw::Status transfer_status = _transfer_thread.Poll(2);
   if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);

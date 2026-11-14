@@ -5,14 +5,16 @@
 #include <pw_transfer/handler.h>
 #include <services/EepromTransfer.h>
 
-#if !defined(__AVR_ATmega2560__)
-#error "This integration sketch requires Arduino Mega 2560 (ATmega2560)."
+#if !defined(ARDUINO_ARCH_AVR) && !defined(__AVR__)
+#error "This integration sketch requires an AVR microcontroller."
 #endif
 
 namespace {
 
+#if defined(__AVR_ATmega2560__)
 static_assert(bridge::services::kEepromTransferResourceSize == 4096U,
               "Mega 2560 EEPROM resource must expose all 4 KiB");
+#endif
 static_assert(bridge::services::kEepromTransferResourceId == 0x4D454741UL,
               "EEPROM transfer resource ID is a stable wire contract");
 

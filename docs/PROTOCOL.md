@@ -52,7 +52,7 @@ Notas:
 - Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
 - Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc.pb.LocalBridge/<method>")`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
-- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`). El antiguo `FileSystemService/Read` Nanopb fue eliminado. En ATmega2560, `Bridge.begin()` registra un handler upstream `pw_transfer` sobre los 4.096 bytes de EEPROM interna como recurso binario fijo `0x4D454741`. No es un filesystem: no hay rutas, nombres ni directorios. Las escrituras usan `EEPROM.update`, ventana de un byte y no son transaccionales. Esto habilita el recurso EEPROM MCU, pero no el filesystem del MPU. La ruta reservada `mcu/eeprom` de `LocalBridge.FileRead` / `FileWrite` accede a ese recurso binario mediante `pw_transfer`; no representa un archivo. El endpoint Linux `pw_transfer` para transferir archivos del MPU y la migración de esas APIs locales siguen pendientes.
+- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`rpc.pb.GpioService/SubscribePins` vía `Bridge.sendPinEvent`). El antiguo `rpc.pb.FileSystemService/Read` Nanopb fue eliminado. En ATmega2560, `Bridge.begin()` registra un handler upstream `pw_transfer` sobre los 4.096 bytes de EEPROM interna como recurso binario fijo `0x4D454741`. No es un filesystem: no hay rutas, nombres ni directorios. Las escrituras usan `EEPROM.update`, ventana de un byte y no son transaccionales. Esto habilita el recurso EEPROM MCU, pero no el filesystem del MPU. La ruta reservada `mcu/eeprom` de `LocalBridge.FileRead` / `FileWrite` accede a ese recurso binario mediante `pw_transfer`; no representa un archivo. El endpoint Linux `pw_transfer` para transferir archivos del MPU y la migración de esas APIs locales siguen pendientes.
 - gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
 ```
 
@@ -377,7 +377,7 @@ El estado de salud del enlace se expone en:
 | `status_interval` | Intervalo de emisión periódica de telemetría y snapshots. | `1.0` |
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
-| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `FileSystemService/Write`). | `262144` |
+| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `rpc.pb.FileSystemService/Write`). | `262144` |
 | `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `4194304` |
 
 ## Flujo de inicio (resumen)
@@ -443,7 +443,7 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
 - **Comandos ACK-only:** Son métodos unarios cuyo éxito se confirma mediante `RESPONSE` con `status = 0` (`Ok`) o `AckPacket` (`STATUS_ACK`):
   Esta lista está alineada con el spec (bindings Python: `OPERATIONS` con `requires_ack=True`):
   - `rpc.pb.GpioService/SetPinMode`, `rpc.pb.GpioService/DigitalWrite`, `rpc.pb.GpioService/AnalogWrite` (Linux → MCU)
-  - `rpc.pb.ConsoleService/ConsoleWrite` (bidireccional)
+  - `rpc.pb.ConsoleService/Write` (bidireccional; servicio del lado Linux, no un servicio `pw_rpc` del MCU)
   - `rpc.pb.DataStoreService/Put` (MCU → Linux)
   - `rpc.pb.MailboxService/Push` (bidireccional)
   - `rpc.pb.FileSystemService/Write` (MCU → MPU, unary legado)
@@ -692,12 +692,12 @@ MCU detecta RX buffer < 25% → envía rpc.pb.SystemService/Xon  → Linux reanu
 
 El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante invocaciones tipadas de `LocalBridge` o despacho de comandos en tópicos canónicos:
 - **Comandos Canónicos Cloud**:
-  - Escritura digital: `{prefix}/req/GpioService/DigitalWrite` (o `devices/{device_id}/req/GpioService/DigitalWrite`) con payload Protobuf `DigitalWrite { pin, value }`.
-  - Modo de pin: `{prefix}/req/GpioService/SetPinMode` con payload Protobuf `PinMode { pin, mode }`.
-  - Lectura digital: `{prefix}/req/GpioService/DigitalRead` con payload Protobuf `PinRead { pin }`.
-  - Escritura analógica: `{prefix}/req/GpioService/AnalogWrite` con payload Protobuf `AnalogWrite { pin, value }`.
-  - Lectura analógica: `{prefix}/req/GpioService/AnalogRead` con payload Protobuf `PinRead { pin }`.
-  - Suscripción de pin: `{prefix}/req/GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
+  - Escritura digital: `{prefix}/req/rpc.pb.GpioService/DigitalWrite` (o `devices/{device_id}/req/GpioService/DigitalWrite`) con payload Protobuf `DigitalWrite { pin, value }`.
+  - Modo de pin: `{prefix}/req/rpc.pb.GpioService/SetPinMode` con payload Protobuf `PinMode { pin, mode }`.
+  - Lectura digital: `{prefix}/req/rpc.pb.GpioService/DigitalRead` con payload Protobuf `PinRead { pin }`.
+  - Escritura analógica: `{prefix}/req/rpc.pb.GpioService/AnalogWrite` con payload Protobuf `AnalogWrite { pin, value }`.
+  - Lectura analógica: `{prefix}/req/rpc.pb.GpioService/AnalogRead` con payload Protobuf `PinRead { pin }`.
+  - Suscripción de pin: `{prefix}/req/rpc.pb.GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
 - **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `rpc.pb.GpioService/DigitalWrite`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
 - **Correlación Asíncrona**: Cada request/response se correlaciona con `call_id` / `sequence_id` garantizando entrega determinista fin a fin.
 - **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
@@ -724,8 +724,10 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 
 - **Stream HDLC Nativo (`HDLC_ADDRESS_CONSOLE = 3`, bidireccional):**
   - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`encode_hdlc_console`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
-- **`rpc.pb.ConsoleService/ConsoleWrite` (Linux ↔ MCU):**
-  - Payload: mensaje protobuf `ConsoleData { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `AckPacket`.
+- **`rpc.pb.ConsoleService/Write` (Linux ↔ MCU, definido en `cloud_gateway.proto`):**
+  - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `Empty`.
+  - Linux → MCU: el daemon encola los bytes (`console_to_mcu_queue`) y los emite en tramas HDLC sobre la dirección `3`; alcanzable desde el Gateway vía `GatewayControl.Dispatch` y autorizado por `cloud_allow_console_input`.
+  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/ConsoleService/Write` (expiración `CLOUD_EXPIRY_CONSOLE`). Todavía no existe un stream northbound Gateway → cliente para ese tópico.
 
 ### 5.4 Datastore (`rpc.pb.DataStoreService`)
 
@@ -1042,7 +1044,7 @@ Utilizado por el daemon de borde cuando procesa rutas relativas a su propio pref
   - `req`: Peticiones / comandos RPC entrantes desde la nube o clientes hacia el daemon.
   - `res`: Respuestas y retornos generados por el daemon tras la ejecución del RPC.
   - `evt`: Eventos asíncronos y telemetría emitidos espontáneamente por el daemon hacia el Gateway (`status_online`, `pin_event`, etc.).
-- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `GpioService/DigitalWrite`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
+- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `rpc.pb.GpioService/DigitalWrite`, `rpc.pb.SystemService/GetVersion`, `rpc.pb.DataStoreService/Put`, `rpc.pb.MailboxService/Push`).
 
 Ejemplos:
 - Petición de escritura GPIO: `br/req/GpioService/DigitalWrite`

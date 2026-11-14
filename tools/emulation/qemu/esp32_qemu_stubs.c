@@ -37,3 +37,23 @@ void __wrap_analogWrite(uint8_t pin, int value) {
   (void)pin;
   (void)value;
 }
+
+uint16_t __wrap_analogRead(uint8_t pin) {
+  /* No-op in QEMU: ESP32-S3 SAR ADC oneshot peripheral is not emulated. */
+  (void)pin;
+  return 0;
+}
+
+uint32_t __wrap_adc_hal_self_calibration(int adc_n, int atten,
+                                         bool internal_gnd) {
+  /* No-op in QEMU: bypass pre-main SAR ADC hardware calibration spinloop. */
+  (void)adc_n;
+  (void)atten;
+  (void)internal_gnd;
+  return 0;
+}
+
+bool __wrap_psramInit(void) {
+  /* No-op in QEMU: external QSPI/OPI PSRAM is not mapped in headless run. */
+  return false;
+}

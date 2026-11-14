@@ -17,7 +17,8 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
    [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ] || \
    [ ! -f "$SRC_DIR/pb_common.h" ] || \
    [ ! -f "$SRC_DIR/pb_decode.h" ] || \
-   [ ! -f "$SRC_DIR/pb_encode.h" ]; then
+   [ ! -f "$SRC_DIR/pb_encode.h" ] || \
+   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/PigweedAVR.h" ]; then
     mkdir -p "${ARDUINO_LIBS}"
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi

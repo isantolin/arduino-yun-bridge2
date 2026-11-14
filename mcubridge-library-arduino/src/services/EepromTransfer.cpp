@@ -45,7 +45,7 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
                              : remaining;
     for (size_t i = 0; i < count; ++i) {
       destination[i] =
-          static_cast<std::byte>(EEPROM.read(static_cast<int>(position_ + i)));
+          static_cast<pw::ByteSpan::element_type>(EEPROM.read(static_cast<int>(position_ + i)));
     }
     position_ += count;
     return pw::StatusWithSize(count);

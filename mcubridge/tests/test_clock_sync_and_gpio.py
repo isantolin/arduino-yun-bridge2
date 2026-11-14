@@ -134,6 +134,12 @@ async def test_gpio_service() -> None:
 
         mock_serial.send.return_value = True
 
+        # Intervals below the floor would make the MCU report on every loop iteration.
+        sends_before = mock_serial.send.await_count
+        too_fast = await gpio.subscribe_pin(13, mode="INPUT", interval_ms=0, hysteresis=0)
+        assert too_fast["status"] == "error"
+        assert mock_serial.send.await_count == sends_before
+
         res = await gpio.subscribe_pin(13, mode="INPUT_PULLUP", interval_ms=100, hysteresis=2)
         assert res["status"] == "ok"
         assert res["pin"] == 13

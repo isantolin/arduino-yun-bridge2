@@ -17,7 +17,7 @@ from typing import Annotated, Any
 import structlog
 import typer
 from mcubridge_client import GatewayClient, GatewayConnection, mcu_wire_pb2
-from mcubridge_client.cli import configure_logging
+from mcubridge_client.cli import build_gateway_ssl_context, configure_logging
 
 logger = structlog.get_logger("test-gateway-northbound")
 
@@ -30,7 +30,12 @@ async def run_test(
     client_factory: Callable[[Any, str], GatewayClient] | None = None,
 ) -> None:
     logger.info("Connecting to Cloud Gateway northbound endpoint", host=host, port=port, device_id=device_id)
-    conn = connection_factory(host, port) if connection_factory is not None else GatewayConnection(host, port)
+    conn = (
+        connection_factory(host, port)
+        if connection_factory is not None
+        # The standalone Gateway only accepts mTLS peers (ADR-0003).
+        else GatewayConnection(host, port, ssl_context=build_gateway_ssl_context())
+    )
     client = client_factory(conn, device_id) if client_factory is not None else GatewayClient(conn, device_id)
     try:
         req = mcu_wire_pb2.DigitalWrite(pin=13, value=1)

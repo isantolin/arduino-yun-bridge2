@@ -34,6 +34,8 @@
 #include <PigweedAVR.h>
 #include <wolfssl.h>
 
+#include "hal/arduino_stream.h"
+
 // clang-format off
 #if defined(ARDUINO_BOARD)
 #pragma push_macro("ARDUINO_BOARD")
@@ -128,16 +130,21 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       return bridge::config::RX_BUFFER_SIZE - rpc::RPC_AEAD_COUNTER_SIZE -
              rpc::RPC_AEAD_TAG_SIZE;
     }
-    pw::Status Send(pw::span<const std::byte> packet) override;
+    pw::Status Send(pw::ConstByteSpan packet) override;
 
    private:
     BridgeClass& bridge_;
   };
 
   explicit BridgeClass(Stream& stream);
+  // Hardware UARTs are identified by type (overload resolution), never by
+  // comparing against global port objects: taking &Serial1 forces the linker
+  // to keep that port and its RX/TX buffers even when the sketch never uses it.
+  explicit BridgeClass(HardwareSerial& serial);
   ~BridgeClass();
 
   void setStream(Stream& stream);
+  void setStream(HardwareSerial& serial);
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
@@ -284,7 +291,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
-  avr_port::ArduinoStream _arduino_stream;
+  bridge::stream::ArduinoStream _arduino_stream;
   pw::hdlc::DecoderBuffer<bridge::config::RX_BUFFER_SIZE> _hdlc_decoder;
   RpcChannelOutput _rpc_channel_output;
   pw::rpc::Channel _rpc_channel;
@@ -298,8 +305,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       bridge::config::RX_BUFFER_SIZE;
   static_assert(kTransferEncodeBufferSize > kTransferChunkBufferSize,
                 "pw_transfer encode buffer must exceed its chunk buffer");
-  etl::array<pw::byte, kTransferChunkBufferSize> _transfer_chunk_storage{};
-  etl::array<pw::byte, kTransferEncodeBufferSize> _transfer_encode_storage{};
+  etl::array<pw::ByteSpan::element_type, kTransferChunkBufferSize>
+      _transfer_chunk_storage{};
+  etl::array<pw::ByteSpan::element_type, kTransferEncodeBufferSize>
+      _transfer_encode_storage{};
   pw::transfer::Thread<1, 1> _transfer_thread;
   pw::transfer::TransferService _transfer_service;
   pw::transfer::Client _transfer_client;

@@ -66,12 +66,14 @@ option (rpc.pb.constants) = {
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
+  cloud_expiry_console: 5
   cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
   sync_timeout_ms: 30000
   max_datastore_value_size: 255
   default_pin_interval_ms: 50
+  min_pin_interval_ms: 10
   default_pin_hysteresis: 1
   default_clock_sync_interval_seconds: 30
   default_clock_sync_timeout_ms: 1000
@@ -294,6 +296,10 @@ option (rpc.pb.ubus_methods) = {
     {
       name: "data"
       type: "STRING"
+    },
+    {
+      name: "encoding"
+      type: "STRING"
     }
   ]
   description: "Write content to MPU filesystem path"
@@ -473,7 +479,8 @@ message Constants {
     (cpp_name) = "RPC_BOOTLOADER_MAGIC",
     (cpp_type) = "uint32_t",
     (py_name) = "BOOTLOADER_MAGIC",
-    (py_type) = "int"
+    (py_type) = "int",
+    (client_constant) = true
   ];
   uint32 frame_delimiter = 32 [
     (cpp_name) = "RPC_FRAME_DELIMITER",
@@ -633,6 +640,17 @@ message Constants {
     (cpp_type) = "size_t",
     (py_name) = "AEAD_COUNTER_SIZE",
     (py_type) = "int"
+  ];
+  uint32 cloud_expiry_console = 91 [
+    (py_name) = "CLOUD_EXPIRY_CONSOLE",
+    (py_type) = "int"
+  ];
+  uint32 min_pin_interval_ms = 92 [
+    (cpp_name) = "MIN_PIN_INTERVAL_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "MIN_PIN_INTERVAL_MS",
+    (py_type) = "int",
+    (client_constant) = true
   ];
 }
 

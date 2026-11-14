@@ -8,8 +8,9 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, cloud_gateway_pb2
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.protocol import BOOTLOADER_MAGIC
 
 configure_logging()
 log = structlog.get_logger("bootloader_sim")
@@ -19,15 +20,13 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
     log.info("Waiting 5s for link readiness...")
     await asyncio.sleep(5)
 
     log.info("Triggering bootloader via GatewayClient...")
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
-        topic_bl = Topic.build("req", "rpc.pb.SystemService", "EnterBootloader", prefix=topic_prefix)
-        await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_bl, payload=b"", qos=1))
+        await stub.EnterBootloader(mcu_wire_pb2.EnterBootloader(magic=BOOTLOADER_MAGIC))
         log.info("Bootloader command sent.")
 
     log.info("Watching for MCU output (2s)...")
@@ -38,9 +37,8 @@ def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
-    asyncio.run(run_test(host, port, device_id, topic_prefix))
+    asyncio.run(run_test(host, port, device_id))
 
 
 cli = typer.Typer(
@@ -53,9 +51,8 @@ def cli_main(
     host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
     device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
-    main(host, port, device_id, topic_prefix)
+    main(host, port, device_id)
 
 
 if __name__ == "__main__":

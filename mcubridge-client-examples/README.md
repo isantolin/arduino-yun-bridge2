@@ -66,7 +66,7 @@ Donde:
   - `req`: Comandos / solicitudes dirigidas al microcontrolador o daemon.
   - `res`: Respuestas directas a solicitudes previas.
   - `evt`: Eventos asíncronos y telemetría espontánea (`status_online`, `pin_event`, etc.).
-- `method`: Nombre canónico del servicio/método u operación (`GpioService/DigitalWrite`, `DataStoreService/Put`, etc.).
+- `method`: Nombre canónico del servicio/método u operación (`rpc.pb.GpioService/DigitalWrite`, `rpc.pb.DataStoreService/Put`, etc.).
 
 Todo tópico que no respete esta estructura exacta de 3 segmentos es rechazado de inmediato.
 
@@ -107,14 +107,14 @@ Si se omite `--device-id` y no se ha definido `MCUBRIDGE_DEVICE_ID`, el script f
 
 | Script | Descripción Funcional | Métodos gRPC Utilizados |
 |---|---|---|
-| `all_features_test.py` | Suite integral de validación de todas las capacidades del Bridge. | GPIO, Datastore, Mailbox, Process, FileIO, SPI |
-| `bootloader_test.py` | Reinicio controlado del MCU hacia el bootloader de programación. | `Publish` (`SYS_RESET`) |
-| `console_test.py` | Streaming bidireccional en tiempo real de la consola del MCU. | `SubscribeConsole` |
+| `all_features_test.py` | Suite integral de validación de las capacidades expuestas por `GatewayControl` (GPIO, Datastore, FileIO escritura/borrado). | `DigitalWrite`, `AnalogWrite`, `DatastorePut`, `DatastoreGet`, `FileWrite`, `FileRemove` |
+| `bootloader_test.py` | Reinicio controlado del MCU hacia el bootloader de programación. | `EnterBootloader` |
+| `console_test.py` | Escritura hacia la consola del MCU (`rpc.pb.ConsoleService/Write`). La salida MCU → Linux se publica como telemetría (`evt/ConsoleService/Write`); todavía no hay stream northbound hacia el cliente. | `ConsoleWrite` |
 | `datastore_test.py` | Lectura, escritura y verificación de pares clave-valor en RAM. | `DatastorePut`, `DatastoreGet` |
-| `fileio_test.py` | Operaciones de archivos del MPU (escritura, lectura y borrado). El recurso EEPROM del MCU se transfiere mediante `pw_transfer` (ruta reservada `mcu/eeprom`); no existe un filesystem de MCU en esa interfaz. | `FileWrite`, `FileRead`, `FileRemove` |
+| `fileio_test.py` | Escritura y borrado de archivos del MPU. La lectura de archivos del MPU todavía no forma parte del contrato `GatewayControl` (ADR-0003). El recurso EEPROM del MCU se transfiere mediante `pw_transfer` (ruta reservada `mcu/eeprom`); no existe un filesystem de MCU en esa interfaz. | `FileWrite`, `FileRemove` |
 | `led13_test.py` | Alternancia periódica de encendido y apagado del LED Pin 13. | `DigitalWrite` |
 | `mailbox_read_test.py` | Lectura no destructiva y consumo FIFO de la cola de mensajes. | `MailboxRead` |
-| `pin_subscribe_test.py` | Suscripción asíncrona a cambios de estado de pines digitales. | `PinSubscribe` |
+| `pin_subscribe_test.py` | Alta y baja de una suscripción de pin en el MCU (`rpc.pb.GpioService/SubscribePins`). Los eventos `PinUpdateEvent` se publican como telemetría del daemon; todavía no hay stream northbound hacia el cliente. | `PinSubscribe` |
 | `process_test.py` | Ejecución, sondeo y terminación de subprocesos en el MPU. | `ProcessRunAsync`, `ProcessPoll`, `ProcessKill` |
 | `sensor_reader_test.py` | Muestreo continuo de lecturas analógicas y digitales. | `AnalogRead`, `DigitalRead` |
 | `spi_test.py` | Configuración de bus SPI y transferencias de bytes full-duplex. | `SpiConfigure`, `SpiTransfer` |

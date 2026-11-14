@@ -16,7 +16,7 @@ if [[ "$FQBN" == arduino:avr:* ]]; then
     EMULATOR="simavr"
 elif [[ "$FQBN" == arduino:samd:* ]]; then
     EMULATOR="renode"
-elif [[ "$FQBN" == arduino:esp32:* || "$FQBN" == esp32:esp32:* ]]; then
+elif [[ "$FQBN" == esp32:esp32:* ]]; then
     EMULATOR="qemu"
 else
     echo "ERROR: Unsupported FQBN: $FQBN" >&2
@@ -125,44 +125,33 @@ if [ "$EMULATOR" = "simavr" ]; then
         "${AVR_PROPS[@]}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -fstack-usage $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 -fstack-usage $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
-        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
-        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref -save-temps=obj"
+        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
+    # shellcheck source=tools/ci/arduino_toolchains.sh
+    source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+    samd_toolchain_props
     COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
+        "${SAMD_TOOLCHAIN_PROPS[@]}"
         "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "qemu" ]; then
-    ESPTOOL_BIN="$(find "${HOME}/.arduino15" -name esptool.py 2>/dev/null | head -n 1 || true)"
-    if [ -z "$ESPTOOL_BIN" ] && command -v esptool.py >/dev/null 2>&1; then
-        ESPTOOL_BIN="$(command -v esptool.py)"
-    fi
-    XTENSA_GCC="$(find "${HOME}/.arduino15" -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
-    if [ -z "$XTENSA_GCC" ] && command -v xtensa-esp32s3-elf-gcc >/dev/null 2>&1; then
-        XTENSA_GCC="$(command -v xtensa-esp32s3-elf-gcc)"
-    fi
-    BOOT_APP0="$(find "${HOME}/.arduino15" -name boot_app0.bin 2>/dev/null | head -n 1 || true)"
-
+    # The Espressif core (tools/install_espressif_core.sh) ships the modern
+    # xtensa-esp-elf toolchain; its esp32s3 driver is xtensa-esp32s3-elf-gcc.
+    XTENSA_GCC="$(find "${HOME}/.arduino15/packages/esp32/tools/esp-x32" "${HOME}/.arduino15/packages/esp32" -type f -name xtensa-esp32s3-elf-gcc 2>/dev/null | head -n 1 || true)"
     if [ -z "$XTENSA_GCC" ]; then
-        echo "ERROR: xtensa-esp32s3-elf-gcc compiler not found in ~/.arduino15 or PATH" >&2
-        exit 1
-    fi
-    if [ -z "$ESPTOOL_BIN" ]; then
-        echo "ERROR: esptool.py not found in ~/.arduino15 or PATH" >&2
-        exit 1
-    fi
-    if [ -z "$BOOT_APP0" ]; then
-        echo "ERROR: boot_app0.bin partition image not found in ~/.arduino15" >&2
+        echo "ERROR: xtensa-esp32s3-elf-gcc not found; run tools/ci/install_espressif_core.sh" >&2
         exit 1
     fi
 
@@ -170,20 +159,19 @@ elif [ "$EMULATOR" = "qemu" ]; then
     STUBS_OBJ="$(mktemp /tmp/esp32_qemu_stubs_XXXXXX.o)"
     "$XTENSA_GCC" -c "$STUBS_SRC" -o "$STUBS_OBJ"
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
-        "--build-property" "build.extra_flags=-DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -DETL_NO_STL $COMMON_FLAGS"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
         "--build-property" "build.psram_type=qspi"
         "--build-property" "build.cdc_on_boot=0"
         "--build-property" "build.dfu_on_boot=0"
         "--build-property" "build.defines=-DBOARD_HAS_PIN_REMAP -DBOARD_USES_HW_GPIO_NUMBERS '-DUSB_MANUFACTURER=\"Arduino\"' '-DUSB_PRODUCT=\"Nano ESP32\"'"
-        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite"
+        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite -Wl,--wrap=analogRead -Wl,--wrap=adc_hal_self_calibration -Wl,--wrap=psramInit"
         "--build-path" "$OUTPUT_DIR"
     )
 fi
@@ -210,26 +198,26 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2
     fi
     cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
 
-    if [ "$EMULATOR" = "qemu" ]; then
-        BIN_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.bin"
-        BOOT_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.bootloader.bin"
-        PART_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.partitions.bin"
+    if [ "$EMULATOR" = "simavr" ] && command -v avr-size >/dev/null 2>&1; then
+        # Static RAM report: the ATmega2560 has 8 KiB SRAM shared by .data,
+        # .bss, heap and stack, so log what the image leaves for the stack.
+        echo "[compile_firmware] AVR memory usage for ${SKETCH_NAME}:"
+        grep -E "Serial1" "$TMP_LOG" || true
+        avr-size -A "${OUTPUT_DIR}/firmware.elf" | grep -E '^\.(data|bss|noinit) '
+        avr-nm --size-sort -S -C "${OUTPUT_DIR}/firmware.elf" | grep -E ' [bBdD] ' | tail -n 15
+    fi
 
-        if [ ! -f "$BIN_FILE" ] || [ ! -f "$BOOT_FILE" ] || [ ! -f "$PART_FILE" ]; then
-            echo "ERROR: Missing flash component binaries in $OUTPUT_DIR" >&2
+    if [ "$EMULATOR" = "qemu" ]; then
+        # The Espressif core already emits a full-flash image (bootloader,
+        # partitions, boot_app0 and app) padded to the board flash size.
+        MERGED_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.merged.bin"
+        if [ ! -f "$MERGED_FILE" ]; then
+            echo "ERROR: Espressif core did not produce ${MERGED_FILE}" >&2
             exit 1
         fi
 
         FLASH_BIN="${OUTPUT_DIR}/firmware_flash.bin"
-        python3 "$ESPTOOL_BIN" \
-            --chip esp32s3 merge_bin \
-            --output "$FLASH_BIN" \
-            --fill-flash-size 16MB \
-            0x0 "$BOOT_FILE" \
-            0x8000 "$PART_FILE" \
-            0xe000 "$BOOT_APP0" \
-            0x10000 "$BIN_FILE" >/dev/null 2>&1
-
+        cp "$MERGED_FILE" "$FLASH_BIN"
         cp "$FLASH_BIN" "${OUTPUT_DIR}/firmware.bin"
         echo "[compile_firmware] Successfully produced 16MB flash image: $FLASH_BIN"
     fi

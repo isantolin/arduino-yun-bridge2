@@ -277,6 +277,7 @@ if [ "$COVERAGE_MODE" = true ]; then
         ${PYTHON_CMD} -m pip install --break-system-packages gcovr
     fi
 
+    gcovr_status=0
     ${PYTHON_CMD} -m gcovr --root "${SRC_DIR}" "${BUILD_DIR}" --filter "${SRC_DIR}" \
         -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" -e ".*wolfssl.*" -e ".*wolfcrypt.*" \
         --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max \
@@ -287,9 +288,15 @@ if [ "$COVERAGE_MODE" = true ]; then
         --html-details "${OUTPUT_ROOT}/index.html" \
         --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty \
         --json "${OUTPUT_ROOT}/coverage.json" \
-        --print-summary > "${OUTPUT_ROOT}/summary.txt"
+        --txt "${OUTPUT_ROOT}/coverage.txt" \
+        --print-summary > "${OUTPUT_ROOT}/summary.txt" || gcovr_status=$?
 
+    # Per-file table so threshold failures can be diagnosed from the CI log alone.
+    cat "${OUTPUT_ROOT}/coverage.txt" || true
     cat "${OUTPUT_ROOT}/summary.txt"
+    if [ "${gcovr_status}" -ne 0 ]; then
+        exit "${gcovr_status}"
+    fi
     echo "[host-cpp] ALL COVERAGE GATES PASSED (Line >= ${ARDUINO_COVERAGE_MIN_LINE}%, Branch >= ${ARDUINO_COVERAGE_MIN_BRANCH}%, Function >= ${ARDUINO_COVERAGE_MIN_FUNCTION}%)"
 else
     # Compile and run test suites in parallel

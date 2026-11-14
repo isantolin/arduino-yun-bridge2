@@ -53,7 +53,7 @@ def test_detect_board_label() -> None:
     mkr_elf = Path("/tmp/build/arduino-samd-mkrwifi1010/BridgeControl/BridgeControl.ino.elf")
     assert detect_board_label(build_dir, mkr_elf) == "Arduino MKR WiFi 1010"
 
-    nano_elf = Path("/tmp/build/arduino-esp32-nano_nora/BridgeControl/BridgeControl.ino.elf")
+    nano_elf = Path("/tmp/build/esp32-esp32-nano_nora/BridgeControl/BridgeControl.ino.elf")
     assert detect_board_label(build_dir, nano_elf) == "Arduino Nano ESP32"
 
     generic_path = Path("/tmp/build/generic_board/firmware.elf")
@@ -126,7 +126,7 @@ def test_extract_elf_memory_table(tmp_path: Path) -> None:
 
 
 def test_extract_elf_memory_table_esp32(tmp_path: Path) -> None:
-    build_dir = tmp_path / "arduino-esp32-nano_nora"
+    build_dir = tmp_path / "esp32-esp32-nano_nora"
     ensure_test_elf(build_dir / "BridgeControl" / "BridgeControl.ino.elf")
 
     table = extract_elf_memory_table(build_dir)

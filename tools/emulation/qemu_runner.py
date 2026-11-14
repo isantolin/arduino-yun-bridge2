@@ -171,7 +171,17 @@ def run_qemu_emulation(
             return False
 
         time.sleep(1.0)
-        drain_pty_nonblocking(pty_link)
+        boot_output = drain_pty_nonblocking(pty_link)[-4096:]
+        try:
+            boot_text: str | None = boot_output.decode("utf-8")
+        except UnicodeDecodeError:
+            boot_text = None
+        logger.info(
+            "ESP32 boot output before daemon start",
+            length=len(boot_output),
+            text=boot_text,
+            raw=boot_output if boot_text is None else b"",
+        )
 
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
         logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
@@ -315,7 +325,7 @@ def main(
     board: Annotated[
         str,
         typer.Option("--board", "-b", help="Target board FQBN"),
-    ] = "arduino:esp32:nano_nora",
+    ] = "esp32:esp32:nano_nora",
     sketch: Annotated[
         Path | None,
         typer.Option("--sketch", "-s", help="Path to Arduino sketch (.ino) to compile and emulate"),

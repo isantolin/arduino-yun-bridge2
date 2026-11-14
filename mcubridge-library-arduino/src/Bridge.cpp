@@ -292,6 +292,11 @@ BridgeClass::BridgeClass(Stream& stream)
   _initObservers();
 }
 
+BridgeClass::BridgeClass(HardwareSerial& serial)
+    : BridgeClass(static_cast<Stream&>(serial)) {
+  _hardware_serial = &serial;
+}
+
 BridgeClass::~BridgeClass() {
   if (!_rpc_services_registered) return;
   _rpc_server.UnregisterService(g_gpio_service, g_system_service,
@@ -316,7 +321,7 @@ BridgeClass::~BridgeClass() {
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(
-    pw::span<const std::byte> packet) {
+    pw::ConstByteSpan packet) {
   const auto data = pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(packet.data()), packet.size());
   return bridge_._writeHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, data,
@@ -326,39 +331,15 @@ pw::Status BridgeClass::RpcChannelOutput::Send(
 }
 
 void BridgeClass::setStream(Stream& stream) {
+  // Generic streams (USB CDC, sockets, emulator shims) have no baud rate.
   _stream = &stream;
   _arduino_stream.setStream(stream);
-#if defined(SERIAL_PORT_LINUXBRIDGE)
-  if (_stream == &SERIAL_PORT_LINUXBRIDGE) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(SERIAL_PORT_HARDWARE)
-  if (_stream == &SERIAL_PORT_HARDWARE) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(ARDUINO_ARCH_SAMD)
-  if (_stream == &Serial) {
-    _hardware_serial = nullptr;
-    return;
-  }
-#else
-  if (_stream == &Serial) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(Serial1) || defined(HAVE_HWSERIAL1) || \
-    (defined(SOC_UART_NUM) && SOC_UART_NUM > 1)
-  if (_stream == &Serial1) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
   _hardware_serial = nullptr;
+}
+
+void BridgeClass::setStream(HardwareSerial& serial) {
+  setStream(static_cast<Stream&>(serial));
+  _hardware_serial = &serial;
 }
 
 void BridgeClass::_initializeRuntime() {
@@ -366,10 +347,6 @@ void BridgeClass::_initializeRuntime() {
   _timer_last_tick_ms = 0;
   _state_flags.reset();
   _clearLinkSession();
-
-  if (_stream) {
-    setStream(*_stream);
-  }
 
   pw_log_avr_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
@@ -491,18 +468,29 @@ void BridgeClass::_watchdogTask() {
 
 void BridgeClass::_serialTask() {
   if (!_stream) return;
-  etl::array<pw::byte, bridge::config::RX_BUFFER_SIZE> chunk;
-  const auto read_result = _arduino_stream.Read(
-      pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
-  if (read_result.ok()) {
+  // Drain up to RX_BUFFER_SIZE bytes per pass, but through a small stack
+  // chunk: a complete frame is dispatched (RPC handler + AEAD response) while
+  // this buffer is live, and on the ATmega2560 a full RX_BUFFER_SIZE copy here
+  // pushed that call chain past the stack into .bss.
+  constexpr size_t kReadChunkSize = 32U;
+  static_assert(bridge::config::RX_BUFFER_SIZE % kReadChunkSize == 0U);
+  constexpr size_t kReadPasses = bridge::config::RX_BUFFER_SIZE / kReadChunkSize;
+  etl::array<pw::ByteSpan::element_type, kReadChunkSize> chunk;
+  const etl::array<uint8_t, kReadPasses> passes{};
+  // all_of stops at the first pass that finds no data.
+  (void)etl::all_of(passes.begin(), passes.end(), [this, &chunk](uint8_t) {
+    const auto read_result =
+        _arduino_stream.Read(pw::ByteSpan(chunk.data(), chunk.size()));
+    if (!read_result.ok()) return false;  // no data: DoRead never returns 0 bytes OK
     const pw::ConstByteSpan rx_span = read_result.value();
-    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::byte b) {
+    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::ByteSpan::element_type b) {
       auto result = _hdlc_decoder.Process(b);
       if (result.ok()) {
         _handleReceivedHdlcFrame(result.value());
       }
     });
-  }
+    return true;
+  });
 
   const int avail = _stream->available();
   if (!_state_flags.test(FLAG_SERIAL_XOFF) &&

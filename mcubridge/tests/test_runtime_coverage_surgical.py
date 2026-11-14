@@ -109,8 +109,8 @@ async def test_spool_cloud_message_exceptions(test_config: RuntimeConfig, mock_b
 async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_spool = MagicMock()
-    svc._cloud_rpc_client = MagicMock()
-    svc._cloud_writer = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
+    svc.cloud_writer = MagicMock()
     svc.cloud_spool = mock_spool
 
     # Single garbage entry: peek decodes to ProtobufDecodeError, popleft drains it.
@@ -198,8 +198,8 @@ async def test_cloud_events_and_direct_rpc_dispatch(
     mock_client = MagicMock()
     mock_writer = MagicMock()
     mock_writer.drain = AsyncMock()
-    svc._cloud_rpc_client = mock_client
-    svc._cloud_writer = mock_writer
+    svc.cloud_rpc_client = mock_client
+    svc.cloud_writer = mock_writer
     svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
     # send_cloud_event test
@@ -285,8 +285,8 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc._cloud_rpc_client = MagicMock()
-    svc._cloud_writer = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
+    svc.cloud_writer = MagicMock()
     svc.publish_cloud_message = AsyncMock(return_value=False)
 
     spool = svc.cloud_spool
@@ -346,8 +346,8 @@ async def test_spool_cloud_message_serialization_error(
 async def test_publish_cloud_message_debug_logging(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc._cloud_rpc_client = MagicMock()
-    svc._cloud_writer = MagicMock()
+    svc.cloud_rpc_client = MagicMock()
+    svc.cloud_writer = MagicMock()
     svc.send_cloud_telemetry = AsyncMock(return_value=True)
     logging.getLogger("mcubridge.service").setLevel(logging.DEBUG)
     msg = cloud_gateway_pb2.CloudQueuedPublish(

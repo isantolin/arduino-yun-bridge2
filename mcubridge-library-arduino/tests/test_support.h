@@ -4,7 +4,18 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
+#else
+#include <pw_bytes/span.h>
+#include <pw_checksum/crc32.h>
+#include <pw_hdlc/decoder.h>
+#include <pw_hdlc/encoder.h>
+#include <pw_result/result.h>
+#include <pw_status/status.h>
+#include <pw_stream/memory_stream.h>
+#include <pw_stream/stream.h>
+#endif
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/string_view.h>
@@ -148,7 +159,7 @@ inline bool extract_next_valid_hdlc_frame(
     const ByteBuffer<N>& buffer, size_t& cursor,
     pw::hdlc::DecoderBuffer<1024>& decoder, pw::hdlc::Frame& out_frame) {
   while (cursor < buffer.len) {
-    auto res = decoder.Process(static_cast<pw::byte>(buffer.data[cursor++]));
+    auto res = decoder.Process(static_cast<pw::ByteSpan::element_type>(buffer.data[cursor++]));
     if (res.ok()) {
       out_frame = res.value();
       return true;
@@ -259,7 +270,7 @@ inline bool perform_test_link_sync(bridge::test::TestAccessor& ba,
   handshake_nonce.fill(nonce_fill);
   if (!out_nonce.empty()) {
     etl::copy_n(handshake_nonce.begin(),
-                std::min(out_nonce.size(), handshake_nonce.size()),
+                etl::min(out_nonce.size(), handshake_nonce.size()),
                 out_nonce.begin());
   }
   rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
@@ -284,7 +295,7 @@ inline bool decode_tx_response(const BiStream& stream,
                                NanopbType& out_msg) {
   pw::hdlc::DecoderBuffer<1024> decoder;
   for (size_t i = 0; i < stream.tx_buf.len; ++i) {
-    auto frame = decoder.Process(static_cast<pw::byte>(stream.tx_buf.data[i]));
+    auto frame = decoder.Process(static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
     if (!frame.ok()) continue;
     auto pkt = pw::rpc::internal::Packet::FromBuffer(frame.value().data());
     if (!pkt.ok() ||

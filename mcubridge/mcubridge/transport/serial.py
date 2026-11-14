@@ -16,6 +16,7 @@ import asyncio
 from collections import deque
 import logging
 import os
+import socket
 from pathlib import Path
 import sys
 import time
@@ -31,7 +32,8 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
-from pw_rpc import callback_client, packets as pw_packets
+from pw_rpc import packets as pw_packets
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
 from pw_rpc.internal.packet_pb2 import PacketType
@@ -58,6 +60,8 @@ logger = structlog.get_logger("mcubridge.serial")
 
 _LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
 _LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
+# Console bytes travel on HDLC_ADDRESS_CONSOLE, not as pw_rpc packets to the MCU.
+_CONSOLE_WRITE_SPEC: Final = protocol.BY_NAME["rpc.pb.ConsoleService/Write"]
 _HANDSHAKE_RAW_NAMES: Final[frozenset[str]] = frozenset(
     {
         "rpc.pb.SystemService/LinkSync",
@@ -110,6 +114,22 @@ def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
     ser.flush()
 
 
+def close_serial_port(ser: serial.Serial) -> None:
+    """Thread target to close the port and release its raw socket deterministically. [SIL-2]
+
+    pyserial's socket:// handler drops its socket reference when shutdown() fails
+    (peer already gone) without calling close(), leaving the descriptor to the GC and
+    raising ResourceWarning. Closing the raw socket ourselves is idempotent and keeps
+    teardown deterministic for tcp:// and wifi:// links.
+    """
+    raw_socket = getattr(ser, "_socket", None)
+    try:
+        ser.close()
+    finally:
+        if isinstance(raw_socket, socket.socket):
+            raw_socket.close()
+
+
 class SerialTransport:
     """High-performance asyncio serial/wireless transport with flattened pipeline. [SIL-2]"""
 
@@ -151,7 +171,7 @@ class SerialTransport:
         self._transfer_manager: Any | None = None
         self._transfer_lock = asyncio.Lock()
         self.rpc_client = PwRpcClient(
-            cast(Any, callback_client).Impl(),
+            PwCallbackClientImpl(),
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, self.queue_rpc_packet)],
             protocol.PW_SERVICES,
         )
@@ -329,7 +349,7 @@ class SerialTransport:
                 except (AttributeError, OSError) as exc:
                     logger.debug("Failed to cancel pending serial I/O during cleanup", error=str(exc))
                 try:
-                    await asyncio.to_thread(self.serial.close)
+                    await asyncio.to_thread(close_serial_port, self.serial)
                 except (AttributeError, OSError) as exc:
                     logger.error("Failed to close serial port during cleanup", error=str(exc))
                 self.serial = None
@@ -358,7 +378,7 @@ class SerialTransport:
             except (AttributeError, OSError) as exc:
                 logger.debug("Failed to cancel pending serial I/O on stop", error=str(exc))
             try:
-                await asyncio.to_thread(self.serial.close)
+                await asyncio.to_thread(close_serial_port, self.serial)
             except (AttributeError, OSError) as exc:
                 logger.error("Failed to close serial port on stop", error=str(exc))
 
@@ -415,7 +435,7 @@ class SerialTransport:
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
             if self.service:
-                await self.service.handle_mcu_frame("ConsoleWrite", 0, pb.ConsoleWrite(data=frame_data))
+                await self.service.handle_mcu_frame(_CONSOLE_WRITE_SPEC.name, 0, pb.ConsoleWrite(data=frame_data))
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
@@ -534,6 +554,8 @@ class SerialTransport:
             return False
 
         spec = get_operation(command_id)
+        if spec is _CONSOLE_WRITE_SPEC:
+            return await self.send_raw(_CONSOLE_WRITE_SPEC, payload, seq_id)
         pw_method = (
             protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
             if spec is not None and spec.service_name and spec.method_name
@@ -723,7 +745,7 @@ class SerialTransport:
             )
 
     def _get_rpc_method(self, spec: Any) -> Any | None:
-        method_name = f"{spec.service_name}/{spec.method_name}"
+        method_name = spec.name
         try:
             return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(method_name)
         except (KeyError, ValueError) as exc:
@@ -881,12 +903,27 @@ class SerialTransport:
         rpc_method = self._get_rpc_method(spec)
         if rpc_method is None:
             return False
-        method_name = f"{spec.service_name}/{spec.method_name}"
+        method_name = spec.name
         pw_method = protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
         effective_timeout = timeout if timeout is not None else self._response_timeout
         if pw_method.type is PwRpcMethod.Type.SERVER_STREAMING:
             return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
+
+    async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
+        """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""
+        packet_type = PacketType.RESPONSE if status is Status.OK else PacketType.SERVER_ERROR
+        packet = protocol.encode_rpc_packet(
+            1,
+            service_id,
+            method_id,
+            call_id=call_id,
+            payload=b"",
+            packet_type=int(packet_type),
+            status=status.value,
+        )
+        self._active_server_call_ids.pop((service_id, method_id), None)
+        return await self._rpc_packet_writer(packet)
 
     async def send_raw(
         self,
@@ -947,7 +984,7 @@ class SerialTransport:
             target = spec if spec is not None else command_id
             is_link_reset = spec is _LINK_RESET_SPEC
             is_link_sync = spec is _LINK_SYNC_SPEC
-            is_console_write = (spec is not None and spec.name == "ConsoleWrite") or command_id == "ConsoleWrite"
+            is_console_write = spec is _CONSOLE_WRITE_SPEC
 
             if is_console_write:
                 if isinstance(payload, bytes):

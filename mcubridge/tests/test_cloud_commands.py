@@ -110,8 +110,8 @@ async def test_publish_cloud_message_wraps_command_response(
     try:
         mock_client = AsyncMock()
         mock_writer = AsyncMock()
-        svc._cloud_rpc_client = mock_client
-        svc._cloud_writer = mock_writer
+        svc.cloud_rpc_client = mock_client
+        svc.cloud_writer = mock_writer
         svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
         msg = cloud_gateway_pb2.CloudQueuedPublish(

@@ -37,7 +37,6 @@ REQUIRED_DEPS = [
     "google.protobuf",
     "nanopb",
     "mypy_protobuf",
-    "grpclib",
     "black",
     "typer",
     "packaging",
@@ -103,10 +102,6 @@ class ConfigFieldDef:
 _message_to_dict: Final = functools.partial(
     MessageToDict, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
 )
-
-
-def _snake_case(s: str) -> str:
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 
 def _format_cpp_digit(v: object) -> str:

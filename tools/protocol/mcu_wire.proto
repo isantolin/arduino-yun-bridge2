@@ -449,6 +449,7 @@ service GpioService {
   }
   rpc SubscribePins(rpc.pb.PinSubscribeRequest) returns (stream rpc.pb.PinUpdateEvent) {
     option (auth_field) = "gpio_subscribe";
+    option (mcu_handler) = "pin_subscribe";
   }
 }
 

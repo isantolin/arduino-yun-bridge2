@@ -8,15 +8,18 @@
 from __future__ import annotations
 
 import asyncio
+import socket
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from typing import Any, cast
 import serial
 import structlog
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import (
+    close_serial_port,
     SerialTransport,
     resolve_serial_url,
 )
@@ -246,3 +249,54 @@ async def test_serial_transport_tcp_none_service_disconnect(
 
     server.close()
     await server.wait_closed()
+
+
+def test_close_serial_port_releases_leaked_socket() -> None:
+    """pyserial's socket handler may drop its socket without closing it; the transport must close it anyway."""
+    server_sock, client_sock = socket.socketpair()
+    try:
+
+        class LeakyPort:
+            def __init__(self, sock: socket.socket) -> None:
+                self._socket: socket.socket | None = sock
+                self.is_open = True
+
+            def close(self) -> None:
+                # Mirrors serial.urlhandler.protocol_socket.Serial.close() when shutdown() raises:
+                # the reference is dropped but the descriptor is never closed.
+                self._socket = None
+                self.is_open = False
+
+        port = LeakyPort(client_sock)
+        close_serial_port(cast(Any, port))
+        assert port.is_open is False
+        assert client_sock.fileno() == -1
+    finally:
+        server_sock.close()
+        client_sock.close()
+
+
+async def test_send_status_emits_call_bound_server_error(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    """send_status must answer the MCU's call with its service/method/call ids, not a bare status packet."""
+    from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+
+    written: list[bytes] = []
+
+    async def _writer(packet: bytes) -> bool:
+        written.append(packet)
+        return True
+
+    transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=_writer)
+    assert await transport.send_status(protocol.Status.NOT_FOUND, 42, 0xAAAA, 0xBBBB)
+    assert await transport.send_status(protocol.Status.OK, 43, 0xAAAA, 0xBBBB)
+    err, ok = (RpcPacket.FromString(p) for p in written)
+    assert (err.type, err.status, err.call_id, err.service_id, err.method_id) == (
+        PacketType.SERVER_ERROR,
+        protocol.Status.NOT_FOUND.value,
+        42,
+        0xAAAA,
+        0xBBBB,
+    )
+    assert (ok.type, ok.status, ok.call_id) == (PacketType.RESPONSE, 0, 43)

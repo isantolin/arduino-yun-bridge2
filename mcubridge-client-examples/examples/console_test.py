@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Interactive console helper for the Arduino bridge using direct GatewayClient through Gateway."""
+"""Console write helper for the Arduino bridge using direct GatewayClient through Gateway.
+
+Linux -> MCU console bytes travel through ``ConsoleService/Write``. The MCU -> Linux
+console output is published by the daemon as telemetry on ``evt/ConsoleService/Write``;
+a northbound Gateway -> client stream for that topic does not exist yet (ADR-0003), so
+this helper only writes.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +16,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, cloud_gateway_pb2, mcu_wire_pb2
+from mcubridge_client import mcu_wire_pb2
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -21,68 +27,39 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
 
     async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
-
-        async def console_listener() -> None:
-            try:
-                async with stub.SubscribeConsole.open() as stream:
-                    await stream.send_message(mcu_wire_pb2.SubscribeRequest())
-                    async for msg in stream:
-                        payload_str = (msg.payload or b"").decode("utf-8")
-                        logger.info("Received from Arduino", payload=payload_str)
-            except asyncio.CancelledError:
-                logger.debug("Console listener task cancelled.")
-            except (OSError, RuntimeError) as e:
-                logger.debug("Console listener closed", error=str(e))
-
-        listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
-
         is_interactive = sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
-        topic_cw = Topic.build("req", "ConsoleWrite", prefix=topic_prefix)
 
         if not is_interactive:
-            logger.info("Non-interactive mode. Running Echo Test (ping/pong)...")
-            await stub.Publish(cloud_gateway_pb2.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
+            logger.info("Non-interactive mode. Writing 'ping' to the MCU console...")
+            await stub.ConsoleWrite(mcu_wire_pb2.ConsoleWrite(data=b"ping"))
             await asyncio.sleep(2.0)
-            logger.info("Echo Test phase completed.")
-        else:
-            logger.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
-            while True:
-                try:
-                    user_input = await asyncio.to_thread(input)
-                    if user_input.lower() == "exit":
-                        break
-                    await stub.Publish(
-                        cloud_gateway_pb2.CloudQueuedPublish(
-                            topic_name=topic_cw,
-                            payload=user_input.encode("utf-8"),
-                            qos=1,
-                        )
-                    )
-                except EOFError as exc:
-                    logger.info("Console input stream terminated by EOF", error=str(exc))
-                    break
+            logger.info("Console write phase completed.")
+            return
 
-        listener_task.cancel()
-        try:
-            await listener_task
-        except asyncio.CancelledError:
-            logger.debug("Listener task cleanup complete.")
+        logger.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
+        while True:
+            try:
+                user_input = await asyncio.to_thread(input)
+            except EOFError as exc:
+                logger.info("Console input stream terminated by EOF", error=str(exc))
+                break
+            if user_input.lower() == "exit":
+                break
+            await stub.ConsoleWrite(mcu_wire_pb2.ConsoleWrite(data=user_input.encode("utf-8")))
 
 
 def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
-    asyncio.run(run_test(host, port, device_id, topic_prefix))
+    asyncio.run(run_test(host, port, device_id))
 
 
-cli = typer.Typer(help="Interactive console helper using direct GatewayClient through Gateway.", add_completion=False)
+cli = typer.Typer(help="Console write helper using direct GatewayClient through Gateway.", add_completion=False)
 
 
 @cli.command()
@@ -90,9 +67,8 @@ def cli_main(
     host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
     device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
-    main(host, port, device_id, topic_prefix)
+    main(host, port, device_id)
 
 
 if __name__ == "__main__":

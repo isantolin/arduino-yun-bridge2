@@ -171,8 +171,10 @@ def get_ssl_context(cfg: config_schema_pb2.RuntimeConfig) -> ssl.SSLContext | No
         context.minimum_version = TLSVersion.TLSv1_2
 
         if cfg.cloud_tls_insecure:
+            # Only hostname matching is relaxed (IP endpoints with DNS SANs); the CA chain is
+            # still verified so a forged certificate is rejected.
             context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
+            context.verify_mode = ssl.CERT_REQUIRED
 
         if cfg.cloud_certfile:
             context.load_cert_chain(cfg.cloud_certfile, cfg.cloud_keyfile)

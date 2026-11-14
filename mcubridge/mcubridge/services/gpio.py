@@ -12,6 +12,7 @@ from ..protocol.protocol import (
     CLOUD_EXPIRY_PIN,
     DEFAULT_PIN_HYSTERESIS,
     DEFAULT_PIN_INTERVAL_MS,
+    MIN_PIN_INTERVAL_MS,
     topic_path,
 )
 from ..protocol.structures import create_queued_publish
@@ -53,6 +54,9 @@ class GpioService:
         serial = self._runtime.serial
         if serial is None or not self._runtime.state.is_connected:
             return {"status": "error", "message": "Serial transport is not connected"}
+        if enabled and interval_ms < MIN_PIN_INTERVAL_MS:
+            # An interval of 0 makes the MCU report on every loop iteration and floods the link.
+            return {"status": "error", "message": f"interval_ms must be >= {MIN_PIN_INTERVAL_MS}"}
 
         pb_mode = getattr(config_schema_pb2.PinModeType, f"PIN_{mode.upper()}", config_schema_pb2.PinModeType.PIN_INPUT)
         req = mcu_wire_pb2.PinSubscribeRequest(

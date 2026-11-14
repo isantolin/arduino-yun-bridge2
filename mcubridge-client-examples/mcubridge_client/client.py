@@ -11,17 +11,23 @@ from typing import Any, Final, cast
 import pw_hdlc.decode
 import pw_hdlc.encode
 import structlog
-from pw_rpc import callback_client
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
 
-from . import mcu_wire_pb2
+from . import cloud_gateway_pb2, mcu_wire_pb2
 from .gateway import gateway_control_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
     PwRpcService.from_descriptor(desc)
-    for mod in (mcu_wire_pb2, gateway_control_pb2)
+    for mod in (mcu_wire_pb2, cloud_gateway_pb2, gateway_control_pb2)
     for desc in cast(Any, mod).DESCRIPTOR.services_by_name.values()
+)
+
+# Canonical operation names ("<proto service>/<method>"), the single identifier
+# format used end to end by the client, the Gateway and the daemon catalog.
+OPERATIONS: Final[frozenset[str]] = frozenset(
+    f"{service.full_name}/{method.name}" for service in PW_SERVICES for method in service.methods
 )
 
 logger = structlog.get_logger(__name__)
@@ -46,7 +52,7 @@ class GatewayConnection:
         self.running = True
         self.decoder = pw_hdlc.decode.FrameDecoder()
         self.rpc_client = PwRpcClient(
-            callback_client.Impl(),
+            PwCallbackClientImpl(),
             [PwRpcChannel(1, self.send_frame)],
             PW_SERVICES,
         )
@@ -72,6 +78,14 @@ class GatewayConnection:
 
     def close(self) -> None:
         self.running = False
+        # shutdown() wakes the reader thread blocked in recv() and sends EOF right
+        # away. Without it the descriptor stays open until the reader returns, and
+        # the Gateway keeps the client principal registered, rejecting the next
+        # session with the same identity as a duplicate.
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError as exc:
+            logger.debug("Socket shutdown error ignored", error=str(exc))
         try:
             self.sock.close()
         except OSError as exc:
@@ -88,30 +102,33 @@ class GatewayClient:
 
     async def dispatch(
         self,
-        service_name: str,
-        method_name: str,
+        operation: str,
         request: Any = None,
         timeout_ms: int = 5000,
     ) -> bytes:
+        """Dispatch the canonical operation (e.g. "rpc.pb.GpioService/DigitalWrite") to the target device."""
+        if operation not in OPERATIONS:
+            raise ValueError(f"Unknown operation: {operation}")
         payload = request.SerializeToString() if request is not None else b""
         dispatch_method = self.connection.rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
         req = gateway_control_pb2.DispatchRequest(
             target_device_id=self.target_device_id,
-            service_name=service_name,
-            method_name=method_name,
+            operation=operation,
             request_payload=payload,
             timeout_ms=timeout_ms,
         )
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()
 
-        def _on_completed(call: Any, resp: Any) -> None:
+        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
+        # final Status (the unary response is call.response); on_error the error Status.
+        def _on_completed(call: Any, status: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, resp))
+                fut.set_result((status, call.response))
 
-        def _on_error(call: Any) -> None:
+        def _on_error(_call: Any, error: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, None))
+                fut.set_result((error, None))
 
         dispatch_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
         status, resp = await asyncio.wait_for(fut, timeout=max(float(timeout_ms) / 1000.0, 1.0) + 2.0)
@@ -124,13 +141,15 @@ class GatewayClient:
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()
 
-        def _on_completed(call: Any, resp: Any) -> None:
+        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
+        # final Status (the unary response is call.response); on_error the error Status.
+        def _on_completed(call: Any, status: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, resp))
+                fut.set_result((status, call.response))
 
-        def _on_error(call: Any) -> None:
+        def _on_error(_call: Any, error: Any) -> None:
             if not fut.done():
-                fut.set_result((call.status, None))
+                fut.set_result((error, None))
 
         health_method.invoke(on_completed=_on_completed, on_error=_on_error)
         status, resp = await asyncio.wait_for(fut, timeout=5.0)
@@ -139,115 +158,139 @@ class GatewayClient:
         return resp
 
     async def DigitalWrite(self, req: mcu_wire_pb2.DigitalWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService", "DigitalWrite", req)
+        resp_bytes = await self.dispatch("rpc.pb.GpioService/DigitalWrite", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def DigitalRead(self, req: mcu_wire_pb2.PinRead) -> mcu_wire_pb2.DigitalReadResponse:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService", "DigitalRead", req)
+        resp_bytes = await self.dispatch("rpc.pb.GpioService/DigitalRead", req)
         resp = mcu_wire_pb2.DigitalReadResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def AnalogWrite(self, req: mcu_wire_pb2.AnalogWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService", "AnalogWrite", req)
+        resp_bytes = await self.dispatch("rpc.pb.GpioService/AnalogWrite", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def AnalogRead(self, req: mcu_wire_pb2.PinRead) -> mcu_wire_pb2.AnalogReadResponse:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService", "AnalogRead", req)
+        resp_bytes = await self.dispatch("rpc.pb.GpioService/AnalogRead", req)
         resp = mcu_wire_pb2.AnalogReadResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
+    async def PinSubscribe(self, req: mcu_wire_pb2.PinSubscribeRequest) -> mcu_wire_pb2.PinSubscribeResponse:
+        resp_bytes = await self.dispatch("rpc.pb.GpioService/SubscribePins", req)
+        resp = mcu_wire_pb2.PinSubscribeResponse()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
     async def SetPinMode(self, req: mcu_wire_pb2.PinMode) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService", "SetPinMode", req)
+        resp_bytes = await self.dispatch("rpc.pb.GpioService/SetPinMode", req)
+        resp = mcu_wire_pb2.Empty()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
+    async def ConsoleWrite(self, req: mcu_wire_pb2.ConsoleWrite) -> mcu_wire_pb2.Empty:
+        resp_bytes = await self.dispatch("rpc.pb.ConsoleService/Write", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def DatastorePut(self, req: mcu_wire_pb2.DatastorePut) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.DataStoreService", "Put", req)
+        resp_bytes = await self.dispatch("rpc.pb.DataStoreService/Put", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def DatastoreGet(self, req: mcu_wire_pb2.DatastoreGet) -> mcu_wire_pb2.DatastoreGetResponse:
-        resp_bytes = await self.dispatch("rpc.pb.DataStoreService", "Get", req)
+        resp_bytes = await self.dispatch("rpc.pb.DataStoreService/Get", req)
         resp = mcu_wire_pb2.DatastoreGetResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def MailboxPush(self, req: mcu_wire_pb2.MailboxPush) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.MailboxService", "Push", req)
+        resp_bytes = await self.dispatch("rpc.pb.MailboxService/Push", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def MailboxRead(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.MailboxReadResponse:
-        resp_bytes = await self.dispatch("rpc.pb.MailboxService", "Read", req)
+        resp_bytes = await self.dispatch("rpc.pb.MailboxService/Read", req)
         resp = mcu_wire_pb2.MailboxReadResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def ProcessRunAsync(self, req: mcu_wire_pb2.ProcessRunAsync) -> mcu_wire_pb2.ProcessRunAsyncResponse:
-        resp_bytes = await self.dispatch("rpc.pb.ProcessService", "RunAsync", req)
+        resp_bytes = await self.dispatch("rpc.pb.ProcessService/RunAsync", req)
         resp = mcu_wire_pb2.ProcessRunAsyncResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def ProcessPoll(self, req: mcu_wire_pb2.ProcessPoll) -> mcu_wire_pb2.ProcessPollResponse:
-        resp_bytes = await self.dispatch("rpc.pb.ProcessService", "Poll", req)
+        resp_bytes = await self.dispatch("rpc.pb.ProcessService/Poll", req)
         resp = mcu_wire_pb2.ProcessPollResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def ProcessKill(self, req: mcu_wire_pb2.ProcessKill) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.ProcessService", "Kill", req)
+        resp_bytes = await self.dispatch("rpc.pb.ProcessService/Kill", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def FileWrite(self, req: mcu_wire_pb2.FileWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.FileSystemService", "Write", req)
+        resp_bytes = await self.dispatch("rpc.pb.FileSystemService/Write", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def FileRemove(self, req: mcu_wire_pb2.FileRemove) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.FileSystemService", "Remove", req)
+        resp_bytes = await self.dispatch("rpc.pb.FileSystemService/Remove", req)
+        resp = mcu_wire_pb2.Empty()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
+    async def SpiBegin(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.Empty:
+        resp_bytes = await self.dispatch("rpc.pb.SpiService/Begin", req)
+        resp = mcu_wire_pb2.Empty()
+        resp.ParseFromString(resp_bytes)
+        return resp
+
+    async def SpiEnd(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.Empty:
+        resp_bytes = await self.dispatch("rpc.pb.SpiService/End", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def SpiConfigure(self, req: mcu_wire_pb2.SpiConfig) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.SpiService", "SetConfig", req)
+        resp_bytes = await self.dispatch("rpc.pb.SpiService/SetConfig", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def SpiTransfer(self, req: mcu_wire_pb2.SpiTransfer) -> mcu_wire_pb2.SpiTransferResponse:
-        resp_bytes = await self.dispatch("rpc.pb.SpiService", "Transfer", req)
+        resp_bytes = await self.dispatch("rpc.pb.SpiService/Transfer", req)
         resp = mcu_wire_pb2.SpiTransferResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def GetVersion(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.VersionResponse:
-        resp_bytes = await self.dispatch("rpc.pb.SystemService", "GetVersion", req)
+        resp_bytes = await self.dispatch("rpc.pb.SystemService/GetVersion", req)
         resp = mcu_wire_pb2.VersionResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def GetFreeMemory(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.FreeMemoryResponse:
-        resp_bytes = await self.dispatch("rpc.pb.SystemService", "GetFreeMemory", req)
+        resp_bytes = await self.dispatch("rpc.pb.SystemService/GetFreeMemory", req)
         resp = mcu_wire_pb2.FreeMemoryResponse()
         resp.ParseFromString(resp_bytes)
         return resp
 
     async def EnterBootloader(self, req: mcu_wire_pb2.EnterBootloader) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.SystemService", "EnterBootloader", req)
+        resp_bytes = await self.dispatch("rpc.pb.SystemService/EnterBootloader", req)
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp

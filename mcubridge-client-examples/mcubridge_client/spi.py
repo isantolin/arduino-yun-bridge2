@@ -45,6 +45,9 @@ class SpiDevice:
         """Initialize the SPI bus on the MCU."""
         if self.is_active:
             return
+        # The MCU only clocks bytes after SpiService/Begin; without it every
+        # transfer returns an empty buffer.
+        await self._stub.SpiBegin(mcu_wire_pb2.SubscribeRequest())
         cfg = mcu_wire_pb2.SpiConfig(
             frequency=self.frequency,
             bit_order=mcu_wire_pb2.SpiBitOrder.Value(self.bit_order.name),
@@ -55,6 +58,8 @@ class SpiDevice:
 
     async def end(self) -> None:
         """Deinitialize the SPI bus on the MCU."""
+        if self.is_active:
+            await self._stub.SpiEnd(mcu_wire_pb2.SubscribeRequest())
         self.is_active = False
 
     async def transfer(self, data: SpiBuffer) -> bytes:

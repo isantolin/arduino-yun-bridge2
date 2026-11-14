@@ -26,7 +26,7 @@ fi
 # Update core index and install cores only if not already installed by CI workflow
 if [ ! -d "$HOME/.arduino15/packages/arduino/hardware/avr" ] || \
    [ ! -d "$HOME/.arduino15/packages/arduino/hardware/samd" ] || \
-   [ ! -d "$HOME/.arduino15/packages/arduino/hardware/esp32" ]; then
+   [ ! -d "$HOME/.arduino15/packages/esp32/hardware/esp32" ]; then
     echo "Updating core index..."
     if ! arduino-cli core update-index; then
         echo "[WARN] arduino-cli core update-index failed; bootstrapping package_index.tar.bz2 directly..."
@@ -34,11 +34,12 @@ if [ ! -d "$HOME/.arduino15/packages/arduino/hardware/avr" ] || \
         curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"
     fi
 
-    echo "Installing Arduino AVR, SAMD, and ESP32 cores..."
-    arduino-cli core install arduino:avr arduino:samd arduino:esp32 || {
+    echo "Installing Arduino AVR and SAMD cores and the Espressif ESP32 core..."
+    arduino-cli core install arduino:avr arduino:samd || {
         echo "Failed to install required Arduino board cores" >&2
         exit 1
     }
+    bash "$PWD/tools/ci/install_espressif_core.sh"
 fi
 
 # Install official dependencies if missing
@@ -104,11 +105,14 @@ done
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
 
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "$PWD/tools/ci/arduino_toolchains.sh"
+
 # Define memory-capable, library-supported target boards (SSOT: tools.boards).
 if command -v python3 >/dev/null 2>&1 && python3 -c "import tools.boards" >/dev/null 2>&1; then
     TARGET_BOARDS=($(python3 -m tools.boards fqbns))
 else
-    TARGET_BOARDS=("arduino:avr:mega" "arduino:samd:mkrwifi1010" "arduino:esp32:nano_nora")
+    TARGET_BOARDS=("arduino:avr:mega" "arduino:samd:mkrwifi1010" "esp32:esp32:nano_nora")
 fi
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
@@ -158,6 +162,10 @@ compile_sketch() {
     local LINK_FLAGS=()
     local AVR_PROPS=()
     local AVR_STDCPP_INC=""
+    if [[ "$FQBN" == arduino:samd:* ]]; then
+        samd_toolchain_props || return 1
+        AVR_PROPS+=("${SAMD_TOOLCHAIN_PROPS[@]}")
+    fi
     if [[ "$FQBN" == arduino:avr:* ]]; then
         COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
         if command -v avr-gcc >/dev/null 2>&1; then

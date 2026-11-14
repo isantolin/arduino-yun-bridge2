@@ -117,7 +117,7 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
     console_envelope = mcu_cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, b"console output")
     await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_CONSOLE, console_envelope))
     service_mock.handle_mcu_frame.assert_awaited_once_with(
-        "ConsoleWrite",
+        "rpc.pb.ConsoleService/Write",
         0,
         pb.ConsoleWrite(data=b"console output"),
     )

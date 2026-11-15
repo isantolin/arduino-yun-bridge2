@@ -35,15 +35,15 @@ def test_topic_route_properties() -> None:
     cmd=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=16),
     arg=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=0, max_size=16),
 )
-def test_is_command_allowed_property(cmd: str, arg: str) -> None:
+def test_parse_allowed_command_property(cmd: str, arg: str) -> None:
     policy = config_schema_pb2.AllowedCommandPolicy(entries=[cmd, "*"])
     full_cmd = f"{cmd} {arg}".strip()
-    assert structures.is_command_allowed(policy, full_cmd) is True
-    assert structures.is_command_allowed(policy, "") is False
+    assert structures.parse_allowed_command(policy, full_cmd) == full_cmd.split()
+    assert structures.parse_allowed_command(policy, "") is None
 
     strict_policy = config_schema_pb2.AllowedCommandPolicy(entries=[cmd])
-    assert structures.is_command_allowed(strict_policy, full_cmd) is True
-    assert structures.is_command_allowed(strict_policy, f"disallowed_{cmd}") is False
+    assert structures.parse_allowed_command(strict_policy, full_cmd) == full_cmd.split()
+    assert structures.parse_allowed_command(strict_policy, f"disallowed_{cmd}") is None
 
 
 def test_create_allowed_policy() -> None:

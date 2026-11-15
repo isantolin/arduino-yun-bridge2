@@ -181,6 +181,41 @@ async def test_mcu_process_run_asserts_exec(
     await service.process_kill(pid)
 
 
+async def test_process_run_malformed_quoting_does_not_leak_slots(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    """Regression: a shlex error used to escape after a slot was taken, leaking it forever."""
+    service, state, _serial = service_setup
+    for _ in range(state.process_max_concurrent * 2 + 1):
+        rejected = await service.process_run_async('echo "unterminated')
+        assert rejected.pid == 0
+    accepted = await service.process_run_async("echo ok")
+    assert accepted.pid > 0
+    await service.process_kill(accepted.pid)
+
+
+async def test_process_run_rejects_commands_outside_exact_policy(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    """The policy entry "ls" allows neither a differently-cased program nor a path."""
+    service, state, _serial = service_setup
+    for command in ("LS", "/bin/ls", "./ls", "lsx"):
+        res = await service.process_run_async(command)
+        assert res.pid == 0, command
+    assert state.running_processes == {}
+
+
+async def test_process_handle_is_the_real_pid(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    """Regression: the handle used to be pid & 0xFFFF, which can collide or be 0."""
+    service, state, _serial = service_setup
+    res = await service.process_run_async("sleep 10")
+    assert res.pid > 0
+    assert state.running_processes[res.pid].handle.pid == res.pid
+    await service.process_kill(res.pid)
+
+
 async def test_cloud_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:

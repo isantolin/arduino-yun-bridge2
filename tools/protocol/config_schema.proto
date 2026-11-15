@@ -1101,7 +1101,7 @@ message RuntimeConfig {
     (uci_option) = "topic_prefix"
   ];
   repeated string allowed_commands = 13 [
-    (config_desc) = "List of permitted shell commands",
+    (config_desc) = "Allowed programs (case-sensitive; /path exact, name glob; * = all)",
     (uci_option) = "allowed_commands"
   ];
   string file_system_root = 14 [

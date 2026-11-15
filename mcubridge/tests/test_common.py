@@ -16,9 +16,10 @@ def test_normalise_commands() -> None:
     policy = create_allowed_policy(cmds)
     assert tuple(policy.entries) == ("*",)
 
+    # Case is preserved: policy matching is case-sensitive.
     cmds = ["cmd1", "CMD2"]
     policy = create_allowed_policy(cmds)
-    assert tuple(policy.entries) == ("cmd1", "cmd2")
+    assert tuple(policy.entries) == ("CMD2", "cmd1")
 
 
 def test_get_uci_config_success() -> None:

@@ -159,7 +159,7 @@ bool derive_handshake_auth_key(pw::span<const uint8_t> secret,
 constexpr size_t kHandshakePairLength = 2U * RPC_HANDSHAKE_NONCE_LENGTH;
 
 bool is_handshake_message_length(size_t length) {
-  return (length == RPC_HANDSHAKE_NONCE_LENGTH) |
+  return (length == RPC_HANDSHAKE_NONCE_LENGTH) ||
          (length == kHandshakePairLength);
 }
 
@@ -180,8 +180,8 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
                           pw::span<const uint8_t> nonce,
                           pw::span<const uint8_t> info,
                           pw::span<uint8_t> out_tag) {
-  const bool invalid_dimensions = secret.empty() |
-                                  !is_handshake_message_length(nonce.size()) |
+  const bool invalid_message = !is_handshake_message_length(nonce.size());
+  const bool invalid_dimensions = secret.empty() | invalid_message |
                                   (out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH);
   if (invalid_dimensions) {
     secure_zero(out_tag);

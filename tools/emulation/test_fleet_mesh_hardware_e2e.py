@@ -157,7 +157,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
     )
     decoder = FrameDecoder()
     secret = DEFAULT_SHARED_SECRET.encode("utf-8")
-    pending_sync: tuple[int, bytes, bytes] | None = None
+    pending_sync: tuple[int, bytes] | None = None
     call_id = 0
     next_probe = 0.0
     deadline = time.monotonic() + timeout

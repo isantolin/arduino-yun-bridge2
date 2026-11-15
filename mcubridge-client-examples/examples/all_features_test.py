@@ -44,13 +44,15 @@ async def run_test(
         assert ds_val.value == b"hello"
         logger.info("DataStore key verified.", key=test_key, value=ds_val.value.decode("utf-8"))
 
-        # 4. FileIO test (write/remove; MPU file read is not exposed by the Gateway contract yet, ADR-0003)
-        logger.info("Testing FileIO...")
+        # 4. FileIO test using pw_transfer staging and FileTransferService
+        logger.info("Testing FileIO via pw_transfer staging...")
         test_file = "test_file_all.txt"
         test_data = b"e2e-data-all"
-        await stub.FileWrite(mcu_wire_pb2.FileWrite(path=test_file, data=test_data))
+        await stub.push_bytes_to_device(test_data, test_file)
+        fetched = await stub.fetch_bytes_from_device(test_file)
+        assert fetched == test_data
         await stub.FileRemove(mcu_wire_pb2.FileRemove(path=test_file))
-        logger.info("FileIO write/remove verified.")
+        logger.info("FileIO pw_transfer roundtrip verified.")
 
     logger.info("--- ALL-FEATURES TEST SUCCEEDED ---")
 

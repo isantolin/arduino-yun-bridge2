@@ -832,11 +832,8 @@ class GatewayControlService final
     }
 
     const std::string_view op(request.operation);
-    const bool is_push = (op == "rpc.pb.FileTransferService/PushToLinux" ||
-                          op == "rpc.pb.LinuxFileTransferService/PushToLinux");
-    const bool is_fetch =
-        (op == "rpc.pb.FileTransferService/FetchFromLinux" ||
-         op == "rpc.pb.LinuxFileTransferService/FetchFromLinux");
+    const bool is_push = (op == "rpc.pb.FileTransferService/PushToLinux");
+    const bool is_fetch = (op == "rpc.pb.FileTransferService/FetchFromLinux");
 
     if (is_push && !client_id_.empty() && !target_id.empty()) {
       std::error_code ec;

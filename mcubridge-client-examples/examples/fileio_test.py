@@ -34,19 +34,20 @@ async def run_test(
         if read_back != transfer_payload:
             raise RuntimeError(f"pw_transfer mismatch: expected {transfer_payload!r}, got {read_back!r}")
 
-        # --- 2. Test MPU File Write / Remove ---
+        # --- 2. Test MPU File Transfer via pw_transfer Staging & FileTransferService ---
         test_filename: str = "test_file.txt"
-        test_content: str = "hello from async fileio_test"
+        test_content: bytes = b"hello from pw_transfer streaming fileio_test"
 
         try:
-            logger.info("Writing file", filename=test_filename, content=test_content)
-            await stub.FileWrite(
-                mcu_wire_pb2.FileWrite(
-                    path=test_filename,
-                    data=test_content.encode("utf-8"),
-                )
-            )
-            logger.info("File written to MPU safe path")
+            logger.info("Pushing file to Linux device via pw_transfer staging", filename=test_filename)
+            await stub.push_bytes_to_device(test_content, test_filename)
+            logger.info("File pushed to MPU safe path")
+
+            logger.info("Fetching file from Linux device via pw_transfer staging", filename=test_filename)
+            fetched_content = await stub.fetch_bytes_from_device(test_filename)
+            logger.info("File fetched back", matches=fetched_content == test_content)
+            if fetched_content != test_content:
+                raise RuntimeError(f"File content mismatch: expected {test_content!r}, got {fetched_content!r}")
         finally:
             logger.info("Removing file", filename=test_filename)
             await stub.FileRemove(

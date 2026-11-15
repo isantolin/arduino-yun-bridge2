@@ -303,12 +303,6 @@ class GatewayClient:
         resp.ParseFromString(resp_bytes)
         return resp
 
-    async def FileWrite(self, req: mcu_wire_pb2.FileWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.FileSystemService/Write", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
-
     async def FileRemove(self, req: mcu_wire_pb2.FileRemove) -> mcu_wire_pb2.Empty:
         resp_bytes = await self.dispatch("rpc.pb.FileSystemService/Remove", req)
         resp = mcu_wire_pb2.Empty()
@@ -357,15 +351,14 @@ class GatewayClient:
         resp.ParseFromString(resp_bytes)
         return resp
 
-    async def push_file_to_device(
+    async def push_bytes_to_device(
         self,
-        local_path: str | os.PathLike[str],
+        data: bytes,
         remote_device_path: str,
         resource_id: int = 2,
         timeout_ms: int | None = None,
     ) -> int:
-        """Push a local file to the remote OpenWrt Linux device using pw_transfer staging."""
-        data = Path(local_path).read_bytes()
+        """Push in-memory bytes to the remote OpenWrt Linux device using pw_transfer staging."""
         await self.transfer_write(resource_id, data)
         req = cloud_gateway_pb2.FileTransferSyncRequest(
             path=remote_device_path,
@@ -382,14 +375,13 @@ class GatewayClient:
             raise RuntimeError(f"Push to Linux device failed: {resp.message}")
         return resp.bytes_transferred
 
-    async def fetch_file_from_device(
+    async def fetch_bytes_from_device(
         self,
         remote_device_path: str,
-        local_destination_path: str | os.PathLike[str],
         resource_id: int = 2,
         timeout_ms: int | None = None,
-    ) -> int:
-        """Fetch a remote file from the OpenWrt Linux device using pw_transfer staging."""
+    ) -> bytes:
+        """Fetch remote file contents as bytes from the OpenWrt Linux device using pw_transfer staging."""
         req = cloud_gateway_pb2.FileTransferSyncRequest(
             path=remote_device_path,
             resource_id=resource_id,
@@ -403,7 +395,37 @@ class GatewayClient:
         resp.ParseFromString(resp_bytes)
         if not resp.success:
             raise RuntimeError(f"Fetch from Linux device failed: {resp.message}")
-        data = await self.transfer_read(resource_id)
+        return await self.transfer_read(resource_id)
+
+    async def push_file_to_device(
+        self,
+        local_path: str | os.PathLike[str],
+        remote_device_path: str,
+        resource_id: int = 2,
+        timeout_ms: int | None = None,
+    ) -> int:
+        """Push a local file to the remote OpenWrt Linux device using pw_transfer staging."""
+        data = Path(local_path).read_bytes()
+        return await self.push_bytes_to_device(
+            data=data,
+            remote_device_path=remote_device_path,
+            resource_id=resource_id,
+            timeout_ms=timeout_ms,
+        )
+
+    async def fetch_file_from_device(
+        self,
+        remote_device_path: str,
+        local_destination_path: str | os.PathLike[str],
+        resource_id: int = 2,
+        timeout_ms: int | None = None,
+    ) -> int:
+        """Fetch a remote file from the OpenWrt Linux device using pw_transfer staging."""
+        data = await self.fetch_bytes_from_device(
+            remote_device_path=remote_device_path,
+            resource_id=resource_id,
+            timeout_ms=timeout_ms,
+        )
         dest = Path(local_destination_path)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)

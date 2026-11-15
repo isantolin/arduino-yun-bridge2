@@ -260,7 +260,7 @@ El protocolo erradica bucles de reintento manuales mediante el uso exclusivo de 
 ### 6. Asynchronous File I/O & Storage Subsystem (`pathlib.Path` + `asyncio.to_thread`)
 
 Las rutas locales se resuelven y validan con `pathlib.Path`; las operaciones de disco potencialmente bloqueantes se delegan fuera del event loop:
-- **Lectura/escritura local en el MPU**: las rutas ordinarias de `FileRead` / `FileWrite` operan sobre `file_system_root`, con validación de rutas y cuota. La única ruta `mcu/` admitida es `mcu/eeprom`, que lee/escribe el recurso EEPROM fijo a través de `pw_transfer`; otras rutas `mcu/*` se rechazan. `FileRead` no es un método de `FileSystemService` del MCU.
+- **Lectura/escritura en el MPU desde la nube**: la sincronización bidireccional de archivos entre la nube y el filesystem de Linux opera mediante `FileTransferService` (`PushToLinux` / `FetchFromLinux`) utilizando el staging de `pw_transfer`, con validación de rutas y cuota en `file_system_root`. La única ruta `mcu/` admitida es `mcu/eeprom`, que lee/escribe el recurso EEPROM fijo a través de `pw_transfer`; otras rutas `mcu/*` se rechazan. Los antiguos métodos unarios `FileRead` / `FileWrite` en la nube han sido reemplazados por este canal de streaming.
 - **Transferencia de archivos del MCU**: debe usar upstream `pw_transfer` con handlers y streams acotados; no existe fallback al antiguo RPC Nanopb.
 - **Operaciones de disco**: `asyncio.to_thread` ejecuta filesystem y `psutil.disk_usage` sin bloquear `asyncio`/`uvloop`.
 - **Validación de rutas**: se comprueba que la ruta resuelta permanezca dentro de `file_system_root`; errores de acceso y filesystem se registran explícitamente.

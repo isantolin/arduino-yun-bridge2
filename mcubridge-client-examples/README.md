@@ -108,11 +108,11 @@ Si se omite `--device-id` y no se ha definido `MCUBRIDGE_DEVICE_ID`, el script f
 
 | Script | Descripción Funcional | Métodos RPC Pigweed Utilizados |
 |---|---|---|
-| `all_features_test.py` | Suite integral de validación de las capacidades expuestas por `GatewayControl` (GPIO, Datastore, FileIO escritura/borrado). | `DigitalWrite`, `AnalogWrite`, `DatastorePut`, `DatastoreGet`, `FileWrite`, `FileRemove` |
+| `all_features_test.py` | Suite integral de validación de las capacidades expuestas por `GatewayControl` (GPIO, Datastore, FileIO mediante pw_transfer/borrado). | `DigitalWrite`, `AnalogWrite`, `DatastorePut`, `DatastoreGet`, `push_bytes_to_device`, `fetch_bytes_from_device`, `FileRemove` |
 | `bootloader_test.py` | Reinicio controlado del MCU hacia el bootloader de programación. | `EnterBootloader` |
 | `console_test.py` | Escritura hacia la consola del MCU (`rpc.pb.ConsoleService/Write`). La salida MCU → Linux se publica como telemetría (`evt/rpc.pb.ConsoleService/Write`). | `ConsoleWrite` |
 | `datastore_test.py` | Lectura, escritura y verificación de pares clave-valor en RAM. | `DatastorePut`, `DatastoreGet` |
-| `fileio_test.py` | Escritura y borrado de archivos del MPU. El recurso EEPROM del MCU se transfiere mediante `pw_transfer` (ruta reservada `mcu/eeprom`). | `FileWrite`, `FileRemove` |
+| `fileio_test.py` | Transferencia de archivos del MPU mediante `pw_transfer` staging y `FileTransferService`, y borrado con `FileRemove`. El recurso EEPROM del MCU se transfiere mediante `pw_transfer` (recurso `0x4D454741`). | `transfer_write`, `transfer_read`, `push_bytes_to_device`, `fetch_bytes_from_device`, `FileRemove` |
 | `led13_test.py` | Alternancia periódica de encendido y apagado del LED Pin 13. | `DigitalWrite` |
 | `mailbox_read_test.py` | Lectura no destructiva y consumo FIFO de la cola de mensajes. | `MailboxRead` |
 | `pin_subscribe_test.py` | Alta y baja de una suscripción de pin en el MCU (`rpc.pb.GpioService/SubscribePins`). | `PinSubscribe` |

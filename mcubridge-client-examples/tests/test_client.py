@@ -28,7 +28,8 @@ def mock_grpc() -> tuple[MagicMock, MagicMock]:
     mock_stub.DigitalWrite = AsyncMock()
     mock_stub.AnalogWrite = AsyncMock()
     mock_stub.DatastorePut = AsyncMock()
-    mock_stub.FileWrite = AsyncMock()
+    mock_stub.push_bytes_to_device = AsyncMock(return_value=7)
+    mock_stub.fetch_bytes_from_device = AsyncMock(return_value=b"content")
     mock_stub.AnalogRead = AsyncMock()
     mock_stub.PinSubscribe = AsyncMock()
     return mock_channel, mock_stub
@@ -81,17 +82,11 @@ async def test_client_datastore_put(mock_grpc: tuple[MagicMock, MagicMock]) -> N
     assert sent.value == b"test_value"
 
 
-async def test_client_file_write(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+async def test_client_push_bytes(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
     _, mock_stub = mock_grpc
-    msg = mcu_wire_pb2.FileWrite(path="test.txt", data=b"content")
-    await mock_stub.FileWrite(msg)
-    mock_fn = cast(AsyncMock, mock_stub.FileWrite)
-    mock_fn.assert_awaited_once_with(msg)
-    call_args = mock_fn.call_args
-    assert call_args is not None
-    sent = cast(mcu_wire_pb2.FileWrite, call_args[0][0])
-    assert sent.path == "test.txt"
-    assert sent.data == b"content"
+    await mock_stub.push_bytes_to_device(b"content", "test.txt")
+    mock_fn = cast(AsyncMock, mock_stub.push_bytes_to_device)
+    mock_fn.assert_awaited_once_with(b"content", "test.txt")
 
 
 async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
@@ -473,9 +468,6 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
     res_pk = await client.ProcessKill(mcu_wire_pb2.ProcessKill(pid=42))
     assert isinstance(res_pk, mcu_wire_pb2.Empty)
 
-    res_fw = await client.FileWrite(mcu_wire_pb2.FileWrite(path="a.txt", data=b"data"))
-    assert isinstance(res_fw, mcu_wire_pb2.Empty)
-
     res_fr = await client.FileRemove(mcu_wire_pb2.FileRemove(path="a.txt"))
     assert isinstance(res_fr, mcu_wire_pb2.Empty)
 
@@ -699,3 +691,28 @@ async def test_gateway_client_fetch_file_from_device_failure(tmp_path: Path) -> 
 
     with pytest.raises(RuntimeError, match="Fetch from Linux device failed: File not found"):
         await client.fetch_file_from_device("/var/log/missing", dest_file)
+
+
+async def test_gateway_client_push_fetch_bytes() -> None:
+    mock_conn = MagicMock()
+    mock_manager = MagicMock()
+    mock_manager.read.return_value = b"bytes content"
+    client = GatewayClient(mock_conn, target_device_id="dev-test", transfer_manager=mock_manager)
+
+    push_resp = cloud_gateway_pb2.FileTransferSyncResponse(
+        success=True, bytes_transferred=13, message="OK"
+    ).SerializeToString()
+    fetch_resp = cloud_gateway_pb2.FileTransferSyncResponse(
+        success=True, bytes_transferred=13, message="OK"
+    ).SerializeToString()
+
+    client.dispatch = AsyncMock(side_effect=[push_resp, fetch_resp])
+
+    transferred = await client.push_bytes_to_device(b"bytes content", "/tmp/bytes.bin", resource_id=3)
+    assert transferred == 13
+    mock_manager.write.assert_called_once_with(3, b"bytes content")
+
+    fetched = await client.fetch_bytes_from_device("/tmp/bytes.bin", resource_id=3)
+    assert fetched == b"bytes content"
+    mock_manager.read.assert_called_once_with(3)
+

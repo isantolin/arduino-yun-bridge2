@@ -107,11 +107,18 @@ class GatewayClient:
         target_device_id: str,
         *,
         transfer_manager: PwTransferManager | None = None,
+        default_timeout_ms: int | None = None,
     ) -> None:
         self.connection = connection
         self.target_device_id = target_device_id
         self._transfer_manager: PwTransferManager | None = transfer_manager
         self._transfer_lock = asyncio.Lock()
+        env_timeout = os.environ.get("MCUBRIDGE_CLIENT_TIMEOUT_MS")
+        self.default_timeout_ms: int = (
+            default_timeout_ms
+            if default_timeout_ms is not None
+            else (int(env_timeout) if env_timeout else 30000)
+        )
 
     def _get_transfer_manager(self) -> PwTransferManager:
         if self._transfer_manager is None:
@@ -142,18 +149,19 @@ class GatewayClient:
         self,
         operation: str,
         request: Any = None,
-        timeout_ms: int = 15000,
+        timeout_ms: int | None = None,
     ) -> bytes:
         """Dispatch the canonical operation (e.g. "rpc.pb.GpioService/DigitalWrite") to the target device."""
         if operation not in OPERATIONS:
             raise ValueError(f"Unknown operation: {operation}")
         payload = request.SerializeToString() if request is not None else b""
         dispatch_method = self.connection.rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
+        effective_timeout_ms = timeout_ms if timeout_ms is not None else self.default_timeout_ms
         req = gateway_control_pb2.DispatchRequest(
             target_device_id=self.target_device_id,
             operation=operation,
             request_payload=payload,
-            timeout_ms=timeout_ms,
+            timeout_ms=effective_timeout_ms,
         )
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Any] = loop.create_future()
@@ -172,7 +180,7 @@ class GatewayClient:
             loop.call_soon_threadsafe(_set_result, (error, None))
 
         dispatch_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
-        status, resp = await asyncio.wait_for(fut, timeout=max(float(timeout_ms) / 1000.0, 1.0) + 2.0)
+        status, resp = await asyncio.wait_for(fut, timeout=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0)
         if not status.ok():
             raise RuntimeError(f"Pigweed RPC dispatch failed: {status}")
         return resp.response_payload

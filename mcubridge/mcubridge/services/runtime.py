@@ -1170,7 +1170,7 @@ class BridgeService:
                 resp_payload = b""
                 status_code = 403
             else:
-                resp_payload = await self.execute_rpc(target, edge_req.request_payload)
+                resp_payload = await self.execute_rpc(target, edge_req.request_payload, timeout_ms=edge_req.timeout_ms)
                 status_code = 200
         except (ValueError, ProtobufDecodeError) as exc:
             logger.warning("Unknown or invalid RPC method from cloud", error=str(exc))
@@ -1298,7 +1298,7 @@ class BridgeService:
 
     # --- RPC Execution & Operations [SIL-2] ---
 
-    async def execute_rpc(self, target: str, payload_bytes: bytes) -> bytes:
+    async def execute_rpc(self, target: str, payload_bytes: bytes, timeout_ms: int = 0) -> bytes:
         spec = protocol.BY_NAME.get(target)
         if not spec or not spec.request_type:
             raise ValueError(f"Unknown RPC method: {target}")
@@ -1319,7 +1319,8 @@ class BridgeService:
                 raise ConnectionError(f"Serial link disconnected for {target}")
 
             payload = b"" if isinstance(req, mcu_wire_pb2.SubscribeRequest) else req
-            res = await self.serial.send(spec.name, payload)
+            timeout_s = float(timeout_ms) / 1000.0 if timeout_ms > 0 else None
+            res = await self.serial.send(spec.name, payload, timeout=timeout_s)
             if isinstance(res, mcu_wire_pb2.VersionResponse):
                 self.state.mcu_version = (res.major, res.minor, res.patch)
             if res is True:

@@ -492,7 +492,7 @@ class GatewaySession final
       return pw::Status::Unavailable();
     }
 
-    const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 5000;
+    const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
     std::unique_lock lock(ctx.cv_mutex);
     if (!ctx.cv.wait_for(lock, std::chrono::milliseconds(timeout),
                          [&] { return ctx.completed || stopping_.load(); })) {

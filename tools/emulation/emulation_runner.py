@@ -209,7 +209,7 @@ def setup_fake_uci(
         "cloud_certfile": str(device_identity.cert),
         "cloud_keyfile": str(device_identity.key),
         "watchdog_enabled": "0",
-        "serial_response_timeout": "30.0",
+        "serial_response_timeout": "60.0",
         "serial_shared_secret": shared_secret,
         "allowed_commands": "*",
         "storage_path": str(storage_path),

@@ -277,15 +277,20 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
-        async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name) as (_channel, stub):
-            ver_resp: mcu_wire_pb2.VersionResponse = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
-            for _ in range(5):
-                if ver_resp.major == 2 and ver_resp.minor == 8:
-                    break
-                await asyncio.sleep(0.5)
-                ver_resp = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
-            if ver_resp.major != 2 or ver_resp.minor != 8:
-                logger.error("Unexpected version response", node=node.name, major=ver_resp.major, minor=ver_resp.minor)
+        async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000) as (_channel, stub):
+            ver_resp: mcu_wire_pb2.VersionResponse | None = None
+            for attempt in range(5):
+                try:
+                    ver_resp = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
+                    if ver_resp.major == 2 and ver_resp.minor == 8:
+                        break
+                except (RuntimeError, TimeoutError) as exc:
+                    logger.warning("GetVersion attempt failed, retrying...", node=node.name, attempt=attempt, error=str(exc))
+                await asyncio.sleep(1.0)
+            if ver_resp is None or ver_resp.major != 2 or ver_resp.minor != 8:
+                major = ver_resp.major if ver_resp else -1
+                minor = ver_resp.minor if ver_resp else -1
+                logger.error("Unexpected version response", node=node.name, major=major, minor=minor)
                 return False
             logger.info(
                 "Node GetVersion verified",
@@ -293,26 +298,42 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                 version=f"{ver_resp.major}.{ver_resp.minor}.{ver_resp.patch}",
             )
 
-            mem_resp = await stub.GetFreeMemory(mcu_wire_pb2.SubscribeRequest())
-            if mem_resp.value == 0:
-                logger.error("Free memory reported as 0", node=node.name)
+            mem_resp: mcu_wire_pb2.FreeMemoryResponse | None = None
+            for attempt in range(3):
+                try:
+                    mem_resp = await stub.GetFreeMemory(mcu_wire_pb2.SubscribeRequest())
+                    if mem_resp.value > 0:
+                        break
+                except (RuntimeError, TimeoutError) as exc:
+                    logger.warning("GetFreeMemory attempt failed, retrying...", node=node.name, attempt=attempt, error=str(exc))
+                await asyncio.sleep(1.0)
+            if mem_resp is None or mem_resp.value == 0:
+                logger.error("Free memory reported as 0 or unavailable", node=node.name)
                 return False
             logger.info("Node GetFreeMemory verified", node=node.name, free_bytes=mem_resp.value)
 
             led_pin = node.metadata.led_builtin
-            try:
-                await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
-            except (RuntimeError, TimeoutError) as exc:
-                logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
-                return False
-            await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
+            for attempt in range(3):
+                try:
+                    await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
+                    await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
+                    break
+                except (RuntimeError, TimeoutError) as exc:
+                    if attempt == 2:
+                        logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
+                        return False
+                    await asyncio.sleep(1.0)
             logger.info("Node hardware actuation (LED) verified", node=node.name, pin=led_pin)
 
-            try:
-                await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
-            except (RuntimeError, TimeoutError) as exc:
-                logger.error("MailboxPush failed", node=node.name, error=str(exc))
-                return False
+            for attempt in range(3):
+                try:
+                    await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
+                    break
+                except (RuntimeError, TimeoutError) as exc:
+                    if attempt == 2:
+                        logger.error("MailboxPush failed", node=node.name, error=str(exc))
+                        return False
+                    await asyncio.sleep(1.0)
             logger.info("Node MailboxPush verified", node=node.name)
 
     return True

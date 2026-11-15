@@ -53,6 +53,8 @@ _CRASH_PARSER = parse.compile(
     "ramend=0x{ramend:x} sreg=0x{sreg:x} cycle={cycle:d}"
 )
 _LOW_WATER_PARSER = parse.compile("AVR stack low-water mark: min_sp=0x{min_sp:x} ramend=0x{ramend:x}")
+_PEAK_CONTEXT_PARSER = parse.compile("AVR stack low-water context: pc=0x{pc:x} address_size={address_size:d} stack:{stack}")
+_MAX_PEAK_FRAMES = 16
 # avr-nm reports data-space symbols with the 0x800000 SRAM offset.
 _AVR_DATA_SPACE_MASK = 0xFFFF
 SIMAVR_STARTUP_SETTLE_SECONDS = 5.0
@@ -197,15 +199,60 @@ def _run_avr_tool(args: list[str]) -> str | None:
     return res.stdout if res.returncode == 0 else None
 
 
-def _avr_symbol_address(firmware_path: Path, symbol: str) -> int | None:
+def _avr_symbol_address(firmware_path: Path, symbol: str, *, data_space: bool = True) -> int | None:
     output = _run_avr_tool(["avr-nm", str(firmware_path)])
     if output is None:
         return None
     for line in output.splitlines():
         fields = line.split()
         if len(fields) == 3 and fields[2] == symbol:
-            return int(fields[0], 16) & _AVR_DATA_SPACE_MASK
+            address = int(fields[0], 16)
+            return address & _AVR_DATA_SPACE_MASK if data_space else address
     return None
+
+
+def _symbolize(firmware_path: Path, byte_addresses: list[int]) -> list[str]:
+    if not byte_addresses:
+        return []
+    output = _run_avr_tool(
+        ["avr-addr2line", "-f", "-C", "-p", "-e", str(firmware_path), *(hex(a) for a in byte_addresses)]
+    )
+    return output.splitlines() if output else []
+
+
+def _scan_return_addresses(stack: bytes, address_size: int, text_end: int) -> list[int]:
+    """Return candidate return addresses (byte addresses) found on an AVR stack.
+
+    CALL pushes the word address low byte first, so it reads big-endian from SP+1
+    upward. Values that fall inside .text are kept; this is a heuristic stack
+    scan, so stale or data values that look like code addresses can appear.
+    """
+    candidates: list[int] = []
+    for i in range(len(stack) - address_size + 1):
+        word_address = int.from_bytes(stack[i : i + address_size], "big")
+        byte_address = word_address * 2
+        if 0 < byte_address < text_end and byte_address not in candidates:
+            candidates.append(byte_address)
+    return candidates[:_MAX_PEAK_FRAMES]
+
+
+def _report_stack_peak(firmware_path: Path, lines: list[str], heap_start: int | None) -> None:
+    peak = next((res for line in reversed(lines) if (res := _PEAK_CONTEXT_PARSER.parse(line))), None)
+    low_water = next((res for line in reversed(lines) if (res := _LOW_WATER_PARSER.parse(line))), None)
+    if peak is None or low_water is None:
+        return
+    stack = bytes.fromhex(str(peak["stack"]).replace(" ", ""))
+    text_end = _avr_symbol_address(firmware_path, "_etext", data_space=False)
+    frames = _scan_return_addresses(stack, peak["address_size"], text_end) if text_end else []
+    pc_function = _symbolize(firmware_path, [peak["pc"]])
+    logger.info(
+        "simavr stack peak context",
+        stack_used_bytes=low_water["ramend"] - low_water["min_sp"],
+        stack_budget_bytes=(low_water["ramend"] - heap_start) if heap_start is not None else None,
+        pc=hex(peak["pc"]),
+        function=pc_function[0] if pc_function else None,
+        call_chain_candidates=_symbolize(firmware_path, frames),
+    )
 
 
 def report_simavr_crash(firmware_path: Path, state: EmulationState) -> None:
@@ -223,10 +270,11 @@ def report_simavr_crash(firmware_path: Path, state: EmulationState) -> None:
         tenacity.Retrying(
             stop=tenacity.stop_after_delay(2.0),
             wait=tenacity.wait_fixed(0.05),
-            retry=tenacity.retry_if_result(lambda lines: not any(_LOW_WATER_PARSER.parse(x) for x in lines)),
+            # The peak-context line is the runner's last output on exit.
+            retry=tenacity.retry_if_result(lambda lines: not any(_PEAK_CONTEXT_PARSER.parse(x) for x in lines)),
         )(_stderr_lines)
     except tenacity.RetryError:
-        logger.warning("simavr exited without a stack low-water report")
+        logger.warning("simavr exited without a stack peak report")
 
     lines = _stderr_lines()
     crash = next((res for line in lines if (res := _CRASH_PARSER.parse(line))), None)
@@ -251,6 +299,7 @@ def report_simavr_crash(firmware_path: Path, state: EmulationState) -> None:
         # __heap_start means the stack overwrote static data.
         stack_overflowed_into_bss=(min_sp < heap_start) if min_sp is not None and heap_start is not None else None,
     )
+    _report_stack_peak(firmware_path, lines, heap_start)
 
 
 def _teardown_simavr(

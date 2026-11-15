@@ -1,37 +1,38 @@
-# Arquitectura de Clientes MCU Bridge v2 (gRPC Cloud Gateway)
+# Arquitectura de Clientes MCU Bridge v2 (Pigweed Cloud Gateway)
 
 [![Python](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![gRPC](https://img.shields.io/badge/gRPC-HTTP%2F2-244c5a?logo=grpc)](https://grpc.io/)
+[![Pigweed](https://img.shields.io/badge/Pigweed-RPC-orange)](https://pigweed.dev/)
 [![Protobuf](https://img.shields.io/badge/Serialization-Protobuf_v3-green?logo=protobuf)](https://protobuf.dev/)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.6-00B5E2?logo=openwrt)](https://openwrt.org/)
 
-Este componente proporciona el SDK y la suite de herramientas CLI para que aplicaciones, dashboards y servicios de automatización interactúen con microcontroladores Arduino Yún a través del **Protobuf Cloud Gateway** centralizado (`mcubridge-gateway`).
+Este componente proporciona el SDK y la suite de herramientas CLI para que aplicaciones, dashboards y servicios de automatización interactúen con microcontroladores Arduino a través del **Pigweed Cloud Gateway** C++ (`mcubridge-gateway-cpp`).
 
 ## Arquitectura de Comunicación Centralizada
 
-Todos los clientes se comunican **exclusivamente con el Cloud Gateway** mediante llamadas RPC fuertemente tipadas sobre gRPC (`LocalBridgeStub`). Se ha erradicado por completo el uso de sockets UNIX locales en los clientes, consolidando un plano de control distribuido y homogéneo:
+Todos los clientes se comunican **exclusivamente con el Cloud Gateway** mediante llamadas RPC fuertemente tipadas sobre Pigweed RPC (`GatewayClient`). Se ha erradicado por completo el uso de sockets UNIX locales en los clientes, consolidando un plano de control distribuido y homogéneo:
 
 ```
 ┌──────────────────────────────────────┐
 │  Client Applications / Scripts / CLI │
 │    (mcubridge-client-examples)       │
 └──────────────────┬───────────────────┘
-                   │ gRPC (LocalBridge RPCs, x-device-id)
+                   │ TLS 1.3 mTLS (SPIFFE ID, HDLC, pw_rpc)
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
-│       Protobuf Cloud Gateway (Dedicated Central Server)     │
-│  - GatewayLocalBridgeService (25 RPCs + SubscribeConsole)   │
-│  - Enrutamiento estricto por metadato 'x-device-id'         │
+│       Pigweed Cloud Gateway (mcubridge-gateway-cpp)         │
+│  - GatewayControl (Health, Dispatch con target_device_id)   │
+│  - pw_transfer (Streaming de archivos y EEPROM acotado)     │
+│  - Identidad SPIFFE (spiffe://mcubridge/{client,device}/...) │
 │  - Multiplexación N:1 de dispositivos de borde              │
 └──────────────────┬──────────────────────────────────────────┘
-                   │ gRPC Bidirectional Session Stream
-                   │ CommandRequest(command_path="rpc.pb.LocalBridge/<method>")
+                   │ TLS 1.3 mTLS (EdgeControl, DeviceTelemetry)
+                   │ rpc.pb.<Service>/<Method>
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
 │             McuBridge Daemon (Edge Linux / MPU)             │
-│  - Outbound-only connection (Pure Push)                     │
-│  - Delegated RPC execution (local_bridge_service)           │
-│  - Local IPC via OpenWrt UBUS (ubus call mcubridge)         │
+│  - Conexión saliente autenticada (Pure Push)                │
+│  - Despacho delegado RPC (EdgeControl.Dispatch)             │
+│  - IPC local vía OpenWrt UBUS (ubus call mcubridge)         │
 └──────────────────┬──────────────────────────────────────────┘
                    │ Serial HDLC + pw_rpc (pw_hdlc + CRC32 FCS)
                    ▼

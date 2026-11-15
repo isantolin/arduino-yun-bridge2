@@ -825,15 +825,15 @@ class GatewayClientSession final : public SessionControl {
       }
     } registration{clients_, client_id_, this};
 
+    pw::thread::stl::Options transfer_options;
+    transfer_worker_ = std::make_unique<pw::thread::Thread>(
+        transfer_options, transfer_thread_.AsFunction());
+
     rpc_server_.RegisterService(control_service_);
     rpc_server_.RegisterService(transfer_service_);
     transfer_service_.RegisterHandler(default_transfer_handler_);
     transfer_service_.RegisterHandler(eeprom_transfer_handler_);
     transfer_service_.RegisterHandler(file_transfer_handler_);
-
-    pw::thread::stl::Options transfer_options;
-    transfer_worker_ = std::make_unique<pw::thread::Thread>(
-        transfer_options, transfer_thread_.AsFunction());
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "client=" << client_id_ << " event=session_open\n";
     ReceiveLoop();

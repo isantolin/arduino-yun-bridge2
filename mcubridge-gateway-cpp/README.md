@@ -24,12 +24,15 @@ standalone Linux C++ process, not a sidecar to the Python Gateway.
 - TX framing is serialized and passed through a bounded queue; a full queue
   fails the send with RESOURCE_EXHAUSTED rather than dropping bytes.
 
-The transfer service is intentionally registered without file handlers in
-this first service slice. GatewayControl currently exposes only Health; it is
-not yet a replacement for telemetry, commands, console, mailbox or sessions.
-Filesystem handlers must be attached only after the MPU resource broker
-enforces per-device roots, path confinement, quotas, seek/resume and
-atomic-write rules. No arbitrary host path is exposed.
+The upstream pw_transfer::TransferService is registered on the per-peer
+upstream pw_rpc::Server with bounded handlers:
+- Resource 1: In-memory transfer buffer (64 KiB).
+- Resource 2: Bounded atomic file transfer handler (`BoundedFileTransferHandler`)
+  enforcing per-principal roots (`/tmp/mcubridge-gateway/<client_id>/`), path
+  confinement (no path traversal or directory separators), quotas (1 MiB), and
+  atomic temporary file commits on `FinalizeWrite`.
+- Resource 0x4D454741: MCU EEPROM buffer (4 KiB).
+No arbitrary host paths are exposed.
 
 ## Build
 

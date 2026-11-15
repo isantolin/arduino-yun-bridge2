@@ -602,7 +602,7 @@ jobs:
       - name: Test Gateway TLS identity and session isolation
         run: |
           export PYTHONPATH=.:mcubridge
-          .tox/protocol/bin/python -m unittest discover -s mcubridge-gateway-cpp/tests -v
+          .tox/protocol/bin/pytest mcubridge-gateway-cpp/tests -vv --timeout=30 --timeout-method=thread
       - name: Generate Gateway Coverage Report
         run: |
           . .venv-gateway/bin/activate

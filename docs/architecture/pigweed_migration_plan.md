@@ -1,6 +1,6 @@
 # Plan de migración a Pigweed: ejecución consolidada
 
-- **Estado:** migración RPC integrada y Gateway Legacy Python erradicado; etapa final de handlers de archivos en `pw_transfer` en curso en PR #85 (`feat/multi-arch-pigweed-clean-compilers`). PR abierto y sin merge; la CI del HEAD debe aprobarse antes de considerar validada esta revisión.
+- **Estado:** migración RPC y transferencias `pw_transfer` integradas en Gateway C++ y firmware MCU (Etapa 7 completada); Gateway Legacy Python erradicado. Validación integral en CI en curso en PR #85 (`feat/multi-arch-pigweed-clean-compilers`). PR abierto y sin merge; la CI del HEAD debe aprobarse antes de considerar validada esta revisión.
 - **Base:** ADR-0002 — `docs/architecture/decisions/0002-pigweed-hdlc-rpc-migration.md` y ADR-0003 — `docs/architecture/decisions/0003-pigweed-gateway-cpp-replacement.md`.
 - **Protocolo canónico:** `tools/protocol/mcu_wire.proto`, `tools/protocol/config_schema.proto` y `tools/protocol/cloud_gateway.proto`.
 - **Integración MCU:** submódulo `third_party/avr_pigweed_port`, exportado como biblioteca Arduino `PigweedAVR`.
@@ -36,7 +36,7 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos, UBUS del MPU y clientes northbound (`GatewayClient`) invocan métodos RPC por nombre canónico Pigweed (`rpc.pb.<Service>/<Method>`); `LocalBridge` y `CloudBridge` gRPC erradicados | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read`/`Write` y `FileRead`/`FileWrite` unarios eliminados; Gateway Linux C++ Pigweed (`mcubridge-gateway-cpp`) con `pw_transfer::TransferService` integrado y Gateway Python/grpclib erradicado | Implementar e integrar handlers de archivos acotados en `TransferService` de `mcubridge-gateway-cpp` |
+| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read`/`Write` y `FileRead`/`FileWrite` unarios eliminados; Gateway Linux C++ Pigweed (`mcubridge-gateway-cpp`) con `pw_transfer::TransferService` y `BoundedFileTransferHandler` integrados; Gateway Python/grpclib erradicado | Ninguno |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
 | CI y validación | Matriz de CI completa de PR #85 en ejecución y supervisión en GitHub Actions HEAD actual (Tox, Gateway C++, simavr, Renode, QEMU, Arduino) | CI verde en HEAD de PR #85 y validación física UART/HDLC |
@@ -51,9 +51,7 @@ El corte coordinado ordenado por ADR-0003 se ejecutó en PR #85 (`feat/multi-arc
 - **Contratos legacy gRPC extirpados:** `CloudBridge`, `LocalBridge`, `FileRead`, `FileWrite` y `FileRemove` fueron completamente removidos de `cloud_gateway.proto`. El protocolo canónico northbound ahora expone `GatewayControl`, `EdgeControl` y `DeviceTelemetry` sobre Pigweed RPC.
 - **Clientes northbound migrados:** `mcubridge-client-examples` y `mcubridge_client` operan 100% sobre `GatewayClient` con `pw_rpc.Client`, canales HDLC framing y TLS 1.3 mTLS.
 - **Gateway Pigweed C++ activo:** `mcubridge-gateway-cpp` es el único gateway soportado; implementa mTLS 1.3 con SPIFFE ID (`spiffe://mcubridge/device/...`, `spiffe://mcubridge/client/...`), segregación de sesiones concurrentes por principal, enrutamiento determinista de telemetría y comandos hacia el daemon edge.
-
-**Pendiente de implementación en C++ Gateway:**
-- El servicio `pw_transfer::TransferService` está registrado en `mcubridge-gateway-cpp/src/gateway_main.cc`, pero requiere el registro de handlers de lectura/escritura acotados para streaming seguro de archivos a disco antes de habilitar transferencias remotas de archivos northbound.
+- **Implementación completada en C++ Gateway (Etapa 7):** El servicio `pw_transfer::TransferService` está registrado en `mcubridge-gateway-cpp/src/gateway_main.cc` con `BufferTransferHandler` (recursos 1 y 0x4D454741) y `BoundedFileTransferHandler` (recurso 2) con confinamiento estricto de rutas, cuotas acotadas y escrituras atómicas transaccionales a disco.
 
 ## Orden de ejecución
 
@@ -66,7 +64,7 @@ El corte coordinado ordenado por ADR-0003 se ejecutó en PR #85 (`feat/multi-arc
 | 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, sin `CMD_*`; mantener UBUS y contratos externos sin capas de compatibilidad innecesarias | **Completada** |
 | 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y tablas `commands` | **Completada** |
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
-| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **En curso — handler EEPROM MCU, cliente Python y reemplazo por Gateway C++ completados; resta registro de handlers de archivos acotados en `mcubridge-gateway-cpp`** |
+| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **Completada** — handlers EEPROM MCU, cliente Python `pw_transfer.Manager`, Gateway C++ con handlers acotados y atómicos en disco (`BoundedFileTransferHandler`) integrados y validados |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
 | 10 | Validación integral | Las métricas históricas citadas son un baseline anterior, no una validación del HEAD actual. PR #85 debe superar la matriz completa, incluida cobertura Python/C++, AVR Mega 2560, Renode, QEMU, fuzzing, OpenWrt y el Gateway C++ | **En curso — supervisión activa en CI de PR #85** |

@@ -19,6 +19,7 @@ import pw_status
 from pw_rpc import callback_client
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_transfer.client import Manager as PwTransferManager
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -408,9 +409,10 @@ class GatewayTlsIdentityTests(unittest.TestCase):
 
     def test_gateway_control_health_rpc(self) -> None:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_sock.settimeout(0.2)
         decoder = pw_hdlc.decode.FrameDecoder()
         rpc_client = PwRpcClient(
-            callback_client.Impl(),
+            callback_client.Impl(default_unary_timeout_s=5.0),
             [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
             protocol.PW_SERVICES,
         )
@@ -420,13 +422,15 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             while running:
                 try:
                     data = client_sock.recv(4096)
-                    if not data:
-                        break
-                    for f in decoder.process(data):
-                        if f.ok() and f.address == 1:
-                            rpc_client.process_packet(f.data)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
                 except (OSError, ssl.SSLError):
                     break
+                if not data:
+                    break
+                for f in decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        rpc_client.process_packet(f.data)
 
         t = threading.Thread(target=reader, daemon=True)
         t.start()
@@ -441,12 +445,14 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             running = False
             client_sock.close()
             t.join(timeout=2)
+            self.gateway.wait_for("client=operator-01 event=session_closed")
 
     def test_device_telemetry_reporting(self) -> None:
         dev_sock = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        dev_sock.settimeout(0.2)
         decoder = pw_hdlc.decode.FrameDecoder()
         rpc_client = PwRpcClient(
-            callback_client.Impl(),
+            callback_client.Impl(default_unary_timeout_s=5.0),
             [PwRpcChannel(1, lambda p: dev_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
             protocol.PW_SERVICES,
         )
@@ -456,13 +462,15 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             while running:
                 try:
                     data = dev_sock.recv(4096)
-                    if not data:
-                        break
-                    for f in decoder.process(data):
-                        if f.ok() and f.address == 1:
-                            rpc_client.process_packet(f.data)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
                 except (OSError, ssl.SSLError):
                     break
+                if not data:
+                    break
+                for f in decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        rpc_client.process_packet(f.data)
 
         t = threading.Thread(target=reader, daemon=True)
         t.start()
@@ -480,12 +488,14 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             running = False
             dev_sock.close()
             t.join(timeout=2)
+            self.gateway.wait_for("device=device-01 event=session_closed")
 
     def test_gateway_control_dispatch_device_not_found(self) -> None:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_sock.settimeout(0.2)
         decoder = pw_hdlc.decode.FrameDecoder()
         rpc_client = PwRpcClient(
-            callback_client.Impl(),
+            callback_client.Impl(default_unary_timeout_s=5.0),
             [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
             protocol.PW_SERVICES,
         )
@@ -495,13 +505,15 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             while running:
                 try:
                     data = client_sock.recv(4096)
-                    if not data:
-                        break
-                    for f in decoder.process(data):
-                        if f.ok() and f.address == 1:
-                            rpc_client.process_packet(f.data)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
                 except (OSError, ssl.SSLError):
                     break
+                if not data:
+                    break
+                for f in decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        rpc_client.process_packet(f.data)
 
         t = threading.Thread(target=reader, daemon=True)
         t.start()
@@ -519,17 +531,20 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             running = False
             client_sock.close()
             t.join(timeout=2)
+            self.gateway.wait_for("client=operator-01 event=session_closed")
 
     def test_gateway_control_dispatch_end_to_end(self) -> None:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_sock.settimeout(0.2)
         client_decoder = pw_hdlc.decode.FrameDecoder()
         client_rpc = PwRpcClient(
-            callback_client.Impl(),
+            callback_client.Impl(default_unary_timeout_s=5.0),
             [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
             protocol.PW_SERVICES,
         )
 
         dev_sock = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        dev_sock.settimeout(0.2)
         dev_decoder = pw_hdlc.decode.FrameDecoder()
 
         running = True
@@ -538,35 +553,37 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             while running:
                 try:
                     data = client_sock.recv(4096)
-                    if not data:
-                        break
-                    for f in client_decoder.process(data):
-                        if f.ok() and f.address == 1:
-                            client_rpc.process_packet(f.data)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
                 except (OSError, ssl.SSLError):
                     break
+                if not data:
+                    break
+                for f in client_decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        client_rpc.process_packet(f.data)
 
         def dev_reader() -> None:
             while running:
                 try:
                     data = dev_sock.recv(4096)
-                    if not data:
-                        break
-                    for f in dev_decoder.process(data):
-                        if f.ok() and f.address == 1:
-                            pkt = pw_rpc.packets.decode(f.data)
-                            edge_req = gateway_control_pb2.EdgeDispatchRequest()
-                            edge_req.ParseFromString(pkt.payload)
-                            edge_resp = gateway_control_pb2.EdgeDispatchResponse(
-                                status_code=0,
-                                response_payload=edge_req.operation.encode("utf-8"),
-                            )
-                            resp_pkt = pw_rpc.packets.encode_response(
-                                pkt, response=edge_resp, status=pw_status.Status.OK
-                            )
-                            dev_sock.sendall(pw_hdlc.encode.ui_frame(1, resp_pkt))
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
                 except (OSError, ssl.SSLError):
                     break
+                if not data:
+                    break
+                for f in dev_decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        pkt = pw_rpc.packets.decode(f.data)
+                        edge_req = gateway_control_pb2.EdgeDispatchRequest()
+                        edge_req.ParseFromString(pkt.payload)
+                        edge_resp = gateway_control_pb2.EdgeDispatchResponse(
+                            status_code=0,
+                            response_payload=edge_req.operation.encode("utf-8"),
+                        )
+                        resp_pkt = pw_rpc.packets.encode_response(pkt, response=edge_resp, status=pw_status.Status.OK)
+                        dev_sock.sendall(pw_hdlc.encode.ui_frame(1, resp_pkt))
 
         t_client = threading.Thread(target=client_reader, daemon=True)
         t_dev = threading.Thread(target=dev_reader, daemon=True)
@@ -595,7 +612,56 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dev_sock.close()
             t_client.join(timeout=2)
             t_dev.join(timeout=2)
+            self.gateway.wait_for("client=operator-01 event=session_closed")
+            self.gateway.wait_for("device=device-01 event=session_closed")
+
+    def test_gateway_transfer_bounded_file_read_and_write(self) -> None:
+        client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_sock.settimeout(0.2)
+        decoder = pw_hdlc.decode.FrameDecoder()
+        rpc_client = PwRpcClient(
+            callback_client.Impl(default_unary_timeout_s=5.0),
+            [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        running = True
+
+        def reader() -> None:
+            while running:
+                try:
+                    data = client_sock.recv(4096)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
+                except (OSError, ssl.SSLError):
+                    break
+                if not data:
+                    break
+                for f in decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        rpc_client.process_packet(f.data)
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        self.gateway.wait_for("client=operator-01 event=session_open")
+
+        try:
+            transfer_service = rpc_client.channel(1).rpcs.pw.transfer.Transfer
+            transfer_manager = PwTransferManager(transfer_service, default_response_timeout_s=5.0)
+            payload = b"test payload for bounded file transfer via pw_transfer"
+            transfer_manager.write(2, payload)
+            read_back = transfer_manager.read(2)
+            assert read_back == payload
+
+            # Verify on-disk file creation
+            staging_file = Path("/tmp/mcubridge-gateway/operator-01/staging.bin")
+            assert staging_file.is_file()
+            assert staging_file.read_bytes() == payload
+        finally:
+            running = False
+            client_sock.close()
+            t.join(timeout=2)
+            self.gateway.wait_for("client=operator-01 event=session_closed")
 
 
 if __name__ == "__main__":
-    unittest.main()
+    pytest.main([__file__, "-vv"])

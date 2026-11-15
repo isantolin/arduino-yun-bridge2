@@ -110,6 +110,7 @@ class BridgeService:
     cloud_writer: asyncio.StreamWriter | None
     _cloud_reader: asyncio.StreamReader | None
     cloud_rpc_client: Any | None
+    cloud_transfer_manager: Any | None
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
@@ -158,7 +159,7 @@ class BridgeService:
         self.lifecycle_fsm = DaemonLifecycleMachine()
         self.cloud_publisher = cloud_publisher
         self.cloud_writer, self._cloud_reader, self.cloud_rpc_client = None, None, None
-        self._cloud_transfer_manager: PwTransferManager | None = None
+        self.cloud_transfer_manager: Any | None = None
         self._cloud_transfer_lock = asyncio.Lock()
         self.watchdog = (
             WatchdogKeepalive(interval=config.watchdog_interval, state=state) if config.watchdog_enabled else None
@@ -724,9 +725,9 @@ class BridgeService:
     def get_cloud_transfer_manager(self) -> PwTransferManager:
         if self.cloud_rpc_client is None:
             raise ConnectionError("Cloud Gateway RPC client is not connected")
-        if self._cloud_transfer_manager is None:
+        if self.cloud_transfer_manager is None:
             transfer_service = self.cloud_rpc_client.channel(1).rpcs.pw.transfer.Transfer
-            self._cloud_transfer_manager = PwTransferManager(
+            self.cloud_transfer_manager = PwTransferManager(
                 transfer_service,
                 default_response_timeout_s=5.0,
                 initial_response_timeout_s=5.0,
@@ -734,7 +735,7 @@ class BridgeService:
                 max_lifetime_retries=60,
                 max_chunk_size_bytes=1024,
             )
-        return self._cloud_transfer_manager
+        return cast(PwTransferManager, self.cloud_transfer_manager)
 
     _get_cloud_transfer_manager = get_cloud_transfer_manager
 
@@ -1204,7 +1205,7 @@ class BridgeService:
             self.cloud_writer = None
             self._cloud_reader = None
             self.cloud_rpc_client = None
-            self._cloud_transfer_manager = None
+            self.cloud_transfer_manager = None
             try:
                 writer.close()
                 await writer.wait_closed()

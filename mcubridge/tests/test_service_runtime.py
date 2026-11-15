@@ -1861,7 +1861,7 @@ async def test_cloud_transfer_manager_lifecycle_and_operations(mock_bridge_servi
     # Mock manager methods for read/write
     mock_mgr = MagicMock()
     mock_mgr.read.return_value = b"read_bytes"
-    setattr(svc, "_cloud_transfer_manager", mock_mgr)
+    svc.cloud_transfer_manager = mock_mgr
 
     read_data = await svc.cloud_transfer_read(7)
     assert read_data == b"read_bytes"

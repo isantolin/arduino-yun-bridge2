@@ -94,6 +94,7 @@ async def test_tx_sequence_wrapping_isomorphism(init_seq: int) -> None:
     state.link_cipher = LinkCipher.for_host(
         transport.config.serial_shared_secret,
         bytes(range(protocol.HANDSHAKE_NONCE_LENGTH)),
+        bytes(range(16, 32)),
     )
     transport.tx_sequence_id = init_seq
     result = await transport.send_raw(0x01, b"")

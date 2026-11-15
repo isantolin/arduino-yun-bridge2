@@ -45,7 +45,7 @@ def _make_config() -> RuntimeConfig:
 
 def _install_link_cipher(config: RuntimeConfig, state: RuntimeState) -> LinkCipher:
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(config.serial_shared_secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(config.serial_shared_secret, nonce, bytes(range(16, 32)))
     state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     return LinkCipher(mcu_to_host, host_to_mcu)
 
@@ -658,6 +658,7 @@ async def test_connect_and_run_synchronizes_before_baudrate_negotiation(mocker: 
         state.link_cipher = LinkCipher.for_host(
             config.serial_shared_secret,
             bytes(range(protocol.HANDSHAKE_NONCE_LENGTH)),
+            bytes(range(16, 32)),
         )
         transport.stop_event.set()
 

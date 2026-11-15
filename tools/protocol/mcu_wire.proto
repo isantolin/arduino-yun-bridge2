@@ -185,6 +185,10 @@ message SetBaudratePacket {
 message LinkSync {
   bytes nonce = 1;
   bytes tag = 2;
+  // Handshake v2 (ADR-0005): the MCU's never-repeating nonce, set only in the
+  // MCU's response. The response tag and the session-key salt cover
+  // nonce || mcu_nonce, so a replayed host LinkSync yields fresh keys.
+  bytes mcu_nonce = 3;
 }
 
 message EnterBootloader {

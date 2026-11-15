@@ -137,6 +137,24 @@ bool checkStackOverflow();
 bool run_power_on_self_tests();
 
 /**
+ * @brief Fill `out` (16 bytes) with the MCU's handshake nonce (ADR-0005).
+ *
+ * ESP32 uses the hardware RNG. Other boards derive it from the shared secret
+ * and a never-repeating counter block (linkBootEpoch() || handshake count),
+ * so the value never repeats for the same secret.
+ */
+bool fillLinkNonce(pw::span<const uint8_t> secret, pw::span<uint8_t> out);
+
+/**
+ * @brief Return this boot's link epoch, persisted before the first nonce.
+ *
+ * AVR keeps it in the reserved EEPROM tail (incremented once per boot that
+ * performs a handshake). Boards without persistent storage support return 0,
+ * which keeps nonces unique within a boot only.
+ */
+uint64_t linkBootEpoch();
+
+/**
  * @brief [SIL-2] Enter MCU bootloader. Flushes state and triggers a
  * watchdog-driven reset into the bootloader. This function does not return.
  */

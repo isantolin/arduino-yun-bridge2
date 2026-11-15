@@ -13,11 +13,13 @@ namespace bridge::services {
 
 inline constexpr uint32_t kEepromTransferResourceId = 0x4D454741UL;
 #if defined(E2END)
-inline constexpr size_t kEepromTransferResourceSize =
-    static_cast<size_t>(E2END) + 1U;
+inline constexpr size_t kEepromPhysicalSize = static_cast<size_t>(E2END) + 1U;
 #else
-inline constexpr size_t kEepromTransferResourceSize = 4096U;
+inline constexpr size_t kEepromPhysicalSize = 4096U;
 #endif
+// The EEPROM tail holds the link boot epoch (ADR-0005) and is never exposed.
+inline constexpr size_t kEepromTransferResourceSize =
+    kEepromPhysicalSize - bridge::config::LINK_EPOCH_EEPROM_RESERVED_BYTES;
 
 bool registerEepromTransferHandler(pw::transfer::TransferService& service);
 

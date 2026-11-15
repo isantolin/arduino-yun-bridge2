@@ -71,6 +71,21 @@ def test_wolfssl_archive_pin_is_synced_to_installer() -> None:
     assert not sync_runtime_deps.update_cpp_install_script(manifest.cpp, dry_run=True)
 
 
+def test_flashstorage_archive_pin_is_synced_to_installer_and_ci() -> None:
+    manifest = sync_runtime_deps.load_manifest()
+    flash = next(dep for dep in manifest.cpp if dep["name"] == "FlashStorage")
+    installer = sync_runtime_deps.ARDUINO_INSTALL_SCRIPT_PATH.read_text(encoding="utf-8")
+    workflow = (sync_runtime_deps.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert flash["sha256"] == "2f5a349e1c5dc4ec7f7e22268c0f998af3f471b98ed873abd6e671ac67940e39"
+    assert not flash["check_latest"]
+    assert f'FLASHSTORAGE_VERSION="{flash["version"]}"' in installer
+    assert f'FLASHSTORAGE_SHA256="{flash["sha256"]}"' in installer
+    assert "FlashStorage-${FLASHSTORAGE_VERSION}.zip" in installer
+    assert f'"FlashStorage@{flash["version"]}"' in workflow
+    assert not sync_runtime_deps.update_cpp_install_script(manifest.cpp, dry_run=True)
+
+
 def test_check_latest_versions_skips_disabled_cpp_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

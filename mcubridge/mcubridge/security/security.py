@@ -17,16 +17,20 @@ os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 logger = structlog.get_logger("mcubridge.security")
 
 
-def derive_link_keys(secret: bytes, nonce: bytes) -> tuple[bytes, bytes]:
-    """Derive host-to-MCU and MCU-to-host keys from the shared secret."""
+def derive_link_keys(secret: bytes, host_nonce: bytes, mcu_nonce: bytes) -> tuple[bytes, bytes]:
+    """Derive host-to-MCU and MCU-to-host keys (handshake v2, ADR-0005).
+
+    The HKDF salt binds both nonces. The MCU nonce never repeats, so replaying
+    a recorded host LinkSync cannot recreate an earlier session's keys.
+    """
     if not secret:
         raise ValueError("link shared secret is empty")
-    if len(nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
+    if len(host_nonce) != protocol.HANDSHAKE_NONCE_LENGTH or len(mcu_nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
         raise ValueError("link handshake nonce has an invalid length")
     key_material = HKDF(
         algorithm=hashes.SHA256(),
         length=2 * protocol.AEAD_KEY_SIZE,
-        salt=nonce,
+        salt=host_nonce + mcu_nonce,
         info=protocol.HANDSHAKE_HKDF_INFO_SESSION,
     ).derive(secret)
     split_index = protocol.AEAD_KEY_SIZE
@@ -50,8 +54,8 @@ class LinkCipher:
         self._rx_counter = 0
 
     @classmethod
-    def for_host(cls, secret: bytes, nonce: bytes) -> LinkCipher:
-        host_to_mcu_key, mcu_to_host_key = derive_link_keys(secret, nonce)
+    def for_host(cls, secret: bytes, host_nonce: bytes, mcu_nonce: bytes) -> LinkCipher:
+        host_to_mcu_key, mcu_to_host_key = derive_link_keys(secret, host_nonce, mcu_nonce)
         return cls(host_to_mcu_key, mcu_to_host_key)
 
     def encrypt(self, address: int, plaintext: bytes) -> bytes:

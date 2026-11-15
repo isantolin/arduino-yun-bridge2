@@ -275,7 +275,6 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_response_tag(self._config.serial_shared_secret, nonce)
         self._state.link_cipher = None
 
         reset_ok = await self.send_frame(
@@ -362,6 +361,7 @@ class SerialHandshakeManager:
                 sync_pkt = pb.LinkSync.FromString(payload)
             nonce = sync_pkt.nonce
             tag_bytes = sync_pkt.tag
+            mcu_nonce = sync_pkt.mcu_nonce
         except (ProtobufDecodeError, ValueError, TypeError):
             self._logger.error(
                 "LINK_SYNC_RESP protobuf decode failed (len=%d)",
@@ -371,10 +371,12 @@ class SerialHandshakeManager:
             await self.handle_handshake_failure("sync_decode_failed")
             return False
 
-        expected_tag = self._state.link_expected_tag
-
+        secret = self._config.serial_shared_secret
         nonce_mismatch = not bytes_eq(nonce, expected)
-        missing_expected_tag = expected_tag is None
+        # Handshake v2 (ADR-0005): with a secret the MCU must return its own
+        # 16-byte nonce, and its tag must cover nonce || mcu_nonce.
+        missing_mcu_nonce = bool(secret) and len(mcu_nonce) != protocol.HANDSHAKE_NONCE_LENGTH
+        expected_tag = None if missing_mcu_nonce else self.calculate_handshake_response_tag(secret, nonce, mcu_nonce)
         tag_mismatch = expected_tag is None or not bytes_eq(tag_bytes, expected_tag)
 
         if nonce_mismatch:
@@ -385,10 +387,10 @@ class SerialHandshakeManager:
             )
             return False
 
-        if missing_expected_tag or tag_mismatch:
+        if tag_mismatch:
             self._logger.error(
-                "LINK_SYNC_RESP auth mismatch: missing_tag=%s, tag_mismatch=%s (nonce=%s)",
-                missing_expected_tag,
+                "LINK_SYNC_RESP auth mismatch: missing_mcu_nonce=%s, tag_mismatch=%s (nonce=%s)",
+                missing_mcu_nonce,
                 tag_mismatch,
                 nonce.hex(),
             )
@@ -400,9 +402,9 @@ class SerialHandshakeManager:
             return False
 
         session_cipher: LinkCipher | None = None
-        if self._config.serial_shared_secret:
+        if secret:
             try:
-                session_cipher = LinkCipher.for_host(self._config.serial_shared_secret, nonce)
+                session_cipher = LinkCipher.for_host(secret, nonce, mcu_nonce)
             except ValueError as exc:
                 self._logger.error("Unable to derive serial AEAD session keys", error=str(exc))
                 self.clear_handshake_expectations()
@@ -533,7 +535,6 @@ class SerialHandshakeManager:
         by setting them to None to allow prompt garbage collection.
         """
         self._state.link_handshake_nonce = None
-        self._state.link_expected_tag = None
         self._state.link_nonce_length = 0
 
     async def publish_handshake_event(
@@ -595,12 +596,24 @@ class SerialHandshakeManager:
         return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_AUTH)
 
     @staticmethod
-    def calculate_handshake_response_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        return SerialHandshakeManager._calculate_handshake_tag(secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE)
+    def calculate_handshake_response_tag(secret: bytes | None, host_nonce: bytes, mcu_nonce: bytes) -> bytes:
+        """MCU proof over host_nonce || mcu_nonce (handshake v2, ADR-0005).
+
+        Without a secret (allow_insecure_link) the link is unauthenticated: the
+        MCU sends neither a tag nor an MCU nonce, so the expected tag is empty.
+        """
+        if not secret:
+            return b""
+        if len(mcu_nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
+            raise ValueError("MCU handshake nonce has an invalid length")
+        return SerialHandshakeManager._calculate_handshake_tag(
+            secret, host_nonce + mcu_nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE
+        )
 
     @staticmethod
     def _calculate_handshake_tag(secret: bytes | None, nonce: bytes, info: bytes) -> bytes:
-        if len(nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
+        # One nonce (host request tag) or nonce_h || mcu_nonce (v2 response tag).
+        if len(nonce) not in (protocol.HANDSHAKE_NONCE_LENGTH, 2 * protocol.HANDSHAKE_NONCE_LENGTH):
             raise ValueError("handshake nonce has an invalid length")
         if not secret:
             return b""

@@ -60,4 +60,4 @@ def test_build_protocol_context_contains_template_data() -> None:
     ]
     assert {constant["name"]: constant["value"] for constant in context["python_handshake_constants"]}[
         "HANDSHAKE_HKDF_INFO_SESSION"
-    ] == 'b"session-key"'
+    ] == 'b"session-key-v2"'

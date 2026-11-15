@@ -20,7 +20,7 @@ def test_verify_crypto_integrity_success() -> None:
 def test_link_cipher_directional_round_trip() -> None:
     secret = b"link shared secret"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce, bytes(range(16, 32)))
     host = LinkCipher(host_to_mcu, mcu_to_host)
     mcu = LinkCipher(mcu_to_host, host_to_mcu)
 
@@ -35,7 +35,7 @@ def test_link_cipher_directional_round_trip() -> None:
 def test_link_cipher_authentication_failure_does_not_advance_receive_counter() -> None:
     secret = b"link shared secret"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce, bytes(range(16, 32)))
     host = LinkCipher(host_to_mcu, mcu_to_host)
     mcu = LinkCipher(mcu_to_host, host_to_mcu)
     envelope = host.encrypt(protocol.HDLC_ADDRESS_RPC, b"request")
@@ -48,7 +48,7 @@ def test_link_cipher_authentication_failure_does_not_advance_receive_counter() -
 def test_link_cipher_rejects_replay_and_truncated_frames() -> None:
     secret = b"link shared secret"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce, bytes(range(16, 32)))
     host = LinkCipher(host_to_mcu, mcu_to_host)
     mcu = LinkCipher(mcu_to_host, host_to_mcu)
     envelope = host.encrypt(protocol.HDLC_ADDRESS_RPC, b"request")
@@ -63,9 +63,21 @@ def test_link_cipher_rejects_replay_and_truncated_frames() -> None:
 def test_link_key_derivation_rejects_empty_secret_and_invalid_nonce() -> None:
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
     with pytest.raises(ValueError, match="shared secret is empty"):
-        derive_link_keys(b"", nonce)
+        derive_link_keys(b"", nonce, bytes(range(16, 32)))
     with pytest.raises(ValueError, match="nonce has an invalid length"):
-        derive_link_keys(b"secret", nonce[:-1])
+        derive_link_keys(b"secret", nonce[:-1], bytes(range(16, 32)))
+    with pytest.raises(ValueError, match="nonce has an invalid length"):
+        derive_link_keys(b"secret", nonce, bytes(range(16, 31)))
+
+
+def test_link_keys_bind_mcu_nonce() -> None:
+    """Replaying a host nonce with a fresh MCU nonce must yield new keys (ADR-0005)."""
+    secret = b"shared-secret-key"
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    first = derive_link_keys(secret, nonce, bytes(range(16, 32)))
+    replay = derive_link_keys(secret, nonce, bytes(range(32, 48)))
+    assert first[0] != replay[0]
+    assert first[1] != replay[1]
 
 
 @pytest.mark.parametrize(

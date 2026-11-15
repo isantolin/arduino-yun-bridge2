@@ -96,7 +96,9 @@ jobs:
     name: Arduino Examples Compilation
     runs-on: ubuntu-26.04
     needs: [tox-checks]
-    timeout-minutes: 15
+    # ~13 min with a warm Arduino cache; a cold cache (key hashes ci.yml and
+    # install.sh) adds about 2 min of core installation.
+    timeout-minutes: 25
     env:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
@@ -128,7 +130,7 @@ jobs:
             sleep "$delay"
           done
           arduino-cli lib install "Embedded Template Library ETL"
-          arduino-cli lib install WiFiNINA
+          arduino-cli lib install WiFiNINA "FlashStorage@1.0.0"
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: arduino-examples
@@ -407,7 +409,7 @@ jobs:
         run: |
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:samd
-          arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA "Embedded Template Library ETL" "FlashStorage@1.0.0"
       - name: Install Renode
         uses: ./.github/actions/setup-renode
       - name: Download standalone Gateway binary
@@ -525,7 +527,7 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli core install arduino:samd
           bash tools/ci/install_espressif_core.sh
-          arduino-cli lib install WiFiNINA "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA "Embedded Template Library ETL" "FlashStorage@1.0.0"
           python -m pip install pyserial esptool
       - name: Install Renode
         uses: ./.github/actions/setup-renode

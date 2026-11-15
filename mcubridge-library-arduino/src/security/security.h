@@ -22,12 +22,25 @@ using AeadOutputSink = etl::delegate<bool(pw::span<const uint8_t>)>;
 /** Maximum plaintext accepted by aead_encrypt_chunked(). */
 inline constexpr size_t kAeadChunkedMaxPlaintext = 512U;
 
-/** Derive host-to-MCU and MCU-to-host keys from the shared secret and nonce. */
-// Writes host-to-MCU (RX) followed by MCU-to-host (TX) into one contiguous
-// buffer. This avoids a 64-byte temporary stack buffer on small AVR targets.
+/**
+ * Derive host-to-MCU and MCU-to-host keys (handshake v2, ADR-0005):
+ * HKDF-SHA256(secret, salt = host_nonce || mcu_nonce, info = session v2).
+ * Writes RX (host-to-MCU) then TX (MCU-to-host) into one contiguous buffer.
+ */
 bool derive_session_keys(pw::span<const uint8_t> secret,
-                         pw::span<const uint8_t> nonce,
+                         pw::span<const uint8_t> host_nonce,
+                         pw::span<const uint8_t> mcu_nonce,
                          pw::span<uint8_t> session_keys);
+
+/**
+ * Derive the MCU's 16-byte handshake nonce from a never-repeating 16-byte
+ * counter block (boot epoch || handshake counter) on boards without a
+ * hardware RNG. Uniqueness comes from the counters; the keyed HMAC only
+ * makes the value unpredictable without the secret.
+ */
+bool derive_mcu_nonce(pw::span<const uint8_t> secret,
+                      pw::span<const uint8_t> counter_block,
+                      pw::span<uint8_t> out_nonce);
 
 /** Encrypt plaintext with ChaCha20-Poly1305. */
 bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
@@ -60,9 +73,10 @@ bool handshake_generate_tag(pw::span<const uint8_t> secret,
                             pw::span<const uint8_t> nonce,
                             pw::span<uint8_t> out_tag);
 
-/** Generate the domain-separated MCU proof for a valid handshake nonce. */
+/** Generate the MCU proof over host_nonce || mcu_nonce (handshake v2). */
 bool handshake_generate_response_tag(pw::span<const uint8_t> secret,
-                                     pw::span<const uint8_t> nonce,
+                                     pw::span<const uint8_t> host_nonce,
+                                     pw::span<const uint8_t> mcu_nonce,
                                      pw::span<uint8_t> out_tag);
 
 /** Verify the host's exact-length handshake tag using a timing-safe compare. */

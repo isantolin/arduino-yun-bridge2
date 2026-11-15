@@ -48,6 +48,10 @@ inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_auth_len }}U> RPC_HA
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_response_len }}U> RPC_HANDSHAKE_HKDF_INFO_RESPONSE RPC_PROGMEM = { {{ handshake.hkdf_info_response_bytes }} };
 {%- endif %}
 
+{% if handshake.hkdf_info_mcu_nonce -%}
+inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_mcu_nonce_len }}U> RPC_HANDSHAKE_HKDF_INFO_MCU_NONCE RPC_PROGMEM = { {{ handshake.hkdf_info_mcu_nonce_bytes }} };
+{%- endif %}
+
 {% if handshake.hkdf_info_session -%}
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_session_len }}U> RPC_HANDSHAKE_HKDF_INFO_SESSION RPC_PROGMEM = { {{ handshake.hkdf_info_session_bytes }} };
 {%- endif %}

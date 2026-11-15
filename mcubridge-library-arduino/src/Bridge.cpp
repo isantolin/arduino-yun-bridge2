@@ -913,16 +913,26 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
       return;
     }
 
-    const bool response_tag_ok = rpc::security::handshake_generate_response_tag(
-        pw::span<const uint8_t>(_shared_secret),
-        pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
-        pw::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
+    // Handshake v2 (ADR-0005): the MCU contributes a never-repeating nonce.
+    // The response tag and the session-key salt cover nonce || mcu_nonce, so
+    // replaying a recorded host LinkSync yields fresh, different keys.
+    const auto host_nonce =
+        pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size);
+    const auto mcu_nonce = pw::span<uint8_t>(response.mcu_nonce.bytes,
+                                             rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+    const bool mcu_nonce_ok = bridge::hal::fillLinkNonce(
+        pw::span<const uint8_t>(_shared_secret), mcu_nonce);
+    const bool response_tag_ok =
+        mcu_nonce_ok &&
+        rpc::security::handshake_generate_response_tag(
+            pw::span<const uint8_t>(_shared_secret), host_nonce,
+            pw::span<const uint8_t>(mcu_nonce),
+            pw::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
     bool session_keys_ok =
-        response_tag_ok &&
-        rpc::security::derive_session_keys(
-            pw::span<const uint8_t>(_shared_secret),
-            pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
-            pw::span<uint8_t>(_session_aead_keys));
+        response_tag_ok && rpc::security::derive_session_keys(
+                               pw::span<const uint8_t>(_shared_secret),
+                               host_nonce, pw::span<const uint8_t>(mcu_nonce),
+                               pw::span<uint8_t>(_session_aead_keys));
     if (!session_keys_ok) {
       _clearLinkSession();
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
@@ -930,6 +940,7 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
       return;
     }
     response.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+    response.mcu_nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
     _tx_aead_counter = 0;
     _rx_aead_counter = 0;
     _session_keys_ready = true;

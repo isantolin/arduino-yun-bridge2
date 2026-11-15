@@ -46,14 +46,26 @@ constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH>
     kExpectedLongHandshakeTag = {0x76U, 0x8DU, 0xFCU, 0xD9U, 0x27U, 0x29U,
                                  0xAEU, 0x57U, 0xC1U, 0x2AU, 0xEAU, 0xFDU,
                                  0x15U, 0x28U, 0x83U, 0xF8U};
+// Handshake v2 (ADR-0005): MCU nonces bound into the response tag and keys.
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kVectorMcuNonce =
+    {0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU,
+     0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU, 0xCDU};
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kLongMcuNonce = {
+    0x10U, 0x11U, 0x12U, 0x13U, 0x14U, 0x15U, 0x16U, 0x17U,
+    0x18U, 0x19U, 0x1AU, 0x1BU, 0x1CU, 0x1DU, 0x1EU, 0x1FU};
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH>
     kExpectedLongHandshakeResponseTag = {
-        0x4CU, 0x1BU, 0x41U, 0xA8U, 0x9EU, 0xA7U, 0xEAU, 0xD5U,
-        0x8BU, 0xF6U, 0x97U, 0xDBU, 0x29U, 0x8BU, 0x16U, 0xB7U};
+        0xFEU, 0xA1U, 0x21U, 0x43U, 0xFDU, 0x2AU, 0xEAU, 0x9EU,
+        0xBEU, 0xA2U, 0x2EU, 0x7BU, 0xE3U, 0x00U, 0x1DU, 0x61U};
 constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH>
-    kExpectedResponseTag = {0x46U, 0x82U, 0x99U, 0xFAU, 0xC4U, 0xFBU,
-                            0x82U, 0xDEU, 0x13U, 0x91U, 0xF8U, 0xA9U,
-                            0xA8U, 0x4BU, 0xAFU, 0xD5U};
+    kExpectedResponseTag = {0x31U, 0x51U, 0xD9U, 0xCEU, 0x73U, 0x2DU,
+                            0xEAU, 0x90U, 0x56U, 0x03U, 0x1AU, 0x4CU,
+                            0x4AU, 0x33U, 0xBEU, 0x70U};
+// derive_mcu_nonce(kVectorSecret, all-zero counter block).
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH>
+    kExpectedMcuNonceZeroCounter = {0x3AU, 0xBCU, 0xD1U, 0x2CU, 0x55U, 0xA6U,
+                                    0x7DU, 0x46U, 0x85U, 0x94U, 0xB1U, 0xAEU,
+                                    0x91U, 0xCCU, 0x5DU, 0x44U};
 
 }  // namespace
 
@@ -147,7 +159,7 @@ void test_handshake_tag_known_answer(void) {
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> response_tag = {};
   TEST_ASSERT_TRUE(rpc::security::handshake_generate_response_tag(
-      kVectorSecret, kVectorNonce, response_tag));
+      kVectorSecret, kVectorNonce, kVectorMcuNonce, response_tag));
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedResponseTag.data(),
                                 response_tag.data(), response_tag.size());
   TEST_ASSERT_FALSE(
@@ -167,23 +179,23 @@ void test_long_handshake_secret_known_answer(void) {
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> response_tag = {};
   TEST_ASSERT_TRUE(rpc::security::handshake_generate_response_tag(
-      secret, kLongHandshakeNonce, response_tag));
+      secret, kLongHandshakeNonce, kLongMcuNonce, response_tag));
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedLongHandshakeResponseTag.data(),
                                 response_tag.data(), response_tag.size());
 
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedHostToMcu = {
-      0xDCU, 0xCFU, 0x88U, 0xF5U, 0x7BU, 0x24U, 0x3BU, 0x24U,
-      0xDEU, 0xC4U, 0x5BU, 0xD2U, 0xCAU, 0xBEU, 0x12U, 0x5AU,
-      0x4EU, 0xDCU, 0x9FU, 0xF7U, 0xC5U, 0xA1U, 0x77U, 0x17U,
-      0x22U, 0x03U, 0xE1U, 0x16U, 0x73U, 0x7AU, 0x9BU, 0x03U};
+      0x36U, 0x53U, 0xCAU, 0x7EU, 0x5FU, 0x20U, 0xB5U, 0x58U,
+      0xE5U, 0xA2U, 0x2BU, 0x50U, 0x6CU, 0xC8U, 0x57U, 0x96U,
+      0x41U, 0x3EU, 0x82U, 0x9CU, 0xE2U, 0xD9U, 0x1FU, 0x8BU,
+      0xF5U, 0x81U, 0xF3U, 0xF4U, 0xD7U, 0x02U, 0xB7U, 0x7FU};
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedMcuToHost = {
-      0x74U, 0xA8U, 0xD5U, 0xD4U, 0xBDU, 0x85U, 0x87U, 0xCCU,
-      0x3FU, 0xB1U, 0x89U, 0xCCU, 0x5DU, 0x2CU, 0x41U, 0xD2U,
-      0x4EU, 0x63U, 0xF7U, 0xEAU, 0x7AU, 0x64U, 0x2EU, 0x77U,
-      0x64U, 0x78U, 0x81U, 0x6DU, 0x59U, 0xE8U, 0x3AU, 0xEEU};
+      0xA3U, 0x97U, 0x06U, 0x4EU, 0x8AU, 0x86U, 0xCFU, 0x3EU,
+      0x8EU, 0x8CU, 0xABU, 0x43U, 0x75U, 0xABU, 0x9BU, 0xF6U,
+      0x4DU, 0xB7U, 0x01U, 0x9DU, 0x08U, 0x78U, 0x60U, 0x76U,
+      0xF6U, 0xB5U, 0x57U, 0xF1U, 0xA4U, 0x7FU, 0x9CU, 0xBEU};
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
-      secret, kLongHandshakeNonce, session_keys));
+      secret, kLongHandshakeNonce, kLongMcuNonce, session_keys));
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), session_keys.data(),
                                 kExpectedHostToMcu.size());
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
@@ -193,21 +205,41 @@ void test_long_handshake_secret_known_answer(void) {
 
 void test_session_key_derivation_known_answer(void) {
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedHostToMcu = {
-      0x5D, 0xFD, 0x05, 0x83, 0x21, 0x1B, 0x31, 0x36, 0x0B, 0x59, 0x8B,
-      0xC3, 0x79, 0xB2, 0xE4, 0x98, 0x6B, 0xFA, 0xC0, 0x8D, 0x3C, 0xEA,
-      0x83, 0xCF, 0x2D, 0xE7, 0xE7, 0x1A, 0xC2, 0x69, 0xDB, 0xAB};
+      0xD3U, 0xE9U, 0x1DU, 0x2AU, 0x82U, 0xDAU, 0x25U, 0x7EU,
+      0x8AU, 0x6AU, 0xABU, 0x60U, 0xB5U, 0x81U, 0xCBU, 0x33U,
+      0xCCU, 0x95U, 0x3CU, 0x4AU, 0x3BU, 0xDEU, 0x54U, 0x8FU,
+      0x7AU, 0x07U, 0xA8U, 0xE8U, 0xDBU, 0xC2U, 0x11U, 0x6BU};
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedMcuToHost = {
-      0x6F, 0x91, 0xBF, 0x7D, 0x92, 0x38, 0x7A, 0x46, 0x0F, 0xE1, 0x37,
-      0x37, 0xA3, 0x51, 0xF3, 0x3C, 0xF6, 0x3D, 0xFE, 0x26, 0xB2, 0xBC,
-      0x68, 0x51, 0xA7, 0x80, 0x2C, 0x91, 0xF4, 0x3F, 0xEB, 0xBC};
+      0x04U, 0x22U, 0x5CU, 0x74U, 0xDCU, 0xB3U, 0xF1U, 0xDEU,
+      0x5DU, 0x00U, 0x0DU, 0xFAU, 0xECU, 0xA1U, 0xD8U, 0xBBU,
+      0x6AU, 0x08U, 0x4EU, 0xB1U, 0x37U, 0x9DU, 0x63U, 0x55U,
+      0x1CU, 0xC0U, 0x76U, 0x56U, 0x3AU, 0xE5U, 0x33U, 0xE8U};
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
-      kVectorSecret, kVectorNonce, session_keys));
+      kVectorSecret, kVectorNonce, kVectorMcuNonce, session_keys));
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedHostToMcu.data(), session_keys.data(),
                                 kExpectedHostToMcu.size());
   TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuToHost.data(),
                                 session_keys.data() + kExpectedHostToMcu.size(),
                                 kExpectedMcuToHost.size());
+}
+
+void test_mcu_nonce_known_answer_and_counter_uniqueness(void) {
+  const etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> zero_counter{};
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce_a{};
+  TEST_ASSERT_TRUE(
+      rpc::security::derive_mcu_nonce(kVectorSecret, zero_counter, nonce_a));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(kExpectedMcuNonceZeroCounter.data(),
+                                nonce_a.data(), nonce_a.size());
+
+  // A different handshake counter (last byte) must give a different nonce.
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> next_counter{};
+  next_counter[rpc::RPC_HANDSHAKE_NONCE_LENGTH - 1U] = 1U;
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce_b{};
+  TEST_ASSERT_TRUE(
+      rpc::security::derive_mcu_nonce(kVectorSecret, next_counter, nonce_b));
+  TEST_ASSERT_FALSE(
+      etl::equal(nonce_a.begin(), nonce_a.end(), nonce_b.begin()));
 }
 
 void test_crypto_public_api_rejects_invalid_dimensions(void) {
@@ -228,11 +260,14 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH - 1U> short_handshake_tag{};
 
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      pw::span<const uint8_t>(), handshake_nonce, session_keys));
+      pw::span<const uint8_t>(), handshake_nonce, handshake_nonce,
+      session_keys));
   TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
-      kSecret, short_handshake_nonce, session_keys));
-  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(kSecret, handshake_nonce,
-                                                       short_session_keys));
+      kSecret, short_handshake_nonce, handshake_nonce, session_keys));
+  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
+      kSecret, handshake_nonce, short_handshake_nonce, session_keys));
+  TEST_ASSERT_FALSE(rpc::security::derive_session_keys(
+      kSecret, handshake_nonce, handshake_nonce, short_session_keys));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_tag(
       pw::span<const uint8_t>(), handshake_nonce, handshake_tag));
@@ -242,11 +277,23 @@ void test_crypto_public_api_rejects_invalid_dimensions(void) {
       kSecret, handshake_nonce, short_handshake_tag));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_response_tag(
-      pw::span<const uint8_t>(), handshake_nonce, handshake_tag));
+      pw::span<const uint8_t>(), handshake_nonce, handshake_nonce,
+      handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_response_tag(
-      kSecret, short_handshake_nonce, handshake_tag));
+      kSecret, short_handshake_nonce, handshake_nonce, handshake_tag));
   TEST_ASSERT_FALSE(rpc::security::handshake_generate_response_tag(
-      kSecret, handshake_nonce, short_handshake_tag));
+      kSecret, handshake_nonce, short_handshake_nonce, handshake_tag));
+  TEST_ASSERT_FALSE(rpc::security::handshake_generate_response_tag(
+      kSecret, handshake_nonce, handshake_nonce, short_handshake_tag));
+
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> mcu_nonce{};
+  TEST_ASSERT_FALSE(rpc::security::derive_mcu_nonce(
+      pw::span<const uint8_t>(), handshake_nonce, mcu_nonce));
+  TEST_ASSERT_FALSE(rpc::security::derive_mcu_nonce(
+      kSecret, short_handshake_nonce, mcu_nonce));
+  TEST_ASSERT_FALSE(rpc::security::derive_mcu_nonce(
+      kSecret, handshake_nonce,
+      pw::span<uint8_t>(mcu_nonce.data(), mcu_nonce.size() - 1U)));
 
   TEST_ASSERT_FALSE(rpc::security::handshake_verify_tag(
       pw::span<const uint8_t>(), handshake_nonce, handshake_tag));
@@ -301,8 +348,8 @@ namespace {
 
 // Collects aead_encrypt_chunked() output and can fail on a chosen call.
 struct ChunkCollector {
-  etl::array<uint8_t, rpc::security::kAeadChunkedMaxPlaintext +
-                          rpc::RPC_AEAD_TAG_SIZE>
+  etl::array<uint8_t,
+             rpc::security::kAeadChunkedMaxPlaintext + rpc::RPC_AEAD_TAG_SIZE>
       bytes{};
   size_t size = 0U;
   size_t calls = 0U;
@@ -373,8 +420,7 @@ void test_aead_encrypt_chunked_rejects_and_aborts(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce{};
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce{};
   etl::array<uint8_t, 40> plaintext{};
-  etl::array<uint8_t, rpc::security::kAeadChunkedMaxPlaintext + 1U>
-      oversized{};
+  etl::array<uint8_t, rpc::security::kAeadChunkedMaxPlaintext + 1U> oversized{};
 
   ChunkCollector collector;
   auto sink_fn = [&collector](pw::span<const uint8_t> chunk) {
@@ -425,6 +471,7 @@ int main(int argc, char** argv) {
   RUN_TEST(test_handshake_tag_known_answer);
   RUN_TEST(test_long_handshake_secret_known_answer);
   RUN_TEST(test_session_key_derivation_known_answer);
+  RUN_TEST(test_mcu_nonce_known_answer_and_counter_uniqueness);
   RUN_TEST(test_crypto_public_api_rejects_invalid_dimensions);
   RUN_TEST(test_aead_empty_payload_and_aad_edge_cases);
   RUN_TEST(test_aead_encrypt_chunked_matches_one_shot);

@@ -16,10 +16,9 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
   void Reset(size_t offset = 0) { position_ = offset; }
 
  private:
-  size_t Capacity() const {
-    const int length = EEPROM.length();
-    return length > 0 ? static_cast<size_t>(length) : 0U;
-  }
+  // Only the transfer resource is reachable; the reserved tail (link boot
+  // epoch) is never read or written through pw_transfer.
+  size_t Capacity() const { return kEepromTransferResourceSize; }
 
   size_t ConservativeLimit(LimitType type) const override {
     const size_t capacity = Capacity();
@@ -131,7 +130,7 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
 
  private:
   pw::Status CapacityStatus() const {
-    return EEPROM.length() == static_cast<int>(kEepromTransferResourceSize)
+    return EEPROM.length() == static_cast<int>(kEepromPhysicalSize)
                ? pw::OkStatus()
                : pw::Status::FailedPrecondition();
   }

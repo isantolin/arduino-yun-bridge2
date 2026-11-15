@@ -14,6 +14,7 @@ rpc.pb.ProcessPollResponse.stdout_data        max_size:32
 rpc.pb.ProcessPollResponse.stderr_data        max_size:32
 rpc.pb.LinkSync.nonce                         max_size:16
 rpc.pb.LinkSync.tag                           max_size:16
+rpc.pb.LinkSync.mcu_nonce                     max_size:16
 rpc.pb.SpiTransfer.data                       max_size:64
 rpc.pb.SpiTransferResponse.data               max_size:64
 rpc.pb.Capabilities.board_name                max_size:16

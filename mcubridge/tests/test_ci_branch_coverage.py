@@ -171,6 +171,33 @@ def test_link_cipher_counter_exhaustion_and_zero_counter(mocker: MockerFixture) 
     assert not verify_crypto_integrity()
 
 
+@pytest.mark.parametrize("mcu_nonce", [b"", bytes(range(16, 31))])
+async def test_handshake_rejects_response_without_valid_mcu_nonce(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    mcu_nonce: bytes,
+) -> None:
+    """A v1 (or truncated) LinkSync response must fail authentication (ADR-0005)."""
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    runtime_config.serial_shared_secret = b"shared-secret-key"
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(response_timeout_ms=0),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+    )
+    # Even a tag computed v1-style over the host nonce alone must be rejected.
+    v1_tag = SerialHandshakeManager._calculate_handshake_tag(  # pyright: ignore[reportPrivateUsage]
+        runtime_config.serial_shared_secret, nonce, protocol.HANDSHAKE_HKDF_INFO_RESPONSE
+    )
+    runtime_state.link_handshake_nonce = nonce
+    hs.fsm_state = HandshakeState.CONFIRMING
+    assert not await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=v1_tag, mcu_nonce=mcu_nonce))
+    assert runtime_state.last_handshake_error == protocol.STATUS_REASON_SYNC_AUTH_MISMATCH
+    assert runtime_state.link_cipher is None
+
+
 async def test_handshake_session_key_and_transition_failure_branches(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -187,12 +214,12 @@ async def test_handshake_session_key_and_transition_failure_branches(
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )
-    tag = hs.calculate_handshake_response_tag(runtime_config.serial_shared_secret, nonce)
-    pkt = pb.LinkSync(nonce=nonce, tag=tag)
+    mcu_nonce = bytes(range(16, 32))
+    tag = hs.calculate_handshake_response_tag(runtime_config.serial_shared_secret, nonce, mcu_nonce)
+    pkt = pb.LinkSync(nonce=nonce, tag=tag, mcu_nonce=mcu_nonce)
 
     # 1. LinkCipher.for_host raises ValueError
     runtime_state.link_handshake_nonce = nonce
-    runtime_state.link_expected_tag = tag
     mocker.patch.object(LinkCipher, "for_host", side_effect=ValueError("bad key"))
     assert not await hs.handle_link_sync_resp(1, pkt)
     assert runtime_state.last_handshake_error == "session_key_derivation_failed"
@@ -202,7 +229,6 @@ async def test_handshake_session_key_and_transition_failure_branches(
     hs.transition(HandshakeEvent.RESET)
     assert hs.fsm_state == HandshakeState.UNSYNCHRONIZED
     runtime_state.link_handshake_nonce = nonce
-    runtime_state.link_expected_tag = tag
     assert not await hs.handle_link_sync_resp(2, pkt)
     assert runtime_state.last_handshake_error == "sync_state_transition_failed"
 
@@ -266,7 +292,7 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
 
     # 5. Post-handshake (cipher installed): invalid encrypted frame is rejected
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    runtime_state.link_cipher = LinkCipher.for_host(runtime_config.serial_shared_secret, nonce)
+    runtime_state.link_cipher = LinkCipher.for_host(runtime_config.serial_shared_secret, nonce, bytes(range(16, 32)))
     bad_encrypted_frame = next(iter(FrameDecoder().process(ui_frame(protocol.HDLC_ADDRESS_RPC, b"\x00" * 4))))
     await transport.process_hdlc_frame(bad_encrypted_frame)
     assert runtime_state.serial_decode_errors == 2

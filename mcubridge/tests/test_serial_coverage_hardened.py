@@ -44,7 +44,7 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
         serial_shared_secret=_TEST_SECRET,
     )
     state = create_runtime_state(config)
-    host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE)
+    host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE, bytes(range(16, 32)))
     state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
@@ -94,7 +94,7 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
     transport, state, mock_serial = _make_transport(tmp_path)
     secret = b"serial transport test secret"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce, bytes(range(16, 32)))
     transport.config.serial_shared_secret = secret
     state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
@@ -167,7 +167,7 @@ async def test_serial_transport_feed_data_hdlc_rpc(tmp_path: Path) -> None:
     state.connection_fsm.synchronize()
 
     # Valid HDLC RPC frame
-    host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE)
+    host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE, bytes(range(16, 32)))
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
     packet = protocol.encode_rpc_packet(
         "rpc.pb.GpioService/DigitalRead",

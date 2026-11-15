@@ -170,6 +170,8 @@ NANOPB_VERSION="0.4.9.2"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
 WOLFSSL_VERSION="5.8.4"
 WOLFSSL_SHA256="a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
+FLASHSTORAGE_VERSION="1.0.0"
+FLASHSTORAGE_SHA256="2f5a349e1c5dc4ec7f7e22268c0f998af3f471b98ed873abd6e671ac67940e39"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)
@@ -205,6 +207,10 @@ if ! mv -f "$WOLFSSL_SETTINGS_TMP" "$WOLFSSL_LIB/src/user_settings.h"; then
     rm -f "$WOLFSSL_SETTINGS_TMP"
     exit 1
 fi
+
+# FlashStorage (SAMD21 NVM row storage for the ADR-0005 link boot epoch).
+FLASHSTORAGE_URL="https://downloads.arduino.cc/libraries/github.com/cmaglie/FlashStorage-${FLASHSTORAGE_VERSION}.zip"
+install_dependency "FlashStorage" "$FLASHSTORAGE_URL" "src/FlashStorage.h" "$LIB_DIR" "$FLASHSTORAGE_SHA256"
 
 # Pigweed AVR library (Google Pigweed RPC, HDLC, Tokenizer, Chrono, Crypto for Arduino)
 if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmodules" ]; then

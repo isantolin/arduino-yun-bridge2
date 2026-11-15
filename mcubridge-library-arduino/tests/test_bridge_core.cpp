@@ -99,10 +99,16 @@ void test_bridge_handshake_response_uses_tag_length() {
   TEST_ASSERT_TRUE(
       decode_tx_response(stream, rpc_pb_LinkSync_fields, response));
   TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_TAG_LENGTH, response.tag.size);
+  // Handshake v2: the MCU returns its own nonce and the tag covers both.
+  TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_NONCE_LENGTH,
+                           response.mcu_nonce.size);
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> expected_response_tag = {};
   TEST_ASSERT_TRUE(rpc::security::handshake_generate_response_tag(
-      secret, nonce, expected_response_tag));
+      secret, nonce,
+      pw::span<const uint8_t>(response.mcu_nonce.bytes,
+                              response.mcu_nonce.size),
+      expected_response_tag));
   TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_response_tag.data(),
                                 response.tag.bytes,
                                 expected_response_tag.size());
@@ -571,8 +577,17 @@ void test_bridge_authenticated_digital_write_frame() {
   const auto secret =
       pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kSharedSecret),
                               sizeof(kSharedSecret) - 1U);
-  TEST_ASSERT_TRUE(rpc::security::derive_session_keys(secret, handshake_nonce,
-                                                      session_keys));
+  // Derive the keys independently from both nonces (handshake v2).
+  rpc_pb_LinkSync link_response = rpc_pb_LinkSync_init_default;
+  TEST_ASSERT_TRUE(
+      decode_tx_response(stream, rpc_pb_LinkSync_fields, link_response));
+  TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_NONCE_LENGTH,
+                           link_response.mcu_nonce.size);
+  TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
+      secret, handshake_nonce,
+      pw::span<const uint8_t>(link_response.mcu_nonce.bytes,
+                              link_response.mcu_nonce.size),
+      session_keys));
 
   constexpr uint64_t kCounter = 1U;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};

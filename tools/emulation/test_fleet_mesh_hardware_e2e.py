@@ -157,7 +157,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
     )
     decoder = FrameDecoder()
     secret = DEFAULT_SHARED_SECRET.encode("utf-8")
-    pending_sync: tuple[int, bytes, bytes] | None = None
+    pending_sync: tuple[int, bytes] | None = None
     call_id = 0
     next_probe = 0.0
     deadline = time.monotonic() + timeout
@@ -190,11 +190,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 )
                 if ser.write(sync_request) != len(sync_request):
                     raise OSError("Partial write while probing MCU UART readiness")
-                pending_sync = (
-                    call_id,
-                    nonce,
-                    SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce),
-                )
+                pending_sync = (call_id, nonce)
 
             for frame in decoder.process(ser.read(512)):
                 if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
@@ -207,7 +203,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 if pending_sync is None or response.call_id != pending_sync[0] or response.type != PacketType.RESPONSE:
                     continue
 
-                expected_nonce, expected_tag = pending_sync[1], pending_sync[2]
+                expected_nonce = pending_sync[1]
                 # This response completes the only outstanding probe, even if
                 # authentication or RPC metadata is invalid. A fresh request
                 # may be sent afterwards, but never while the previous one is pending.
@@ -222,6 +218,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 try:
                     sync_response = mcu_wire_pb2.LinkSync.FromString(response.payload)
                 except DecodeError:
+                    continue
+                # Handshake v2 (ADR-0005): the tag covers nonce || mcu_nonce.
+                try:
+                    expected_tag = SerialHandshakeManager.calculate_handshake_response_tag(
+                        secret, expected_nonce, sync_response.mcu_nonce
+                    )
+                except ValueError:
                     continue
                 if sync_response.nonce == expected_nonce and hmac.compare_digest(sync_response.tag, expected_tag):
                     logger.info("Firmware UART authenticated after POST", port=port)

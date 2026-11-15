@@ -123,7 +123,7 @@ async def test_logging_not_debug_branches(
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    host_to_mcu, mcu_to_host = derive_link_keys(mock_config.serial_shared_secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(mock_config.serial_shared_secret, nonce, bytes(range(16, 32)))
     transport.state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
     mock_serial = MagicMock(spec=serial.Serial)

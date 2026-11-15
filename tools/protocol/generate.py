@@ -313,6 +313,7 @@ def _extract_constants_and_handshake(
         "hkdf_info_auth",
         "hkdf_info_session",
         "hkdf_info_response",
+        "hkdf_info_mcu_nonce",
     ):
         raw_str: str = getattr(hs_opt, key)
         handshake_dict[key] = raw_str

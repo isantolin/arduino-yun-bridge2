@@ -778,8 +778,6 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
     return pw::OkStatus();
   }
 
-  ~BoundedFileTransferHandler() override { CloseFiles(); }
-
   size_t ResourceSize() const override {
     std::error_code ec;
     const auto target_path = root_dir_ / filename_;

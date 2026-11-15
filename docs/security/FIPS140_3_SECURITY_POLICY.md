@@ -7,13 +7,13 @@
 
 ## 1. Implementation Scope (Not a Validated Cryptographic Boundary)
 
-When a shared secret is configured, the link authenticates `LinkSync`, derives directional session keys, and protects RPC, console, and log HDLC payloads with ChaCha20-Poly1305. This description is not an assessed or validated cryptographic-module boundary. Counter-based replay rejection is limited to one session; a recorded session can be replayed after a forced `LinkReset`, without an MCU restart (see ADR-0005, proposed).
+When a shared secret is configured, the link authenticates `LinkSync`, derives directional session keys, and protects RPC, console, and log HDLC payloads with ChaCha20-Poly1305. This description is not an assessed or validated cryptographic-module boundary. Counter-based replay rejection applies within a session; across sessions, handshake v2 mixes an MCU-contributed nonce into the session keys so a recorded session cannot be replayed after `LinkReset` (ADR-0005).
 
 ```mermaid
 graph LR
     subgraph Arduino MCU Boundary
-        A[PSA SHA-256 / HMAC and Mbed TLS zeroization]
-        E[HKDF / ChaCha20-Poly1305: Mbed TLS 4 on AVR/SAMD; wolfCrypt 5.8.4 on ESP32]
+        A[wolfCrypt 5.8.4 SHA-256 / HMAC and ForceZero zeroization]
+        E[wolfCrypt HKDF / ChaCha20-Poly1305 on AVR, SAMD and ESP32]
         B[Directional session keys and counters]
     end
 
@@ -65,15 +65,19 @@ These functional regression checks are not CAVP testing or FIPS 140-3 module val
 ## 4. Key Management & Zeroization
 
 ### 4.1 Ephemeral Key Derivation
-The host request and MCU response proofs use HKDF-SHA256 with the configured shared secret, the canonical `mcubridge-v2` salt, separate `handshake-auth` and `handshake-response` info strings, and HMAC-SHA256 over the 16-byte host nonce. A separate HKDF-SHA256 derivation uses the host nonce as salt and `session-key` as info to produce independent 256-bit keys for each direction.
+The host request and MCU response proofs use HKDF-SHA256 with the configured shared secret, the canonical `mcubridge-v2` salt and separate `handshake-auth` and `handshake-response-v2` info strings. The host proof is HMAC-SHA256 over the 16-byte host nonce; the MCU proof covers `host_nonce || mcu_nonce`. A separate HKDF-SHA256 derivation uses `host_nonce || mcu_nonce` as salt and `session-key-v2` as info to produce independent 256-bit keys for each direction.
 
 ### 4.2 Nonce and Replay
-The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks its exact length and binds both HMAC proofs to it. Each protected frame carries an 8-byte big-endian counter used as the final eight bytes of its 96-bit nonce; the first four bytes are zero. The receiver rejects counters that are zero or not strictly greater than the last accepted counter for that direction.
+The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks its exact length and answers with its own 16-byte `mcu_nonce`. The host rejects a response without a 16-byte `mcu_nonce`. Each protected frame carries an 8-byte big-endian counter used as the final eight bytes of its 96-bit nonce; the first four bytes are zero. The receiver rejects counters that are zero or not strictly greater than the last accepted counter for that direction.
 
-The MCU does not currently have a demonstrated persistent boot epoch or cross-platform cryptographic random source. Session keys depend only on the host nonce, and the MCU accepts a plaintext `LinkReset` at any time. Consequently, an attacker with access to the transport can force a `LinkReset`, replay an old authenticated `LinkSync` exchange, obtain the same session keys, and have its captured frames accepted again; the MCU also reuses key/nonce pairs for its own traffic. No MCU restart is required. `LinkReset` is not a plaintext fallback for data. The proposed fix is an MCU-contributed nonce (ADR-0005).
+The `mcu_nonce` must never repeat for the same secret; it does not need to be secret. On ESP32 it comes from the hardware RNG (`esp_fill_random()`). AVR and SAMD21 have no hardware RNG, so the MCU computes `HMAC-SHA256(HKDF(secret, info = "mcu-nonce-v2"), boot_epoch || handshake_counter)[:16]`. The 64-bit boot epoch is persisted as two copies (AVR EEPROM tail; SAMD21 NVM rows via `FlashStorage`) and advanced before the first nonce of each boot, so a torn write cannot move it backwards.
+
+Replaying a recorded `LinkSync` after a forced `LinkReset` therefore yields fresh session keys: captured frames fail authentication and the MCU does not reuse key/nonce pairs. `LinkReset` is still accepted in plaintext, so an attacker on the transport can force resynchronisation (denial of service). `LinkReset` is not a plaintext fallback for data.
+
+Limitation: re-flashing a SAMD21 sketch rewrites the `FlashStorage` rows, and an ISP chip erase clears the AVR EEPROM; either resets the boot epoch, after which earlier nonces can repeat. Rotate the shared secret after such operations.
 
 ### 4.3 Key Zeroization
-* **C++ MCU**: Mbed TLS platform zeroization clears derived keys, output buffers, handshake intermediates, and the stored shared secret when the bridge is reinitialized. This is not a guarantee that every library-internal copy is erased.
+* **C++ MCU**: wolfCrypt `ForceZero` clears derived keys, output buffers, handshake intermediates, and the stored shared secret when the bridge is reinitialized. This is not a guarantee that every library-internal copy is erased.
 * **Python MPU**: `secure_zero()` overwrites the supplied mutable `bytearray` or writable `memoryview`. It cannot guarantee removal of immutable copies or every copy retained by the interpreter, allocator, or native libraries; it is not a process-wide zeroization guarantee.
 
 ### 4.4 Cloud Transport

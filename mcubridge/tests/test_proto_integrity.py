@@ -480,7 +480,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     import operator
     from mcubridge.services.runtime import BridgeService
 
-    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 16
+    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 18
     for name, handler_path in BridgeService.LOCAL_RPC_HANDLERS.items():
         assert isinstance(name, str)
         assert name in protocol.BY_NAME

@@ -93,11 +93,15 @@ inline constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 #define BRIDGE_ENABLE_SPI 1
 #endif
 // Upstream pw_transfer endpoints (TransferService, Client, Thread<1, 1>) and
-// the built-in EEPROM resource 0x4D454741. Opt-in: on the ATmega2560 they cost
-// ~0.5 KB of SRAM that the runtime stack needs, and no MPU/cloud operation
-// reaches the EEPROM resource today. Only the AVR port implements it.
+// the built-in EEPROM resource 0x4D454741. Enabled by default wherever it is
+// implemented (currently the AVR port only); define it to 0 as a global build
+// flag to reclaim ~0.5 KB of SRAM on the ATmega2560.
 #ifndef BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#define BRIDGE_ENABLE_PW_TRANSFER 1
+#else
 #define BRIDGE_ENABLE_PW_TRANSFER 0
+#endif
 #endif
 #if BRIDGE_ENABLE_PW_TRANSFER && !defined(ARDUINO_ARCH_AVR) && !defined(__AVR__)
 #error "BRIDGE_ENABLE_PW_TRANSFER is only implemented for AVR targets"

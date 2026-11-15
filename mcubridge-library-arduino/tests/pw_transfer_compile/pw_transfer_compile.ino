@@ -9,7 +9,7 @@
 #error "This integration sketch requires an AVR microcontroller."
 #endif
 #if !BRIDGE_ENABLE_PW_TRANSFER
-#error "Build with -DBRIDGE_ENABLE_PW_TRANSFER=1 (pw_transfer is opt-in)."
+#error "pw_transfer is disabled (BRIDGE_ENABLE_PW_TRANSFER=0); this sketch needs it."
 #endif
 
 namespace {

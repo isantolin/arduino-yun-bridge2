@@ -145,8 +145,6 @@ jobs:
             arduino:avr:mega \
             arduino-avr-mega/BridgeControl
       - name: Compile cooperative pw_transfer API for Arduino Mega 2560
-        env:
-          MCUBRIDGE_EXTRA_BUILD_FLAGS: -DBRIDGE_ENABLE_PW_TRANSFER=1
         run: |
           bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \

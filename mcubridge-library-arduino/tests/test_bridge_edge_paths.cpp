@@ -1005,11 +1005,16 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
   TEST_ASSERT_TRUE(
       ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
 
-  size_t cursor = 0;
+  // pw::hdlc::Frame is only constructible by the Decoder, so keep the
+  // decoder's Result and stop at the first complete frame.
   pw::hdlc::DecoderBuffer<1024> decoder;
-  pw::hdlc::Frame frame;
-  TEST_ASSERT_TRUE(
-      extract_next_valid_hdlc_frame(stream.tx_buf, cursor, decoder, frame));
+  pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
+  for (size_t i = 0; i < stream.tx_buf.len && !decoded.ok(); ++i) {
+    decoded = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+  }
+  TEST_ASSERT_TRUE(decoded.ok());
+  const pw::hdlc::Frame& frame = decoded.value();
   TEST_ASSERT_EQUAL_UINT64(rpc::RPC_HDLC_ADDRESS_RPC, frame.address());
   const auto envelope = pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(frame.data().data()),

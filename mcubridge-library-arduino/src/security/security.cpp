@@ -250,7 +250,7 @@ bool aead_encrypt_chunked(pw::span<const uint8_t> key,
   const bool invalid_dimensions =
       (key.size() != RPC_AEAD_KEY_SIZE) |
       (nonce.size() != RPC_AEAD_NONCE_SIZE) |
-      (plaintext.size() > kAeadChunkedMaxPlaintext) | !sink.is_valid();
+      (plaintext.size() > kAeadChunkedMaxPlaintext) | (!sink.is_valid());
   if (invalid_dimensions) return false;
 
   ChaChaPoly_Aead aead{};

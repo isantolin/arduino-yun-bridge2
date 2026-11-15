@@ -721,7 +721,7 @@ class BridgeService:
             await ap.write_bytes(data)
             return True
 
-    def _get_cloud_transfer_manager(self) -> PwTransferManager:
+    def get_cloud_transfer_manager(self) -> PwTransferManager:
         if self.cloud_rpc_client is None:
             raise ConnectionError("Cloud Gateway RPC client is not connected")
         if self._cloud_transfer_manager is None:
@@ -736,14 +736,16 @@ class BridgeService:
             )
         return self._cloud_transfer_manager
 
+    _get_cloud_transfer_manager = get_cloud_transfer_manager
+
     async def cloud_transfer_read(self, resource_id: int) -> bytes:
         async with self._cloud_transfer_lock:
-            manager = self._get_cloud_transfer_manager()
+            manager = self.get_cloud_transfer_manager()
             return await asyncio.to_thread(manager.read, resource_id)
 
     async def cloud_transfer_write(self, resource_id: int, data: bytes) -> None:
         async with self._cloud_transfer_lock:
-            manager = self._get_cloud_transfer_manager()
+            manager = self.get_cloud_transfer_manager()
             await asyncio.to_thread(manager.write, resource_id, data)
 
     async def file_transfer_push_to_linux(

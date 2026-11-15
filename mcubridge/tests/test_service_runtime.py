@@ -1852,16 +1852,16 @@ async def test_cloud_transfer_manager_lifecycle_and_operations(mock_bridge_servi
     svc.cloud_rpc_client = mock_client
 
     # First call: creates and caches manager
-    mgr1 = svc._get_cloud_transfer_manager()
+    mgr1 = svc.get_cloud_transfer_manager()
     assert mgr1 is not None
     # Second call: returns cached manager
-    mgr2 = svc._get_cloud_transfer_manager()
+    mgr2 = svc.get_cloud_transfer_manager()
     assert mgr1 is mgr2
 
     # Mock manager methods for read/write
     mock_mgr = MagicMock()
     mock_mgr.read.return_value = b"read_bytes"
-    svc._cloud_transfer_manager = mock_mgr
+    setattr(svc, "_cloud_transfer_manager", mock_mgr)
 
     read_data = await svc.cloud_transfer_read(7)
     assert read_data == b"read_bytes"

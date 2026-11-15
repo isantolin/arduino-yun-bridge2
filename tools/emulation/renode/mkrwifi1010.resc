@@ -20,6 +20,10 @@ cpu PC `sysbus ReadDoubleWord 0x2004`
 sysbus WriteDoubleWord 0x4000080C 0x0000FFFF
 sysbus WriteDoubleWord 0x00806020 0xFFFFFFFF
 sysbus WriteDoubleWord 0x00806024 0xFFFFFFFF
+# NVMCTRL is plain memory here: report INTFLAG.READY so FlashStorage's
+# erase/write polls complete (the link boot epoch, ADR-0005). Writes land
+# directly in the MappedMemory flash, which starts zeroed (epoch 0).
+sysbus WriteDoubleWord 0x41004014 0x00000001
 
 start
 

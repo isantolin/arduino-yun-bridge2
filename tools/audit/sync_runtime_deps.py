@@ -259,6 +259,12 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
         "Unity": "UNITY_VERSION",
         "nanopb_core": "NANOPB_VERSION",
         "wolfssl": "WOLFSSL_VERSION",
+        "FlashStorage": "FLASHSTORAGE_VERSION",
+    }
+    # Archives downloaded as release zips must carry a pinned digest.
+    sha_map = {
+        "wolfssl": "WOLFSSL_SHA256",
+        "FlashStorage": "FLASHSTORAGE_SHA256",
     }
     lines: list[str] = []
     for dep in cpp_deps:
@@ -272,10 +278,10 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
                 raise ManifestError("nanopb_core must list its runtime files")
             quoted_files = " ".join(f'"{file_name}"' for file_name in dep["files"])
             lines.append(f"NANOPB_CORE_FILES=({quoted_files})")
-        elif dep["name"] == "wolfssl":
+        elif dep["name"] in sha_map:
             if not dep["sha256"]:
-                raise ManifestError("wolfssl must have a pinned SHA-256 archive digest")
-            lines.append(f'WOLFSSL_SHA256="{dep["sha256"]}"')
+                raise ManifestError(f"{dep['name']} must have a pinned SHA-256 archive digest")
+            lines.append(f'{sha_map[dep["name"]]}="{dep["sha256"]}"')
 
     new_content = _replace_marked_block(content, CPP_BLOCK_START, CPP_BLOCK_END, "\n".join(lines))
     changed = _write_if_changed(ARDUINO_INSTALL_SCRIPT_PATH, new_content, dry_run=dry_run)

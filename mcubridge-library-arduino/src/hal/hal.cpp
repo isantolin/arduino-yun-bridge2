@@ -10,6 +10,9 @@
 #if defined(ARDUINO_ARCH_ESP32)
 #include <esp_random.h>
 #endif
+#if defined(ARDUINO_ARCH_SAMD)
+#include <FlashStorage.h>
+#endif
 
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
@@ -199,12 +202,29 @@ void init() {
   }
 }
 
+#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD)
+namespace {
+// Boot epoch kept as two persisted copies (ADR-0005). The newest value is the
+// larger one; the increment overwrites the older copy, so a write torn by a
+// power loss leaves the other copy intact and the next boot still moves
+// forward. Erased EEPROM/flash reads as all ones and counts as zero. The write
+// completes before any nonce of this epoch is emitted.
+struct LinkEpochUpdate {
+  uint64_t next;
+  bool write_slot_a;
+};
+
+LinkEpochUpdate next_link_epoch(uint64_t slot_a, uint64_t slot_b) {
+  if (slot_a == UINT64_MAX) slot_a = 0U;
+  if (slot_b == UINT64_MAX) slot_b = 0U;
+  return {etl::max(slot_a, slot_b) + 1U, slot_a <= slot_b};
+}
+}  // namespace
+#endif
+
 #if defined(ARDUINO_ARCH_AVR)
 uint64_t linkBootEpoch() {
-  // Two copies in the reserved EEPROM tail. The newest value is the larger
-  // one; the increment overwrites the older copy, so a write torn by a power
-  // loss leaves the other copy intact and the next boot still moves forward.
-  // The write completes before any nonce of this epoch is emitted.
+  // Both copies live in the EEPROM tail reserved by the pw_transfer resource.
   constexpr int kSlotA = static_cast<int>(
       E2END + 1U - bridge::config::LINK_EPOCH_EEPROM_RESERVED_BYTES);
   constexpr int kSlotB = kSlotA + static_cast<int>(sizeof(uint64_t));
@@ -212,16 +232,28 @@ uint64_t linkBootEpoch() {
   uint64_t slot_b = 0U;
   EEPROM.get(kSlotA, slot_a);
   EEPROM.get(kSlotB, slot_b);
-  // Erased EEPROM reads as all ones.
-  if (slot_a == UINT64_MAX) slot_a = 0U;
-  if (slot_b == UINT64_MAX) slot_b = 0U;
-  const uint64_t next = etl::max(slot_a, slot_b) + 1U;
-  EEPROM.put(slot_a <= slot_b ? kSlotA : kSlotB, next);
-  return next;
+  const LinkEpochUpdate update = next_link_epoch(slot_a, slot_b);
+  EEPROM.put(update.write_slot_a ? kSlotA : kSlotB, update.next);
+  return update.next;
+}
+#elif defined(ARDUINO_ARCH_SAMD)
+// One NVM row per copy, so erasing one row never touches the other copy.
+// Re-flashing the sketch resets both rows (see ADR-0005 limitations).
+FlashStorage(link_epoch_slot_a, uint64_t);
+FlashStorage(link_epoch_slot_b, uint64_t);
+
+uint64_t linkBootEpoch() {
+  const LinkEpochUpdate update =
+      next_link_epoch(link_epoch_slot_a.read(), link_epoch_slot_b.read());
+  if (update.write_slot_a) {
+    link_epoch_slot_a.write(update.next);
+  } else {
+    link_epoch_slot_b.write(update.next);
+  }
+  return update.next;
 }
 #else
-// TODO(ADR-0005 step 3): persist the epoch on SAMD21 (FlashStorage). Until
-// then, nonces on boards without a hardware RNG are unique within a boot.
+// Host builds have no persistent store; nonces are unique within a run.
 __attribute__((weak)) uint64_t linkBootEpoch() { return 0U; }
 #endif
 

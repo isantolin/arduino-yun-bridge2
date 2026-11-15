@@ -411,6 +411,7 @@ class GatewaySession final
     } registration{registry_, device_id_, this};
 
     rpc_server_.RegisterService(telemetry_service_);
+    services_registered_.store(true);
 
     // The edge MPU is the pw_transfer server. The central Gateway owns only
     // the upstream client endpoint and never registers a duplicate server.
@@ -425,6 +426,7 @@ class GatewaySession final
     tx_writer_.Stop();
     if (tx_worker_.joinable()) tx_worker_.join();
     TerminateTransfer();
+    UnregisterServices();
     std::cerr << "device=" << device_id_ << " event=session_closed\n";
   }
 
@@ -433,11 +435,14 @@ class GatewaySession final
     socket_.Stop();
     tx_writer_.Stop();
     TerminateTransfer();
+    UnregisterServices();
   }
 
   ~GatewaySession() override {
     stopping_.store(true);
     TerminateTransfer();
+    UnregisterServices();
+    if (tx_worker_.joinable()) tx_worker_.join();
   }
 
   pw::Status Dispatch(
@@ -523,6 +528,16 @@ class GatewaySession final
     }
   }
 
+  void UnregisterServices() {
+    bool expected = false;
+    if (services_unregistered_.compare_exchange_strong(expected, true)) {
+      if (services_registered_.load()) {
+        rpc_server_.UnregisterService(telemetry_service_);
+        services_registered_.store(false);
+      }
+    }
+  }
+
   void TransmitLoop() {
     std::vector<std::byte> frame;
     while (!stopping_.load()) {
@@ -586,6 +601,8 @@ class GatewaySession final
   mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
   std::atomic<bool> stopping_{false};
   std::atomic<bool> transfer_terminated_{false};
+  std::atomic<bool> services_registered_{false};
+  std::atomic<bool> services_unregistered_{false};
   std::thread tx_worker_;
   std::mutex dispatch_mutex_;
 };
@@ -761,6 +778,8 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
     return pw::OkStatus();
   }
 
+  ~BoundedFileTransferHandler() override { CloseFiles(); }
+
   size_t ResourceSize() const override {
     std::error_code ec;
     const auto target_path = root_dir_ / filename_;
@@ -831,9 +850,16 @@ class GatewayClientSession final : public SessionControl {
 
     rpc_server_.RegisterService(control_service_);
     rpc_server_.RegisterService(transfer_service_);
-    transfer_service_.RegisterHandler(default_transfer_handler_);
-    transfer_service_.RegisterHandler(eeprom_transfer_handler_);
-    transfer_service_.RegisterHandler(file_transfer_handler_);
+    services_registered_.store(true);
+    if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
+      default_handler_registered_.store(true);
+    }
+    if (transfer_service_.RegisterHandler(eeprom_transfer_handler_)) {
+      eeprom_handler_registered_.store(true);
+    }
+    if (transfer_service_.RegisterHandler(file_transfer_handler_)) {
+      file_handler_registered_.store(true);
+    }
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "client=" << client_id_ << " event=session_open\n";
     ReceiveLoop();
@@ -842,6 +868,7 @@ class GatewayClientSession final : public SessionControl {
     tx_writer_.Stop();
     if (tx_worker_.joinable()) tx_worker_.join();
     TerminateTransfer();
+    UnregisterServices();
     std::cerr << "client=" << client_id_ << " event=session_closed\n";
   }
 
@@ -850,22 +877,51 @@ class GatewayClientSession final : public SessionControl {
     socket_.Stop();
     tx_writer_.Stop();
     TerminateTransfer();
+    UnregisterServices();
   }
 
   ~GatewayClientSession() override {
     stopping_.store(true);
     TerminateTransfer();
+    UnregisterServices();
+    if (tx_worker_.joinable()) tx_worker_.join();
   }
 
  private:
+  void UnregisterTransferHandlers() {
+    if (default_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(default_transfer_handler_);
+      default_handler_registered_.store(false);
+    }
+    if (eeprom_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(eeprom_transfer_handler_);
+      eeprom_handler_registered_.store(false);
+    }
+    if (file_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(file_transfer_handler_);
+      file_handler_registered_.store(false);
+    }
+  }
+
   void TerminateTransfer() {
     bool expected = false;
     if (transfer_terminated_.compare_exchange_strong(expected, true)) {
       if (transfer_worker_ != nullptr) {
+        UnregisterTransferHandlers();
         transfer_thread_.Terminate();
         if (transfer_worker_->joinable()) {
           transfer_worker_->join();
         }
+      }
+    }
+  }
+
+  void UnregisterServices() {
+    bool expected = false;
+    if (services_unregistered_.compare_exchange_strong(expected, true)) {
+      if (services_registered_.load()) {
+        rpc_server_.UnregisterService(control_service_, transfer_service_);
+        services_registered_.store(false);
       }
     }
   }
@@ -927,6 +983,11 @@ class GatewayClientSession final : public SessionControl {
   pw::hdlc::Decoder decoder_;
   std::atomic<bool> stopping_{false};
   std::atomic<bool> transfer_terminated_{false};
+  std::atomic<bool> services_registered_{false};
+  std::atomic<bool> services_unregistered_{false};
+  std::atomic<bool> default_handler_registered_{false};
+  std::atomic<bool> eeprom_handler_registered_{false};
+  std::atomic<bool> file_handler_registered_{false};
   std::thread tx_worker_;
 };
 

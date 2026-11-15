@@ -383,6 +383,10 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         first.close()
         self.gateway.wait_for("client=operator-01 event=session_closed")
         self.gateway.wait_for("client=operator-01 event=session_unregistered")
+        third = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        self.gateway.wait_for("client=operator-01 event=session_open", count=2)
+        third.close()
+        self.gateway.wait_for("client=operator-01 event=session_closed", count=2)
 
     def test_duplicate_device_session_is_rejected_and_released(self) -> None:
         first = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)

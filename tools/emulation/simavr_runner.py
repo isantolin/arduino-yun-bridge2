@@ -53,7 +53,9 @@ _CRASH_PARSER = parse.compile(
     "ramend=0x{ramend:x} sreg=0x{sreg:x} cycle={cycle:d}"
 )
 _LOW_WATER_PARSER = parse.compile("AVR stack low-water mark: min_sp=0x{min_sp:x} ramend=0x{ramend:x}")
-_PEAK_CONTEXT_PARSER = parse.compile("AVR stack low-water context: pc=0x{pc:x} address_size={address_size:d} stack:{stack}")
+_PEAK_CONTEXT_PARSER = parse.compile(
+    "AVR stack low-water context: pc=0x{pc:x} address_size={address_size:d} stack:{stack}"
+)
 _MAX_PEAK_FRAMES = 16
 # avr-nm reports data-space symbols with the 0x800000 SRAM offset.
 _AVR_DATA_SPACE_MASK = 0xFFFF
@@ -228,8 +230,9 @@ def _scan_return_addresses(stack: bytes, address_size: int, text_end: int) -> li
     scan, so stale or data values that look like code addresses can appear.
     """
     candidates: list[int] = []
-    for i in range(len(stack) - address_size + 1):
-        word_address = int.from_bytes(stack[i : i + address_size], "big")
+    for start in range(len(stack) - address_size + 1):
+        end = start + address_size
+        word_address = int.from_bytes(stack[start:end], "big")
         byte_address = word_address * 2
         if 0 < byte_address < text_end and byte_address not in candidates:
             candidates.append(byte_address)

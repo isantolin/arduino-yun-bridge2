@@ -126,16 +126,16 @@ def close_serial_port(ser: serial.Serial) -> None:
     if isinstance(raw_socket, socket.socket):
         try:
             raw_socket.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Raw socket shutdown handled during close", error=str(exc))
     try:
         ser.close()
     finally:
         if isinstance(raw_socket, socket.socket):
             try:
                 raw_socket.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Raw socket close handled during teardown", error=str(exc))
 
 
 class SerialTransport:

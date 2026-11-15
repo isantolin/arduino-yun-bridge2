@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 
 from google.protobuf.message import DecodeError
 from google.protobuf.message import Message as ProtobufMessage
@@ -188,15 +187,17 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
         for w in active_writers:
             try:
                 w.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Active client writer close handled", error=str(exc))
         server.close()
         await server.wait_closed()
         await transport.stop()
         if not transport_task.done():
             transport_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, ConnectionError):
+            try:
                 await transport_task
+            except (asyncio.CancelledError, ConnectionError) as exc:
+                logger.debug("Wireless transport task teardown handled", error=str(exc))
 
 
 async def test_e2e_wireless_tcp_analog_read_and_datastore(
@@ -307,12 +308,14 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
         for w in active_writers:
             try:
                 w.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Active client writer close handled", error=str(exc))
         server.close()
         await server.wait_closed()
         await transport.stop()
         if not transport_task.done():
             transport_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, ConnectionError):
+            try:
                 await transport_task
+            except (asyncio.CancelledError, ConnectionError) as exc:
+                logger.debug("Wireless transport task teardown handled", error=str(exc))

@@ -1,6 +1,6 @@
 #include "services/EepromTransfer.h"
 
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#if BRIDGE_ENABLE_PW_TRANSFER
 
 #include <EEPROM.h>
 #include <pw_stream/stream.h>
@@ -149,4 +149,4 @@ bool registerEepromTransferHandler(pw::transfer::TransferService& service) {
 
 }  // namespace bridge::services
 
-#endif  // defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#endif  // BRIDGE_ENABLE_PW_TRANSFER

@@ -1,6 +1,6 @@
 # Upstream pw_transfer integration (Arduino Mega 2560)
 
-The ATmega2560 build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. `pw_transfer` is the only supported streaming-transfer protocol; the legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
+When built with `-DBRIDGE_ENABLE_PW_TRANSFER=1`, the AVR build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. The option is **off by default**: on the ATmega2560 the transfer thread, service, client and their 384 B of staging buffers take SRAM that the runtime stack needs (the Fleet Mesh stack measurement showed the stack overflowing into `.bss` with it enabled), and no MPU or cloud operation currently reaches the EEPROM resource. Library sources compile separately from the sketch, so the macro must be a global build flag (for example `compiler.cpp.extra_flags`), not a `#define` in the sketch. `pw_transfer` is the only supported streaming-transfer protocol; the legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
 
 ## Runtime ownership
 
@@ -24,7 +24,7 @@ Bridge.transferClient()
 
 ## Registering an application resource
 
-The EEPROM resource is registered automatically by `Bridge.begin()` on ATmega2560. Its stable resource ID is `0x4D454741` and its resource size is 4,096 bytes. Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
+With `BRIDGE_ENABLE_PW_TRANSFER=1`, the EEPROM resource is registered automatically by `Bridge.begin()`. Its stable resource ID is `0x4D454741` and its resource size is 4,096 bytes. Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
 
 ```cpp
 #include <etl/array.h>
@@ -65,7 +65,7 @@ Large-file reads and writes must use upstream `pw_transfer` with a resource hand
 ## Validation and release gates
 
 - The port includes [avr_pigweed_port PR #8](https://github.com/isantolin/avr_pigweed_port/pull/8), [PR #10](https://github.com/isantolin/avr_pigweed_port/pull/10), [PR #11](https://github.com/isantolin/avr_pigweed_port/pull/11), and [PR #12](https://github.com/isantolin/avr_pigweed_port/pull/12), merged as `026c5f6b4350e75641bc125d2098e53c7e2d317f`. The Bridge PR submodule is pinned to that merge commit. Both CRC32 CI configurations passed in PR #10; the Bridge PR's final-head matrix remains a separate release gate.
-- CI compiles both BridgeControl and a dedicated `pw_transfer` API sketch for Arduino Mega 2560.
+- CI compiles BridgeControl (default build, `pw_transfer` disabled) and a dedicated `pw_transfer` API sketch with `-DBRIDGE_ENABLE_PW_TRANSFER=1` for Arduino Mega 2560.
 - The port CI exercises upstream transfer reads/writes, retries, cancellation, timeout, bounded-queue saturation, and sequential role reuse under `simavr`.
 - The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.
 - Hardware UART/HDLC transfer against a live MPU remains a separate release gate.

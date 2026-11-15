@@ -1,6 +1,8 @@
 #pragma once
 
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#include "config/bridge_config.h"
+
+#if BRIDGE_ENABLE_PW_TRANSFER
 
 #include <avr/io.h>
 #include <pw_transfer/transfer.h>
@@ -21,4 +23,4 @@ bool registerEepromTransferHandler(pw::transfer::TransferService& service);
 
 }  // namespace bridge::services
 
-#endif  // defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#endif  // BRIDGE_ENABLE_PW_TRANSFER

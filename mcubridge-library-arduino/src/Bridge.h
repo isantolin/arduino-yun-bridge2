@@ -33,10 +33,6 @@
 
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
-#include <pw_transfer/client.h>
-#include <pw_transfer/handler.h>
-#include <pw_transfer/transfer.h>
-#include <pw_transfer/transfer_thread.h>
 #else
 #include <pw_bytes/span.h>
 #include <pw_checksum/crc32.h>
@@ -93,6 +89,13 @@
 #include "protocol/mcu_wire.pb.h"
 #include "protocol/mcu_wire.rpc.pb.h"
 #include "protocol/rpc_protocol.h"
+
+#if BRIDGE_ENABLE_PW_TRANSFER
+#include <pw_transfer/client.h>
+#include <pw_transfer/handler.h>
+#include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
+#endif
 
 namespace bridge {
 
@@ -253,7 +256,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#if BRIDGE_ENABLE_PW_TRANSFER
   // Upstream pw_transfer endpoints share one Thread<1, 1>.
   // On AVR, the cooperative role arbiter permits client/server transfers
   // sequentially.
@@ -319,7 +322,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#if BRIDGE_ENABLE_PW_TRANSFER
   static constexpr size_t kTransferChunkBufferSize = 128;
   // The encode buffer holds the outgoing RPC packet and must be larger than
   // the chunk staging buffer. Use the complete configured receive-frame size.
@@ -337,7 +340,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 #endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+#if BRIDGE_ENABLE_PW_TRANSFER
   bool _eeprom_transfer_registered{false};
 #endif
   bool _rpc_plaintext_response{false};

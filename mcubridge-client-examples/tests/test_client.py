@@ -591,3 +591,20 @@ async def test_gateway_client_transfer_read_and_write() -> None:
 
     await client.transfer_write(1, b"new_data")
     mock_manager.write.assert_called_once_with(1, b"new_data")
+
+
+async def test_gateway_client_timeout_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_conn = MagicMock()
+    # 1. Explicit default_timeout_ms
+    c1 = GatewayClient(mock_conn, target_device_id="dev-1", default_timeout_ms=45000)
+    assert c1.default_timeout_ms == 45000
+
+    # 2. Environment variable MCUBRIDGE_CLIENT_TIMEOUT_MS
+    monkeypatch.setenv("MCUBRIDGE_CLIENT_TIMEOUT_MS", "25000")
+    c2 = GatewayClient(mock_conn, target_device_id="dev-2")
+    assert c2.default_timeout_ms == 25000
+
+    # 3. Default fallback (30000ms)
+    monkeypatch.delenv("MCUBRIDGE_CLIENT_TIMEOUT_MS", raising=False)
+    c3 = GatewayClient(mock_conn, target_device_id="dev-3")
+    assert c3.default_timeout_ms == 30000

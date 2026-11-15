@@ -1208,7 +1208,7 @@ message RuntimeConfig {
   ];
   bytes serial_shared_secret = 36 [
     (config_default) = "failsafe_secret_mode",
-    (config_desc) = "Shared secret for LinkSync authentication and HDLC AEAD; an empty secret is rejected unless allow_insecure_link is set",
+    (config_desc) = "LinkSync/AEAD shared secret (empty needs allow_insecure_link)",
     (uci_option) = "serial_shared_secret"
   ];
   string cloud_spool_dir = 37 [
@@ -1276,7 +1276,7 @@ message RuntimeConfig {
   ];
   bool allow_insecure_link = 54 [
     (config_default) = "false",
-    (config_desc) = "Permit an empty serial_shared_secret: the MCU link is then neither authenticated nor encrypted and the cloud transport is disabled",
+    (config_desc) = "Allow empty secret: link unauthenticated/unencrypted, cloud off",
     (uci_option) = "allow_insecure_link"
   ];
 }

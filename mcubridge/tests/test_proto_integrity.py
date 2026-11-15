@@ -1,6 +1,7 @@
 """Test suite for Protobuf SSOT integrity, dead definition audits, and strong typing. [SIL-2]"""
 
 from collections.abc import Sequence
+import json
 from pathlib import Path
 import subprocess
 from typing import Any, cast
@@ -81,6 +82,52 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, mocker: MockerF
     mocker.patch.object(codebase_auditor, "run_command", _mock_cmd_fail)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: invalid rules"]
+
+
+def _mock_semgrep_json(mocker: MockerFixture, tmp_path: Path, payload: dict[str, object]) -> None:
+    (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
+    mocker.patch.object(codebase_auditor, "ROOT", tmp_path)
+    mocker.patch.object(codebase_auditor.shutil, "which", return_value="semgrep")
+    stdout = json.dumps(payload)
+
+    def _mock_cmd(
+        cmd: Sequence[str], *, cwd: Path | None = None, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        _ = env
+        return subprocess.CompletedProcess(list(cmd), 0, stdout=stdout, stderr="")
+
+    mocker.patch.object(codebase_auditor, "run_command", _mock_cmd)
+
+
+def _partial_parse_error(start: int, end: int) -> dict[str, object]:
+    return {
+        "type": ["PartialParsing", []],
+        "path": "src/Bridge.cpp",
+        "spans": [{"start": {"line": start, "col": 1}, "end": {"line": end, "col": 1}}],
+    }
+
+
+def test_audit_semgrep_tolerates_short_partial_parsing(tmp_path: Path, mocker: MockerFixture) -> None:
+    """A one-line PROGMEM declaration semgrep cannot parse is not a finding."""
+    _mock_semgrep_json(mocker, tmp_path, {"results": [], "errors": [_partial_parse_error(10, 11)]})
+    assert codebase_auditor.audit_semgrep() == []
+
+
+def test_audit_semgrep_reports_large_unparsed_region(tmp_path: Path, mocker: MockerFixture) -> None:
+    """SIL-2: a large region hidden from the rules must fail the audit."""
+    _mock_semgrep_json(mocker, tmp_path, {"results": [], "errors": [_partial_parse_error(10, 40)]})
+    assert codebase_auditor.audit_semgrep() == [
+        "Semgrep Coverage Error [PartialParsing]: src/Bridge.cpp:10-40 - 31 lines unparsed (max 3)"
+    ]
+
+
+def test_audit_semgrep_reports_non_parsing_errors(tmp_path: Path, mocker: MockerFixture) -> None:
+    """SIL-2: a timeout means the file was not analysed and must fail the audit."""
+    error = {"type": "Timeout", "path": "src/hal/hal.cpp", "message": "Timeout when running rules\ndetails"}
+    _mock_semgrep_json(mocker, tmp_path, {"results": [], "errors": [error]})
+    assert codebase_auditor.audit_semgrep() == [
+        "Semgrep Coverage Error [Timeout]: src/hal/hal.cpp - Timeout when running rules"
+    ]
 
 
 def test_audit_semgrep_reports_empty_output_as_execution_error(tmp_path: Path, mocker: MockerFixture) -> None:

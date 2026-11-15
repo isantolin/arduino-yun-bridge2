@@ -248,6 +248,52 @@ def audit_semgrep() -> list[str]:
                 extra_dict = cast(dict[str, object], extra_obj)
                 msg = str(extra_dict.get("message") or "")
             findings.append(f"Semgrep Violation [{check_id}]: {path_str}:{line} - {msg}")
+    return findings + _semgrep_coverage_findings(data.get("errors"))
+
+
+# Semgrep skips constructs it cannot parse (PROGMEM placement, `#if` inside an
+# argument list, function-like macros) and reports them as PartialParsing.
+# Rules never see those lines, so only short skipped regions are tolerated.
+SEMGREP_MAX_SKIPPED_LINES = 3
+
+
+def _semgrep_error_type(error: dict[str, object]) -> str:
+    raw_type = error.get("type")
+    if isinstance(raw_type, list):
+        type_parts = cast(list[object], raw_type)
+        return str(type_parts[0]) if type_parts else "unknown"
+    return str(raw_type) if raw_type else "unknown"
+
+
+def _semgrep_coverage_findings(raw_errors: object) -> list[str]:
+    """Turn Semgrep errors into findings so unanalysed code never passes silently."""
+    if not isinstance(raw_errors, list):
+        return []
+    findings: list[str] = []
+    for raw_error in cast(list[object], raw_errors):
+        if not isinstance(raw_error, dict):
+            continue
+        error = cast(dict[str, object], raw_error)
+        error_type = _semgrep_error_type(error)
+        path_str = str(error.get("path") or "")
+        if error_type != "PartialParsing":
+            message = str(error.get("message") or "").strip().splitlines()
+            detail = message[0] if message else "no message"
+            findings.append(f"Semgrep Coverage Error [{error_type}]: {path_str} - {detail}")
+            continue
+        raw_spans = error.get("spans")
+        spans = cast(list[object], raw_spans) if isinstance(raw_spans, list) else []
+        for raw_span in spans:
+            if not isinstance(raw_span, dict):
+                continue
+            span = cast(dict[str, dict[str, int]], raw_span)
+            start = span.get("start", {}).get("line", 0)
+            end = span.get("end", {}).get("line", start)
+            if end - start + 1 > SEMGREP_MAX_SKIPPED_LINES:
+                findings.append(
+                    f"Semgrep Coverage Error [PartialParsing]: {path_str}:{start}-{end} - "
+                    f"{end - start + 1} lines unparsed (max {SEMGREP_MAX_SKIPPED_LINES})"
+                )
     return findings
 
 

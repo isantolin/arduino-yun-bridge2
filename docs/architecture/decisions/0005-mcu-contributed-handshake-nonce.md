@@ -1,6 +1,6 @@
 # ADR-0005: MCU-Contributed Nonce in the Link Handshake
 
-- Status: Proposed
+- Status: Accepted (implemented in PR #92)
 - Date: 2026-11-15
 - Decision owners: Repository maintainer
 
@@ -32,29 +32,30 @@ Verified per-platform sources (installed cores):
 | SAMD21 (MKR WiFi 1010) | **No** (TRNG exists only on SAMD51) | No EEPROM; flash only |
 | AVR (Mega 2560) | **No** | 4 KiB EEPROM, today fully exposed as `pw_transfer` resource `0x4D454741` |
 
-## Decision (proposed)
+## Decision
 
 1. **Wire format.**
    - Add `bytes mcu_nonce = 3` (16 bytes) to `rpc.pb.LinkSync`; the MCU fills it in its response.
-   - Bump the handshake to v2 with new HKDF `info` labels for the response tag and the session keys, so a v1 peer fails closed with an authentication mismatch instead of deriving silently different keys.
+   - Bump the handshake to v2 with new HKDF `info` labels, so a v1 peer fails closed with an authentication mismatch instead of deriving silently different keys: `session-key-v2`, `handshake-response-v2` and `mcu-nonce-v2` (`config_schema.proto`, generated as `RPC_HANDSHAKE_HKDF_INFO_*` / `HANDSHAKE_HKDF_INFO_*`).
+   - The host rejects a response without a 16-byte `mcu_nonce` as `sync_auth_mismatch`.
 2. **Response tag:** `HMAC(K_resp_v2, nonce_h ‖ mcu_nonce)[:16]`. The host verifies the MCU's knowledge of the secret bound to both nonces.
 3. **Session keys:** `HKDF-SHA256(secret, salt = nonce_h ‖ mcu_nonce, info = SESSION_v2)`, still split host→MCU / MCU→host.
 4. **`mcu_nonce` generation**, per platform:
    - **ESP32:** `esp_fill_random()`.
-   - **AVR:** `HMAC-SHA256(K_nonce, boot_counter ‖ handshake_counter)[:16]`, where `K_nonce = HKDF(secret, info = "mcubridge nonce v2")`.
-     - `boot_counter` is a 64-bit counter in a **reserved EEPROM slot**, incremented once per boot with `EEPROM.update`.
+   - **AVR and SAMD21:** `HMAC-SHA256(K_nonce, boot_epoch ‖ handshake_counter)[:16]`, where `K_nonce = HKDF(secret, info = "mcu-nonce-v2")` and both counters are 64-bit big-endian (`bridge::hal::fillLinkNonce`, `rpc::security::derive_mcu_nonce`).
+     - `boot_epoch` is persisted as **two 8-byte copies**. Each boot reads both (erased storage counts as 0), takes the larger value plus one, and overwrites the **older** copy before the first nonce is emitted. A write torn by a power loss leaves the other copy intact, so the epoch still moves forward on the next boot.
+     - AVR stores the copies in the last 16 bytes of the EEPROM (D5a); SAMD21 stores each copy in its own NVM row through `FlashStorage` (D5b).
      - `handshake_counter` is a RAM counter incremented per `LinkSync`.
      - Uniqueness comes from the counters; the HMAC only hides them.
-   - **SAMD21:** same construction as AVR, with `boot_counter` in flash. Option (a) below is recommended.
+   - A POST known-answer test covers the derivation (`kat_mcu_nonce_from_zero_counter`).
 5. **Documentation:** correct `PROTOCOL.md` and the FIPS policy text. Replay of a recorded session is prevented. An unauthenticated `LinkReset` remains a denial-of-service vector, tracked separately.
 
-## Decisions requested from the maintainer
+## Maintainer decisions
 
-- **D5a: AVR EEPROM reservation.** Reserving 16 bytes at the end of the EEPROM shrinks the `pw_transfer` EEPROM resource from 4096 to 4080 bytes on the Mega. That is a contract change, interacting with D1 (whether the EEPROM is reachable at all), and `pw_transfer_compile.ino` asserts 4096 today.
-- **D5b: SAMD21 boot counter source.**
-  - **(a) Recommended:** emulated EEPROM in flash via the `FlashStorage` library. This is a **new dependency** that requires approval. One row write per boot. The SAMD21 NVM endurance per row must be confirmed against the datasheet before acceptance; wear-levelling across pages is available if needed.
-  - **(b)** The ATECC608 TRNG present on the MKR WiFi 1010 (`ArduinoECCX08`). Also a new dependency, and board-specific.
-  - **(c)** Drop SAMD21 support for authenticated links. Not recommended.
+- **D5a: AVR EEPROM reservation — accepted.** The last 16 bytes of the EEPROM are reserved (`LINK_EPOCH_EEPROM_RESERVED_BYTES`). The `pw_transfer` EEPROM resource `0x4D454741` shrinks from 4096 to 4080 bytes on the Mega; `pw_transfer_compile.ino` asserts the new size. This interacts with D1 (whether the EEPROM is reachable at all).
+- **D5b: SAMD21 boot counter source — option (a) accepted.** `FlashStorage` 1.0.0 (`cmaglie/FlashStorage`, LGPL-2.1) is approved as a new dependency, pinned by archive SHA-256 in `requirements/runtime.toml` and generated into `install.sh`. Rejected options:
+  - **(b)** The ATECC608 TRNG on the MKR WiFi 1010 (`ArduinoECCX08`): also a new dependency, and board-specific.
+  - **(c)** Dropping SAMD21 support for authenticated links.
 
 ## Alternatives considered
 
@@ -73,6 +74,10 @@ Verified per-platform sources (installed cores):
   - the emulator, KATs (both sides), `docs/PROTOCOL.md` and the FIPS policy.
 - **AVR stack:** HKDF/HMAC is already the deepest path (1514 / 1791 B measured). The extra HMAC for `mcu_nonce` runs at the same depth and must be measured with the simavr low-water report before merge.
 - **Rollback:** revert the firmware and the daemon together. The new fields and labels are additive in the schema.
+- **Known limitations:**
+  - Re-flashing a SAMD21 sketch rewrites the `FlashStorage` rows with zeros, and an ISP chip erase clears the AVR EEPROM. In both cases the boot epoch restarts and earlier nonces can repeat. Rotate the shared secret after such an operation.
+  - Endurance: each copy is written every other boot. With roughly 25k erase cycles per SAMD21 row and 100k per AVR EEPROM cell, that allows about 50k and 200k boots respectively.
+  - The Renode SAMD21 model has no NVM controller. The emulation presets `NVMCTRL.INTFLAG.READY`, and flash writes land directly in memory, so the emulator exercises the code path but not real erase semantics.
 
 ## Validation plan
 

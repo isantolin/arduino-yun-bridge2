@@ -1,6 +1,6 @@
 # MCU Bridge — Release Notes (next, unreleased)
 
-**Status:** Draft. It covers the changes merged after 2.8.9: PR #86 (E0) and PRs #87, #88, #89 (E0.1 B, C, D). PR #90 (E0.1 E) is included as pending merge. Publish only after the release CI, emulation and packaging checks pass on the release commit.
+**Status:** Draft. It covers the changes merged after 2.8.9: PR #86 (E0) and PRs #87, #88, #89 (E0.1 B, C, D). PR #90 (E0.1 E) and PR #92 (E0.1 F, handshake v2) are included as pending merge. Publish only after the release CI, emulation and packaging checks pass on the release commit.
 
 ## ⚠️ Breaking changes and migration
 
@@ -24,7 +24,17 @@ An empty secret runs the MCU link unauthenticated and unencrypted. The daemon no
 
 **Migration:** installations keep the random secret generated at install time, so no action is needed. If you deliberately run without a secret, set `uci set mcubridge.general.allow_insecure_link=1` (LuCI: *Allow insecure serial link*) and expect the cloud to be off.
 
-### 3. AVR builds in CI use the core's default serial buffers (PR #86)
+### 3. Link handshake v2: upgrade firmware and daemon together (PR #92, pending)
+
+The MCU now contributes its own 16-byte nonce to `LinkSync` (`mcu_nonce`), and both the response tag and the session keys depend on it (ADR-0005). A v1 firmware and a v2 daemon, or the reverse, fail closed with `sync_auth_mismatch`; they never fall back to a weaker link.
+
+Side effects:
+- On AVR the last 16 bytes of the EEPROM hold the boot epoch, so the `pw_transfer` EEPROM resource shrinks from 4096 to 4080 bytes.
+- SAMD21 builds need the `FlashStorage` 1.0.0 library (installed by `install.sh` and the Library Manager `depends`).
+
+**Migration:** flash the new firmware and upgrade the daemon in the same maintenance window. After re-flashing a SAMD21 sketch or an ISP chip erase of an AVR, rotate `serial_shared_secret`, because the boot epoch restarts.
+
+### 4. AVR builds in CI use the core's default serial buffers (PR #86)
 
 CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by users never had it; this aligns CI with them. No user action is needed.
 
@@ -50,10 +60,11 @@ CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by us
 
 ## Compatibility
 
-- **MCU ↔ MPU wire protocol:** unchanged in this release; the streamed AEAD frames are byte-identical. ADR-0005 (proposed) will change the handshake in a later release and will require upgrading the firmware and the daemon together.
+- **MCU ↔ MPU wire protocol:** `LinkSync` gains `mcu_nonce` (field 3) and the handshake HKDF labels move to v2 (PR #92, pending). The streamed AEAD frame format is unchanged.
 - **Configuration schema:** new `allow_insecure_link` field (RuntimeConfig 54) and per-architecture flow-control constants (Hardware 23/24/46/47).
 
 ## Known limitations
 
-- The link handshake still derives keys from the host nonce only. A recorded session can be replayed after a forced `LinkReset` (see ADR-0005, proposed).
+- Until PR #92 merges, the link handshake derives keys from the host nonce only, and a recorded session can be replayed after a forced `LinkReset` (ADR-0005).
+- `LinkReset` is still accepted in plaintext, so an attacker on the transport can force resynchronisation (denial of service). Replay is no longer possible after PR #92.
 - Any authenticated gateway client can address any device. With `topic_authorization` unset, all operations are allowed.

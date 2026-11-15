@@ -277,9 +277,10 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
-        async with bridge_session(
-            host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000
-        ) as (_channel, stub):
+        async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000) as (
+            _channel,
+            stub,
+        ):
             ver_resp: mcu_wire_pb2.VersionResponse | None = None
             for attempt in range(5):
                 try:

@@ -1721,3 +1721,121 @@ async def test_send_cloud_telemetry_resolves_pw_rpc_callbacks(
 
     async with asyncio.timeout(1.0):
         assert await svc.send_cloud_telemetry(system_status_blob=b"x") is expected
+
+
+async def test_file_transfer_push_to_linux_success(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=b"payload_data"))
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="dest_file.bin", resource_id=2)
+    resp = await svc.file_transfer_push_to_linux(req)
+    assert resp.success is True
+    assert resp.bytes_transferred == len(b"payload_data")
+    assert (tmp_path / "dest_file.bin").read_bytes() == b"payload_data"
+
+
+async def test_file_transfer_push_to_linux_invalid_path(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="../../etc/shadow", resource_id=2)
+    resp = await svc.file_transfer_push_to_linux(req)
+    assert resp.success is False
+    assert resp.bytes_transferred == 0
+
+
+async def test_file_transfer_push_to_linux_read_error(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(side_effect=RuntimeError("Transfer timeout")))
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="test.bin", resource_id=2)
+    resp = await svc.file_transfer_push_to_linux(req)
+    assert resp.success is False
+    assert "Transfer timeout" in resp.message
+
+
+async def test_file_transfer_push_to_linux_quota_exceeded(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=b"data"))
+    monkeypatch.setattr(svc, "write_with_quota", AsyncMock(return_value=False))
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="test.bin", resource_id=2)
+    resp = await svc.file_transfer_push_to_linux(req)
+    assert resp.success is False
+    assert "quota" in resp.message
+
+
+async def test_file_transfer_fetch_from_linux_success(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    test_file = tmp_path / "src_file.bin"
+    test_file.write_bytes(b"download_content")
+
+    mock_write = AsyncMock()
+    monkeypatch.setattr(svc, "cloud_transfer_write", mock_write)
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="src_file.bin", resource_id=2)
+    resp = await svc.file_transfer_fetch_from_linux(req)
+    assert resp.success is True
+    assert resp.bytes_transferred == len(b"download_content")
+    mock_write.assert_awaited_once_with(2, b"download_content")
+
+
+async def test_file_transfer_fetch_from_linux_invalid_path(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="../../etc/shadow", resource_id=2)
+    resp = await svc.file_transfer_fetch_from_linux(req)
+    assert resp.success is False
+    assert resp.bytes_transferred == 0
+
+
+async def test_file_transfer_fetch_from_linux_not_found(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="nonexistent.bin", resource_id=2)
+    resp = await svc.file_transfer_fetch_from_linux(req)
+    assert resp.success is False
+    assert "not found" in resp.message.lower()
+
+
+async def test_file_transfer_fetch_from_linux_write_error(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    test_file = tmp_path / "src_file.bin"
+    test_file.write_bytes(b"content")
+
+    monkeypatch.setattr(svc, "cloud_transfer_write", AsyncMock(side_effect=RuntimeError("write failed")))
+
+    req = cloud_gateway_pb2.FileTransferSyncRequest(path="src_file.bin", resource_id=2)
+    resp = await svc.file_transfer_fetch_from_linux(req)
+    assert resp.success is False
+    assert "write failed" in resp.message
+
+
+async def test_cloud_transfer_disconnected_raises_connection_error(
+    mock_bridge_service: BridgeService,
+) -> None:
+    svc = mock_bridge_service
+    svc.cloud_rpc_client = None
+
+    with pytest.raises(ConnectionError, match="not connected"):
+        await svc.cloud_transfer_read(2)
+
+    with pytest.raises(ConnectionError, match="not connected"):
+        await svc.cloud_transfer_write(2, b"test")

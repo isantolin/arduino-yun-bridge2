@@ -36,7 +36,7 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos, UBUS del MPU y clientes northbound (`GatewayClient`) invocan métodos RPC por nombre canónico Pigweed (`rpc.pb.<Service>/<Method>`); `LocalBridge` y `CloudBridge` gRPC erradicados | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Cliente Python `pw_transfer.Manager` y handler EEPROM MCU integrados; `FileSystemService.Read`/`Write` y `FileRead`/`FileWrite` unarios eliminados; Gateway Linux C++ Pigweed (`mcubridge-gateway-cpp`) con `pw_transfer::TransferService` y `BoundedFileTransferHandler` integrados; Gateway Python/grpclib erradicado | Ninguno |
+| Transferencia de archivos | Upstream pw_transfer completo e integrado end-to-end: TransferService en Gateway C++ (handlers de buffer y BoundedFileTransferHandler staging en recurso 2 para clientes y dispositivos edge); proxy LinuxFileTransferService (PushToLinux/FetchFromLinux) en daemon MPU con validación de rutas y cuotas; cliente Python con push_file_to_device/fetch_file_from_device; handler EEPROM MCU | Ninguno |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
 | CI y validación | Matriz de CI completa de PR #85 en ejecución y supervisión en GitHub Actions HEAD actual (Tox, Gateway C++, simavr, Renode, QEMU, Arduino) | CI verde en HEAD de PR #85 y validación física UART/HDLC |
@@ -118,8 +118,10 @@ Cambios en el daemon y el contrato:
 2. **Transferencias de archivos (upstream `pw_transfer`):**
    - `pw_transfer` es el único protocolo de streaming de archivos; el RPC legacy `FileSystemService.Read` y las intercepciones unarias en `runtime.py` (antiguo desvío `mcu/eeprom`) se eliminaron en favor de streaming nativo `pw_transfer`.
    - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados para ATmega2560 en `third_party/avr_pigweed_port`, manteniéndose las características cooperativas y de árbitro mono-rol estrictamente en AVR bajo condicionales de plataforma.
-   - En el Gateway C++ standalone (`mcubridge-gateway-cpp`), `GatewayClientSession` registra `pw::transfer::TransferService` con `BufferTransferHandler` acotado y seguro sobre subprocesos de hilo de transferencia estándar de Pigweed.
-   - En `mcubridge-client-examples`, `GatewayClient` incorpora `transfer_read` y `transfer_write` nativos mediante `pw_transfer.client.Manager`, y `fileio_test.py` valida transferencias streaming bidireccionales concurrentes.
+   - En el Gateway C++ standalone (`mcubridge-gateway-cpp`), tanto `GatewayClientSession` como `GatewaySession` registran `pw::transfer::TransferService` con `BufferTransferHandler` y `BoundedFileTransferHandler` (`staging.bin` en recurso 2). `GatewayControlService::Dispatch` coordina la sincronización de archivos de staging entre el cliente autenticado y el dispositivo edge de destino.
+   - En el daemon MPU (`mcubridge`), el servicio de control registra `rpc.pb.LinuxFileTransferService` (`PushToLinux` y `FetchFromLinux`), interactuando como cliente `pw_transfer` con el Gateway mediante `PwTransferManager`, aplicando validación de seguridad de rutas `_get_safe_path` y cuotas de almacenamiento `write_with_quota`.
+   - En `mcubridge-client-examples`, `GatewayClient` incorpora `push_file_to_device` y `fetch_file_from_device` de alto nivel, completando el canal de transferencia end-to-end hacia el filesystem local de OpenWrt.
+   - `fileio_test.py` valida transferencias streaming bidireccionales concurrentes.
 
 ## Detalle de las etapas 8 y 9: Estructura C++, cero supresiones NOLINT y gestión estática de memoria
 

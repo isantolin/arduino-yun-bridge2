@@ -390,6 +390,7 @@ class SerialTransport:
                 self.state.serial_decode_errors += 1
                 await self.check_baudrate_fallback()
                 continue
+            self.consecutive_crc_errors = 0
             await self.process_hdlc_frame(frame)
 
     async def read_loop(self, ser: serial.Serial) -> None:

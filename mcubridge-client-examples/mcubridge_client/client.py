@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import socket
 import ssl
 import threading
@@ -116,9 +117,7 @@ class GatewayClient:
         self._transfer_lock = asyncio.Lock()
         env_timeout = os.environ.get("MCUBRIDGE_CLIENT_TIMEOUT_MS")
         self.default_timeout_ms: int = (
-            default_timeout_ms
-            if default_timeout_ms is not None
-            else (int(env_timeout) if env_timeout else 30000)
+            default_timeout_ms if default_timeout_ms is not None else (int(env_timeout) if env_timeout else 30000)
         )
 
     def _get_transfer_manager(self) -> PwTransferManager:
@@ -347,3 +346,55 @@ class GatewayClient:
         resp = mcu_wire_pb2.Empty()
         resp.ParseFromString(resp_bytes)
         return resp
+
+    async def push_file_to_device(
+        self,
+        local_path: str | os.PathLike[str],
+        remote_device_path: str,
+        resource_id: int = 2,
+        timeout_ms: int | None = None,
+    ) -> int:
+        """Push a local file to the remote OpenWrt Linux device using pw_transfer staging."""
+        data = Path(local_path).read_bytes()
+        await self.transfer_write(resource_id, data)
+        req = cloud_gateway_pb2.FileTransferSyncRequest(
+            path=remote_device_path,
+            resource_id=resource_id,
+        )
+        resp_bytes = await self.dispatch(
+            "rpc.pb.LinuxFileTransferService/PushToLinux",
+            req,
+            timeout_ms=timeout_ms,
+        )
+        resp = cloud_gateway_pb2.FileTransferSyncResponse()
+        resp.ParseFromString(resp_bytes)
+        if not resp.success:
+            raise RuntimeError(f"Push to Linux device failed: {resp.message}")
+        return resp.bytes_transferred
+
+    async def fetch_file_from_device(
+        self,
+        remote_device_path: str,
+        local_destination_path: str | os.PathLike[str],
+        resource_id: int = 2,
+        timeout_ms: int | None = None,
+    ) -> int:
+        """Fetch a remote file from the OpenWrt Linux device using pw_transfer staging."""
+        req = cloud_gateway_pb2.FileTransferSyncRequest(
+            path=remote_device_path,
+            resource_id=resource_id,
+        )
+        resp_bytes = await self.dispatch(
+            "rpc.pb.LinuxFileTransferService/FetchFromLinux",
+            req,
+            timeout_ms=timeout_ms,
+        )
+        resp = cloud_gateway_pb2.FileTransferSyncResponse()
+        resp.ParseFromString(resp_bytes)
+        if not resp.success:
+            raise RuntimeError(f"Fetch from Linux device failed: {resp.message}")
+        data = await self.transfer_read(resource_id)
+        dest = Path(local_destination_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        return len(data)

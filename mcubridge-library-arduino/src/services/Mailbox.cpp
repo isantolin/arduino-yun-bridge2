@@ -13,8 +13,7 @@
 
 MailboxClass::MailboxClass() {}
 
-pw::rpc::NanopbUnaryReceiver<rpc_pb_Empty>
-    MailboxClass::_push_call;
+pw::rpc::NanopbUnaryReceiver<rpc_pb_Empty> MailboxClass::_push_call;
 pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxReadResponse>
     MailboxClass::_read_call;
 pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxAvailableResponse>

@@ -215,3 +215,27 @@ service ConsoleService {
     option (method_description) = "Console bytes. Linux -> MCU writes are queued and framed on HDLC_ADDRESS_CONSOLE; MCU -> Linux console frames are published on the cloud topic.";
   }
 }
+
+message FileTransferSyncRequest {
+  string path = 1;
+  uint32 resource_id = 2;
+}
+
+message FileTransferSyncResponse {
+  bool success = 1;
+  uint32 bytes_transferred = 2;
+  string message = 3;
+}
+
+// Linux-side pw_transfer proxy service. Synchronizes files between the Gateway's
+// pw_transfer staging resource and the local OpenWrt Linux filesystem.
+service LinuxFileTransferService {
+  rpc PushToLinux(rpc.pb.FileTransferSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
+    option (auth_field) = "file_write";
+    option (method_description) = "Synchronize a staged pw_transfer file from Gateway to local Linux filesystem.";
+  }
+  rpc FetchFromLinux(rpc.pb.FileTransferSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
+    option (auth_field) = "file_read";
+    option (method_description) = "Synchronize a local Linux filesystem file to Gateway pw_transfer staging.";
+  }
+}

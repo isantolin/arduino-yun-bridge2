@@ -33,6 +33,7 @@ from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal import packet_pb2
+from pw_transfer.client import Error as PwTransferError, Manager as PwTransferManager
 
 from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge.protocol.cloud_gateway_pb2 import (
@@ -129,6 +130,8 @@ class BridgeService:
         "rpc.pb.SystemService/Xon": "mcu_xon",
         "rpc.pb.FileSystemService/Write": "file_write",
         "rpc.pb.FileSystemService/Remove": "file_remove",
+        "rpc.pb.LinuxFileTransferService/PushToLinux": "file_transfer_push_to_linux",
+        "rpc.pb.LinuxFileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
         "rpc.pb.MailboxService/Push": "mailbox_push",
         "rpc.pb.MailboxService/Read": "mailbox_read",
         "rpc.pb.MailboxService/Available": "mailbox_available",
@@ -155,6 +158,8 @@ class BridgeService:
         self.lifecycle_fsm = DaemonLifecycleMachine()
         self.cloud_publisher = cloud_publisher
         self.cloud_writer, self._cloud_reader, self.cloud_rpc_client = None, None, None
+        self._cloud_transfer_manager: PwTransferManager | None = None
+        self._cloud_transfer_lock = asyncio.Lock()
         self.watchdog = (
             WatchdogKeepalive(interval=config.watchdog_interval, state=state) if config.watchdog_enabled else None
         )
@@ -716,6 +721,77 @@ class BridgeService:
             await ap.write_bytes(data)
             return True
 
+    def _get_cloud_transfer_manager(self) -> PwTransferManager:
+        if self.cloud_rpc_client is None:
+            raise ConnectionError("Cloud Gateway RPC client is not connected")
+        if self._cloud_transfer_manager is None:
+            transfer_service = self.cloud_rpc_client.channel(1).rpcs.pw.transfer.Transfer
+            self._cloud_transfer_manager = PwTransferManager(
+                transfer_service,
+                default_response_timeout_s=5.0,
+                initial_response_timeout_s=5.0,
+                max_retries=3,
+                max_lifetime_retries=60,
+                max_chunk_size_bytes=1024,
+            )
+        return self._cloud_transfer_manager
+
+    async def cloud_transfer_read(self, resource_id: int) -> bytes:
+        async with self._cloud_transfer_lock:
+            manager = self._get_cloud_transfer_manager()
+            return await asyncio.to_thread(manager.read, resource_id)
+
+    async def cloud_transfer_write(self, resource_id: int, data: bytes) -> None:
+        async with self._cloud_transfer_lock:
+            manager = self._get_cloud_transfer_manager()
+            await asyncio.to_thread(manager.write, resource_id, data)
+
+    async def file_transfer_push_to_linux(
+        self, req: cloud_gateway_pb2.FileTransferSyncRequest
+    ) -> cloud_gateway_pb2.FileTransferSyncResponse:
+        resource_id = req.resource_id or 2
+        safe_path = self._get_safe_path(req.path)
+        if not safe_path:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="Invalid or forbidden target path"
+            )
+        try:
+            data = await self.cloud_transfer_read(resource_id)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError) as exc:
+            logger.error("Cloud transfer read failed", resource_id=resource_id, error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Transfer read failed: {exc}"
+            )
+        ok = await self.write_with_quota(safe_path, data)
+        if not ok:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="File write quota exceeded or rejected"
+            )
+        return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
+
+    async def file_transfer_fetch_from_linux(
+        self, req: cloud_gateway_pb2.FileTransferSyncRequest
+    ) -> cloud_gateway_pb2.FileTransferSyncResponse:
+        resource_id = req.resource_id or 2
+        safe_path = self._get_safe_path(req.path)
+        if not safe_path:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="Invalid or forbidden source path"
+            )
+        data = await self._safe_file_read(req.path)
+        if data is None:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="File not found or unreadable"
+            )
+        try:
+            await self.cloud_transfer_write(resource_id, data)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError) as exc:
+            logger.error("Cloud transfer write failed", resource_id=resource_id, error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Transfer write failed: {exc}"
+            )
+        return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
+
     # --- Process Subsystem ---
 
     async def process_run_async(
@@ -1126,6 +1202,7 @@ class BridgeService:
             self.cloud_writer = None
             self._cloud_reader = None
             self.cloud_rpc_client = None
+            self._cloud_transfer_manager = None
             try:
                 writer.close()
                 await writer.wait_closed()

@@ -369,277 +369,6 @@ class DeviceTelemetryService final
   const std::string& device_id_;
 };
 
-class GatewaySession final
-    : public SessionControl,
-      public std::enable_shared_from_this<GatewaySession> {
- public:
-  GatewaySession(SSL* ssl, int fd, std::string device_id,
-                 DeviceSessionRegistry& registry)
-      : socket_(ssl, fd),
-        registry_(registry),
-        channel_output_(tx_writer_, kRpcHdlcAddress),
-        client_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
-        server_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
-        rpc_client_(client_channels_),
-        rpc_server_(server_channels_),
-        transfer_thread_(pw::ByteSpan(transfer_chunk_),
-                         pw::ByteSpan(transfer_encode_)),
-        transfer_client_(rpc_client_, 1, transfer_thread_,
-                         kTransferWindowBytes),
-        decoder_(pw::ByteSpan(decoder_storage_)),
-        device_id_(std::move(device_id)),
-        telemetry_service_(device_id_),
-        edge_control_client_(rpc_client_, 1) {}
-  GatewaySession(const GatewaySession&) = delete;
-  GatewaySession& operator=(const GatewaySession&) = delete;
-
-  void Run() override {
-    if (!socket_.SetNonBlocking()) return;
-    if (!registry_.Register(device_id_, shared_from_this())) {
-      std::cerr << "device=" << device_id_
-                << " event=session_rejected reason=duplicate_session\n";
-      return;
-    }
-    struct RegistrationGuard {
-      DeviceSessionRegistry& registry;
-      const std::string& device_id;
-      const GatewaySession* session;
-      ~RegistrationGuard() {
-        registry.Unregister(device_id, session);
-        std::cerr << "device=" << device_id << " event=session_unregistered\n";
-      }
-    } registration{registry_, device_id_, this};
-
-    rpc_server_.RegisterService(telemetry_service_);
-    services_registered_.store(true);
-
-    // The edge MPU is the pw_transfer server. The central Gateway owns only
-    // the upstream client endpoint and never registers a duplicate server.
-    pw::thread::stl::Options transfer_options;
-    transfer_worker_ = std::make_unique<pw::thread::Thread>(
-        transfer_options, transfer_thread_.AsFunction());
-    tx_worker_ = std::thread([this] { TransmitLoop(); });
-    std::cerr << "device=" << device_id_ << " event=session_open\n";
-    ReceiveLoop();
-    stopping_.store(true);
-    socket_.Stop();
-    tx_writer_.Stop();
-    if (tx_worker_.joinable()) tx_worker_.join();
-    TerminateTransfer();
-    UnregisterServices();
-    std::cerr << "device=" << device_id_ << " event=session_closed\n";
-  }
-
-  void Stop() override {
-    stopping_.store(true);
-    socket_.Stop();
-    tx_writer_.Stop();
-    TerminateTransfer();
-    UnregisterServices();
-  }
-
-  ~GatewaySession() override {
-    stopping_.store(true);
-    TerminateTransfer();
-    UnregisterServices();
-    if (tx_worker_.joinable()) tx_worker_.join();
-  }
-
-  pw::Status Dispatch(
-      const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
-      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
-    if (stopping_.load()) {
-      return pw::Status::Unavailable();
-    }
-
-    std::lock_guard session_lock(dispatch_mutex_);
-
-    mcubridge::gateway::pwpb::EdgeDispatchRequest::Message edge_req{};
-    edge_req.operation = request.operation;
-    edge_req.request_payload = request.request_payload;
-    edge_req.timeout_ms = request.timeout_ms;
-
-    struct DispatchContext {
-      std::mutex cv_mutex;
-      std::condition_variable cv;
-      bool completed = false;
-      pw::Status call_status = pw::OkStatus();
-      uint32_t status_code = 0;
-      std::vector<std::byte> response_payload;
-    } ctx;
-
-    auto call = edge_control_client_.Dispatch(
-        edge_req,
-        [&ctx](const mcubridge::gateway::pwpb::EdgeDispatchResponse::Message&
-                   edge_resp,
-               pw::Status status) {
-          std::lock_guard lock(ctx.cv_mutex);
-          ctx.call_status = status;
-          ctx.status_code = edge_resp.status_code;
-          ctx.response_payload.assign(edge_resp.response_payload.begin(),
-                                      edge_resp.response_payload.end());
-          ctx.completed = true;
-          ctx.cv.notify_one();
-        },
-        [&ctx](pw::Status status) {
-          std::lock_guard lock(ctx.cv_mutex);
-          ctx.call_status = status;
-          ctx.completed = true;
-          ctx.cv.notify_one();
-        });
-
-    if (!call.active()) {
-      return pw::Status::Unavailable();
-    }
-
-    const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
-    std::unique_lock lock(ctx.cv_mutex);
-    if (!ctx.cv.wait_for(lock, std::chrono::milliseconds(timeout),
-                         [&] { return ctx.completed || stopping_.load(); })) {
-      call.Cancel().IgnoreError();
-      return pw::Status::DeadlineExceeded();
-    }
-
-    if (stopping_.load() && !ctx.completed) {
-      call.Cancel().IgnoreError();
-      return pw::Status::Unavailable();
-    }
-
-    if (!ctx.call_status.ok()) {
-      return ctx.call_status;
-    }
-
-    response.status_code = ctx.status_code;
-    response.response_payload.assign(ctx.response_payload.begin(),
-                                     ctx.response_payload.end());
-    return pw::OkStatus();
-  }
-
- private:
-  void TerminateTransfer() {
-    bool expected = false;
-    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
-      if (transfer_worker_ != nullptr) {
-        transfer_thread_.Terminate();
-        if (transfer_worker_->joinable()) {
-          transfer_worker_->join();
-        }
-      }
-    }
-  }
-
-  void UnregisterServices() {
-    bool expected = false;
-    if (services_unregistered_.compare_exchange_strong(expected, true)) {
-      if (services_registered_.load()) {
-        rpc_server_.UnregisterService(telemetry_service_);
-        services_registered_.store(false);
-      }
-    }
-  }
-
-  void TransmitLoop() {
-    std::vector<std::byte> frame;
-    while (!stopping_.load()) {
-      if (!tx_writer_.Pop(frame, stopping_)) continue;
-      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
-        stopping_.store(true);
-        socket_.Stop();
-        break;
-      }
-    }
-  }
-
-  void ReceiveLoop() {
-    std::array<std::byte, 4096> input{};
-    while (!stopping_.load()) {
-      size_t received = 0;
-      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
-      for (size_t i = 0; i < received; ++i) {
-        auto frame = decoder_.Process(input[i]);
-        if (frame.status() == pw::Status::Unavailable()) continue;
-        if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        auto meta = pw::rpc::PacketMeta::FromBuffer(frame->data());
-        if (!meta.ok()) {
-          std::cerr << "device=" << device_id_ << " event=rpc_packet_corrupt\n";
-          continue;
-        }
-        pw::Status status;
-        if (meta->destination_is_client()) {
-          status = rpc_client_.ProcessPacket(frame->data());
-        } else if (meta->destination_is_server()) {
-          status = rpc_server_.ProcessPacket(frame->data());
-        } else {
-          status = pw::Status::InvalidArgument();
-        }
-        if (!status.ok() && status != pw::Status::Unavailable()) {
-          std::cerr << "device=" << device_id_
-                    << " event=rpc_packet_rejected status=" << status.code()
-                    << "\n";
-        }
-      }
-    }
-  }
-
-  TlsSocket socket_;
-  DeviceSessionRegistry& registry_;
-  TlsQueueWriter tx_writer_{kTxQueueBytes};
-  HdlcChannelOutput channel_output_;
-  std::array<pw::rpc::Channel, 1> client_channels_;
-  std::array<pw::rpc::Channel, 1> server_channels_;
-  pw::rpc::Client rpc_client_;
-  pw::rpc::Server rpc_server_;
-  std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
-  std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
-  pw::transfer::Thread<1, 1> transfer_thread_;
-  pw::transfer::Client transfer_client_;
-  std::unique_ptr<pw::thread::Thread> transfer_worker_;
-  std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
-  pw::hdlc::Decoder decoder_;
-  std::string device_id_;
-  DeviceTelemetryService telemetry_service_;
-  mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
-  std::atomic<bool> stopping_{false};
-  std::atomic<bool> transfer_terminated_{false};
-  std::atomic<bool> services_registered_{false};
-  std::atomic<bool> services_unregistered_{false};
-  std::thread tx_worker_;
-  std::mutex dispatch_mutex_;
-};
-
-class GatewayControlService final
-    : public mcubridge::gateway::pw_rpc::pwpb::GatewayControl::Service<
-          GatewayControlService> {
- public:
-  GatewayControlService(DeviceSessionRegistry& devices,
-                        ClientSessionRegistry& clients)
-      : devices_(devices), clients_(clients) {}
-
-  pw::Status Health(
-      const mcubridge::gateway::pwpb::HealthRequest::Message&,
-      mcubridge::gateway::pwpb::HealthResponse::Message& response) {
-    response.ready = true;
-    response.active_device_sessions = static_cast<uint32_t>(devices_.size());
-    response.active_client_sessions = static_cast<uint32_t>(clients_.size());
-    return pw::OkStatus();
-  }
-
-  pw::Status Dispatch(
-      const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
-      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
-    const std::string target_id(request.target_device_id);
-    auto session = devices_.Lookup(target_id);
-    if (!session) {
-      return pw::Status::NotFound();
-    }
-    return session->Dispatch(request, response);
-  }
-
- private:
-  DeviceSessionRegistry& devices_;
-  ClientSessionRegistry& clients_;
-};
-
 class BufferTransferHandler final : public pw::transfer::Handler {
  public:
   BufferTransferHandler(uint32_t resource_id, pw::ByteSpan storage)
@@ -806,6 +535,339 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
   std::optional<pw::stream::MemoryWriter> writer_;
 };
 
+class GatewaySession final
+    : public SessionControl,
+      public std::enable_shared_from_this<GatewaySession> {
+ public:
+  GatewaySession(SSL* ssl, int fd, std::string device_id,
+                 DeviceSessionRegistry& registry)
+      : socket_(ssl, fd),
+        registry_(registry),
+        channel_output_(tx_writer_, kRpcHdlcAddress),
+        client_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
+        server_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
+        rpc_client_(client_channels_),
+        rpc_server_(server_channels_),
+        transfer_thread_(pw::ByteSpan(transfer_chunk_),
+                         pw::ByteSpan(transfer_encode_)),
+        transfer_service_(transfer_thread_, kTransferWindowBytes),
+        device_id_(std::move(device_id)),
+        telemetry_service_(device_id_),
+        edge_control_client_(rpc_client_, 1),
+        decoder_(pw::ByteSpan(decoder_storage_)) {}
+  GatewaySession(const GatewaySession&) = delete;
+  GatewaySession& operator=(const GatewaySession&) = delete;
+
+  void Run() override {
+    if (!socket_.SetNonBlocking()) return;
+    if (!registry_.Register(device_id_, shared_from_this())) {
+      std::cerr << "device=" << device_id_
+                << " event=session_rejected reason=duplicate_session\n";
+      return;
+    }
+    struct RegistrationGuard {
+      DeviceSessionRegistry& registry;
+      const std::string& device_id;
+      const GatewaySession* session;
+      ~RegistrationGuard() {
+        registry.Unregister(device_id, session);
+        std::cerr << "device=" << device_id << " event=session_unregistered\n";
+      }
+    } registration{registry_, device_id_, this};
+
+    rpc_server_.RegisterService(telemetry_service_);
+    rpc_server_.RegisterService(transfer_service_);
+    services_registered_.store(true);
+    if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
+      default_handler_registered_.store(true);
+    }
+    if (transfer_service_.RegisterHandler(file_transfer_handler_)) {
+      file_handler_registered_.store(true);
+    }
+
+    pw::thread::stl::Options transfer_options;
+    transfer_worker_ = std::make_unique<pw::thread::Thread>(
+        transfer_options, transfer_thread_.AsFunction());
+    tx_worker_ = std::thread([this] { TransmitLoop(); });
+    std::cerr << "device=" << device_id_ << " event=session_open\n";
+    ReceiveLoop();
+    stopping_.store(true);
+    socket_.Stop();
+    tx_writer_.Stop();
+    if (tx_worker_.joinable()) tx_worker_.join();
+    TerminateTransfer();
+    UnregisterServices();
+    std::cerr << "device=" << device_id_ << " event=session_closed\n";
+  }
+
+  void Stop() override {
+    stopping_.store(true);
+    socket_.Stop();
+    tx_writer_.Stop();
+    TerminateTransfer();
+    UnregisterServices();
+  }
+
+  ~GatewaySession() override {
+    stopping_.store(true);
+    TerminateTransfer();
+    UnregisterServices();
+    if (tx_worker_.joinable()) tx_worker_.join();
+  }
+
+  pw::Status Dispatch(
+      const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
+      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
+    if (stopping_.load()) {
+      return pw::Status::Unavailable();
+    }
+
+    std::lock_guard session_lock(dispatch_mutex_);
+
+    mcubridge::gateway::pwpb::EdgeDispatchRequest::Message edge_req{};
+    edge_req.operation = request.operation;
+    edge_req.request_payload = request.request_payload;
+    edge_req.timeout_ms = request.timeout_ms;
+
+    struct DispatchContext {
+      std::mutex cv_mutex;
+      std::condition_variable cv;
+      bool completed = false;
+      pw::Status call_status = pw::OkStatus();
+      uint32_t status_code = 0;
+      std::vector<std::byte> response_payload;
+    } ctx;
+
+    auto call = edge_control_client_.Dispatch(
+        edge_req,
+        [&ctx](const mcubridge::gateway::pwpb::EdgeDispatchResponse::Message&
+                   edge_resp,
+               pw::Status status) {
+          std::lock_guard lock(ctx.cv_mutex);
+          ctx.call_status = status;
+          ctx.status_code = edge_resp.status_code;
+          ctx.response_payload.assign(edge_resp.response_payload.begin(),
+                                      edge_resp.response_payload.end());
+          ctx.completed = true;
+          ctx.cv.notify_one();
+        },
+        [&ctx](pw::Status status) {
+          std::lock_guard lock(ctx.cv_mutex);
+          ctx.call_status = status;
+          ctx.completed = true;
+          ctx.cv.notify_one();
+        });
+
+    if (!call.active()) {
+      return pw::Status::Unavailable();
+    }
+
+    const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
+    std::unique_lock lock(ctx.cv_mutex);
+    if (!ctx.cv.wait_for(lock, std::chrono::milliseconds(timeout),
+                         [&] { return ctx.completed || stopping_.load(); })) {
+      call.Cancel().IgnoreError();
+      return pw::Status::DeadlineExceeded();
+    }
+
+    if (stopping_.load() && !ctx.completed) {
+      call.Cancel().IgnoreError();
+      return pw::Status::Unavailable();
+    }
+
+    if (!ctx.call_status.ok()) {
+      return ctx.call_status;
+    }
+
+    response.status_code = ctx.status_code;
+    response.response_payload.assign(ctx.response_payload.begin(),
+                                     ctx.response_payload.end());
+    return pw::OkStatus();
+  }
+
+ private:
+  void UnregisterTransferHandlers() {
+    if (default_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(default_transfer_handler_);
+      default_handler_registered_.store(false);
+    }
+    if (file_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(file_transfer_handler_);
+      file_handler_registered_.store(false);
+    }
+  }
+
+  void TerminateTransfer() {
+    bool expected = false;
+    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
+      if (transfer_worker_ != nullptr) {
+        UnregisterTransferHandlers();
+        transfer_thread_.Terminate();
+        if (transfer_worker_->joinable()) {
+          transfer_worker_->join();
+        }
+      }
+    }
+  }
+
+  void UnregisterServices() {
+    bool expected = false;
+    if (services_unregistered_.compare_exchange_strong(expected, true)) {
+      if (services_registered_.load()) {
+        rpc_server_.UnregisterService(telemetry_service_, transfer_service_);
+        services_registered_.store(false);
+      }
+    }
+  }
+
+  void TransmitLoop() {
+    std::vector<std::byte> frame;
+    while (!stopping_.load()) {
+      if (!tx_writer_.Pop(frame, stopping_)) continue;
+      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
+        stopping_.store(true);
+        socket_.Stop();
+        break;
+      }
+    }
+  }
+
+  void ReceiveLoop() {
+    std::array<std::byte, 4096> input{};
+    while (!stopping_.load()) {
+      size_t received = 0;
+      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
+      for (size_t i = 0; i < received; ++i) {
+        auto frame = decoder_.Process(input[i]);
+        if (frame.status() == pw::Status::Unavailable()) continue;
+        if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
+        auto meta = pw::rpc::PacketMeta::FromBuffer(frame->data());
+        if (!meta.ok()) {
+          std::cerr << "device=" << device_id_ << " event=rpc_packet_corrupt\n";
+          continue;
+        }
+        pw::Status status;
+        if (meta->destination_is_client()) {
+          status = rpc_client_.ProcessPacket(frame->data());
+        } else if (meta->destination_is_server()) {
+          status = rpc_server_.ProcessPacket(frame->data());
+        } else {
+          status = pw::Status::InvalidArgument();
+        }
+        if (!status.ok() && status != pw::Status::Unavailable()) {
+          std::cerr << "device=" << device_id_
+                    << " event=rpc_packet_rejected status=" << status.code()
+                    << "\n";
+        }
+      }
+    }
+  }
+
+  TlsSocket socket_;
+  DeviceSessionRegistry& registry_;
+  TlsQueueWriter tx_writer_{kTxQueueBytes};
+  HdlcChannelOutput channel_output_;
+  std::array<pw::rpc::Channel, 1> client_channels_;
+  std::array<pw::rpc::Channel, 1> server_channels_;
+  pw::rpc::Client rpc_client_;
+  pw::rpc::Server rpc_server_;
+  std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
+  std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
+  pw::transfer::Thread<1, 1> transfer_thread_;
+  pw::transfer::TransferService transfer_service_;
+  std::unique_ptr<pw::thread::Thread> transfer_worker_;
+  std::string device_id_;
+  std::array<std::byte, 64 * 1024> device_transfer_buffer_{};
+  BufferTransferHandler default_transfer_handler_{
+      1, pw::ByteSpan(device_transfer_buffer_)};
+  BoundedFileTransferHandler file_transfer_handler_{
+      2,
+      std::filesystem::temp_directory_path() / "mcubridge-gateway" / device_id_,
+      "staging.bin", 1024 * 1024};
+  DeviceTelemetryService telemetry_service_;
+  mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
+  std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
+  pw::hdlc::Decoder decoder_;
+  std::atomic<bool> stopping_{false};
+  std::atomic<bool> default_handler_registered_{false};
+  std::atomic<bool> file_handler_registered_{false};
+  std::atomic<bool> transfer_terminated_{false};
+  std::atomic<bool> services_registered_{false};
+  std::atomic<bool> services_unregistered_{false};
+  std::thread tx_worker_;
+  std::mutex dispatch_mutex_;
+};
+
+class GatewayControlService final
+    : public mcubridge::gateway::pw_rpc::pwpb::GatewayControl::Service<
+          GatewayControlService> {
+ public:
+  GatewayControlService(DeviceSessionRegistry& devices,
+                        ClientSessionRegistry& clients,
+                        std::string client_id = "")
+      : devices_(devices), clients_(clients), client_id_(std::move(client_id)) {}
+
+  pw::Status Health(
+      const mcubridge::gateway::pwpb::HealthRequest::Message&,
+      mcubridge::gateway::pwpb::HealthResponse::Message& response) {
+    response.ready = true;
+    response.active_device_sessions = static_cast<uint32_t>(devices_.size());
+    response.active_client_sessions = static_cast<uint32_t>(clients_.size());
+    return pw::OkStatus();
+  }
+
+  pw::Status Dispatch(
+      const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
+      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
+    const std::string target_id(request.target_device_id);
+    auto session = devices_.Lookup(target_id);
+    if (!session) {
+      return pw::Status::NotFound();
+    }
+
+    const std::string_view op(request.operation);
+    const bool is_push = (op == "rpc.pb.LinuxFileTransferService/PushToLinux");
+    const bool is_fetch = (op == "rpc.pb.LinuxFileTransferService/FetchFromLinux");
+
+    if (is_push && !client_id_.empty() && !target_id.empty()) {
+      std::error_code ec;
+      const auto client_staging =
+          std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_ / "staging.bin";
+      const auto device_staging =
+          std::filesystem::temp_directory_path() / "mcubridge-gateway" / target_id / "staging.bin";
+      if (std::filesystem::exists(client_staging, ec)) {
+        std::filesystem::create_directories(device_staging.parent_path(), ec);
+        std::filesystem::copy_file(
+            client_staging, device_staging,
+            std::filesystem::copy_options::overwrite_existing, ec);
+      }
+    }
+
+    const pw::Status status = session->Dispatch(request, response);
+
+    if (status.ok() && is_fetch && !client_id_.empty() && !target_id.empty()) {
+      std::error_code ec;
+      const auto client_staging =
+          std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_ / "staging.bin";
+      const auto device_staging =
+          std::filesystem::temp_directory_path() / "mcubridge-gateway" / target_id / "staging.bin";
+      if (std::filesystem::exists(device_staging, ec)) {
+        std::filesystem::create_directories(client_staging.parent_path(), ec);
+        std::filesystem::copy_file(
+            device_staging, client_staging,
+            std::filesystem::copy_options::overwrite_existing, ec);
+      }
+    }
+
+    return status;
+  }
+
+ private:
+  DeviceSessionRegistry& devices_;
+  ClientSessionRegistry& clients_;
+  std::string client_id_;
+};
+
 class GatewayClientSession final : public SessionControl {
  public:
   GatewayClientSession(SSL* ssl, int fd, std::string client_id,
@@ -813,14 +875,14 @@ class GatewayClientSession final : public SessionControl {
                        ClientSessionRegistry& clients)
       : socket_(ssl, fd),
         clients_(clients),
-        control_service_(devices, clients),
+        client_id_(std::move(client_id)),
+        control_service_(devices, clients, client_id_),
         channel_output_(tx_writer_, kRpcHdlcAddress),
         channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         rpc_server_(channels_),
         transfer_thread_(pw::ByteSpan(transfer_chunk_),
                          pw::ByteSpan(transfer_encode_)),
         transfer_service_(transfer_thread_, kTransferWindowBytes),
-        client_id_(std::move(client_id)),
         decoder_(pw::ByteSpan(decoder_storage_)) {}
   GatewayClientSession(const GatewayClientSession&) = delete;
   GatewayClientSession& operator=(const GatewayClientSession&) = delete;
@@ -956,6 +1018,7 @@ class GatewayClientSession final : public SessionControl {
 
   TlsSocket socket_;
   ClientSessionRegistry& clients_;
+  std::string client_id_;
   GatewayControlService control_service_;
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
@@ -966,7 +1029,6 @@ class GatewayClientSession final : public SessionControl {
   pw::transfer::Thread<1, 1> transfer_thread_;
   pw::transfer::TransferService transfer_service_;
   std::unique_ptr<pw::thread::Thread> transfer_worker_;
-  std::string client_id_;
   std::array<std::byte, 64 * 1024> client_transfer_buffer_{};
   BufferTransferHandler default_transfer_handler_{
       1, pw::ByteSpan(client_transfer_buffer_)};

@@ -608,3 +608,89 @@ async def test_gateway_client_timeout_configuration(monkeypatch: pytest.MonkeyPa
     monkeypatch.delenv("MCUBRIDGE_CLIENT_TIMEOUT_MS", raising=False)
     c3 = GatewayClient(mock_conn, target_device_id="dev-3")
     assert c3.default_timeout_ms == 30000
+
+
+async def test_gateway_client_push_file_to_device(tmp_path: Path) -> None:
+    mock_conn = MagicMock()
+    mock_manager = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="dev-test", transfer_manager=mock_manager)
+
+    local_file = tmp_path / "local.txt"
+    local_file.write_bytes(b"hello world")
+
+    success_resp = cloud_gateway_pb2.FileTransferSyncResponse(
+        success=True, bytes_transferred=11, message="OK"
+    ).SerializeToString()
+
+    mock_dispatch = AsyncMock(return_value=success_resp)
+    client.dispatch = mock_dispatch
+
+    transferred = await client.push_file_to_device(local_file, "/etc/config/test.txt", resource_id=2)
+    assert transferred == 11
+    mock_manager.write.assert_called_once_with(2, b"hello world")
+    mock_dispatch.assert_awaited_once()
+    op, req = mock_dispatch.call_args[0][:2]
+    assert op == "rpc.pb.LinuxFileTransferService/PushToLinux"
+    assert req.path == "/etc/config/test.txt"
+    assert req.resource_id == 2
+
+
+async def test_gateway_client_push_file_to_device_failure(tmp_path: Path) -> None:
+    mock_conn = MagicMock()
+    mock_manager = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="dev-test", transfer_manager=mock_manager)
+
+    local_file = tmp_path / "local.txt"
+    local_file.write_bytes(b"fail data")
+
+    fail_resp = cloud_gateway_pb2.FileTransferSyncResponse(
+        success=False, bytes_transferred=0, message="Quota exceeded"
+    ).SerializeToString()
+
+    client.dispatch = AsyncMock(return_value=fail_resp)
+
+    with pytest.raises(RuntimeError, match="Push to Linux device failed: Quota exceeded"):
+        await client.push_file_to_device(local_file, "/etc/config/test.txt")
+
+
+async def test_gateway_client_fetch_file_from_device(tmp_path: Path) -> None:
+    mock_conn = MagicMock()
+    mock_manager = MagicMock()
+    mock_manager.read.return_value = b"remote content"
+    client = GatewayClient(mock_conn, target_device_id="dev-test", transfer_manager=mock_manager)
+
+    dest_file = tmp_path / "subdir" / "dest.txt"
+
+    success_resp = cloud_gateway_pb2.FileTransferSyncResponse(
+        success=True, bytes_transferred=14, message="OK"
+    ).SerializeToString()
+
+    mock_dispatch = AsyncMock(return_value=success_resp)
+    client.dispatch = mock_dispatch
+
+    transferred = await client.fetch_file_from_device("/var/log/messages", dest_file, resource_id=2)
+    assert transferred == 14
+    mock_dispatch.assert_awaited_once()
+    op, req = mock_dispatch.call_args[0][:2]
+    assert op == "rpc.pb.LinuxFileTransferService/FetchFromLinux"
+    assert req.path == "/var/log/messages"
+    assert req.resource_id == 2
+    mock_manager.read.assert_called_once_with(2)
+    assert dest_file.read_bytes() == b"remote content"
+
+
+async def test_gateway_client_fetch_file_from_device_failure(tmp_path: Path) -> None:
+    mock_conn = MagicMock()
+    mock_manager = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="dev-test", transfer_manager=mock_manager)
+
+    dest_file = tmp_path / "dest.txt"
+
+    fail_resp = cloud_gateway_pb2.FileTransferSyncResponse(
+        success=False, bytes_transferred=0, message="File not found"
+    ).SerializeToString()
+
+    client.dispatch = AsyncMock(return_value=fail_resp)
+
+    with pytest.raises(RuntimeError, match="Fetch from Linux device failed: File not found"):
+        await client.fetch_file_from_device("/var/log/missing", dest_file)

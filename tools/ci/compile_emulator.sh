@@ -33,8 +33,10 @@ fi
 echo "[emulator] Installing library dependencies..."
 "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
 if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
@@ -61,17 +63,6 @@ mkdir -p "${METADATA_DIR}"
     --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h" \
     --json-output "${METADATA_DIR}/arduino_core_metadata.json"
 
-echo "[emulator] Verifying library paths..."
-ls -la "${PIGWEED_PATH}" || echo "PIGWEED_PATH not found"
-ls -la "${PIGWEED_PATH}/src" || echo "PIGWEED_PATH/src not found"
-
-mapfile -t PIGWEED_RPC_SOURCES < <(
-    find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
-        \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
-           -o -name 'pw_stream_interval_reader.cc' \
-           -o -name 'pw_varint_stream.cc' \
-           -o -name 'pw_containers_intrusive_item.cc' \) -print | sort
-)
 
 NANOPB_SOURCES=(
     "${SRC_DIR}/pb_encode.c"
@@ -99,7 +90,7 @@ done
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
+    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -109,26 +100,13 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    -I"${PIGWEED_PATH}" \
-    -I"${PIGWEED_PATH}/src" \
+    "${PW_INC_FLAGS[@]}" \
     -I"${WOLFSSL_INC}" \
     -I"${WOLFSSL_PATH}" \
     -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
     "${WOLF_OBJECTS[@]}" \
-    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
-    "$PIGWEED_PATH/src/assert_avr.cpp" \
-    "$PIGWEED_PATH/src/system_clock_avr.cpp" \
-    "$PIGWEED_PATH/src/log_avr.cpp" \
-    "${PIGWEED_RPC_SOURCES[@]}" \
-    "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
-    "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
-    "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
-    "$PIGWEED_PATH/src/pw_varint_varint.cc" \
-    "$PIGWEED_PATH/src/pw_status_status.cc" \
-    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
-    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
-    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc" \
+    "${PW_PIGWEED_SRCS[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -148,7 +126,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
+    -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -158,26 +136,13 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    -I"${PIGWEED_PATH}" \
-    -I"${PIGWEED_PATH}/src" \
+    "${PW_INC_FLAGS[@]}" \
     -I"${WOLFSSL_INC}" \
     -I"${WOLFSSL_PATH}" \
     -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
     "${WOLF_OBJECTS[@]}" \
-    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp" \
-    "$PIGWEED_PATH/src/assert_avr.cpp" \
-    "$PIGWEED_PATH/src/system_clock_avr.cpp" \
-    "$PIGWEED_PATH/src/log_avr.cpp" \
-    "${PIGWEED_RPC_SOURCES[@]}" \
-    "$PIGWEED_PATH/src/pw_checksum_crc32.cc" \
-    "$PIGWEED_PATH/src/pw_hdlc_decoder.cc" \
-    "$PIGWEED_PATH/src/pw_hdlc_encoder.cc" \
-    "$PIGWEED_PATH/src/pw_varint_varint.cc" \
-    "$PIGWEED_PATH/src/pw_status_status.cc" \
-    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc" \
-    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc" \
-    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc" \
+    "${PW_PIGWEED_SRCS[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

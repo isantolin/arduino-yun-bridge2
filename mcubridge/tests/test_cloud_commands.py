@@ -110,12 +110,12 @@ async def test_publish_cloud_message_wraps_command_response(
     try:
         mock_client = AsyncMock()
         mock_writer = AsyncMock()
-        svc._cloud_rpc_client = mock_client
-        svc._cloud_writer = mock_writer
+        svc.cloud_rpc_client = mock_client
+        svc.cloud_writer = mock_writer
         svc.send_cloud_telemetry = AsyncMock(return_value=True)
 
         msg = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="br/res/GpioService/DigitalRead",
+            topic_name="br/res/rpc.pb.GpioService/DigitalRead",
             payload=payload,
             correlation_data=seq_id.to_bytes(8, "big"),
             response_topic="cloud",
@@ -156,7 +156,7 @@ async def test_mcu_pin_update_event_forwarding(
         call_args = mock_cloud.await_args.args
         assert len(call_args) > 0
         queued_msg: cloud_gateway_pb2.CloudQueuedPublish = call_args[0]
-        assert f"evt/GpioService/PinUpdateEvent/{pin}" in queued_msg.topic_name
+        assert f"evt/rpc.pb.GpioService/PinUpdateEvent/{pin}" in queued_msg.topic_name
         assert queued_msg.payload == str(value).encode()
     finally:
         state.cleanup()

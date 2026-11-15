@@ -66,16 +66,17 @@ option (rpc.pb.constants) = {
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
+  cloud_expiry_console: 5
   cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
   sync_timeout_ms: 30000
   max_datastore_value_size: 255
   default_pin_interval_ms: 50
+  min_pin_interval_ms: 10
   default_pin_hysteresis: 1
   default_clock_sync_interval_seconds: 30
   default_clock_sync_timeout_ms: 1000
-  default_ipc_timeout_seconds: 15
   default_process_retention_seconds: 60
   process_kill_timeout_seconds: 3
   capabilities_discovery_delay_seconds: 2
@@ -294,6 +295,10 @@ option (rpc.pb.ubus_methods) = {
     {
       name: "data"
       type: "STRING"
+    },
+    {
+      name: "encoding"
+      type: "STRING"
     }
   ]
   description: "Write content to MPU filesystem path"
@@ -372,8 +377,8 @@ option (rpc.pb.ubus_methods) = {
 };
 
 message Constants {
-  reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68;
-  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask";
+  reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68, 73;
+  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask", "default_ipc_timeout_seconds";
   // ChaCha20-Poly1305 protects all HDLC channels after an authenticated handshake.
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
@@ -473,7 +478,8 @@ message Constants {
     (cpp_name) = "RPC_BOOTLOADER_MAGIC",
     (cpp_type) = "uint32_t",
     (py_name) = "BOOTLOADER_MAGIC",
-    (py_type) = "int"
+    (py_type) = "int",
+    (client_constant) = true
   ];
   uint32 frame_delimiter = 32 [
     (cpp_name) = "RPC_FRAME_DELIMITER",
@@ -541,12 +547,6 @@ message Constants {
     (cpp_name) = "RPC_DEFAULT_CLOCK_SYNC_TIMEOUT_MS",
     (cpp_type) = "uint32_t",
     (py_name) = "DEFAULT_CLOCK_SYNC_TIMEOUT_MS",
-    (py_type) = "int"
-  ];
-  uint32 default_ipc_timeout_seconds = 73 [
-    (cpp_name) = "RPC_DEFAULT_IPC_TIMEOUT_SECONDS",
-    (cpp_type) = "uint32_t",
-    (py_name) = "DEFAULT_IPC_TIMEOUT_SECONDS",
     (py_type) = "int"
   ];
   uint32 default_process_retention_seconds = 74 [
@@ -633,6 +633,17 @@ message Constants {
     (cpp_type) = "size_t",
     (py_name) = "AEAD_COUNTER_SIZE",
     (py_type) = "int"
+  ];
+  uint32 cloud_expiry_console = 91 [
+    (py_name) = "CLOUD_EXPIRY_CONSOLE",
+    (py_type) = "int"
+  ];
+  uint32 min_pin_interval_ms = 92 [
+    (cpp_name) = "MIN_PIN_INTERVAL_MS",
+    (cpp_type) = "uint32_t",
+    (py_name) = "MIN_PIN_INTERVAL_MS",
+    (py_type) = "int",
+    (client_constant) = true
   ];
 }
 
@@ -870,9 +881,7 @@ extend google.protobuf.MessageOptions {
 }
 
 extend google.protobuf.MethodOptions {
-  bool is_custom_handler = 1036;
   string auth_field = 1039;
-  string mcu_handler = 1040;
   string cloud_topic = 1041;
   bool pre_sync_allowed = 1042;
   string method_description = 1043;
@@ -966,7 +975,7 @@ extend google.protobuf.FieldOptions {
 }
 
 enum Status {
-  option (enum_cloud_topic) = "evt/SystemService/StatusReport";
+  option (enum_cloud_topic) = "evt/rpc.pb.SystemService/StatusReport";
   OK = 0 [(status_opts) = {description: "Operation completed successfully."}];
   CANCELLED = 1 [(status_opts) = {description: "Operation was cancelled."}];
   UNKNOWN = 2 [(status_opts) = {description: "Unknown error."}];

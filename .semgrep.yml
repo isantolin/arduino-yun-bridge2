@@ -305,3 +305,22 @@ rules:
         - "**/pb_*.h"
         - "**/*.pb.c"
         - "**/*.pb.h"
+
+  # ==============================================================================
+  # ZERO-STL BAN: PROHIBITION OF STD:: IN ARDUINO FIRMWARE (C++)
+  # ==============================================================================
+  - id: sil2-ban-cpp-std-namespace
+    languages: [generic]
+    severity: ERROR
+    message: "SIL-2 / Zero-STL Violation: Use of 'std::' is strictly prohibited in mcubridge-library-arduino. Use ETL containers and algorithms, C types, or Pigweed abstractions."
+    pattern-regex: '\bstd::'
+    paths:
+      include:
+        - "/mcubridge-library-arduino/src/**"
+        - "/mcubridge-library-arduino/tests/**"
+        - "/mcubridge-library-arduino/examples/**"
+      exclude:
+        - "**/pb_*.c"
+        - "**/pb_*.h"
+        - "**/*.pb.c"
+        - "**/*.pb.h"

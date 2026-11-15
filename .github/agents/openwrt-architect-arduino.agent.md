@@ -12,7 +12,7 @@ Act as the repository's principal engineering architect. Understand the system a
 
 Project map:
 - Python daemon: mcubridge/
-- Cloud gateway: mcubridge-gateway-cpp/
+- Cloud gateway: mcubridge-gateway/
 - Client examples: mcubridge-client-examples/
 - Arduino firmware/library: mcubridge-library-arduino/
 - LuCI application: luci-app-mcubridge/

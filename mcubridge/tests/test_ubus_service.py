@@ -485,6 +485,21 @@ async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
     mock_runtime.file_write.assert_awaited_once_with("test.txt", data.encode("utf-8"))
 
 
+async def test_ubus_handle_file_write_hex_roundtrips_binary(mock_runtime: MockRuntimeFacade) -> None:
+    """Binary payloads sent as hex by mcubridge-file-push must be stored as the original bytes."""
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_file_write(MagicMock(), {"path": "bin.dat", "data": "fffe00", "encoding": "hex"})
+    assert res == {"status": "accepted", "path": "bin.dat", "bytes_requested": 3}
+    await asyncio.sleep(0.01)
+    mock_runtime.file_write.assert_awaited_once_with("bin.dat", b"\xff\xfe\x00")
+
+    bad_hex = service.ubus_handle_file_write(MagicMock(), {"path": "x", "data": "zz", "encoding": "hex"})
+    assert bad_hex["status"] == "error"
+    bad_enc = service.ubus_handle_file_write(MagicMock(), {"path": "x", "data": "a", "encoding": "base64"})
+    assert bad_enc["status"] == "error"
+    assert mock_runtime.file_write.await_count == 1
+
+
 def test_ubus_handle_link_reset(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
     res = service.ubus_handle_link_reset(MagicMock(), {})

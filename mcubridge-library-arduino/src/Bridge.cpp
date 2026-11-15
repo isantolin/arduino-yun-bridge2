@@ -4,14 +4,14 @@
 #include <etl/fixed_iterator.h>
 #include <etl/utility.h>
 
-#include "security/security.h"
 #include "hal/hal.h"
+#include "security/security.h"
 #if defined(ARDUINO_ARCH_AVR)
 #include "pw_assert_avr/assert_avr.h"
 #endif
 #include "services/Console.h"
 #include "services/DataStore.h"
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include "services/EepromTransfer.h"
 #endif
 #include "services/FileSystem.h"
@@ -27,15 +27,13 @@ void __attribute__((weak)) handle_error(const etl::exception&) {
 
 namespace {
 
-uint32_t NowMillis() {
-  return static_cast<uint32_t>(
-      pw::chrono::SystemClock::now().time_since_epoch().count());
-}
+uint32_t NowMillis() { return static_cast<uint32_t>(::millis()); }
 
 #if defined(ARDUINO_ARCH_AVR)
 void BridgePanicHook(int) {
   // Assertions are fatal. Put all application outputs into their configured
-  // safe state before the backend halts; never write raw bytes to the HDLC UART.
+  // safe state before the backend halts; never write raw bytes to the HDLC
+  // UART.
   bridge::hal::forceSafeState();
 }
 #endif
@@ -275,13 +273,12 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
       ,
-      _transfer_thread(
-          pw::ByteSpan(_transfer_chunk_storage.data(),
-                       _transfer_chunk_storage.size()),
-          pw::ByteSpan(_transfer_encode_storage.data(),
-                       _transfer_encode_storage.size())),
+      _transfer_thread(pw::ByteSpan(_transfer_chunk_storage.data(),
+                                    _transfer_chunk_storage.size()),
+                       pw::ByteSpan(_transfer_encode_storage.data(),
+                                    _transfer_encode_storage.size())),
       _transfer_service(_transfer_thread, 256),
       _transfer_client(_rpc_client, 1, _transfer_thread, 256)
 #endif
@@ -290,6 +287,11 @@ BridgeClass::BridgeClass(Stream& stream)
   pw_assert_avr_SetPanicHook(BridgePanicHook);
 #endif
   _initObservers();
+}
+
+BridgeClass::BridgeClass(HardwareSerial& serial)
+    : BridgeClass(static_cast<Stream&>(serial)) {
+  _hardware_serial = &serial;
 }
 
 BridgeClass::~BridgeClass() {
@@ -308,15 +310,14 @@ BridgeClass::~BridgeClass() {
                                 ,
                                 g_mailbox_service
 #endif
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
                                 ,
                                 _transfer_service
 #endif
   );
 }
 
-pw::Status BridgeClass::RpcChannelOutput::Send(
-    pw::span<const std::byte> packet) {
+pw::Status BridgeClass::RpcChannelOutput::Send(pw::ConstByteSpan packet) {
   const auto data = pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(packet.data()), packet.size());
   return bridge_._writeHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, data,
@@ -326,39 +327,15 @@ pw::Status BridgeClass::RpcChannelOutput::Send(
 }
 
 void BridgeClass::setStream(Stream& stream) {
+  // Generic streams (USB CDC, sockets, emulator shims) have no baud rate.
   _stream = &stream;
   _arduino_stream.setStream(stream);
-#if defined(SERIAL_PORT_LINUXBRIDGE)
-  if (_stream == &SERIAL_PORT_LINUXBRIDGE) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(SERIAL_PORT_HARDWARE)
-  if (_stream == &SERIAL_PORT_HARDWARE) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(ARDUINO_ARCH_SAMD)
-  if (_stream == &Serial) {
-    _hardware_serial = nullptr;
-    return;
-  }
-#else
-  if (_stream == &Serial) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
-#if defined(Serial1) || defined(HAVE_HWSERIAL1) || \
-    (defined(SOC_UART_NUM) && SOC_UART_NUM > 1)
-  if (_stream == &Serial1) {
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
-    return;
-  }
-#endif
   _hardware_serial = nullptr;
+}
+
+void BridgeClass::setStream(HardwareSerial& serial) {
+  setStream(static_cast<Stream&>(serial));
+  _hardware_serial = &serial;
 }
 
 void BridgeClass::_initializeRuntime() {
@@ -367,14 +344,12 @@ void BridgeClass::_initializeRuntime() {
   _state_flags.reset();
   _clearLinkSession();
 
-  if (_stream) {
-    setStream(*_stream);
-  }
-
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   pw_log_avr_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
         (void)Bridge.sendLogStream(pw::span<const uint8_t>(log_data, size));
       });
+#endif
 
   if (_rpc_services_registered) return;
   _rpc_server.RegisterService(g_gpio_service, g_system_service,
@@ -391,7 +366,7 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
                               ,
                               _transfer_service
 #endif
@@ -425,7 +400,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   if (!_eeprom_transfer_registered) {
     _eeprom_transfer_registered =
         bridge::services::registerEepromTransferHandler(_transfer_service);
@@ -461,10 +436,9 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   const pw::Status transfer_status = _transfer_thread.Poll(2);
-  if (!transfer_status.ok() &&
-      transfer_status != pw::Status::Unavailable()) {
+  if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);
   }
 #endif
@@ -491,18 +465,32 @@ void BridgeClass::_watchdogTask() {
 
 void BridgeClass::_serialTask() {
   if (!_stream) return;
-  etl::array<pw::byte, bridge::config::RX_BUFFER_SIZE> chunk;
-  const auto read_result = _arduino_stream.Read(
-      pw::ByteSpan(chunk.data(), bridge::config::RX_BUFFER_SIZE));
-  if (read_result.ok()) {
+  // Drain up to RX_BUFFER_SIZE bytes per pass, but through a small stack
+  // chunk: a complete frame is dispatched (RPC handler + AEAD response) while
+  // this buffer is live, and on the ATmega2560 a full RX_BUFFER_SIZE copy here
+  // pushed that call chain past the stack into .bss.
+  constexpr size_t kReadChunkSize = 32U;
+  static_assert(bridge::config::RX_BUFFER_SIZE % kReadChunkSize == 0U);
+  constexpr size_t kReadPasses =
+      bridge::config::RX_BUFFER_SIZE / kReadChunkSize;
+  etl::array<pw::ByteSpan::element_type, kReadChunkSize> chunk;
+  const etl::array<uint8_t, kReadPasses> passes{};
+  // all_of stops at the first pass that finds no data.
+  (void)etl::all_of(passes.begin(), passes.end(), [this, &chunk](uint8_t) {
+    const auto read_result =
+        _arduino_stream.Read(pw::ByteSpan(chunk.data(), chunk.size()));
+    if (!read_result.ok())
+      return false;  // no data: DoRead never returns 0 bytes OK
     const pw::ConstByteSpan rx_span = read_result.value();
-    etl::for_each(rx_span.begin(), rx_span.end(), [this](const pw::byte b) {
-      auto result = _hdlc_decoder.Process(b);
-      if (result.ok()) {
-        _handleReceivedHdlcFrame(result.value());
-      }
-    });
-  }
+    etl::for_each(rx_span.begin(), rx_span.end(),
+                  [this](const pw::ByteSpan::element_type b) {
+                    auto result = _hdlc_decoder.Process(b);
+                    if (result.ok()) {
+                      _handleReceivedHdlcFrame(result.value());
+                    }
+                  });
+    return true;
+  });
 
   const int avail = _stream->available();
   if (!_state_flags.test(FLAG_SERIAL_XOFF) &&
@@ -676,7 +664,9 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
       pw::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
                         rpc::RPC_AEAD_TAG_SIZE);
   if (!rpc::security::aead_encrypt(
-          pw::span<const uint8_t>(_session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE, rpc::RPC_AEAD_KEY_SIZE),
+          pw::span<const uint8_t>(
+              _session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE,
+              rpc::RPC_AEAD_KEY_SIZE),
           pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad), data,
           ciphertext, tag)) {
     rpc::security::secure_zero(pw::span<uint8_t>(envelope));
@@ -733,8 +723,9 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   const uint8_t* ciphertext = envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
   const uint8_t* tag = ciphertext + ciphertext_size;
   const bool decrypted = rpc::security::aead_decrypt(
-      pw::span<const uint8_t>(_session_aead_keys.data(), rpc::RPC_AEAD_KEY_SIZE), pw::span<const uint8_t>(nonce),
-      pw::span<const uint8_t>(aad),
+      pw::span<const uint8_t>(_session_aead_keys.data(),
+                              rpc::RPC_AEAD_KEY_SIZE),
+      pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad),
       pw::span<const uint8_t>(ciphertext, ciphertext_size),
       pw::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
       pw::span<uint8_t>(_rx_plaintext.data(), ciphertext_size));
@@ -963,7 +954,8 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
         pw::span<const uint8_t>(_shared_secret),
         pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),
         pw::span<uint8_t>(response.tag.bytes, sizeof(response.tag.bytes)));
-    bool session_keys_ok = response_tag_ok &&
+    bool session_keys_ok =
+        response_tag_ok &&
         rpc::security::derive_session_keys(
             pw::span<const uint8_t>(_shared_secret),
             pw::span<const uint8_t>(request.nonce.bytes, request.nonce.size),

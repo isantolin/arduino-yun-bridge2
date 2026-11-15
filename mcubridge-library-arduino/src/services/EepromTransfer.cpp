@@ -1,14 +1,12 @@
 #include "services/EepromTransfer.h"
 
-#if defined(__AVR_ATmega2560__)
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 
 #include <EEPROM.h>
-
-#include <stddef.h>
-#include <stdint.h>
-
 #include <pw_stream/stream.h>
 #include <pw_transfer/handler.h>
+#include <stddef.h>
+#include <stdint.h>
 
 namespace bridge::services {
 namespace {
@@ -25,8 +23,7 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
 
   size_t ConservativeLimit(LimitType type) const override {
     const size_t capacity = Capacity();
-    const size_t remaining =
-        position_ < capacity ? capacity - position_ : 0U;
+    const size_t remaining = position_ < capacity ? capacity - position_ : 0U;
     if (type == LimitType::kRead) return remaining;
 
     // EEPROM.update() may wait for the AVR EEPROM controller. Advertise a
@@ -44,8 +41,8 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
                              ? destination.size_bytes()
                              : remaining;
     for (size_t i = 0; i < count; ++i) {
-      destination[i] =
-          static_cast<std::byte>(EEPROM.read(static_cast<int>(position_ + i)));
+      destination[i] = static_cast<pw::ByteSpan::element_type>(
+          EEPROM.read(static_cast<int>(position_ + i)));
     }
     position_ += count;
     return pw::StatusWithSize(count);
@@ -130,9 +127,7 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
 
   pw::Status FinalizeWrite(pw::Status status) override { return status; }
 
-  size_t ResourceSize() const override {
-    return kEepromTransferResourceSize;
-  }
+  size_t ResourceSize() const override { return kEepromTransferResourceSize; }
 
  private:
   pw::Status CapacityStatus() const {
@@ -154,4 +149,4 @@ bool registerEepromTransferHandler(pw::transfer::TransferService& service) {
 
 }  // namespace bridge::services
 
-#endif  // defined(__AVR_ATmega2560__)
+#endif  // defined(ARDUINO_ARCH_AVR) || defined(__AVR__)

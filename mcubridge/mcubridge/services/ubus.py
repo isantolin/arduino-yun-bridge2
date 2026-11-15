@@ -362,7 +362,16 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.file_write'."""
         target_path = str(msg.get("path", ""))
         data_str = str(msg.get("data", ""))
-        payload = data_str.encode("utf-8")
+        encoding = str(msg.get("encoding", "utf-8")).lower()
+        if encoding == "hex":
+            try:
+                payload = bytes.fromhex(data_str)
+            except ValueError:
+                return {"status": "error", "message": "data is not valid hex"}
+        elif encoding in ("utf-8", "utf8", ""):
+            payload = data_str.encode("utf-8")
+        else:
+            return {"status": "error", "message": f"unsupported encoding: {encoding}"}
         self.schedule_async(self.runtime.file_write(target_path, payload))
         return {"status": "accepted", "path": target_path, "bytes_requested": len(payload)}
 

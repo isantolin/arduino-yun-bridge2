@@ -178,7 +178,7 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     fail_count = qemu_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
-    assert qemu_runner.MATRIX_BOARDS == [("arduino:esp32:nano_nora", "Arduino Nano ESP32")]
+    assert qemu_runner.MATRIX_BOARDS == [("esp32:esp32:nano_nora", "Arduino Nano ESP32")]
 
     summary_file = tmp_path / "metrics" / "qemu_summary.md"
     assert summary_file.exists()

@@ -37,7 +37,6 @@ REQUIRED_DEPS = [
     "google.protobuf",
     "nanopb",
     "mypy_protobuf",
-    "grpclib",
     "black",
     "typer",
     "packaging",
@@ -85,6 +84,63 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
+def run_pw_rpc_packet_generate(repo_root: Path) -> None:
+    """Generate pw_rpc's internal packet type and pw_transfer protos with Pigweed's PWPB compiler."""
+    pw_root = repo_root / "third_party" / "pigweed"
+    proto_path = pw_root / "pw_rpc" / "internal" / "packet.proto"
+    plugin_path = pw_root / "pw_protobuf" / "py" / "pw_protobuf" / "plugin.py"
+    raw_rpc_plugin_path = pw_root / "pw_rpc" / "py" / "pw_rpc" / "plugin_raw.py"
+    output_dir = repo_root / "build" / "pigweed_generated" / "include"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not proto_path.is_file() or not plugin_path.is_file():
+        raise FileNotFoundError("Pigweed pw_rpc PWPB generator sources are missing")
+
+    env = os.environ.copy()
+    python_paths = (
+        pw_root / "pw_protobuf" / "py",
+        pw_root / "pw_rpc" / "py",
+        pw_root / "pw_codegen" / "py",
+        pw_root / "pw_cli" / "py",
+    )
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = os.pathsep.join(
+        [*(str(path) for path in python_paths), *([existing_pythonpath] if existing_pythonpath else [])]
+    )
+
+    command = [
+        "protoc",
+        f"-I{pw_root}",
+        f"--plugin=protoc-gen-pwpb={plugin_path}",
+        f"--pwpb_out={output_dir}",
+        "pw_rpc/internal/packet.proto",
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True, cwd=pw_root, env=env)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: pw_rpc packet generation failed:\n{e.stderr}\n")
+        sys.exit(1)
+
+    transfer_proto_dir = pw_root / "pw_transfer"
+    transfer_out_dir = output_dir / "pw_transfer"
+    transfer_out_dir.mkdir(parents=True, exist_ok=True)
+    transfer_command = [
+        "protoc",
+        "--experimental_allow_proto3_optional",
+        f"-I{transfer_proto_dir}",
+        f"--plugin=protoc-gen-pwpb={plugin_path}",
+        f"--pwpb_opt=-I{transfer_proto_dir}",
+        f"--pwpb_out={transfer_out_dir}",
+        f"--plugin=protoc-gen-raw_rpc={raw_rpc_plugin_path}",
+        f"--raw_rpc_out={transfer_out_dir}",
+        "transfer.proto",
+    ]
+    try:
+        subprocess.run(transfer_command, check=True, capture_output=True, text=True, cwd=transfer_proto_dir, env=env)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: pw_transfer proto generation failed:\n{e.stderr}\n")
+        sys.exit(1)
+
+
 @dataclass(frozen=True, slots=True)
 class ConfigFieldDef:
     name: str
@@ -103,10 +159,6 @@ class ConfigFieldDef:
 _message_to_dict: Final = functools.partial(
     MessageToDict, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
 )
-
-
-def _snake_case(s: str) -> str:
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
 
 def _format_cpp_digit(v: object) -> str:
@@ -343,14 +395,11 @@ def _build_mcu_operation(mcu_method: dict[str, Any]) -> dict[str, Any]:
         "service_name": mcu_method["service_name"],
         "method_name": mcu_method["method_name"],
     }
-    for str_key in ("cloud_topic", "auth_field", "mcu_handler"):
+    for str_key in ("cloud_topic", "auth_field"):
         if mcu_method.get(str_key):
             op[str_key] = mcu_method[str_key]
     if mcu_method.get("pre_sync_allowed"):
         op["pre_sync_allowed"] = True
-    if mcu_method.get("mcu_handler"):
-        op["handler_name"] = mcu_method["mcu_handler"]
-        op["is_custom_handler"] = True
     return op
 
 
@@ -485,7 +534,7 @@ def _extract_operations_context(
         }
     )
 
-    excluded_services = ("CloudBridge", "LocalBridge", "GatewayControl", "EdgeControl", "DeviceTelemetry")
+    excluded_services = ("GatewayControl", "EdgeControl", "DeviceTelemetry")
     mcu_services = [s for d in all_descs for s in d.services_by_name.values() if s.name not in excluded_services]
     mcu_methods: list[dict[str, Any]] = []
     for s_desc in mcu_services:
@@ -500,7 +549,6 @@ def _extract_operations_context(
                     "input_type": method_desc.input_type.full_name,
                     "output_type": method_desc.output_type.full_name,
                     "auth_field": _opt_ext(method_options, pb_module.auth_field, ""),
-                    "mcu_handler": _opt_ext(method_options, pb_module.mcu_handler, ""),
                     "cloud_topic": _opt_ext(method_options, pb_module.cloud_topic, ""),
                     "pre_sync_allowed": bool(_opt_ext(method_options, pb_module.pre_sync_allowed, False)),
                     "description": _opt_ext(method_options, pb_module.method_description, ""),
@@ -543,17 +591,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         if f.client_constant and f.default_value is not None
     ]
 
-    topic_auth_map: dict[tuple[str, str], str] = {}
-    for n in (f.name for f in pb_module.TopicAuthorization.DESCRIPTOR.fields):
-        for prefix in ("bridge_", "gpio_", "system_", "shell_"):
-            if n.startswith(prefix):
-                topic_auth_map[(prefix.removesuffix("_").upper(), n.removeprefix(prefix).upper())] = n
-                break
-        else:
-            parts = n.split("_", 1)
-            if len(parts) == 2:
-                topic_auth_map[(parts[0].upper(), parts[1].upper())] = n
-
     status_reasons = _message_to_dict(opts.Extensions[pb_module.status_reasons])
     for f in pb_module.StatusReasons.DESCRIPTOR.fields:
         status_reasons.setdefault(f.name, f.name)
@@ -562,7 +599,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         "runtime_config_constants": rt_consts,
         "client_runtime_config_constants": cl_rt_consts,
         "runtime_config_fields": cfg_fields,
-        "topic_auth_map": topic_auth_map,
         "capabilities": {c.name: c.value for c in opts.Extensions[pb_module.capabilities]},
         "architectures": {a.name: a.value for a in opts.Extensions[pb_module.architectures]},
         "architecture_display_names": {
@@ -699,6 +735,9 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
         for stem in ("config_schema", "mcu_wire"):
             outputs.extend((args.cpp.parent / f"{stem}.pb.h", args.cpp.parent / f"{stem}.pb.c"))
         outputs.append(repo_root / "mcubridge-library-arduino/src/protocol/mcu_wire.rpc.pb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_transfer/transfer.pwpb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_transfer/transfer.raw_rpc.pb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
         for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
@@ -738,6 +777,15 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
         repo_root / "tools/protocol/protoc_gen_mcu_rpc.py",
         *template_paths,
     ]
+    pw_root = repo_root / "third_party" / "pigweed"
+    packet_proto = pw_root / "pw_rpc" / "internal" / "packet.proto"
+    if packet_proto.is_file():
+        input_paths.append(packet_proto)
+        for package in ("pw_protobuf/py/pw_protobuf", "pw_rpc/py/pw_rpc", "pw_codegen/py/pw_codegen"):
+            input_paths.extend(sorted((pw_root / package).rglob("*.py")))
+    transfer_proto = pw_root / "pw_transfer" / "transfer.proto"
+    if transfer_proto.is_file():
+        input_paths.append(transfer_proto)
     version_path = repo_root / "VERSION"
     if version_path.is_file():
         input_paths.append(version_path)
@@ -833,6 +881,8 @@ def main(
 
     sys.stderr.write(f"Generating protocol bindings from {proto_path} via buf...\n")
     run_buf_generate(proto_path.parent)
+    if args.cpp:
+        run_pw_rpc_packet_generate(REPO_ROOT)
 
     proto_spec = load_spec_from_proto(proto_path)
     context = build_protocol_context(proto_spec, version)
@@ -874,10 +924,13 @@ def main(
     _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.py", gateway_targets, _sanitize_pb2)
     _dispatch_generated_file(gateway_proto_dir / "gateway_control_pb2.pyi", gateway_targets, _sanitize_pb2)
 
-    for grpc_file in proto_path.parent.rglob("*_grpc.py"):
-        grpc_file.unlink(missing_ok=True)
-    for nanopb_file in (gateway_proto_dir / "gateway_control.pb.h", gateway_proto_dir / "gateway_control.pb.c"):
-        nanopb_file.unlink(missing_ok=True)
+    for orphan_nanopb in (
+        gateway_proto_dir / "gateway_control.pb.h",
+        gateway_proto_dir / "gateway_control.pb.c",
+        proto_path.parent / "cloud_gateway.pb.h",
+        proto_path.parent / "cloud_gateway.pb.c",
+    ):
+        orphan_nanopb.unlink(missing_ok=True)
 
     py_context = context | {
         "constants": context["python_constants"],

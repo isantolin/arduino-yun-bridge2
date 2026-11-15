@@ -5,14 +5,6 @@ package rpc.pb;
 import "config_schema.proto";
 import "mcu_wire.proto";
 
-message FileRead {
-  string path = 1;
-}
-
-message FileReadResponse {
-  bytes content = 1;
-}
-
 message SystemStatus {
   float cpu_percent = 1;
   uint64 memory_total_bytes = 2;
@@ -28,7 +20,7 @@ message SerialLinkSnapshot {
 }
 
 message HandshakeSnapshot {
-  option (msg_cloud_topic) = "evt/SystemService/HandshakeSnapshot";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/HandshakeSnapshot";
   bool synchronised = 1;
   uint32 attempts = 2;
   uint32 successes = 3;
@@ -74,7 +66,7 @@ message SerialFlowSnapshot {
 }
 
 message BridgeSnapshot {
-  option (msg_cloud_topic) = "evt/SystemService/BridgeSnapshot";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/BridgeSnapshot";
   SerialLinkSnapshot serial_link = 1;
   HandshakeSnapshot handshake = 2;
   SerialPipelineSnapshot serial_pipeline = 3;
@@ -126,7 +118,7 @@ message PinControlResponse {
 }
 
 message StatusReport {
-  option (msg_cloud_topic) = "evt/SystemService/StatusReport";
+  option (msg_cloud_topic) = "evt/rpc.pb.SystemService/StatusReport";
   uint32 status = 1;
   string name = 2;
   string description = 3;
@@ -203,4 +195,39 @@ message GenericResponse {
   option (msg_error_init) = "status=\"error\"";
   string status = 1;
   string message = 2;
+}
+
+// Linux-side console service. It is not an MCU pw_rpc service: Linux -> MCU
+// requests are queued by the daemon and framed on HDLC_ADDRESS_CONSOLE, and
+// MCU -> Linux console frames are published on the method's cloud topic.
+service ConsoleService {
+  rpc Write(rpc.pb.ConsoleWrite) returns (rpc.pb.Empty) {
+    option (auth_field) = "console_input";
+    option (cloud_topic) = "evt/rpc.pb.ConsoleService/Write";
+    option (method_description) = "Console bytes. Linux -> MCU writes are queued and framed on HDLC_ADDRESS_CONSOLE; MCU -> Linux console frames are published on the cloud topic.";
+  }
+}
+
+message FileTransferSyncRequest {
+  string path = 1;
+  uint32 resource_id = 2;
+}
+
+message FileTransferSyncResponse {
+  bool success = 1;
+  uint32 bytes_transferred = 2;
+  string message = 3;
+}
+
+// Linux-side pw_transfer proxy service. Synchronizes files between the Gateway's
+// pw_transfer staging resource and the local OpenWrt Linux filesystem.
+service FileTransferService {
+  rpc PushToLinux(rpc.pb.FileTransferSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
+    option (auth_field) = "file_write";
+    option (method_description) = "Synchronize a staged pw_transfer file from Gateway to local Linux filesystem.";
+  }
+  rpc FetchFromLinux(rpc.pb.FileTransferSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
+    option (auth_field) = "file_read";
+    option (method_description) = "Synchronize a local Linux filesystem file to Gateway pw_transfer staging.";
+  }
 }

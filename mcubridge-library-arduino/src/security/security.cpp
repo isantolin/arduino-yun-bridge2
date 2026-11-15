@@ -20,7 +20,6 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <pw_span/span.h>
-
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
@@ -69,11 +68,11 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
   // Embedded size_t is at most word32; the static assertion above enforces it.
   const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
   const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
-  const int status = wc_HKDF(
-      WC_SHA256, secret.data(), static_cast<word32>(secret.size()), salt_data,
-      static_cast<word32>(salt.size()), info_data,
-      static_cast<word32>(info.size()), output.data(),
-      static_cast<word32>(output.size()));
+  const int status =
+      wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+              salt_data, static_cast<word32>(salt.size()), info_data,
+              static_cast<word32>(info.size()), output.data(),
+              static_cast<word32>(output.size()));
   if (status != 0) {
     secure_zero(output);
     return false;
@@ -99,8 +98,8 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
   bool ok = wc_HmacSetKey(&hmac, WC_SHA256, key.data(),
                           static_cast<word32>(key.size())) == 0;
   if (ok) {
-    ok = wc_HmacUpdate(&hmac, input_data,
-                       static_cast<word32>(input.size())) == 0;
+    ok = wc_HmacUpdate(&hmac, input_data, static_cast<word32>(input.size())) ==
+         0;
   }
 #if defined(WOLF_CRYPTO_CB)
   // Crypto callbacks may retain the key pointer; keep the caller's buffer
@@ -159,9 +158,9 @@ bool derive_handshake_tag(pw::span<const uint8_t> secret,
                           pw::span<const uint8_t> nonce,
                           pw::span<const uint8_t> info,
                           pw::span<uint8_t> out_tag) {
-  const bool invalid_dimensions =
-      secret.empty() | (nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) |
-      (out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH);
+  const bool invalid_dimensions = secret.empty() |
+                                  (nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) |
+                                  (out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH);
   if (invalid_dimensions) {
     secure_zero(out_tag);
     return false;
@@ -211,11 +210,10 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> plaintext,
                   pw::span<uint8_t> ciphertext, pw::span<uint8_t> tag) {
-  const bool invalid_dimensions =
-      (key.size() != RPC_AEAD_KEY_SIZE) |
-      (nonce.size() != RPC_AEAD_NONCE_SIZE) |
-      (ciphertext.size() < plaintext.size()) |
-      (tag.size() != RPC_AEAD_TAG_SIZE);
+  const bool invalid_dimensions = (key.size() != RPC_AEAD_KEY_SIZE) |
+                                  (nonce.size() != RPC_AEAD_NONCE_SIZE) |
+                                  (ciphertext.size() < plaintext.size()) |
+                                  (tag.size() != RPC_AEAD_TAG_SIZE);
   if (invalid_dimensions) {
     secure_zero(ciphertext);
     secure_zero(tag);
@@ -243,11 +241,10 @@ bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> ciphertext,
                   pw::span<const uint8_t> tag, pw::span<uint8_t> plaintext) {
-  const bool invalid_dimensions =
-      (key.size() != RPC_AEAD_KEY_SIZE) |
-      (nonce.size() != RPC_AEAD_NONCE_SIZE) |
-      (ciphertext.size() > plaintext.size()) |
-      (tag.size() != RPC_AEAD_TAG_SIZE);
+  const bool invalid_dimensions = (key.size() != RPC_AEAD_KEY_SIZE) |
+                                  (nonce.size() != RPC_AEAD_NONCE_SIZE) |
+                                  (ciphertext.size() > plaintext.size()) |
+                                  (tag.size() != RPC_AEAD_TAG_SIZE);
   if (invalid_dimensions) {
     secure_zero(plaintext);
     return false;
@@ -436,9 +433,7 @@ bool run_cryptographic_self_tests() {
 }
 
 #else
-bool run_cryptographic_self_tests() {
-  return true;
-}
+bool run_cryptographic_self_tests() { return true; }
 #endif  // BRIDGE_ENABLE_POST_TESTS
 
 }  // namespace security

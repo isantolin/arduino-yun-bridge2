@@ -480,10 +480,10 @@ def test_proto_dispatch_handlers_ssot() -> None:
     import operator
     from mcubridge.services.runtime import BridgeService
 
-    mcu_handlers = {op.name: op.mcu_handler for op in protocol.OPERATIONS if op.mcu_handler}
-    assert len(mcu_handlers) == 14
-    for name, handler_path in mcu_handlers.items():
+    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 18
+    for name, handler_path in BridgeService.LOCAL_RPC_HANDLERS.items():
         assert isinstance(name, str)
+        assert name in protocol.BY_NAME
         root_attr = handler_path.split(".", 1)[0]
         assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
         assert callable(operator.attrgetter(root_attr))
@@ -497,10 +497,6 @@ def test_proto_dispatch_handlers_ssot() -> None:
             assert m.id
             assert m.request_type is not None
             assert m.response_type is not None
-
-    for h_name in protocol.CUSTOM_HANDLERS:
-        root_attr = h_name.split(".", 1)[0]
-        assert hasattr(BridgeService, root_attr) or root_attr in ("handshake", "gpio", "clock_sync")
 
     assert callable(BridgeService.execute_rpc)
 

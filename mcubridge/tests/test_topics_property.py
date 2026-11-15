@@ -105,14 +105,14 @@ def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
 def test_topics_canonical_service_paths() -> None:
     """Validate canonical service topic paths."""
     assert (
-        topic_path("prefix", "evt", "SystemService", "HandshakeSnapshot")
-        == "prefix/evt/SystemService/HandshakeSnapshot"
+        topic_path("prefix", "evt", "rpc.pb.SystemService", "HandshakeSnapshot")
+        == "prefix/evt/rpc.pb.SystemService/HandshakeSnapshot"
     )
     assert topic_path("p", "req", "rpc.pb.GpioService", "DigitalRead") == "p/req/rpc.pb.GpioService/DigitalRead"
-    assert topic_path("p", "res", "SpiService", "Transfer") == "p/res/SpiService/Transfer"
+    assert topic_path("p", "res", "rpc.pb.SpiService", "Transfer") == "p/res/rpc.pb.SpiService/Transfer"
     assert topic_path("p", "req", "rpc.pb.DataStoreService", "Get") == "p/req/rpc.pb.DataStoreService/Get"
     assert topic_path("p", "req", "rpc.pb.ProcessService", "Kill") == "p/req/rpc.pb.ProcessService/Kill"
-    assert topic_path("p", "evt", "MailboxService", "Push") == "p/evt/MailboxService/Push"
+    assert topic_path("p", "evt", "rpc.pb.MailboxService", "Push") == "p/evt/rpc.pb.MailboxService/Push"
 
 
 def test_topics_edge_cases() -> None:
@@ -128,13 +128,13 @@ def test_topics_edge_cases() -> None:
 
 def test_get_topic_for_message_all_types() -> None:
     """[SIL-2] Test get_topic_for_message across all message input types (str, message, class, invalid)."""
-    assert get_topic_for_message("bridge", "VersionResponse") == "bridge/evt/SystemService/VersionResponse"
+    assert get_topic_for_message("bridge", "VersionResponse") == "bridge/evt/rpc.pb.SystemService/VersionResponse"
     assert get_topic_for_message("bridge", "NonExistentMsg") is None
 
     resp = pb.VersionResponse()
-    assert get_topic_for_message("bridge", resp) == "bridge/evt/SystemService/VersionResponse"
+    assert get_topic_for_message("bridge", resp) == "bridge/evt/rpc.pb.SystemService/VersionResponse"
 
-    assert get_topic_for_message("bridge", pb.VersionResponse) == "bridge/evt/SystemService/VersionResponse"
+    assert get_topic_for_message("bridge", pb.VersionResponse) == "bridge/evt/rpc.pb.SystemService/VersionResponse"
 
     class DummyMsg:
         class DESCRIPTOR:

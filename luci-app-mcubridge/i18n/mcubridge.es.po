@@ -205,8 +205,8 @@ msgstr "Permitir cancelar trabajos asíncronos de shell vía br/sh/kill."
 msgid "Allow console input"
 msgstr "Permitir entrada de consola"
 
-msgid "Permit writes to br/console/in to reach the MCU console."
-msgstr "Permitir escrituras a br/console/in para llegar a la consola del MCU."
+msgid "Permit ConsoleService/Write requests to reach the MCU console."
+msgstr "Permitir peticiones ConsoleService/Write hacia la consola del MCU."
 
 msgid "Allow digital write"
 msgstr "Permitir escritura digital"

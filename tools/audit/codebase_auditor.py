@@ -101,7 +101,11 @@ def _inspect_ast_node(node: ast.AST, rel_path: Path) -> list[str]:
             )
             for stmt in handler.body:
                 if isinstance(stmt, (ast.Break, ast.Continue)) and is_broad:
-                    name = handler.type.id if handler.type else "bare except"
+                    name = (
+                        handler.type.id
+                        if isinstance(handler.type, ast.Name)
+                        else ("bare except" if handler.type is None else "broad except")
+                    )
                     action = stmt.__class__.__name__.lower()
                     violations.append(
                         f"Rule 4 AST Violation: {rel_path}:{stmt.lineno} - "

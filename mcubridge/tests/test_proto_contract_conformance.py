@@ -58,9 +58,11 @@ def test_protocol_dispatch_coverage(svc: tuple[BridgeService, RuntimeState, Asyn
     """Certifies that all known Operations have defined handlers or default fallbacks."""
     service, _state, _serial = svc
     dispatch = build_mcu_dispatch(service)
-    for op in protocol.OPERATIONS:
-        if op.mcu_handler:
-            assert op.name in dispatch
+    for rpc_name in BridgeService.LOCAL_RPC_HANDLERS:
+        assert rpc_name in dispatch
+        op = protocol.BY_NAME[rpc_name]
+        if op.service_id is not None and op.method_id is not None:
+            assert (op.service_id, op.method_id) in dispatch
 
 
 # -----------------------------------------------------------------------------
@@ -85,11 +87,11 @@ async def test_unsupported_mcu_request(
     assert dr_op.service_id is not None
     assert dr_op.method_id is not None
     await service.handle_mcu_frame((dr_op.service_id, dr_op.method_id), 1, b"")
-    assert serial.send.await_count == expected_calls
+    assert serial.send_status.await_count == expected_calls
     if has_serial:
         assert state.unknown_command_count == 1
         assert state.unknown_command_last_id == dr_op.method_id
-        assert serial.send.call_args[0][0] == Status.UNIMPLEMENTED.value
+        serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 1, dr_op.service_id, dr_op.method_id)
 
 
 # -----------------------------------------------------------------------------
@@ -151,7 +153,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
     on_proc: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_proc(1, mcu_wire_pb2.MailboxProcessed(message_id=42))
     assert len(captured) == 1
-    assert captured[0].topic_name == f"{state.cloud_topic_prefix}/evt/MailboxService/Processed"
+    assert captured[0].topic_name == f"{state.cloud_topic_prefix}/evt/rpc.pb.MailboxService/Processed"
 
 
 # -----------------------------------------------------------------------------
@@ -174,20 +176,22 @@ async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, Asyn
     service.config.file_system_root = "/tmp/fs"
     serial.send.return_value = True
     assert (await on_write(1, mcu_wire_pb2.FileWrite(path="../../../etc/shadow", data=b"evil"))).status == "error"
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
+    fw_spec = protocol.BY_NAME["rpc.pb.FileSystemService/Write"]
+    serial.send_status.assert_awaited_with(Status.PERMISSION_DENIED, 1, fw_spec.service_id, fw_spec.method_id)
 
     # Successful write
     assert (await on_write(2, mcu_wire_pb2.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
-    assert serial.send.call_args[0][0] == Status.OK.value
+    serial.send_status.assert_awaited_with(Status.OK, 2, fw_spec.service_id, fw_spec.method_id)
 
     # Remove nonexistent file
     service.serial = serial
     assert (await on_remove(1, mcu_wire_pb2.FileRemove(path="missing.txt"))).status == "error"
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
+    fr_spec = protocol.BY_NAME["rpc.pb.FileSystemService/Remove"]
+    serial.send_status.assert_awaited_with(Status.NOT_FOUND, 1, fr_spec.service_id, fr_spec.method_id)
 
     # Remove existing file
     assert (await on_remove(2, mcu_wire_pb2.FileRemove(path="valid.txt"))).status == "ok"
-    assert serial.send.call_args[0][0] == Status.OK.value
+    serial.send_status.assert_awaited_with(Status.OK, 2, fr_spec.service_id, fr_spec.method_id)
 
 
 # -----------------------------------------------------------------------------
@@ -209,7 +213,8 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
     service.serial = serial
     serial.send.return_value = True
     assert (await on_run(1, mcu_wire_pb2.ProcessRunAsync(command="rm -rf /"))).pid == 0
-    assert serial.send.call_args[0][0] == Status.INTERNAL.value
+    run_spec = protocol.BY_NAME["rpc.pb.ProcessService/RunAsync"]
+    serial.send_status.assert_awaited_with(Status.PERMISSION_DENIED, 1, run_spec.service_id, run_spec.method_id)
 
     # Allowed command
     assert (await on_run(2, mcu_wire_pb2.ProcessRunAsync(command="echo test_exec"))).pid == IsPositiveInt
@@ -247,7 +252,7 @@ async def test_status_reporting_and_ack(
 
     # Status OK no payload
     await handle_status(Status.OK, 1, b"")
-    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/evt/SystemService/StatusReport"
+    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/evt/rpc.pb.SystemService/StatusReport"
 
     # Status with GenericResponse
     await handle_status(Status.INTERNAL, 2, cloud_gateway_pb2.GenericResponse(status="error", message="fault"))
@@ -273,7 +278,7 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     # SPI transfer response
     on_spi: Callable[..., Awaitable[None]] = service.publish_mcu_message
     await on_spi(3, mcu_wire_pb2.SpiTransferResponse(data=b"\xaa\x55"))
-    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/res/SpiService/Transfer"
+    assert captured[-1].topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.SpiService/Transfer"
     assert captured[-1].payload == b"\xaa\x55"
 
     # Datastore put with cache None
@@ -289,7 +294,8 @@ async def test_pin_telemetry_and_spi(svc: tuple[BridgeService, RuntimeState, Asy
     await service.handle_mcu_frame("rpc.pb.DataStoreService/Put", 10, b"\xff\xff\xff\xff")
     assert state.serial_decode_errors == initial_errors + 1
     assert state.serial_decode_errors == IsPositiveInt
-    mock_serial.send.assert_awaited_with(Status.INVALID_ARGUMENT.value, b"")
+    put_spec = protocol.BY_NAME["rpc.pb.DataStoreService/Put"]
+    mock_serial.send_status.assert_awaited_with(Status.INVALID_ARGUMENT, 10, put_spec.service_id, put_spec.method_id)
 
 
 @given(pin_mode=st.from_type(mcu_wire_pb2.PinMode))
@@ -345,12 +351,19 @@ def test_file_write_roundtrip_property(file_write: mcu_wire_pb2.FileWrite) -> No
     assert decoded.data == file_write.data
 
 
-@given(file_read=st.from_type(cloud_gateway_pb2.FileRead))
-def test_file_read_roundtrip_property(file_read: cloud_gateway_pb2.FileRead) -> None:
-    """Property: FileRead message preserves fields across protobuf serialization."""
-    encoded = file_read.SerializeToString()
-    decoded = cloud_gateway_pb2.FileRead.FromString(encoded)
-    assert decoded.path == file_read.path
+@given(
+    req=st.builds(
+        cloud_gateway_pb2.FileTransferSyncRequest,
+        path=st.text(min_size=1, max_size=64),
+        resource_id=st.integers(min_value=1, max_value=100),
+    )
+)
+def test_file_transfer_sync_request_roundtrip_property(req: cloud_gateway_pb2.FileTransferSyncRequest) -> None:
+    """Property: FileTransferSyncRequest preserves fields across protobuf serialization."""
+    encoded = req.SerializeToString()
+    decoded = cloud_gateway_pb2.FileTransferSyncRequest.FromString(encoded)
+    assert decoded.path == req.path
+    assert decoded.resource_id == req.resource_id
 
 
 @given(spi_transfer=st.from_type(mcu_wire_pb2.SpiTransfer))

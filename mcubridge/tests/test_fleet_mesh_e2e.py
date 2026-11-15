@@ -308,7 +308,7 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
     # -------------------------------------------------------------------------
     target_payload = b"TARGET:esp32:CROSS_PAYLOAD_12345"
     push_res = await mesh_mkr.service.mailbox_push(target_payload)
-    assert push_res.status == "ok"
+    assert isinstance(push_res, mcu_wire_pb2.Empty)
 
     # Entrega en el buzón entrante del ESP32
     await mesh_esp32.state.mailbox_incoming_queue.append(target_payload)

@@ -37,7 +37,6 @@ fi
 PROJECT_APK_PATTERNS="\
 python3*.apk \
 mcubridge*.apk \
-mcubridge-gateway*.apk \
 luci-app-mcubridge*.apk"
 
 UCI_GENERAL_DIRTY=0

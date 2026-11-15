@@ -13,6 +13,7 @@
 
 MailboxClass::MailboxClass() {}
 
+pw::rpc::NanopbUnaryReceiver<rpc_pb_Empty> MailboxClass::_push_call;
 pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxReadResponse>
     MailboxClass::_read_call;
 pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxAvailableResponse>
@@ -29,7 +30,7 @@ void MailboxClass::push(pw::span<const uint8_t> data) {
   }
   rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
   bridge::pb::copy_bytes(p.data, data);
-  (void)Bridge.mailboxClient().Push(p);
+  _push_call = Bridge.mailboxClient().Push(p);
 }
 
 bool MailboxClass::requestRead() {
@@ -66,6 +67,7 @@ void MailboxClass::signalProcessed(uint32_t message_id) {
 }
 
 void MailboxClass::_enqueue(pw::span<const uint8_t> data) {
+  if (data.empty()) return;
   if (!_queue.full()) {
     MailboxBuffer m;
     const size_t sz = etl::min(data.size(), m.capacity());
@@ -90,6 +92,7 @@ void MailboxClass::process() {
 }
 
 void MailboxClass::onLost() {
+  _push_call = {};
   _read_call = {};
   _avail_call = {};
   _queue.clear();

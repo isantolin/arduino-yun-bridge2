@@ -969,13 +969,122 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
 
   ba.setNullStream();
-  const std::byte dummy_byte{0x01};
+  const uint8_t dummy_byte = 0x01;
   const pw::Status send_status =
-      ba.invokeChannelSend(pw::span<const std::byte>(&dummy_byte, 1U));
+      ba.invokeChannelSend(pw::as_bytes(pw::span(&dummy_byte, 1U)));
   TEST_ASSERT_FALSE(send_status.ok());
 }
 
 }  // namespace
+
+namespace {
+rpc::StatusCode g_edge_last_status = rpc::StatusCode::STATUS_OK;
+size_t g_edge_status_calls = 0U;
+void capture_edge_status(rpc::StatusCode s, pw::span<const uint8_t>) {
+  g_edge_last_status = s;
+  ++g_edge_status_calls;
+}
+}  // namespace
+
+// A subscribed input that rises must be reported and become the new baseline.
+void test_pin_subscription_reports_rising_edge() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  constexpr uint8_t kPin = 7U;
+
+  g_arduino_stub_pin_states[kPin].value = LOW;
+  rpc_pb_PinSubscribeRequest sub = rpc_pb_PinSubscribeRequest_init_default;
+  sub.pin = kPin;
+  sub.mode = rpc_pb_PinModeType_PIN_INPUT;
+  sub.interval_ms = 10;
+  sub.hysteresis = 1;
+  sub.enabled = true;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub);
+  TEST_ASSERT_EQUAL_INT32(0, ba.subscriptionLastValueForPin(kPin));
+
+  g_arduino_stub_pin_states[kPin].value = HIGH;
+  bridge::test::fault::advance_clock_ms(20U);
+  ba.invokeSubscriptionTask();
+  TEST_ASSERT_EQUAL_INT32(1, ba.subscriptionLastValueForPin(kPin));
+
+  g_arduino_stub_pin_states[kPin].value = LOW;
+}
+
+// Without a shared secret, a plaintext RPC frame that is not a valid
+// pw_rpc packet must be rejected with INVALID_ARGUMENT and not dispatched.
+void test_plaintext_malformed_rpc_frame_is_rejected() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  g_edge_status_calls = 0U;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
+
+  const etl::array<uint8_t, 2> garbage = {0xFFU, 0xFFU};
+  pw::stream::MemoryWriterBuffer<32> frame;
+  TEST_ASSERT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
+                                          pw::as_bytes(pw::span(garbage)),
+                                          frame)
+                       .ok());
+  ba.feedHdlcBytes(pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
+
+  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(rpc::StatusCode::STATUS_INVALID_ARGUMENT),
+      static_cast<int>(g_edge_last_status));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
+// Only HardwareSerial ports (selected by type) are re-clocked on baudrate
+// changes; generic streams must never be treated as a UART.
+void test_set_stream_selects_hardware_serial_by_type() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  TEST_ASSERT_NULL(ba.hardwareSerial());
+
+  Bridge.setStream(Serial);
+  TEST_ASSERT_EQUAL_PTR(&Serial, ba.hardwareSerial());
+
+  Bridge.setStream(stream);
+  TEST_ASSERT_NULL(ba.hardwareSerial());
+
+  BridgeClass uart_bridge(Serial);
+  auto& uart_ba = TestAccessor::create(uart_bridge);
+  TEST_ASSERT_EQUAL_PTR(&Serial, uart_ba.hardwareSerial());
+}
+
+// With a live stream but TX disabled (e.g. after entering the safe state) the
+// console must not emit frames.
+void test_console_stream_blocked_while_tx_disabled() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  const etl::array<uint8_t, 2> msg = {'h', 'i'};
+  TEST_ASSERT_TRUE(Bridge.sendConsoleStream(msg));
+
+  ba.setTxEnabled(false);
+  TEST_ASSERT_FALSE(Bridge.sendConsoleStream(msg));
+}
+
+// Pin events are only emitted on a synchronized link, even with TX enabled.
+void test_pin_event_blocked_while_unsynchronized() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setTxEnabled(true);
+  ba.clearSynchronized();
+  TEST_ASSERT_TRUE(ba.isTxEnabled());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+}
 
 int main() {
   UNITY_BEGIN();
@@ -994,5 +1103,10 @@ int main() {
   RUN_TEST(test_all_timers_and_etl_error_coverage);
   RUN_TEST(test_bootloader_timer_and_hal_coverage);
   RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
+  RUN_TEST(test_pin_subscription_reports_rising_edge);
+  RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
+  RUN_TEST(test_set_stream_selects_hardware_serial_by_type);
+  RUN_TEST(test_console_stream_blocked_while_tx_disabled);
+  RUN_TEST(test_pin_event_blocked_while_unsynchronized);
   return UNITY_END();
 }

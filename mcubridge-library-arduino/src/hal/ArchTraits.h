@@ -4,6 +4,14 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+// Platform SDK headers must be included at global scope: including them inside
+// namespace bridge::hal would declare the SDK API as bridge::hal::* symbols.
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/wdt.h>
+#elif defined(ARDUINO_ARCH_ESP32)
+#include <esp_task_wdt.h>
+#endif
+
 namespace bridge::hal {
 
 enum class ArchId : uint8_t {
@@ -15,12 +23,10 @@ enum class ArchId : uint8_t {
 };
 
 #if defined(ARDUINO_ARCH_AVR)
-#include <avr/wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_AVR
 #elif defined(ARDUINO_ARCH_SAMD)
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_SAMD
 #elif defined(ARDUINO_ARCH_ESP32)
-#include <esp_task_wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ESP32
 #elif defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_HOST

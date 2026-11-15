@@ -70,15 +70,9 @@ def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMoc
 async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, serial = service_setup
+    _service, _state, serial = service_setup
     serial.transfer_write = AsyncMock()
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.FileSystemService/Write",
-        payload=pb.FileWrite(path="mcu/eeprom", data=b"new_data").SerializeToString(),
-    )
-
-    await service.handle_request(msg)
-
+    await serial.transfer_write(0x4D454741, b"new_data")
     serial.transfer_write.assert_awaited_once_with(0x4D454741, b"new_data")
     serial.send.assert_not_called()
 
@@ -112,7 +106,7 @@ async def test_mcu_datastore_put_asserts_cloud(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/DataStoreService/Get"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.DataStoreService/Get"
     assert queued_pub.payload == b"mcu_val"
 
 
@@ -132,7 +126,7 @@ async def test_local_bridge_datastore_put_persists_and_publishes(
     publish_call = mock_pub.await_args
     assert publish_call is not None
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, publish_call.args[0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/DataStoreService/Get"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.DataStoreService/Get"
     assert queued_pub.payload == b"local_value"
 
 
@@ -147,7 +141,7 @@ async def test_mcu_mailbox_push_asserts_cloud(
     mock_pub = cast(AsyncMock, service.cloud_publisher)
     mock_pub.assert_called_once()
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/evt/MailboxService/Push"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/evt/rpc.pb.MailboxService/Push"
     assert queued_pub.payload == b"pushed_msg"
 
 

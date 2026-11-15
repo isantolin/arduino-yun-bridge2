@@ -64,7 +64,7 @@ mkdir -p "${ARDUINO_LIBS}"
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-PIGWEED_PATH="$ARDUINO_LIBS/PigweedAVR"
+PW_ROOT="${ROOT_DIR}/third_party/pigweed"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
 if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
@@ -84,12 +84,31 @@ WOLF_SOURCES=(
     "$WOLFCRYPT_SRC/hash.c"
     "$WOLFCRYPT_SRC/misc.c"
 )
-mapfile -t PIGWEED_RPC_SOURCES < <(
-    find "$PIGWEED_PATH/src" -maxdepth 1 -type f \
-        \( -name 'pw_rpc_*.cc' -o -name 'pw_protobuf_*.cc' \
-           -o -name 'pw_stream_interval_reader.cc' \
-           -o -name 'pw_varint_stream.cc' \
-           -o -name 'pw_containers_intrusive_item.cc' \) -print | sort
+
+PIGWEED_RPC_SOURCES=(
+    "$PW_ROOT/pw_rpc/call.cc"
+    "$PW_ROOT/pw_rpc/client.cc"
+    "$PW_ROOT/pw_rpc/client_call.cc"
+    "$PW_ROOT/pw_rpc/channel.cc"
+    "$PW_ROOT/pw_rpc/channel_list.cc"
+    "$PW_ROOT/pw_rpc/endpoint.cc"
+    "$PW_ROOT/pw_rpc/packet.cc"
+    "$PW_ROOT/pw_rpc/packet_meta.cc"
+    "$PW_ROOT/pw_rpc/server.cc"
+    "$PW_ROOT/pw_rpc/server_call.cc"
+    "$PW_ROOT/pw_rpc/service.cc"
+    "$PW_ROOT/pw_rpc/nanopb/common.cc"
+    "$PW_ROOT/pw_rpc/nanopb/method.cc"
+    "$PW_ROOT/pw_rpc/nanopb/server_reader_writer.cc"
+    "$PW_ROOT/pw_rpc/raw/method.cc"
+    "$PW_ROOT/pw_containers/intrusive_item.cc"
+    "$PW_ROOT/pw_varint/stream.cc"
+    "$PW_ROOT/pw_stream/interval_reader.cc"
+    "$PW_ROOT/pw_protobuf/decoder.cc"
+    "$PW_ROOT/pw_protobuf/encoder.cc"
+    "$PW_ROOT/pw_protobuf/find.cc"
+    "$PW_ROOT/pw_protobuf/message.cc"
+    "$PW_ROOT/pw_protobuf/stream_decoder.cc"
 )
 
 if [ "$INSTALL_ONLY" = true ]; then
@@ -118,19 +137,15 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
-    "$PIGWEED_PATH/src/cxx_abi_stubs.cpp"
-    "$PIGWEED_PATH/src/assert_avr.cpp"
-    "$PIGWEED_PATH/src/system_clock_avr.cpp"
-    "$PIGWEED_PATH/src/log_avr.cpp"
     "${PIGWEED_RPC_SOURCES[@]}"
-    "$PIGWEED_PATH/src/pw_checksum_crc32.cc"
-    "$PIGWEED_PATH/src/pw_hdlc_decoder.cc"
-    "$PIGWEED_PATH/src/pw_hdlc_encoder.cc"
-    "$PIGWEED_PATH/src/pw_varint_varint.cc"
-    "$PIGWEED_PATH/src/pw_status_status.cc"
-    "$PIGWEED_PATH/src/pw_tokenizer_encode_args.cc"
-    "$PIGWEED_PATH/src/pw_tokenizer_tokenize.cc"
-    "$PIGWEED_PATH/src/pw_stream_memory_stream.cc"
+    "$PW_ROOT/pw_checksum/crc32.cc"
+    "$PW_ROOT/pw_hdlc/decoder.cc"
+    "$PW_ROOT/pw_hdlc/encoder.cc"
+    "$PW_ROOT/pw_varint/varint.cc"
+    "$PW_ROOT/pw_status/status.cc"
+    "$PW_ROOT/pw_tokenizer/encode_args.cc"
+    "$PW_ROOT/pw_tokenizer/tokenize.cc"
+    "$PW_ROOT/pw_stream/memory_stream.cc"
 )
 
 INC_FLAGS=(
@@ -144,8 +159,39 @@ INC_FLAGS=(
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
-    -I"$PIGWEED_PATH"
-    -I"$PIGWEED_PATH/src"
+    -I"$PW_ROOT/pw_status/public"
+    -I"$PW_ROOT/pw_result/public"
+    -I"$PW_ROOT/pw_span/public"
+    -I"$PW_ROOT/pw_bytes/public"
+    -I"$PW_ROOT/pw_containers/public"
+    -I"$PW_ROOT/pw_stream/public"
+    -I"$PW_ROOT/pw_checksum/public"
+    -I"$PW_ROOT/pw_hdlc/public"
+    -I"$PW_ROOT/pw_rpc/public"
+    -I"$PW_ROOT/pw_rpc/nanopb/public"
+    -I"$PW_ROOT/pw_rpc/raw/public"
+    -I"$PW_ROOT/pw_varint/public"
+    -I"$PW_ROOT/pw_tokenizer/public"
+    -I"$PW_ROOT/pw_function/public"
+    -I"$PW_ROOT/pw_string/public"
+    -I"$PW_ROOT/pw_log/public"
+    -I"$PW_ROOT/pw_log_null/public_overrides"
+    -I"$PW_ROOT/pw_log_null/public"
+    -I"$PW_ROOT/pw_assert/print_and_abort_assert_public_overrides"
+    -I"$PW_ROOT/pw_assert/print_and_abort_check_public_overrides"
+    -I"$PW_ROOT/pw_assert/public"
+    -I"$PW_ROOT/pw_preprocessor/public"
+    -I"$PW_ROOT/pw_polyfill/public"
+    -I"$PW_ROOT/pw_enum/public"
+    -I"$PW_ROOT/pw_numeric/public"
+    -I"$PW_ROOT/pw_memory/public"
+    -I"$PW_ROOT/pw_protobuf/public"
+    -I"$PW_ROOT/pw_sync/public"
+    -I"$PW_ROOT/pw_thread/public"
+    -I"$PW_ROOT/pw_toolchain/public"
+    -I"$PW_ROOT/third_party/fuchsia/repo/sdk/lib/stdcompat/include"
+    -I"$PW_ROOT/third_party/fuchsia/repo/sdk/lib/fit/include"
+    -I"${ROOT_DIR}/build/pigweed_generated/include"
     -I"$WOLFSSL_INC"
     -I"$WOLFSSL_PATH"
 )
@@ -160,6 +206,7 @@ COMMON_DEFS=(
     -DETL_NO_STL
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
+    -DPW_RPC_USE_GLOBAL_MUTEX=0
 )
 
 if [ "$COVERAGE_MODE" = true ]; then
@@ -205,10 +252,17 @@ echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
 COMPILE_PIDS=()
 for src in "${SOURCES[@]}"; do
-    obj_name=$(basename "${src}").o
     if [[ "${src}" == "$WOLFSSL_PATH/"* ]]; then
         obj_name="${src#"$WOLFSSL_PATH/"}"
         obj_name="${obj_name//\//_}.o"
+    elif [[ "${src}" == "$PW_ROOT/"* ]]; then
+        obj_name="${src#"$PW_ROOT/"}"
+        obj_name="${obj_name//\//_}.o"
+    elif [[ "${src}" == "$ROOT_DIR/"* ]]; then
+        obj_name="${src#"$ROOT_DIR/"}"
+        obj_name="${obj_name//\//_}.o"
+    else
+        obj_name=$(basename "${src}").o
     fi
     obj="${OBJ_DIR}/${obj_name}"
     OBJECTS+=("${obj}")
@@ -261,7 +315,7 @@ if [ "$COVERAGE_MODE" = true ]; then
         test_name=$(basename "${test_file}" .cpp)
         LOCAL_OBJECTS=()
         for obj in "${OBJECTS[@]}"; do
-            if [ "${test_name}" = "test_hal_weak_defaults" ] && [[ "$(basename "${obj}")" == "test_host_filesystem_mock.cpp.o" ]]; then
+            if [ "${test_name}" = "test_hal_weak_defaults" ] && [[ "${obj}" == *test_host_filesystem_mock.cpp.o ]]; then
                 continue
             fi
             LOCAL_OBJECTS+=("${obj}")
@@ -277,6 +331,7 @@ if [ "$COVERAGE_MODE" = true ]; then
         ${PYTHON_CMD} -m pip install --break-system-packages gcovr
     fi
 
+    gcovr_status=0
     ${PYTHON_CMD} -m gcovr --root "${SRC_DIR}" "${BUILD_DIR}" --filter "${SRC_DIR}" \
         -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" -e ".*wolfssl.*" -e ".*wolfcrypt.*" \
         --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max \
@@ -287,9 +342,15 @@ if [ "$COVERAGE_MODE" = true ]; then
         --html-details "${OUTPUT_ROOT}/index.html" \
         --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty \
         --json "${OUTPUT_ROOT}/coverage.json" \
-        --print-summary > "${OUTPUT_ROOT}/summary.txt"
+        --txt "${OUTPUT_ROOT}/coverage.txt" \
+        --print-summary > "${OUTPUT_ROOT}/summary.txt" || gcovr_status=$?
 
+    # Per-file table so threshold failures can be diagnosed from the CI log alone.
+    cat "${OUTPUT_ROOT}/coverage.txt" || true
     cat "${OUTPUT_ROOT}/summary.txt"
+    if [ "${gcovr_status}" -ne 0 ]; then
+        exit "${gcovr_status}"
+    fi
     echo "[host-cpp] ALL COVERAGE GATES PASSED (Line >= ${ARDUINO_COVERAGE_MIN_LINE}%, Branch >= ${ARDUINO_COVERAGE_MIN_BRANCH}%, Function >= ${ARDUINO_COVERAGE_MIN_FUNCTION}%)"
 else
     # Compile and run test suites in parallel
@@ -302,7 +363,7 @@ else
             if [ "${test_name}" = "test_hal_weak_defaults" ]; then
                 LOCAL_OBJECTS=()
                 for obj in "${OBJECTS[@]}"; do
-                    if [[ "$(basename "${obj}")" != "test_host_filesystem_mock.cpp.o" ]]; then
+                    if [[ "${obj}" != *test_host_filesystem_mock.cpp.o ]]; then
                         LOCAL_OBJECTS+=("${obj}")
                     fi
                 done

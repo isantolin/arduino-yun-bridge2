@@ -6,18 +6,18 @@ import asyncio
 import functools
 import inspect
 import logging
-import secrets
+import operator
 import shlex
+import stat
 import time
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from pathlib import Path
-from typing import Any, Final, cast
+from typing import Any, ClassVar, Final, cast
 
 import anyio
 import anyio.to_thread
 import lmdb
 import psutil
-from pw_transfer.client import Error as PwTransferError
 import structlog
 import tenacity
 from google.protobuf.message import (
@@ -29,10 +29,11 @@ import pw_hdlc.decode
 import pw_hdlc.encode
 import pw_rpc.packets
 import pw_status
-from pw_rpc import callback_client
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal import packet_pb2
+from pw_transfer.client import Error as PwTransferError, Manager as PwTransferManager
 
 from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge.protocol.cloud_gateway_pb2 import (
@@ -56,8 +57,6 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
-    ConsoleQueueTarget,
-    MemoryQueueAdapter,
     create_queued_publish,
     get_ssl_context,
     is_command_allowed,
@@ -86,8 +85,20 @@ from ..transport.serial import SerialTransport
 logger = structlog.get_logger("mcubridge.service")
 
 _STATUS_VALUES: Final = {s.value for s in Status}
-_MCU_EEPROM_RESOURCE_ID: Final = 0x4D454741
-_MCU_EEPROM_RESOURCE_PATH: Final = "eeprom"
+
+
+def _directory_usage_bytes(root: str) -> int:
+    """Sum regular-file sizes under the managed storage root without following symlinks. [SIL-2]"""
+    total = 0
+    for dirpath, _dirnames, filenames in Path(root).walk(follow_symlinks=False):
+        for name in filenames:
+            try:
+                st = (dirpath / name).lstat()
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                total += st.st_size
+    return total
 
 
 class BridgeService:
@@ -96,9 +107,10 @@ class BridgeService:
     config: RuntimeConfig
     state: RuntimeState
     serial: SerialTransport | None
-    _cloud_writer: asyncio.StreamWriter | None
+    cloud_writer: asyncio.StreamWriter | None
     _cloud_reader: asyncio.StreamReader | None
-    _cloud_rpc_client: Any | None
+    cloud_rpc_client: Any | None
+    cloud_transfer_manager: Any | None
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
@@ -106,14 +118,33 @@ class BridgeService:
     _cloud_publish_lock: asyncio.Lock
     cloud_spool: LmdbDeque | None
     mcu_registry: protocol.McuDispatchTable
-    ipc_requests: dict[bytes, asyncio.Queue[CloudQueuedPublish]]
-    console_queues: list[ConsoleQueueTarget]
     ubus_service: UbusService
     clock_sync: ClockSyncService
     gpio: GpioService
     _tg: asyncio.TaskGroup | None
     cloud_publisher: Callable[[CloudQueuedPublish], Awaitable[None]] | None
     lifecycle_fsm: DaemonLifecycleMachine
+
+    LOCAL_RPC_HANDLERS: ClassVar[dict[str, str]] = {
+        "rpc.pb.SystemService/LinkSync": "handshake.handle_link_sync_resp",
+        "rpc.pb.SystemService/Xoff": "mcu_xoff",
+        "rpc.pb.SystemService/Xon": "mcu_xon",
+        "rpc.pb.FileSystemService/Write": "file_write",
+        "rpc.pb.FileSystemService/Remove": "file_remove",
+        "rpc.pb.FileTransferService/PushToLinux": "file_transfer_push_to_linux",
+        "rpc.pb.FileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
+        "rpc.pb.MailboxService/Push": "mailbox_push",
+        "rpc.pb.MailboxService/Read": "mailbox_read",
+        "rpc.pb.MailboxService/Available": "mailbox_available",
+        "rpc.pb.MailboxService/Processed": "publish_mcu_message",
+        "rpc.pb.ProcessService/RunAsync": "process_run_async",
+        "rpc.pb.ProcessService/Poll": "process_poll",
+        "rpc.pb.ProcessService/Kill": "process_kill",
+        "rpc.pb.DataStoreService/Put": "datastore_put",
+        "rpc.pb.DataStoreService/Get": "datastore_get",
+        "rpc.pb.ConsoleService/Write": "console_write",
+        "rpc.pb.GpioService/SubscribePins": "pin_subscribe",
+    }
 
     def __init__(
         self,
@@ -127,7 +158,9 @@ class BridgeService:
         self.config, self.state, self.serial = config, state, serial
         self.lifecycle_fsm = DaemonLifecycleMachine()
         self.cloud_publisher = cloud_publisher
-        self._cloud_writer, self._cloud_reader, self._cloud_rpc_client = None, None, None
+        self.cloud_writer, self._cloud_reader, self.cloud_rpc_client = None, None, None
+        self.cloud_transfer_manager: Any | None = None
+        self._cloud_transfer_lock = asyncio.Lock()
         self.watchdog = (
             WatchdogKeepalive(interval=config.watchdog_interval, state=state) if config.watchdog_enabled else None
         )
@@ -142,8 +175,6 @@ class BridgeService:
             summary_interval=self.config.bridge_summary_interval,
             handshake_interval=self.config.bridge_handshake_interval,
         )
-        self.ipc_requests = {}
-        self.console_queues = []
         self.ubus_service = UbusService(self)
         self.ubus_service.start()
         self.clock_sync = ClockSyncService(self)
@@ -170,36 +201,18 @@ class BridgeService:
         # [SIL-2] O(1) MCU Dispatch Table
         self.mcu_registry = protocol.build_mcu_dispatch(self)
 
-    async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
-        return bool(self.serial and await self.serial.send(Status.OK.value, payload))
-
-    async def send_mcu_error(self, message: str) -> bool:
-        return bool(self.serial and await self.serial.send(Status.INTERNAL.value, b""))
-
-    async def _send_mcu_status(self, ok: bool, error_message: str = "") -> bool:
-        return await (self.send_mcu_ok() if ok else self.send_mcu_error(error_message))
+    async def send_mcu_status(self, status: Status, seq_id: int, request_or_key: Any) -> bool:
+        """Complete an MCU-initiated RPC with a status bound to its service, method and call id. [SIL-2]"""
+        serial = self.serial
+        spec = protocol.get_operation(request_or_key)
+        if serial is None or spec is None or spec.service_id is None or spec.method_id is None:
+            return False
+        return await serial.send_status(status, seq_id, spec.service_id, spec.method_id)
 
     # --- External Interface ---
 
     async def enqueue_cloud(self, message: CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_cloud_context(message, reply_context)
-        correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "enqueue_cloud debug info",
-                topic=resolved_message.topic_name,
-                correlation=correlation.hex() if correlation else None,
-                in_ipc_requests=(correlation in self.ipc_requests if correlation else False),
-                registered_keys=[k.hex() for k in self.ipc_requests],
-            )
-        if correlation and correlation in self.ipc_requests:
-            self.ipc_requests[correlation].put_nowait(resolved_message)
-            return
-
-        if "console" in resolved_message.topic_name.lower():
-            for q in list(self.console_queues):
-                q.put_nowait(resolved_message)
-
         if self.cloud_publisher is not None:
             await self.cloud_publisher(resolved_message)
             return
@@ -299,7 +312,7 @@ class BridgeService:
 
     async def flush_cloud_spool_locked(self) -> None:
         spool = self.cloud_spool
-        if not (self._cloud_rpc_client and self._cloud_writer) or spool is None:
+        if not (self.cloud_rpc_client and self.cloud_writer) or spool is None:
             return
 
         async def _pop_spool() -> bool:
@@ -352,7 +365,7 @@ class BridgeService:
             self.state.cloud_spool_failure_reason = str(exc)
 
     async def publish_cloud_message(self, message: CloudQueuedPublish) -> bool:
-        if not (self._cloud_rpc_client and self._cloud_writer):
+        if not (self.cloud_rpc_client and self.cloud_writer):
             return False
         telemetry_attr = next(
             (
@@ -439,7 +452,7 @@ class BridgeService:
                     except ProtobufDecodeError as exc:
                         logger.error("Failed to decode MCU Protobuf payload", error=str(exc))
                         self.state.serial_decode_errors += 1
-                        await serial.send(Status.INVALID_ARGUMENT.value, b"")
+                        await self.send_mcu_status(Status.INVALID_ARGUMENT, sequence_id, spec)
                         return
 
                 res = handler(sequence_id, p)
@@ -452,7 +465,8 @@ class BridgeService:
                     if isinstance(operation_key, int)
                     else (operation_key[1] if isinstance(operation_key, tuple) else 0)
                 )
-                await serial.send(Status.UNIMPLEMENTED.value, b"")
+                if isinstance(operation_key, tuple):
+                    await serial.send_status(Status.UNIMPLEMENTED, sequence_id, operation_key[0], operation_key[1])
 
     @staticmethod
     def _coerce_inbound_request(inbound: Any) -> CloudQueuedPublish:
@@ -570,7 +584,7 @@ class BridgeService:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(k, v)
         tp = getattr(reply_context, "response_topic", None) or protocol.topic_path(
-            self.state.cloud_topic_prefix, "res", "DataStoreService/Get"
+            self.state.cloud_topic_prefix, "res", "rpc.pb.DataStoreService/Get"
         )
         await self.enqueue_cloud_publish(
             tp,
@@ -598,18 +612,19 @@ class BridgeService:
 
     async def mailbox_push(
         self, req_or_data: bytes | mcu_wire_pb2.MailboxPush | int, p: mcu_wire_pb2.MailboxPush | None = None
-    ) -> cloud_gateway_pb2.GenericResponse:
+    ) -> mcu_wire_pb2.Empty:
         if p is not None:
             await self.state.mailbox_incoming_queue.append(p.data)
             await self.publish_mcu_message(p, p.data)
-            return cloud_gateway_pb2.GenericResponse(status="ok")
+            if self.serial:
+                await self.serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty())
+            return mcu_wire_pb2.Empty()
         data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
         await self.state.mailbox_queue.append(data)
         serial = self.serial
-        res = (
-            (await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data))) if serial else False
-        )
-        return cloud_gateway_pb2.GenericResponse(status="ok" if res else "error")
+        if serial:
+            await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data))
+        return mcu_wire_pb2.Empty()
 
     async def mailbox_read(
         self, req_or_seq: mcu_wire_pb2.SubscribeRequest | int | None = None, _p: Any = None
@@ -643,24 +658,10 @@ class BridgeService:
         src = data if from_mcu else path_or_req
         path = src.path if isinstance(src, mcu_wire_pb2.FileWrite) else str(path_or_req)
         payload_data = src.data if isinstance(src, mcu_wire_pb2.FileWrite) else cast(bytes, data)
-        clean = path.lstrip("/")
-        if clean.startswith("mcu/"):
-            mcu_path = clean.removeprefix("mcu/").strip("/")
-            serial = self.serial
-            if mcu_path != _MCU_EEPROM_RESOURCE_PATH or serial is None:
-                ok = False
-            else:
-                try:
-                    await serial.transfer_write(_MCU_EEPROM_RESOURCE_ID, payload_data)
-                    ok = True
-                except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
-                    logger.warning("MCU EEPROM pw_transfer write failed", error=str(exc))
-                    ok = False
-        else:
-            safe_path = self._get_safe_path(path)
-            ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
+        safe_path = self._get_safe_path(path)
+        ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
         if from_mcu:
-            await self._send_mcu_status(ok, "Path not allowed or quota exceeded")
+            await self.send_mcu_status(Status.OK if ok else Status.PERMISSION_DENIED, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     async def file_remove(
@@ -668,32 +669,17 @@ class BridgeService:
     ) -> cloud_gateway_pb2.GenericResponse:
         src = p if p is not None else path_or_req
         path = src.path if isinstance(src, mcu_wire_pb2.FileRemove) else str(path_or_req)
-        clean = path.lstrip("/")
-        if clean.startswith("mcu/"):
-            mcu_path = clean.removeprefix("mcu/").strip("/")
-            serial = self.serial
-            if mcu_path == _MCU_EEPROM_RESOURCE_PATH or serial is None:
-                # The EEPROM is a fixed-size raw transfer resource, not a file.
-                ok = False
-            else:
-                ok = bool(
-                    await serial.send(
-                        "rpc.pb.FileSystemService/Remove",
-                        mcu_wire_pb2.FileRemove(path=mcu_path),
-                    )
-                )
+        if not (safe_path := self._get_safe_path(path)):
+            ok = False
         else:
-            if not (safe_path := self._get_safe_path(path)):
+            try:
+                await anyio.Path(safe_path).unlink()
+                ok = True
+            except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
+                logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
                 ok = False
-            else:
-                try:
-                    await anyio.Path(safe_path).unlink()
-                    ok = True
-                except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
-                    logger.debug("Safe file remove failed", path=str(safe_path), error=str(exc))
-                    ok = False
         if p is not None:
-            await self._send_mcu_status(ok, "Path not allowed or not found")
+            await self.send_mcu_status(Status.OK if ok else Status.NOT_FOUND, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     def _get_safe_path(self, p_str: str) -> Path | None:
@@ -718,9 +704,14 @@ class BridgeService:
                 self.state.file_write_limit_rejections += 1
                 return False
             try:
+                used = await anyio.to_thread.run_sync(_directory_usage_bytes, self.config.file_system_root)
+                self.state.file_storage_bytes_used = used
+                existing = path.stat().st_size if path.is_file() else 0
+                quota = self.state.file_storage_quota_bytes
+                if quota > 0 and used - existing + len(data) > quota:
+                    self.state.file_storage_limit_rejections += 1
+                    return False
                 usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
-                self.state.file_storage_bytes_used = usage.used
-
                 if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False
@@ -731,6 +722,77 @@ class BridgeService:
             await ap.write_bytes(data)
             return True
 
+    def get_cloud_transfer_manager(self) -> PwTransferManager:
+        if self.cloud_rpc_client is None:
+            raise ConnectionError("Cloud Gateway RPC client is not connected")
+        if self.cloud_transfer_manager is None:
+            transfer_service = self.cloud_rpc_client.channel(1).rpcs.pw.transfer.Transfer
+            self.cloud_transfer_manager = PwTransferManager(
+                transfer_service,
+                default_response_timeout_s=5.0,
+                initial_response_timeout_s=5.0,
+                max_retries=3,
+                max_lifetime_retries=60,
+                max_chunk_size_bytes=1024,
+            )
+        return cast(PwTransferManager, self.cloud_transfer_manager)
+
+    async def cloud_transfer_read(self, resource_id: int) -> bytes:
+        async with self._cloud_transfer_lock:
+            manager = self.get_cloud_transfer_manager()
+            return await asyncio.to_thread(manager.read, resource_id)
+
+    async def cloud_transfer_write(self, resource_id: int, data: bytes) -> None:
+        async with self._cloud_transfer_lock:
+            manager = self.get_cloud_transfer_manager()
+            await asyncio.to_thread(manager.write, resource_id, data)
+
+    async def file_transfer_push_to_linux(
+        self, req: cloud_gateway_pb2.FileTransferSyncRequest
+    ) -> cloud_gateway_pb2.FileTransferSyncResponse:
+        resource_id = req.resource_id or 2
+        safe_path = self._get_safe_path(req.path)
+        if not safe_path:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="Invalid or forbidden target path"
+            )
+        try:
+            data = await self.cloud_transfer_read(resource_id)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError) as exc:
+            logger.error("Cloud transfer read failed", resource_id=resource_id, error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Transfer read failed: {exc}"
+            )
+        ok = await self.write_with_quota(safe_path, data)
+        if not ok:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="File write quota exceeded or rejected"
+            )
+        return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
+
+    async def file_transfer_fetch_from_linux(
+        self, req: cloud_gateway_pb2.FileTransferSyncRequest
+    ) -> cloud_gateway_pb2.FileTransferSyncResponse:
+        resource_id = req.resource_id or 2
+        safe_path = self._get_safe_path(req.path)
+        if not safe_path:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="Invalid or forbidden source path"
+            )
+        data = await self._safe_file_read(req.path)
+        if data is None:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="File not found or unreadable"
+            )
+        try:
+            await self.cloud_transfer_write(resource_id, data)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError) as exc:
+            logger.error("Cloud transfer write failed", resource_id=resource_id, error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Transfer write failed: {exc}"
+            )
+        return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
+
     # --- Process Subsystem ---
 
     async def process_run_async(
@@ -739,7 +801,8 @@ class BridgeService:
         src = p if p is not None else req_or_cmd
         command = src.command if isinstance(src, mcu_wire_pb2.ProcessRunAsync) else str(req_or_cmd)
         pid = 0
-        if command and is_command_allowed(self.state.allowed_policy, command):
+        allowed = bool(command) and is_command_allowed(self.state.allowed_policy, command)
+        if allowed:
             with structlog.contextvars.bound_contextvars(command=command):
                 await self._process_slots.acquire()
                 try:
@@ -758,9 +821,12 @@ class BridgeService:
                     self._process_slots.release()
         resp = mcu_wire_pb2.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:
-            await (
-                self.serial.send("rpc.pb.ProcessService/RunAsync", resp) if pid else self.send_mcu_error("Exec failed")
-            )
+            if pid:
+                await self.serial.send("rpc.pb.ProcessService/RunAsync", resp)
+            else:
+                await self.send_mcu_status(
+                    Status.INTERNAL if allowed else Status.PERMISSION_DENIED, cast(int, req_or_cmd), src
+                )
         return resp
 
     async def process_poll(
@@ -887,9 +953,23 @@ class BridgeService:
             buf = self.state.console_to_mcu_queue.popleft()
 
             for chunk in iter_chunks(buf, protocol.MAX_PAYLOAD_SIZE):
-                if not await serial.send("ConsoleWrite", mcu_wire_pb2.ConsoleWrite(data=chunk)):
+                if not await serial.send("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=chunk)):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
+
+    async def console_write(
+        self, req_or_seq: mcu_wire_pb2.ConsoleWrite | int, p: mcu_wire_pb2.ConsoleWrite | None = None
+    ) -> mcu_wire_pb2.Empty:
+        """Bridge console bytes: MCU frames are published to the cloud, Linux requests are queued to the MCU."""
+        if p is not None:
+            if p.data:
+                await self.publish_mcu_message(p, p.data, message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE)
+            return mcu_wire_pb2.Empty()
+        req = cast(mcu_wire_pb2.ConsoleWrite, req_or_seq)
+        if req.data:
+            self.state.console_to_mcu_queue.append(req.data)
+            await self.flush_console_queue()
+        return mcu_wire_pb2.Empty()
 
     async def set_mcu_paused(self, paused: bool, _seq: int = 0, _payload: Any = None) -> None:
         self.state.mcu_is_paused = paused
@@ -1054,16 +1134,16 @@ class BridgeService:
             logger.warning("Cloud Gateway connection failed", error=str(exc))
             raise ConnectionError(f"Cloud Gateway connection failed: {exc}") from exc
 
-        self._cloud_writer = writer
+        self.cloud_writer = writer
         self._cloud_reader = reader
 
         def _send_channel_packet(packet: bytes) -> None:
-            if self._cloud_writer and not self._cloud_writer.is_closing():
+            if self.cloud_writer and not self.cloud_writer.is_closing():
                 frame = pw_hdlc.encode.ui_frame(1, packet)
-                self._cloud_writer.write(frame)
+                self.cloud_writer.write(frame)
 
-        self._cloud_rpc_client = PwRpcClient(
-            callback_client.Impl(),
+        self.cloud_rpc_client = PwRpcClient(
+            PwCallbackClientImpl(),
             [PwRpcChannel(1, _send_channel_packet)],
             protocol.PW_SERVICES,
         )
@@ -1071,9 +1151,20 @@ class BridgeService:
         self.state.cloud_fsm.connect_http2()
         logger.info("Connected to Cloud Gateway via Pigweed HDLC over TLS.")
 
-        # Emit status online event
-        await self.send_cloud_event("status_online", "info", "Device online")
-        await self.flush_cloud_spool()
+        # The reader below is the only consumer of Gateway responses and EdgeControl
+        # requests, so nothing that awaits a Gateway response may run before it starts.
+        session_tasks: set[asyncio.Task[None]] = set()
+
+        def _spawn(coro: Coroutine[Any, Any, None], name: str) -> None:
+            task = asyncio.create_task(coro, name=name)
+            session_tasks.add(task)
+            task.add_done_callback(session_tasks.discard)
+
+        async def _announce_online() -> None:
+            await self.send_cloud_event("status_online", "info", "Device online")
+            await self.flush_cloud_spool()
+
+        _spawn(_announce_online(), "mcubridge-cloud-online")
 
         decoder = pw_hdlc.decode.FrameDecoder()
         try:
@@ -1091,13 +1182,13 @@ class BridgeService:
                         continue
 
                     if pkt.type == packet_pb2.PacketType.REQUEST:
-                        asyncio.create_task(self._handle_cloud_edge_dispatch(pkt, writer))
+                        _spawn(self.handle_cloud_edge_dispatch(pkt, writer), "mcubridge-edge-dispatch")
                     elif pkt.type in (
                         packet_pb2.PacketType.RESPONSE,
                         packet_pb2.PacketType.SERVER_ERROR,
                         packet_pb2.PacketType.SERVER_STREAM,
                     ):
-                        self._cloud_rpc_client.process_packet(frame.data)
+                        self.cloud_rpc_client.process_packet(frame.data)
         except (ConnectionError, OSError, EOFError) as exc:
             cur_task = asyncio.current_task()
             if cur_task and cur_task.cancelling():
@@ -1106,23 +1197,35 @@ class BridgeService:
             logger.warning("Cloud session stream disconnected", error=str(exc))
             raise ConnectionError(f"Cloud session stream disconnected: {exc}") from exc
         finally:
+            for task in tuple(session_tasks):
+                task.cancel()
             self.state.cloud_fsm.degrade()
-            self._cloud_writer = None
+            self.cloud_writer = None
             self._cloud_reader = None
-            self._cloud_rpc_client = None
+            self.cloud_rpc_client = None
+            self.cloud_transfer_manager = None
             try:
                 writer.close()
                 await writer.wait_closed()
             except OSError as exc:
                 logger.debug("Cloud session writer close error ignored", error=str(exc))
 
-    async def _handle_cloud_edge_dispatch(self, pkt: Any, writer: asyncio.StreamWriter) -> None:
+    async def handle_cloud_edge_dispatch(self, pkt: Any, writer: asyncio.StreamWriter) -> None:
         edge_req = gateway_control_pb2.EdgeDispatchRequest()
         try:
             edge_req.ParseFromString(pkt.payload)
-            target = f"{edge_req.service_name}/{edge_req.method_name}"
-            resp_payload = await self.execute_rpc(target, edge_req.request_payload)
-            status_code = 200
+            target = edge_req.operation
+            spec = protocol.BY_NAME.get(target)
+            if spec is None:
+                raise ValueError(f"Unknown RPC method: {target}")
+            if self.state.topic_authorization and not protocol.allows_method(self.state.topic_authorization, spec):
+                # Same ACL as the topic path: cloud_allow_* flags apply to Gateway dispatch too.
+                logger.warning("RPC method forbidden by topic authorization", method=target)
+                resp_payload = b""
+                status_code = 403
+            else:
+                resp_payload = await self.execute_rpc(target, edge_req.request_payload, timeout_ms=edge_req.timeout_ms)
+                status_code = 200
         except (ValueError, ProtobufDecodeError) as exc:
             logger.warning("Unknown or invalid RPC method from cloud", error=str(exc))
             resp_payload = b""
@@ -1151,7 +1254,7 @@ class BridgeService:
         bridge_snapshot_blob: bytes = b"",
         handshake_snapshot_blob: bytes = b"",
     ) -> bool:
-        if not self._cloud_rpc_client or not self._cloud_writer:
+        if not self.cloud_rpc_client or not self.cloud_writer:
             return False
         try:
             req = gateway_control_pb2.TelemetryReport(
@@ -1160,20 +1263,21 @@ class BridgeService:
                 bridge_snapshot_blob=bridge_snapshot_blob,
                 handshake_snapshot_blob=handshake_snapshot_blob,
             )
-            report_method = self._cloud_rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry
+            report_method = self.cloud_rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry
             loop = asyncio.get_running_loop()
             fut: asyncio.Future[Any] = loop.create_future()
 
-            def _on_completed(call: Any, resp: Any) -> None:
+            def _on_completed(_call: Any, status: Any) -> None:
                 if not fut.done():
-                    fut.set_result(call.status)
+                    fut.set_result(status)
 
-            def _on_error(call: Any) -> None:
+            def _on_error(_call: Any, error: Any) -> None:
+                # pw_rpc invokes every callback as callback(call, arg); error is the failure Status.
                 if not fut.done():
-                    fut.set_result(call.status)
+                    fut.set_result(error)
 
             report_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
-            await self._cloud_writer.drain()
+            await self.cloud_writer.drain()
             async with asyncio.timeout(5.0):
                 status = await fut
                 return bool(status.ok())
@@ -1189,7 +1293,7 @@ class BridgeService:
                 severity,
                 description,
             )
-        if self._cloud_rpc_client and self._cloud_writer:
+        if self.cloud_rpc_client and self.cloud_writer:
             event_blob = f"{event_type}:{severity}:{description}".encode()
             await self.send_cloud_telemetry(system_status_blob=event_blob)
 
@@ -1248,7 +1352,7 @@ class BridgeService:
 
     # --- RPC Execution & Operations [SIL-2] ---
 
-    async def execute_rpc(self, target: str, payload_bytes: bytes) -> bytes:
+    async def execute_rpc(self, target: str, payload_bytes: bytes, timeout_ms: int = 0) -> bytes:
         spec = protocol.BY_NAME.get(target)
         if not spec or not spec.request_type:
             raise ValueError(f"Unknown RPC method: {target}")
@@ -1258,16 +1362,21 @@ class BridgeService:
             req.ParseFromString(payload_bytes)
 
         with structlog.contextvars.bound_contextvars(rpc_method=target):
-            if spec.handler_name and spec.handler_name in protocol.CUSTOM_HANDLERS:
-                resp = await getattr(self, spec.handler_name)(req)
+            if target in self.LOCAL_RPC_HANDLERS:
+                handler_path = self.LOCAL_RPC_HANDLERS[target]
+                fn = operator.attrgetter(handler_path)(self)
+                res = fn(req)
+                resp = await res if inspect.isawaitable(res) else res
                 return resp.SerializeToString() if resp is not None else b""
 
             if self.serial is None:
                 raise ConnectionError(f"Serial link disconnected for {target}")
 
             payload = b"" if isinstance(req, mcu_wire_pb2.SubscribeRequest) else req
-            cmd_key = f"{spec.service_name}/{spec.method_name}" if spec.service_name and spec.method_name else spec
-            res = await self.serial.send(cmd_key, payload)
+            if timeout_ms > 0:
+                res = await self.serial.send(spec.name, payload, timeout=float(timeout_ms) / 1000.0)
+            else:
+                res = await self.serial.send(spec.name, payload)
             if isinstance(res, mcu_wire_pb2.VersionResponse):
                 self.state.mcu_version = (res.major, res.minor, res.patch)
             if res is True:
@@ -1275,70 +1384,16 @@ class BridgeService:
                 return resp_cls().SerializeToString()
             if isinstance(res, ProtobufMessage):
                 return res.SerializeToString()
-            if res is False or res is None:
-                raise RuntimeError(f"Serial RPC invocation failed: {target}")
-            return res if isinstance(res, bytes) else b""
+            if isinstance(res, bytes):
+                return res
+            raise RuntimeError(f"Serial RPC invocation failed: {target}")
 
-    async def Publish(self, stream: Any) -> None:
-        if (req := await stream.recv_message()) is None:
-            return
-
-        has_correlation = req.HasField("correlation_data")
-        route = protocol.parse_topic(self.state.cloud_topic_prefix, req.topic_name)
-        is_query = has_correlation or (route is not None and route.direction == "req")
-
-        correlation = req.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
-
-        with structlog.contextvars.bound_contextvars(
-            topic=req.topic_name, correlation=correlation.hex() if correlation else ""
-        ):
-            response_queue: asyncio.Queue[CloudQueuedPublish] | None = None
-            if is_query and correlation:
-                response_queue = asyncio.Queue(maxsize=1)
-                self.ipc_requests[correlation] = response_queue
-
-            resp = CloudQueuedPublish()
-            try:
-                await self.handle_request(
-                    CloudQueuedPublish(topic_name=req.topic_name, payload=req.payload, correlation_data=correlation)
-                )
-
-                if is_query and response_queue is not None:
-                    try:
-                        async with asyncio.timeout(float(protocol.DEFAULT_IPC_TIMEOUT_SECONDS)):
-                            resp = await response_queue.get()
-                    except TimeoutError:
-                        logger.warning("IPC request timed out")
-            finally:
-                with anyio.CancelScope(shield=True):
-                    if is_query and correlation:
-                        self.ipc_requests.pop(correlation, None)
-
-            try:
-                await stream.send_message(resp)
-            except OSError as exc:
-                logger.debug("IPC connection closed during response write", error=str(exc))
-
-    async def SubscribeConsole(self, stream: Any) -> None:
-        if await stream.recv_message() is None:
-            return
-
-        send_stream, receive_stream = anyio.create_memory_object_stream[CloudQueuedPublish](max_buffer_size=64)
-        adapter = MemoryQueueAdapter(send_stream)
-        self.console_queues.append(adapter)
-        try:
-            async with receive_stream:
-                async for msg in receive_stream:
-                    await stream.send_message(msg)
-        except (OSError, RuntimeError) as e:
-            logger.error("Local IPC console stream error", error=str(e))
-            raise
-        finally:
-            adapter.close()
-            if adapter in self.console_queues:
-                self.console_queues.remove(adapter)
-
-    async def pin_subscribe(self, req: mcu_wire_pb2.PinSubscribeRequest) -> mcu_wire_pb2.PinSubscribeResponse:
+    async def pin_subscribe(
+        self,
+        req_or_seq: mcu_wire_pb2.PinSubscribeRequest | int,
+        p: mcu_wire_pb2.PinSubscribeRequest | None = None,
+    ) -> mcu_wire_pb2.PinSubscribeResponse:
+        req = p if p is not None else cast(mcu_wire_pb2.PinSubscribeRequest, req_or_seq)
         try:
             mode_str = config_schema_pb2.PinModeType.Name(req.mode).removeprefix("PIN_")
         except (ValueError, KeyError) as exc:

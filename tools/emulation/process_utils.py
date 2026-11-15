@@ -107,8 +107,13 @@ def stream_pump(stream: Any, on_line: Callable[[str, str], None], source: str) -
         on_line(line_str, source)
 
 
-def drain_pty_nonblocking(pty_path: Path | str, timeout: float = 0.1) -> None:
-    """Drain pending ROM bootloader ASCII output from a PTY device before spawning the daemon."""
+def drain_pty_nonblocking(pty_path: Path | str, timeout: float = 0.1) -> bytes:
+    """Drain pending ROM bootloader output from a PTY before spawning the daemon.
+
+    Returns the drained bytes so callers can log the target's boot output (ROM,
+    bootloader, panics), which is otherwise invisible once the daemon owns the port.
+    """
+    drained = bytearray()
     try:
         fd = os.open(str(pty_path), os.O_RDONLY | os.O_NONBLOCK)
         try:
@@ -116,11 +121,15 @@ def drain_pty_nonblocking(pty_path: Path | str, timeout: float = 0.1) -> None:
                 ready, _, _ = select.select([fd], [], [], timeout)
                 if not ready:
                     break
-                os.read(fd, 4096)
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                drained.extend(chunk)
         finally:
             os.close(fd)
     except OSError as exc:
         logger.debug("Non-fatal PTY pre-drain exception", path=str(pty_path), error=str(exc))
+    return bytes(drained)
 
 
 def cleanup_paths(*paths: Path | str | None) -> None:

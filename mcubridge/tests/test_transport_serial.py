@@ -83,7 +83,7 @@ async def test_feed_data_success_dispatches() -> None:
         transport = SerialTransport(config, state, service)
         await transport.feed_data(encoded)
 
-        service.handle_mcu_frame.assert_awaited_once_with("ConsoleWrite", 0, pb.ConsoleWrite(data=b"hi"))
+        service.handle_mcu_frame.assert_awaited_once_with("rpc.pb.ConsoleService/Write", 0, pb.ConsoleWrite(data=b"hi"))
     finally:
         state.cleanup()
 
@@ -175,7 +175,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         mock_serial.write = MagicMock(side_effect=OSError("boom"))
         transport.serial = mock_serial
 
-        ok = await transport.send("ConsoleWrite", b"hi")
+        ok = await transport.send("rpc.pb.ConsoleService/Write", b"hi")
         assert not ok
     finally:
         state.cleanup()
@@ -933,8 +933,8 @@ async def test_send_raw_console_payload_variants(runtime_config: RuntimeConfig, 
     mock_serial = MagicMock(spec=serial.Serial)
     transport.serial = mock_serial
 
-    assert await transport.send_raw("ConsoleWrite", pb.ConsoleWrite(data=b"abc"))
-    assert await transport.send_raw("ConsoleWrite", cast(Any, object()))
+    assert await transport.send_raw("rpc.pb.ConsoleService/Write", pb.ConsoleWrite(data=b"abc"))
+    assert await transport.send_raw("rpc.pb.ConsoleService/Write", cast(Any, object()))
 
     written = [next(iter(FrameDecoder().process(c.args[0]))) for c in mock_serial.write.call_args_list]
     assert written[0].address == protocol.HDLC_ADDRESS_CONSOLE

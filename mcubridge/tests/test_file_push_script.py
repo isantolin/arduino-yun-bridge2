@@ -34,7 +34,7 @@ def test_push_file_ubus_success() -> None:
     call_args = mock_ubus.call.call_args[0]
     assert call_args[0] == "mcubridge"
     assert call_args[1] == "file_write"
-    assert call_args[2] == {"path": "test.txt", "data": "hello"}
+    assert call_args[2] == {"path": "test.txt", "data": "hello", "encoding": "utf-8"}
 
 
 def test_push_file_ubus_binary_hex_fallback() -> None:
@@ -46,6 +46,7 @@ def test_push_file_ubus_binary_hex_fallback() -> None:
     assert res is True
     call_args = mock_ubus.call.call_args[0]
     assert call_args[2]["data"] == "fffe00"
+    assert call_args[2]["encoding"] == "hex"
 
 
 def test_push_file_ubus_failure_returns_false() -> None:
@@ -70,7 +71,9 @@ def test_push_file_direct_ubus() -> None:
     mock_ubus_ok.connect.return_value = True
     mock_ubus_ok.call.return_value = [{"status": "accepted"}]
     push_file("test.txt", b"data", ubus_module=mock_ubus_ok)
-    mock_ubus_ok.call.assert_called_once_with("mcubridge", "file_write", {"path": "test.txt", "data": "data"})
+    mock_ubus_ok.call.assert_called_once_with(
+        "mcubridge", "file_write", {"path": "test.txt", "data": "data", "encoding": "utf-8"}
+    )
 
     # 2. When UBUS fails, exit(1) is called
     mock_ubus_err = MagicMock()

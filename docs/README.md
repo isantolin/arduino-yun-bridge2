@@ -27,7 +27,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Migración Integral del Enlace Serie y RPC a Google Pigweed (`pw_hdlc` + `pw_rpc`)**:
   - **Framing y Multiplexación `pw_hdlc`**: Sustitución completa del framing legacy COBS/R y `RpcEnvelope` por tramas UI de `pw_hdlc` (`0x7E`, CRC-32 IEEE 802.3 FCS) multiplexando 3 canales lógicos sobre un único enlace físico: Canal `1` (`HDLC_ADDRESS_RPC` para `pw_rpc`), Canal `2` (`HDLC_ADDRESS_LOG` para logs tokenizados) y Canal `3` (`HDLC_ADDRESS_CONSOLE` para el stream transparente de consola).
   - **Motor `pw_rpc` Upstream en MCU (`pw::rpc::Server`, `pw::rpc::Client`, `pw::rpc::Channel` y `protoc_gen_mcu_rpc.py`) y MPU (`PW_SERVICES`)**: El MCU registra 6 servicios servidor generados por `protoc_gen_mcu_rpc.py` (`rpc::pb::pw_rpc::nanopb::<Service>::Service`) en `pw::rpc::Server` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`). `ProcessService` y `DataStoreService` proveen contratos cliente (`rpc::pb::pw_rpc::nanopb::<Service>::Client`) para solicitudes iniciadas por el MCU hacia Linux; no son servicios servidor registrados en el MCU. Python usa `PW_SERVICES` (`pw_rpc.descriptors.Services`) y `pw_rpc.packets` para los 8 contratos.
-  - **Streaming Server-Side de Pines (`GpioService/SubscribePins`)**: Notificaciones asíncronas `PinUpdateEvent` emitidas mediante `pw::rpc::NanopbServerWriter` / paquetes `SERVER_STREAM`.
+  - **Streaming Server-Side de Pines (`rpc.pb.GpioService/SubscribePins`)**: Notificaciones asíncronas `PinUpdateEvent` emitidas mediante `pw::rpc::NanopbServerWriter` / paquetes `SERVER_STREAM`.
   - **Reloj Monótono Atómico (`pw::chrono::SystemClock`) y Logs Tokenizados (`pw::log` + `pw_tokenizer`)**: Integración de `pw::chrono::SystemClock::now()` y `pw::log::SetLogSink` en `BridgeClass`, con decodificación de diagnósticos tokenizados mediante `pw_tokenizer.Detokenizer` en el daemon Linux.
 
 ### Novedades (septiembre 2026)
@@ -71,7 +71,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (julio 2026)
 
-- **Migración a gRPC para el Enlace con la Nube (v2.8.5)**: El daemon y el Cloud Gateway utilizan stubs tipados generados desde `tools/protocol/cloud_gateway.proto` y gRPC bidireccional sobre HTTP/2 mediante `grpclib`. La opción histórica HTTP/3/QUIC no inicia actualmente un transporte QUIC y se trata como configuración heredada con fallback explícito a HTTP/2.
+- **Enlace con la Nube**: El daemon y el Cloud Gateway utilizan stubs tipados generados desde contratos Protobuf y Pigweed RPC sobre HDLC mTLS 1.3 con SPIFFE SANs.
 - **Exclusión de Archivos Autogenerados**: Los archivos autogenerados de gRPC y Protobuf (`*_grpc.py` y `*_pb2.py`) han sido excluidos formalmente de las validaciones estáticas de tipos y linters en `pyproject.toml`, e incorporados al archivo `.gitignore`.
 - **Consolidación de RPC en Cloud Gateway & Eliminación de Sockets UNIX (v2.8.5)**: Reemplazo integral de los sockets UNIX locales para clientes por el servicio gRPC `GatewayLocalBridgeService` en el Cloud Gateway centralizado, con resolución estrictamente explícita de dispositivo (`x-device-id`). Los clientes externos y herramientas CLI interactúan a través de gRPC tipado hacia el Gateway, mientras que el IPC local en OpenWrt Linux MPU se resuelve de forma nativa a través de UBUS (`ubus call mcubridge ...`).
 - **Exclusión de Directorios Temporales**: Optimización del linter (`black`/`ruff`) excluyendo `.tmp_tests` para evitar bloqueos e inconsistencias durante compilaciones concurrentes y ejecuciones de tests E2E.
@@ -114,17 +114,17 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ---
 
-### Detalles Técnicos del Stack gRPC & Arquitectura de Clientes (v2.8.5)
+### Detalles Técnicos del Stack Pigweed & Arquitectura de Clientes (ADR-0003)
 
-- **Cloud Gateway en gRPC:** La comunicación del daemon y el gateway utiliza gRPC sobre HTTP/2. La opción histórica HTTP/3 se conserva por compatibilidad de configuración, pero el transporte actual de `grpclib` no inicia un listener QUIC y emite una advertencia cuando se solicita.
-- **Northbound GatewayLocalBridgeService:** El Cloud Gateway expone los 25 métodos unarios tipados de `LocalBridge` y el endpoint de streaming `SubscribeConsole` (26 operaciones en total). Todos los clientes se conectan al Gateway indicando explícitamente el dispositivo de destino vía metadatos `x-device-id`. El Gateway despacha las operaciones hacia el daemon de borde correspondiente a través del stream de sesión activo.
+- **Cloud Gateway en C++ Pigweed:** La comunicación del daemon y el Gateway utiliza Pigweed RPC sobre HDLC en un canal seguro con TLS mutuo (mTLS 1.3) y autenticación SPIFFE URI SAN.
+- **Northbound GatewayControl y EdgeControl:** El Cloud Gateway C++ (`mcubridge-gateway-cpp`) expone los servicios Pigweed `GatewayControl` (Health, Dispatch) para clientes externos y `DeviceTelemetry` / `EdgeControl` para dispositivos de borde. Toda llamada incluye explícitamente el dispositivo de destino vía `target_device_id`.
 - **Local IPC Nativo en OpenWrt:** En el Linux MPU de borde, los procesos del sistema, interfaces CGI y LuCI Web UI interactúan mediante llamadas nativas UBUS (`ubus call mcubridge ...`), eliminando sockets UNIX locales desprotegidos y reduciendo el consumo de RAM.
 - **Datastore sin ida y vuelta al MCU:** Las consultas de datos locales se resuelven de forma inmediata en Linux usando la caché en memoria sincronizada por el daemon.
 - **Telemetría consolidada:** `RuntimeState` registra métricas de drop/truncamiento por canal (`console_dropped_chunks`, `mailbox_truncated_messages`, etc.) y las expone en `/tmp/mcubridge_status.json`.
 - **Persistencia vs Flash-wear:** Las colas de desbordamiento temporales apuntan a `/tmp` (`cloud_spool_dir=/tmp/mcubridge/spool`), mientras que las de almacenamiento estático pueden configurarse en directorios persistentes seguros (`file_system_root=/tmp/yun_files`).
 - **Autodiagnóstico del Spool:** Si el spool en disco sufre de problemas de espacio o corrupción, el daemon degrada su estado a *best effort* de forma automática, registrando el incidente en la telemetría sin bloquear el sistema.
 - **Falla en Seguro con TLS:** Si `cloud_tls=1` y el archivo `cloud_cafile` no existe en la ruta configurada, el daemon abortará el arranque inmediatamente.
-- **Arquitectura "Pure Telemetry Push" & Fleet Metrics:** El daemon de borde opera sin servidor HTTP local (eliminando puertos de escucha abiertos y superficie de ataque en el MPU). Toda la telemetría y métricas se transmiten en tiempo real vía streaming gRPC al `mcubridge-gateway` central, que consolida la observabilidad de la flota (`FleetMetrics`) en `/metrics` (puerto 9100) y bases de datos temporales (TSDB).
+- **Arquitectura "Pure Telemetry Push" & Fleet Metrics:** El daemon de borde opera sin servidor HTTP local (eliminando puertos de escucha abiertos y superficie de ataque en el MPU). Toda la telemetría y métricas se transmiten en tiempo real vía Pigweed RPC hacia el Gateway central (`mcubridge-gateway-cpp`), que consolida la observabilidad de la flota (`FleetMetrics`) en `/metrics` (puerto 9100) y bases de datos temporales (TSDB).
 
 ## Guía rápida de UCI
 ```sh

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from tools.emulation import emulation_runner
+from tools.emulation.emulation_pki import EmulationPki
 
 
 def test_default_output_lines() -> None:
@@ -52,7 +53,26 @@ def test_ensure_cloud_gateway_already_running(monkeypatch: pytest.MonkeyPatch) -
     assert proc is None
 
 
-def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_gateway_launch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Provide a fake Gateway binary and a throwaway PKI that do not touch os.environ."""
+    fake_bin = tmp_path / "mcubridge-gateway-cpp"
+    fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setenv("MCUBRIDGE_GATEWAY_BINARY", str(fake_bin))
+    pki = EmulationPki(tmp_path / "pki")
+
+    def _no_env_export(env: dict[str, str] | None = None) -> None:
+        _ = env
+
+    def _pki() -> EmulationPki:
+        return pki
+
+    monkeypatch.setattr(pki, "export_client_env", _no_env_export)
+    monkeypatch.setattr(emulation_runner, "get_emulation_pki", _pki)
+    return fake_bin
+
+
+def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fake_bin = _isolate_gateway_launch(monkeypatch, tmp_path)
     state = emulation_runner.EmulationState()
     ready_sequence = [False, True]
 
@@ -65,8 +85,11 @@ def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch) -> 
     class MockPopen:
         stdout = None
 
+    launched: list[list[str]] = []
+
     def mock_popen(*args: Any, **kwargs: Any) -> MockPopen:
-        _ = (args, kwargs)
+        _ = kwargs
+        launched.append(list(args[0]))
         return MockPopen()
 
     def mock_start_thread(*args: Any, **kwargs: Any) -> None:
@@ -77,9 +100,34 @@ def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch) -> 
 
     proc = emulation_runner.ensure_cloud_gateway(state)
     assert proc is not None
+    cmd = launched[0]
+    assert cmd[0] == str(fake_bin)
+    # The standalone Gateway refuses to start without its mTLS material.
+    for flag in ("--cert", "--key", "--client-ca", "--bind", "--port"):
+        assert flag in cmd
+    assert Path(cmd[cmd.index("--client-ca") + 1]).is_file()
 
 
-def test_ensure_cloud_gateway_spawn_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_cloud_gateway_missing_binary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MCUBRIDGE_GATEWAY_BINARY", str(tmp_path / "absent"))
+    spawned: list[bool] = []
+
+    def _never_ready(*args: Any, **kwargs: Any) -> bool:
+        _ = (args, kwargs)
+        return False
+
+    def _record_spawn(*args: Any, **kwargs: Any) -> None:
+        _ = (args, kwargs)
+        spawned.append(True)
+
+    monkeypatch.setattr(emulation_runner, "wait_for_tcp_ready", _never_ready)
+    monkeypatch.setattr(subprocess, "Popen", _record_spawn)
+    assert emulation_runner.ensure_cloud_gateway(emulation_runner.EmulationState()) is None
+    assert spawned == []
+
+
+def test_ensure_cloud_gateway_spawn_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _isolate_gateway_launch(monkeypatch, tmp_path)
     state = emulation_runner.EmulationState()
 
     def mock_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: float = 0.5) -> bool:

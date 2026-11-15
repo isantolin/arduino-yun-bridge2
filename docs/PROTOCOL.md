@@ -8,33 +8,33 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
 
 ```
                  ┌─────────────────────────────────────────────────────────────┐
-                 │       Protobuf Cloud Gateway (Dedicated Central Server)     │
-                 │  - Hub-and-Spoke (N:1) multiplexing                         │
+                 │    Pigweed Standalone C++ Cloud Gateway (ADR-0003)          │
+                 │  - Hub-and-Spoke (N:1) multiplexing via pw_rpc + pw_hdlc    │
                  │  - Central Prometheus /metrics (port 9100, FleetMetrics)    │
                  │  - TSDB Sink (InfluxDB / VictoriaMetrics Line Protocol)     │
-                 │  - Northbound LocalBridge RPC (GatewayLocalBridgeService)   │
-                 │  - Strictly explicit device routing via x-device-id         │
-                 │  - Northbound Command Orchestration (send_command)          │
-                 │  - mTLS mutual authentication (extract_peer_identity)       │
+                 │  - Northbound GatewayControl RPC (Dispatch, Health)         │
+                 │  - Explicit device routing via target_device_id in payload  │
+                 │  - Northbound Command Orchestration -> EdgeControl.Dispatch │
+                 │  - mTLS mutual authentication (SPIFFE ID SAN validation)    │
                  └─────────────────────────────────────────────────────────────┘
                                ▲            ▲                    │
-              Device Telemetry │            │ Client gRPC        │ Correlated Commands
-              (CloudEnvelope)  │            │ (LocalBridge RPC,  │ (CommandRequest:
-              Pure Push        │            │  SubscribeConsole, │  rpc/*, pin, etc.)
-                               │            │  x-device-id)      ▼
+              Device Telemetry │            │ Client pw_rpc      │ Correlated Dispatch
+           (ReportTelemetry)   │            │ (GatewayControl,   │ (EdgeControl.Dispatch:
+              Pure Push        │            │  mTLS SPIFFE)      │  rpc.pb.<Svc>/<Method>)
+                               │            │                    ▼
                                │            │       ┌──────────────────────────────────────┐
                                │            │       │ Client Apps / CLI / Automations      │
                                │            └───────│ (mcubridge-client-examples)          │
                                │                    └──────────────────────────────────────┘
-                               │ bidirectional gRPC stream
-                               │ (HTTP/2)
+                               │ pw_rpc over TLS
+                               │ (pw_hdlc framing)
                                ▼
                       ┌────────────────────────────────────────────────────────┐
                       │             McuBridge daemon (Linux / MPU)             │
                       │  - Pure Telemetry Push (Zero local HTTP attack surface)│
                       │  - Policy (allow/deny) & Declarative Dispatcher        │
                       │  - RuntimeState snapshots & Local IPC (OpenWrt UBUS)   │
-                      │  - Delegated RPC execution (local_bridge_service)      │
+                      │  - EdgeControl RPC server implementation               │
                       └────────────────────────────────────────────────────────┘
                                ▲
                                │ Serial HDLC + pw_rpc frames (pw_hdlc + CRC32 FCS, Channel Multiplexing)
@@ -49,11 +49,11 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                       └────────────────────────────────────────────────────────┘
 
 Notas:
-- Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 25 métodos unarios tipados de `LocalBridge` + el endpoint de streaming `SubscribeConsole`, 26 operaciones en total), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
-- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc.pb.LocalBridge/<method>")`).
+- Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde (ADR-0003: binario standalone C++ `mcubridge-gateway-cpp`). Aloja `mcubridge.gateway.GatewayControl` (`Dispatch`, `Health`) para clientes externos tipados y `mcubridge.gateway.DeviceTelemetry` para ingesta de telemetría. Enruta llamadas al daemon de destino mediante `target_device_id` en `DispatchRequest`.
+- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene una sesión HDLC/TLS saliente hacia el Gateway, reporta telemetría vía `DeviceTelemetry.ReportTelemetry` y aloja el servicio servidor `mcubridge.gateway.EdgeControl` (`Dispatch`) para ejecutar RPCs delegados (`operation="rpc.pb.<Service>/<Method>"`).
 - Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
-- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`GpioService/SubscribePins` vía `Bridge.sendPinEvent`). El antiguo `FileSystemService/Read` Nanopb fue eliminado. En ATmega2560, `Bridge.begin()` registra un handler upstream `pw_transfer` sobre los 4.096 bytes de EEPROM interna como recurso binario fijo `0x4D454741`. No es un filesystem: no hay rutas, nombres ni directorios. Las escrituras usan `EEPROM.update`, ventana de un byte y no son transaccionales. Esto habilita el recurso EEPROM MCU, pero no el filesystem del MPU. La ruta reservada `mcu/eeprom` de `LocalBridge.FileRead` / `FileWrite` accede a ese recurso binario mediante `pw_transfer`; no representa un archivo. El endpoint Linux `pw_transfer` para transferir archivos del MPU y la migración de esas APIs locales siguen pendientes.
-- gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
+- Serial HDLC + `pw_rpc`: multiplexa sobre un único enlace físico 3 canales lógicos HDLC (`HDLC_ADDRESS_RPC = 1` para `pw_rpc`, `HDLC_ADDRESS_LOG = 2` para logs tokenizados `pw_tokenizer` y `HDLC_ADDRESS_CONSOLE = 3` para el stream transparente de consola), incluyendo server-streaming en tiempo real (`rpc.pb.GpioService/SubscribePins` vía `Bridge.sendPinEvent`). El antiguo `rpc.pb.FileSystemService/Read` Nanopb fue eliminado. En ATmega2560, `Bridge.begin()` registra un handler upstream `pw_transfer` sobre los 4.096 bytes de EEPROM interna como recurso binario fijo `0x4D454741`. No es un filesystem: no hay rutas, nombres ni directorios. Las escrituras usan `EEPROM.update`, ventana de un byte y no son transaccionales. Para el filesystem local de OpenWrt Linux, el canal/proxy `pw_transfer` opera mediante `pw::transfer::TransferService` en el Gateway C++ (`BoundedFileTransferHandler` en recurso 2 `staging.bin`) y el cliente `PwTransferManager` en el daemon del MPU coordinado por `rpc.pb.FileTransferService` (`PushToLinux` / `FetchFromLinux`), garantizando transferencia en streaming acotada, validación de ruta `_get_safe_path` y control de cuota `write_with_quota`.
+- Pigweed RPC sobre HDLC/TLS: comunicación tipada asíncrona entre los daemons de borde, el Gateway central (`mcubridge-gateway-cpp`) y los clientes externos, reemplazando completamente stacks HTTP/2 o gRPC pesados con serialización `pw_protobuf` y stubs `pw_rpc`.
 ```
 
 ## Fuente de verdad
@@ -80,7 +80,7 @@ La librería C++ utiliza intensivamente `constexpr` e `if constexpr` (sin STL, `
 
 Qué se centraliza en los esquemas Protobuf modulares (y se genera a Python/C++ vía el generador):
 
-- **Servicios y Layouts de payload**: cada método RPC define su servicio en `mcu_wire.proto` (`rpc.pb.*`) o `cloud_gateway.proto` (`rpc.pb.LocalBridge`, `mcubridge.cloud.CloudBridge`) y su mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con tamaños máximos estáticos en `mcu_wire.options` / `config_schema.options`.
+- **Servicios y Layouts de payload**: cada método RPC define su servicio en `mcu_wire.proto` (`rpc.pb.*`) o `gateway_control.proto` (`mcubridge.gateway.GatewayControl`, `mcubridge.gateway.EdgeControl`, `mcubridge.gateway.DeviceTelemetry`) y su mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con tamaños máximos estáticos en `mcu_wire.options` / `config_schema.options`.
 - **Defaults compartidos y metadatos de configuración**: los defaults de `RuntimeConfig`, las constantes referenciadas y los defaults de tópicos se declaran en el schema. Los bindings/clientes consumen los valores generados; UCI puede sobrescribir las opciones de despliegue.
 - **Reservas de compatibilidad**: los nombres y números retirados permanecen reservados en el schema. Buf comprueba compatibilidad de wire (`WIRE`); el API fuente de los bindings generados sí puede cambiar.
 
@@ -260,7 +260,7 @@ El protocolo erradica bucles de reintento manuales mediante el uso exclusivo de 
 ### 6. Asynchronous File I/O & Storage Subsystem (`pathlib.Path` + `asyncio.to_thread`)
 
 Las rutas locales se resuelven y validan con `pathlib.Path`; las operaciones de disco potencialmente bloqueantes se delegan fuera del event loop:
-- **Lectura/escritura local en el MPU**: las rutas ordinarias de `FileRead` / `FileWrite` operan sobre `file_system_root`, con validación de rutas y cuota. La única ruta `mcu/` admitida es `mcu/eeprom`, que lee/escribe el recurso EEPROM fijo a través de `pw_transfer`; otras rutas `mcu/*` se rechazan. `FileRead` no es un método de `FileSystemService` del MCU.
+- **Lectura/escritura en el MPU desde la nube**: la sincronización bidireccional de archivos entre la nube y el filesystem de Linux opera mediante `FileTransferService` (`PushToLinux` / `FetchFromLinux`) utilizando el staging de `pw_transfer`, con validación de rutas y cuota en `file_system_root`. La única ruta `mcu/` admitida es `mcu/eeprom`, que lee/escribe el recurso EEPROM fijo a través de `pw_transfer`; otras rutas `mcu/*` se rechazan. Los antiguos métodos unarios `FileRead` / `FileWrite` en la nube han sido reemplazados por este canal de streaming.
 - **Transferencia de archivos del MCU**: debe usar upstream `pw_transfer` con handlers y streams acotados; no existe fallback al antiguo RPC Nanopb.
 - **Operaciones de disco**: `asyncio.to_thread` ejecuta filesystem y `psutil.disk_usage` sin bloquear `asyncio`/`uvloop`.
 - **Validación de rutas**: se comprueba que la ruta resuelta permanezca dentro de `file_system_root`; errores de acceso y filesystem se registran explícitamente.
@@ -377,7 +377,7 @@ El estado de salud del enlace se expone en:
 | `status_interval` | Intervalo de emisión periódica de telemetría y snapshots. | `1.0` |
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
-| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `FileSystemService/Write`). | `262144` |
+| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `rpc.pb.FileSystemService/Write`). | `262144` |
 | `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `4194304` |
 
 ## Flujo de inicio (resumen)
@@ -443,7 +443,7 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
 - **Comandos ACK-only:** Son métodos unarios cuyo éxito se confirma mediante `RESPONSE` con `status = 0` (`Ok`) o `AckPacket` (`STATUS_ACK`):
   Esta lista está alineada con el spec (bindings Python: `OPERATIONS` con `requires_ack=True`):
   - `rpc.pb.GpioService/SetPinMode`, `rpc.pb.GpioService/DigitalWrite`, `rpc.pb.GpioService/AnalogWrite` (Linux → MCU)
-  - `rpc.pb.ConsoleService/ConsoleWrite` (bidireccional)
+  - `rpc.pb.ConsoleService/Write` (bidireccional; servicio del lado Linux, no un servicio `pw_rpc` del MCU)
   - `rpc.pb.DataStoreService/Put` (MCU → Linux)
   - `rpc.pb.MailboxService/Push` (bidireccional)
   - `rpc.pb.FileSystemService/Write` (MCU → MPU, unary legado)
@@ -686,21 +686,21 @@ MCU detecta RX buffer < 25% → envía rpc.pb.SystemService/Xon  → Linux reanu
 - **`rpc.pb.GpioService/AnalogWrite` (`AnalogWrite`, Linux → MCU)**: `AnalogWrite { pin, value }`. Retorna `AckPacket`.
 - **`rpc.pb.GpioService/DigitalRead` (`DigitalRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta: `DigitalReadResponse { value }`.
 - **`rpc.pb.GpioService/AnalogRead` (`AnalogRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta: `AnalogReadResponse { value }`.
-- **`rpc.pb.GpioService/SubscribePins` (Server-Streaming, Linux ↔ MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Evento de streaming (`PacketType.SERVER_STREAM`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico canónico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
+- **`rpc.pb.GpioService/SubscribePins` (Server-Streaming, Linux ↔ MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Evento de streaming (`PacketType.SERVER_STREAM`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico canónico `{prefix}/evt/rpc.pb.GpioService/PinUpdateEvent/{pin}`.
 
 #### Control Bidireccional de GPIO desde Cloud Gateway
 
-El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante invocaciones tipadas de `LocalBridge` o despacho de comandos en tópicos canónicos:
-- **Comandos Canónicos Cloud**:
-  - Escritura digital: `{prefix}/req/GpioService/DigitalWrite` (o `devices/{device_id}/req/GpioService/DigitalWrite`) con payload Protobuf `DigitalWrite { pin, value }`.
-  - Modo de pin: `{prefix}/req/GpioService/SetPinMode` con payload Protobuf `PinMode { pin, mode }`.
-  - Lectura digital: `{prefix}/req/GpioService/DigitalRead` con payload Protobuf `PinRead { pin }`.
-  - Escritura analógica: `{prefix}/req/GpioService/AnalogWrite` con payload Protobuf `AnalogWrite { pin, value }`.
-  - Lectura analógica: `{prefix}/req/GpioService/AnalogRead` con payload Protobuf `PinRead { pin }`.
-  - Suscripción de pin: `{prefix}/req/GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
-- **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `rpc.pb.GpioService/DigitalWrite`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`GenericResponse`, `DigitalReadResponse`, `AnalogReadResponse`, etc.).
+El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante llamadas Pigweed RPC `GatewayControl.Dispatch` (especificando `target_device_id` y `operation="rpc.pb.GpioService/<Method>"`):
+- **Operaciones Canónicas Cloud / Gateway**:
+  - Escritura digital: `rpc.pb.GpioService/DigitalWrite` con payload Protobuf `DigitalWrite { pin, value }`.
+  - Modo de pin: `rpc.pb.GpioService/SetPinMode` con payload Protobuf `PinMode { pin, mode }`.
+  - Lectura digital: `rpc.pb.GpioService/DigitalRead` con payload Protobuf `PinRead { pin }`.
+  - Escritura analógica: `rpc.pb.GpioService/AnalogWrite` con payload Protobuf `AnalogWrite { pin, value }`.
+  - Lectura analógica: `rpc.pb.GpioService/AnalogRead` con payload Protobuf `PinRead { pin }`.
+  - Suscripción de pin: `rpc.pb.GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
+- **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `rpc.pb.GpioService/DigitalWrite`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`Empty`, `DigitalReadResponse`, `AnalogReadResponse`, etc.) en `EdgeDispatchResponse.response_payload`.
 - **Correlación Asíncrona**: Cada request/response se correlaciona con `call_id` / `sequence_id` garantizando entrega determinista fin a fin.
-- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
+- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/rpc.pb.GpioService/PinUpdateEvent/{pin}`.
 
 #### GPIO Frame Examples (`pw_hdlc` + `RpcPacket`)
 
@@ -724,8 +724,10 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 
 - **Stream HDLC Nativo (`HDLC_ADDRESS_CONSOLE = 3`, bidireccional):**
   - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`encode_hdlc_console`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
-- **`rpc.pb.ConsoleService/ConsoleWrite` (Linux ↔ MCU):**
-  - Payload: mensaje protobuf `ConsoleData { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `AckPacket`.
+- **`rpc.pb.ConsoleService/Write` (Linux ↔ MCU, definido en `cloud_gateway.proto`):**
+  - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `Empty`.
+  - Linux → MCU: el daemon encola los bytes (`console_to_mcu_queue`) y los emite en tramas HDLC sobre la dirección `3`; alcanzable desde el Gateway vía `GatewayControl.Dispatch` y autorizado por `cloud_allow_console_input`.
+  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/rpc.pb.ConsoleService/Write` (expiración `CLOUD_EXPIRY_CONSOLE`). Todavía no existe un stream northbound Gateway → cliente para ese tópico.
 
 ### 5.4 Datastore (`rpc.pb.DataStoreService`)
 
@@ -747,7 +749,7 @@ Notas operativas:
 ### 5.6 Sistema de archivos (`rpc.pb.FileSystemService`)
 
 - **Transferencia de contenido**: upstream `pw_transfer` (`pw.transfer.Transfer.Read/Write`) es el único protocolo de transferencia de contenido. En Mega 2560 ya existe un handler de lectura/escritura para la EEPROM interna (4 KiB, recurso fijo `0x4D454741`); no implementa filesystem. El endpoint Linux para `file_system_root`, la migración de clientes MPU y las pruebas interoperables siguen pendientes; no existe todavía transferencia de archivos end-to-end.
-- **APIs locales MPU heredadas**: `LocalBridge.FileRead` y `LocalBridge.FileWrite` siguen temporalmente expuestas sobre gRPC mientras se implementa y valida el endpoint Linux `pw_transfer`. No son el diseño final.
+- **APIs locales MPU heredadas**: `rpc.pb.FileSystemService/Write` y `Remove` siguen temporalmente expuestas mientras se implementa y valida el endpoint Linux `pw_transfer`. No son el diseño final.
 - **APIs MCU heredadas**: `rpc.pb.FileSystemService/Write` y `Remove` siguen temporalmente en el protocolo Nanopb; no acceden al recurso EEPROM. Deben retirarse cuando se complete la migración de clientes y se determine si queda alguna operación administrativa real que conservar.
 
 ### 5.7 Gestión de procesos (`rpc.pb.ProcessService`)
@@ -776,69 +778,67 @@ Para correlación de eventos, telemetría y detección de derivas temporales ent
 ## 6. Consideraciones adicionales
 
 - **Truncado**: si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
-- **Cloud Gateway**: además del RPC serie, el daemon se comunica con el Cloud Gateway mediante un stream bidireccional gRPC.
-  - Dirección: Cloud Gateway → daemon (comandos remotos y RPCs delegados en `CloudEnvelope.command_request`), daemon → Cloud Gateway (respuestas/telemetría y eventos de estado en `CloudEnvelope`).
+- **Cloud Gateway (Pigweed RPC)**: además del enlace serie local MCU↔MPU, el daemon se comunica con el Cloud Gateway mediante un canal seguro TLS con framing `pw_hdlc` y `pw_rpc`.
+  - Dirección: Cloud Gateway → daemon (comandos remotos en `mcubridge.gateway.EdgeControl.Dispatch`), daemon → Cloud Gateway (telemetría en `mcubridge.gateway.DeviceTelemetry.ReportTelemetry`).
 
 ---
 
-### gRPC Northbound: Servicio GatewayLocalBridgeService y Resolución Explícita de Dispositivos
+### Pigweed RPC Northbound: Servicio GatewayControl y Orquestación de Dispositivos (ADR-0003)
 
-El Cloud Gateway centralizado (`mcubridge-gateway`) expone el servicio `LocalBridge` para clientes externos y scripts de automatización (`mcubridge-client-examples`), consolidando un único punto de acceso tipado a nivel de flota:
+El Cloud Gateway standalone en C++ (`mcubridge-gateway-cpp`) expone el servicio `mcubridge.gateway.GatewayControl` para clientes externos y scripts de automatización (`mcubridge-client-examples`), consolidando un único punto de acceso tipado a nivel de flota sin dependencias gRPC/HTTP/2:
 
 ```
 [Cliente Externo / CLI]
        │
-       │ gRPC unario / streaming (con metadata "x-device-id: <id>")
+       │ Pigweed RPC / HDLC sobre TLS: GatewayControl.Dispatch
+       │ (target_device_id="yun-01", operation="rpc.pb.<Service>/<Method>", request_payload=...)
        ▼
-[GatewayLocalBridgeService en mcubridge-gateway]
+[mcubridge-gateway-cpp (Standalone C++ Pigweed Gateway)]
        │
-       │ 1. Validación de x-device-id (Status.INVALID_ARGUMENT si falta)
-       │ 2. Resolución de sesión activa (Status.UNAVAILABLE si no está conectado)
-       │ 3. Empaquetado: CommandRequest(command_path="rpc.pb.LocalBridge/<method>", payload=...)
-       ▼
-[Stream de Sesión gRPC Bidireccional (Session)]
+       │ 1. Validación de mTLS SPIFFE ID SAN (spiffe://mcubridge/client/<id>)
+       │ 2. Resolución de sesión activa del dispositivo (Status::NOT_FOUND si no está conectado)
+       │ 3. Invocación: EdgeControl.Dispatch(operation, request_payload, timeout_ms)
        ▼
 [McuBridge Daemon en Linux MPU]
        │
-       │ 4. Resolución O(1) de método: command_path en protocol.BY_NAME
-       │ 5. Despacho delegado: self.local_bridge_service.execute_rpc(method, payload)
-       │ 6. Ejecución hardware/serie/sistema y retorno de CommandResponse
+       │ 4. Resolución canónica de operación en protocol.OPERATIONS
+       │ 5. Despacho delegado a servicio de runtime / hardware serie
+       │ 6. Ejecución y retorno de EdgeDispatchResponse(status_code, response_payload)
        ▼
-[GatewayLocalBridgeService]
+[mcubridge-gateway-cpp]
        │
-       │ 7. Desempaquetado tipado y retorno de respuesta gRPC al cliente
+       │ 7. Desempaquetado y retorno de DispatchResponse(status_code, response_payload) al cliente
        ▼
 [Cliente Externo / CLI]
 ```
 
-#### Métodos Soportados en `GatewayLocalBridgeService`
+#### Operaciones Soportadas en `GatewayControl.Dispatch`
 
-El servicio implementa 25 operaciones unarias y 1 endpoint de streaming (26 operaciones en total):
-1. **Control de Pines (GPIO):** `SetPinMode`, `DigitalWrite`, `DigitalRead`, `AnalogWrite`, `AnalogRead`, `PinSubscribe`.
-2. **Datastore en Memoria:** `DatastorePut`, `DatastoreGet`.
-3. **Mailbox FIFO:** `MailboxPush`, `MailboxRead`.
-4. **Sistema de Archivos MPU:** `FileWrite`, `FileRead`, `FileRemove`; recurso EEPROM del MCU mediante `pw_transfer` (no es un filesystem).
-5. **Gestión de Procesos:** `ProcessRunAsync`, `ProcessPoll`, `ProcessKill`.
-6. **Bus SPI:** `SpiTransfer`, `SpiConfigure`.
-7. **Introspección y Control de Sistema:** `GetVersion`, `GetFreeMemory`, `GetStatus`, `EnterBootloader`.
-8. **Consola y Sincronización Temporal:** `ConsoleWrite`, `ClockSync`.
-9. **Publicación Genérica:** `Publish`.
-10. **Streaming de Consola en Tiempo Real:** `SubscribeConsole` (multiplexa chunks de consola recibidos en telemetría hacia los clientes suscriptos).
+El servicio despacha operaciones mapeadas a los servicios Pigweed / Nanopb canónicos:
+1. **Control de Pines (GPIO - `rpc.pb.GpioService`):** `SetPinMode`, `DigitalWrite`, `DigitalRead`, `AnalogWrite`, `AnalogRead`, `SubscribePins`.
+2. **Datastore en Memoria (`rpc.pb.DataStoreService`):** `Put`, `Get`.
+3. **Mailbox FIFO (`rpc.pb.MailboxService`):** `Push`, `Read`, `Available`, `Processed`.
+4. **Sistema de Archivos MPU / EEPROM (`rpc.pb.FileSystemService` / `pw_transfer`):** `Write`, `Remove`; recurso EEPROM del MCU mediante `pw_transfer` (no es un filesystem).
+5. **Gestión de Procesos (`rpc.pb.ProcessService`):** `RunAsync`, `Poll`, `Kill`.
+6. **Bus SPI (`rpc.pb.SpiService`):** `Transfer`, `Configure`.
+7. **Introspección y Control de Sistema (`rpc.pb.SystemService`):** `GetVersion`, `GetFreeMemory`, `GetStatus`, `EnterBootloader`.
+8. **Consola y Sincronización Temporal (`rpc.pb.ConsoleService`, `rpc.pb.ClockSyncService`):** `Write`, `Sync`.
 
 #### Invariante de Resolución Explícita de Dispositivo
 
-- **Obligatoriedad de `x-device-id`:** Todo cliente debe especificar explícitamente el dispositivo de destino.
-- **Ausencia de Metadato:** Genera `GRPCError(Status.INVALID_ARGUMENT, "Missing x-device-id in request metadata")`.
-- **Dispositivo Desconectado:** Genera `GRPCError(Status.UNAVAILABLE, "Device '<id>' is not connected to gateway")`.
-- **Cero Código Legacy:** Se erradican totalmente los sockets UNIX locales para clientes, evitando fallbacks ambiguos o asunciones implícitas de dispositivo local.
+- **Obligatoriedad de `target_device_id`:** Todo cliente debe especificar explícitamente el dispositivo de destino en el mensaje `DispatchRequest`.
+- **Ausencia o Dispositivo Desconectado:** Genera error de estado Pigweed (`Status::NOT_FOUND` / `Status::UNAVAILABLE` con mensaje detallado).
+- **Cero Código Legacy:** Se erradican totalmente los stacks HTTP/2 (`grpclib`, `h2`, `hpack`, `hyperframe`) y sockets UNIX locales para clientes, consolidando toda la arquitectura en Pigweed RPC sobre HDLC.
 
 ---
 
-### gRPC: snapshots del bridge y eventos de estado
+### Pigweed RPC: snapshots del bridge y telemetría de estado
 
-Además de los comandos anteriores, el daemon transmite eventos periódicos y lecturas de estado al Cloud Gateway sobre el stream gRPC:
-- `CloudEnvelope.event` transmite eventos de estado en tiempo real.
-- `CloudEnvelope.telemetry` transmite snapshots periódicos del bridge.
+Además de los comandos anteriores, el daemon transmite periódicamente telemetría consolidada al Cloud Gateway mediante el servicio `mcubridge.gateway.DeviceTelemetry.ReportTelemetry`:
+- `daemon_metrics_blob`: Métricas del daemon serializadas.
+- `system_status_blob`: Estado del sistema operativo y carga de CPU/memoria.
+- `bridge_snapshot_blob`: Snapshot de enlaces serie, pipeline y capacidades del MCU.
+- `handshake_snapshot_blob`: Estado del handshake HMAC y máquina de estados FSM.
 
 ---
 
@@ -1014,7 +1014,7 @@ Para aplicaciones web ligeras, paneles de control HTML directos (`/mcubridge/ind
 - **Rutas HTTP Soportadas**:
   - `POST /cgi-bin/mcubridge-pin/pin/<pin>` con payload JSON `{"state": "ON"|"OFF"|1|0}`: Traduce la petición directamente a `ubus call mcubridge digital_write "{\"pin\": $PIN, \"value\": $VAL}"`.
   - `GET /cgi-bin/mcubridge-pin/status`: Devuelve el snapshot de estado en `/tmp/mcubridge_status.json` de forma atómica.
-- **Rendimiento**: Al evitar la carga de un intérprete Python con módulos complejos (`typer`, `pydantic`, `grpclib`), el tiempo de respuesta total bajo emulación MIPS desciende de >30 segundos a <500 ms (<50 ms en hardware nativo), con un consumo de memoria inferior a 200 KB.
+- **Rendimiento**: Al evitar la carga de un intérprete Python con módulos complejos (`typer`, `pydantic`), el tiempo de respuesta total bajo emulación MIPS desciende de >30 segundos a <500 ms (<50 ms en hardware nativo), con un consumo de memoria inferior a 200 KB.
 
 ### 10.6 Conducción Activa Hardware GPIO en Firmware MCU (`pinMode`)
 
@@ -1042,7 +1042,7 @@ Utilizado por el daemon de borde cuando procesa rutas relativas a su propio pref
   - `req`: Peticiones / comandos RPC entrantes desde la nube o clientes hacia el daemon.
   - `res`: Respuestas y retornos generados por el daemon tras la ejecución del RPC.
   - `evt`: Eventos asíncronos y telemetría emitidos espontáneamente por el daemon hacia el Gateway (`status_online`, `pin_event`, etc.).
-- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `GpioService/DigitalWrite`, `SystemService/GetVersion`, `DataStoreService/Put`, `MailboxService/Push`).
+- **`{method}`**: Identificador canónico de la operación o evento (p.ej. `rpc.pb.GpioService/DigitalWrite`, `rpc.pb.SystemService/GetVersion`, `rpc.pb.DataStoreService/Put`, `rpc.pb.MailboxService/Push`).
 
 Ejemplos:
 - Petición de escritura GPIO: `br/req/GpioService/DigitalWrite`

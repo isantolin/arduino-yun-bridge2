@@ -22,8 +22,10 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
     "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 fi
 
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
-PIGWEED_INC="$ARDUINO_LIBS/PigweedAVR/src"
 WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
 
 INCLUDES=(
@@ -33,10 +35,9 @@ INCLUDES=(
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
     "-isystem${ETL_INC}"
-    "-isystem${PIGWEED_INC}"
-    "-isystem${ARDUINO_LIBS}/PigweedAVR"
     "-isystem${WOLFSSL_INC}"
     "-isystem${ARDUINO_LIBS}/wolfssl"
+    "${PW_INC_FLAGS[@]}"
 )
 
 COMPILE_FLAGS=(
@@ -46,6 +47,7 @@ COMPILE_FLAGS=(
     "-DETL_NO_STL"
     "-DETL_FORCE_STD_INITIALIZER_LIST"
     "-DWOLFSSL_USER_SETTINGS"
+    "-DPW_RPC_USE_GLOBAL_MUTEX=0"
     "${INCLUDES[@]}"
 )
 

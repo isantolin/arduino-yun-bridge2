@@ -50,6 +50,7 @@ EXPECTED_OPERATION_NAMES: Final[set[str]] = {
     "rpc.pb.SpiService/End",
     "rpc.pb.SpiService/SetConfig",
     "rpc.pb.ClockSyncService/ClockSync",
+    "rpc.pb.ConsoleService/Write",
 }
 
 
@@ -63,8 +64,8 @@ def test_operations_are_derived_from_protobuf_services() -> None:
 
     by_name: dict[str, dict[str, Any]] = {str(op["name"]): op for op in operations}
     assert by_name["rpc.pb.SystemService/LinkSync"]["pre_sync_allowed"] is True
-    assert by_name["rpc.pb.SystemService/LinkSync"]["mcu_handler"] == "handshake.handle_link_sync_resp"
     assert by_name["rpc.pb.SystemService/GetVersion"]["auth_field"] == "system_version"
+    assert by_name["rpc.pb.ConsoleService/Write"]["auth_field"] == "console_input"
 
 
 def test_pigweed_rpc_method_mappings() -> None:
@@ -121,8 +122,6 @@ def test_every_mcu_rpc_method_has_an_operation_spec() -> None:
     seen_methods: set[str] = set()
     for file_descriptor in descriptors:
         for service in file_descriptor.services_by_name.values():
-            if service.name in {"CloudBridge", "LocalBridge"}:
-                continue
             for method in service.methods:
                 full_key = f"{service.full_name}/{method.name}"
                 assert full_key not in seen_methods

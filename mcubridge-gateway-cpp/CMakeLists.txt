@@ -6,8 +6,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(OpenSSL 3.0 REQUIRED COMPONENTS SSL Crypto)
 find_package(Threads REQUIRED)
 
+get_filename_component(DEFAULT_PIGWEED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pigweed" ABSOLUTE)
 set(PIGWEED_ROOT
-    "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/avr_pigweed_port/third_party/pigweed"
+    "${DEFAULT_PIGWEED_ROOT}"
     CACHE PATH "Pinned upstream Pigweed source tree")
 if(NOT EXISTS "${PIGWEED_ROOT}/pw_rpc/CMakeLists.txt")
   message(FATAL_ERROR "Pigweed source is missing; initialize the recursive submodules or set PIGWEED_ROOT.")

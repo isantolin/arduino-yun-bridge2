@@ -65,6 +65,7 @@ from tools.emulation.process_utils import (
 from tools.emulation.qemu_runner import find_qemu_binary
 from tools.emulation.simavr_runner import (
     build_simavr_harness,
+    report_simavr_crash,
     spawn_simavr,
 )
 
@@ -270,6 +271,30 @@ def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
         return sync_retryer(_is_ready)
     except tenacity.RetryError:
         return False
+
+
+EMULATOR_LIVENESS_POLL_SECONDS = 0.5
+
+
+async def verify_with_emulator_watchdog(
+    nodes: tuple[NodeRuntime, ...],
+    emulators: dict[str, subprocess.Popen[str]],
+) -> str | None:
+    """Run mesh verification, aborting as soon as any emulator process exits.
+
+    Returns None when verification passed, or a failure description. Without
+    this watchdog a dead emulator only surfaces after every RPC retry times out.
+    """
+    verification = asyncio.create_task(verify_mesh_interoperability(nodes))
+    while not verification.done():
+        exited = next(((name, proc) for name, proc in emulators.items() if proc.poll() is not None), None)
+        if exited is not None:
+            verification.cancel()
+            await asyncio.gather(verification, return_exceptions=True)
+            name, proc = exited
+            return f"emulator {name} exited with code {proc.returncode} during verification"
+        await asyncio.wait({verification}, timeout=EMULATOR_LIVENESS_POLL_SECONDS)
+    return None if verification.result() else "cross-node mesh verification failed"
 
 
 async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
@@ -617,8 +642,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
                 return False
             logger.info("Node synchronized successfully", node=node.name, board=node.board.label)
 
-        if not asyncio.run(verify_mesh_interoperability(nodes)):
-            logger.error("Cross-node mesh verification failed")
+        emulators = {"simavr": simavr_proc, "renode": renode_proc, "qemu": qemu_proc}
+        failure = asyncio.run(verify_with_emulator_watchdog(nodes, emulators))
+        if failure is not None:
+            logger.error("Cross-node mesh verification failed", reason=failure)
             return False
 
         logger.info("Performing Rule 29 Post-Execution Status Audit on all 3 nodes...")
@@ -642,6 +669,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
         terminate_process_tree(daemon_procs, timeout=3.0)
         emulation_procs = [p for p in all_procs if p not in daemon_procs]
         terminate_process_tree(emulation_procs, timeout=3.0)
+        if node_mega is not None:
+            # The runner prints its crash report and stack low-water mark on
+            # exit (crash or SIGTERM); symbolize it against the firmware ELF.
+            report_simavr_crash(node_mega.firmware_path, log_collector)
         cleanup_paths(base_temp_dir)
 
 

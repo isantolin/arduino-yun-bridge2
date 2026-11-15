@@ -7,7 +7,7 @@
 
 ## 1. Implementation Scope (Not a Validated Cryptographic Boundary)
 
-When a shared secret is configured, the link authenticates `LinkSync`, derives directional session keys, and protects RPC, console, and log HDLC payloads with ChaCha20-Poly1305. This description is not an assessed or validated cryptographic-module boundary. Counter-based replay rejection is limited to one session; replay across MCU restarts is not ruled out.
+When a shared secret is configured, the link authenticates `LinkSync`, derives directional session keys, and protects RPC, console, and log HDLC payloads with ChaCha20-Poly1305. This description is not an assessed or validated cryptographic-module boundary. Counter-based replay rejection is limited to one session; a recorded session can be replayed after a forced `LinkReset`, without an MCU restart (see ADR-0005, proposed).
 
 ```mermaid
 graph LR
@@ -70,7 +70,7 @@ The host request and MCU response proofs use HKDF-SHA256 with the configured sha
 ### 4.2 Nonce and Replay
 The daemon creates a 16-byte random nonce for each `LinkSync`; the MCU checks its exact length and binds both HMAC proofs to it. Each protected frame carries an 8-byte big-endian counter used as the final eight bytes of its 96-bit nonce; the first four bytes are zero. The receiver rejects counters that are zero or not strictly greater than the last accepted counter for that direction.
 
-The MCU does not currently have a demonstrated persistent boot epoch or cross-platform cryptographic random source. Consequently, replay of an old authenticated `LinkSync` exchange and its captured frames after an MCU restart is not ruled out. `LinkReset` remains an explicit plaintext recovery control, not a plaintext fallback for data.
+The MCU does not currently have a demonstrated persistent boot epoch or cross-platform cryptographic random source. Session keys depend only on the host nonce, and the MCU accepts a plaintext `LinkReset` at any time. Consequently, an attacker with access to the transport can force a `LinkReset`, replay an old authenticated `LinkSync` exchange, obtain the same session keys, and have its captured frames accepted again; the MCU also reuses key/nonce pairs for its own traffic. No MCU restart is required. `LinkReset` is not a plaintext fallback for data. The proposed fix is an MCU-contributed nonce (ADR-0005).
 
 ### 4.3 Key Zeroization
 * **C++ MCU**: Mbed TLS platform zeroization clears derived keys, output buffers, handshake intermediates, and the stored shared secret when the bridge is reinitialized. This is not a guarantee that every library-internal copy is erased.

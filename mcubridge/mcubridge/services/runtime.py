@@ -7,7 +7,6 @@ import functools
 import inspect
 import logging
 import operator
-import secrets
 import shlex
 import stat
 import time
@@ -57,8 +56,6 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
-    ConsoleQueueTarget,
-    MemoryQueueAdapter,
     create_queued_publish,
     get_ssl_context,
     is_command_allowed,
@@ -119,8 +116,6 @@ class BridgeService:
     _cloud_publish_lock: asyncio.Lock
     cloud_spool: LmdbDeque | None
     mcu_registry: protocol.McuDispatchTable
-    ipc_requests: dict[bytes, asyncio.Queue[CloudQueuedPublish]]
-    console_queues: list[ConsoleQueueTarget]
     ubus_service: UbusService
     clock_sync: ClockSyncService
     gpio: GpioService
@@ -174,8 +169,6 @@ class BridgeService:
             summary_interval=self.config.bridge_summary_interval,
             handshake_interval=self.config.bridge_handshake_interval,
         )
-        self.ipc_requests = {}
-        self.console_queues = []
         self.ubus_service = UbusService(self)
         self.ubus_service.start()
         self.clock_sync = ClockSyncService(self)
@@ -214,23 +207,6 @@ class BridgeService:
 
     async def enqueue_cloud(self, message: CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_cloud_context(message, reply_context)
-        correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "enqueue_cloud debug info",
-                topic=resolved_message.topic_name,
-                correlation=correlation.hex() if correlation else None,
-                in_ipc_requests=(correlation in self.ipc_requests if correlation else False),
-                registered_keys=[k.hex() for k in self.ipc_requests],
-            )
-        if correlation and correlation in self.ipc_requests:
-            self.ipc_requests[correlation].put_nowait(resolved_message)
-            return
-
-        if "console" in resolved_message.topic_name.lower():
-            for q in list(self.console_queues):
-                q.put_nowait(resolved_message)
-
         if self.cloud_publisher is not None:
             await self.cloud_publisher(resolved_message)
             return
@@ -1333,65 +1309,6 @@ class BridgeService:
             if isinstance(res, bytes):
                 return res
             raise RuntimeError(f"Serial RPC invocation failed: {target}")
-
-    async def Publish(self, stream: Any) -> None:
-        if (req := await stream.recv_message()) is None:
-            return
-
-        has_correlation = req.HasField("correlation_data")
-        route = protocol.parse_topic(self.state.cloud_topic_prefix, req.topic_name)
-        is_query = has_correlation or (route is not None and route.direction == "req")
-
-        correlation = req.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
-
-        with structlog.contextvars.bound_contextvars(
-            topic=req.topic_name, correlation=correlation.hex() if correlation else ""
-        ):
-            response_queue: asyncio.Queue[CloudQueuedPublish] | None = None
-            if is_query and correlation:
-                response_queue = asyncio.Queue(maxsize=1)
-                self.ipc_requests[correlation] = response_queue
-
-            resp = CloudQueuedPublish()
-            try:
-                await self.handle_request(
-                    CloudQueuedPublish(topic_name=req.topic_name, payload=req.payload, correlation_data=correlation)
-                )
-
-                if is_query and response_queue is not None:
-                    try:
-                        async with asyncio.timeout(float(protocol.DEFAULT_IPC_TIMEOUT_SECONDS)):
-                            resp = await response_queue.get()
-                    except TimeoutError:
-                        logger.warning("IPC request timed out")
-            finally:
-                with anyio.CancelScope(shield=True):
-                    if is_query and correlation:
-                        self.ipc_requests.pop(correlation, None)
-
-            try:
-                await stream.send_message(resp)
-            except OSError as exc:
-                logger.debug("IPC connection closed during response write", error=str(exc))
-
-    async def SubscribeConsole(self, stream: Any) -> None:
-        if await stream.recv_message() is None:
-            return
-
-        send_stream, receive_stream = anyio.create_memory_object_stream[CloudQueuedPublish](max_buffer_size=64)
-        adapter = MemoryQueueAdapter(send_stream)
-        self.console_queues.append(adapter)
-        try:
-            async with receive_stream:
-                async for msg in receive_stream:
-                    await stream.send_message(msg)
-        except (OSError, RuntimeError) as e:
-            logger.error("Local IPC console stream error", error=str(e))
-            raise
-        finally:
-            adapter.close()
-            if adapter in self.console_queues:
-                self.console_queues.remove(adapter)
 
     async def pin_subscribe(
         self,

@@ -38,38 +38,6 @@ def mock_bridge_state(test_config: RuntimeConfig) -> RuntimeState:
     return create_runtime_state(test_config)
 
 
-async def test_enqueue_cloud_ipc_correlation(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
-    svc = BridgeService(test_config, mock_bridge_state, MagicMock())
-    q: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish] = asyncio.Queue()
-    correlation_bytes = b"corr-123"
-    svc.ipc_requests[correlation_bytes] = q
-
-    prefix = mock_bridge_state.cloud_topic_prefix
-    canonical_topic = f"{prefix}/evt/DataStoreService/Data"
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=canonical_topic,
-        correlation_data=correlation_bytes,
-        payload=b"test",
-    )
-    await svc.enqueue_cloud(msg)
-    pushed = await q.get()
-    assert pushed.topic_name == canonical_topic
-
-
-async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
-    svc = BridgeService(test_config, mock_bridge_state, MagicMock())
-    cq: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish] = asyncio.Queue()
-    svc.console_queues.append(cq)
-
-    prefix = mock_bridge_state.cloud_topic_prefix
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name=f"{prefix}/evt/rpc.pb.ConsoleService/Write", payload=b"hello")
-    svc.cloud_publisher = AsyncMock()
-    await svc.enqueue_cloud(msg)
-
-    pushed = await cq.get()
-    assert pushed.payload == b"hello"
-
-
 async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_bridge_state.cloud_queue_limit = 5

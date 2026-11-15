@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from google.protobuf.message import DecodeError
 from google.protobuf.message import Message as ProtobufMessage
@@ -80,8 +81,10 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 ) -> None:
     """Verify complete E2E synchronization and RPC command exchange over Wireless TCP."""
     frames_received_by_mcu: list[tuple[str, bytes, int]] = []
+    active_writers: list[asyncio.StreamWriter] = []
 
     async def mock_mcu_tcp_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        active_writers.append(writer)
         decoder = FrameDecoder()
         mcu_cipher: LinkCipher | None = None
         try:
@@ -182,18 +185,28 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
         assert "rpc.pb.SystemService/LinkSync" in op_names
         assert "rpc.pb.GpioService/DigitalWrite" in op_names
     finally:
-        await transport.stop()
-        await transport_task
+        for w in active_writers:
+            try:
+                w.close()
+            except OSError:
+                pass
         server.close()
         await server.wait_closed()
+        await transport.stop()
+        if not transport_task.done():
+            transport_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, ConnectionError):
+                await transport_task
 
 
 async def test_e2e_wireless_tcp_analog_read_and_datastore(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     """Verify analog reading and datastore exchange over wireless TCP link."""
+    active_writers: list[asyncio.StreamWriter] = []
 
     async def mock_mcu_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        active_writers.append(writer)
         decoder = FrameDecoder()
         mcu_cipher: LinkCipher | None = None
         try:
@@ -291,7 +304,15 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
             raise AssertionError(f"Unexpected response type: {type(raw_res)}")
         assert ar_resp.value == 742
     finally:
-        await transport.stop()
-        await transport_task
+        for w in active_writers:
+            try:
+                w.close()
+            except OSError:
+                pass
         server.close()
         await server.wait_closed()
+        await transport.stop()
+        if not transport_task.done():
+            transport_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, ConnectionError):
+                await transport_task

@@ -433,7 +433,7 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
       return pw::Status::ResourceExhausted();
     }
     file_bytes_.resize(file_size);
-    int fd = open(target_path.c_str(), O_RDONLY);
+    int fd = open(target_path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
     if (fd < 0) return pw::Status::Internal();
     size_t total_read = 0;
     while (total_read < file_size) {
@@ -462,6 +462,11 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
     }
     std::error_code ec;
     std::filesystem::create_directories(root_dir_, ec);
+    std::filesystem::permissions(
+        root_dir_,
+        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+            std::filesystem::perms::owner_exec,
+        std::filesystem::perm_options::replace, ec);
     write_buffer_.resize(max_bytes_);
     writer_.emplace(pw::ByteSpan(write_buffer_));
     set_writer(*writer_);
@@ -480,7 +485,8 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
     }
     const auto tmp_path = root_dir_ / ("." + filename_ + ".tmp");
     const auto target_path = root_dir_ / filename_;
-    int fd = open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    int fd = open(tmp_path.c_str(),
+                  O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (fd < 0) {
       CloseFiles();
       return pw::Status::Internal();
@@ -835,11 +841,29 @@ class GatewayControlService final
           std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_ / "staging.bin";
       const auto device_staging =
           std::filesystem::temp_directory_path() / "mcubridge-gateway" / target_id / "staging.bin";
-      if (std::filesystem::exists(client_staging, ec)) {
-        std::filesystem::create_directories(device_staging.parent_path(), ec);
-        std::filesystem::copy_file(
-            client_staging, device_staging,
-            std::filesystem::copy_options::overwrite_existing, ec);
+      if (!std::filesystem::exists(client_staging, ec) || ec) {
+        std::cerr << "client=" << client_id_
+                  << " event=dispatch_push_missing_staging target=" << target_id << '\n';
+        return pw::Status::FailedPrecondition();
+      }
+      std::filesystem::create_directories(device_staging.parent_path(), ec);
+      if (ec) {
+        std::cerr << "client=" << client_id_
+                  << " event=dispatch_push_dir_error target=" << target_id << '\n';
+        return pw::Status::Internal();
+      }
+      std::filesystem::permissions(
+          device_staging.parent_path(),
+          std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+              std::filesystem::perms::owner_exec,
+          std::filesystem::perm_options::replace, ec);
+      std::filesystem::copy_file(
+          client_staging, device_staging,
+          std::filesystem::copy_options::overwrite_existing, ec);
+      if (ec) {
+        std::cerr << "client=" << client_id_
+                  << " event=dispatch_push_copy_error target=" << target_id << '\n';
+        return pw::Status::Internal();
       }
     }
 
@@ -851,11 +875,29 @@ class GatewayControlService final
           std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_ / "staging.bin";
       const auto device_staging =
           std::filesystem::temp_directory_path() / "mcubridge-gateway" / target_id / "staging.bin";
-      if (std::filesystem::exists(device_staging, ec)) {
-        std::filesystem::create_directories(client_staging.parent_path(), ec);
-        std::filesystem::copy_file(
-            device_staging, client_staging,
-            std::filesystem::copy_options::overwrite_existing, ec);
+      if (!std::filesystem::exists(device_staging, ec) || ec) {
+        std::cerr << "client=" << client_id_
+                  << " event=dispatch_fetch_missing_staging target=" << target_id << '\n';
+        return pw::Status::NotFound();
+      }
+      std::filesystem::create_directories(client_staging.parent_path(), ec);
+      if (ec) {
+        std::cerr << "client=" << client_id_
+                  << " event=dispatch_fetch_dir_error target=" << target_id << '\n';
+        return pw::Status::Internal();
+      }
+      std::filesystem::permissions(
+          client_staging.parent_path(),
+          std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
+              std::filesystem::perms::owner_exec,
+          std::filesystem::perm_options::replace, ec);
+      std::filesystem::copy_file(
+          device_staging, client_staging,
+          std::filesystem::copy_options::overwrite_existing, ec);
+      if (ec) {
+        std::cerr << "client=" << client_id_
+                  << " event=dispatch_fetch_copy_error target=" << target_id << '\n';
+        return pw::Status::Internal();
       }
     }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Console write helper for the Arduino bridge using direct GatewayClient through Gateway.
 
-Linux -> MCU console bytes travel through ``ConsoleService/Write``. The MCU -> Linux
-console output is published by the daemon as telemetry on ``evt/ConsoleService/Write``;
+Linux -> MCU console bytes travel through ``rpc.pb.ConsoleService/Write``. The MCU -> Linux
+console output is published by the daemon as telemetry on ``evt/rpc.pb.ConsoleService/Write``;
 a northbound Gateway -> client stream for that topic does not exist yet (ADR-0003), so
 this helper only writes.
 """

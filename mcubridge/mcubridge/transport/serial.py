@@ -123,11 +123,19 @@ def close_serial_port(ser: serial.Serial) -> None:
     teardown deterministic for tcp:// and wifi:// links.
     """
     raw_socket = getattr(ser, "_socket", None)
+    if isinstance(raw_socket, socket.socket):
+        try:
+            raw_socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
     try:
         ser.close()
     finally:
         if isinstance(raw_socket, socket.socket):
-            raw_socket.close()
+            try:
+                raw_socket.close()
+            except OSError:
+                pass
 
 
 class SerialTransport:

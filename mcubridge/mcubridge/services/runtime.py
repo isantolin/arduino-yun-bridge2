@@ -737,8 +737,6 @@ class BridgeService:
             )
         return cast(PwTransferManager, self.cloud_transfer_manager)
 
-    _get_cloud_transfer_manager = get_cloud_transfer_manager
-
     async def cloud_transfer_read(self, resource_id: int) -> bytes:
         async with self._cloud_transfer_lock:
             manager = self.get_cloud_transfer_manager()

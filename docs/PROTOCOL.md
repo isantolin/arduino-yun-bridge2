@@ -686,7 +686,7 @@ MCU detecta RX buffer < 25% → envía rpc.pb.SystemService/Xon  → Linux reanu
 - **`rpc.pb.GpioService/AnalogWrite` (`AnalogWrite`, Linux → MCU)**: `AnalogWrite { pin, value }`. Retorna `AckPacket`.
 - **`rpc.pb.GpioService/DigitalRead` (`DigitalRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta: `DigitalReadResponse { value }`.
 - **`rpc.pb.GpioService/AnalogRead` (`AnalogRead`, Linux → MCU)**: `PinRead { pin }`. Respuesta: `AnalogReadResponse { value }`.
-- **`rpc.pb.GpioService/SubscribePins` (Server-Streaming, Linux ↔ MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Evento de streaming (`PacketType.SERVER_STREAM`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico canónico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
+- **`rpc.pb.GpioService/SubscribePins` (Server-Streaming, Linux ↔ MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Evento de streaming (`PacketType.SERVER_STREAM`) emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)`. El daemon lo reenvía a la nube bajo el tópico canónico `{prefix}/evt/rpc.pb.GpioService/PinUpdateEvent/{pin}`.
 
 #### Control Bidireccional de GPIO desde Cloud Gateway
 
@@ -700,7 +700,7 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
   - Suscripción de pin: `rpc.pb.GpioService/SubscribePins` con payload Protobuf `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`.
 - **Ejecución en Daemon**: El daemon valida la autorización del namespace (`cloud_allow_digital_write`, `cloud_allow_pin_read`, etc.), despacha el comando al MCU (p.ej. `rpc.pb.GpioService/DigitalWrite`), y emite de vuelta el mensaje Protobuf tipado de respuesta (`Empty`, `DigitalReadResponse`, `AnalogReadResponse`, etc.) en `EdgeDispatchResponse.response_payload`.
 - **Correlación Asíncrona**: Cada request/response se correlaciona con `call_id` / `sequence_id` garantizando entrega determinista fin a fin.
-- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/GpioService/PinUpdateEvent/{pin}`.
+- **Eventos de Telemetría**: Las actualizaciones emitidas por el microcontrolador (`PinUpdateEvent`) se transmiten hacia el Gateway en el tópico `{prefix}/evt/rpc.pb.GpioService/PinUpdateEvent/{pin}`.
 
 #### GPIO Frame Examples (`pw_hdlc` + `RpcPacket`)
 
@@ -727,7 +727,7 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 - **`rpc.pb.ConsoleService/Write` (Linux ↔ MCU, definido en `cloud_gateway.proto`):**
   - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `Empty`.
   - Linux → MCU: el daemon encola los bytes (`console_to_mcu_queue`) y los emite en tramas HDLC sobre la dirección `3`; alcanzable desde el Gateway vía `GatewayControl.Dispatch` y autorizado por `cloud_allow_console_input`.
-  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/ConsoleService/Write` (expiración `CLOUD_EXPIRY_CONSOLE`). Todavía no existe un stream northbound Gateway → cliente para ese tópico.
+  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/rpc.pb.ConsoleService/Write` (expiración `CLOUD_EXPIRY_CONSOLE`). Todavía no existe un stream northbound Gateway → cliente para ese tópico.
 
 ### 5.4 Datastore (`rpc.pb.DataStoreService`)
 

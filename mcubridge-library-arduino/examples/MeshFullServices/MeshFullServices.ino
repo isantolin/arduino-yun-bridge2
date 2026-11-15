@@ -72,9 +72,13 @@ static void onMailboxMessage(pw::span<const uint8_t> payload) {
 static void onDataStoreRead(etl::string_view key,
                             pw::span<const uint8_t> value) {
   Console.print(F("[DATASTORE_GET] key="));
-  Console.print(key.data());
+  if (!key.empty() && key.data() != nullptr) {
+    Console.write(reinterpret_cast<const uint8_t*>(key.data()), key.size());
+  }
   Console.print(F(" val="));
-  Console.write(value.data(), value.size());
+  if (!value.empty() && value.data() != nullptr) {
+    Console.write(value.data(), value.size());
+  }
   Console.println();
 }
 

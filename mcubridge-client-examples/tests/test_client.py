@@ -609,6 +609,11 @@ async def test_gateway_client_timeout_configuration(monkeypatch: pytest.MonkeyPa
     c3 = GatewayClient(mock_conn, target_device_id="dev-3")
     assert c3.default_timeout_ms == 30000
 
+    # 4. Invalid environment variable raises descriptive ValueError
+    monkeypatch.setenv("MCUBRIDGE_CLIENT_TIMEOUT_MS", "not_a_number")
+    with pytest.raises(ValueError, match="Invalid MCUBRIDGE_CLIENT_TIMEOUT_MS"):
+        GatewayClient(mock_conn, target_device_id="dev-4")
+
 
 async def test_gateway_client_push_file_to_device(tmp_path: Path) -> None:
     mock_conn = MagicMock()

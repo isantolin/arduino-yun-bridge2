@@ -116,8 +116,18 @@ class GatewayClient:
         self._transfer_manager: PwTransferManager | None = transfer_manager
         self._transfer_lock = asyncio.Lock()
         env_timeout = os.environ.get("MCUBRIDGE_CLIENT_TIMEOUT_MS")
+        parsed_env_timeout: int | None = None
+        if env_timeout:
+            try:
+                parsed_env_timeout = int(env_timeout)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid MCUBRIDGE_CLIENT_TIMEOUT_MS environment variable: '{env_timeout}' must be an integer"
+                ) from exc
         self.default_timeout_ms: int = (
-            default_timeout_ms if default_timeout_ms is not None else (int(env_timeout) if env_timeout else 30000)
+            default_timeout_ms
+            if default_timeout_ms is not None
+            else (parsed_env_timeout if parsed_env_timeout is not None else 30000)
         )
 
     def _get_transfer_manager(self) -> PwTransferManager:

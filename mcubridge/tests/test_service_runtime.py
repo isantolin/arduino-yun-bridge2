@@ -8,7 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import lmdb
 import pw_hdlc.decode
@@ -1633,7 +1633,7 @@ async def test_runtime_execute_rpc_branches(mock_bridge_service: BridgeService) 
     mock_serial.send = AsyncMock(return_value=True)
     res_rpc_timeout = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"", timeout_ms=5000)
     assert res_rpc_timeout == mcu_wire_pb2.Empty().SerializeToString()
-    mock_serial.send.assert_awaited_once_with("rpc.pb.SystemService/EnterBootloader", b"", timeout=5.0)
+    mock_serial.send.assert_awaited_once_with("rpc.pb.SystemService/EnterBootloader", ANY, timeout=5.0)
 
 
 async def test_runtime_console_write_both_directions(

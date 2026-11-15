@@ -7,7 +7,6 @@ import functools
 import inspect
 import logging
 import operator
-import shlex
 import stat
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
@@ -59,8 +58,8 @@ from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
     create_queued_publish,
     get_ssl_context,
-    is_command_allowed,
     iter_chunks,
+    parse_allowed_command,
 )
 from ..state.context import (
     DaemonLifecycleMachine,
@@ -801,23 +800,32 @@ class BridgeService:
         src = p if p is not None else req_or_cmd
         command = src.command if isinstance(src, mcu_wire_pb2.ProcessRunAsync) else str(req_or_cmd)
         pid = 0
-        allowed = bool(command) and is_command_allowed(self.state.allowed_policy, command)
-        if allowed:
+        # Parse once: the argv checked against the policy is the argv executed.
+        # Malformed quoting is rejected here, before a process slot is taken.
+        argv = parse_allowed_command(self.state.allowed_policy, command)
+        allowed = argv is not None
+        if argv is not None:
             with structlog.contextvars.bound_contextvars(command=command):
                 await self._process_slots.acquire()
                 try:
                     proc = await asyncio.create_subprocess_exec(
-                        *shlex.split(command),
+                        *argv,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         start_new_session=True,
                     )
-                    pid = proc.pid & protocol.UINT16_MAX
+                    # The real PID is the handle: the wire field is uint32 and
+                    # the firmware stores int32, so truncating it could collide
+                    # with a running process or produce 0 (= failure).
+                    pid = proc.pid
                     async with self.state.process_lock:
                         self.state.running_processes[pid] = ProcessContext(proc)
                     tg = self._tg
                     (tg.create_task if tg else asyncio.create_task)(self._monitor_process(pid))
-                except OSError:
+                except (OSError, ValueError) as exc:
+                    # OSError: missing/unexecutable program; ValueError: e.g. an
+                    # embedded NUL byte. Either way the slot must be returned.
+                    logger.warning("Process spawn failed", error=str(exc))
                     self._process_slots.release()
         resp = mcu_wire_pb2.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import shlex
 import ssl
 from collections.abc import Iterable
 from pathlib import Path
@@ -51,17 +52,40 @@ _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(
 # =============================================================================
 
 
-def is_command_allowed(policy: config_schema_pb2.AllowedCommandPolicy, command: str) -> bool:
-    """Check if a shell/process command is allowed by the policy. [SIL-2]"""
-    pieces = command.split()
-    if not pieces:
-        return False
-    return "*" in policy.entries or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in policy.entries)
+def _matches_program(entry: str, program: str) -> bool:
+    """Match one policy entry against argv[0], case-sensitively.
+
+    An entry containing "/" names one exact executable path (no globbing, so
+    "/usr/bin/*" cannot reach "/usr/bin/../../tmp/x"). Any other entry is a
+    glob over a bare program name and never matches a path.
+    """
+    if "/" in entry:
+        return program == entry
+    return "/" not in program and fnmatch.fnmatchcase(program, entry)
+
+
+def parse_allowed_command(policy: config_schema_pb2.AllowedCommandPolicy, command: str) -> list[str] | None:
+    """Return the argv to execute if the policy allows it, otherwise None. [SIL-2]
+
+    The command is tokenized once with shlex and the same argv is both checked
+    and executed, so validation cannot diverge from execution. Malformed
+    quoting and empty commands are rejected.
+    """
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if not argv:
+        return None
+    program = argv[0]
+    if "*" in policy.entries or any(_matches_program(entry, program) for entry in policy.entries):
+        return argv
+    return None
 
 
 def create_allowed_policy(entries: Iterable[str]) -> config_schema_pb2.AllowedCommandPolicy:
-    """Create a normalized AllowedCommandPolicy Protobuf message. [SIL-2]"""
-    items = {item for c in entries if c for item in _TOKEN_SEP.split(c.strip().lower()) if item}
+    """Create a normalized AllowedCommandPolicy Protobuf message (case preserved). [SIL-2]"""
+    items = {item for c in entries if c for item in _TOKEN_SEP.split(c.strip()) if item}
     normalised = ["*"] if "*" in items else sorted(items)
     return config_schema_pb2.AllowedCommandPolicy(entries=normalised)
 

@@ -1049,6 +1049,74 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
       expected_tag.size());
 }
 
+// Accepts at most `budget` bytes in total, then reports short writes.
+class WriteBudgetStream : public Stream {
+ public:
+  explicit WriteBudgetStream(size_t budget) : budget_(budget) {}
+  size_t write(uint8_t c) override { return write(&c, 1U); }
+  size_t write(const uint8_t* b, size_t s) override {
+    (void)b;
+    const size_t accepted = s < budget_ ? s : budget_;
+    budget_ -= accepted;
+    written_ += accepted;
+    return accepted;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+  size_t written() const { return written_; }
+
+ private:
+  size_t budget_;
+  size_t written_ = 0U;
+};
+
+// A short write at any point of the streamed frame (start, counter,
+// ciphertext chunks, tag or closing FCS/flag) must make the send fail.
+void test_encrypted_frame_streaming_fails_on_short_write() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream, 0U, "shared-key");
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  memset(sync.nonce.bytes, 0x3C, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size, sync.tag.bytes);
+  sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+
+  // 40 bytes: two ciphertext chunks plus the tag.
+  etl::array<uint8_t, 40> payload = {};
+  payload.fill(0x11U);
+
+  WriteBudgetStream unlimited(4096U);
+  Bridge.setStream(unlimited);
+  ba.setTxAeadCounter(0U);
+  TEST_ASSERT_TRUE(
+      ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+  const size_t frame_size = unlimited.written();
+  TEST_ASSERT_TRUE(frame_size > rpc::RPC_AEAD_COUNTER_SIZE + payload.size() +
+                                    rpc::RPC_AEAD_TAG_SIZE);
+
+  for (size_t budget = 0U; budget < frame_size; ++budget) {
+    WriteBudgetStream limited(budget);
+    Bridge.setStream(limited);
+    ba.setTxAeadCounter(0U);
+    TEST_ASSERT_FALSE(
+        ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+  }
+
+  WriteBudgetStream exact(frame_size);
+  Bridge.setStream(exact);
+  ba.setTxAeadCounter(0U);
+  TEST_ASSERT_TRUE(
+      ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+  Bridge.setStream(stream);
+}
+
 }  // namespace
 
 namespace {
@@ -1178,6 +1246,7 @@ int main() {
   RUN_TEST(test_bootloader_timer_and_hal_coverage);
   RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
   RUN_TEST(test_encrypted_frame_streaming_matches_one_shot_aead);
+  RUN_TEST(test_encrypted_frame_streaming_fails_on_short_write);
   RUN_TEST(test_pin_subscription_reports_rising_edge);
   RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
   RUN_TEST(test_set_stream_selects_hardware_serial_by_type);

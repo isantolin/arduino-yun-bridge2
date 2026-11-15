@@ -1894,9 +1894,7 @@ async def test_file_transfer_default_resource_id_and_rpc_dispatch(
 
     # Fetch with default resource_id (0 -> 2) through execute_rpc
     fetch_req = cloud_gateway_pb2.FileTransferSyncRequest(path="pushed.txt", resource_id=0)
-    fetch_resp_bytes = await svc.execute_rpc(
-        "rpc.pb.FileTransferService/FetchFromLinux", fetch_req.SerializeToString()
-    )
+    fetch_resp_bytes = await svc.execute_rpc("rpc.pb.FileTransferService/FetchFromLinux", fetch_req.SerializeToString())
     fetch_resp = cloud_gateway_pb2.FileTransferSyncResponse()
     fetch_resp.ParseFromString(fetch_resp_bytes)
     assert fetch_resp.success is True

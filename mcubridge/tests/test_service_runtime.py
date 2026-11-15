@@ -634,7 +634,7 @@ async def test_runtime_file_dispatch_local_methods_none_path(
     svc = mock_bridge_service
     req = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=f"{runtime_config.topic_prefix}/req/fs.read",
-        payload=cloud_gateway_pb2.FileRead(path="../../secret").SerializeToString(),
+        payload=b"../../secret",
     )
     await svc.handle_request(req)
     assert mock_serial.send.call_count == 0
@@ -1884,7 +1884,7 @@ async def test_file_transfer_default_resource_id_and_rpc_dispatch(
 
     # Push with default resource_id (0 -> 2) through execute_rpc
     push_req = cloud_gateway_pb2.FileTransferSyncRequest(path="pushed.txt", resource_id=0)
-    push_resp_bytes = await svc.execute_rpc("rpc.pb.LinuxFileTransferService/PushToLinux", push_req.SerializeToString())
+    push_resp_bytes = await svc.execute_rpc("rpc.pb.FileTransferService/PushToLinux", push_req.SerializeToString())
     push_resp = cloud_gateway_pb2.FileTransferSyncResponse()
     push_resp.ParseFromString(push_resp_bytes)
     assert push_resp.success is True
@@ -1895,7 +1895,7 @@ async def test_file_transfer_default_resource_id_and_rpc_dispatch(
     # Fetch with default resource_id (0 -> 2) through execute_rpc
     fetch_req = cloud_gateway_pb2.FileTransferSyncRequest(path="pushed.txt", resource_id=0)
     fetch_resp_bytes = await svc.execute_rpc(
-        "rpc.pb.LinuxFileTransferService/FetchFromLinux", fetch_req.SerializeToString()
+        "rpc.pb.FileTransferService/FetchFromLinux", fetch_req.SerializeToString()
     )
     fetch_resp = cloud_gateway_pb2.FileTransferSyncResponse()
     fetch_resp.ParseFromString(fetch_resp_bytes)

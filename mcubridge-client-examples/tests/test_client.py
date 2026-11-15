@@ -635,7 +635,7 @@ async def test_gateway_client_push_file_to_device(tmp_path: Path) -> None:
     mock_manager.write.assert_called_once_with(2, b"hello world")
     mock_dispatch.assert_awaited_once()
     op, req = mock_dispatch.call_args[0][:2]
-    assert op == "rpc.pb.LinuxFileTransferService/PushToLinux"
+    assert op == "rpc.pb.FileTransferService/PushToLinux"
     assert req.path == "/etc/config/test.txt"
     assert req.resource_id == 2
 
@@ -677,7 +677,7 @@ async def test_gateway_client_fetch_file_from_device(tmp_path: Path) -> None:
     assert transferred == 14
     mock_dispatch.assert_awaited_once()
     op, req = mock_dispatch.call_args[0][:2]
-    assert op == "rpc.pb.LinuxFileTransferService/FetchFromLinux"
+    assert op == "rpc.pb.FileTransferService/FetchFromLinux"
     assert req.path == "/var/log/messages"
     assert req.resource_id == 2
     mock_manager.read.assert_called_once_with(2)

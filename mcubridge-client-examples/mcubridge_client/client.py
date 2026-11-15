@@ -372,7 +372,7 @@ class GatewayClient:
             resource_id=resource_id,
         )
         resp_bytes = await self.dispatch(
-            "rpc.pb.LinuxFileTransferService/PushToLinux",
+            "rpc.pb.FileTransferService/PushToLinux",
             req,
             timeout_ms=timeout_ms,
         )
@@ -395,7 +395,7 @@ class GatewayClient:
             resource_id=resource_id,
         )
         resp_bytes = await self.dispatch(
-            "rpc.pb.LinuxFileTransferService/FetchFromLinux",
+            "rpc.pb.FileTransferService/FetchFromLinux",
             req,
             timeout_ms=timeout_ms,
         )

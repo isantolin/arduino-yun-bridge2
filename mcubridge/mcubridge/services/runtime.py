@@ -131,6 +131,8 @@ class BridgeService:
         "rpc.pb.SystemService/Xon": "mcu_xon",
         "rpc.pb.FileSystemService/Write": "file_write",
         "rpc.pb.FileSystemService/Remove": "file_remove",
+        "rpc.pb.FileTransferService/PushToLinux": "file_transfer_push_to_linux",
+        "rpc.pb.FileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
         "rpc.pb.LinuxFileTransferService/PushToLinux": "file_transfer_push_to_linux",
         "rpc.pb.LinuxFileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
         "rpc.pb.MailboxService/Push": "mailbox_push",

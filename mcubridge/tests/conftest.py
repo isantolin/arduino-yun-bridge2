@@ -508,13 +508,6 @@ def st_file_write(draw: DrawFn) -> mcu_wire_pb2.FileWrite:
 
 
 @st.composite
-def st_file_read(draw: DrawFn) -> cloud_gateway_pb2.FileRead:
-    """Canonical Hypothesis strategy for generating FileRead messages."""
-    name = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,16}$", fullmatch=True))
-    return cloud_gateway_pb2.FileRead(path=f"/tmp/{name}")
-
-
-@st.composite
 def st_spi_transfer(draw: DrawFn) -> mcu_wire_pb2.SpiTransfer:
     """Canonical Hypothesis strategy for generating SpiTransfer messages."""
     data = draw(st.binary(min_size=1, max_size=64))
@@ -532,7 +525,6 @@ st.register_type_strategy(mcu_wire_pb2.DatastorePut, st_datastore_put())
 st.register_type_strategy(mcu_wire_pb2.DatastoreGet, st_datastore_get())
 st.register_type_strategy(mcu_wire_pb2.MailboxPush, st_mailbox_push())
 st.register_type_strategy(mcu_wire_pb2.FileWrite, st_file_write())
-st.register_type_strategy(cloud_gateway_pb2.FileRead, st_file_read())
 st.register_type_strategy(mcu_wire_pb2.SpiTransfer, st_spi_transfer())
 st.register_type_strategy(cloud_gateway_pb2.CloudQueuedPublish, st_cloud_queued_publish())
 st.register_type_strategy(config_schema_pb2.RuntimeConfig, st_runtime_config())

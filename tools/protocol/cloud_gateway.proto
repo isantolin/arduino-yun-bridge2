@@ -5,14 +5,6 @@ package rpc.pb;
 import "config_schema.proto";
 import "mcu_wire.proto";
 
-message FileRead {
-  string path = 1;
-}
-
-message FileReadResponse {
-  bytes content = 1;
-}
-
 message SystemStatus {
   float cpu_percent = 1;
   uint64 memory_total_bytes = 2;
@@ -229,7 +221,7 @@ message FileTransferSyncResponse {
 
 // Linux-side pw_transfer proxy service. Synchronizes files between the Gateway's
 // pw_transfer staging resource and the local OpenWrt Linux filesystem.
-service LinuxFileTransferService {
+service FileTransferService {
   rpc PushToLinux(rpc.pb.FileTransferSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
     option (auth_field) = "file_write";
     option (method_description) = "Synchronize a staged pw_transfer file from Gateway to local Linux filesystem.";

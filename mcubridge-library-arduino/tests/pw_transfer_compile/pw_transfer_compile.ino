@@ -15,8 +15,9 @@
 namespace {
 
 #if defined(__AVR_ATmega2560__)
-static_assert(bridge::services::kEepromTransferResourceSize == 4096U,
-              "Mega 2560 EEPROM resource must expose all 4 KiB");
+static_assert(bridge::services::kEepromTransferResourceSize == 4080U,
+              "Mega 2560 EEPROM resource exposes 4 KiB minus the 16-byte "
+              "link-epoch reserve (ADR-0005)");
 #endif
 static_assert(bridge::services::kEepromTransferResourceId == 0x4D454741UL,
               "EEPROM transfer resource ID is a stable wire contract");

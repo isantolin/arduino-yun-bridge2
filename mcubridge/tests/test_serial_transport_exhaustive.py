@@ -35,7 +35,9 @@ def mock_serial_setup() -> tuple[SerialTransport, RuntimeState, MagicMock]:
 def _install_test_cipher(transport: SerialTransport) -> None:
     if transport.config.serial_shared_secret:
         nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-        transport.state.link_cipher = LinkCipher.for_host(transport.config.serial_shared_secret, nonce)
+        transport.state.link_cipher = LinkCipher.for_host(
+            transport.config.serial_shared_secret, nonce, bytes(range(16, 32))
+        )
 
 
 async def test_pw_transfer_client_is_shared_and_nonblocking(

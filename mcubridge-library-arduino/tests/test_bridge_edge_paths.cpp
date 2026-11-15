@@ -1049,6 +1049,42 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
       expected_tag.size());
 }
 
+// Regression (ADR-0005): a recorded LinkSync replayed after a forced
+// LinkReset used to derive the same session keys (keys depended only on the
+// host nonce), so captured frames were accepted again. With the MCU nonce the
+// replay must yield different keys in both directions.
+void test_replayed_link_sync_derives_fresh_keys() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream, 0U, "shared-key");
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  memset(sync.nonce.bytes, 0x77, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size, sync.tag.bytes);
+  sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> first_rx = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> first_tx = {};
+  etl::copy(ba.rxAeadKey().begin(), ba.rxAeadKey().end(), first_rx.begin());
+  etl::copy(ba.txAeadKey().begin(), ba.txAeadKey().end(), first_tx.begin());
+
+  feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
+  TEST_ASSERT_FALSE(ba.isSessionKeysReady());
+
+  // Replay the identical recorded host LinkSync.
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+  TEST_ASSERT_FALSE(
+      etl::equal(first_rx.begin(), first_rx.end(), ba.rxAeadKey().begin()));
+  TEST_ASSERT_FALSE(
+      etl::equal(first_tx.begin(), first_tx.end(), ba.txAeadKey().begin()));
+}
+
 // Accepts at most `budget` bytes in total, then reports short writes.
 class WriteBudgetStream : public Stream {
  public:
@@ -1247,6 +1283,7 @@ int main() {
   RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
   RUN_TEST(test_encrypted_frame_streaming_matches_one_shot_aead);
   RUN_TEST(test_encrypted_frame_streaming_fails_on_short_write);
+  RUN_TEST(test_replayed_link_sync_derives_fresh_keys);
   RUN_TEST(test_pin_subscription_reports_rising_edge);
   RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
   RUN_TEST(test_set_stream_selects_hardware_serial_by_type);

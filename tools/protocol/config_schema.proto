@@ -148,9 +148,10 @@ option (rpc.pb.handshake) = {
   retry_limit_max: 8
   hkdf_salt: "mcubridge-v2"
   hkdf_info_auth: "handshake-auth"
-  hkdf_info_session: "session-key"
+  hkdf_info_session: "session-key-v2"
   hkdf_output_length: 32
-  hkdf_info_response: "handshake-response"
+  hkdf_info_response: "handshake-response-v2"
+  hkdf_info_mcu_nonce: "mcu-nonce-v2"
   nonce_random_bytes: 16
   nonce_counter_bytes: 0
 };
@@ -814,6 +815,12 @@ message Handshake {
   ];
   string hkdf_info_response = 18 [
     (py_name) = "HANDSHAKE_HKDF_INFO_RESPONSE",
+    (py_type) = "bytes"
+  ];
+  // Handshake v2 (ADR-0005): label for the key that derives the MCU's
+  // never-repeating nonce contribution on boards without a hardware RNG.
+  string hkdf_info_mcu_nonce = 19 [
+    (py_name) = "HANDSHAKE_HKDF_INFO_MCU_NONCE",
     (py_type) = "bytes"
   ];
 }

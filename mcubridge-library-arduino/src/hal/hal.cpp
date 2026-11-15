@@ -1,8 +1,14 @@
 #include "hal.h"
 
 #include <etl/algorithm.h>
+#include <etl/array.h>
+#include <etl/byte_stream.h>
 #if defined(ARDUINO_ARCH_AVR)
+#include <EEPROM.h>
 #include <avr/pgmspace.h>
+#endif
+#if defined(ARDUINO_ARCH_ESP32)
+#include <esp_random.h>
 #endif
 
 #include "ArchTraits.h"
@@ -191,6 +197,56 @@ void init() {
 #endif
     }
   }
+}
+
+#if defined(ARDUINO_ARCH_AVR)
+uint64_t linkBootEpoch() {
+  // Two copies in the reserved EEPROM tail. The newest value is the larger
+  // one; the increment overwrites the older copy, so a write torn by a power
+  // loss leaves the other copy intact and the next boot still moves forward.
+  // The write completes before any nonce of this epoch is emitted.
+  constexpr int kSlotA = static_cast<int>(
+      E2END + 1U - bridge::config::LINK_EPOCH_EEPROM_RESERVED_BYTES);
+  constexpr int kSlotB = kSlotA + static_cast<int>(sizeof(uint64_t));
+  uint64_t slot_a = 0U;
+  uint64_t slot_b = 0U;
+  EEPROM.get(kSlotA, slot_a);
+  EEPROM.get(kSlotB, slot_b);
+  // Erased EEPROM reads as all ones.
+  if (slot_a == UINT64_MAX) slot_a = 0U;
+  if (slot_b == UINT64_MAX) slot_b = 0U;
+  const uint64_t next = etl::max(slot_a, slot_b) + 1U;
+  EEPROM.put(slot_a <= slot_b ? kSlotA : kSlotB, next);
+  return next;
+}
+#else
+// TODO(ADR-0005 step 3): persist the epoch on SAMD21 (FlashStorage). Until
+// then, nonces on boards without a hardware RNG are unique within a boot.
+__attribute__((weak)) uint64_t linkBootEpoch() { return 0U; }
+#endif
+
+bool fillLinkNonce(pw::span<const uint8_t> secret, pw::span<uint8_t> out) {
+  if (out.size() != rpc::RPC_HANDSHAKE_NONCE_LENGTH) return false;
+#if defined(ARDUINO_ARCH_ESP32)
+  (void)secret;
+  esp_fill_random(out.data(), out.size());
+  return true;
+#else
+  static bool epoch_loaded = false;
+  static uint64_t epoch = 0U;
+  static uint64_t handshakes = 0U;
+  if (!epoch_loaded) {
+    epoch = linkBootEpoch();
+    epoch_loaded = true;
+  }
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> counter_block = {};
+  etl::byte_stream_writer writer(counter_block.data(), counter_block.size(),
+                                 etl::endian::big);
+  writer.write_unchecked<uint64_t>(epoch);
+  writer.write_unchecked<uint64_t>(handshakes);
+  ++handshakes;
+  return rpc::security::derive_mcu_nonce(secret, counter_block, out);
+#endif
 }
 
 __attribute__((weak)) bool hasSD() { return false; }

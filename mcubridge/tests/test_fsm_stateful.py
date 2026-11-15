@@ -552,8 +552,11 @@ def test_handshake_calculate_tag_matches_wire_vector() -> None:
     nonce = b"\xab" * protocol.HANDSHAKE_NONCE_LENGTH
     expected_tag = bytes.fromhex("f07a5aa13405715b8b54efde57ac8130")
     assert SerialHandshakeManager.calculate_handshake_tag(secret, nonce) == expected_tag
-    expected_response_tag = bytes.fromhex("468299fac4fb82de1391f8a9a84bafd5")
-    assert SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce) == expected_response_tag
+    # Handshake v2 (ADR-0005): the response tag covers nonce || mcu_nonce. Same
+    # vector as the firmware KAT (kat_handshake_response_tag in security.cpp).
+    mcu_nonce = b"\xcd" * protocol.HANDSHAKE_NONCE_LENGTH
+    expected_response_tag = bytes.fromhex("3151d9ce732dea9056031a4c4a33be70")
+    assert SerialHandshakeManager.calculate_handshake_response_tag(secret, nonce, mcu_nonce) == expected_response_tag
 
 
 @given(
@@ -663,8 +666,9 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     runtime_config.serial_shared_secret = b""
     runtime_state.handshake_rate_until = 0.0
     runtime_state.link_handshake_nonce = nonce
-    tag = hs.calculate_handshake_response_tag(b"", nonce)
-    runtime_state.link_expected_tag = tag
+    # Insecure mode: the MCU sends neither a tag nor an MCU nonce.
+    tag = hs.calculate_handshake_response_tag(b"", nonce, b"")
+    assert tag == b""
     pkt_matching = pb.LinkSync(nonce=nonce, tag=tag)
     hs.capabilities_delay = 100.0
     assert await hs.handle_link_sync_resp(2, pkt_matching) is True
@@ -792,11 +796,11 @@ async def test_handshake_send_failures_and_capabilities_branches(
     runtime_state.handshake_rate_until = 0.0
     nonce = b"1234567890123456"
     runtime_state.link_handshake_nonce = nonce
-    tag = hs.calculate_handshake_response_tag(runtime_config.serial_shared_secret, nonce)
-    runtime_state.link_expected_tag = tag
+    mcu_nonce = bytes(range(16, 32))
+    tag = hs.calculate_handshake_response_tag(runtime_config.serial_shared_secret, nonce, mcu_nonce)
     hs.capabilities_delay = 0.0
     hs.fsm_state = HandshakeState.CONFIRMING
-    assert await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=tag))
+    assert await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=tag, mcu_nonce=mcu_nonce))
     assert runtime_state.handshake_rate_until > 0.0
 
     # 4. Let background capabilities discovery task (scheduled by handle_link_sync_resp) run

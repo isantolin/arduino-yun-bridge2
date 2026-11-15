@@ -92,6 +92,12 @@ inline constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 #ifndef BRIDGE_ENABLE_SPI
 #define BRIDGE_ENABLE_SPI 1
 #endif
+// Handshake v2 (ADR-0005): on AVR the last bytes of the internal EEPROM hold
+// two 8-byte copies of the persistent link boot epoch, so the MCU nonce never
+// repeats across reboots. They are excluded from the pw_transfer EEPROM
+// resource.
+inline constexpr size_t LINK_EPOCH_EEPROM_RESERVED_BYTES = 16U;
+
 // Upstream pw_transfer endpoints (TransferService, Client, Thread<1, 1>) and
 // the built-in EEPROM resource 0x4D454741. Enabled by default wherever it is
 // implemented (currently the AVR port only); define it to 0 as a global build

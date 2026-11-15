@@ -28,6 +28,9 @@ from mcubridge.state.context import create_runtime_state
 from mcubridge_client import mcu_wire_pb2
 from tools.emulation import test_fleet_mesh_hardware_e2e as fleet_mesh
 
+# Simulated firmware nonce (handshake v2, ADR-0005).
+_MCU_NONCE = bytes(range(16, 32))
+
 
 @pytest.mark.parametrize(
     ("bridge_status", "expected"),
@@ -77,7 +80,7 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
                 sync_request = mcu_wire_pb2.LinkSync.FromString(request.payload)
                 secret = fleet_mesh.DEFAULT_SHARED_SECRET.encode("utf-8")
                 response_tag = fleet_mesh.SerialHandshakeManager.calculate_handshake_response_tag(
-                    secret, sync_request.nonce
+                    secret, sync_request.nonce, _MCU_NONCE
                 )
                 if self.sync_attempts == 1:
                     self._queue_response(request.call_id + 1, sync_request.nonce, response_tag)
@@ -102,7 +105,7 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
             self.incoming.extend(
                 fleet_mesh.protocol.encode_hdlc_rpc(
                     "rpc.pb.SystemService/LinkSync",
-                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
+                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
                     call_id=call_id,
                     packet_type=1,
                 )
@@ -156,7 +159,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
                 sync_request = mcu_wire_pb2.LinkSync.FromString(request.payload)
                 secret = fleet_mesh.DEFAULT_SHARED_SECRET.encode("utf-8")
                 response_tag = fleet_mesh.SerialHandshakeManager.calculate_handshake_response_tag(
-                    secret, sync_request.nonce
+                    secret, sync_request.nonce, _MCU_NONCE
                 )
                 self.pending.append((time.monotonic() + 0.55, request.call_id, sync_request.nonce, response_tag))
                 self.max_inflight = max(self.max_inflight, len(self.pending))
@@ -170,7 +173,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
                 self.incoming.extend(
                     fleet_mesh.protocol.encode_hdlc_rpc(
                         "rpc.pb.SystemService/LinkSync",
-                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag),
+                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
                         call_id=call_id,
                         packet_type=1,
                     )

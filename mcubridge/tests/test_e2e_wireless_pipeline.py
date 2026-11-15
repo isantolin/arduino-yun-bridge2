@@ -27,8 +27,12 @@ from mcubridge.transport.serial import SerialTransport
 logger = structlog.get_logger(__name__)
 
 
+# Simulated MCU nonce (handshake v2): the real firmware never repeats it.
+_MCU_NONCE = bytes(range(16, 32))
+
+
 def _make_mcu_cipher(secret: bytes, nonce: bytes) -> LinkCipher:
-    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce)
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, nonce, _MCU_NONCE)
     return LinkCipher(mcu_to_host, host_to_mcu)
 
 
@@ -109,11 +113,12 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                         sync_req = pb.LinkSync.FromString(payload)
                         mcu_cipher = _make_mcu_cipher(runtime_config.serial_shared_secret, sync_req.nonce)
                         tag = service.handshake.calculate_handshake_response_tag(
-                            runtime_config.serial_shared_secret, sync_req.nonce
+                            runtime_config.serial_shared_secret, sync_req.nonce, _MCU_NONCE
                         )
                         resp_pb = pb.LinkSync(
                             nonce=sync_req.nonce,
                             tag=tag,
+                            mcu_nonce=_MCU_NONCE,
                         )
                         resp_frame = protocol.encode_hdlc_rpc(
                             "rpc.pb.SystemService/LinkSync",
@@ -230,9 +235,9 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                         sync_req = pb.LinkSync.FromString(payload)
                         mcu_cipher = _make_mcu_cipher(runtime_config.serial_shared_secret, sync_req.nonce)
                         tag = service.handshake.calculate_handshake_response_tag(
-                            runtime_config.serial_shared_secret, sync_req.nonce
+                            runtime_config.serial_shared_secret, sync_req.nonce, _MCU_NONCE
                         )
-                        resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag)
+                        resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag, mcu_nonce=_MCU_NONCE)
                         resp_frame = protocol.encode_hdlc_rpc(
                             "rpc.pb.SystemService/LinkSync",
                             resp_pb,

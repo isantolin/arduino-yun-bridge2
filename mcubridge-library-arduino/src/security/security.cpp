@@ -154,12 +154,34 @@ bool derive_handshake_auth_key(pw::span<const uint8_t> secret,
   return derive_hkdf_sha256(secret, salt, info, auth_key);
 }
 
+// Bound into the handshake: either one 16-byte value (host nonce, MCU
+// counter block) or the 32-byte concatenation nonce_h || mcu_nonce.
+constexpr size_t kHandshakePairLength = 2U * RPC_HANDSHAKE_NONCE_LENGTH;
+
+bool is_handshake_message_length(size_t length) {
+  return (length == RPC_HANDSHAKE_NONCE_LENGTH) |
+         (length == kHandshakePairLength);
+}
+
+// Builds nonce_h || mcu_nonce; false unless both are exactly one nonce long.
+bool concat_handshake_nonces(pw::span<const uint8_t> host_nonce,
+                             pw::span<const uint8_t> mcu_nonce,
+                             etl::array<uint8_t, kHandshakePairLength>& out) {
+  const bool valid = (host_nonce.size() == RPC_HANDSHAKE_NONCE_LENGTH) &
+                     (mcu_nonce.size() == RPC_HANDSHAKE_NONCE_LENGTH);
+  if (!valid) return false;
+  etl::copy(host_nonce.begin(), host_nonce.end(), out.begin());
+  etl::copy(mcu_nonce.begin(), mcu_nonce.end(),
+            out.begin() + RPC_HANDSHAKE_NONCE_LENGTH);
+  return true;
+}
+
 bool derive_handshake_tag(pw::span<const uint8_t> secret,
                           pw::span<const uint8_t> nonce,
                           pw::span<const uint8_t> info,
                           pw::span<uint8_t> out_tag) {
   const bool invalid_dimensions = secret.empty() |
-                                  (nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) |
+                                  !is_handshake_message_length(nonce.size()) |
                                   (out_tag.size() < RPC_HANDSHAKE_TAG_LENGTH);
   if (invalid_dimensions) {
     secure_zero(out_tag);
@@ -191,19 +213,34 @@ void secure_zero(pw::span<uint8_t> buf) {
 }
 
 bool derive_session_keys(pw::span<const uint8_t> secret,
-                         pw::span<const uint8_t> nonce,
+                         pw::span<const uint8_t> host_nonce,
+                         pw::span<const uint8_t> mcu_nonce,
                          pw::span<uint8_t> session_keys) {
   constexpr size_t kSessionKeyBytes = RPC_AEAD_KEY_SIZE * 2U;
-  if (secret.empty() || nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
-      session_keys.size() != kSessionKeyBytes) {
+  etl::array<uint8_t, kHandshakePairLength> salt = {};
+  if (secret.empty() || session_keys.size() != kSessionKeyBytes ||
+      !concat_handshake_nonces(host_nonce, mcu_nonce, salt)) {
     secure_zero(session_keys);
     return false;
   }
 
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_SESSION);
+  // Handshake v2 (ADR-0005): the salt binds both nonces, so a replayed host
+  // LinkSync derives different keys because the MCU nonce never repeats.
   // HKDF writes directly into the caller's contiguous RX||TX key storage.
-  // This removes the previous 64-byte local array and its copy operations.
-  return derive_hkdf_sha256(secret, nonce, info, session_keys);
+  return derive_hkdf_sha256(secret, salt, info, session_keys);
+}
+
+bool derive_mcu_nonce(pw::span<const uint8_t> secret,
+                      pw::span<const uint8_t> counter_block,
+                      pw::span<uint8_t> out_nonce) {
+  if (counter_block.size() != RPC_HANDSHAKE_NONCE_LENGTH ||
+      out_nonce.size() != RPC_HANDSHAKE_NONCE_LENGTH) {
+    secure_zero(out_nonce);
+    return false;
+  }
+  const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_MCU_NONCE);
+  return derive_handshake_tag(secret, counter_block, info, out_nonce);
 }
 
 bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
@@ -325,10 +362,16 @@ bool handshake_generate_tag(pw::span<const uint8_t> secret,
 }
 
 bool handshake_generate_response_tag(pw::span<const uint8_t> secret,
-                                     pw::span<const uint8_t> nonce,
+                                     pw::span<const uint8_t> host_nonce,
+                                     pw::span<const uint8_t> mcu_nonce,
                                      pw::span<uint8_t> out_tag) {
+  etl::array<uint8_t, kHandshakePairLength> message = {};
+  if (!concat_handshake_nonces(host_nonce, mcu_nonce, message)) {
+    secure_zero(out_tag);
+    return false;
+  }
   const auto info = copy_progmem(RPC_HANDSHAKE_HKDF_INFO_RESPONSE);
-  return derive_handshake_tag(secret, nonce, info, out_tag);
+  return derive_handshake_tag(secret, message, info, out_tag);
 }
 
 bool handshake_verify_tag(pw::span<const uint8_t> secret,
@@ -379,9 +422,19 @@ static constexpr etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH>
                                           0x71, 0x5B, 0x8B, 0x54, 0xEF, 0xDE,
                                           0x57, 0xAC, 0x81, 0x30}};
 static constexpr etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH>
-    kat_handshake_response_tag PROGMEM = {{0x46, 0x82, 0x99, 0xFA, 0xC4, 0xFB,
-                                           0x82, 0xDE, 0x13, 0x91, 0xF8, 0xA9,
-                                           0xA8, 0x4B, 0xAF, 0xD5}};
+    kat_handshake_response_tag PROGMEM = {{0x31, 0x51, 0xD9, 0xCE, 0x73, 0x2D,
+                                           0xEA, 0x90, 0x56, 0x03, 0x1A, 0x4C,
+                                           0x4A, 0x33, 0xBE, 0x70}};
+// Handshake v2 (ADR-0005): MCU nonce used by the response-tag KAT, and the
+// expected MCU nonce derived from an all-zero counter block.
+static constexpr etl::array<uint8_t, RPC_HANDSHAKE_NONCE_LENGTH>
+    kat_handshake_mcu_nonce PROGMEM = {{0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD,
+                                        0xCD, 0xCD, 0xCD, 0xCD, 0xCD, 0xCD,
+                                        0xCD, 0xCD, 0xCD, 0xCD}};
+static constexpr etl::array<uint8_t, RPC_HANDSHAKE_NONCE_LENGTH>
+    kat_mcu_nonce_from_zero_counter PROGMEM = {
+        {0x3A, 0xBC, 0xD1, 0x2C, 0x55, 0xA6, 0x7D, 0x46, 0x85, 0x94, 0xB1, 0xAE,
+         0x91, 0xCC, 0x5D, 0x44}};
 static constexpr etl::array<uint8_t, RPC_AEAD_KEY_SIZE> kat_aead_key PROGMEM = {
     {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A,
      0x8B, 0x8C, 0x8D, 0x8E, 0x8F, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95,
@@ -446,14 +499,27 @@ static constexpr etl::array<uint8_t, RPC_AEAD_TAG_SIZE> kat_aead_tag PROGMEM = {
                              handshake_request_expected.begin()));
   ok = combine_ok(ok, handshake_verify_tag(handshake_secret, handshake_nonce,
                                            handshake_request_expected));
-  ok = combine_ok(
-      ok, handshake_generate_response_tag(handshake_secret, handshake_nonce,
-                                          handshake_response));
+  const auto handshake_mcu_nonce = copy_progmem(kat_handshake_mcu_nonce);
+  ok = combine_ok(ok, handshake_generate_response_tag(
+                          handshake_secret, handshake_nonce,
+                          handshake_mcu_nonce, handshake_response));
   ok = combine_ok(
       ok, etl::equal(handshake_response.begin(), handshake_response.end(),
                      handshake_response_expected.begin()));
   secure_zero(pw::span<uint8_t>(handshake_request));
   secure_zero(pw::span<uint8_t>(handshake_response));
+  return ok;
+}
+
+[[gnu::noinline]] static bool run_mcu_nonce_kat() {
+  const auto secret = copy_progmem(kat_handshake_secret);
+  const auto expected = copy_progmem(kat_mcu_nonce_from_zero_counter);
+  const etl::array<uint8_t, RPC_HANDSHAKE_NONCE_LENGTH> zero_counter = {};
+  etl::array<uint8_t, RPC_HANDSHAKE_NONCE_LENGTH> derived = {};
+  bool ok = derive_mcu_nonce(secret, zero_counter, derived);
+  ok = combine_ok(ok,
+                  etl::equal(derived.begin(), derived.end(), expected.begin()));
+  secure_zero(pw::span<uint8_t>(derived));
   return ok;
 }
 
@@ -502,6 +568,7 @@ bool run_cryptographic_self_tests() {
   bool ok = run_sha256_kat();
   ok = combine_ok(ok, run_hmac_kat());
   ok = combine_ok(ok, run_handshake_kat());
+  ok = combine_ok(ok, run_mcu_nonce_kat());
   ok = combine_ok(ok, run_aead_kat());
   return ok;
 }

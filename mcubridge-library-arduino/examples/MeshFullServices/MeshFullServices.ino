@@ -148,8 +148,11 @@ void loop() {
     Console.process();
   }
 
+  // Messages are pushed to the MCU (MailboxService/Push) as they arrive; the
+  // daemon only queues one when that push fails. A slow fallback read drains
+  // such queued messages without spending link bandwidth on idle polling.
   static unsigned long lastMailboxPoll = millis();
-  if (millis() - lastMailboxPoll >= 250) {
+  if (millis() - lastMailboxPoll >= 5000UL) {
     lastMailboxPoll = millis();
     Mailbox.requestRead();
   }

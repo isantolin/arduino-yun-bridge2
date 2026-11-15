@@ -620,10 +620,16 @@ class BridgeService:
                 await self.serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty())
             return mcu_wire_pb2.Empty()
         data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
-        await self.state.mailbox_queue.append(data)
+        # Push first. Queue only when the MCU did not take the message, so the
+        # MCU can still fetch it with MailboxService/Read; queueing it after a
+        # successful push delivered every cloud message twice (push + Read).
         serial = self.serial
-        if serial:
-            await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data))
+        delivered = (
+            serial is not None
+            and await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data)) is not False
+        )
+        if not delivered:
+            await self.state.mailbox_queue.append(data)
         return mcu_wire_pb2.Empty()
 
     async def mailbox_read(

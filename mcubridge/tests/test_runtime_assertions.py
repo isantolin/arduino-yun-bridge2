@@ -161,6 +161,35 @@ async def test_cloud_mailbox_write_asserts_serial(
     assert serial.send.call_args[0][0] == "rpc.pb.MailboxService/Push"
     assert isinstance(serial.send.call_args[0][1], pb.MailboxPush)
     assert serial.send.call_args[0][1].data == b"outbound_box"
+    # Delivered by push, so it must not also be queued for MailboxService/Read.
+    assert len(state.mailbox_queue) == 0
+
+
+async def test_cloud_mailbox_push_failure_queues_for_read(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    """A message the MCU did not take stays available to MailboxService/Read."""
+    service, state, serial = service_setup
+    serial.send.return_value = False
+
+    await service.mailbox_push(b"retry_later")
+
+    serial.send.assert_awaited_once()
+    assert len(state.mailbox_queue) == 1
+    read = await service.mailbox_read(0)
+    assert read.content == b"retry_later"
+    assert len(state.mailbox_queue) == 0
+
+
+async def test_cloud_mailbox_push_without_serial_queues_for_read(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    service, state, _serial = service_setup
+    service.serial = None
+
+    await service.mailbox_push(b"offline")
+
+    assert len(state.mailbox_queue) == 1
 
 
 async def test_mcu_process_run_asserts_exec(

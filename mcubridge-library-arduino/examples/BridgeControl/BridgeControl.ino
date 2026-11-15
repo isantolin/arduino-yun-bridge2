@@ -57,7 +57,9 @@ void loop() {
   Bridge.process();
 
   static unsigned long lastMailboxCheck = 0;
-  if (millis() - lastMailboxCheck > 500) {
+  // Fallback only: messages are pushed to the MCU as they arrive and are
+  // queued for MailboxService/Read only when that push fails.
+  if (millis() - lastMailboxCheck > 5000UL) {
     lastMailboxCheck = millis();
 #if BRIDGE_ENABLE_MAILBOX
     if (Bridge.isSynchronized()) {

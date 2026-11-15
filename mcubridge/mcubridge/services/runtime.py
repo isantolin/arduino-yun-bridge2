@@ -133,8 +133,6 @@ class BridgeService:
         "rpc.pb.FileSystemService/Remove": "file_remove",
         "rpc.pb.FileTransferService/PushToLinux": "file_transfer_push_to_linux",
         "rpc.pb.FileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
-        "rpc.pb.LinuxFileTransferService/PushToLinux": "file_transfer_push_to_linux",
-        "rpc.pb.LinuxFileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
         "rpc.pb.MailboxService/Push": "mailbox_push",
         "rpc.pb.MailboxService/Read": "mailbox_read",
         "rpc.pb.MailboxService/Available": "mailbox_available",

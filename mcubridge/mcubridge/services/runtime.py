@@ -1319,8 +1319,10 @@ class BridgeService:
                 raise ConnectionError(f"Serial link disconnected for {target}")
 
             payload = b"" if isinstance(req, mcu_wire_pb2.SubscribeRequest) else req
-            timeout_s = float(timeout_ms) / 1000.0 if timeout_ms > 0 else None
-            res = await self.serial.send(spec.name, payload, timeout=timeout_s)
+            if timeout_ms > 0:
+                res = await self.serial.send(spec.name, payload, timeout=float(timeout_ms) / 1000.0)
+            else:
+                res = await self.serial.send(spec.name, payload)
             if isinstance(res, mcu_wire_pb2.VersionResponse):
                 self.state.mcu_version = (res.major, res.minor, res.patch)
             if res is True:

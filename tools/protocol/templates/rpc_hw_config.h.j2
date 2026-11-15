@@ -20,6 +20,8 @@ inline constexpr uint16_t CONSOLE_RX_BUFFER_SIZE = {{ hardware.console_rx_buffer
 inline constexpr uint16_t CONSOLE_TX_BUFFER_SIZE = {{ hardware.console_tx_buffer_size_avr }}U;
 inline constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = {{ hardware.mailbox_rx_buffer_size_avr }}U;
 inline constexpr uint16_t MAX_MAILBOX_QUEUE_SIZE = {{ hardware.max_mailbox_queue_size_avr }}U;
+inline constexpr uint16_t FLOW_CONTROL_XOFF_THRESHOLD = {{ hardware.flow_control_xoff_threshold_avr }}U;
+inline constexpr uint16_t FLOW_CONTROL_XON_THRESHOLD = {{ hardware.flow_control_xon_threshold_avr }}U;
 #else
 inline constexpr uint16_t MAX_OBSERVERS = {{ hardware.max_observers_other }}U;
 inline constexpr uint16_t RX_BUFFER_SIZE = {{ hardware.rx_buffer_size_other }}U;
@@ -28,7 +30,11 @@ inline constexpr uint16_t CONSOLE_RX_BUFFER_SIZE = {{ hardware.console_rx_buffer
 inline constexpr uint16_t CONSOLE_TX_BUFFER_SIZE = {{ hardware.console_tx_buffer_size_other }}U;
 inline constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = {{ hardware.mailbox_rx_buffer_size_other }}U;
 inline constexpr uint16_t MAX_MAILBOX_QUEUE_SIZE = {{ hardware.max_mailbox_queue_size_other }}U;
+inline constexpr uint16_t FLOW_CONTROL_XOFF_THRESHOLD = {{ hardware.flow_control_xoff_threshold_other }}U;
+inline constexpr uint16_t FLOW_CONTROL_XON_THRESHOLD = {{ hardware.flow_control_xon_threshold_other }}U;
 #endif
+static_assert(FLOW_CONTROL_XON_THRESHOLD < FLOW_CONTROL_XOFF_THRESHOLD,
+              "XON must be below XOFF to keep flow-control hysteresis");
 
 inline constexpr uint16_t MAX_PENDING_DATASTORE = {{ hardware.max_pending_datastore }}U;
 inline constexpr uint16_t MAX_PENDING_PROCESS_POLLS = {{ hardware.max_pending_process_polls }}U;
@@ -38,8 +44,6 @@ inline constexpr uint16_t STARTUP_DRAIN_FINAL = {{ hardware.startup_drain_final 
 inline constexpr uint32_t STARTUP_STABILIZATION_MS = {{ hardware.startup_stabilization_ms }}UL;
 inline constexpr uint32_t BAUDRATE_CHANGE_DELAY_MS = {{ hardware.baudrate_change_delay_ms }}UL;
 inline constexpr uint16_t MAX_CONSECUTIVE_CRC_ERRORS = {{ hardware.max_consecutive_crc_errors }}U;
-inline constexpr uint16_t FLOW_CONTROL_XOFF_THRESHOLD = {{ hardware.flow_control_xoff_threshold }}U;
-inline constexpr uint16_t FLOW_CONTROL_XON_THRESHOLD = {{ hardware.flow_control_xon_threshold }}U;
 inline constexpr uint16_t HKDF_KEY_LENGTH = {{ hardware.hkdf_key_length }}U;
 inline constexpr uint16_t KEY_AND_DIGEST_BUFFER_SIZE = {{ hardware.key_and_digest_buffer_size }}U;
 

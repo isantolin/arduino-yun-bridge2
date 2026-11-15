@@ -8,6 +8,9 @@
 #if !defined(ARDUINO_ARCH_AVR) && !defined(__AVR__)
 #error "This integration sketch requires an AVR microcontroller."
 #endif
+#if !BRIDGE_ENABLE_PW_TRANSFER
+#error "pw_transfer is disabled (BRIDGE_ENABLE_PW_TRANSFER=0); this sketch needs it."
+#endif
 
 namespace {
 

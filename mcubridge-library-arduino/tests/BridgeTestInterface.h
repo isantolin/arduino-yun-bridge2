@@ -166,10 +166,14 @@ class TestAccessor : public BridgeClass {
     return pw::span<const uint8_t>(_session_aead_keys.data(),
                                    rpc::RPC_AEAD_KEY_SIZE);
   }
-  bool invokeWriteEncryptedHdlcFrameWithBuffer(uint64_t address,
-                                               pw::span<const uint8_t> data,
-                                               pw::span<uint8_t> envelope) {
-    return _writeEncryptedHdlcFrameWithBuffer(address, data, envelope);
+  pw::span<const uint8_t> txAeadKey() const {
+    return pw::span<const uint8_t>(
+        _session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE,
+        rpc::RPC_AEAD_KEY_SIZE);
+  }
+  bool invokeWriteEncryptedHdlcFrame(uint64_t address,
+                                     pw::span<const uint8_t> data) {
+    return _writeEncryptedHdlcFrame(address, data);
   }
   bool invokeDecryptHdlcFrame(uint64_t address,
                               pw::span<const uint8_t> envelope,

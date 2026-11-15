@@ -237,6 +237,57 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
   return true;
 }
 
+bool aead_encrypt_chunked(pw::span<const uint8_t> key,
+                          pw::span<const uint8_t> nonce,
+                          pw::span<const uint8_t> aad,
+                          pw::span<const uint8_t> plaintext,
+                          const AeadOutputSink& sink) {
+  // A 32-byte chunk keeps the stack cost constant regardless of frame size;
+  // the previous one-shot path needed a frame-sized (256 B on AVR) envelope.
+  constexpr size_t kChunkSize = 32U;
+  constexpr size_t kMaxChunks =
+      (kAeadChunkedMaxPlaintext + kChunkSize - 1U) / kChunkSize;
+  const bool invalid_dimensions =
+      (key.size() != RPC_AEAD_KEY_SIZE) |
+      (nonce.size() != RPC_AEAD_NONCE_SIZE) |
+      (plaintext.size() > kAeadChunkedMaxPlaintext) | (!sink.is_valid());
+  if (invalid_dimensions) return false;
+
+  ChaChaPoly_Aead aead{};
+  bool ok = wc_ChaCha20Poly1305_Init(&aead, key.data(), nonce.data(),
+                                     CHACHA20_POLY1305_AEAD_ENCRYPT) == 0;
+  if (ok && !aad.empty()) {
+    ok = wc_ChaCha20Poly1305_UpdateAad(&aead, aad.data(),
+                                       static_cast<word32>(aad.size())) == 0;
+  }
+
+  etl::array<uint8_t, kChunkSize> chunk = {};
+  size_t offset = 0U;
+  const etl::array<uint8_t, kMaxChunks> passes{};
+  // Bounded pass count (SIL-2: no unbounded loops); passes beyond the end of
+  // the plaintext are no-ops, and the first failure stops the iteration.
+  ok = ok && etl::all_of(passes.begin(), passes.end(), [&](uint8_t) {
+         if (offset >= plaintext.size()) return true;
+         const size_t count = etl::min(chunk.size(), plaintext.size() - offset);
+         const bool encrypted =
+             wc_ChaCha20Poly1305_UpdateData(&aead, plaintext.data() + offset,
+                                            chunk.data(),
+                                            static_cast<word32>(count)) == 0;
+         offset += count;
+         return encrypted && sink(pw::span<const uint8_t>(chunk.data(), count));
+       });
+
+  etl::array<uint8_t, RPC_AEAD_TAG_SIZE> tag = {};
+  if (ok) {
+    ok = wc_ChaCha20Poly1305_Final(&aead, tag.data()) == 0 &&
+         sink(pw::span<const uint8_t>(tag));
+  }
+  secure_zero(pw::span<uint8_t>(chunk));
+  secure_zero(pw::span<uint8_t>(tag));
+  ForceZero(&aead, sizeof(aead));
+  return ok;
+}
+
 bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> ciphertext,
@@ -348,7 +399,11 @@ static constexpr etl::array<uint8_t, RPC_AEAD_TAG_SIZE> kat_aead_tag PROGMEM = {
     {0x7D, 0xCA, 0x84, 0x79, 0x78, 0x7A, 0x5C, 0x19, 0x0F, 0x58, 0xEE, 0xDA,
      0xE6, 0xA0, 0x6B, 0xCF}};
 
-bool run_cryptographic_self_tests() {
+// Each known-answer test runs in its own non-inlined frame and copies only its
+// own vectors out of PROGMEM. Inlined into one function, the copies of every
+// vector, the SHA-256 context and the nested HMAC/HKDF frames were all live at
+// once (~550 B frame), overflowing the ATmega2560 stack into .bss during POST.
+[[gnu::noinline]] static bool run_sha256_kat() {
   const auto sha_msg = copy_progmem(kat_sha256_msg);
   const auto sha_expected = copy_progmem(kat_sha256_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> digest = {};
@@ -357,16 +412,25 @@ bool run_cryptographic_self_tests() {
   wc_Sha256Update(&sha, sha_msg.data(), static_cast<word32>(sha_msg.size()));
   wc_Sha256Final(&sha, digest.data());
   wc_Sha256Free(&sha);
-  bool ok = etl::equal(digest.begin(), digest.end(), sha_expected.begin());
+  const bool ok =
+      etl::equal(digest.begin(), digest.end(), sha_expected.begin());
+  secure_zero(pw::span<uint8_t>(digest));
+  return ok;
+}
 
+[[gnu::noinline]] static bool run_hmac_kat() {
   const auto hmac_key = copy_progmem(kat_hmac_key);
   const auto hmac_data = copy_progmem(kat_hmac_data);
   const auto hmac_expected = copy_progmem(kat_hmac_expected);
   etl::array<uint8_t, RPC_SHA256_DIGEST_SIZE> hmac_result = {};
-  ok = combine_ok(ok, compute_hmac_sha256(hmac_key, hmac_data, hmac_result));
+  bool ok = compute_hmac_sha256(hmac_key, hmac_data, hmac_result);
   ok = combine_ok(ok, etl::equal(hmac_result.begin(), hmac_result.end(),
                                  hmac_expected.begin()));
+  secure_zero(pw::span<uint8_t>(hmac_result));
+  return ok;
+}
 
+[[gnu::noinline]] static bool run_handshake_kat() {
   const auto handshake_secret = copy_progmem(kat_handshake_secret);
   const auto handshake_nonce = copy_progmem(kat_handshake_nonce);
   const auto handshake_request_expected =
@@ -375,8 +439,8 @@ bool run_cryptographic_self_tests() {
       copy_progmem(kat_handshake_response_tag);
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_request = {};
   etl::array<uint8_t, RPC_HANDSHAKE_TAG_LENGTH> handshake_response = {};
-  ok = combine_ok(ok, handshake_generate_tag(handshake_secret, handshake_nonce,
-                                             handshake_request));
+  bool ok = handshake_generate_tag(handshake_secret, handshake_nonce,
+                                   handshake_request);
   ok = combine_ok(ok,
                   etl::equal(handshake_request.begin(), handshake_request.end(),
                              handshake_request_expected.begin()));
@@ -388,7 +452,12 @@ bool run_cryptographic_self_tests() {
   ok = combine_ok(
       ok, etl::equal(handshake_response.begin(), handshake_response.end(),
                      handshake_response_expected.begin()));
+  secure_zero(pw::span<uint8_t>(handshake_request));
+  secure_zero(pw::span<uint8_t>(handshake_response));
+  return ok;
+}
 
+[[gnu::noinline]] static bool run_aead_kat() {
   const auto aead_key = copy_progmem(kat_aead_key);
   const auto aead_nonce = copy_progmem(kat_aead_nonce);
   const auto aead_aad = copy_progmem(kat_aead_aad);
@@ -398,8 +467,8 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, 4> ciphertext = {};
   etl::array<uint8_t, RPC_AEAD_TAG_SIZE> tag = {};
   etl::array<uint8_t, 4> decrypted = {};
-  ok = combine_ok(ok, aead_encrypt(aead_key, aead_nonce, aead_aad,
-                                   aead_plaintext, ciphertext, tag));
+  bool ok = aead_encrypt(aead_key, aead_nonce, aead_aad, aead_plaintext,
+                         ciphertext, tag);
   ok = combine_ok(ok, etl::equal(ciphertext.begin(), ciphertext.end(),
                                  aead_expected.begin()));
   ok = combine_ok(
@@ -421,14 +490,19 @@ bool run_cryptographic_self_tests() {
       ok, etl::equal(rejected_plaintext.begin(), rejected_plaintext.end(),
                      zero_plaintext.begin()));
 
-  secure_zero(pw::span<uint8_t>(digest));
-  secure_zero(pw::span<uint8_t>(hmac_result));
-  secure_zero(pw::span<uint8_t>(handshake_request));
-  secure_zero(pw::span<uint8_t>(handshake_response));
   secure_zero(pw::span<uint8_t>(ciphertext));
   secure_zero(pw::span<uint8_t>(tag));
   secure_zero(pw::span<uint8_t>(decrypted));
   secure_zero(pw::span<uint8_t>(rejected_plaintext));
+  return ok;
+}
+
+bool run_cryptographic_self_tests() {
+  // Run every KAT regardless of earlier results (no short-circuit).
+  bool ok = run_sha256_kat();
+  ok = combine_ok(ok, run_hmac_kat());
+  ok = combine_ok(ok, run_handshake_kat());
+  ok = combine_ok(ok, run_aead_kat());
   return ok;
 }
 

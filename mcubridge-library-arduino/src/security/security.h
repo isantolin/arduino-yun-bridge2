@@ -8,12 +8,19 @@
 #ifndef RPC_SECURITY_H
 #define RPC_SECURITY_H
 
+#include <etl/delegate.h>
 #include <pw_span/span.h>
 #include <stddef.h>
 #include <stdint.h>
 
 namespace rpc {
 namespace security {
+
+/** Receives successive output chunks; returns false to abort the operation. */
+using AeadOutputSink = etl::delegate<bool(pw::span<const uint8_t>)>;
+
+/** Maximum plaintext accepted by aead_encrypt_chunked(). */
+inline constexpr size_t kAeadChunkedMaxPlaintext = 512U;
 
 /** Derive host-to-MCU and MCU-to-host keys from the shared secret and nonce. */
 // Writes host-to-MCU (RX) followed by MCU-to-host (TX) into one contiguous
@@ -27,6 +34,20 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> plaintext,
                   pw::span<uint8_t> ciphertext, pw::span<uint8_t> tag);
+
+/**
+ * Encrypt plaintext with ChaCha20-Poly1305 in small chunks, passing each
+ * ciphertext chunk and finally the 16-byte tag to `sink`.
+ *
+ * Produces exactly the ciphertext || tag of aead_encrypt() without a
+ * plaintext-sized output buffer, so callers can stream it (e.g. into an HDLC
+ * encoder) using only a fixed small stack chunk.
+ */
+bool aead_encrypt_chunked(pw::span<const uint8_t> key,
+                          pw::span<const uint8_t> nonce,
+                          pw::span<const uint8_t> aad,
+                          pw::span<const uint8_t> plaintext,
+                          const AeadOutputSink& sink);
 
 /** Authenticate and decrypt ciphertext with ChaCha20-Poly1305. */
 bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,

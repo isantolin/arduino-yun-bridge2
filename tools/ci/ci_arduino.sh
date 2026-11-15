@@ -184,7 +184,7 @@ compile_sketch() {
         )
         ARCH_INC="$PW_INC"
     elif [[ "$FQBN" == arduino:avr:* ]]; then
-        COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+        COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
         if command -v avr-gcc >/dev/null 2>&1; then
             local SYS_AVR_GCC_VER="$(avr-gcc -dumpversion | cut -d. -f1)"
             if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then

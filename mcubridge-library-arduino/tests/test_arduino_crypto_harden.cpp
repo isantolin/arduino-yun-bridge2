@@ -297,6 +297,118 @@ void test_aead_empty_payload_and_aad_edge_cases(void) {
       pw::span<uint8_t>()));
 }
 
+namespace {
+
+// Collects aead_encrypt_chunked() output and can fail on a chosen call.
+struct ChunkCollector {
+  etl::array<uint8_t, rpc::security::kAeadChunkedMaxPlaintext +
+                          rpc::RPC_AEAD_TAG_SIZE>
+      bytes{};
+  size_t size = 0U;
+  size_t calls = 0U;
+  size_t fail_on_call = 0U;  // 1-based; 0 never fails.
+
+  bool append(pw::span<const uint8_t> chunk) {
+    ++calls;
+    if (calls == fail_on_call) return false;
+    TEST_ASSERT_TRUE(size + chunk.size() <= bytes.size());
+    etl::copy(chunk.begin(), chunk.end(), bytes.begin() + size);
+    size += chunk.size();
+    return true;
+  }
+};
+
+void assert_chunked_matches_one_shot(pw::span<const uint8_t> aad,
+                                     pw::span<const uint8_t> plaintext) {
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> key{};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce{};
+  key.fill(0x42U);
+  nonce.fill(0x07U);
+
+  etl::array<uint8_t, 128> expected_ciphertext{};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> expected_tag{};
+  TEST_ASSERT_TRUE(plaintext.size() <= expected_ciphertext.size());
+  TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
+      key, nonce, aad, plaintext,
+      pw::span<uint8_t>(expected_ciphertext.data(), plaintext.size()),
+      expected_tag));
+
+  ChunkCollector collector;
+  auto sink_fn = [&collector](pw::span<const uint8_t> chunk) {
+    return collector.append(chunk);
+  };
+  TEST_ASSERT_TRUE(rpc::security::aead_encrypt_chunked(
+      key, nonce, aad, plaintext, rpc::security::AeadOutputSink(sink_fn)));
+
+  TEST_ASSERT_EQUAL_UINT32(
+      static_cast<uint32_t>(plaintext.size() + rpc::RPC_AEAD_TAG_SIZE),
+      static_cast<uint32_t>(collector.size));
+  if (!plaintext.empty()) {
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_ciphertext.data(),
+                                  collector.bytes.data(), plaintext.size());
+  }
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_tag.data(),
+                                collector.bytes.data() + plaintext.size(),
+                                expected_tag.size());
+}
+
+}  // namespace
+
+void test_aead_encrypt_chunked_matches_one_shot(void) {
+  etl::array<uint8_t, 70> plaintext{};  // 32 + 32 + 6 byte chunks.
+  for (size_t i = 0; i < plaintext.size(); ++i) {
+    plaintext[i] = static_cast<uint8_t>(i * 13U + 1U);
+  }
+  etl::array<uint8_t, 9> aad{};
+  aad.fill(0xA5U);
+
+  assert_chunked_matches_one_shot(aad, plaintext);
+  assert_chunked_matches_one_shot(pw::span<const uint8_t>(), plaintext);
+  assert_chunked_matches_one_shot(aad, pw::span<const uint8_t>());
+}
+
+void test_aead_encrypt_chunked_rejects_and_aborts(void) {
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> key{};
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_key{};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce{};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce{};
+  etl::array<uint8_t, 40> plaintext{};
+  etl::array<uint8_t, rpc::security::kAeadChunkedMaxPlaintext + 1U>
+      oversized{};
+
+  ChunkCollector collector;
+  auto sink_fn = [&collector](pw::span<const uint8_t> chunk) {
+    return collector.append(chunk);
+  };
+  const rpc::security::AeadOutputSink sink(sink_fn);
+
+  // Invalid inputs are rejected before any output is produced.
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt_chunked(
+      short_key, nonce, pw::span<const uint8_t>(), plaintext, sink));
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt_chunked(
+      key, short_nonce, pw::span<const uint8_t>(), plaintext, sink));
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt_chunked(
+      key, nonce, pw::span<const uint8_t>(), oversized, sink));
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt_chunked(
+      key, nonce, pw::span<const uint8_t>(), plaintext,
+      rpc::security::AeadOutputSink()));
+  TEST_ASSERT_EQUAL_UINT32(0U, static_cast<uint32_t>(collector.calls));
+
+  // A sink failure on the first ciphertext chunk aborts the operation.
+  collector = ChunkCollector{};
+  collector.fail_on_call = 1U;
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt_chunked(
+      key, nonce, pw::span<const uint8_t>(), plaintext, sink));
+  TEST_ASSERT_EQUAL_UINT32(1U, static_cast<uint32_t>(collector.calls));
+
+  // 40 bytes -> two ciphertext chunks, then the tag on the third call.
+  collector = ChunkCollector{};
+  collector.fail_on_call = 3U;
+  TEST_ASSERT_FALSE(rpc::security::aead_encrypt_chunked(
+      key, nonce, pw::span<const uint8_t>(), plaintext, sink));
+  TEST_ASSERT_EQUAL_UINT32(3U, static_cast<uint32_t>(collector.calls));
+}
+
 #if BRIDGE_ENABLE_POST_TESTS
 void test_cryptographic_self_tests_run(void) {
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
@@ -315,6 +427,8 @@ int main(int argc, char** argv) {
   RUN_TEST(test_session_key_derivation_known_answer);
   RUN_TEST(test_crypto_public_api_rejects_invalid_dimensions);
   RUN_TEST(test_aead_empty_payload_and_aad_edge_cases);
+  RUN_TEST(test_aead_encrypt_chunked_matches_one_shot);
+  RUN_TEST(test_aead_encrypt_chunked_rejects_and_aborts);
 #if BRIDGE_ENABLE_POST_TESTS
   RUN_TEST(test_cryptographic_self_tests_run);
 #endif

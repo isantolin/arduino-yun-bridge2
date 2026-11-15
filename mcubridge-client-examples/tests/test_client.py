@@ -715,4 +715,3 @@ async def test_gateway_client_push_fetch_bytes() -> None:
     fetched = await client.fetch_bytes_from_device("/tmp/bytes.bin", resource_id=3)
     assert fetched == b"bytes content"
     mock_manager.read.assert_called_once_with(3)
-

@@ -27,6 +27,13 @@
 #define SIZEOF_LONG_LONG 8
 #define NO_64BIT
 #define CHACHA_AEAD_SLOW
+// SRAM is the binding constraint on the ATmega2560 (8 KiB shared by .data,
+// .bss and the stack). Keep SHA-256's 256-byte K[] round-constant table in
+// flash (avr-gcc __flash; only wolfCrypt C sources use FLASH_QUALIFIER).
+#define WOLFSSL_USE_FLASHMEM
+// Use the 16-word rolling message schedule in Transform_Sha256 (W[16], 64 B)
+// instead of the full W[64] (256 B) stack array on the HMAC/HKDF paths.
+#define SHA256_MANY_REGISTERS
 #endif
 
 #define WOLFSSL_SHA256

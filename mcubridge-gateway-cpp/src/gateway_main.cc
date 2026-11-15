@@ -369,6 +369,14 @@ class DeviceTelemetryService final
   const std::string& device_id_;
 };
 
+void LogHandlerRegistrationFailure(std::string_view role,
+                                   const std::string& principal_id,
+                                   const pw::transfer::Handler& handler) {
+  std::cerr << role << '=' << principal_id
+            << " event=transfer_handler_registration_failed resource="
+            << handler.id() << '\n';
+}
+
 class BufferTransferHandler final : public pw::transfer::Handler {
  public:
   BufferTransferHandler(uint32_t resource_id, pw::ByteSpan storage)
@@ -581,19 +589,30 @@ class GatewaySession final
       }
     } registration{registry_, device_id_, this};
 
+    // The transfer thread must run before handlers are registered:
+    // TransferService::RegisterHandler() posts an event that only the running
+    // thread can process, and returns false after the event-processing timeout
+    // when the thread has not started, leaving the resource unregistered.
+    pw::thread::stl::Options transfer_options;
+    transfer_worker_ = std::make_unique<pw::thread::Thread>(
+        transfer_options, transfer_thread_.AsFunction());
+
     rpc_server_.RegisterService(telemetry_service_);
     rpc_server_.RegisterService(transfer_service_);
     services_registered_.store(true);
     if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
       default_handler_registered_.store(true);
+    } else {
+      LogHandlerRegistrationFailure("device", device_id_,
+                                    default_transfer_handler_);
     }
     if (transfer_service_.RegisterHandler(file_transfer_handler_)) {
       file_handler_registered_.store(true);
+    } else {
+      LogHandlerRegistrationFailure("device", device_id_,
+                                    file_transfer_handler_);
     }
 
-    pw::thread::stl::Options transfer_options;
-    transfer_worker_ = std::make_unique<pw::thread::Thread>(
-        transfer_options, transfer_thread_.AsFunction());
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "device=" << device_id_ << " event=session_open\n";
     ReceiveLoop();
@@ -955,12 +974,21 @@ class GatewayClientSession final : public SessionControl {
     services_registered_.store(true);
     if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
       default_handler_registered_.store(true);
+    } else {
+      LogHandlerRegistrationFailure("client", client_id_,
+                                    default_transfer_handler_);
     }
     if (transfer_service_.RegisterHandler(eeprom_transfer_handler_)) {
       eeprom_handler_registered_.store(true);
+    } else {
+      LogHandlerRegistrationFailure("client", client_id_,
+                                    eeprom_transfer_handler_);
     }
     if (transfer_service_.RegisterHandler(file_transfer_handler_)) {
       file_handler_registered_.store(true);
+    } else {
+      LogHandlerRegistrationFailure("client", client_id_,
+                                    file_transfer_handler_);
     }
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "client=" << client_id_ << " event=session_open\n";

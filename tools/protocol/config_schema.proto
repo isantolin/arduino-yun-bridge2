@@ -1101,7 +1101,7 @@ message RuntimeConfig {
     (uci_option) = "topic_prefix"
   ];
   repeated string allowed_commands = 13 [
-    (config_desc) = "Programs the MCU/cloud may run. Case-sensitive: an entry with / must equal the executable path exactly; any other entry is a glob over a bare program name (never a path); * allows all",
+    (config_desc) = "Allowed programs (case-sensitive; /path exact, name glob; * = all)",
     (uci_option) = "allowed_commands"
   ];
   string file_system_root = 14 [

@@ -57,7 +57,7 @@ def test_load_runtime_config_applies_env_and_defaults() -> None:
         "cloud_certfile": "",
         "cloud_keyfile": "",
         "topic_prefix": "custom/topic",
-        "allowed_commands": ["echo", "ls"],
+        "allowed_commands": ["ECHO", "ls"],
         "file_system_root": "/data",
         "process_timeout": 60,
         "cloud_queue_limit": 1,

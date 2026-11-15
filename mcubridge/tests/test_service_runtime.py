@@ -1839,3 +1839,66 @@ async def test_cloud_transfer_disconnected_raises_connection_error(
 
     with pytest.raises(ConnectionError, match="not connected"):
         await svc.cloud_transfer_write(2, b"test")
+
+
+async def test_cloud_transfer_manager_lifecycle_and_operations(mock_bridge_service: BridgeService) -> None:
+    svc = mock_bridge_service
+    mock_client = MagicMock()
+    mock_channel = MagicMock()
+    mock_rpcs = MagicMock()
+    mock_client.channel.return_value = mock_channel
+    mock_channel.rpcs = mock_rpcs
+    mock_rpcs.pw.transfer.Transfer = MagicMock()
+    svc.cloud_rpc_client = mock_client
+
+    # First call: creates and caches manager
+    mgr1 = svc._get_cloud_transfer_manager()
+    assert mgr1 is not None
+    # Second call: returns cached manager
+    mgr2 = svc._get_cloud_transfer_manager()
+    assert mgr1 is mgr2
+
+    # Mock manager methods for read/write
+    mock_mgr = MagicMock()
+    mock_mgr.read.return_value = b"read_bytes"
+    svc._cloud_transfer_manager = mock_mgr
+
+    read_data = await svc.cloud_transfer_read(7)
+    assert read_data == b"read_bytes"
+    mock_mgr.read.assert_called_once_with(7)
+
+    await svc.cloud_transfer_write(8, b"written_bytes")
+    mock_mgr.write.assert_called_once_with(8, b"written_bytes")
+
+
+async def test_file_transfer_default_resource_id_and_rpc_dispatch(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+
+    mock_read = AsyncMock(return_value=b"dispatched_content")
+    mock_write = AsyncMock()
+    monkeypatch.setattr(svc, "cloud_transfer_read", mock_read)
+    monkeypatch.setattr(svc, "cloud_transfer_write", mock_write)
+
+    # Push with default resource_id (0 -> 2) through execute_rpc
+    push_req = cloud_gateway_pb2.FileTransferSyncRequest(path="pushed.txt", resource_id=0)
+    push_resp_bytes = await svc.execute_rpc("rpc.pb.LinuxFileTransferService/PushToLinux", push_req.SerializeToString())
+    push_resp = cloud_gateway_pb2.FileTransferSyncResponse()
+    push_resp.ParseFromString(push_resp_bytes)
+    assert push_resp.success is True
+    assert push_resp.bytes_transferred == len(b"dispatched_content")
+    mock_read.assert_awaited_once_with(2)
+    assert (tmp_path / "pushed.txt").read_bytes() == b"dispatched_content"
+
+    # Fetch with default resource_id (0 -> 2) through execute_rpc
+    fetch_req = cloud_gateway_pb2.FileTransferSyncRequest(path="pushed.txt", resource_id=0)
+    fetch_resp_bytes = await svc.execute_rpc(
+        "rpc.pb.LinuxFileTransferService/FetchFromLinux", fetch_req.SerializeToString()
+    )
+    fetch_resp = cloud_gateway_pb2.FileTransferSyncResponse()
+    fetch_resp.ParseFromString(fetch_resp_bytes)
+    assert fetch_resp.success is True
+    assert fetch_resp.bytes_transferred == len(b"dispatched_content")
+    mock_write.assert_awaited_once_with(2, b"dispatched_content")

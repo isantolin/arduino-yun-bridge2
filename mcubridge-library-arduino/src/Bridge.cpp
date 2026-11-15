@@ -505,15 +505,6 @@ void BridgeClass::_serialTask() {
 }
 
 void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
-  struct RxPlaintextUseGuard {
-    bool& in_use;
-    const bool previous;
-
-    explicit RxPlaintextUseGuard(bool& value)
-        : in_use(value), previous(value) {}
-    ~RxPlaintextUseGuard() { in_use = previous; }
-  } rx_plaintext_use_guard(_rx_plaintext_in_use);
-
   _last_rx_ms = NowMillis();
   const uint64_t addr = frame.address();
   const auto raw_data = pw::span<const uint8_t>(
@@ -534,7 +525,6 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         return;
       }
       decrypted = true;
-      _rx_plaintext_in_use = true;
     } else if (!_shared_secret.empty() && !_session_keys_ready) {
       if (!raw_meta.ok() ||
           (!isLinkSyncRequest(raw_meta.value()) && !clear_link_reset)) {
@@ -553,7 +543,6 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       return;
     }
     decrypted = true;
-    _rx_plaintext_in_use = true;
   }
 
   if (addr == rpc::RPC_HDLC_ADDRESS_RPC) {
@@ -617,28 +606,11 @@ bool BridgeClass::_writeHdlcFrame(uint64_t address,
 
 bool BridgeClass::_writeEncryptedHdlcFrame(uint64_t address,
                                            pw::span<const uint8_t> data) {
-  if (_rx_plaintext_in_use) {
-    return _writeEncryptedHdlcFrameWithStackBuffer(address, data);
-  }
-  return _writeEncryptedHdlcFrameWithBuffer(address, data,
-                                            pw::span<uint8_t>(_rx_plaintext));
-}
-
-bool BridgeClass::_writeEncryptedHdlcFrameWithStackBuffer(
-    uint64_t address, pw::span<const uint8_t> data) {
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> envelope = {};
-  return _writeEncryptedHdlcFrameWithBuffer(address, data,
-                                            pw::span<uint8_t>(envelope));
-}
-
-bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
-    uint64_t address, pw::span<const uint8_t> data,
-    pw::span<uint8_t> envelope) {
   constexpr size_t kAeadOverhead =
       rpc::RPC_AEAD_COUNTER_SIZE + rpc::RPC_AEAD_TAG_SIZE;
+  // Same bound as the receive path, so every frame fits the peer's buffer.
   if (!_session_keys_ready || address > UINT8_MAX ||
-      envelope.size() < kAeadOverhead ||
-      data.size() > envelope.size() - kAeadOverhead ||
+      data.size() > bridge::config::RX_BUFFER_SIZE - kAeadOverhead ||
       _tx_aead_counter == UINT64_MAX) {
     return false;
   }
@@ -652,40 +624,31 @@ bool BridgeClass::_writeEncryptedHdlcFrameWithBuffer(
   etl::for_each(nonce.begin() + 4U, nonce.end(), [&](uint8_t& nonce_byte) {
     nonce_byte = static_cast<uint8_t>(
         counter >> ((rpc::RPC_AEAD_COUNTER_SIZE - 1U - idx) * 8U));
-    envelope[idx] = nonce_byte;
     aad[1U + idx] = nonce_byte;
     ++idx;
   });
 
-  const size_t ciphertext_offset = rpc::RPC_AEAD_COUNTER_SIZE;
-  auto ciphertext =
-      pw::span<uint8_t>(envelope.data() + ciphertext_offset, data.size());
-  auto tag =
-      pw::span<uint8_t>(envelope.data() + ciphertext_offset + data.size(),
-                        rpc::RPC_AEAD_TAG_SIZE);
-  if (!rpc::security::aead_encrypt(
-          pw::span<const uint8_t>(
-              _session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE,
-              rpc::RPC_AEAD_KEY_SIZE),
-          pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad), data,
-          ciphertext, tag)) {
-    rpc::security::secure_zero(pw::span<uint8_t>(envelope));
-    rpc::security::secure_zero(pw::span<uint8_t>(nonce));
-    rpc::security::secure_zero(pw::span<uint8_t>(aad));
-    return false;
-  }
-
-  const size_t envelope_size =
-      rpc::RPC_AEAD_COUNTER_SIZE + data.size() + rpc::RPC_AEAD_TAG_SIZE;
-  const bool written =
-      pw::hdlc::WriteUIFrame(address,
-                             pw::as_bytes(envelope.subspan(0, envelope_size)),
-                             _arduino_stream)
-          .ok();
-  rpc::security::secure_zero(pw::span<uint8_t>(envelope));
+  // Stream counter || ciphertext || tag straight into the HDLC encoder. The
+  // bytes on the wire are identical to encrypting into a frame-sized envelope
+  // first, but the stack no longer holds a RX_BUFFER_SIZE copy, which was the
+  // deepest consumer on the ATmega2560's response path.
+  pw::hdlc::Encoder encoder(_arduino_stream);
+  auto write_chunk = [&encoder](pw::span<const uint8_t> chunk) {
+    return encoder.WriteData(pw::as_bytes(chunk)).ok();
+  };
+  bool ok = encoder.StartUnnumberedFrame(address).ok() &&
+            write_chunk(pw::span<const uint8_t>(aad.data() + 1U,
+                                                rpc::RPC_AEAD_COUNTER_SIZE));
+  ok = ok && rpc::security::aead_encrypt_chunked(
+                 pw::span<const uint8_t>(
+                     _session_aead_keys.data() + rpc::RPC_AEAD_KEY_SIZE,
+                     rpc::RPC_AEAD_KEY_SIZE),
+                 pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad),
+                 data, rpc::security::AeadOutputSink(write_chunk));
+  ok = ok && encoder.FinishFrame().ok();
   rpc::security::secure_zero(pw::span<uint8_t>(nonce));
   rpc::security::secure_zero(pw::span<uint8_t>(aad));
-  return written;
+  return ok;
 }
 
 bool BridgeClass::_decryptHdlcFrame(uint64_t address,

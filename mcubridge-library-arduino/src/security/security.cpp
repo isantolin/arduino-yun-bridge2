@@ -237,6 +237,57 @@ bool aead_encrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
   return true;
 }
 
+bool aead_encrypt_chunked(pw::span<const uint8_t> key,
+                          pw::span<const uint8_t> nonce,
+                          pw::span<const uint8_t> aad,
+                          pw::span<const uint8_t> plaintext,
+                          const AeadOutputSink& sink) {
+  // A 32-byte chunk keeps the stack cost constant regardless of frame size;
+  // the previous one-shot path needed a frame-sized (256 B on AVR) envelope.
+  constexpr size_t kChunkSize = 32U;
+  constexpr size_t kMaxChunks =
+      (kAeadChunkedMaxPlaintext + kChunkSize - 1U) / kChunkSize;
+  const bool invalid_dimensions =
+      (key.size() != RPC_AEAD_KEY_SIZE) |
+      (nonce.size() != RPC_AEAD_NONCE_SIZE) |
+      (plaintext.size() > kAeadChunkedMaxPlaintext) | !sink.is_valid();
+  if (invalid_dimensions) return false;
+
+  ChaChaPoly_Aead aead{};
+  bool ok = wc_ChaCha20Poly1305_Init(&aead, key.data(), nonce.data(),
+                                     CHACHA20_POLY1305_AEAD_ENCRYPT) == 0;
+  if (ok && !aad.empty()) {
+    ok = wc_ChaCha20Poly1305_UpdateAad(&aead, aad.data(),
+                                       static_cast<word32>(aad.size())) == 0;
+  }
+
+  etl::array<uint8_t, kChunkSize> chunk = {};
+  size_t offset = 0U;
+  const etl::array<uint8_t, kMaxChunks> passes{};
+  // Bounded pass count (SIL-2: no unbounded loops); passes beyond the end of
+  // the plaintext are no-ops, and the first failure stops the iteration.
+  ok = ok && etl::all_of(passes.begin(), passes.end(), [&](uint8_t) {
+         if (offset >= plaintext.size()) return true;
+         const size_t count = etl::min(chunk.size(), plaintext.size() - offset);
+         const bool encrypted =
+             wc_ChaCha20Poly1305_UpdateData(&aead, plaintext.data() + offset,
+                                            chunk.data(),
+                                            static_cast<word32>(count)) == 0;
+         offset += count;
+         return encrypted && sink(pw::span<const uint8_t>(chunk.data(), count));
+       });
+
+  etl::array<uint8_t, RPC_AEAD_TAG_SIZE> tag = {};
+  if (ok) {
+    ok = wc_ChaCha20Poly1305_Final(&aead, tag.data()) == 0 &&
+         sink(pw::span<const uint8_t>(tag));
+  }
+  secure_zero(pw::span<uint8_t>(chunk));
+  secure_zero(pw::span<uint8_t>(tag));
+  ForceZero(&aead, sizeof(aead));
+  return ok;
+}
+
 bool aead_decrypt(pw::span<const uint8_t> key, pw::span<const uint8_t> nonce,
                   pw::span<const uint8_t> aad,
                   pw::span<const uint8_t> ciphertext,

@@ -941,20 +941,22 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   ba.setSessionKeysReady(true);
   etl::array<uint8_t, 10> small_env = {};
   etl::array<uint8_t, 24> exact_env = {};
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      256U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), small_env));
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), exact_env));
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
+      256U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes))));
+  // One byte past the largest payload whose counter || ciphertext || tag fits
+  // the peer's RX buffer.
+  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE -
+                          rpc::RPC_AEAD_COUNTER_SIZE - rpc::RPC_AEAD_TAG_SIZE +
+                          1U>
+      oversized_payload = {};
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(1U, oversized_payload));
   ba.setTxAeadCounter(UINT64_MAX);
-  etl::array<uint8_t, 64> normal_env = {};
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
+      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes))));
   ba.setTxAeadCounter(0U);
   ba.setSessionKeysReady(false);
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrameWithBuffer(
-      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), normal_env));
+  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
+      1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes))));
 
   pw::span<const uint8_t> plain_out;
   TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
@@ -973,6 +975,73 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   const pw::Status send_status =
       ba.invokeChannelSend(pw::as_bytes(pw::span(&dummy_byte, 1U)));
   TEST_ASSERT_FALSE(send_status.ok());
+}
+
+// Regression: the MCU now streams counter || ciphertext || tag into the HDLC
+// encoder in 32-byte chunks instead of building a frame-sized envelope on the
+// stack. The bytes on the wire must stay identical to one-shot AEAD.
+void test_encrypted_frame_streaming_matches_one_shot_aead() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream, 0U, "shared-key");
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  memset(sync.nonce.bytes, 0x5A, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+  sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+  ba.computeHandshakeTag(sync.nonce.bytes, sync.nonce.size, sync.tag.bytes);
+  sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+  feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
+                       rpc_pb_LinkSync_fields, sync);
+  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+
+  stream.clear();
+  constexpr uint64_t kPreviousCounter = 41U;
+  ba.setTxAeadCounter(kPreviousCounter);
+  // Spans several 32-byte chunks and ends with a partial chunk.
+  etl::array<uint8_t, 100> payload = {};
+  for (size_t i = 0; i < payload.size(); ++i) {
+    payload[i] = static_cast<uint8_t>(i * 7U + 3U);
+  }
+  TEST_ASSERT_TRUE(
+      ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+
+  size_t cursor = 0;
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  pw::hdlc::Frame frame;
+  TEST_ASSERT_TRUE(
+      extract_next_valid_hdlc_frame(stream.tx_buf, cursor, decoder, frame));
+  TEST_ASSERT_EQUAL_UINT64(rpc::RPC_HDLC_ADDRESS_RPC, frame.address());
+  const auto envelope = pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(frame.data().data()),
+      frame.data().size());
+  TEST_ASSERT_EQUAL_UINT32(
+      static_cast<uint32_t>(rpc::RPC_AEAD_COUNTER_SIZE + payload.size() +
+                            rpc::RPC_AEAD_TAG_SIZE),
+      static_cast<uint32_t>(envelope.size()));
+
+  const uint64_t counter = kPreviousCounter + 1U;
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, 1U + rpc::RPC_AEAD_COUNTER_SIZE> aad = {};
+  aad[0] = static_cast<uint8_t>(rpc::RPC_HDLC_ADDRESS_RPC);
+  for (size_t i = 0; i < rpc::RPC_AEAD_COUNTER_SIZE; ++i) {
+    const size_t shift = (rpc::RPC_AEAD_COUNTER_SIZE - 1U - i) * 8U;
+    const uint8_t counter_byte = static_cast<uint8_t>(counter >> shift);
+    nonce[4U + i] = counter_byte;
+    aad[1U + i] = counter_byte;
+  }
+  etl::array<uint8_t, 100> expected_ciphertext = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> expected_tag = {};
+  TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
+      ba.txAeadKey(), nonce, aad, payload, expected_ciphertext, expected_tag));
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(aad.data() + 1U, envelope.data(),
+                                rpc::RPC_AEAD_COUNTER_SIZE);
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_ciphertext.data(),
+                                envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE,
+                                expected_ciphertext.size());
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(
+      expected_tag.data(),
+      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size(),
+      expected_tag.size());
 }
 
 }  // namespace
@@ -1103,6 +1172,7 @@ int main() {
   RUN_TEST(test_all_timers_and_etl_error_coverage);
   RUN_TEST(test_bootloader_timer_and_hal_coverage);
   RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
+  RUN_TEST(test_encrypted_frame_streaming_matches_one_shot_aead);
   RUN_TEST(test_pin_subscription_reports_rising_edge);
   RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
   RUN_TEST(test_set_stream_selects_hardware_serial_by_type);

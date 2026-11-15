@@ -302,11 +302,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   bool _writeHdlcFrame(uint64_t address, pw::span<const uint8_t> data,
                        bool plaintext = false);
   bool _writeEncryptedHdlcFrame(uint64_t address, pw::span<const uint8_t> data);
-  bool _writeEncryptedHdlcFrameWithBuffer(uint64_t address,
-                                          pw::span<const uint8_t> data,
-                                          pw::span<uint8_t> envelope);
-  bool _writeEncryptedHdlcFrameWithStackBuffer(uint64_t address,
-                                               pw::span<const uint8_t> data);
   bool _decryptHdlcFrame(uint64_t address, pw::span<const uint8_t> envelope,
                          pw::span<const uint8_t>& plaintext);
   void _clearLinkSession();
@@ -353,7 +348,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   // Contiguous RX||TX session keys let HKDF write directly into final storage.
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> _session_aead_keys{};
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
-  bool _rx_plaintext_in_use{false};
   uint64_t _tx_aead_counter{0};
   uint64_t _rx_aead_counter{0};
   bool _session_keys_ready{false};

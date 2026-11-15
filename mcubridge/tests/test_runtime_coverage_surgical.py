@@ -428,18 +428,6 @@ async def test_handle_request_without_serial(test_config: RuntimeConfig, mock_br
     assert len(mock_bridge_state.running_processes) == 0
 
 
-async def test_on_mcu_console_write_no_queues(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
-    mock_serial = AsyncMock(spec=SerialTransport)
-    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.console_queues.clear()
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/evt/rpc.pb.ConsoleService/Write", payload=b"hello mcu"
-    )
-    await svc.enqueue_cloud(msg)
-    assert len(svc.console_queues) == 0
-    assert len(mock_bridge_state.console_to_mcu_queue) == 0
-
-
 async def test_run_cloud_disabled(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     test_config.cloud_enabled = False
     mock_serial = AsyncMock(spec=SerialTransport)

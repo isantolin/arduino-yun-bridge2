@@ -277,7 +277,9 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
-        async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000) as (_channel, stub):
+        async with bridge_session(
+            host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000
+        ) as (_channel, stub):
             ver_resp: mcu_wire_pb2.VersionResponse | None = None
             for attempt in range(5):
                 try:
@@ -285,7 +287,12 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                     if ver_resp.major == 2 and ver_resp.minor == 8:
                         break
                 except (RuntimeError, TimeoutError) as exc:
-                    logger.warning("GetVersion attempt failed, retrying...", node=node.name, attempt=attempt, error=str(exc))
+                    logger.warning(
+                        "GetVersion attempt failed, retrying...",
+                        node=node.name,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
                 await asyncio.sleep(1.0)
             if ver_resp is None or ver_resp.major != 2 or ver_resp.minor != 8:
                 major = ver_resp.major if ver_resp else -1
@@ -305,7 +312,12 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                     if mem_resp.value > 0:
                         break
                 except (RuntimeError, TimeoutError) as exc:
-                    logger.warning("GetFreeMemory attempt failed, retrying...", node=node.name, attempt=attempt, error=str(exc))
+                    logger.warning(
+                        "GetFreeMemory attempt failed, retrying...",
+                        node=node.name,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
                 await asyncio.sleep(1.0)
             if mem_resp is None or mem_resp.value == 0:
                 logger.error("Free memory reported as 0 or unavailable", node=node.name)

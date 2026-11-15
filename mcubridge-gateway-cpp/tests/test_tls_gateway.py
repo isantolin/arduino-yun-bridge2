@@ -666,6 +666,65 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             t.join(timeout=2)
             self.gateway.wait_for("client=operator-01 event=session_closed")
 
+    def test_device_session_registers_transfer_handlers(self) -> None:
+        """Regression: device sessions must serve pw_transfer resources 1 and 2.
+
+        The daemon reads the staged file (resource 2) from its device session
+        during FileTransferService/PushToLinux. Registering handlers before the
+        transfer thread runs made RegisterHandler() time out, so every device
+        transfer failed with NOT_FOUND.
+        """
+        dev_sock = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        dev_sock.settimeout(0.2)
+        decoder = pw_hdlc.decode.FrameDecoder()
+        rpc_client = PwRpcClient(
+            callback_client.Impl(default_unary_timeout_s=5.0),
+            [PwRpcChannel(1, lambda p: dev_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        running = True
+
+        def reader() -> None:
+            while running:
+                try:
+                    data = dev_sock.recv(4096)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
+                except (OSError, ssl.SSLError):
+                    break
+                if not data:
+                    break
+                for f in decoder.process(data):
+                    if f.ok() and f.address == 1:
+                        rpc_client.process_packet(f.data)
+
+        t = threading.Thread(target=reader, daemon=True)
+        t.start()
+        self.gateway.wait_for("device=device-01 event=session_open")
+
+        try:
+            assert "event=transfer_handler_registration_failed" not in self.gateway.logs()
+
+            transfer_service = rpc_client.channel(1).rpcs.pw.transfer.Transfer
+            transfer_manager = PwTransferManager(transfer_service, default_response_timeout_s=5.0)
+
+            buffer_payload = b"device session buffer resource"
+            transfer_manager.write(1, buffer_payload)
+            assert transfer_manager.read(1) == buffer_payload
+
+            file_payload = b"device session staged file resource"
+            transfer_manager.write(2, file_payload)
+            assert transfer_manager.read(2) == file_payload
+
+            staging_file = Path("/tmp/mcubridge-gateway/device-01/staging.bin")
+            assert staging_file.is_file()
+            assert staging_file.read_bytes() == file_payload
+        finally:
+            running = False
+            dev_sock.close()
+            t.join(timeout=2)
+            self.gateway.wait_for("device=device-01 event=session_closed")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"])

@@ -125,9 +125,12 @@ def test_validate_config_discrete_boundaries() -> None:
     with pytest.raises(ValueError, match="cloud_certfile"):
         structures.validate_config(cfg)
 
-    # Empty secret explicitly selects the protocol's unauthenticated mode.
+    # An empty secret (unauthenticated, unencrypted link) needs an explicit opt-in.
     cfg = _valid_runtime_config()
     cfg.serial_shared_secret = b""
+    with pytest.raises(ValueError, match="allow_insecure_link"):
+        structures.validate_config(cfg)
+    cfg.allow_insecure_link = True
     structures.validate_config(cfg)
     assert cfg.serial_shared_secret == b""
 

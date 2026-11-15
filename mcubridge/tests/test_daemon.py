@@ -76,6 +76,34 @@ def test_daemon_strict_mode_when_default_secret(mocker: MockerFixture) -> None:
     assert config.cloud_enabled is False
 
 
+def test_daemon_disables_cloud_for_insecure_link(mocker: MockerFixture) -> None:
+    """An opted-in empty secret runs the link unauthenticated, so the cloud must be off."""
+    config = RuntimeConfig(
+        topic_prefix="test/br",
+        serial_port="/dev/null",
+        serial_shared_secret=b"",
+        allow_insecure_link=True,
+        cloud_enabled=True,
+    )
+    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
+    mocker.patch("mcubridge.daemon.load_runtime_config", return_value=config)
+    mocker.patch("mcubridge.daemon.configure_logging")
+    mock_error = mocker.patch("mcubridge.daemon.logger.error")
+    mock_runner = MagicMock()
+    mock_runner.__enter__.return_value = mock_runner
+
+    def _close_coro(coro: Any) -> None:
+        if hasattr(coro, "close"):
+            coro.close()
+
+    mock_runner.run.side_effect = _close_coro
+    mocker.patch("asyncio.Runner", return_value=mock_runner)
+
+    run_daemon()
+    assert config.cloud_enabled is False
+    assert any("INSECURE LINK" in str(call.args[0]) for call in mock_error.call_args_list)
+
+
 def test_daemon_keyboard_interrupt_graceful_exit(mocker: MockerFixture) -> None:
     """Validate graceful handling and logging of KeyboardInterrupt."""
     mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)

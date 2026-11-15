@@ -65,6 +65,13 @@ def run_daemon() -> None:
         if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
             config.cloud_enabled = False
             logger.error("STRICT MODE: Cloud transport has been DISABLED for security.")
+        elif not config.serial_shared_secret:
+            # Only reachable with allow_insecure_link (validate_config rejects it otherwise).
+            config.cloud_enabled = False
+            logger.error(
+                "INSECURE LINK: serial_shared_secret is empty (allow_insecure_link); the MCU link is "
+                "unauthenticated and unencrypted. Cloud transport has been DISABLED."
+            )
 
         # 1. Create Serial Transport
         serial_transport = SerialTransport(config, state, None)

@@ -197,9 +197,15 @@ return view.extend({
 		});
 
 		o = s.option(form.Value, 'serial_shared_secret', _('Serial Shared Secret'),
-			_('Shared secret for serial authentication (BRIDGE_SERIAL_SHARED_SECRET).'));
+			_('Shared secret for serial authentication (BRIDGE_SERIAL_SHARED_SECRET). An empty secret is rejected unless "Allow insecure serial link" is enabled.'));
 		o.password = true;
 		o.rmempty = false;
+
+		o = s.option(form.Flag, 'allow_insecure_link', _('Allow insecure serial link'),
+			_('Permit an empty Serial Shared Secret. The MCU link is then neither authenticated nor encrypted and the Cloud transport is disabled. Leave this off.'));
+		o.rmempty = false;
+		o.default = '0';
+		applySchemaDefault(o, 'allow_insecure_link', true);
 
 		return m.render();
 	}

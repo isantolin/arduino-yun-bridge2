@@ -1208,7 +1208,7 @@ message RuntimeConfig {
   ];
   bytes serial_shared_secret = 36 [
     (config_default) = "failsafe_secret_mode",
-    (config_desc) = "Shared secret for LinkSync authentication and HDLC AEAD; empty disables authentication and encryption",
+    (config_desc) = "Shared secret for LinkSync authentication and HDLC AEAD; an empty secret is rejected unless allow_insecure_link is set",
     (uci_option) = "serial_shared_secret"
   ];
   string cloud_spool_dir = 37 [
@@ -1273,5 +1273,10 @@ message RuntimeConfig {
     (config_default) = "0",
     (config_desc) = "Procd service respawn maximum retry count (0 for infinite)",
     (uci_option) = "respawn_retry"
+  ];
+  bool allow_insecure_link = 54 [
+    (config_default) = "false",
+    (config_desc) = "Permit an empty serial_shared_secret: the MCU link is then neither authenticated nor encrypted and the cloud transport is disabled",
+    (uci_option) = "allow_insecure_link"
   ];
 }

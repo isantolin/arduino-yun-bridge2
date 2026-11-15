@@ -286,8 +286,17 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
         configure_logging(debug=True, console=True)
 
 
-def test_load_runtime_config_without_secret_uses_compatibility_mode() -> None:
+def test_load_runtime_config_without_secret_requires_insecure_opt_in() -> None:
+    with pytest.raises(ValueError, match="allow_insecure_link"):
+        settings.load_runtime_config(
+            raw_loader=lambda: ({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test")
+        )
+
     config = settings.load_runtime_config(
-        raw_loader=lambda: ({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test")
+        raw_loader=lambda: (
+            {"serial_port": "/dev/ttyS0", "serial_shared_secret": None, "allow_insecure_link": True},
+            "test",
+        )
     )
     assert config.serial_shared_secret == b""
+    assert config.allow_insecure_link is True

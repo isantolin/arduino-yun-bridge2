@@ -141,9 +141,14 @@ def validate_config(cfg: config_schema_pb2.RuntimeConfig) -> None:
                     )
     if bool(cfg.cloud_certfile) != bool(cfg.cloud_keyfile):
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
-    # An empty secret is the explicitly supported, unauthenticated compatibility
-    # mode. The firmware accepts only an empty handshake tag in that mode;
-    # configured secrets continue to require mutual HMAC authentication.
+    # An empty secret leaves the MCU link unauthenticated and unencrypted. It
+    # is only accepted as an explicit opt-in (allow_insecure_link); the daemon
+    # then disables the cloud transport.
+    if not cfg.serial_shared_secret and not cfg.allow_insecure_link:
+        raise ValueError(
+            "serial_shared_secret: an empty secret disables link authentication and encryption; "
+            "set allow_insecure_link to permit it"
+        )
 
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]

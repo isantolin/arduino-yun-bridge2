@@ -32,7 +32,7 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
-from pw_rpc import packets as pw_packets
+from pw_rpc import ids as pw_ids, packets as pw_packets
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
@@ -59,6 +59,10 @@ from mcubridge.state.context import RuntimeState
 logger = structlog.get_logger("mcubridge.serial")
 
 _LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
+# Upstream pw_transfer is not a project operation: its calls are opened by the
+# pw_transfer Manager on this client, so every client-side packet of the
+# service belongs to the Pigweed client (transfer_read / transfer_write).
+_PW_TRANSFER_SERVICE_ID: Final[int] = pw_ids.calculate("pw.transfer.Transfer")
 _LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
 # Console bytes travel on HDLC_ADDRESS_CONSOLE, not as pw_rpc packets to the MCU.
 _CONSOLE_WRITE_SPEC: Final = protocol.BY_NAME["rpc.pb.ConsoleService/Write"]
@@ -416,6 +420,32 @@ class SerialTransport:
                     logger.error("Error in serial read loop", error=str(exc))
                 break
 
+    async def _route_to_pigweed_client(self, pkt: Any, spec: Any, frame_data: bytes) -> bool:
+        """Hand client-side packets of Linux-initiated calls to the Pigweed client.
+
+        Pigweed's native client owns responses and server streams for those
+        calls: call-ID correlation, payload decoding, stream events and status.
+        """
+        if pw_packets.for_server(pkt):
+            return False
+        if pkt.service_id == _PW_TRANSFER_SERVICE_ID:
+            self.rpc_client.process_packet(frame_data)
+            return True
+        rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
+        is_client_rpc = (
+            spec is not None
+            and spec.name not in _HANDSHAKE_RAW_NAMES
+            and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
+            and rpc_packet_key in self._active_rpc_packet_ids
+        )
+        if not is_client_rpc:
+            return False
+        if pkt.type != PacketType.SERVER_STREAM:
+            self._active_rpc_packet_ids.discard(rpc_packet_key)
+        self.rpc_client.process_packet(frame_data)
+        await self._drain_stream_events()
+        return True
+
     async def process_hdlc_frame(self, frame: Any) -> None:
         """Processes a validated HDLC frame received from the serial link. [SIL-2]"""
         raw_len = len(frame.raw_encoded) if hasattr(frame, "raw_encoded") else len(frame.data)
@@ -468,20 +498,7 @@ class SerialTransport:
                     logger.error("Dropping unprotected pre-handshake RPC frame")
                     return
 
-            # Pigweed's native client owns responses and server streams for Linux-initiated RPCs,
-            # including call-ID correlation, payload decoding, stream events, and completion status.
-            rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
-            is_client_rpc = (
-                spec is not None
-                and spec.name not in _HANDSHAKE_RAW_NAMES
-                and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
-                and rpc_packet_key in self._active_rpc_packet_ids
-            )
-            if not pw_packets.for_server(pkt) and is_client_rpc:
-                if pkt.type != PacketType.SERVER_STREAM:
-                    self._active_rpc_packet_ids.discard(rpc_packet_key)
-                self.rpc_client.process_packet(frame_data)
-                await self._drain_stream_events()
+            if await self._route_to_pigweed_client(pkt, spec, frame_data):
                 return
 
             # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;

@@ -1427,3 +1427,35 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     assert (ds_get_spec.service_id, ds_get_spec.method_id) not in active_calls
 
     await transport.reset()
+
+
+async def test_pw_transfer_packets_from_mcu_reach_the_pigweed_client(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    """Regression: MCU pw_transfer chunks must reach the Manager's rpc client.
+
+    pw.transfer.Transfer is not a project operation, so its server-stream
+    packets were routed to the service dispatcher and dropped; every daemon
+    transfer to the MCU (EEPROM write, ADR-0007) timed out.
+    """
+    from pw_rpc import ids as pw_ids
+
+    runtime_config.serial_shared_secret = b""
+    service = AsyncMock(spec=BridgeService)
+    transport = SerialTransport(runtime_config, runtime_state, service=service)
+    process_packet = MagicMock()
+    transport.rpc_client = cast(Any, MagicMock(process_packet=process_packet))
+    chunk = RpcPacket(
+        type=PacketType.SERVER_STREAM,
+        channel_id=1,
+        service_id=pw_ids.calculate("pw.transfer.Transfer"),
+        method_id=pw_ids.calculate("Write"),
+        call_id=8,
+        payload=b"\x08\x01",
+    ).SerializeToString()
+    frame = MagicMock(data=chunk, address=protocol.HDLC_ADDRESS_RPC, raw_encoded=chunk)
+
+    await transport.process_hdlc_frame(frame)
+
+    process_packet.assert_called_once_with(chunk)
+    service.handle_mcu_frame.assert_not_awaited()

@@ -136,6 +136,8 @@ def ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
             str(pki.ca_cert),
             "--acl",
             str(acl_path),
+            "--staging-dir",
+            str(acl_path.parent / "staging"),
             "--bind",
             CLOUD_HOST,
             "--port",

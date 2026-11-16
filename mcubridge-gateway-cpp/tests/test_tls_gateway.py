@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from typing import Any
 import unittest
 
 from mcubridge.protocol import protocol
@@ -188,6 +189,13 @@ class GatewayProcess:
         probe.close()
         self.log_path = root / "gateway.log"
         self.log_file = self.log_path.open("w+", encoding="utf-8")
+        # ADR-0007: dispatch is deny-by-default. operator-01 may only Ping,
+        # on any device; every other client/operation pair is rejected.
+        self.acl_path = root / "gateway.acl"
+        self.acl_path.write_text(
+            "# client device operation\noperator-01 * rpc.pb.SystemService/Ping  # probe\n",
+            encoding="utf-8",
+        )
         self.process = subprocess.Popen(
             [
                 str(BINARY),
@@ -197,6 +205,8 @@ class GatewayProcess:
                 str(certs.server_key),
                 "--client-ca",
                 str(certs.ca_cert),
+                "--acl",
+                str(self.acl_path),
                 "--bind",
                 "127.0.0.1",
                 "--port",
@@ -494,7 +504,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             t.join(timeout=2)
             self.gateway.wait_for("device=device-01 event=session_closed")
 
-    def test_gateway_control_dispatch_device_not_found(self) -> None:
+    def _dispatch_status(self, target_device_id: str, operation: str) -> Any:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
         client_sock.settimeout(0.2)
         decoder = pw_hdlc.decode.FrameDecoder()
@@ -524,18 +534,26 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         try:
             dispatch_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
             req = gateway_control_pb2.DispatchRequest(
-                target_device_id="missing-device",
-                operation="rpc.pb.SystemService/Ping",
+                target_device_id=target_device_id,
+                operation=operation,
                 request_payload=b"",
                 timeout_ms=1000,
             )
-            res = dispatch_method(req)
-            assert res.status == pw_status.Status.NOT_FOUND
+            return dispatch_method(req).status
         finally:
             running = False
             client_sock.close()
             t.join(timeout=2)
             self.gateway.wait_for("client=operator-01 event=session_closed")
+
+    def test_gateway_control_dispatch_device_not_found(self) -> None:
+        assert self._dispatch_status("missing-device", "rpc.pb.SystemService/Ping") == pw_status.Status.NOT_FOUND
+
+    def test_gateway_control_dispatch_denied_by_acl(self) -> None:
+        """ADR-0007: an operation the ACL does not grant is rejected before the device lookup."""
+        status = self._dispatch_status("missing-device", "rpc.pb.SystemService/EnterBootloader")
+        assert status == pw_status.Status.PERMISSION_DENIED
+        self.gateway.wait_for("client=operator-01 event=dispatch_denied target=missing-device")
 
     def test_gateway_control_dispatch_end_to_end(self) -> None:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)

@@ -144,6 +144,15 @@ class PatchedRuntimeConfig:
 
         if isinstance(kwargs.get("serial_shared_secret"), str):
             kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode()
+        # Production cloud authorization is deny-by-default (ADR-0007). Test
+        # configs grant every permission unless a test passes its own
+        # topic_authorization; authorization tests narrow it explicitly.
+        kwargs.setdefault(
+            "topic_authorization",
+            config_schema_pb2.TopicAuthorization(
+                **{field.name: True for field in config_schema_pb2.TopicAuthorization.DESCRIPTOR.fields}
+            ),
+        )
         cfg = OriginalRuntimeConfig(*args, **kwargs)
         mcubridge.protocol.structures.validate_config(cfg)
         return cfg

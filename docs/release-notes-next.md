@@ -34,7 +34,14 @@ Side effects:
 
 **Migration:** flash the new firmware and upgrade the daemon in the same maintenance window. After re-flashing a SAMD21 sketch or an ISP chip erase of an AVR, rotate `serial_shared_secret`, because the boot epoch restarts.
 
-### 4. AVR builds in CI use the core's default serial buffers (PR #86)
+### 4. Cloud authorization is deny-by-default (ADR-0007)
+
+- **Daemon:** before, when no `cloud_allow_*` flag was set, every cloud operation was allowed. Now nothing is allowed until it is granted, and LuCI shows every permission off by default. New permissions `cloud_allow_eeprom_read` and `cloud_allow_eeprom_write`.
+- **Gateway:** `GatewayControl.Dispatch` requires an ACL file (`--acl`) that lists, for each client, the devices and operations it may use. Without it every dispatch is denied.
+
+**Migration:** enable in LuCI (or `uci set mcubridge.general.cloud_allow_<name>=1`) only the permissions your clients use, and start the gateway with `--acl` (format in `mcubridge-gateway-cpp/README.md`).
+
+### 5. AVR builds in CI use the core's default serial buffers (PR #86)
 
 CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by users never had it; this aligns CI with them. No user action is needed.
 

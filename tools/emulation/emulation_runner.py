@@ -32,7 +32,7 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 from tools.arduino_core_metadata import read_metadata_json
 from tools.audit.audit_bridge_status import audit_status_dict
-from tools.emulation.emulation_pki import get_emulation_pki
+from tools.emulation.emulation_pki import EMULATION_CLIENT_ID, get_emulation_pki
 from tools.emulation.process_utils import (
     cleanup_paths,
     start_daemon_thread,
@@ -122,6 +122,10 @@ def ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
             return None
         pki = get_emulation_pki()
         pki.export_client_env()
+        # ADR-0007: the gateway denies every dispatch without an ACL. The
+        # emulation client drives all emulated devices and operations.
+        acl_path = Path(tempfile.mkdtemp(prefix="mcubridge_gw_acl_")) / "gateway.acl"
+        acl_path.write_text(f"{EMULATION_CLIENT_ID} * *\n", encoding="utf-8")
         gateway_cmd = [
             str(gateway_bin),
             "--cert",
@@ -130,6 +134,8 @@ def ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
             str(pki.gateway.key),
             "--client-ca",
             str(pki.ca_cert),
+            "--acl",
+            str(acl_path),
             "--bind",
             CLOUD_HOST,
             "--port",

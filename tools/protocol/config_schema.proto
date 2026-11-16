@@ -1047,6 +1047,9 @@ message TopicAuthorization {
   bool spi_config = 23;
   bool clock_sync = 24;
   bool gpio_subscribe = 25;
+  // ADR-0007: cloud access to the AVR EEPROM pw_transfer resource.
+  bool eeprom_read = 26;
+  bool eeprom_write = 27;
 }
 
 message RuntimeConfig {

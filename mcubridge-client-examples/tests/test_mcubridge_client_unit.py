@@ -291,7 +291,9 @@ async def test_read_mcu_eeprom_dispatches_then_reads_staging() -> None:
     """ADR-0007: the client asks the device to stage its EEPROM, then reads the staged image."""
     client = _eeprom_client(cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=4080))
     assert await client.read_mcu_eeprom() == b"\x01" * 4080
-    assert cast(AsyncMock, client.dispatch).await_args.args[0] == "rpc.pb.EepromService/Read"
+    dispatch_call = cast(AsyncMock, client.dispatch).await_args
+    assert dispatch_call is not None
+    assert dispatch_call.args[0] == "rpc.pb.EepromService/Read"
     cast(AsyncMock, client.transfer_read).assert_awaited_once_with(0x4D454741)
 
 
@@ -299,7 +301,9 @@ async def test_write_mcu_eeprom_stages_then_dispatches() -> None:
     client = _eeprom_client(cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=16))
     assert await client.write_mcu_eeprom(b"\x02" * 16) == 16
     cast(AsyncMock, client.transfer_write).assert_awaited_once_with(0x4D454741, b"\x02" * 16)
-    assert cast(AsyncMock, client.dispatch).await_args.args[0] == "rpc.pb.EepromService/Write"
+    dispatch_call = cast(AsyncMock, client.dispatch).await_args
+    assert dispatch_call is not None
+    assert dispatch_call.args[0] == "rpc.pb.EepromService/Write"
 
 
 @pytest.mark.parametrize("image", [b"", b"\x00" * 4081])

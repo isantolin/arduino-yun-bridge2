@@ -20,21 +20,30 @@ chmod 0755 /etc/profile.d/99-mcubridge-crypto.sh
 if command -v uci >/dev/null 2>&1; then
     uci -q set mcubridge.general=general
 
-    # 3. Enforce RAM-backed volatile paths by default (flash wear protection)
-    DEFAULT_FILE_ROOT="${MCUBRIDGE_DEFAULT_FILE_SYSTEM_ROOT:-/tmp/yun_files}"
+    # 3. Storage locations (ADR-0007): file storage is persistent by default;
+    #    the cloud spool stays in RAM (flash wear protection).
+    DEFAULT_FILE_ROOT="${MCUBRIDGE_DEFAULT_FILE_SYSTEM_ROOT:-/srv/mcubridge/files}"
+    LEGACY_FILE_ROOT="/tmp/yun_files"
     DEFAULT_SPOOL_DIR="${MCUBRIDGE_DEFAULT_CLOUD_SPOOL_DIR:-/tmp/mcubridge/spool}"
     allow_non_tmp="$(uci -q get mcubridge.general.allow_non_tmp_paths 2>/dev/null || echo "0")"
     cur_file_root="$(uci -q get mcubridge.general.file_system_root 2>/dev/null || true)"
     cur_spool_dir="$(uci -q get mcubridge.general.cloud_spool_dir 2>/dev/null || true)"
 
-    case "$allow_non_tmp" in
-        1|true|yes|on|enable|enabled) ;;
+    # Migrate unset or legacy-default roots; keep any explicit user choice that
+    # the daemon accepts (approved roots, RAM, or allow_non_tmp_paths).
+    case "$cur_file_root" in
+        ""|"$LEGACY_FILE_ROOT") cur_file_root="$DEFAULT_FILE_ROOT" ;;
+        /srv/mcubridge|/srv/mcubridge/*|/mnt|/mnt/*|/tmp|/tmp/*) ;;
         *)
-            case "$cur_file_root" in
-                /tmp|/tmp/*) ;;
-                *) uci -q set mcubridge.general.file_system_root="$DEFAULT_FILE_ROOT" ;;
+            case "$allow_non_tmp" in
+                1|true|yes|on|enable|enabled) ;;
+                *) cur_file_root="$DEFAULT_FILE_ROOT" ;;
             esac
             ;;
+    esac
+    uci -q set mcubridge.general.file_system_root="$cur_file_root"
+    case "$cur_file_root" in
+        /srv/mcubridge/*) mkdir -p "$cur_file_root" && chmod 0750 "$cur_file_root" ;;
     esac
     case "$cur_spool_dir" in
         /tmp|/tmp/*) ;;

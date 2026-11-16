@@ -158,11 +158,19 @@ def validate_config(cfg: config_schema_pb2.RuntimeConfig) -> None:
         for field_name, meta in protocol.RUNTIME_CONFIG_METADATA.items():
             if meta.get("volatile"):
                 val = getattr(cfg, field_name, "")
-                if val and not str(val).startswith(tuple(protocol.VOLATILE_STORAGE_PATHS)):
+                if val and not protocol.path_within_roots(str(val), protocol.VOLATILE_STORAGE_PATHS):
                     raise ValueError(
                         f"{field_name}: {field_name} must be in volatile storage "
                         "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
                     )
+        # ADR-0007: file storage is persistent by default, confined to the
+        # approved persistent roots or RAM unless explicitly opted out.
+        storage_roots = protocol.VOLATILE_STORAGE_PATHS | protocol.PERSISTENT_STORAGE_PATHS
+        if cfg.file_system_root and not protocol.path_within_roots(cfg.file_system_root, storage_roots):
+            raise ValueError(
+                "file_system_root: file_system_root must be under /srv/mcubridge, /mnt or volatile "
+                "storage unless allow_non_tmp_paths is set"
+            )
     if bool(cfg.cloud_certfile) != bool(cfg.cloud_keyfile):
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
     # An empty secret leaves the MCU link unauthenticated and unencrypted. It

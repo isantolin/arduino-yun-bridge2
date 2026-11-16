@@ -378,7 +378,7 @@ El estado de salud del enlace se expone en:
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
 | `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `rpc.pb.FileSystemService/Write`). | `262144` |
-| `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `4194304` |
+| `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `2097152` |
 
 ## Flujo de inicio (resumen)
 

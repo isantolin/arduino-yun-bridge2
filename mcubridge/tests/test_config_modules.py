@@ -91,7 +91,7 @@ def test_load_runtime_config_intervals() -> None:
 def test_load_runtime_config_rejects_non_tmp_paths_when_disabled() -> None:
     raw_config = {
         "cloud_spool_dir": "/var/spool/mcu",
-        "file_system_root": "/var/lib/mcu",
+        "file_system_root": "/tmp/mcu-files",
         "allow_non_tmp_paths": False,
     }
     with pytest.raises(ValueError, match="must be in volatile storage"):

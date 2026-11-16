@@ -614,7 +614,10 @@ class RuntimeState:
     def get_storage_subdir(self, subdir: str) -> Path | None:
         """Resolve, validate, and create a managed storage directory under file_system_root. [SIL-2]"""
         if self.file_system_root and (
-            self.allow_non_tmp_paths or self.file_system_root.startswith(tuple(protocol.VOLATILE_STORAGE_PATHS))
+            self.allow_non_tmp_paths
+            or protocol.path_within_roots(
+                self.file_system_root, protocol.VOLATILE_STORAGE_PATHS | protocol.PERSISTENT_STORAGE_PATHS
+            )
         ):
             directory = Path(self.file_system_root) / subdir
             try:

@@ -1117,9 +1117,8 @@ message RuntimeConfig {
     (uci_option) = "allowed_commands"
   ];
   string file_system_root = 14 [
-    (config_default) = "/tmp/yun_files",
-    (config_volatile) = true,
-    (config_desc) = "Base directory for MCU file operations (RAM)",
+    (config_default) = "/srv/mcubridge/files",
+    (config_desc) = "Persistent MPU file storage root (overlay or SD)",
     (uci_option) = "file_system_root"
   ];
   uint32 process_timeout = 15 [
@@ -1139,7 +1138,7 @@ message RuntimeConfig {
     (config_desc) = "Maximum bytes per file write transaction"
   ];
   uint32 file_storage_quota_bytes = 18 [
-    (config_default) = "8388608",
+    (config_default) = "2097152",
     (config_desc) = "Maximum total file storage quota in bytes"
   ];
   uint32 cloud_queue_limit = 19 [

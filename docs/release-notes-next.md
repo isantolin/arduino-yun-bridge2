@@ -41,7 +41,13 @@ Side effects:
 
 **Migration:** enable in LuCI (or `uci set mcubridge.general.cloud_allow_<name>=1`) only the permissions your clients use, and start the gateway with `--acl` (format in `mcubridge-gateway-cpp/README.md`).
 
-### 5. AVR builds in CI use the core's default serial buffers (PR #86)
+### 5. File storage is persistent by default (ADR-0007)
+
+`file_system_root` moves from `/tmp/yun_files` (RAM, lost on reboot) to `/srv/mcubridge/files` (router overlay), which is kept across `sysupgrade`. The default `file_storage_quota_bytes` drops from 8 MiB to 2 MiB to limit flash wear. Roots under `/srv/mcubridge`, `/mnt` (SD card) or RAM are accepted without `allow_non_tmp_paths`.
+
+**Migration:** automatic. An installation still using `/tmp/yun_files` is moved to the new default on upgrade; an explicit root you chose is kept. Existing files under `/tmp/yun_files` are not copied (they did not survive reboots anyway). For frequent writes, point `file_system_root` to an SD card under `/mnt`.
+
+### 6. AVR builds in CI use the core's default serial buffers (PR #86)
 
 CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by users never had it; this aligns CI with them. No user action is needed.
 

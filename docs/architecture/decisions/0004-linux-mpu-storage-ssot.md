@@ -1,6 +1,6 @@
 # ADR-0004: Filesystem de Linux MPU como SSOT de Almacenamiento Común
 
-- **Estado:** Accepted (aprobado)
+- **Estado:** Accepted (aprobado); modificado por [ADR-0007](0007-cloud-eeprom-access-and-persistent-storage.md)
 - **Fecha:** 2026-11-15
 - **Responsables de la decisión:** mantenedor del repositorio
 - **Contexto:** PR #85 / Arquitectura McuBridge 2
@@ -27,7 +27,7 @@ Intentar unificar el almacenamiento persistente forzando emulaciones de filesyst
 Se adopta formalmente la **Opción 1**:
 
 1. **Linux MPU Filesystem como SSOT de Almacenamiento:**
-   * El sistema de archivos del procesador Linux OpenWrt (`file_system_root`; por defecto `/tmp/yun_files`, volátil, o un directorio persistido en overlayfs/SD) es la **única fuente de verdad (*Single Source of Truth*) para el almacenamiento común persistente**.
+   * El sistema de archivos del procesador Linux OpenWrt (`file_system_root`; por defecto `/srv/mcubridge/files`, persistente en el overlay, o una tarjeta SD montada; ver ADR-0007) es la **única fuente de verdad (*Single Source of Truth*) para el almacenamiento común persistente**.
    * Todo almacenamiento jerárquico de archivos, telemetría histórica, binarios, configuraciones extensas y datos de aplicación reside en el MPU.
 
 2. **Rol del Microcontrolador (MCU):**
@@ -40,7 +40,7 @@ Se adopta formalmente la **Opción 1**:
    * Se prohíben y extirpan los métodos unarios legados que transportaban archivos completos en payloads Protobuf (`FileWrite`, `FileRead`).
 
 4. **Delimitación de la EEPROM de Hardware:**
-   * La EEPROM interna de 4 KiB del ATmega2560 (recurso fijo `0x4D454741`) permanece accesible vía `pw_transfer` como un recurso de hardware nativo de bajo nivel para compatibilidad de proyectos AVR, pero **no** constituye el modelo general de almacenamiento de la plataforma. El recurso expone los primeros 4.080 bytes; los últimos 16 bytes guardan el epoch de arranque del handshake ([ADR-0005](0005-mcu-contributed-handshake-nonce.md)).
+   * La EEPROM interna de 4 KiB del ATmega2560 (recurso fijo `0x4D454741`) permanece accesible vía `pw_transfer` como un recurso de hardware nativo de bajo nivel para compatibilidad de proyectos AVR (y, según ADR-0007, también desde la nube con permisos `eeprom_read`/`eeprom_write`), pero **no** constituye el modelo general de almacenamiento de la plataforma. El recurso expone los primeros 4.080 bytes; los últimos 16 bytes guardan el epoch de arranque del handshake ([ADR-0005](0005-mcu-contributed-handshake-nonce.md)).
    * Excepción acotada: el epoch de arranque de ADR-0005 es el único estado persistente propio del MCU (AVR: 16 bytes de EEPROM; SAMD21: dos filas NVM vía `FlashStorage`, una escritura por arranque). No es almacenamiento de aplicación y no contradice esta decisión.
 
 ---
@@ -69,5 +69,6 @@ Se adopta formalmente la **Opción 1**:
 ## 5. Relacionados
 
 * [ADR-0002](0002-pigweed-hdlc-rpc-migration.md): migración a Pigweed HDLC/RPC (`pw_transfer`).
+* [ADR-0007](0007-cloud-eeprom-access-and-persistent-storage.md): acceso desde la nube a la EEPROM y almacenamiento persistente.
 * [ADR-0005](0005-mcu-contributed-handshake-nonce.md): reserva de 16 bytes de EEPROM AVR y epoch SAMD21 para el nonce del MCU.
 * [`docs/architecture/pw-transfer-integration.md`](../pw-transfer-integration.md): recurso EEPROM `0x4D454741` y frontera de transferencia de archivos.

@@ -527,8 +527,8 @@ def test_proto_dispatch_handlers_ssot() -> None:
     import operator
     from mcubridge.services.runtime import BridgeService
 
-    # 18 + EepromService.Read/Write (ADR-0007, E5).
-    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 20
+    # 18 + EepromService.Read/Write (E5) + FileSystemService.Upload (E6), ADR-0007.
+    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 21
     for name, handler_path in BridgeService.LOCAL_RPC_HANDLERS.items():
         assert isinstance(name, str)
         assert name in protocol.BY_NAME

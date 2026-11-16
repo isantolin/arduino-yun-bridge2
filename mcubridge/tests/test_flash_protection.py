@@ -99,7 +99,8 @@ def test_default_file_system_root_is_persistent() -> None:
     """ADR-0007: the default storage root is persistent and accepted without allow_non_tmp_paths."""
     from mcubridge.protocol import protocol
 
-    defaults = common.get_default_config()
-    assert defaults["file_system_root"] == "/srv/mcubridge/files"
-    assert defaults["file_storage_quota_bytes"] == 2 * 1024 * 1024
+    # The test environment replaces get_default_config() paths with temporary
+    # directories, so check the generated schema defaults directly.
+    assert protocol.DEFAULT_FILE_SYSTEM_ROOT == "/srv/mcubridge/files"
+    assert protocol.DEFAULT_FILE_STORAGE_QUOTA_BYTES == 2 * 1024 * 1024
     assert protocol.RUNTIME_CONFIG_METADATA["file_system_root"].get("volatile") is False

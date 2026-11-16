@@ -527,7 +527,7 @@ def test_proto_dispatch_handlers_ssot() -> None:
     import operator
     from mcubridge.services.runtime import BridgeService
 
-    # 18 + EepromService.Read/Write (ADR-0007, E5).
+    # ADR-0007 adds the EepromService read and write handlers to the original eighteen.
     assert len(BridgeService.LOCAL_RPC_HANDLERS) == 20
     for name, handler_path in BridgeService.LOCAL_RPC_HANDLERS.items():
         assert isinstance(name, str)

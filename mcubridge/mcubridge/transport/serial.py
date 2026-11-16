@@ -400,6 +400,12 @@ class SerialTransport:
         for frame in self.decoder.process(raw_bytes):
             if not frame.ok():
                 self.state.serial_decode_errors += 1
+                logger.debug(
+                    "Dropping corrupt HDLC frame",
+                    status=str(frame.status),
+                    length=len(frame.raw_decoded),
+                    decode_errors=self.state.serial_decode_errors,
+                )
                 await self.check_baudrate_fallback()
                 continue
             self.consecutive_crc_errors = 0
@@ -429,7 +435,14 @@ class SerialTransport:
         if pw_packets.for_server(pkt):
             return False
         if pkt.service_id == _PW_TRANSFER_SERVICE_ID:
-            self.rpc_client.process_packet(frame_data)
+            status = self.rpc_client.process_packet(frame_data)
+            logger.debug(
+                "Routed MCU pw_transfer packet",
+                packet_type=pkt.type,
+                call_id=pkt.call_id,
+                length=len(pkt.payload),
+                status=str(status),
+            )
             return True
         rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
         is_client_rpc = (

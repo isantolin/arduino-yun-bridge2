@@ -143,7 +143,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 1. **TLS recomendado**: `cloud_tls=1` por defecto y se exige `cloud_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
 2. **Derivación de Claves (HKDF)**: Se utiliza **HKDF-SHA256 (RFC 5869)** para derivar la clave de autenticación del handshake a partir del `serial_shared_secret`. Esto evita el uso directo del secreto en el bus y proporciona aislamiento criptográfico.
-3. **Secreto serie fuerte**: con `serial_shared_secret` no vacío, handshake MCU↔Linux con nonce de 16 bytes y `HMAC-SHA256(derived_key, nonce)` truncado a 16 bytes. El daemon rechaza el placeholder `changeme123`. Un secreto vacío selecciona explícitamente el modo de compatibilidad sin autenticación ni cifrado del enlace; debe limitarse a pruebas aisladas y nunca utilizarse sobre un enlace no confiable.
+3. **Secreto serie fuerte**: con `serial_shared_secret` no vacío, handshake MCU↔Linux v2 ([ADR-0005](architecture/decisions/0005-mcu-contributed-handshake-nonce.md)) con un nonce de 16 bytes de cada lado y pruebas `HMAC-SHA256` truncadas a 16 bytes. El daemon rechaza el placeholder `changeme123`. Un secreto vacío selecciona explícitamente el modo de compatibilidad sin autenticación ni cifrado del enlace; debe limitarse a pruebas aisladas y nunca utilizarse sobre un enlace no confiable.
 4. **Auto-Validación (KAT)**: Tanto el MCU como el daemon realizan **Known Answer Tests (KAT)** para SHA256 y HMAC-SHA256 en cada arranque. Si la validación falla, el sistema entra en modo **Fail-Secure** y aborta la operación.
 5. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se aplica al ejecutar procesos/shell.
 6. **Namespaces sensibles**: `TopicAuthorization` gobierna toggles `cloud_allow_*` (consola, archivos, datastore, mailbox, shell, GPIO, etc.).
@@ -483,13 +483,15 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 
 ### 3.2 Integridad y Autenticación
 - **Detección de errores (FCS):** Todo frame HDLC incluye un CRC-32 IEEE 802.3 de 4 bytes verificado por `pw::hdlc::DecoderBuffer` en el MCU y `pw_hdlc.decode.FrameDecoder` en el daemon. CRC detecta errores accidentales; no autentica frames.
-- **Autenticación de `LinkSync`:** Con secreto compartido configurado, el host envía un HMAC-SHA256 de 16 bytes y el MCU verifica el tag antes de habilitar métodos fuera de `pre_sync_allowed`. El MCU responde con un HMAC bajo un `HKDF info` distinto para que el host compruebe la identidad compartida del MCU. Ambos tags cubren un nonce host de 16 bytes.
+- **Autenticación de `LinkSync`:** Con secreto compartido configurado, el host envía un HMAC-SHA256 de 16 bytes y el MCU verifica el tag antes de habilitar métodos fuera de `pre_sync_allowed`. El MCU genera su propio nonce de 16 bytes (`mcu_nonce`) y responde con un HMAC bajo un `HKDF info` distinto (`handshake-response-v2`) sobre `nonce_host || mcu_nonce`, para que el host compruebe la identidad compartida del MCU. El host rechaza como `sync_auth_mismatch` una respuesta sin `mcu_nonce` de 16 bytes.
 - Si el secreto está vacío, el protocolo requiere tags vacíos y el enlace queda **sin autenticación**. No existe fallback desde un tag inválido.
 - **Cifrado de enlace:** Tras un `LinkSync` autenticado, los payloads HDLC de RPC (`1`), logs (`2`) y consola (`3`) se cifran y autentican con ChaCha20-Poly1305. El envelope es `contador[8 bytes BE] || ciphertext || tag[16 bytes]`; el nonce es `00 00 00 00 || contador` y el AAD es `dirección HDLC[1 byte] || contador`.
-- Las claves host→MCU y MCU→host se derivan como dos bloques de 32 bytes mediante HKDF-SHA256 (`IKM=secreto`, `salt=nonce del handshake`, `info="session-key"`). Cada dirección mantiene un contador común a todos los canales protegidos; el receptor rechaza contadores cero o no crecientes.
+- Las claves host→MCU y MCU→host se derivan como dos bloques de 32 bytes mediante HKDF-SHA256 (`IKM=secreto`, `salt=nonce_host || mcu_nonce`, `info="session-key-v2"`). Cada dirección mantiene un contador común a todos los canales protegidos; el receptor rechaza contadores cero o no crecientes.
 - `LinkSync` y su respuesta autenticada ocurren antes de activar AEAD. `LinkReset` también es un control plaintext explícito de recuperación; no habilita tráfico de datos plaintext y puede polarizar una nueva sincronización.
-- La protección anti-replay de contadores solo dura lo que la sesión. Las claves de sesión dependen únicamente del nonce del host, y el MCU acepta `LinkReset` en claro en cualquier momento: quien tenga acceso al transporte puede forzar un `LinkReset`, repetir un `LinkSync` capturado y obtener **las mismas claves**, sin necesidad de reiniciar el MCU. Con eso se aceptan de nuevo los frames host→MCU capturados y el MCU reutiliza clave y nonce en su tráfico. La corrección (nonce aportado por el MCU) está propuesta en [ADR-0005](architecture/decisions/0005-mcu-contributed-handshake-nonce.md).
-- Los peers deben actualizarse juntos: los tags de respuesta usan un dominio distinto y no hay negociación ni modo de compatibilidad para la semántica anterior.
+- **Origen de `mcu_nonce`:** en ESP32, `esp_fill_random()` (RNG hardware). En AVR y SAMD21, que no tienen RNG hardware, `HMAC-SHA256(HKDF(secreto, info="mcu-nonce-v2"), boot_epoch || contador_handshake)[:16]` con ambos contadores de 64 bits big-endian. `boot_epoch` se persiste en dos copias (AVR: últimos 16 bytes de la EEPROM; SAMD21: dos filas NVM vía `FlashStorage`) y se incrementa en cada arranque antes de emitir el primer nonce, de modo que un corte de energía durante la escritura no lo hace retroceder.
+- **Anti-replay entre sesiones:** como cada sesión mezcla un `mcu_nonce` que no se repite, repetir un `LinkSync` capturado tras un `LinkReset` produce claves nuevas: los frames capturados no autentican y el MCU no reutiliza clave y nonce. `LinkReset` sigue aceptándose en claro, así que quien tenga acceso al transporte puede forzar resincronizaciones (denegación de servicio), pero no repetir sesiones.
+- **Limitación:** reflashear un sketch SAMD21 reescribe las filas de `FlashStorage` y un chip erase por ISP borra la EEPROM AVR; en ambos casos `boot_epoch` vuelve a empezar y nonces anteriores pueden repetirse. Rotar `serial_shared_secret` después de esas operaciones.
+- Los peers deben actualizarse juntos: v2 usa etiquetas HKDF nuevas (`session-key-v2`, `handshake-response-v2`, `mcu-nonce-v2`) y no hay negociación ni modo de compatibilidad con v1; una mezcla v1/v2 falla cerrada con `sync_auth_mismatch`.
 
 ### 3.3 Implementación de bibliotecas (Wire Format)
 
@@ -546,7 +548,7 @@ El protocolo utiliza los códigos de estado canónicos de Pigweed (`pw::Status`)
 
 - **`rpc.pb.SystemService/LinkSync` (Linux ↔ MCU)**
   - Petición: mensaje Protobuf `LinkSync` con `nonce` de 16 bytes y `tag` de 16 bytes si hay secreto; `tag` vacío si la autenticación está explícitamente deshabilitada.
-  - Respuesta (`PacketType.RESPONSE`, MCU → Linux): mensaje `LinkSync` con el mismo `nonce` y una prueba HMAC bajo un dominio HKDF separado (`"mcubridge-link-sync-resp-v2"`); `tag` vacío en modo no autenticado.
+  - Respuesta (`PacketType.RESPONSE`, MCU → Linux): mensaje `LinkSync` con el mismo `nonce`, el `mcu_nonce` de 16 bytes (campo 3) y una prueba HMAC sobre `nonce || mcu_nonce` bajo un dominio HKDF separado (`"handshake-response-v2"`); `tag` y `mcu_nonce` vacíos en modo no autenticado.
 
 #### Secuencia de autenticación `LinkSync`
 
@@ -566,9 +568,11 @@ sequenceDiagram
     M->>M: Verify our_tag == expected_tag
     
     alt Tag Valid
-        M->>M: response_key = HKDF(secret, "handshake-response")
-        M->>M: tag_mcu = HMAC-SHA256(response_key, nonce)[:16]
-        M->>D: LinkSync (Response) [nonce || tag_mcu]
+        M->>M: mcu_nonce = TRNG (ESP32) o HMAC(K_nonce, boot_epoch || counter)[:16]
+        M->>M: response_key = HKDF(secret, "handshake-response-v2")
+        M->>M: tag_mcu = HMAC-SHA256(response_key, nonce || mcu_nonce)[:16]
+        M->>M: session keys = HKDF(secret, salt=nonce || mcu_nonce, "session-key-v2")
+        M->>D: LinkSync (Response) [nonce, tag_mcu, mcu_nonce]
     else Tag Invalid
         M->>M: enterSafeState()
         M->>M: FSM -> Fault
@@ -576,8 +580,10 @@ sequenceDiagram
     end
 
     Note over D,M: Phase 3: Host verifies nonce and MCU proof
-    D->>D: Verify tag_mcu == expected_tag
+    D->>D: Require len(mcu_nonce) == 16
+    D->>D: Verify tag_mcu == HMAC(response_key, nonce || mcu_nonce)[:16]
     alt Tag Valid
+        D->>D: session keys = HKDF(secret, salt=nonce || mcu_nonce, "session-key-v2")
         D->>D: is_synchronized = true
         D->>D: FSM → Idle state
         Note over D,M: ✓ Handshake Complete
@@ -600,13 +606,13 @@ sequenceDiagram
 # rpc.pb.SystemService/LinkSync request (Linux → MCU)
 # HDLC Address: 1 (HDLC_ADDRESS_RPC), Control: 0x03 (UI)
 # RpcPacket: type=REQUEST (0), channel_id=1, service_id=Hash("rpc.pb.SystemService"),
-#            method_id=Hash("LinkSync"), call_id=1, payload=HandshakeProof(nonce[16], tag[16])
+#            method_id=Hash("LinkSync"), call_id=1, payload=LinkSync(nonce[16], tag[16])
 # FCS: 4-byte CRC32 (IEEE 802.3, Little Endian)
 
 HDLC Wire Frame:
   7E                              # Opening Flag
   03 03                           # Address=1 (varint encoded: (1<<1)|1 = 0x03), Control=0x03 (UI)
-  <Serialized RpcPacket bytes>    # Protobuf RpcPacket containing HandshakeProof payload
+  <Serialized RpcPacket bytes>    # Protobuf RpcPacket containing the LinkSync payload
   XX XX XX XX                     # CRC32 FCS (4 bytes, escaped if 0x7E/0x7D)
   7E                              # Closing Flag
 ```

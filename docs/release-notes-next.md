@@ -1,6 +1,6 @@
 # MCU Bridge — Release Notes (next, unreleased)
 
-**Status:** Draft. It covers the changes merged after 2.8.9: PR #86 (E0) and PRs #87, #88, #89 (E0.1 B, C, D). PR #90 (E0.1 E) and PR #92 (E0.1 F, handshake v2) are included as pending merge. Publish only after the release CI, emulation and packaging checks pass on the release commit.
+**Status:** Draft. It covers the changes merged after 2.8.9: PR #86 (E0) and PRs #87, #88, #89 (E0.1 B, C, D). PR #90 (E0.1 E) and PR #92 (E0.1 F, handshake v2) are merged. Publish only after the release CI, emulation and packaging checks pass on the release commit.
 
 ## ⚠️ Breaking changes and migration
 
@@ -24,7 +24,7 @@ An empty secret runs the MCU link unauthenticated and unencrypted. The daemon no
 
 **Migration:** installations keep the random secret generated at install time, so no action is needed. If you deliberately run without a secret, set `uci set mcubridge.general.allow_insecure_link=1` (LuCI: *Allow insecure serial link*) and expect the cloud to be off.
 
-### 3. Link handshake v2: upgrade firmware and daemon together (PR #92, pending)
+### 3. Link handshake v2: upgrade firmware and daemon together (PR #92)
 
 The MCU now contributes its own 16-byte nonce to `LinkSync` (`mcu_nonce`), and both the response tag and the session keys depend on it (ADR-0005). A v1 firmware and a v2 daemon, or the reverse, fail closed with `sync_auth_mismatch`; they never fall back to a weaker link.
 
@@ -49,7 +49,7 @@ CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by us
   - malformed quoting no longer leaks a process slot;
   - process handles are the real PID instead of `pid & 0xFFFF`.
 - **Mailbox (PR #89).** Cloud messages are delivered to the MCU once. They were pushed *and* queued, and then read again by the sketch's polling. The examples poll only every 5 s as a fallback.
-- **Serial flow control (PR #90, pending).** XOFF/XON thresholds now follow each core's RX buffer: AVR 48/16 B, SAMD/ESP32 192/64 B. This removes needless XOFF/XON bursts on 256-byte-buffer boards.
+- **Serial flow control (PR #90).** XOFF/XON thresholds now follow each core's RX buffer: AVR 48/16 B, SAMD/ESP32 192/64 B. This removes needless XOFF/XON bursts on 256-byte-buffer boards.
 
 ## Features
 
@@ -60,11 +60,11 @@ CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by us
 
 ## Compatibility
 
-- **MCU ↔ MPU wire protocol:** `LinkSync` gains `mcu_nonce` (field 3) and the handshake HKDF labels move to v2 (PR #92, pending). The streamed AEAD frame format is unchanged.
+- **MCU ↔ MPU wire protocol:** `LinkSync` gains `mcu_nonce` (field 3) and the handshake HKDF labels move to v2 (PR #92). The streamed AEAD frame format is unchanged.
 - **Configuration schema:** new `allow_insecure_link` field (RuntimeConfig 54) and per-architecture flow-control constants (Hardware 23/24/46/47).
 
 ## Known limitations
 
-- Until PR #92 merges, the link handshake derives keys from the host nonce only, and a recorded session can be replayed after a forced `LinkReset` (ADR-0005).
-- `LinkReset` is still accepted in plaintext, so an attacker on the transport can force resynchronisation (denial of service). Replay is no longer possible after PR #92.
+- `LinkReset` is still accepted in plaintext, so an attacker on the transport can force resynchronisation (denial of service). Replaying a recorded session is no longer possible (ADR-0005).
+- Re-flashing a SAMD21 sketch or an ISP chip erase of an AVR resets the boot epoch behind the MCU nonce; rotate `serial_shared_secret` afterwards.
 - Any authenticated gateway client can address any device. With `topic_authorization` unset, all operations are allowed.

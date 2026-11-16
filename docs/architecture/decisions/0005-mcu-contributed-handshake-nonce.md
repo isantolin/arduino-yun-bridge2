@@ -1,6 +1,6 @@
 # ADR-0005: MCU-Contributed Nonce in the Link Handshake
 
-- Status: Accepted (implemented in PR #92)
+- Status: Accepted — implemented (PR #92, merged)
 - Date: 2026-11-15
 - Decision owners: Repository maintainer
 

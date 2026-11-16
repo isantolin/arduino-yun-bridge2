@@ -504,6 +504,15 @@ void BridgeClass::_serialTask() {
   }
 }
 
+namespace {
+// Received plaintext lives in the HDLC decoder buffer (decrypted in place).
+void zeroReceivedPlaintext(pw::span<const uint8_t> plaintext) {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+  rpc::security::secure_zero(pw::span<uint8_t>(
+      const_cast<uint8_t*>(plaintext.data()), plaintext.size()));
+}
+}  // namespace
+
 void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   _last_rx_ms = NowMillis();
   const uint64_t addr = frame.address();
@@ -551,7 +560,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     }
     if (!meta_result.ok()) {
       if (decrypted) {
-        rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+        zeroReceivedPlaintext(data);
       }
       emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
       return;
@@ -562,7 +571,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
           isLinkSyncRequest(meta)) {
         emitStatus(rpc::StatusCode::STATUS_FAILED_PRECONDITION);
         if (decrypted) {
-          rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+          zeroReceivedPlaintext(data);
         }
         return;
       }
@@ -571,7 +580,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         emitStatus(rpc::StatusCode::STATUS_FAILED_PRECONDITION);
         enterSafeState();
         if (decrypted) {
-          rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+          zeroReceivedPlaintext(data);
         }
         return;
       }
@@ -589,7 +598,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   }
 #endif
   if (decrypted) {
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+    zeroReceivedPlaintext(data);
   }
 }
 
@@ -657,9 +666,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   plaintext = {};
   const size_t overhead = rpc::RPC_AEAD_COUNTER_SIZE + rpc::RPC_AEAD_TAG_SIZE;
   if (!_session_keys_ready || address > UINT8_MAX ||
-      envelope.size() < overhead ||
-      envelope.size() - overhead > _rx_plaintext.size()) {
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+      envelope.size() < overhead) {
     return false;
   }
 
@@ -678,29 +685,33 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   if (counter == 0 || counter <= _rx_aead_counter) {
     rpc::security::secure_zero(pw::span<uint8_t>(nonce));
     rpc::security::secure_zero(pw::span<uint8_t>(aad));
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
     return false;
   }
 
   const size_t ciphertext_size = envelope.size() - overhead;
   const uint8_t* ciphertext = envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
   const uint8_t* tag = ciphertext + ciphertext_size;
+  // Decrypt in place inside the HDLC decoder buffer, which this object owns
+  // and which is not reused until the frame handler returns. wolfCrypt
+  // authenticates the ciphertext before the ChaCha20 pass overwrites it, so
+  // a dedicated RX_BUFFER_SIZE plaintext copy is not needed on the 8 KiB AVR.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+  uint8_t* const in_place = const_cast<uint8_t*>(ciphertext);
   const bool decrypted = rpc::security::aead_decrypt(
       pw::span<const uint8_t>(_session_aead_keys.data(),
                               rpc::RPC_AEAD_KEY_SIZE),
       pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad),
       pw::span<const uint8_t>(ciphertext, ciphertext_size),
       pw::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
-      pw::span<uint8_t>(_rx_plaintext.data(), ciphertext_size));
+      pw::span<uint8_t>(in_place, ciphertext_size));
   rpc::security::secure_zero(pw::span<uint8_t>(nonce));
   rpc::security::secure_zero(pw::span<uint8_t>(aad));
   if (!decrypted) {
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
     return false;
   }
 
   _rx_aead_counter = counter;
-  plaintext = pw::span<const uint8_t>(_rx_plaintext.data(), ciphertext_size);
+  plaintext = pw::span<const uint8_t>(in_place, ciphertext_size);
   return true;
 }
 

@@ -76,6 +76,7 @@ option (rpc.pb.constants) = {
   min_pin_interval_ms: 10
   eeprom_transfer_resource_id: 0x4D454741
   eeprom_resource_max_bytes: 4080
+  file_upload_resource_id: 0x55504C44
   default_pin_hysteresis: 1
   default_clock_sync_interval_seconds: 30
   default_clock_sync_timeout_ms: 1000
@@ -665,6 +666,13 @@ message Constants {
     (py_name) = "EEPROM_RESOURCE_MAX_BYTES",
     (py_type) = "int",
     (client_constant) = true
+  ];
+  // ADR-0007 (E6): read-only MCU resource ("UPLD") for MCU -> Linux uploads.
+  uint32 file_upload_resource_id = 95 [
+    (cpp_name) = "RPC_FILE_UPLOAD_RESOURCE_ID",
+    (cpp_type) = "uint32_t",
+    (py_name) = "FILE_UPLOAD_RESOURCE_ID",
+    (py_type) = "int"
   ];
 }
 

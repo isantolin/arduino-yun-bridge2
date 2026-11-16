@@ -203,6 +203,12 @@ class FileSystemRpcService final
     FileSystem._onRemove(request);
     return pw::OkStatus();
   }
+
+  // Uploads only flow MCU -> MPU (FileSystem.upload()); the MCU never
+  // serves them.
+  pw::Status Upload(const rpc_pb_FileUpload&, rpc_pb_Empty&) {
+    return pw::Status::Unimplemented();
+  }
 };
 #endif
 
@@ -410,6 +416,17 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
       return;
     }
   }
+#if BRIDGE_ENABLE_FILESYSTEM
+  if (!_upload_transfer_registered) {
+    _upload_transfer_registered =
+        FileSystemClass::registerUploadHandler(_transfer_service);
+    if (!_upload_transfer_registered) {
+      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+      enterSafeState();
+      return;
+    }
+  }
+#endif
 #endif
 
   _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());

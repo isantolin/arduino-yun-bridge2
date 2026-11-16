@@ -348,7 +348,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   etl::vector<uint8_t, 64> _shared_secret;
   // Contiguous RX||TX session keys let HKDF write directly into final storage.
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> _session_aead_keys{};
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
   uint64_t _tx_aead_counter{0};
   uint64_t _rx_aead_counter{0};
   bool _session_keys_ready{false};

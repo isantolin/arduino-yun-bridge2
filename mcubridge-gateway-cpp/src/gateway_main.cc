@@ -1047,6 +1047,10 @@ class GatewayControlService final
     }
 
     const pw::Status status = session->Dispatch(request, response);
+    std::cerr << "client=" << client_id_ << " event=dispatch_completed target="
+              << target_id << " operation=" << op
+              << " status=" << status.str()
+              << " device_status=" << response.status_code << '\n';
 
     if (staged && staged->to_device) {
       std::filesystem::remove(device_file, ec);

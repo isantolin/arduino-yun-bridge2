@@ -1370,6 +1370,14 @@ class BridgeService:
             await writer.drain()
         except OSError as exc:
             logger.warning("Failed to send edge dispatch response to cloud", error=str(exc))
+            return
+        logger.debug(
+            "Edge dispatch response sent",
+            operation=edge_req.operation,
+            status_code=status_code,
+            call_id=pkt.call_id,
+            frame_bytes=len(frame),
+        )
 
     async def send_cloud_telemetry(
         self,

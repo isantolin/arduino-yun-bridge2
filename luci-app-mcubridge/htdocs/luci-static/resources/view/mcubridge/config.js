@@ -191,14 +191,16 @@ return view.extend({
 			['cloud_allow_digital_read', _('Allow digital read'), _('Allow reads via br/d/<pin>/read.')],
 			['cloud_allow_digital_mode', _('Allow digital mode'), _('Allow access to br/d/<pin>/mode.')],
 			['cloud_allow_analog_write', _('Allow analog write'), _('Allow writes to br/a/<pin>/write.')],
-			['cloud_allow_analog_read', _('Allow analog read'), _('Allow reads via br/a/<pin>/read.')]
+			['cloud_allow_analog_read', _('Allow analog read'), _('Allow reads via br/a/<pin>/read.')],
+			['cloud_allow_eeprom_read', _('Allow EEPROM read'), _('Allow the cloud to read the AVR EEPROM image (ADR-0007).')],
+			['cloud_allow_eeprom_write', _('Allow EEPROM write'), _('Allow the cloud to overwrite the AVR EEPROM contents (ADR-0007).')]
 		];
 
 		cloud_acl_options.forEach(function (opt) {
+			// ADR-0007: cloud permissions are deny-by-default.
 			o = s.option(form.Flag, opt[0], opt[1], opt[2]);
 			o.rmempty = false;
-			o.default = '1';
-			applySchemaDefault(o, opt[0], true);
+			o.default = '0';
 		});
 
 		o = s.option(form.Value, 'serial_shared_secret', _('Serial Shared Secret'),

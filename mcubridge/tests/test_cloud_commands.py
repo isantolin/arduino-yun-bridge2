@@ -27,7 +27,9 @@ def _make_config() -> RuntimeConfig:
 
 def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     cfg = _make_config()
-    state = RuntimeState(cloud_topic_prefix=cfg.topic_prefix)
+    # Production builds the state from the config (create_runtime_state); cloud
+    # authorization is deny-by-default, so carry the config's permissions over.
+    state = RuntimeState(cloud_topic_prefix=cfg.topic_prefix, topic_authorization=cfg.topic_authorization)
     state.link_sync_event.set()
     serial_mock = AsyncMock(spec=SerialTransport)
     serial_mock.send.return_value = True

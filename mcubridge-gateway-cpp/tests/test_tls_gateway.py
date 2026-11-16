@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from typing import Any
 import unittest
 
 from mcubridge.protocol import protocol
@@ -19,6 +20,7 @@ import pw_status
 from pw_rpc import callback_client
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_transfer.client import Error as PwTransferError
 from pw_transfer.client import Manager as PwTransferManager
 import pytest
 
@@ -179,6 +181,11 @@ class Certificates:
         return cert, key
 
 
+# ADR-0005/0007: MCU EEPROM resource ID and size (EEPROM minus the boot epoch).
+EEPROM_RESOURCE_ID = 0x4D454741
+EEPROM_RESOURCE_BYTES = 4080
+
+
 class GatewayProcess:
     def __init__(self, root: Path, certs: Certificates) -> None:
         self._certs = certs
@@ -188,6 +195,15 @@ class GatewayProcess:
         probe.close()
         self.log_path = root / "gateway.log"
         self.log_file = self.log_path.open("w+", encoding="utf-8")
+        # ADR-0007: dispatch is deny-by-default. operator-01 may only Ping,
+        # on any device; every other client/operation pair is rejected.
+        self.acl_path = root / "gateway.acl"
+        self.acl_path.write_text(
+            "# client device operation\noperator-01 * rpc.pb.SystemService/Ping  # probe\n",
+            encoding="utf-8",
+        )
+        # ADR-0007: private staging root (0700, owned by the gateway).
+        self.staging_dir = root / "staging"
         self.process = subprocess.Popen(
             [
                 str(BINARY),
@@ -197,6 +213,10 @@ class GatewayProcess:
                 str(certs.server_key),
                 "--client-ca",
                 str(certs.ca_cert),
+                "--acl",
+                str(self.acl_path),
+                "--staging-dir",
+                str(self.staging_dir),
                 "--bind",
                 "127.0.0.1",
                 "--port",
@@ -494,7 +514,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             t.join(timeout=2)
             self.gateway.wait_for("device=device-01 event=session_closed")
 
-    def test_gateway_control_dispatch_device_not_found(self) -> None:
+    def _dispatch_status(self, target_device_id: str, operation: str) -> Any:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
         client_sock.settimeout(0.2)
         decoder = pw_hdlc.decode.FrameDecoder()
@@ -524,18 +544,26 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         try:
             dispatch_method = rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
             req = gateway_control_pb2.DispatchRequest(
-                target_device_id="missing-device",
-                operation="rpc.pb.SystemService/Ping",
+                target_device_id=target_device_id,
+                operation=operation,
                 request_payload=b"",
                 timeout_ms=1000,
             )
-            res = dispatch_method(req)
-            assert res.status == pw_status.Status.NOT_FOUND
+            return dispatch_method(req).status
         finally:
             running = False
             client_sock.close()
             t.join(timeout=2)
             self.gateway.wait_for("client=operator-01 event=session_closed")
+
+    def test_gateway_control_dispatch_device_not_found(self) -> None:
+        assert self._dispatch_status("missing-device", "rpc.pb.SystemService/Ping") == pw_status.Status.NOT_FOUND
+
+    def test_gateway_control_dispatch_denied_by_acl(self) -> None:
+        """ADR-0007: an operation the ACL does not grant is rejected before the device lookup."""
+        status = self._dispatch_status("missing-device", "rpc.pb.SystemService/EnterBootloader")
+        assert status == pw_status.Status.PERMISSION_DENIED
+        self.gateway.wait_for("client=operator-01 event=dispatch_denied target=missing-device")
 
     def test_gateway_control_dispatch_end_to_end(self) -> None:
         client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
@@ -656,15 +684,27 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             read_back = transfer_manager.read(2)
             assert read_back == payload
 
-            # Verify on-disk file creation
-            staging_file = Path("/tmp/mcubridge-gateway/operator-01/staging.bin")
+            # ADR-0007: staged in the client's private directory.
+            client_dir = self.gateway.staging_dir / "clients" / "operator-01"
+            staging_file = client_dir / "staging.bin"
             assert staging_file.is_file()
             assert staging_file.read_bytes() == payload
+            assert (self.gateway.staging_dir.stat().st_mode & 0o777) == 0o700
+
+            # The EEPROM staging resource accepts exactly the MCU resource size.
+            eeprom_image = bytes(range(256)) * 15 + bytes(240)
+            assert len(eeprom_image) == EEPROM_RESOURCE_BYTES
+            transfer_manager.write(EEPROM_RESOURCE_ID, eeprom_image)
+            assert transfer_manager.read(EEPROM_RESOURCE_ID) == eeprom_image
+            with pytest.raises(PwTransferError):
+                transfer_manager.write(EEPROM_RESOURCE_ID, eeprom_image + b"\x00")
         finally:
             running = False
             client_sock.close()
             t.join(timeout=2)
             self.gateway.wait_for("client=operator-01 event=session_closed")
+        # Staged data is not kept after the session closes.
+        assert not (self.gateway.staging_dir / "clients" / "operator-01").exists()
 
     def test_device_session_registers_transfer_handlers(self) -> None:
         """Regression: device sessions must serve pw_transfer resources 1 and 2.
@@ -716,15 +756,60 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             transfer_manager.write(2, file_payload)
             assert transfer_manager.read(2) == file_payload
 
-            staging_file = Path("/tmp/mcubridge-gateway/device-01/staging.bin")
+            # ADR-0007: devices stage under their own namespace.
+            staging_file = self.gateway.staging_dir / "devices" / "device-01" / "staging.bin"
             assert staging_file.is_file()
             assert staging_file.read_bytes() == file_payload
+
+            # Multi-chunk reads: before PW_RPC_ENCODING_BUFFER_SIZE_BYTES was
+            # raised, any read above one small chunk aborted with DATA_LOSS.
+            large_payload = bytes(i & 0xFF for i in range(8 * 1024))
+            transfer_manager.write(2, large_payload)
+            assert transfer_manager.read(2) == large_payload
+            eeprom_image = bytes(range(256)) * 15 + bytes(240)
+            transfer_manager.write(EEPROM_RESOURCE_ID, eeprom_image)
+            assert transfer_manager.read(EEPROM_RESOURCE_ID) == eeprom_image
         finally:
             running = False
             dev_sock.close()
             t.join(timeout=2)
             self.gateway.wait_for("device=device-01 event=session_closed")
+        assert not (self.gateway.staging_dir / "devices" / "device-01").exists()
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-vv"])
+
+
+def test_gateway_refuses_symlinked_staging_root(tmp_path: Path) -> None:
+    """ADR-0007: a staging root that is a symlink could redirect staged files; startup must fail."""
+    if not BINARY.is_file():
+        pytest.skip(f"Gateway binary not found: {BINARY}")
+    certs = Certificates(tmp_path)
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    link = tmp_path / "staging-link"
+    link.symlink_to(target, target_is_directory=True)
+    result = subprocess.run(
+        [
+            str(BINARY),
+            "--cert",
+            str(certs.server_cert),
+            "--key",
+            str(certs.server_key),
+            "--client-ca",
+            str(certs.ca_cert),
+            "--staging-dir",
+            str(link),
+            "--bind",
+            "127.0.0.1",
+            "--port",
+            "0",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert "staging path is not a directory (or is a symlink)" in result.stderr

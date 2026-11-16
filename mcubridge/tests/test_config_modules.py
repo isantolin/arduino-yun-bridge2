@@ -8,7 +8,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config import common, settings
-from mcubridge.protocol import protocol
+from mcubridge.protocol import config_schema_pb2, protocol
+from mcubridge.protocol.structures import validate_config
 from pytest_mock import MockerFixture
 
 
@@ -300,3 +301,19 @@ def test_load_runtime_config_without_secret_requires_insecure_opt_in() -> None:
     )
     assert config.serial_shared_secret == b""
     assert config.allow_insecure_link is True
+
+
+def test_validate_config_keeps_empty_cloud_authorization_denied(
+    runtime_config: config_schema_pb2.RuntimeConfig,
+) -> None:
+    """ADR-0007: validation no longer turns an empty topic_authorization into "allow all"."""
+    runtime_config.ClearField("topic_authorization")
+    runtime_config.cloud_enabled = True
+    validate_config(runtime_config)
+    granted = [
+        f.name
+        for f in runtime_config.topic_authorization.DESCRIPTOR.fields
+        if getattr(runtime_config.topic_authorization, f.name)
+    ]
+    assert granted == []
+    assert runtime_config.topic_authorization.eeprom_write is False

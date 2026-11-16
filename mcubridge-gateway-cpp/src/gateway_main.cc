@@ -6,6 +6,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -18,6 +19,8 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -59,6 +62,62 @@ constexpr size_t kTxQueueBytes = 64U * 1024U;
 constexpr size_t kMaxSessions = 256U;
 constexpr std::string_view kDeviceIdentityPrefix = "spiffe://mcubridge/device/";
 constexpr std::string_view kClientIdentityPrefix = "spiffe://mcubridge/client/";
+
+// ADR-0007 staging layout. Every client and device gets a private directory
+// under a root that the gateway owns (mode 0700, not a symlink); clients and
+// devices live in separate namespaces so identities cannot collide.
+constexpr uint32_t kDefaultTransferResource = 1U;
+constexpr uint32_t kFileTransferResource = 2U;
+constexpr uint32_t kEepromTransferResource = 0x4D454741U;
+constexpr size_t kFileStagingMaxBytes = 1024U * 1024U;
+// Must equal the MCU EEPROM resource size (EEPROM minus the 16-byte ADR-0005
+// boot-epoch reservation).
+constexpr size_t kEepromResourceBytes = 4080U;
+constexpr std::string_view kFileStagingName = "staging.bin";
+constexpr std::string_view kEepromStagingName = "eeprom.bin";
+
+std::filesystem::path g_staging_root;  // Set once in main() before sessions.
+
+std::filesystem::path ClientStagingDir(const std::string& client_id) {
+  return g_staging_root / "clients" / client_id;
+}
+
+std::filesystem::path DeviceStagingDir(const std::string& device_id) {
+  return g_staging_root / "devices" / device_id;
+}
+
+// Creates `dir` if needed and verifies it is a real directory owned by this
+// process with mode 0700; refuses symlinks and foreign owners.
+bool EnsurePrivateDirectory(const std::filesystem::path& dir,
+                            std::string& error) {
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  struct stat info {};
+  if (lstat(dir.c_str(), &info) != 0 || !S_ISDIR(info.st_mode)) {
+    error = "staging path is not a directory (or is a symlink): " + dir.string();
+    return false;
+  }
+  if (info.st_uid != geteuid()) {
+    error = "staging directory is owned by another user: " + dir.string();
+    return false;
+  }
+  if (chmod(dir.c_str(), S_IRWXU) != 0) {
+    error = "cannot set mode 0700 on staging directory: " + dir.string();
+    return false;
+  }
+  return true;
+}
+
+bool PrepareStagingRoot(const std::filesystem::path& root, std::string& error) {
+  return EnsurePrivateDirectory(root, error) &&
+         EnsurePrivateDirectory(root / "clients", error) &&
+         EnsurePrivateDirectory(root / "devices", error);
+}
+
+void RemoveStagingDirectory(const std::filesystem::path& dir) {
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
 std::atomic<bool> g_stopping{false};
 
 void HandleSignal(int) { g_stopping.store(true); }
@@ -317,6 +376,67 @@ class DeviceSessionRegistry {
  private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<GatewaySession>> sessions_;
+};
+
+// Client -> device authorization (ADR-0007). Deny by default: a dispatch is
+// allowed only when a rule names the client and matches the device and the
+// operation. "*" matches any device or operation as a whole field; there is
+// no partial wildcard. Rules are loaded once at startup and never mutated.
+class GatewayAcl {
+ public:
+  struct Rule {
+    std::string client;
+    std::string device;
+    std::string operation;
+  };
+
+  static std::optional<GatewayAcl> Load(const std::string& path,
+                                        std::string& error) {
+    GatewayAcl acl;
+    if (path.empty()) return acl;
+    std::ifstream input(path);
+    if (!input) {
+      error = "cannot read ACL file " + path;
+      return std::nullopt;
+    }
+    std::string line;
+    size_t line_number = 0;
+    while (std::getline(input, line)) {
+      ++line_number;
+      const auto comment = line.find('#');
+      if (comment != std::string::npos) line.erase(comment);
+      std::istringstream fields(line);
+      Rule rule;
+      std::string extra;
+      if (!(fields >> rule.client)) continue;  // blank or comment-only line
+      if (!(fields >> rule.device >> rule.operation) || (fields >> extra) ||
+          rule.client == "*") {
+        error = "invalid ACL rule at " + path + ":" +
+                std::to_string(line_number) +
+                " (expected: <client> <device|*> <operation|*>)";
+        return std::nullopt;
+      }
+      acl.rules_.push_back(std::move(rule));
+    }
+    return acl;
+  }
+
+  bool Allows(std::string_view client, std::string_view device,
+              std::string_view operation) const {
+    for (const Rule& rule : rules_) {
+      if (rule.client == client &&
+          (rule.device == "*" || rule.device == device) &&
+          (rule.operation == "*" || rule.operation == operation)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  size_t size() const { return rules_.size(); }
+
+ private:
+  std::vector<Rule> rules_;
 };
 
 class ClientSessionRegistry {
@@ -612,6 +732,12 @@ class GatewaySession final
       LogHandlerRegistrationFailure("device", device_id_,
                                     file_transfer_handler_);
     }
+    if (transfer_service_.RegisterHandler(eeprom_transfer_handler_)) {
+      eeprom_handler_registered_.store(true);
+    } else {
+      LogHandlerRegistrationFailure("device", device_id_,
+                                    eeprom_transfer_handler_);
+    }
 
     tx_worker_ = std::thread([this] { TransmitLoop(); });
     std::cerr << "device=" << device_id_ << " event=session_open\n";
@@ -622,6 +748,7 @@ class GatewaySession final
     if (tx_worker_.joinable()) tx_worker_.join();
     TerminateTransfer();
     UnregisterServices();
+    RemoveStagingDirectory(DeviceStagingDir(device_id_));
     std::cerr << "device=" << device_id_ << " event=session_closed\n";
   }
 
@@ -720,6 +847,10 @@ class GatewaySession final
       transfer_service_.UnregisterHandler(file_transfer_handler_);
       file_handler_registered_.store(false);
     }
+    if (eeprom_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(eeprom_transfer_handler_);
+      eeprom_handler_registered_.store(false);
+    }
   }
 
   void TerminateTransfer() {
@@ -804,11 +935,13 @@ class GatewaySession final
   std::string device_id_;
   std::array<std::byte, 64 * 1024> device_transfer_buffer_{};
   BufferTransferHandler default_transfer_handler_{
-      1, pw::ByteSpan(device_transfer_buffer_)};
+      kDefaultTransferResource, pw::ByteSpan(device_transfer_buffer_)};
   BoundedFileTransferHandler file_transfer_handler_{
-      2,
-      std::filesystem::temp_directory_path() / "mcubridge-gateway" / device_id_,
-      "staging.bin", 1024 * 1024};
+      kFileTransferResource, DeviceStagingDir(device_id_),
+      std::string(kFileStagingName), kFileStagingMaxBytes};
+  BoundedFileTransferHandler eeprom_transfer_handler_{
+      kEepromTransferResource, DeviceStagingDir(device_id_),
+      std::string(kEepromStagingName), kEepromResourceBytes};
   DeviceTelemetryService telemetry_service_;
   mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
@@ -816,6 +949,7 @@ class GatewaySession final
   std::atomic<bool> stopping_{false};
   std::atomic<bool> default_handler_registered_{false};
   std::atomic<bool> file_handler_registered_{false};
+  std::atomic<bool> eeprom_handler_registered_{false};
   std::atomic<bool> transfer_terminated_{false};
   std::atomic<bool> services_registered_{false};
   std::atomic<bool> services_unregistered_{false};
@@ -828,9 +962,12 @@ class GatewayControlService final
           GatewayControlService> {
  public:
   GatewayControlService(DeviceSessionRegistry& devices,
-                        ClientSessionRegistry& clients,
-                        std::string client_id = "")
-      : devices_(devices), clients_(clients), client_id_(std::move(client_id)) {}
+                        ClientSessionRegistry& clients, const GatewayAcl& acl,
+                        std::string client_id)
+      : devices_(devices),
+        clients_(clients),
+        acl_(acl),
+        client_id_(std::move(client_id)) {}
 
   pw::Status Health(
       const mcubridge::gateway::pwpb::HealthRequest::Message&,
@@ -845,77 +982,86 @@ class GatewayControlService final
       const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
       mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
     const std::string target_id(request.target_device_id);
+    const std::string_view op(request.operation);
+    // Checked before the device lookup so a denied client cannot probe which
+    // devices are connected.
+    if (!acl_.Allows(client_id_, target_id, op)) {
+      std::cerr << "client=" << client_id_ << " event=dispatch_denied target="
+                << target_id << " operation=" << op << '\n';
+      return pw::Status::PermissionDenied();
+    }
     auto session = devices_.Lookup(target_id);
     if (!session) {
       return pw::Status::NotFound();
     }
 
-    const std::string_view op(request.operation);
-    const bool is_push = (op == "rpc.pb.FileTransferService/PushToLinux");
-    const bool is_fetch = (op == "rpc.pb.FileTransferService/FetchFromLinux");
+    // Operations that move a staged file between the client's and the
+    // device's private directories (ADR-0007). Push consumes the client's
+    // copy; the device copy is removed once the daemon has read it. Fetch
+    // hands the daemon's copy to the client.
+    struct StagedOperation {
+      std::string_view operation;
+      std::string_view filename;
+      bool to_device;
+    };
+    static constexpr std::array<StagedOperation, 2> kStagedOperations{{
+        {"rpc.pb.FileTransferService/PushToLinux", kFileStagingName, true},
+        {"rpc.pb.FileTransferService/FetchFromLinux", kFileStagingName, false},
+    }};
+    const StagedOperation* staged = nullptr;
+    for (const auto& candidate : kStagedOperations) {
+      if (candidate.operation == op) staged = &candidate;
+    }
+    const auto client_file =
+        staged ? ClientStagingDir(client_id_) / staged->filename
+               : std::filesystem::path();
+    const auto device_file =
+        staged ? DeviceStagingDir(target_id) / staged->filename
+               : std::filesystem::path();
+    std::error_code ec;
 
-    if (is_push && !client_id_.empty() && !target_id.empty()) {
-      std::error_code ec;
-      const auto client_staging =
-          std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_ / "staging.bin";
-      const auto device_staging =
-          std::filesystem::temp_directory_path() / "mcubridge-gateway" / target_id / "staging.bin";
-      if (!std::filesystem::exists(client_staging, ec) || ec) {
+    if (staged && staged->to_device) {
+      std::string error;
+      if (!std::filesystem::is_regular_file(client_file, ec)) {
         std::cerr << "client=" << client_id_
-                  << " event=dispatch_push_missing_staging target=" << target_id << '\n';
+                  << " event=dispatch_missing_staging target=" << target_id
+                  << '\n';
         return pw::Status::FailedPrecondition();
       }
-      std::filesystem::create_directories(device_staging.parent_path(), ec);
-      if (ec) {
+      if (!EnsurePrivateDirectory(DeviceStagingDir(target_id), error)) {
         std::cerr << "client=" << client_id_
-                  << " event=dispatch_push_dir_error target=" << target_id << '\n';
+                  << " event=dispatch_staging_error target=" << target_id
+                  << " detail=" << error << '\n';
         return pw::Status::Internal();
       }
-      std::filesystem::permissions(
-          device_staging.parent_path(),
-          std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
-              std::filesystem::perms::owner_exec,
-          std::filesystem::perm_options::replace, ec);
-      std::filesystem::copy_file(
-          client_staging, device_staging,
-          std::filesystem::copy_options::overwrite_existing, ec);
+      std::filesystem::rename(client_file, device_file, ec);
       if (ec) {
         std::cerr << "client=" << client_id_
-                  << " event=dispatch_push_copy_error target=" << target_id << '\n';
+                  << " event=dispatch_staging_error target=" << target_id
+                  << '\n';
         return pw::Status::Internal();
       }
     }
 
     const pw::Status status = session->Dispatch(request, response);
 
-    if (status.ok() && is_fetch && !client_id_.empty() && !target_id.empty()) {
-      std::error_code ec;
-      const auto client_staging =
-          std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_ / "staging.bin";
-      const auto device_staging =
-          std::filesystem::temp_directory_path() / "mcubridge-gateway" / target_id / "staging.bin";
-      if (!std::filesystem::exists(device_staging, ec) || ec) {
+    if (staged && staged->to_device) {
+      std::filesystem::remove(device_file, ec);
+    } else if (staged && status.ok()) {
+      std::string error;
+      if (!std::filesystem::is_regular_file(device_file, ec)) {
         std::cerr << "client=" << client_id_
-                  << " event=dispatch_fetch_missing_staging target=" << target_id << '\n';
+                  << " event=dispatch_missing_staging target=" << target_id
+                  << '\n';
         return pw::Status::NotFound();
       }
-      std::filesystem::create_directories(client_staging.parent_path(), ec);
-      if (ec) {
-        std::cerr << "client=" << client_id_
-                  << " event=dispatch_fetch_dir_error target=" << target_id << '\n';
+      if (!EnsurePrivateDirectory(ClientStagingDir(client_id_), error)) {
+        std::filesystem::remove(device_file, ec);
         return pw::Status::Internal();
       }
-      std::filesystem::permissions(
-          client_staging.parent_path(),
-          std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
-              std::filesystem::perms::owner_exec,
-          std::filesystem::perm_options::replace, ec);
-      std::filesystem::copy_file(
-          device_staging, client_staging,
-          std::filesystem::copy_options::overwrite_existing, ec);
+      std::filesystem::rename(device_file, client_file, ec);
       if (ec) {
-        std::cerr << "client=" << client_id_
-                  << " event=dispatch_fetch_copy_error target=" << target_id << '\n';
+        std::filesystem::remove(device_file, ec);
         return pw::Status::Internal();
       }
     }
@@ -926,6 +1072,7 @@ class GatewayControlService final
  private:
   DeviceSessionRegistry& devices_;
   ClientSessionRegistry& clients_;
+  const GatewayAcl& acl_;
   std::string client_id_;
 };
 
@@ -933,11 +1080,11 @@ class GatewayClientSession final : public SessionControl {
  public:
   GatewayClientSession(SSL* ssl, int fd, std::string client_id,
                        DeviceSessionRegistry& devices,
-                       ClientSessionRegistry& clients)
+                       ClientSessionRegistry& clients, const GatewayAcl& acl)
       : socket_(ssl, fd),
         clients_(clients),
         client_id_(std::move(client_id)),
-        control_service_(devices, clients, client_id_),
+        control_service_(devices, clients, acl, client_id_),
         channel_output_(tx_writer_, kRpcHdlcAddress),
         channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         rpc_server_(channels_),
@@ -999,6 +1146,7 @@ class GatewayClientSession final : public SessionControl {
     if (tx_worker_.joinable()) tx_worker_.join();
     TerminateTransfer();
     UnregisterServices();
+    RemoveStagingDirectory(ClientStagingDir(client_id_));
     std::cerr << "client=" << client_id_ << " event=session_closed\n";
   }
 
@@ -1101,14 +1249,13 @@ class GatewayClientSession final : public SessionControl {
   std::unique_ptr<pw::thread::Thread> transfer_worker_;
   std::array<std::byte, 64 * 1024> client_transfer_buffer_{};
   BufferTransferHandler default_transfer_handler_{
-      1, pw::ByteSpan(client_transfer_buffer_)};
-  std::array<std::byte, 4096> client_eeprom_buffer_{};
-  BufferTransferHandler eeprom_transfer_handler_{
-      0x4D454741, pw::ByteSpan(client_eeprom_buffer_)};
+      kDefaultTransferResource, pw::ByteSpan(client_transfer_buffer_)};
+  BoundedFileTransferHandler eeprom_transfer_handler_{
+      kEepromTransferResource, ClientStagingDir(client_id_),
+      std::string(kEepromStagingName), kEepromResourceBytes};
   BoundedFileTransferHandler file_transfer_handler_{
-      2,
-      std::filesystem::temp_directory_path() / "mcubridge-gateway" / client_id_,
-      "staging.bin", 1024 * 1024};
+      kFileTransferResource, ClientStagingDir(client_id_),
+      std::string(kFileStagingName), kFileStagingMaxBytes};
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
   pw::hdlc::Decoder decoder_;
   std::atomic<bool> stopping_{false};
@@ -1218,12 +1365,30 @@ int main(int argc, char** argv) {
   const std::string client_ca = Argument(argc, argv, "--client-ca");
   const std::string bind_address = Argument(argc, argv, "--bind", "*");
   const std::string port = Argument(argc, argv, "--port", "8443");
+  const std::string acl_path = Argument(argc, argv, "--acl");
+  const std::string staging_dir =
+      Argument(argc, argv, "--staging-dir", "/var/lib/mcubridge-gateway");
   if (certificate.empty() || private_key.empty() || client_ca.empty()) {
     std::cerr << "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
-                 "--client-ca FILE [--bind ADDRESS] [--port PORT]\n";
+                 "--client-ca FILE [--acl FILE] [--staging-dir DIR] [--bind ADDRESS] "
+                 "[--port PORT]\n";
     return 2;
   }
   std::string error;
+  const auto acl = GatewayAcl::Load(acl_path, error);
+  if (!acl.has_value()) {
+    std::cerr << "fatal=" << error << '\n';
+    return 1;
+  }
+  g_staging_root = staging_dir;
+  if (!PrepareStagingRoot(g_staging_root, error)) {
+    std::cerr << "fatal=" << error << '\n';
+    return 1;
+  }
+  if (acl->size() == 0) {
+    std::cerr << "event=acl_empty detail=every client dispatch is denied; "
+                 "pass --acl FILE\n";
+  }
   auto tls_context =
       CreateTlsContext(certificate, private_key, client_ca, error);
   if (!tls_context) {
@@ -1270,7 +1435,7 @@ int main(int argc, char** argv) {
     task->fd = client_fd;
     SessionTask* task_ptr = task.get();
     task->worker = std::thread([task_ptr, context = tls_context.get(),
-                                &device_registry, &client_registry] {
+                                &device_registry, &client_registry, &acl] {
       const auto close_task_fd = [task_ptr] {
         std::lock_guard lock(task_ptr->mutex);
         if (task_ptr->fd >= 0) {
@@ -1321,7 +1486,7 @@ int main(int argc, char** argv) {
       } else {
         session = std::make_shared<GatewayClientSession>(
             ssl, client_fd, std::move(identity->id), device_registry,
-            client_registry);
+            client_registry, *acl);
       }
       {
         std::lock_guard lock(task_ptr->mutex);

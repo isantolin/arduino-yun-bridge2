@@ -496,7 +496,7 @@ class BridgeService:
                 logger.warning("Unrecognized RPC method requested", method=route.method, topic=topic_val)
                 return
 
-            if self.state.topic_authorization and not protocol.allows_method(self.state.topic_authorization, spec):
+            if not protocol.allows_method(self.state.topic_authorization, spec):
                 action = route.action or route.method
                 await self.reject_cloud(request, route.method, action)
                 return
@@ -1232,8 +1232,9 @@ class BridgeService:
             spec = protocol.BY_NAME.get(target)
             if spec is None:
                 raise ValueError(f"Unknown RPC method: {target}")
-            if self.state.topic_authorization and not protocol.allows_method(self.state.topic_authorization, spec):
+            if not protocol.allows_method(self.state.topic_authorization, spec):
                 # Same ACL as the topic path: cloud_allow_* flags apply to Gateway dispatch too.
+                # ADR-0007: a missing authorization denies (deny-by-default).
                 logger.warning("RPC method forbidden by topic authorization", method=target)
                 resp_payload = b""
                 status_code = 403

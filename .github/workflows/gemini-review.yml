@@ -19,17 +19,36 @@ defaults:
 jobs:
   review:
     runs-on: 'ubuntu-26.04'
-    timeout-minutes: 7
+    timeout-minutes: 15
+    env:
+      # Pinned so the extension pre-install and the action use the same CLI.
+      GEMINI_CLI_VERSION: "${{ vars.GEMINI_CLI_VERSION || '0.50.0' }}"
     permissions:
       contents: 'read'
       id-token: 'write'
       issues: 'write'
       pull-requests: 'write'
     steps:
+      # Without any Gemini credential the review cannot run; report it and
+      # finish instead of failing every pull request.
+      - name: 'Check Gemini credentials'
+        id: 'credentials'
+        env:
+          HAS_GEMINI_API_KEY: "${{ secrets.GEMINI_API_KEY != '' }}"
+          HAS_GOOGLE_API_KEY: "${{ secrets.GOOGLE_API_KEY != '' }}"
+          HAS_VERTEX_OR_GCA: "${{ vars.GCP_WIF_PROVIDER != '' }}"
+        run: |-
+          if [ "$HAS_GEMINI_API_KEY" = "true" ] || [ "$HAS_GOOGLE_API_KEY" = "true" ] || [ "$HAS_VERTEX_OR_GCA" = "true" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Gemini review skipped: configure GEMINI_API_KEY, GOOGLE_API_KEY or GCP_WIF_PROVIDER."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 'Mint identity token'
         id: 'mint_identity_token'
         if: |-
-          ${{ vars.APP_ID }}
+          ${{ steps.credentials.outputs.available == 'true' && vars.APP_ID }}
         uses: 'actions/create-github-app-token@v3'
         with:
           app-id: '${{ vars.APP_ID }}'
@@ -39,10 +58,12 @@ jobs:
           permission-pull-requests: 'write'
 
       - name: 'Checkout repository'
+        if: "${{ steps.credentials.outputs.available == 'true' }}"
         uses: 'actions/checkout@v7'
 
       - name: 'Read canonical Gemini model'
         id: 'gemini_model'
+        if: "${{ steps.credentials.outputs.available == 'true' }}"
         run: |-
           model=''
           IFS= read -r model < tools/gemini_model || true
@@ -52,7 +73,18 @@ jobs:
           fi
           printf 'model=%s\n' "$model" >> "$GITHUB_OUTPUT"
 
+      # Workaround for google-github-actions/run-gemini-cli#533: the action's
+      # `echo "Y" | gemini extensions install` hangs on the code-review
+      # extension's second consent prompt. Pre-install it non-interactively;
+      # the CLI loads extensions already present under ~/.gemini.
+      - name: 'Pre-install Gemini code-review extension'
+        if: "${{ steps.credentials.outputs.available == 'true' }}"
+        run: |-
+          npx --yes "@google/gemini-cli@${GEMINI_CLI_VERSION}" extensions install --consent \
+            'https://github.com/gemini-cli-extensions/code-review' </dev/null
+
       - name: 'Run Gemini pull request review'
+        if: "${{ steps.credentials.outputs.available == 'true' }}"
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
         id: 'gemini_pr_review'
         env:
@@ -69,7 +101,7 @@ jobs:
           gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
           gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
           gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
-          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
+          gemini_cli_version: '${{ env.GEMINI_CLI_VERSION }}'
           gemini_debug: '${{ fromJSON(vars.GEMINI_DEBUG || vars.ACTIONS_STEP_DEBUG || false) }}'
           gemini_model: '${{ steps.gemini_model.outputs.model }}'
           google_api_key: '${{ secrets.GOOGLE_API_KEY }}'
@@ -143,8 +175,4 @@ jobs:
                 ]
               }
             }
-          extensions: |
-            [
-              "https://github.com/gemini-cli-extensions/code-review"
-            ]
           prompt: '/pr-code-review'

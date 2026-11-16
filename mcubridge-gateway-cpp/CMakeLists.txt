@@ -50,6 +50,13 @@ pw_proto_library(mcu_wire_proto
   SOURCES
     "${MCUBRIDGE_PROTOCOL_DIR}/config_schema.proto"
     "${MCUBRIDGE_PROTOCOL_DIR}/mcu_wire.proto")
+# pw_rpc encodes every outgoing packet in a buffer of
+# PW_RPC_ENCODING_BUFFER_SIZE_BYTES (default 512). pw_transfer data chunks are
+# up to kTransferChunkBytes (1024) plus chunk and packet headers; with the
+# default, any read larger than one small chunk failed in Write() and the
+# server aborted the transfer with DATA_LOSS. Match kRpcEncodeBytes.
+add_compile_definitions(PW_RPC_ENCODING_BUFFER_SIZE_BYTES=2048)
+
 add_subdirectory("${PIGWEED_ROOT}/pw_build" pw_build)
 add_subdirectory("${PIGWEED_ROOT}/third_party/fuchsia" pw_third_party_fuchsia)
 add_subdirectory("${PIGWEED_ROOT}/pw_numeric" pw_numeric)

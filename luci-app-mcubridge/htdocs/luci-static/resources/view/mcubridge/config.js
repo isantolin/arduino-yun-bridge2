@@ -155,9 +155,14 @@ return view.extend({
 		};
 
 		o = s.option(form.Value, 'file_system_root', _('File System Root'),
-			_('Directory exposed for MCU file operations. Use /tmp for tmpfs (Flash-safe) or /mnt/<device> for external storage.'));
+			_('Persistent storage for MPU files (ADR-0007). The default /srv/mcubridge/files lives on the router flash: keep the quota small. Prefer a mounted SD card (/mnt/<device>/...) for frequent writes. Paths under /tmp are lost on reboot.'));
 		o.rmempty = false;
 		applySchemaDefault(o, 'file_system_root', false);
+		o.validate = function (section_id, value) {
+			if (!value || value.charAt(0) !== '/') return _('Use an absolute path.');
+			if (/(^|\/)\.\.(\/|$)/.test(value)) return _('Path must not contain "..".');
+			return true;
+		};
 
 		o = s.option(form.Value, 'process_timeout', _('Process Timeout (s)'));
 		o.datatype = 'uinteger';

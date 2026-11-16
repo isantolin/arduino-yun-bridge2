@@ -107,6 +107,10 @@ define Package/$(PKG_NAME)/install
 	
 	# UCI defaults
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-defaults $(1)/etc/uci-defaults/
+
+	# ADR-0007: keep the persistent file storage across sysupgrade
+	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
+	echo "/srv/mcubridge/" > $(1)/lib/upgrade/keep.d/mcubridge
 	
 	# Global environment profile
 	$(INSTALL_DIR) $(1)/etc/profile.d

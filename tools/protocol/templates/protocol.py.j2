@@ -92,6 +92,17 @@ SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(
 )
 SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({Status.OK.value})
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
+# ADR-0007: persistent roots accepted for file_system_root without
+# allow_non_tmp_paths (router overlay and mounted external storage).
+PERSISTENT_STORAGE_PATHS: frozenset[str] = frozenset({"/srv/mcubridge", "/mnt"})
+
+
+def path_within_roots(path: str, roots: frozenset[str]) -> bool:
+    """Return True if the normalized absolute path equals or lies under one of roots."""
+    if not path or not posixpath.isabs(path):
+        return False
+    normalized = posixpath.normpath(path)
+    return any(posixpath.commonpath((normalized, root)) == root for root in roots)
 
 
 @dataclass(slots=True, frozen=True)

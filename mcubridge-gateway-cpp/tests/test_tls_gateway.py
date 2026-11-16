@@ -756,14 +756,25 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             transfer_manager.write(2, file_payload)
             assert transfer_manager.read(2) == file_payload
 
-            staging_file = Path("/tmp/mcubridge-gateway/device-01/staging.bin")
+            # ADR-0007: devices stage under their own namespace.
+            staging_file = self.gateway.staging_dir / "devices" / "device-01" / "staging.bin"
             assert staging_file.is_file()
             assert staging_file.read_bytes() == file_payload
+
+            # Multi-chunk reads: before PW_RPC_ENCODING_BUFFER_SIZE_BYTES was
+            # raised, any read above one small chunk aborted with DATA_LOSS.
+            large_payload = bytes(i & 0xFF for i in range(8 * 1024))
+            transfer_manager.write(2, large_payload)
+            assert transfer_manager.read(2) == large_payload
+            eeprom_image = bytes(range(256)) * 15 + bytes(240)
+            transfer_manager.write(EEPROM_RESOURCE_ID, eeprom_image)
+            assert transfer_manager.read(EEPROM_RESOURCE_ID) == eeprom_image
         finally:
             running = False
             dev_sock.close()
             t.join(timeout=2)
             self.gateway.wait_for("device=device-01 event=session_closed")
+        assert not (self.gateway.staging_dir / "devices" / "device-01").exists()
 
 
 if __name__ == "__main__":

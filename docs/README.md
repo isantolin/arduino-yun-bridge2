@@ -216,9 +216,9 @@ EOF
 
 ## Documentación Técnica y Normativa
 
-- [Notas de diseño de seguridad funcional](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Arquitectura de almacenamiento estático, POST y monitorización del máximo observado de `Bridge.process()`; no es una certificación ni una prueba formal de WCET.
-- [Perfil de implementación criptográfica](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/security/FIPS140_3_SECURITY_POLICY.md): Algoritmos, KATs y límites de la zeroización; no es una política FIPS validada.
-- [Especificación del Protocolo Binario](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/PROTOCOL.md): Framing Google Pigweed `pw_hdlc` (CRC-32 FCS), despacho `pw_rpc` (`PW_SERVICES`), Nanopb y servicios canónicos.
+- [Notas de diseño de seguridad funcional](safety/SIL2_SAFETY_MANUAL.md): Arquitectura de almacenamiento estático, POST y monitorización del máximo observado de `Bridge.process()`; no es una certificación ni una prueba formal de WCET.
+- [Perfil de implementación criptográfica](security/FIPS140_3_SECURITY_POLICY.md): Algoritmos, KATs y límites de la zeroización; no es una política FIPS validada.
+- [Especificación del Protocolo Binario](PROTOCOL.md): Framing Google Pigweed `pw_hdlc` (CRC-32 FCS), despacho `pw_rpc` (`PW_SERVICES`), Nanopb y servicios canónicos.
 
 ## Verificación y control de calidad
 

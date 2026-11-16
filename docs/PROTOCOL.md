@@ -187,7 +187,7 @@ Gestiona la autenticación mutua y el ciclo de vida del enlace criptográfico se
 
 ### 2. Physical Link Connection FSM (`LinkConnectionMachine` — Python Daemon)
 
-Gobierna el estado de la conexión física en [RuntimeState](file:///home/ignaciosantolin/arduino-yun-bridge2/mcubridge/mcubridge/state/context.py#L112) de forma desacoplada pero sincronizada con el transporte serie y de red. Sus transiciones son formalmente idempotentes para tolerar reconexiones y re-sincronizaciones sin inconsistencias de estado.
+Gobierna el estado de la conexión física en [RuntimeState](../mcubridge/mcubridge/state/context.py) de forma desacoplada pero sincronizada con el transporte serie y de red. Sus transiciones son formalmente idempotentes para tolerar reconexiones y re-sincronizaciones sin inconsistencias de estado.
 
 #### Estados
 | Estado | Descripción |

@@ -1,8 +1,13 @@
-# ADR-0003: WolfCrypt Link Crypto Provider on ESP32
+# ADR-0006: WolfCrypt Link Crypto Provider
 
-- Status: Accepted
-- Date: 2026-11-03
+- Status: Accepted (amended)
+- Date: 2026-11-03; amended 2026-11-16
+- Renumbered: originally published as a second ADR-0003, which collided with [ADR-0003: Pigweed gateway replacement](0003-pigweed-gateway-replacement.md). The content below the amendment is the original decision.
 - Decision owners: Repository maintainer
+
+## Amendment (2026-11-16)
+
+The provider split described below no longer exists. wolfCrypt 5.8.4 is now the only cryptographic provider on AVR, SAMD21 and ESP32: SHA-256, HMAC-SHA256, HKDF-SHA256, ChaCha20-Poly1305 and zeroization (`ForceZero`) all come from wolfCrypt (`security.cpp`), and `library.properties` depends on `wolfssl`. Mbed TLS and PSA are no longer used by the firmware. The pinned archive, the repository-owned `wolfssl_user_settings.h`, the no-malloc configuration and the GPL-3.0-or-later obligations described below still apply to every platform.
 
 ## Context
 

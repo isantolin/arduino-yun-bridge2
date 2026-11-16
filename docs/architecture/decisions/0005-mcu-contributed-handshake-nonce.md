@@ -90,4 +90,4 @@ Verified per-platform sources (installed cores):
 ## Related
 
 - Supersedes the replay limitation note in `docs/PROTOCOL.md` ("anti-replay solo dura lo que la sesión").
-- Related: ADR-0002 (Pigweed HDLC/RPC), ADR-0003 (wolfCrypt on ESP32), D1 (EEPROM reachability).
+- Related: ADR-0002 (Pigweed HDLC/RPC), [ADR-0006](0006-wolfcrypt-link-crypto.md) (wolfCrypt provider), D1 (EEPROM reachability).

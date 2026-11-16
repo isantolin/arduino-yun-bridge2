@@ -103,7 +103,7 @@ def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch, tmp
     cmd = launched[0]
     assert cmd[0] == str(fake_bin)
     # The standalone Gateway refuses to start without its mTLS material.
-    for flag in ("--cert", "--key", "--client-ca", "--acl", "--bind", "--port"):
+    for flag in ("--cert", "--key", "--client-ca", "--acl", "--staging-dir", "--bind", "--port"):
         assert flag in cmd
     assert Path(cmd[cmd.index("--client-ca") + 1]).is_file()
     # ADR-0007: the emulation client is granted every device and operation.

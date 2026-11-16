@@ -1752,6 +1752,146 @@ async def test_send_cloud_telemetry_resolves_pw_rpc_callbacks(
         assert await svc.send_cloud_telemetry(system_status_blob=b"x") is expected
 
 
+_EEPROM_IMAGE = bytes(range(256)) * 15 + bytes(240)
+
+
+async def test_eeprom_read_copies_mcu_image_to_gateway(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0007: Read pulls the MCU resource and stages it on the Gateway unchanged."""
+    svc = mock_bridge_service
+    assert len(_EEPROM_IMAGE) == protocol.EEPROM_RESOURCE_MAX_BYTES
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    stage = AsyncMock()
+    monkeypatch.setattr(svc, "cloud_transfer_write", stage)
+
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is True
+    assert resp.bytes_transferred == protocol.EEPROM_RESOURCE_MAX_BYTES
+    cast(AsyncMock, svc.serial.transfer_read).assert_awaited_once_with(protocol.EEPROM_TRANSFER_RESOURCE_ID)
+    stage.assert_awaited_once_with(protocol.EEPROM_TRANSFER_RESOURCE_ID, _EEPROM_IMAGE)
+
+
+@pytest.mark.parametrize("image", [b"", _EEPROM_IMAGE + b"\x00"])
+async def test_eeprom_read_rejects_unexpected_image_size(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, image: bytes
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=image))
+    stage = AsyncMock()
+    monkeypatch.setattr(svc, "cloud_transfer_write", stage)
+
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is False
+    assert "Unexpected EEPROM image size" in resp.message
+    stage.assert_not_awaited()
+
+
+async def test_eeprom_read_reports_mcu_failure(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(side_effect=ConnectionError("link down")))
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "link down" in resp.message
+
+
+async def test_eeprom_write_programs_staged_image(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0007: Write pulls the staged image from the Gateway and programs the MCU resource."""
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    program = AsyncMock()
+    monkeypatch.setattr(svc.serial, "transfer_write", program)
+
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is True
+    assert resp.bytes_transferred == len(_EEPROM_IMAGE)
+    program.assert_awaited_once_with(protocol.EEPROM_TRANSFER_RESOURCE_ID, _EEPROM_IMAGE)
+
+
+@pytest.mark.parametrize("image", [b"", _EEPROM_IMAGE + b"\x00"])
+async def test_eeprom_write_rejects_invalid_image_size(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, image: bytes
+) -> None:
+    """An oversized image would overwrite the ADR-0005 boot epoch; it must never reach the MCU."""
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=image))
+    program = AsyncMock()
+    monkeypatch.setattr(svc.serial, "transfer_write", program)
+
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is False
+    assert f"1..{protocol.EEPROM_RESOURCE_MAX_BYTES} bytes" in resp.message
+    program.assert_not_awaited()
+
+
+async def test_eeprom_write_failure_warns_about_partial_image(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    monkeypatch.setattr(svc.serial, "transfer_write", AsyncMock(side_effect=RuntimeError("transfer aborted")))
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "may be partial" in resp.message
+
+
+async def test_eeprom_write_gateway_staging_failure(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(side_effect=OSError("no staged image")))
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "no staged image" in resp.message
+
+
+async def test_eeprom_read_gateway_staging_failure(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    monkeypatch.setattr(svc, "cloud_transfer_write", AsyncMock(side_effect=OSError("gateway gone")))
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "gateway gone" in resp.message
+
+
+@pytest.mark.parametrize("handler", ["eeprom_read", "eeprom_write"])
+async def test_eeprom_handlers_require_serial(mock_bridge_service: BridgeService, handler: str) -> None:
+    svc = mock_bridge_service
+    svc.serial = None
+    resp = await getattr(svc, handler)(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "serial transport unavailable" in resp.message
+
+
+@pytest.mark.parametrize(
+    ("operation", "permission"),
+    [("rpc.pb.EepromService/Read", "eeprom_read"), ("rpc.pb.EepromService/Write", "eeprom_write")],
+)
+def test_eeprom_operations_require_their_permission(operation: str, permission: str) -> None:
+    """ADR-0007: EEPROM access is gated by dedicated, deny-by-default permissions."""
+    spec = protocol.BY_NAME[operation]
+    assert spec.auth_field == permission
+    assert not protocol.allows_method(config_schema_pb2.TopicAuthorization(), spec)
+    assert protocol.allows_method(config_schema_pb2.TopicAuthorization(**{permission: True}), spec)
+
+
 async def test_file_transfer_push_to_linux_success(
     mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

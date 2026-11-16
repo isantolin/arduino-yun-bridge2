@@ -19,7 +19,7 @@ from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService,
 from pw_transfer import transfer_pb2
 from pw_transfer.client import Manager as PwTransferManager
 
-from . import cloud_gateway_pb2, mcu_wire_pb2
+from . import cloud_gateway_pb2, mcu_wire_pb2, protocol
 from .gateway import gateway_control_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
@@ -430,3 +430,36 @@ class GatewayClient:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
         return len(data)
+
+    async def read_mcu_eeprom(self, timeout_ms: int | None = None) -> bytes:
+        """Read the AVR EEPROM image of the target device (ADR-0007; needs eeprom_read)."""
+        resp_bytes = await self.dispatch(
+            "rpc.pb.EepromService/Read",
+            cloud_gateway_pb2.EepromSyncRequest(),
+            timeout_ms=timeout_ms,
+        )
+        resp = cloud_gateway_pb2.FileTransferSyncResponse()
+        resp.ParseFromString(resp_bytes)
+        if not resp.success:
+            raise RuntimeError(f"MCU EEPROM read failed: {resp.message}")
+        return await self.transfer_read(protocol.EEPROM_TRANSFER_RESOURCE_ID)
+
+    async def write_mcu_eeprom(self, image: bytes, timeout_ms: int | None = None) -> int:
+        """Program the AVR EEPROM of the target device from offset 0 (ADR-0007; needs eeprom_write).
+
+        Writes are not transactional and take tens of seconds for a full image;
+        pass a generous timeout_ms.
+        """
+        if not 0 < len(image) <= protocol.EEPROM_RESOURCE_MAX_BYTES:
+            raise ValueError(f"EEPROM image must be 1..{protocol.EEPROM_RESOURCE_MAX_BYTES} bytes, got {len(image)}")
+        await self.transfer_write(protocol.EEPROM_TRANSFER_RESOURCE_ID, image)
+        resp_bytes = await self.dispatch(
+            "rpc.pb.EepromService/Write",
+            cloud_gateway_pb2.EepromSyncRequest(),
+            timeout_ms=timeout_ms,
+        )
+        resp = cloud_gateway_pb2.FileTransferSyncResponse()
+        resp.ParseFromString(resp_bytes)
+        if not resp.success:
+            raise RuntimeError(f"MCU EEPROM write failed: {resp.message}")
+        return resp.bytes_transferred

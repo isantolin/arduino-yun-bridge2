@@ -132,6 +132,8 @@ class BridgeService:
         "rpc.pb.FileSystemService/Remove": "file_remove",
         "rpc.pb.FileTransferService/PushToLinux": "file_transfer_push_to_linux",
         "rpc.pb.FileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
+        "rpc.pb.EepromService/Read": "eeprom_read",
+        "rpc.pb.EepromService/Write": "eeprom_write",
         "rpc.pb.MailboxService/Push": "mailbox_push",
         "rpc.pb.MailboxService/Read": "mailbox_read",
         "rpc.pb.MailboxService/Available": "mailbox_available",
@@ -773,6 +775,74 @@ class BridgeService:
             return cloud_gateway_pb2.FileTransferSyncResponse(
                 success=False, bytes_transferred=0, message="File write quota exceeded or rejected"
             )
+        return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
+
+    async def eeprom_read(
+        self, _req: cloud_gateway_pb2.EepromSyncRequest
+    ) -> cloud_gateway_pb2.FileTransferSyncResponse:
+        """ADR-0007: copy the MCU EEPROM image to the Gateway EEPROM staging resource."""
+        if self.serial is None:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="MCU serial transport unavailable"
+            )
+        resource_id = protocol.EEPROM_TRANSFER_RESOURCE_ID
+        try:
+            data = await self.serial.transfer_read(resource_id)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+            logger.error("MCU EEPROM read failed", error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"MCU EEPROM read failed: {exc}"
+            )
+        if not data or len(data) > protocol.EEPROM_RESOURCE_MAX_BYTES:
+            logger.error("MCU EEPROM image has an unexpected size", size=len(data))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Unexpected EEPROM image size: {len(data)}"
+            )
+        try:
+            await self.cloud_transfer_write(resource_id, data)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError) as exc:
+            logger.error("Gateway EEPROM staging write failed", error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Gateway staging write failed: {exc}"
+            )
+        logger.info("MCU EEPROM image copied to the Gateway", size=len(data))
+        return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
+
+    async def eeprom_write(
+        self, _req: cloud_gateway_pb2.EepromSyncRequest
+    ) -> cloud_gateway_pb2.FileTransferSyncResponse:
+        """ADR-0007: program the Gateway-staged image into the MCU EEPROM (from offset 0)."""
+        if self.serial is None:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message="MCU serial transport unavailable"
+            )
+        resource_id = protocol.EEPROM_TRANSFER_RESOURCE_ID
+        try:
+            data = await self.cloud_transfer_read(resource_id)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError) as exc:
+            logger.error("Gateway EEPROM staging read failed", error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"Gateway staging read failed: {exc}"
+            )
+        if not data or len(data) > protocol.EEPROM_RESOURCE_MAX_BYTES:
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False,
+                bytes_transferred=0,
+                message=f"EEPROM image must be 1..{protocol.EEPROM_RESOURCE_MAX_BYTES} bytes, got {len(data)}",
+            )
+        started = time.monotonic()
+        try:
+            await self.serial.transfer_write(resource_id, data)
+        except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+            # EEPROM writes are not transactional: a failure can leave a
+            # partially programmed image (pw-transfer-integration.md).
+            logger.error("MCU EEPROM write failed; contents may be partial", error=str(exc))
+            return cloud_gateway_pb2.FileTransferSyncResponse(
+                success=False, bytes_transferred=0, message=f"MCU EEPROM write failed (may be partial): {exc}"
+            )
+        logger.info(
+            "MCU EEPROM programmed from the Gateway", size=len(data), seconds=round(time.monotonic() - started, 2)
+        )
         return cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=len(data), message="OK")
 
     async def file_transfer_fetch_from_linux(

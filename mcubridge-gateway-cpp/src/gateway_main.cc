@@ -1004,9 +1004,12 @@ class GatewayControlService final
       std::string_view filename;
       bool to_device;
     };
-    static constexpr std::array<StagedOperation, 2> kStagedOperations{{
+    static constexpr std::array<StagedOperation, 4> kStagedOperations{{
         {"rpc.pb.FileTransferService/PushToLinux", kFileStagingName, true},
         {"rpc.pb.FileTransferService/FetchFromLinux", kFileStagingName, false},
+        // ADR-0007: the EEPROM image travels through eeprom.bin.
+        {"rpc.pb.EepromService/Write", kEepromStagingName, true},
+        {"rpc.pb.EepromService/Read", kEepromStagingName, false},
     }};
     const StagedOperation* staged = nullptr;
     for (const auto& candidate : kStagedOperations) {

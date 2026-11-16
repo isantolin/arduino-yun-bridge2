@@ -219,6 +219,22 @@ message FileTransferSyncResponse {
   string message = 3;
 }
 
+message EepromSyncRequest {}
+
+// Linux-side bridge between the Gateway's EEPROM staging resource and the MCU
+// pw_transfer resource EEPROM_TRANSFER_RESOURCE_ID (ADR-0007). Read copies the
+// MCU EEPROM image to the Gateway; Write programs the staged image into it.
+service EepromService {
+  rpc Read(rpc.pb.EepromSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
+    option (auth_field) = "eeprom_read";
+    option (method_description) = "Copy the MCU EEPROM image to the Gateway EEPROM staging resource.";
+  }
+  rpc Write(rpc.pb.EepromSyncRequest) returns (rpc.pb.FileTransferSyncResponse) {
+    option (auth_field) = "eeprom_write";
+    option (method_description) = "Program the Gateway-staged EEPROM image into the MCU EEPROM.";
+  }
+}
+
 // Linux-side pw_transfer proxy service. Synchronizes files between the Gateway's
 // pw_transfer staging resource and the local OpenWrt Linux filesystem.
 service FileTransferService {

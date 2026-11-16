@@ -1653,6 +1653,35 @@ async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_serv
         exec_mock.assert_awaited_once()
 
 
+@pytest.mark.parametrize("authorization", [None, config_schema_pb2.TopicAuthorization()])
+async def test_cloud_edge_dispatch_denies_without_permissions(
+    mock_bridge_service: BridgeService, authorization: config_schema_pb2.TopicAuthorization | None
+) -> None:
+    """ADR-0007: with no authorization, or none granted, every cloud dispatch is denied (403)."""
+    svc = mock_bridge_service
+    svc.state.topic_authorization = authorization
+    written_frames: list[bytes] = []
+    mock_writer = MagicMock()
+    mock_writer.write = MagicMock(side_effect=written_frames.append)
+    mock_writer.drain = AsyncMock()
+    pkt = MagicMock()
+    pkt.payload = gateway_control_pb2.EdgeDispatchRequest(
+        operation="rpc.pb.SystemService/GetVersion"
+    ).SerializeToString()
+    pkt.call_id = 1
+    pkt.service_id = 1
+    pkt.method_id = 1
+    pkt.channel_id = 1
+
+    with patch.object(svc, "execute_rpc", new=AsyncMock(return_value=b"")) as exec_mock:
+        await svc.handle_cloud_edge_dispatch(pkt, mock_writer)
+    frames = list(pw_hdlc.decode.FrameDecoder().process_valid_frames(written_frames[-1]))
+    edge_resp = gateway_control_pb2.EdgeDispatchResponse()
+    edge_resp.ParseFromString(pw_rpc.packets.decode(frames[0].data).payload)
+    assert edge_resp.status_code == 403
+    exec_mock.assert_not_awaited()
+
+
 async def test_write_with_quota_enforces_managed_root_quota(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
     """file_storage_quota_bytes bounds the managed root, counting overwrites only once."""
     svc = mock_bridge_service

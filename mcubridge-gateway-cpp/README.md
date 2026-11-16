@@ -54,7 +54,27 @@ the AVR CMake toolchain or the AVR cooperative transfer-thread backend.
       --cert /etc/mcubridge/gateway.crt \
       --key /etc/mcubridge/gateway.key \
       --client-ca /etc/mcubridge/clients-ca.crt \
+      --acl /etc/mcubridge/gateway.acl \
       --bind 0.0.0.0 --port 8443
 
 The process rejects clients without a trusted certificate and the required URI
 SAN. There is no insecure mode or metadata identity fallback.
+
+### Client authorization (`--acl`)
+
+`GatewayControl.Dispatch` is deny-by-default ([ADR-0007](../docs/architecture/decisions/0007-cloud-eeprom-access-and-persistent-storage.md)).
+Each line of the ACL file grants one client (the `<id>` of its
+`spiffe://mcubridge/client/<id>` identity) access to a device and an operation:
+
+    # client     device      operation
+    operator-01  device-01   rpc.pb.GpioService/DigitalWrite
+    operator-01  *           rpc.pb.SystemService/GetVersion
+    provisioner  device-02   *
+
+`*` matches any device or any operation as a whole field; there are no partial
+wildcards and the client field cannot be `*`. `#` starts a comment. The file is
+read once at startup; an invalid line stops the gateway. Without `--acl` the
+gateway starts but denies every dispatch (`event=acl_empty`). A denied request
+returns `PERMISSION_DENIED` before the device lookup, so it does not reveal
+whether the device is connected. The daemon on each device still applies its
+own `cloud_allow_*` permissions.

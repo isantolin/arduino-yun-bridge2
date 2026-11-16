@@ -178,9 +178,10 @@ def validate_config(cfg: config_schema_pb2.RuntimeConfig) -> None:
     del cfg.allowed_commands[:]
     cfg.allowed_commands.extend(cfg.allowed_policy.entries)
 
-    if not any(getattr(cfg.topic_authorization, name) for name in _TOPIC_AUTH_FIELDS):
-        for name in _TOPIC_AUTH_FIELDS:
-            setattr(cfg.topic_authorization, name, True)
+    # ADR-0007: cloud authorization is deny-by-default. An empty
+    # topic_authorization grants nothing; it no longer means "allow all".
+    if cfg.cloud_enabled and not any(getattr(cfg.topic_authorization, name) for name in _TOPIC_AUTH_FIELDS):
+        logger.warning("Cloud enabled but no cloud_allow_* permission is granted; every cloud request is denied")
 
 
 def get_ssl_context(cfg: config_schema_pb2.RuntimeConfig) -> ssl.SSLContext | None:

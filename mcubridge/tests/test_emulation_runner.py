@@ -103,9 +103,12 @@ def test_ensure_cloud_gateway_spawn_success(monkeypatch: pytest.MonkeyPatch, tmp
     cmd = launched[0]
     assert cmd[0] == str(fake_bin)
     # The standalone Gateway refuses to start without its mTLS material.
-    for flag in ("--cert", "--key", "--client-ca", "--bind", "--port"):
+    for flag in ("--cert", "--key", "--client-ca", "--acl", "--bind", "--port"):
         assert flag in cmd
     assert Path(cmd[cmd.index("--client-ca") + 1]).is_file()
+    # ADR-0007: the emulation client is granted every device and operation.
+    acl = Path(cmd[cmd.index("--acl") + 1]).read_text(encoding="utf-8")
+    assert acl.split() == ["emulation", "*", "*"]
 
 
 def test_ensure_cloud_gateway_missing_binary(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -316,3 +319,22 @@ def test_run_emulation_pty_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         emulation_runner.run_emulation(firmware_path=firmware)
 
     assert exc_info.value.code == 1
+
+
+def test_setup_fake_uci_grants_every_cloud_permission(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """ADR-0007: cloud authorization is deny-by-default, so the emulated fleet grants every permission."""
+    from mcubridge.protocol import config_schema_pb2
+
+    captured: dict[str, str] = {}
+
+    def _capture(_base_dir: Path, config: dict[str, str], label: str = "runner") -> Path:
+        _ = label
+        captured.update(config)
+        return tmp_path / "uci.py"
+
+    monkeypatch.setattr(emulation_runner, "write_fake_uci_module", _capture)
+    emulation_runner.setup_fake_uci("/dev/pts/99", device_id="node-a", base_dir=tmp_path)
+
+    fields = config_schema_pb2.TopicAuthorization.DESCRIPTOR.fields
+    assert {f"cloud_allow_{field.name}" for field in fields} <= captured.keys()
+    assert all(captured[f"cloud_allow_{field.name}"] == "1" for field in fields)

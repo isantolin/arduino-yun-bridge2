@@ -18,6 +18,8 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -317,6 +319,67 @@ class DeviceSessionRegistry {
  private:
   mutable std::mutex mutex_;
   std::unordered_map<std::string, std::shared_ptr<GatewaySession>> sessions_;
+};
+
+// Client -> device authorization (ADR-0007). Deny by default: a dispatch is
+// allowed only when a rule names the client and matches the device and the
+// operation. "*" matches any device or operation as a whole field; there is
+// no partial wildcard. Rules are loaded once at startup and never mutated.
+class GatewayAcl {
+ public:
+  struct Rule {
+    std::string client;
+    std::string device;
+    std::string operation;
+  };
+
+  static std::optional<GatewayAcl> Load(const std::string& path,
+                                        std::string& error) {
+    GatewayAcl acl;
+    if (path.empty()) return acl;
+    std::ifstream input(path);
+    if (!input) {
+      error = "cannot read ACL file " + path;
+      return std::nullopt;
+    }
+    std::string line;
+    size_t line_number = 0;
+    while (std::getline(input, line)) {
+      ++line_number;
+      const auto comment = line.find('#');
+      if (comment != std::string::npos) line.erase(comment);
+      std::istringstream fields(line);
+      Rule rule;
+      std::string extra;
+      if (!(fields >> rule.client)) continue;  // blank or comment-only line
+      if (!(fields >> rule.device >> rule.operation) || (fields >> extra) ||
+          rule.client == "*") {
+        error = "invalid ACL rule at " + path + ":" +
+                std::to_string(line_number) +
+                " (expected: <client> <device|*> <operation|*>)";
+        return std::nullopt;
+      }
+      acl.rules_.push_back(std::move(rule));
+    }
+    return acl;
+  }
+
+  bool Allows(std::string_view client, std::string_view device,
+              std::string_view operation) const {
+    for (const Rule& rule : rules_) {
+      if (rule.client == client &&
+          (rule.device == "*" || rule.device == device) &&
+          (rule.operation == "*" || rule.operation == operation)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  size_t size() const { return rules_.size(); }
+
+ private:
+  std::vector<Rule> rules_;
 };
 
 class ClientSessionRegistry {
@@ -828,9 +891,12 @@ class GatewayControlService final
           GatewayControlService> {
  public:
   GatewayControlService(DeviceSessionRegistry& devices,
-                        ClientSessionRegistry& clients,
-                        std::string client_id = "")
-      : devices_(devices), clients_(clients), client_id_(std::move(client_id)) {}
+                        ClientSessionRegistry& clients, const GatewayAcl& acl,
+                        std::string client_id)
+      : devices_(devices),
+        clients_(clients),
+        acl_(acl),
+        client_id_(std::move(client_id)) {}
 
   pw::Status Health(
       const mcubridge::gateway::pwpb::HealthRequest::Message&,
@@ -845,12 +911,19 @@ class GatewayControlService final
       const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
       mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
     const std::string target_id(request.target_device_id);
+    const std::string_view op(request.operation);
+    // Checked before the device lookup so a denied client cannot probe which
+    // devices are connected.
+    if (!acl_.Allows(client_id_, target_id, op)) {
+      std::cerr << "client=" << client_id_ << " event=dispatch_denied target="
+                << target_id << " operation=" << op << '\n';
+      return pw::Status::PermissionDenied();
+    }
     auto session = devices_.Lookup(target_id);
     if (!session) {
       return pw::Status::NotFound();
     }
 
-    const std::string_view op(request.operation);
     const bool is_push = (op == "rpc.pb.FileTransferService/PushToLinux");
     const bool is_fetch = (op == "rpc.pb.FileTransferService/FetchFromLinux");
 
@@ -926,6 +999,7 @@ class GatewayControlService final
  private:
   DeviceSessionRegistry& devices_;
   ClientSessionRegistry& clients_;
+  const GatewayAcl& acl_;
   std::string client_id_;
 };
 
@@ -933,11 +1007,11 @@ class GatewayClientSession final : public SessionControl {
  public:
   GatewayClientSession(SSL* ssl, int fd, std::string client_id,
                        DeviceSessionRegistry& devices,
-                       ClientSessionRegistry& clients)
+                       ClientSessionRegistry& clients, const GatewayAcl& acl)
       : socket_(ssl, fd),
         clients_(clients),
         client_id_(std::move(client_id)),
-        control_service_(devices, clients, client_id_),
+        control_service_(devices, clients, acl, client_id_),
         channel_output_(tx_writer_, kRpcHdlcAddress),
         channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         rpc_server_(channels_),
@@ -1218,12 +1292,22 @@ int main(int argc, char** argv) {
   const std::string client_ca = Argument(argc, argv, "--client-ca");
   const std::string bind_address = Argument(argc, argv, "--bind", "*");
   const std::string port = Argument(argc, argv, "--port", "8443");
+  const std::string acl_path = Argument(argc, argv, "--acl");
   if (certificate.empty() || private_key.empty() || client_ca.empty()) {
     std::cerr << "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
-                 "--client-ca FILE [--bind ADDRESS] [--port PORT]\n";
+                 "--client-ca FILE [--acl FILE] [--bind ADDRESS] [--port PORT]\n";
     return 2;
   }
   std::string error;
+  const auto acl = GatewayAcl::Load(acl_path, error);
+  if (!acl.has_value()) {
+    std::cerr << "fatal=" << error << '\n';
+    return 1;
+  }
+  if (acl->size() == 0) {
+    std::cerr << "event=acl_empty detail=every client dispatch is denied; "
+                 "pass --acl FILE\n";
+  }
   auto tls_context =
       CreateTlsContext(certificate, private_key, client_ca, error);
   if (!tls_context) {
@@ -1270,7 +1354,7 @@ int main(int argc, char** argv) {
     task->fd = client_fd;
     SessionTask* task_ptr = task.get();
     task->worker = std::thread([task_ptr, context = tls_context.get(),
-                                &device_registry, &client_registry] {
+                                &device_registry, &client_registry, &acl] {
       const auto close_task_fd = [task_ptr] {
         std::lock_guard lock(task_ptr->mutex);
         if (task_ptr->fd >= 0) {
@@ -1321,7 +1405,7 @@ int main(int argc, char** argv) {
       } else {
         session = std::make_shared<GatewayClientSession>(
             ssl, client_fd, std::move(identity->id), device_registry,
-            client_registry);
+            client_registry, *acl);
       }
       {
         std::lock_guard lock(task_ptr->mutex);

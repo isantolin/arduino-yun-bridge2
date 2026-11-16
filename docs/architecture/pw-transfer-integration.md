@@ -24,7 +24,7 @@ Bridge.transferClient()
 
 ## Registering an application resource
 
-When `BRIDGE_ENABLE_PW_TRANSFER` is enabled (the AVR default), the EEPROM resource is registered automatically by `Bridge.begin()`. Its stable resource ID is `0x4D454741` and its resource size is 4,096 bytes. Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
+When `BRIDGE_ENABLE_PW_TRANSFER` is enabled (the AVR default), the EEPROM resource is registered automatically by `Bridge.begin()`. Its stable resource ID is `0x4D454741` and its resource size is 4,080 bytes (the last 16 bytes of the EEPROM hold the link boot epoch, ADR-0005). Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
 
 ```cpp
 #include <etl/array.h>
@@ -56,11 +56,16 @@ void loop() {
 
 The transfer service is registered with the upstream `pw_rpc::Server` by Bridge initialization. Applications register resource handlers through `transferService()`. For an outgoing read or write, use `transferClient()` and keep the stream reader/writer and completion callback alive until completion.
 
-## Filesystem transfer boundary
+## Filesystem transfer boundary and Common Storage Architecture
 
-`FileSystemService.Read` no longer exists in the MCU service descriptor. Its Nanopb client reader, server writer, callbacks, observer cleanup, MCU read-stream error codes, and RPC tests were removed. `FileRead` / `FileReadResponse` remain only as message types for the MPU-local CloudBridge file API, along with its `file_read` authorization flag; that API does not forward `mcu/` paths over the removed serial RPC. The MCU `FileSystemService` bounded unary `Write` and `Remove` remain transitional APIs. `Write` is still used in the opposite direction by `FileSystem.write()` to upload data from the MCU into the MPU Linux filesystem; it does not access the EEPROM resource. Remove that remaining unary path only after a Linux-side `pw_transfer` server and the MCU transfer-client path are implemented and tested. `Remove` remains a separate filesystem administration operation.
+As formalized in [ADR-0004](decisions/0004-linux-mpu-storage-ssot.md), the OpenWrt Linux MPU filesystem is the unified Single Source of Truth (SSOT) for persistent storage across the McuBridge ecosystem:
 
-Large-file reads and writes must use upstream `pw_transfer` with a resource handler backed by a bounded stream. The ATmega2560 application registers a built-in upstream `pw_transfer` read/write handler for the internal 4,096-byte EEPROM. It exposes the EEPROM as one fixed-size raw byte resource (resource ID `0x4D454741`), not as a filesystem: there are no directories, filenames, or per-file remove operations. The stream uses bounded random access and writes with `EEPROM.update`, avoiding physical writes when a byte is unchanged. To keep the UART receive path serviceable while the AVR EEPROM controller performs a byte write, the handler advertises a one-byte write window; reads retain normal chunked transfer behavior. EEPROM writes are not transactional: interruption can leave a partially updated image, and the internal EEPROM has finite per-cell endurance (nominally 100,000 write/erase cycles). This backend does not make the separate MPU Linux filesystem APIs operational; those still require the Linux-side `pw_transfer` endpoint and client migration.
+- **Cloud <-> Linux Filesystem:** Synchronized using upstream `pw_transfer` staging through `FileTransferService` (`PushToLinux` / `FetchFromLinux`). Legacy unary file streaming messages (`FileRead`, `FileWrite`) are eliminated from the public client contracts.
+- **MCU Persisted Data:** The MCU operates in high-speed, deterministic SRAM (`DataStore`) and delegates large or persistent storage to the Linux MPU filesystem to prevent embedded NOR flash wear-out on modern targets (such as SAMD21 and ESP32).
+- **AVR EEPROM Resource:** The ATmega2560 application registers a built-in upstream `pw_transfer` read/write handler for the internal EEPROM (resource ID `0x4D454741`). The resource covers the first 4,080 bytes; the last 16 bytes are reserved for the link boot epoch ([ADR-0005](decisions/0005-mcu-contributed-handshake-nonce.md)) and are not reachable through the transfer. It is exposed as a fixed-size raw byte resource, not as a filesystem: there are no directories, filenames, or per-file remove operations. It is a chip-specific hardware resource for AVR compatibility, not a cross-architecture storage contract.
+  - The stream uses bounded random access and writes with `EEPROM.update`, avoiding physical writes when a byte is unchanged. To keep the UART receive path serviceable while the EEPROM controller performs a byte write, the handler advertises a one-byte write window; reads keep normal chunked transfer behavior.
+  - EEPROM writes are not transactional: an interruption can leave a partially updated image, and each cell has finite endurance (nominally 100,000 write/erase cycles).
+- **MCU FileSystemService Unary Operations:** `FileSystemService.Write` remains a transitional legacy RPC on the MCU for bounded writes (path and data up to 64 bytes each, `mcu_wire.options`) from sketch code to the MPU filesystem; it does not access the EEPROM resource. `Remove` unlinks files within the safe root.
 
 ## Validation and release gates
 

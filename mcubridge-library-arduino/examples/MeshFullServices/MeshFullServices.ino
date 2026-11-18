@@ -161,6 +161,7 @@ void loop() {
                                 sizeof(tokenData) - 1));
     s_initStep = InitStep::INIT_DONE;
 #endif
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_PW_TRANSFER
   } else if (s_initStep == InitStep::INIT_FILE_UPLOAD &&
              !FileSystem.uploadPending()) {
     if (FileSystem.lastUploadStatus().ok()) {
@@ -170,7 +171,9 @@ void loop() {
       Console.println(static_cast<int>(FileSystem.lastUploadStatus().code()));
     }
     s_initStep = InitStep::INIT_DONE;
+#else
   }
+#endif
 
   static unsigned long lastConsoleProcess = 0;
   if (millis() - lastConsoleProcess >= 100) {

@@ -48,12 +48,15 @@ async def bridge_session(
     timeout_ms: int | None = None,
 ) -> AsyncGenerator[tuple[Any, GatewayClient]]:
     """Connect GatewayConnection + GatewayClient directly to Cloud Gateway and guarantee close on exit."""
-    dump_client_env(structlog.get_logger(__name__))
+    logger = structlog.get_logger(__name__)
+    logger.info("bridge_session: resolving connection settings")
+    dump_client_env(logger)
     bridge_args = build_bridge_args(host=host, port=port, device_id=device_id)
     effective_host = str(bridge_args["host"])
     effective_port = int(str(bridge_args["port"]))
     effective_device = str(bridge_args["device_id"])
 
+    logger.info("bridge_session: creating GatewayConnection", host=effective_host, port=effective_port, device_id=effective_device)
     connection = (
         connection_factory(effective_host, effective_port)
         if connection_factory is not None
@@ -63,8 +66,13 @@ async def bridge_session(
             ssl_context=ssl_context if ssl_context is not None else build_gateway_ssl_context(),
         )
     )
+    logger.info("bridge_session: GatewayConnection created")
     client = GatewayClient(connection=connection, target_device_id=effective_device, default_timeout_ms=timeout_ms)
     try:
+        logger.info("bridge_session: yielding initialized client")
         yield connection, client
+        logger.info("bridge_session: client context completed")
     finally:
+        logger.info("bridge_session: closing GatewayConnection")
         connection.close()
+        logger.info("bridge_session: GatewayConnection close returned")

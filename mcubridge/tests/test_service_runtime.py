@@ -1893,20 +1893,26 @@ def test_eeprom_operations_require_their_permission(operation: str, permission: 
 
 
 def _status_args(status: AsyncMock) -> tuple[Any, ...]:
-    """Return the positional arguments of the last send_mcu_status call."""
+    """Return positional arguments of the last send_mcu_status call."""
     call = status.await_args
     assert call is not None
     return tuple(call.args)
+
+
 async def _run_upload(svc: BridgeService, request: mcu_wire_pb2.FileUpload) -> None:
-    """Run file_upload and wait for the background completion it spawns."""
+    """Run file_upload and wait for its background completion."""
     before = asyncio.all_tasks()
     await svc.file_upload(7, request)
     spawned = asyncio.all_tasks() - before
     if spawned:
         await asyncio.gather(*spawned)
+
+
 async def test_file_upload_reads_mcu_resource_and_stores_file(
     mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    """ADR-0007 (E6): the daemon pulls the announced bytes from the MCU resource and stores them."""
+) -> None:
+    """The daemon pulls announced bytes from the MCU resource and stores them."""
+    svc = mock_bridge_service
     svc.config.file_system_root = str(tmp_path)
     svc.state.file_system_root = str(tmp_path)
     monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=b"sensor-log"))
@@ -1914,20 +1920,23 @@ async def test_file_upload_reads_mcu_resource_and_stores_file(
     monkeypatch.setattr(svc, "send_mcu_status", status)
     await _run_upload(svc, mcu_wire_pb2.FileUpload(path="logs/today.bin", size=10))
     cast(AsyncMock, svc.serial.transfer_read).assert_awaited_once_with(protocol.FILE_UPLOAD_RESOURCE_ID)
-    assert (tmp_path / "logs/today.bin").read_bytes() == b"sensor-log"
+    assert (tmp_path / "logs" / "today.bin").read_bytes() == b"sensor-log"
     assert _status_args(status)[:2] == (Status.OK, 7)
+
+
+@pytest.mark.parametrize(
     ("request_msg", "expected"),
     [
         (mcu_wire_pb2.FileUpload(path="../../etc/passwd", size=4), Status.PERMISSION_DENIED),
         (mcu_wire_pb2.FileUpload(path="empty.bin", size=0), Status.OUT_OF_RANGE),
         (mcu_wire_pb2.FileUpload(path="huge.bin", size=10_000_000), Status.OUT_OF_RANGE),
     ],
+)
 async def test_file_upload_rejects_before_reading(
-    mock_bridge_service: BridgeService,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    request_msg: mcu_wire_pb2.FileUpload,
-    expected: Status,
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    request_msg: mcu_wire_pb2.FileUpload, expected: Status,
+) -> None:
+    svc = mock_bridge_service
     svc.config.file_system_root = str(tmp_path)
     svc.state.file_system_root = str(tmp_path)
     svc.state.file_write_max_bytes = 1024
@@ -1938,24 +1947,25 @@ async def test_file_upload_rejects_before_reading(
     await _run_upload(svc, request_msg)
     read.assert_not_awaited()
     assert _status_args(status)[0] == expected
+
+
+@pytest.mark.parametrize(
     ("read_result", "write_ok", "expected"),
     [
         (b"short", True, Status.DATA_LOSS),
         (ConnectionError("link down"), True, Status.UNAVAILABLE),
         (b"0123456789", False, Status.RESOURCE_EXHAUSTED),
     ],
+)
 async def test_file_upload_reports_transfer_and_storage_failures(
-    mock_bridge_service: BridgeService,
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    read_result: bytes | Exception,
-    write_ok: bool,
-    expected: Status,
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    read_result: bytes | Exception, write_ok: bool, expected: Status,
+) -> None:
+    svc = mock_bridge_service
     svc.config.file_system_root = str(tmp_path)
     svc.state.file_system_root = str(tmp_path)
     read = (
-        AsyncMock(side_effect=read_result)
-        if isinstance(read_result, Exception)
+        AsyncMock(side_effect=read_result) if isinstance(read_result, Exception)
         else AsyncMock(return_value=read_result)
     )
     monkeypatch.setattr(svc.serial, "transfer_read", read)
@@ -1964,21 +1974,29 @@ async def test_file_upload_reports_transfer_and_storage_failures(
     monkeypatch.setattr(svc, "send_mcu_status", status)
     await _run_upload(svc, mcu_wire_pb2.FileUpload(path="data.bin", size=10))
     assert _status_args(status)[0] == expected
+
+
 async def test_file_upload_completion_without_serial(
     mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    """If the serial link disappears before the read starts, the MCU gets UNAVAILABLE."""
+) -> None:
+    """If the serial link disappears, the MCU receives UNAVAILABLE."""
+    svc = mock_bridge_service
     svc.config.file_system_root = str(tmp_path)
     svc.state.file_system_root = str(tmp_path)
+    monkeypatch.setattr(svc, "serial", None)
     status = AsyncMock(return_value=True)
     monkeypatch.setattr(svc, "send_mcu_status", status)
     await _run_upload(svc, mcu_wire_pb2.FileUpload(path="a.bin", size=1))
     assert _status_args(status)[:2] == (Status.UNAVAILABLE, 7)
+
+
 def test_file_upload_is_dispatched_from_the_mcu(mock_bridge_service: BridgeService) -> None:
-    """The MCU-originated Upload call reaches file_upload through the SSOT dispatch table."""
+    """The MCU-originated Upload call reaches file_upload through the dispatch table."""
     spec = protocol.BY_NAME["rpc.pb.FileSystemService/Upload"]
     assert spec.auth_field == "file_write"
     handler = mock_bridge_service.mcu_registry[spec.name]
     assert getattr(handler, "__name__", "") == "file_upload"
+
 async def test_file_transfer_push_to_linux_success(
     mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

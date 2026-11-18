@@ -110,7 +110,7 @@ rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
 [[dependency]]
 name = "annotated-doc"
 openwrt = "python3-annotated-doc"
-pip = "annotated-doc==0.0.6"
+pip = "annotated-doc==0.0.7"
 gateway = true
 rationale = "Doc docstrings extraction runtime required by Typer"
 
@@ -124,7 +124,7 @@ rationale = "Shell environment detection runtime required by Typer"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer==0.29.1"
+pip = "typer==0.29.2"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
@@ -278,7 +278,7 @@ rationale = "Style guide enforcement and PEP 8 linter"
 
 [[dev_dependency]]
 name = "semgrep"
-pip = "semgrep==1.185.0"
+pip = "semgrep==1.186.0"
 rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and deterministic coding rules"
 
 [[dev_dependency]]

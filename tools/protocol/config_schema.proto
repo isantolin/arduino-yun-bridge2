@@ -674,6 +674,7 @@ message Constants {
     (py_type) = "int",
     (client_constant) = true
   ];
+}
 
 message Hardware {
   uint32 max_observers_avr = 1;

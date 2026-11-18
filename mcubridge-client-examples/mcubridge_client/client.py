@@ -79,13 +79,7 @@ class GatewayConnection:
                 for frame in self.decoder.process(chunk):
                     if frame.ok() and frame.address == 1:
                         logger.debug("Gateway RPC frame received", frame_bytes=len(frame.data))
-                        packet_status = self.rpc_client.process_packet(frame.data)
-                        if not packet_status.ok():
-                            logger.warning(
-                                "Gateway RPC frame rejected by client",
-                                frame_bytes=len(frame.data),
-                                status=str(packet_status),
-                            )
+                        self.rpc_client.process_packet(frame.data)
             except (OSError, ValueError) as exc:
                 logger.debug("Reader loop socket error", error=str(exc))
                 break

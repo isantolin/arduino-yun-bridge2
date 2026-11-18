@@ -670,6 +670,7 @@ message Constants {
   // ADR-0007 (E6): read-only MCU resource ("UPLD") for MCU -> Linux uploads.
   uint32 file_upload_resource_id = 95 [
     (cpp_name) = "RPC_FILE_UPLOAD_RESOURCE_ID",
+    (cpp_type) = "uint32_t",
     (py_name) = "FILE_UPLOAD_RESOURCE_ID",
     (py_type) = "int",
     (client_constant) = true

@@ -300,40 +300,65 @@ async def verify_with_emulator_watchdog(
     return None if verification.result() else "cross-node mesh verification failed"
 
 
+async def get_node_version_with_reconnect(node: NodeRuntime) -> mcu_wire_pb2.VersionResponse | None:
+    """Probe GetVersion over a fresh Gateway session for each attempt.
+
+    A timed-out Gateway dispatch may leave both the client socket and the
+    device-side dispatch path unusable. Retrying the same stub then only
+    produces ConnectionResetError/BrokenPipeError. Closing that session and
+    reconnecting gives the Gateway a clean client session before retrying.
+    """
+    for attempt in range(5):
+        try:
+            async with bridge_session(
+                host=CLOUD_HOST,
+                port=CLOUD_PORT,
+                device_id=node.name,
+                timeout_ms=10000,
+            ) as (_channel, stub):
+                response = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
+            if response.major == 2 and response.minor == 8:
+                logger.info(
+                    "Node GetVersion verified",
+                    node=node.name,
+                    version=f"{response.major}.{response.minor}.{response.patch}",
+                    attempt=attempt,
+                )
+                return response
+            logger.warning(
+                "GetVersion returned an unexpected version; reconnecting...",
+                node=node.name,
+                attempt=attempt,
+                major=response.major,
+                minor=response.minor,
+            )
+        except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
+            logger.warning(
+                "GetVersion attempt failed; reconnecting with a fresh Gateway session...",
+                node=node.name,
+                attempt=attempt,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        if attempt < 4:
+            await asyncio.sleep(1.0)
+    logger.error("GetVersion failed after reconnect attempts", node=node.name)
+    return None
+
+
 async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     """Verify that all nodes are independently reachable, responsive to RPCs, and communicating."""
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
+        ver_resp = await get_node_version_with_reconnect(node)
+        if ver_resp is None:
+            return False
+
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000) as (
             _channel,
             stub,
         ):
-            ver_resp: mcu_wire_pb2.VersionResponse | None = None
-            for attempt in range(5):
-                try:
-                    ver_resp = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
-                    if ver_resp.major == 2 and ver_resp.minor == 8:
-                        break
-                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
-                    logger.warning(
-                        "GetVersion attempt failed, retrying...",
-                        node=node.name,
-                        attempt=attempt,
-                        error=str(exc),
-                    )
-                await asyncio.sleep(1.0)
-            if ver_resp is None or ver_resp.major != 2 or ver_resp.minor != 8:
-                major = ver_resp.major if ver_resp else -1
-                minor = ver_resp.minor if ver_resp else -1
-                logger.error("Unexpected version response", node=node.name, major=major, minor=minor)
-                return False
-            logger.info(
-                "Node GetVersion verified",
-                node=node.name,
-                version=f"{ver_resp.major}.{ver_resp.minor}.{ver_resp.patch}",
-            )
-
             mem_resp: mcu_wire_pb2.FreeMemoryResponse | None = None
             for attempt in range(5):
                 try:

@@ -171,9 +171,8 @@ void loop() {
       Console.println(static_cast<int>(FileSystem.lastUploadStatus().code()));
     }
     s_initStep = InitStep::INIT_DONE;
-#else
-  }
 #endif
+  }
 
   static unsigned long lastConsoleProcess = 0;
   if (millis() - lastConsoleProcess >= 100) {

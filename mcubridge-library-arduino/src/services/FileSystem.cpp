@@ -60,6 +60,12 @@ void finishUpload(pw::Status status) {
 
 }  // namespace
 
+void FileSystemClass::_resetUpload() {
+  g_upload_handler.disarm();
+  g_upload_call = {};
+  g_upload_pending = false;
+}
+
 bool FileSystemClass::registerUploadHandler(
     pw::transfer::TransferService& service) {
   return service.RegisterHandler(g_upload_handler);

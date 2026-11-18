@@ -36,6 +36,7 @@ class FileSystemClass {
   // Status reported by the daemon for the last finished upload.
   static pw::Status lastUploadStatus();
   static bool registerUploadHandler(pw::transfer::TransferService& service);
+  static void _resetUpload();
 #endif
 };
 

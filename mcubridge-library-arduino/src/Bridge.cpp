@@ -733,6 +733,9 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
 }
 
 void BridgeClass::_clearLinkSession() {
+#if BRIDGE_ENABLE_PW_TRANSFER && BRIDGE_ENABLE_FILESYSTEM
+  FileSystemClass::_resetUpload();
+#endif
   _pin_stream_writer = {};
   rpc::security::secure_zero(pw::span<uint8_t>(_session_aead_keys));
   _tx_aead_counter = 0;
@@ -775,6 +778,9 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
 }
 
 void BridgeClass::enterSafeState() {
+#if BRIDGE_ENABLE_PW_TRANSFER && BRIDGE_ENABLE_FILESYSTEM
+  FileSystemClass::_resetUpload();
+#endif
   bridge::hal::forceSafeState();
   etl::for_each(_safety_pins.begin(), _safety_pins.end(),
                 [](const SafetyPinEntry& entry) {

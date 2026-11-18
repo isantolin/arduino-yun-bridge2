@@ -315,7 +315,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                     ver_resp = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
                     if ver_resp.major == 2 and ver_resp.minor == 8:
                         break
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     logger.warning(
                         "GetVersion attempt failed, retrying...",
                         node=node.name,
@@ -345,7 +345,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                         node=node.name,
                         attempt=attempt,
                     )
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     logger.warning(
                         "GetFreeMemory attempt failed, retrying...",
                         node=node.name,
@@ -364,7 +364,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                     await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
                     await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
                     break
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     if attempt == 4:
                         logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
                         return False
@@ -375,7 +375,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                 try:
                     await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
                     break
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     if attempt == 4:
                         logger.error("MailboxPush failed", node=node.name, error=str(exc))
                         return False

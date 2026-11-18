@@ -195,11 +195,14 @@ class GatewayProcess:
         probe.close()
         self.log_path = root / "gateway.log"
         self.log_file = self.log_path.open("w+", encoding="utf-8")
-        # ADR-0007: dispatch is deny-by-default. operator-01 may only Ping,
-        # on any device; every other client/operation pair is rejected.
+        # ADR-0007: dispatch is deny-by-default. operator-01 may Ping any
+        # device and read the EEPROM of device-01; every other client/operation
+        # pair is rejected.
         self.acl_path = root / "gateway.acl"
         self.acl_path.write_text(
-            "# client device operation\noperator-01 * rpc.pb.SystemService/Ping  # probe\n",
+            "# client device operation\n"
+            "operator-01 * rpc.pb.SystemService/Ping  # probe\n"
+            "operator-01 device-01 rpc.pb.EepromService/Read\n",
             encoding="utf-8",
         )
         # ADR-0007: private staging root (0700, owned by the gateway).
@@ -644,6 +647,95 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dev_sock.close()
             t_client.join(timeout=2)
             t_dev.join(timeout=2)
+            self.gateway.wait_for("client=operator-01 event=session_closed")
+            self.gateway.wait_for("device=device-01 event=session_closed")
+
+    def test_staged_fetch_device_uploads_during_dispatch(self) -> None:
+        """ADR-0007: EepromService/Read hands the device's upload to the client.
+
+        The daemon answers the dispatch only after writing eeprom.bin to its
+        device session, so the gateway must serve that transfer while the
+        client's Dispatch call is still waiting for the device response.
+        """
+        client_sock = self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key)
+        client_sock.settimeout(0.2)
+        client_decoder = pw_hdlc.decode.FrameDecoder()
+        client_rpc = PwRpcClient(
+            callback_client.Impl(default_unary_timeout_s=10.0),
+            [PwRpcChannel(1, lambda p: client_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        dev_sock = self.gateway.connect(self.certs.valid_cert, self.certs.valid_key)
+        dev_sock.settimeout(0.2)
+        dev_decoder = pw_hdlc.decode.FrameDecoder()
+        dev_rpc = PwRpcClient(
+            callback_client.Impl(default_unary_timeout_s=10.0),
+            [PwRpcChannel(1, lambda p: dev_sock.sendall(pw_hdlc.encode.ui_frame(1, p)))],
+            protocol.PW_SERVICES,
+        )
+        dev_transfer = PwTransferManager(dev_rpc.channel(1).rpcs.pw.transfer.Transfer, default_response_timeout_s=5.0)
+        eeprom_image = bytes((i * 7) & 0xFF for i in range(EEPROM_RESOURCE_BYTES))
+        running = True
+        device_errors: list[BaseException] = []
+
+        def serve_edge_dispatch(pkt: Any) -> None:
+            try:
+                dev_transfer.write(EEPROM_RESOURCE_ID, eeprom_image)
+                edge_resp = gateway_control_pb2.EdgeDispatchResponse(status_code=200)
+                resp_pkt = pw_rpc.packets.encode_response(pkt, response=edge_resp, status=pw_status.Status.OK)
+                dev_sock.sendall(pw_hdlc.encode.ui_frame(1, resp_pkt))
+            except BaseException as exc:  # noqa: BLE001 - surfaced by the assertion below
+                device_errors.append(exc)
+
+        def reader(sock: ssl.SSLSocket, decoder: Any, rpc: PwRpcClient, device: bool) -> None:
+            while running:
+                try:
+                    data = sock.recv(4096)
+                except (TimeoutError, ssl.SSLWantReadError):
+                    continue
+                except (OSError, ssl.SSLError):
+                    break
+                if not data:
+                    break
+                for f in decoder.process(data):
+                    if not (f.ok() and f.address == 1):
+                        continue
+                    pkt = pw_rpc.packets.decode(f.data)
+                    if device and pw_rpc.packets.for_server(pkt):
+                        threading.Thread(target=serve_edge_dispatch, args=(pkt,), daemon=True).start()
+                    else:
+                        rpc.process_packet(f.data)
+
+        threads = [
+            threading.Thread(target=reader, args=(client_sock, client_decoder, client_rpc, False), daemon=True),
+            threading.Thread(target=reader, args=(dev_sock, dev_decoder, dev_rpc, True), daemon=True),
+        ]
+        for t in threads:
+            t.start()
+        self.gateway.wait_for("device=device-01 event=session_open")
+        self.gateway.wait_for("client=operator-01 event=session_open")
+
+        try:
+            dispatch_method = client_rpc.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
+            req = gateway_control_pb2.DispatchRequest(
+                target_device_id="device-01",
+                operation="rpc.pb.EepromService/Read",
+                timeout_ms=8000,
+            )
+            res = dispatch_method(req)
+            assert not device_errors
+            assert res.status == pw_status.Status.OK
+            assert res.response.status_code == 200
+            client_transfer = PwTransferManager(
+                client_rpc.channel(1).rpcs.pw.transfer.Transfer, default_response_timeout_s=5.0
+            )
+            assert client_transfer.read(EEPROM_RESOURCE_ID) == eeprom_image
+        finally:
+            running = False
+            client_sock.close()
+            dev_sock.close()
+            for t in threads:
+                t.join(timeout=2)
             self.gateway.wait_for("client=operator-01 event=session_closed")
             self.gateway.wait_for("device=device-01 event=session_closed")
 

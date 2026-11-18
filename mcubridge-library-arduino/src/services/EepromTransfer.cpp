@@ -11,6 +11,8 @@
 namespace bridge::services {
 namespace {
 
+constexpr size_t kEepromWriteWindowBytes = 1U;
+
 class EepromStream final : public pw::stream::SeekableReaderWriter {
  public:
   void Reset(size_t offset = 0) { position_ = offset; }
@@ -25,10 +27,13 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
     const size_t remaining = position_ < capacity ? capacity - position_ : 0U;
     if (type == LimitType::kRead) return remaining;
 
-    // EEPROM.update() may wait for the AVR EEPROM controller. Advertise a
-    // one-byte receive window so pw_transfer applies backpressure while the
-    // MCU completes each physical EEPROM write.
-    return remaining == 0U ? 0U : 1U;
+    // EEPROM.update() waits about 3.3 ms per changed byte on the AVR EEPROM
+    // controller. Keep the advertised write window at one byte so the UART
+    // receive path can be serviced between EEPROM programming operations.
+    // Larger windows can block the cooperative transfer poll long enough to
+    // overrun the serial receive buffer; throughput is measured by Fleet Mesh.
+    return remaining < kEepromWriteWindowBytes ? remaining
+                                               : kEepromWriteWindowBytes;
   }
 
   pw::StatusWithSize DoRead(pw::ByteSpan destination) override {

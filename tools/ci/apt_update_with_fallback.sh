@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 
 APT_OPTIONS=(
-  -o Acquire::Retries=1
+  -o Acquire::Retries=3
   -o Acquire::http::Timeout=20
   -o Acquire::https::Timeout=20
 )
@@ -15,29 +15,55 @@ FALLBACK_MIRRORS=(
 )
 
 apt_update() {
-  local apt_log
-  local apt_status=0
-  apt_log="$(mktemp)"
-  sudo apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
+  local attempt apt_log apt_status dns_failure delay
+  for attempt in 1 2 3; do
+    apt_log="$(mktemp)"
+    apt_status=0
+    sudo apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
 
-  # Only DNS resolution failures for Ubuntu repositories may trigger a mirror switch.
-  local dns_failure=false
-  if grep -Eqi "(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution).*(ubuntu|archive|security|c3sl[.]ufpr[.]br|kernel[.]org|mirror[.]units[.]it)|(ubuntu|archive|security|c3sl[.]ufpr[.]br|kernel[.]org|mirror[.]units[.]it).*(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution)" "$apt_log"; then
-    dns_failure=true
-  fi
-  if [[ "$dns_failure" == true ]]; then
+    # Microsoft package feeds can rate-limit shared GitHub runners even
+    # when every Ubuntu index was downloaded successfully. If APT itself
+    # succeeded and the only 429 is from packages.microsoft.com, keep the
+    # usable Ubuntu indexes and do not fail unrelated build jobs.
+    if grep -Eqi '(^|[[:space:]])429([[:space:]]|$)|Too Many Requests' "$apt_log"; then
+      if (( apt_status == 0 )) &&
+          grep -Fq 'packages.microsoft.com' "$apt_log" &&
+          ! grep -Eqi 'Err:.*(ubuntu|archive\.ubuntu|security\.ubuntu)|Failed to fetch https?://[^ ]*(ubuntu|archive\.ubuntu|security\.ubuntu)' "$apt_log"; then
+        echo "::warning::Ignoring Microsoft package-feed HTTP 429; Ubuntu package indexes updated successfully."
+        rm -f "$apt_log"
+        return 0
+      fi
+      rm -f "$apt_log"
+      if (( attempt < 3 )); then
+        delay=$((attempt * 15))
+        echo "::warning::APT repository rate-limited this runner (HTTP 429); retrying in ${delay}s (attempt $((attempt + 1))/3)."
+        sleep "$delay"
+        continue
+      fi
+      echo "::error::APT repository continued returning HTTP 429 after three attempts."
+      return 1
+    fi
+
+    # Only DNS resolution failures for Ubuntu repositories may trigger a mirror switch.
+    dns_failure=false
+    if grep -Eqi "(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution).*(ubuntu|archive|security|c3sl[.]ufpr[.]br|kernel[.]org|mirror[.]units[.]it)|(ubuntu|archive|security|c3sl[.]ufpr[.]br|kernel[.]org|mirror[.]units[.]it).*(Temporary failure resolving|Could not resolve|Name or service not known|Temporary failure in name resolution)" "$apt_log"; then
+      dns_failure=true
+    fi
+    if [[ "$dns_failure" == true ]]; then
+      rm -f "$apt_log"
+      return 10
+    fi
+    if grep -Eqi 'Failed to fetch|Some index files failed' "$apt_log"; then
+      rm -f "$apt_log"
+      return 1
+    fi
     rm -f "$apt_log"
-    return 10
-  fi
-  if grep -Eqi 'Failed to fetch|Some index files failed' "$apt_log"; then
-    rm -f "$apt_log"
-    return 1
-  fi
-  rm -f "$apt_log"
-  if (( apt_status != 0 )); then
-    return "$apt_status"
-  fi
-  return 0
+    if (( apt_status != 0 )); then
+      return "$apt_status"
+    fi
+    return 0
+  done
+  return 1
 }
 
 echo "::group::APT update using the runner's configured Ubuntu mirrors"

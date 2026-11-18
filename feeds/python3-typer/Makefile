@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-typer
-PKG_VERSION:=0.29.1
+PKG_VERSION:=0.29.2
 PKG_RELEASE:=1
 
 PYPI_NAME:=typer
-PKG_HASH:=ab6eb3880bf67ce96147734717f9ec333c06f66e361f3ea947d0be43da39f242
+PKG_HASH:=b1998dc5f2c3dedafa1517a9521fa944cc4dc1fadcea085d81a3b10ebcaeb075
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=MIT

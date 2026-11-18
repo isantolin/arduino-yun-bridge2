@@ -24,7 +24,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import serial
 import structlog
@@ -382,6 +382,47 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                     await asyncio.sleep(1.5)
             logger.info("Node MailboxPush verified", node=node.name)
 
+            if node.board.fqbn.startswith("arduino:avr:") and not await verify_eeprom_round_trip(node, stub):
+                return False
+
+    return True
+
+
+# ADR-0007: a partial image keeps the emulated run short; the per-byte cost
+# is logged so the full 4,080-byte write time can be extrapolated.
+_EEPROM_PROBE = bytes((0xA5 ^ i) & 0xFF for i in range(128))
+
+
+async def verify_eeprom_round_trip(node: NodeRuntime, stub: Any) -> bool:
+    """Write the AVR EEPROM through client -> gateway -> daemon -> MCU and read it back."""
+    started = time.monotonic()
+    stage = "write"
+    try:
+        written = await stub.write_mcu_eeprom(_EEPROM_PROBE, timeout_ms=120000)
+        elapsed = time.monotonic() - started
+        stage = "read"
+        image = await stub.read_mcu_eeprom(timeout_ms=120000)
+    except (RuntimeError, TimeoutError, ValueError) as exc:
+        logger.error(
+            "EEPROM round trip failed",
+            node=node.name,
+            stage=stage,
+            error=str(exc),
+            error_type=type(exc).__name__,
+            error_repr=repr(exc),
+        )
+        return False
+    if written != len(_EEPROM_PROBE) or image[: len(_EEPROM_PROBE)] != _EEPROM_PROBE:
+        logger.error("EEPROM read-back mismatch", node=node.name, written=written, read=len(image))
+        return False
+    per_byte = elapsed / len(_EEPROM_PROBE)
+    logger.info(
+        "Node EEPROM round trip verified",
+        node=node.name,
+        write_seconds=round(elapsed, 2),
+        image_bytes=len(image),
+        extrapolated_full_write_seconds=round(per_byte * protocol.EEPROM_RESOURCE_MAX_BYTES, 1),
+    )
     return True
 
 

@@ -1272,6 +1272,15 @@ class BridgeService:
                         packet_pb2.PacketType.SERVER_ERROR,
                         packet_pb2.PacketType.SERVER_STREAM,
                     ):
+                        logger.debug(
+                            "Gateway RPC response packet received",
+                            packet_type=int(pkt.type),
+                            call_id=int(pkt.call_id),
+                            channel_id=int(pkt.channel_id),
+                            service_id=int(pkt.service_id),
+                            method_id=int(pkt.method_id),
+                            payload_bytes=len(pkt.payload),
+                        )
                         self.cloud_rpc_client.process_packet(frame.data)
         except (ConnectionError, OSError, EOFError) as exc:
             cur_task = asyncio.current_task()

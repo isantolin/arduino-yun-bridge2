@@ -828,17 +828,12 @@ class GatewaySession final
         });
 
     if (!call.active()) {
-      std::cerr << "client=" << client_id_
-                << " event=edge_dispatch_call_inactive target=" << target_id
-                << " operation=" << op << '\\n';
+      std::cerr << "event=edge_dispatch_call_inactive\n";
       return pw::Status::Unavailable();
     }
-    std::cerr << "client=" << client_id_
-              << " event=edge_dispatch_call_started target=" << target_id
-              << " operation=" << op
-              << " timeout_ms="
+    std::cerr << "event=edge_dispatch_call_started timeout_ms="
               << (request.timeout_ms > 0 ? request.timeout_ms : 30000)
-              << '\\n';
+              << '\n';
 
     const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
     std::unique_lock lock(ctx.cv_mutex);

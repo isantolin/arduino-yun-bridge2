@@ -837,6 +837,8 @@ class GatewaySession final
     return pw::OkStatus();
   }
 
+  std::mutex& staging_mutex() { return staging_mutex_; }
+
  private:
   void UnregisterTransferHandlers() {
     if (default_handler_registered_.load()) {
@@ -955,6 +957,7 @@ class GatewaySession final
   std::atomic<bool> services_unregistered_{false};
   std::thread tx_worker_;
   std::mutex dispatch_mutex_;
+  std::mutex staging_mutex_;
 };
 
 class GatewayControlService final
@@ -1022,6 +1025,13 @@ class GatewayControlService final
         staged ? DeviceStagingDir(target_id) / staged->filename
                : std::filesystem::path();
     std::error_code ec;
+
+    // Serialize staged file moves and the device dispatch per target device so
+    // concurrent clients cannot overwrite or consume each other's staging file.
+    std::unique_lock<std::mutex> staging_lock;
+    if (staged != nullptr) {
+      staging_lock = std::unique_lock<std::mutex>(session->staging_mutex());
+    }
 
     if (staged && staged->to_device) {
       std::string error;

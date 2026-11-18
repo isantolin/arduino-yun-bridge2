@@ -671,8 +671,9 @@ message Constants {
   uint32 file_upload_resource_id = 95 [
     (cpp_name) = "RPC_FILE_UPLOAD_RESOURCE_ID",
     (py_name) = "FILE_UPLOAD_RESOURCE_ID",
-    (py_type) = "int"
-}
+    (py_type) = "int",
+    (client_constant) = true
+  ];
 
 message Hardware {
   uint32 max_observers_avr = 1;

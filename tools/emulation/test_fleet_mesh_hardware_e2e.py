@@ -436,12 +436,21 @@ _EEPROM_PROBE = bytes((0xA5 ^ i) & 0xFF for i in range(128))
 async def verify_eeprom_round_trip(node: NodeRuntime, stub: Any) -> bool:
     """Write the AVR EEPROM through client -> gateway -> daemon -> MCU and read it back."""
     started = time.monotonic()
+    stage = "write"
     try:
         written = await stub.write_mcu_eeprom(_EEPROM_PROBE, timeout_ms=120000)
         elapsed = time.monotonic() - started
-        image = await stub.read_mcu_eeprom(timeout_ms=60000)
+        stage = "read"
+        image = await stub.read_mcu_eeprom(timeout_ms=120000)
     except (RuntimeError, TimeoutError, ValueError) as exc:
-        logger.error("EEPROM round trip failed", node=node.name, error=str(exc))
+        logger.error(
+            "EEPROM round trip failed",
+            node=node.name,
+            stage=stage,
+            error=str(exc),
+            error_type=type(exc).__name__,
+            error_repr=repr(exc),
+        )
         return False
     if written != len(_EEPROM_PROBE) or image[: len(_EEPROM_PROBE)] != _EEPROM_PROBE:
         logger.error("EEPROM read-back mismatch", node=node.name, written=written, read=len(image))

@@ -1915,11 +1915,13 @@ async def test_file_upload_reads_mcu_resource_and_stores_file(
     svc = mock_bridge_service
     svc.config.file_system_root = str(tmp_path)
     svc.state.file_system_root = str(tmp_path)
-    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=b"sensor-log"))
+    serial = svc.serial
+    assert serial is not None
+    monkeypatch.setattr(serial, "transfer_read", AsyncMock(return_value=b"sensor-log"))
     status = AsyncMock(return_value=True)
     monkeypatch.setattr(svc, "send_mcu_status", status)
     await _run_upload(svc, mcu_wire_pb2.FileUpload(path="logs/today.bin", size=10))
-    cast(AsyncMock, svc.serial.transfer_read).assert_awaited_once_with(protocol.FILE_UPLOAD_RESOURCE_ID)
+    cast(AsyncMock, serial.transfer_read).assert_awaited_once_with(protocol.FILE_UPLOAD_RESOURCE_ID)
     assert (tmp_path / "logs" / "today.bin").read_bytes() == b"sensor-log"
     assert _status_args(status)[:2] == (Status.OK, 7)
 

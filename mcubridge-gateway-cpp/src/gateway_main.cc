@@ -336,9 +336,20 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
   pw::Status Send(pw::span<const std::byte> packet) override {
     std::lock_guard lock(mutex_);
     const size_t frame_size = pw::hdlc::MaxEncodedFrameSize(address_, packet);
-    if (frame_size > writer_.ConservativeWriteLimit())
+    if (frame_size > writer_.ConservativeWriteLimit()) {
+      std::cerr << "event=rpc_frame_queue_rejected frame_bytes="
+                << packet.size() << " frame_size=" << frame_size << '\n';
       return pw::Status::ResourceExhausted();
-    return pw::hdlc::WriteUIFrame(address_, packet, writer_);
+    }
+    const pw::Status status = pw::hdlc::WriteUIFrame(address_, packet, writer_);
+    if (!status.ok()) {
+      std::cerr << "event=rpc_frame_queue_failed frame_bytes="
+                << packet.size() << " status=" << status.str() << '\n';
+    } else {
+      std::cerr << "event=rpc_frame_queued frame_bytes=" << packet.size()
+                << '\n';
+    }
+    return status;
   }
 
  private:
@@ -801,18 +812,28 @@ class GatewaySession final
           ctx.response_payload.assign(edge_resp.response_payload.begin(),
                                       edge_resp.response_payload.end());
           ctx.completed = true;
+          std::cerr << "event=edge_dispatch_response_received status="
+                    << status.str() << " device_status=" << edge_resp.status_code
+                    << " payload_bytes=" << edge_resp.response_payload.size()
+                    << '\n';
           ctx.cv.notify_one();
         },
         [&ctx](pw::Status status) {
           std::lock_guard lock(ctx.cv_mutex);
           ctx.call_status = status;
           ctx.completed = true;
+          std::cerr << "event=edge_dispatch_rpc_error status=" << status.str()
+                    << '\n';
           ctx.cv.notify_one();
         });
 
     if (!call.active()) {
+      std::cerr << "event=edge_dispatch_call_inactive\n";
       return pw::Status::Unavailable();
     }
+    std::cerr << "event=edge_dispatch_call_started timeout_ms="
+              << (request.timeout_ms > 0 ? request.timeout_ms : 30000)
+              << '\n';
 
     const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
     std::unique_lock lock(ctx.cv_mutex);
@@ -907,6 +928,11 @@ class GatewaySession final
         pw::Status status;
         if (meta->destination_is_client()) {
           status = rpc_client_.ProcessPacket(frame->data());
+          if (!status.ok() && status != pw::Status::Unavailable()) {
+            std::cerr << "device=" << device_id_
+                      << " event=rpc_client_packet_rejected status="
+                      << status.str() << '\n';
+          }
         } else if (meta->destination_is_server()) {
           status = rpc_server_.ProcessPacket(frame->data());
         } else {
@@ -1225,10 +1251,16 @@ class GatewayClientSession final : public SessionControl {
     while (!stopping_.load()) {
       if (!tx_writer_.Pop(frame, stopping_)) continue;
       if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
+        std::cerr << "client=" << client_id_
+                  << " event=tx_frame_failed frame_bytes=" << frame.size()
+                  << '\n';
         stopping_.store(true);
         socket_.Stop();
         break;
       }
+      std::cerr << "client=" << client_id_
+                << " event=tx_frame_sent frame_bytes=" << frame.size()
+                << '\n';
     }
   }
 

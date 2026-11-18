@@ -835,7 +835,7 @@ class GatewaySession final
     }
     std::cerr << "client=" << client_id_
               << " event=edge_dispatch_call_started target=" << target_id
-              << " operation=" << op << " call_id=" << call.id()
+              << " operation=" << op
               << " timeout_ms="
               << (request.timeout_ms > 0 ? request.timeout_ms : 30000)
               << '\\n';

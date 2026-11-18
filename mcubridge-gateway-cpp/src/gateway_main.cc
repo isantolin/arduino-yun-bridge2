@@ -336,9 +336,20 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
   pw::Status Send(pw::span<const std::byte> packet) override {
     std::lock_guard lock(mutex_);
     const size_t frame_size = pw::hdlc::MaxEncodedFrameSize(address_, packet);
-    if (frame_size > writer_.ConservativeWriteLimit())
+    if (frame_size > writer_.ConservativeWriteLimit()) {
+      std::cerr << "event=rpc_frame_queue_rejected frame_bytes="
+                << packet.size() << " frame_size=" << frame_size << '\\n';
       return pw::Status::ResourceExhausted();
-    return pw::hdlc::WriteUIFrame(address_, packet, writer_);
+    }
+    const pw::Status status = pw::hdlc::WriteUIFrame(address_, packet, writer_);
+    if (!status.ok()) {
+      std::cerr << "event=rpc_frame_queue_failed frame_bytes="
+                << packet.size() << " status=" << status.str() << '\\n';
+    } else {
+      std::cerr << "event=rpc_frame_queued frame_bytes=" << packet.size()
+                << '\\n';
+    }
+    return status;
   }
 
  private:
@@ -1225,10 +1236,16 @@ class GatewayClientSession final : public SessionControl {
     while (!stopping_.load()) {
       if (!tx_writer_.Pop(frame, stopping_)) continue;
       if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
+        std::cerr << "client=" << client_id_
+                  << " event=tx_frame_failed frame_bytes=" << frame.size()
+                  << '\\n';
         stopping_.store(true);
         socket_.Stop();
         break;
       }
+      std::cerr << "client=" << client_id_
+                << " event=tx_frame_sent frame_bytes=" << frame.size()
+                << '\\n';
     }
   }
 

@@ -384,8 +384,48 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
 
             if node.board.fqbn.startswith("arduino:avr:") and not await verify_eeprom_round_trip(node, stub):
                 return False
+            if node.board.fqbn.startswith("arduino:avr:") and not await verify_file_upload(node):
+                return False
 
     return True
+
+
+_FILE_UPLOAD_PROBE = b"MCUBRIDGE_UPLOAD_E6"
+
+
+async def verify_file_upload(node: NodeRuntime) -> bool:
+    """Verify the sketch-driven MCU pw_transfer upload reached the MPU filesystem."""
+    uploaded_path = node.temp_dir / "fs" / "fleet_upload_probe.bin"
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline:
+        try:
+            content = uploaded_path.read_bytes()
+        except OSError:
+            await asyncio.sleep(0.1)
+            continue
+        if content == _FILE_UPLOAD_PROBE:
+            logger.info(
+                "Node MCU-to-Linux file upload verified",
+                node=node.name,
+                path=str(uploaded_path),
+                size=len(content),
+            )
+            return True
+        logger.error(
+            "MCU-to-Linux upload content mismatch",
+            node=node.name,
+            path=str(uploaded_path),
+            expected=len(_FILE_UPLOAD_PROBE),
+            received=len(content),
+        )
+        return False
+    logger.error(
+        "MCU-to-Linux upload did not reach the MPU filesystem before timeout",
+        node=node.name,
+        path=str(uploaded_path),
+        timeout_seconds=20,
+    )
+    return False
 
 
 # ADR-0007: a partial image keeps the emulated run short; the per-byte cost

@@ -59,6 +59,7 @@ constexpr size_t kTransferChunkBytes = 1024U;
 constexpr size_t kRpcEncodeBytes = 2048U;
 constexpr size_t kHdlcDecodeBytes = 4096U;
 constexpr size_t kTxQueueBytes = 64U * 1024U;
+constexpr size_t kServerRxQueueMaxFrames = 64U;
 constexpr size_t kMaxSessions = 256U;
 constexpr std::string_view kDeviceIdentityPrefix = "spiffe://mcubridge/device/";
 constexpr std::string_view kClientIdentityPrefix = "spiffe://mcubridge/client/";
@@ -751,12 +752,15 @@ class GatewaySession final
     }
 
     tx_worker_ = std::thread([this] { TransmitLoop(); });
+    server_rx_worker_ = std::thread([this] { ServerReceiveLoop(); });
     std::cerr << "device=" << device_id_ << " event=session_open\n";
     ReceiveLoop();
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
+    server_rx_cv_.notify_all();
     if (tx_worker_.joinable()) tx_worker_.join();
+    if (server_rx_worker_.joinable()) server_rx_worker_.join();
     TerminateTransfer();
     UnregisterServices();
     RemoveStagingDirectory(DeviceStagingDir(device_id_));
@@ -767,6 +771,7 @@ class GatewaySession final
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
+    server_rx_cv_.notify_all();
     TerminateTransfer();
     UnregisterServices();
   }
@@ -776,6 +781,7 @@ class GatewaySession final
     TerminateTransfer();
     UnregisterServices();
     if (tx_worker_.joinable()) tx_worker_.join();
+    if (server_rx_worker_.joinable()) server_rx_worker_.join();
   }
 
   pw::Status Dispatch(
@@ -916,6 +922,30 @@ class GatewaySession final
     }
   }
 
+  void ServerReceiveLoop() {
+    while (true) {
+      std::vector<std::byte> packet;
+      {
+        std::unique_lock lock(server_rx_mutex_);
+        server_rx_cv_.wait(lock, [&] {
+          return stopping_.load() || !server_rx_queue_.empty();
+        });
+        if (server_rx_queue_.empty()) {
+          if (stopping_.load()) return;
+          continue;
+        }
+        packet = std::move(server_rx_queue_.front());
+        server_rx_queue_.pop_front();
+      }
+      const pw::Status status = rpc_server_.ProcessPacket(pw::ByteSpan(packet));
+      if (!status.ok() && status != pw::Status::Unavailable()) {
+        std::cerr << "device=" << device_id_
+                  << " event=rpc_server_packet_rejected status=" << status.str()
+                  << '\\n';
+      }
+    }
+  }
+
   void ReceiveLoop() {
     std::array<std::byte, 4096> input{};
     while (!stopping_.load()) {
@@ -939,7 +969,20 @@ class GatewaySession final
                       << status.str() << '\\n';
           }
         } else if (meta->destination_is_server()) {
-          status = rpc_server_.ProcessPacket(frame->data());
+          std::vector<std::byte> packet(frame->data().begin(),
+                                        frame->data().end());
+          {
+            std::lock_guard lock(server_rx_mutex_);
+            if (server_rx_queue_.size() >= kServerRxQueueMaxFrames) {
+              std::cerr << "device=" << device_id_
+                        << " event=rpc_server_queue_full queued="
+                        << server_rx_queue_.size() << '\\n';
+              continue;
+            }
+            server_rx_queue_.push_back(std::move(packet));
+          }
+          server_rx_cv_.notify_one();
+          continue;
         } else {
           status = pw::Status::InvalidArgument();
         }
@@ -987,6 +1030,10 @@ class GatewaySession final
   std::atomic<bool> services_registered_{false};
   std::atomic<bool> services_unregistered_{false};
   std::thread tx_worker_;
+  std::thread server_rx_worker_;
+  std::mutex server_rx_mutex_;
+  std::condition_variable server_rx_cv_;
+  std::deque<std::vector<std::byte>> server_rx_queue_;
   std::mutex dispatch_mutex_;
   std::mutex staging_mutex_;
 };

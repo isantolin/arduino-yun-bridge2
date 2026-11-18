@@ -252,9 +252,12 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None
     sock_srv, sock_cli = socket.socketpair()
     monkeypatch.setattr(socket, "create_connection", _fake_create_connection(sock_cli))
 
-    # 1. Plain socket connection
+    # 1. Plain socket connection. The connect timeout must not leak into
+    # the long-lived reader socket, or an idle interval kills its thread.
+    sock_cli.settimeout(10.0)
     conn = GatewayConnection("127.0.0.1", 8443)
     assert conn.running is True
+    assert sock_cli.gettimeout() is None
     conn.send_frame(b"ping")
     raw = sock_srv.recv(1024)
     assert len(raw) > 0
@@ -307,6 +310,7 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(socket, "create_connection", _fake_create_connection(MagicMock()))
     conn_ssl = GatewayConnection("127.0.0.1", 8443, ssl_context=mock_ssl_ctx)
     mock_ssl_ctx.wrap_socket.assert_called_once()
+    mock_wrapped_sock.settimeout.assert_called_once_with(None)
     conn_ssl.close()
 
 

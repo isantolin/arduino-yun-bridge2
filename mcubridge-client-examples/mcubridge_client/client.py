@@ -54,6 +54,10 @@ class GatewayConnection:
         else:
             self.sock = raw_sock
 
+        # The connect timeout is only for establishing the TCP/TLS session.
+        # Keep the reader alive across long-running RPCs and idle periods.
+        self.sock.settimeout(None)
+
         self.running = True
         self._send_lock = threading.Lock()
         self.decoder = pw_hdlc.decode.FrameDecoder()

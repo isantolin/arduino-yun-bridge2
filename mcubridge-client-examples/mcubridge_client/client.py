@@ -78,7 +78,14 @@ class GatewayConnection:
                     break
                 for frame in self.decoder.process(chunk):
                     if frame.ok() and frame.address == 1:
-                        self.rpc_client.process_packet(frame.data)
+                        logger.debug("Gateway RPC frame received", frame_bytes=len(frame.data))
+                        packet_status = self.rpc_client.process_packet(frame.data)
+                        if not packet_status.ok():
+                            logger.warning(
+                                "Gateway RPC frame rejected by client",
+                                frame_bytes=len(frame.data),
+                                status=str(packet_status),
+                            )
             except (OSError, ValueError) as exc:
                 logger.debug("Reader loop socket error", error=str(exc))
                 break
@@ -184,13 +191,34 @@ class GatewayClient:
         # final Status (the unary response is call.response); on_error the error Status.
         # Callbacks run in reader_thread, so threadsafe dispatch into the event loop is required.
         def _on_completed(call: Any, status: Any) -> None:
+            logger.debug(
+                "Gateway RPC dispatch callback completed",
+                operation=operation,
+                status=str(status),
+            )
             loop.call_soon_threadsafe(_set_result, (status, call.response))
 
         def _on_error(_call: Any, error: Any) -> None:
+            logger.error(
+                "Gateway RPC dispatch callback failed",
+                operation=operation,
+                error=str(error),
+            )
             loop.call_soon_threadsafe(_set_result, (error, None))
 
         dispatch_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
-        status, resp = await asyncio.wait_for(fut, timeout=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0)
+        try:
+            status, resp = await asyncio.wait_for(
+                fut, timeout=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0
+            )
+        except TimeoutError:
+            logger.error(
+                "Gateway RPC dispatch response timed out",
+                operation=operation,
+                timeout_ms=effective_timeout_ms,
+                target_device_id=self.target_device_id,
+            )
+            raise
         if not status.ok():
             raise RuntimeError(f"Pigweed RPC dispatch failed: {status}")
         return resp.response_payload

@@ -110,8 +110,13 @@ void setup() {
 enum class InitStep : uint8_t {
   INIT_DATASTORE = 0,
   INIT_FILESYSTEM,
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_PW_TRANSFER
+  INIT_FILE_UPLOAD,
+#endif
   INIT_DONE
 };
+
+static const char kFileUploadProbe[] = "MCUBRIDGE_UPLOAD_E6";
 
 void loop() {
   Bridge.process();
@@ -134,12 +139,39 @@ void loop() {
     s_lastInitMs = millis();
   } else if (s_initStep == InitStep::INIT_FILESYSTEM &&
              (millis() - s_lastInitMs >= 1000) && !Bridge.hasPendingTx()) {
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_PW_TRANSFER
+    // Keep the backing bytes static: pw_transfer reads this resource
+    // asynchronously until the daemon completes the Upload RPC.
+    const bool started = FileSystem.upload(
+        "fleet_upload_probe.bin",
+        pw::span<const uint8_t>(
+            reinterpret_cast<const uint8_t*>(kFileUploadProbe),
+            sizeof(kFileUploadProbe) - 1));
+    if (started) {
+      s_initStep = InitStep::INIT_FILE_UPLOAD;
+    } else {
+      Console.println(F("[FILE_UPLOAD] START_FAILED"));
+      s_initStep = InitStep::INIT_DONE;
+    }
+#else
     const char tokenData[] = "BOOT_OK";
     FileSystem.write(
         "boot_token.txt",
         pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
                                 sizeof(tokenData) - 1));
     s_initStep = InitStep::INIT_DONE;
+#endif
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_PW_TRANSFER
+  } else if (s_initStep == InitStep::INIT_FILE_UPLOAD &&
+             !FileSystem.uploadPending()) {
+    if (FileSystem.lastUploadStatus().ok()) {
+      Console.println(F("[FILE_UPLOAD] OK"));
+    } else {
+      Console.print(F("[FILE_UPLOAD] FAILED status="));
+      Console.println(static_cast<int>(FileSystem.lastUploadStatus().code()));
+    }
+    s_initStep = InitStep::INIT_DONE;
+#endif
   }
 
   static unsigned long lastConsoleProcess = 0;

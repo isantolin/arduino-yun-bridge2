@@ -74,12 +74,22 @@ class GpioRpcService final
 
   pw::Status DigitalRead(const rpc_pb_PinRead& request,
                          rpc_pb_DigitalReadResponse& response) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!digitalPinIsValid(request.pin)) {
+      return pw::Status::InvalidArgument();
+    }
+#endif
     response.value = digitalRead(request.pin);
     return pw::OkStatus();
   }
 
   pw::Status AnalogRead(const rpc_pb_PinRead& request,
                         rpc_pb_AnalogReadResponse& response) {
+#if defined(ARDUINO_ARCH_ESP32)
+    if (!digitalPinIsValid(request.pin)) {
+      return pw::Status::InvalidArgument();
+    }
+#endif
     response.value = analogRead(request.pin);
     return pw::OkStatus();
   }
@@ -747,6 +757,7 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
 }
 
 void BridgeClass::enterSafeState() {
+  _clearLinkSession();
   bridge::hal::forceSafeState();
   etl::for_each(_safety_pins.begin(), _safety_pins.end(),
                 [](const SafetyPinEntry& entry) {
@@ -840,6 +851,12 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
 void BridgeClass::_handlePinSubscribe(
     const rpc_pb_PinSubscribeRequest& m,
     pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>& writer) {
+#if defined(ARDUINO_ARCH_ESP32)
+  if (m.enabled && !digitalPinIsValid(static_cast<uint8_t>(m.pin))) {
+    (void)writer.Finish(pw::Status::InvalidArgument());
+    return;
+  }
+#endif
   bool ok = false;
   auto it = etl::find_if(
       _pin_subscriptions.begin(), _pin_subscriptions.end(),

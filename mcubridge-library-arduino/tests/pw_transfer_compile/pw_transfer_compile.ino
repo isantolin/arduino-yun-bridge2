@@ -4,6 +4,7 @@
 #include <pw_stream/memory_stream.h>
 #include <pw_transfer/handler.h>
 #include <services/EepromTransfer.h>
+#include <services/FileSystem.h>
 
 #if !defined(ARDUINO_ARCH_AVR) && !defined(__AVR__)
 #error "This integration sketch requires an AVR microcontroller."
@@ -46,6 +47,21 @@ void StartRemoteRead() {
   (void)result;
 }
 
+#if BRIDGE_ENABLE_FILESYSTEM
+// ADR-0007 (E6): MCU -> Linux upload API. The buffer must outlive the
+// upload, so it is static.
+etl::array<uint8_t, 16> upload_bytes{};
+
+void StartUpload() {
+  if (FileSystemClass::uploadPending()) return;
+  const bool started = FileSystemClass::upload(
+      "logs/boot.bin",
+      pw::span<const uint8_t>(upload_bytes.data(), upload_bytes.size()));
+  (void)started;
+  (void)FileSystemClass::lastUploadStatus();
+}
+#endif
+
 }  // namespace
 
 void setup() {
@@ -55,6 +71,9 @@ void setup() {
   }
   if (millis() == 0xFFFFFFFFUL) {
     StartRemoteRead();
+#if BRIDGE_ENABLE_FILESYSTEM
+    StartUpload();
+#endif
   }
 }
 

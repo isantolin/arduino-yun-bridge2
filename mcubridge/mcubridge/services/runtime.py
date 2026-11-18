@@ -113,6 +113,8 @@ class BridgeService:
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
+    _upload_lock: asyncio.Lock
+    _background_tasks: set[asyncio.Task[None]]
     _process_slots: asyncio.Semaphore
     _cloud_publish_lock: asyncio.Lock
     cloud_spool: LmdbDeque | None
@@ -124,12 +126,15 @@ class BridgeService:
     cloud_publisher: Callable[[CloudQueuedPublish], Awaitable[None]] | None
     lifecycle_fsm: DaemonLifecycleMachine
 
+    _MCU_ONLY_LOCAL_HANDLERS: ClassVar[frozenset[str]] = frozenset({"rpc.pb.FileSystemService/Upload"})
+
     LOCAL_RPC_HANDLERS: ClassVar[dict[str, str]] = {
         "rpc.pb.SystemService/LinkSync": "handshake.handle_link_sync_resp",
         "rpc.pb.SystemService/Xoff": "mcu_xoff",
         "rpc.pb.SystemService/Xon": "mcu_xon",
         "rpc.pb.FileSystemService/Write": "file_write",
         "rpc.pb.FileSystemService/Remove": "file_remove",
+        "rpc.pb.FileSystemService/Upload": "file_upload",
         "rpc.pb.FileTransferService/PushToLinux": "file_transfer_push_to_linux",
         "rpc.pb.FileTransferService/FetchFromLinux": "file_transfer_fetch_from_linux",
         "rpc.pb.EepromService/Read": "eeprom_read",
@@ -192,6 +197,8 @@ class BridgeService:
         )
 
         self._storage_lock = asyncio.Lock()
+        self._upload_lock = asyncio.Lock()
+        self._background_tasks = set()
         self._process_slots = asyncio.Semaphore(state.process_max_concurrent)
         self._cloud_publish_lock = asyncio.Lock()
         self.cloud_spool = None
@@ -670,6 +677,53 @@ class BridgeService:
         if from_mcu:
             await self.send_mcu_status(Status.OK if ok else Status.PERMISSION_DENIED, cast(int, path_or_req), src)
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
+
+    async def file_upload(self, seq_id: int, p: mcu_wire_pb2.FileUpload) -> None:
+        """ADR-0007 (E6): accept an MCU upload announced by FileSystemService/Upload.
+
+        The bytes are read from the MCU pw_transfer resource in a separate task:
+        this handler runs inside the serial read loop, which must keep feeding
+        transfer packets to the pw_transfer client while the read is in flight.
+        """
+        safe_path = self._get_safe_path(p.path)
+        limit = self.state.file_write_max_bytes
+        if not safe_path:
+            await self.send_mcu_status(Status.PERMISSION_DENIED, seq_id, p)
+            return
+        if p.size == 0 or (limit > 0 and p.size > limit):
+            await self.send_mcu_status(Status.OUT_OF_RANGE, seq_id, p)
+            return
+        tg = self._tg
+        if tg is not None:
+            tg.create_task(self._complete_file_upload(seq_id, p, safe_path))
+        else:
+            task = asyncio.create_task(self._complete_file_upload(seq_id, p, safe_path))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
+    async def _complete_file_upload(self, seq_id: int, p: mcu_wire_pb2.FileUpload, safe_path: Path) -> None:
+        async with self._upload_lock:
+            await self._complete_file_upload_locked(seq_id, p, safe_path)
+
+    async def _complete_file_upload_locked(self, seq_id: int, p: mcu_wire_pb2.FileUpload, safe_path: Path) -> None:
+        status = Status.OK
+        if self.serial is None:
+            status = Status.UNAVAILABLE
+        else:
+            try:
+                data = await self.serial.transfer_read(protocol.FILE_UPLOAD_RESOURCE_ID)
+            except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+                logger.error("MCU upload read failed", path=p.path, error=str(exc))
+                status = Status.UNAVAILABLE
+            else:
+                if len(data) != p.size:
+                    logger.error("MCU upload size mismatch", path=p.path, announced=p.size, received=len(data))
+                    status = Status.DATA_LOSS
+                elif not await self.write_with_quota(safe_path, data):
+                    status = Status.RESOURCE_EXHAUSTED
+                else:
+                    logger.info("MCU upload stored", path=p.path, size=len(data))
+        await self.send_mcu_status(status, seq_id, p)
 
     async def file_remove(
         self, path_or_req: str | mcu_wire_pb2.FileRemove | int, p: mcu_wire_pb2.FileRemove | None = None
@@ -1455,6 +1509,8 @@ class BridgeService:
             req.ParseFromString(payload_bytes)
 
         with structlog.contextvars.bound_contextvars(rpc_method=target):
+            if target in self._MCU_ONLY_LOCAL_HANDLERS:
+                raise ValueError(f"MCU-only RPC method cannot be invoked from cloud: {target}")
             if target in self.LOCAL_RPC_HANDLERS:
                 handler_path = self.LOCAL_RPC_HANDLERS[target]
                 fn = operator.attrgetter(handler_path)(self)

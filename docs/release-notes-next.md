@@ -60,6 +60,7 @@ CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by us
 
 ## Features
 
+- **MCU → Linux uploads over `pw_transfer` (AVR, ADR-0007).** `FileSystem.upload(path, data)` sends files of any size up to `file_write_max_bytes` to the MPU storage, instead of 64-byte `FileSystem.write()` calls. Check `FileSystem.uploadPending()` / `lastUploadStatus()`.
 - **Cloud access to the AVR EEPROM (ADR-0007).** `EepromService.Read/Write` copies the EEPROM image (up to 4,080 bytes) between the gateway and the MCU. The client library adds `read_mcu_eeprom()` and `write_mcu_eeprom()`. It requires the `cloud_allow_eeprom_read` / `cloud_allow_eeprom_write` permissions and a gateway ACL rule; writes are not transactional.
 - `pw_transfer` is enabled by default on AVR. Build with `-DBRIDGE_ENABLE_PW_TRANSFER=0` (global build flag) to reclaim about 0.5 KB of SRAM.
 - simavr diagnostics (`avr_pigweed_port` #17/#18):

@@ -138,6 +138,14 @@ message FileRemove {
   string path = 1;
 }
 
+// ADR-0007 (E6): the MCU exposes `size` bytes on the pw_transfer resource
+// FILE_UPLOAD_RESOURCE_ID; the daemon reads them and stores them at `path`
+// under file_system_root, then completes this call with a status.
+message FileUpload {
+  string path = 1;
+  uint32 size = 2;
+}
+
 message ProcessRunAsync {
   string command = 1;
 }
@@ -510,6 +518,9 @@ service FileSystemService {
   }
   rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty) {
     option (auth_field) = "file_remove";
+  }
+  rpc Upload(rpc.pb.FileUpload) returns (rpc.pb.Empty) {
+    option (auth_field) = "file_write";
   }
 }
 

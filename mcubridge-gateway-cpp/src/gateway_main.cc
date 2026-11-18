@@ -815,7 +815,7 @@ class GatewaySession final
           std::cerr << "event=edge_dispatch_response_received status="
                     << status.str() << " device_status=" << edge_resp.status_code
                     << " payload_bytes=" << edge_resp.response_payload.size()
-                    << '\\n';
+                    << '\n';
           ctx.cv.notify_one();
         },
         [&ctx](pw::Status status) {
@@ -823,7 +823,7 @@ class GatewaySession final
           ctx.call_status = status;
           ctx.completed = true;
           std::cerr << "event=edge_dispatch_rpc_error status=" << status.str()
-                    << '\\n';
+                    << '\n';
           ctx.cv.notify_one();
         });
 
@@ -931,7 +931,7 @@ class GatewaySession final
           if (!status.ok() && status != pw::Status::Unavailable()) {
             std::cerr << "device=" << device_id_
                       << " event=rpc_client_packet_rejected status="
-                      << status.str() << '\\n';
+                      << status.str() << '\n';
           }
         } else if (meta->destination_is_server()) {
           status = rpc_server_.ProcessPacket(frame->data());

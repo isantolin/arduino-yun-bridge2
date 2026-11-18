@@ -21,10 +21,18 @@ apt_update() {
     apt_status=0
     sudo apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
 
-    # Microsoft and other third-party mirrors can rate-limit shared GitHub
-    # runners. Retry HTTP 429 in place; do not misclassify it as Ubuntu DNS
-    # failure or rewrite an unrelated repository configuration.
+    # Microsoft package feeds can rate-limit shared GitHub runners even
+    # when every Ubuntu index was downloaded successfully. If APT itself
+    # succeeded and the only 429 is from packages.microsoft.com, keep the
+    # usable Ubuntu indexes and do not fail unrelated build jobs.
     if grep -Eqi '(^|[[:space:]])429([[:space:]]|$)|Too Many Requests' "$apt_log"; then
+      if (( apt_status == 0 )) &&
+          grep -Fq 'packages.microsoft.com' "$apt_log" &&
+          ! grep -Eqi 'Err:.*(ubuntu|archive\.ubuntu|security\.ubuntu)|Failed to fetch https?://[^ ]*(ubuntu|archive\.ubuntu|security\.ubuntu)' "$apt_log"; then
+        echo "::warning::Ignoring Microsoft package-feed HTTP 429; Ubuntu package indexes updated successfully."
+        rm -f "$apt_log"
+        return 0
+      fi
       rm -f "$apt_log"
       if (( attempt < 3 )); then
         delay=$((attempt * 15))

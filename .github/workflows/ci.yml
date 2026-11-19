@@ -157,6 +157,17 @@ jobs:
             mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \
             arduino:avr:mega \
             arduino-logs/arduino-avr-mega/pw_transfer_compile
+      - name: Verify mandatory AVR resource reports
+        run: |
+          for report in \
+            arduino-logs/arduino-avr-mega/BridgeControl/resource_report.json \
+            arduino-logs/arduino-avr-mega/pw_transfer_compile/resource_report.json; do
+            if [ ! -s "$report" ]; then
+              echo "::error::Missing firmware resource report: $report"
+              exit 1
+            fi
+            python -m json.tool "$report" >/dev/null
+          done
       - name: Profile Memory Usage
         if: always()
         run: |

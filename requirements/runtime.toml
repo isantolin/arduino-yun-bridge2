@@ -308,7 +308,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.15"
+pip = "hypothesis==6.170.16"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]

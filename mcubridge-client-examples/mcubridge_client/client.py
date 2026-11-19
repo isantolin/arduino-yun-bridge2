@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+import select
 import socket
 import ssl
 import threading
+import time
 from typing import Any, Final, cast
 
 import pw_hdlc.decode
@@ -63,11 +65,13 @@ class GatewayConnection:
             self.sock = raw_sock
             logger.info("Gateway connection: TLS disabled")
 
-        # The connect timeout is only for establishing the TCP/TLS session.
-        # Keep the reader alive across long-running RPCs and idle periods.
-        self.sock.settimeout(None)
+        # Non-blocking I/O with select() outside the lock lets reader and writer
+        # share a single ssl.SSLSocket safely without concurrent OpenSSL calls.
+        self.sock.setblocking(False)
 
         self.running = True
+        self._closed = False
+        self._io_lock = threading.Lock()
         self._send_lock = threading.Lock()
         self.decoder = pw_hdlc.decode.FrameDecoder()
         self.rpc_client = PwRpcClient(
@@ -80,40 +84,84 @@ class GatewayConnection:
         logger.info("Gateway connection: RPC reader thread started")
 
     def send_frame(self, data: bytes) -> None:
-        if self.sock:
-            with self._send_lock:
-                self.sock.sendall(pw_hdlc.encode.ui_frame(1, data))
+        frame = pw_hdlc.encode.ui_frame(1, data)
+        view = memoryview(frame)
+        deadline = time.monotonic() + 10.0
+        with self._send_lock:
+            while view:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Timed out sending Gateway HDLC frame")
+                wait_read = False
+                wait_write = False
+                with self._io_lock:
+                    if self._closed:
+                        return
+                    try:
+                        sent = self.sock.send(view)
+                    except ssl.SSLWantReadError:
+                        wait_read = True
+                    except (ssl.SSLWantWriteError, BlockingIOError):
+                        wait_write = True
+                    else:
+                        if sent == 0:
+                            raise ConnectionError("Gateway socket closed during send")
+                        view = view[sent:]
+                if wait_read or wait_write:
+                    try:
+                        if wait_read:
+                            select.select([self.sock], [], [], 0.05)
+                        else:
+                            select.select([], [self.sock], [], 0.05)
+                    except (OSError, ValueError):
+                        return
 
     def _reader_loop(self) -> None:
         while self.running:
-            try:
-                chunk = self.sock.recv(4096)
-                if not chunk:
+            with self._io_lock:
+                if self._closed:
                     break
-                for frame in self.decoder.process(chunk):
-                    if frame.ok() and frame.address == 1:
-                        logger.debug("Gateway RPC frame received", frame_bytes=len(frame.data))
-                        self.rpc_client.process_packet(frame.data)
-            except (OSError, ValueError) as exc:
-                logger.debug("Reader loop socket error", error=str(exc))
+                has_pending = isinstance(self.sock, ssl.SSLSocket) and self.sock.pending() > 0
+            if not has_pending:
+                try:
+                    readable, _, _ = select.select([self.sock], [], [], 0.05)
+                except (OSError, ValueError) as exc:
+                    logger.debug("Reader loop select error", error=str(exc))
+                    break
+                if not readable:
+                    continue
+            with self._io_lock:
+                if self._closed:
+                    break
+                try:
+                    chunk = self.sock.recv(4096)
+                except (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError):
+                    continue
+                except (OSError, ValueError) as exc:
+                    logger.debug("Reader loop socket error", error=str(exc))
+                    break
+            if not chunk:
                 break
+            for frame in self.decoder.process(chunk):
+                if frame.ok() and frame.address == 1:
+                    logger.debug("Gateway RPC frame received", frame_bytes=len(frame.data))
+                    self.rpc_client.process_packet(frame.data)
 
     def close(self) -> None:
         logger.info("Gateway connection: closing", reader_alive=self.reader_thread.is_alive())
         self.running = False
-        # shutdown() wakes the reader thread blocked in recv() and sends EOF right
-        # away. Without it the descriptor stays open until the reader returns, and
-        # the Gateway keeps the client principal registered, rejecting the next
-        # session with the same identity as a duplicate.
-        try:
-            self.sock.shutdown(socket.SHUT_RDWR)
-        except OSError as exc:
-            logger.debug("Socket shutdown error ignored", error=str(exc))
-        try:
-            self.sock.close()
-        except OSError as exc:
-            logger.debug("Socket close error ignored", error=str(exc))
         self.reader_thread.join(timeout=2)
+        with self._io_lock:
+            self._closed = True
+            # shutdown() sends EOF immediately so the Gateway releases the
+            # client principal before any subsequent session with the same ID.
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR)
+            except OSError as exc:
+                logger.debug("Socket shutdown error ignored", error=str(exc))
+            try:
+                self.sock.close()
+            except OSError as exc:
+                logger.debug("Socket close error ignored", error=str(exc))
         logger.info("Gateway connection: closed", reader_alive=self.reader_thread.is_alive())
 
 

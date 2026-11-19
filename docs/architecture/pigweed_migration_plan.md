@@ -28,7 +28,7 @@ Reglas obligatorias:
 
 | Subsistema | Estado comprobado | Pendiente |
 |---|---|---|
-| HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log y consola; decodificación nativa con `pw_hdlc.decode.FrameDecoder` | Ninguno; rutas manuales redundantes purgadas |
+| HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log (`HDLC_ADDRESS_LOG`) y consola; decodificación nativa con `pw_hdlc.decode.FrameDecoder` y detokenización de `pw_log` / `pw_tokenizer` activa en AVR, SAMD21, ESP32-S3 y host | Ninguno; rutas manuales redundantes purgadas |
 | RPC MCU | Servicios Nanopb generados y registrados en firmware; `pw::rpc::Server` y `pw::rpc::Client` integrados sin capas de compatibilidad intermedias | Ninguno |
 | Esquema Protobuf | `tools/protocol/mcu_wire.proto` y `config_schema.proto` 100% migrados a RPC Pigweed nativo; `enum Command`, `CMD_*`, `cmd_opts` eliminados | Ninguno |
 | Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` desacoplado de IDs legacy; `BY_COMMAND_ID` eliminado | Ninguno |
@@ -116,6 +116,7 @@ Cambios en el daemon y el contrato:
 1. **Firmware C++ Nanopb y Pigweed RPC:**
    - Se eliminó el dispatch manual de comandos numéricos y sus estructuras intermedias en `Bridge.cpp`.
    - Registro y ciclo de vida de servicios mediante `pw::rpc::Server` y `pw::rpc::Client`.
+   - Paridad multi-arquitectura de `pw_log` + `pw_tokenizer`: el backend tokenizado (`PW_TOKENIZE_TO_BUFFER` -> `pw_log_avr_SetLogSink` -> `HDLC_ADDRESS_LOG`) está activo en AVR ATmega2560, SAMD21 MKR WiFi 1010, ESP32-S3 Nano ESP32 y compilaciones host, reemplazando `pw_log_null` y permitiendo detokenización end-to-end en `SerialTransport`.
 2. **Transferencias de archivos (upstream `pw_transfer`):**
    - `pw_transfer` es el único protocolo de streaming de archivos; el RPC legacy `FileSystemService.Read` y las intercepciones unarias en `runtime.py` (antiguo desvío `mcu/eeprom`) se eliminaron en favor de streaming nativo `pw_transfer`.
    - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados en las tres arquitecturas soportadas (AVR ATmega2560, SAMD21 MKR WiFi 1010 y ESP32-S3 Nano ESP32), y Fleet Mesh verifica `FileSystem.upload()` en los 3 nodos simultáneamente.

@@ -61,6 +61,33 @@ def test_parse_mcu_stack_watermark_line_samd21_and_esp32() -> None:
     }
 
 
+def test_parse_mcu_stack_watermark_line_decodes_pigweed_base64_ci_lines() -> None:
+    renode_ci_line = (
+        'line=\'{"log": "$TUNVX1NUQUNLX1dBVEVSTUFSSyBhcmNoPVNBTUQyMSB1c2VkPTIxODQgYnVkZ2V0PTIyMjUy", '
+        '"raw": "[4D 43 55 5F]", "event": "MCU log"}\''
+    )
+    assert parse_mcu_stack_watermark_line(renode_ci_line) == {
+        "arch": "SAMD21",
+        "stack_used_bytes": 2184,
+        "stack_budget_bytes": 22252,
+        "stack_margin_bytes": 22252 - 2184,
+    }
+
+    qemu_ci_line = (
+        'line=\'{"log": "$TUNVX1NUQUNLX1dBVEVSTUFSSyBhcmNoPUVTUDMyIHVzZWQ9MjgwOCBidWRnZXQ9ODE5Mg==", '
+        '"raw": "[4D 43 55 5F]", "event": "MCU log"}\''
+    )
+    assert parse_mcu_stack_watermark_line(qemu_ci_line) == {
+        "arch": "ESP32",
+        "stack_used_bytes": 2808,
+        "stack_budget_bytes": 8192,
+        "stack_margin_bytes": 8192 - 2808,
+    }
+
+    non_watermark_b64 = 'line=\'{"log": "$aGVsbG8gd29ybGQh====invalid", "event": "MCU log"}\''
+    assert parse_mcu_stack_watermark_line(non_watermark_b64) is None
+
+
 @pytest.mark.parametrize(
     "invalid_line",
     [

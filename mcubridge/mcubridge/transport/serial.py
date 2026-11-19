@@ -218,6 +218,17 @@ class SerialTransport:
                     logger.warning("Failed to load Pigweed tokenizer database", path=str(path), error=str(exc))
         return detokenize.Detokenizer()
 
+    def decode_log_payload(self, frame_data: bytes) -> str:
+        """Detokenize a Pigweed log payload or preserve printable UTF-8 diagnostic text."""
+        detokenized_msg = self.detokenizer.detokenize(frame_data)
+        if detokenized_msg.ok():
+            return str(detokenized_msg)
+        try:
+            candidate = frame_data.decode("utf-8")
+            return candidate if candidate.isprintable() else str(detokenized_msg)
+        except UnicodeDecodeError:
+            return str(detokenized_msg)
+
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:
             if self.serial:
@@ -481,8 +492,7 @@ class SerialTransport:
                     return
 
         if frame.address == protocol.HDLC_ADDRESS_LOG:
-            decoded_log = str(self.detokenizer.detokenize(frame_data))
-            logger.info("MCU log", log=decoded_log, raw=frame_data)
+            logger.info("MCU log", log=self.decode_log_payload(frame_data), raw=frame_data)
             return
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:

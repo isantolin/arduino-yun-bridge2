@@ -86,6 +86,10 @@ WOLF_SOURCES=(
 )
 
 PIGWEED_TRANSFER_DIR="$ARDUINO_LIBS/PigweedAVR/src"
+PIGWEED_TRANSFER_INCLUDE_DIR="$BUILD_DIR/pigweed-transfer-include"
+rm -rf "$PIGWEED_TRANSFER_INCLUDE_DIR"
+mkdir -p "$PIGWEED_TRANSFER_INCLUDE_DIR"
+cp -a "$PIGWEED_TRANSFER_DIR/pw_transfer" "$PIGWEED_TRANSFER_INCLUDE_DIR/"
 for transfer_header in pw_transfer/client.h pw_transfer/transfer.h pw_transfer/transfer_thread.h; do
     if [[ ! -f "$PIGWEED_TRANSFER_DIR/$transfer_header" ]]; then
         echo "[host-cpp] ERROR: exported upstream header is missing: $PIGWEED_TRANSFER_DIR/$transfer_header" >&2
@@ -162,7 +166,6 @@ SOURCES=(
     "$PW_ROOT/pw_tokenizer/encode_args.cc"
     "$PW_ROOT/pw_tokenizer/tokenize.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
-    "$PW_ROOT/pw_chrono_stl/system_clock.cc"
 )
 
 INC_FLAGS=(
@@ -176,7 +179,7 @@ INC_FLAGS=(
     -I"$PW_ROOT/pw_chrono_stl/clock_public_overrides"
     -I"$PW_ROOT/pw_chrono_stl/public"
     -I"$PW_ROOT/pw_chrono/public"
-    -I"$PIGWEED_TRANSFER_DIR"
+    -I"$PIGWEED_TRANSFER_INCLUDE_DIR"
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
@@ -208,6 +211,9 @@ INC_FLAGS=(
     -I"$PW_ROOT/pw_memory/public"
     -I"$PW_ROOT/pw_protobuf/public"
     -I"$PW_ROOT/pw_sync/public"
+    -I"$PW_ROOT/pw_sync/public_overrides"
+    -I"$PW_ROOT/pw_sync_stl/public_overrides"
+    -I"$PW_ROOT/pw_sync_stl/public"
     -I"$PW_ROOT/pw_thread/public"
     -I"$PW_ROOT/pw_toolchain/public"
     -I"$PW_ROOT/third_party/fuchsia/repo/sdk/lib/stdcompat/include"
@@ -228,6 +234,7 @@ COMMON_DEFS=(
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
     -DPW_RPC_USE_GLOBAL_MUTEX=0
+    -DPW_TRANSFER_COOPERATIVE=1
 )
 
 if [ "$COVERAGE_MODE" = true ]; then

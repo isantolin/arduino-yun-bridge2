@@ -97,7 +97,7 @@ for transfer_header in pw_transfer/client.h pw_transfer/transfer.h pw_transfer/t
     fi
 done
 mapfile -t PIGWEED_TRANSFER_SOURCES < <(
-    find "$PIGWEED_TRANSFER_DIR" -maxdepth 1 -type f \\( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' \\) -print | sort
+    find "$PIGWEED_TRANSFER_DIR" -maxdepth 1 -type f \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' \) -print | sort
 )
 if [[ ${#PIGWEED_TRANSFER_SOURCES[@]} -eq 0 ]]; then
     echo "[host-cpp] ERROR: no exported upstream pw_transfer implementation sources found." >&2

@@ -746,12 +746,12 @@ jobs:
           reports = sorted(Path("arduino-logs").rglob("resource_report.json"))
           summary = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
           with summary.open("a", encoding="utf-8") as output:
-              output.write("## Firmware resource measurements\\n\\n")
+              output.write("## Firmware resource measurements\n\n")
               if not reports:
-                  output.write("No resource reports were produced by the Arduino build job.\\n")
+                  output.write("No resource reports were produced by the Arduino build job.\n")
               else:
-                  output.write("| Target / build | Flash used | Flash limit | Static RAM used | Static RAM remaining |\\n")
-                  output.write("|---|---:|---:|---:|---:|\\n")
+                  output.write("| Target / build | Flash used | Flash limit | Static RAM used | Static RAM remaining |\n")
+                  output.write("|---|---:|---:|---:|---:|\n")
                   for path in reports:
                       report = json.loads(path.read_text(encoding="utf-8"))
                       output.write(
@@ -759,11 +759,11 @@ jobs:
                           f"| {report['flash_used_bytes']} B "
                           f"| {report['flash_limit_bytes']} B "
                           f"| {report['static_ram_used_bytes']} B "
-                          f"| {report['static_ram_remaining_bytes']} B |\\n"
+                          f"| {report['static_ram_remaining_bytes']} B |\n"
                       )
                   output.write(
-                      "\\nRuntime stack peak is intentionally not inferred from static "
-                      "sections; see simavr runtime watermark artifacts.\\n"
+                      "\nRuntime stack peak is intentionally not inferred from static "
+                      "sections; see simavr runtime watermark artifacts.\n"
                   )
           PY
       - name: Generate Memory & Hardware Emulation Summary

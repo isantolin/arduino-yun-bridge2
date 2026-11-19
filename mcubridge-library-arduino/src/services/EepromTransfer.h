@@ -3,7 +3,7 @@
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
 
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 
 #include <avr/io.h>
 #include <pw_transfer/transfer.h>
@@ -32,4 +32,4 @@ bool registerEepromTransferHandler(pw::transfer::TransferService& service);
 
 }  // namespace bridge::services
 
-#endif  // BRIDGE_ENABLE_PW_TRANSFER
+#endif  // AVR EEPROM hardware resource

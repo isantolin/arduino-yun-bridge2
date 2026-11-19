@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -32,20 +34,30 @@ def stack_watermark_metrics(min_sp: int, ramend: int, heap_start: int | None) ->
     }
 
 
+_TOKEN_B64_RE = re.compile(r"\$([A-Za-z0-9+/=]{16,})")
+
+
 def parse_mcu_stack_watermark_line(line: str) -> dict[str, int | str] | None:
     """Parse a runtime stack watermark record from firmware or daemon log output.
 
     Firmware emits ``MCU_STACK_WATERMARK arch=<ARCH> used=<USED> budget=<BUDGET>``
-    over ``HDLC_ADDRESS_LOG``.
+    over ``HDLC_ADDRESS_LOG``. Supports both decoded plaintext log lines and
+    Pigweed ``$<base64>`` fallback tokens emitted when no token database matched.
     """
     marker = "MCU_STACK_WATERMARK "
-    if marker not in line and "$TUNVX1NUQUNLX1dBVEVSTUFSSy" in line:
-        b64_part = line.split("$", 1)[1].split('"', 1)[0].split("'", 1)[0].split()[0]
-        padded = b64_part + ("=" * (-len(b64_part) % 4))
-        line = base64.b64decode(padded).decode("utf-8", errors="ignore")
-    if marker not in line:
+    candidate = line
+    if marker not in candidate:
+        for b64_match in _TOKEN_B64_RE.finditer(line):
+            try:
+                decoded = base64.b64decode(b64_match.group(1), validate=True).decode("utf-8")
+            except (binascii.Error, ValueError, UnicodeDecodeError):
+                continue
+            if marker in decoded:
+                candidate = decoded
+                break
+    if marker not in candidate:
         return None
-    tail = line.split(marker, 1)[1]
+    tail = candidate.split(marker, 1)[1]
     arch: str | None = None
     used: int | None = None
     budget: int | None = None

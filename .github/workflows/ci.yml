@@ -647,7 +647,7 @@ jobs:
     needs: [unified-tests, gateway-cpp, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
     # Publish the consolidated report on every successful CI event,
     # including pull requests, so the tested head exposes its own measurements.
-    if: ${{ success() && !cancelled() }}
+    if: ${{ always() && !cancelled() }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7

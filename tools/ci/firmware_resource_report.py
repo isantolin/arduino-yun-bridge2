@@ -110,7 +110,7 @@ def main() -> int:
     args = parser.parse_args()
 
     report = measure(
-        args.compile_log.read_text(encoding="utf-8", errors="replace"),
+        args.compile_log.read_text(encoding="utf-8"),
         args.fqbn,
         args.elf,
         args.size_tool,

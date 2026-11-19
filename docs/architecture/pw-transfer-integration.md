@@ -78,7 +78,14 @@ As formalized in [ADR-0004](decisions/0004-linux-mpu-storage-ssot.md), the OpenW
 - The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.
 - Hardware UART/HDLC transfer against a live MPU remains a separate release gate.
 
-This PR removes only the MCU `FileSystemService.Read` RPC. The `mcubridge-gateway` central Linux service still exposes the existing `LocalBridge.FileRead` / `FileWrite` APIs, and the edge MPU daemon still owns the actual device filesystem. Their `mcu/eeprom` route now uses upstream `pw_transfer`; ordinary paths still use the MPU filesystem.
+The MCU `FileSystemService.Read` RPC and the legacy `CloudBridge` / `LocalBridge` gRPC contracts have been removed. The current file-transfer boundaries are:
+
+- Cloud ↔ Linux staging uses the C++ Gateway's `FileTransferService` (`PushToLinux` / `FetchFromLinux`) and upstream `pw_transfer`.
+- MCU → Linux uploads use E6: `FileSystemService.Upload` announces the transfer, the daemon reads the MCU's `FILE_UPLOAD_RESOURCE_ID` through its upstream `pw_transfer` client, and the MPU stores the validated file under `file_system_root`.
+- AVR EEPROM access uses the fixed `0x4D454741` resource and the E5 cloud staging flow.
+- Bounded MCU `FileSystemService.Write` and `Remove` unary operations remain for small filesystem operations; they are not alternate bulk-transfer protocols.
+
+The Python daemon still owns the edge MPU filesystem. The C++ Gateway is the sole central Gateway implementation; its complete service parity and production cutover remain governed by the separate Gateway release gates below.
 
 The Linux endpoint is a **replacement Gateway**, not an extension or sidecar to the existing Python/grpclib Gateway. ADR-0003 defines the production target: one standalone C++ Linux service using upstream `pw::rpc::Server`, `pw::transfer::TransferService`, `pw_hdlc`, and mutually authenticated TLS. Python Pigweed packages remain clients.
 

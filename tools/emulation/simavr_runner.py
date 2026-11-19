@@ -403,11 +403,13 @@ def run_simavr_emulation(
     if daemon_proc.poll() is not None:
         logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
         _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
+        report_simavr_crash(firmware_path, state)
         return False
 
     logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
     if not state.sync_event.wait(timeout=max(timeout_seconds, 60.0)):
         _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
+        report_simavr_crash(firmware_path, state)
         return False
 
     logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
@@ -416,6 +418,7 @@ def run_simavr_emulation(
 
     all_passed = run_client_scripts(test_scripts, led_builtin_pin=led_builtin_pin) and audit_post_execution_status()
     _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
+    report_simavr_crash(firmware_path, state)
     return all_passed
 
 

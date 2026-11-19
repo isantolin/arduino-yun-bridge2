@@ -111,7 +111,6 @@ enum class InitStep : uint8_t {
   INIT_DATASTORE = 0,
   INIT_FILESYSTEM,
   INIT_FILE_UPLOAD,
-#endif
   INIT_DONE
 };
 
@@ -151,14 +150,6 @@ void loop() {
       Console.println(F("[FILE_UPLOAD] START_FAILED"));
       s_initStep = InitStep::INIT_DONE;
     }
-#else
-    const char tokenData[] = "BOOT_OK";
-    FileSystem.write(
-        "boot_token.txt",
-        pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tokenData),
-                                sizeof(tokenData) - 1));
-    s_initStep = InitStep::INIT_DONE;
-#endif
   } else if (s_initStep == InitStep::INIT_FILE_UPLOAD &&
              !FileSystem.uploadPending()) {
     if (FileSystem.lastUploadStatus().ok()) {
@@ -168,7 +159,6 @@ void loop() {
       Console.println(static_cast<int>(FileSystem.lastUploadStatus().code()));
     }
     s_initStep = InitStep::INIT_DONE;
-#endif
   }
 
   static unsigned long lastConsoleProcess = 0;

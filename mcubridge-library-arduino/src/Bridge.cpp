@@ -2,6 +2,8 @@
 
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
+#include <etl/string.h>
+#include <etl/to_string.h>
 #include <etl/utility.h>
 
 #include "hal/hal.h"
@@ -610,8 +612,10 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       const auto status = _rpc_server.ProcessPacket(pw::as_bytes(data));
       _rpc_plaintext_response = false;
       if (!status.ok()) emitStatus(status);
+      _emitStackWatermarkLog();
     } else if (meta.destination_is_client()) {
       (void)_rpc_client.ProcessPacket(pw::as_bytes(data));
+      _emitStackWatermarkLog();
     }
   }
 #if BRIDGE_ENABLE_CONSOLE
@@ -746,6 +750,28 @@ void BridgeClass::_clearLinkSession() {
   _tx_aead_counter = 0;
   _rx_aead_counter = 0;
   _session_keys_ready = false;
+  _last_reported_stack_used = 0;
+}
+
+void BridgeClass::_emitStackWatermarkLog() {
+#if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_ESP32)
+  if (!isSynchronized() || !isRpcTxReady()) return;
+  const auto wm = bridge::hal::getStackWatermark();
+  if (wm.budget_bytes == 0U || wm.used_bytes == _last_reported_stack_used) {
+    return;
+  }
+  _last_reported_stack_used = wm.used_bytes;
+#if defined(ARDUINO_ARCH_SAMD)
+  etl::string<72> msg("MCU_STACK_WATERMARK arch=SAMD21 used=");
+#else
+  etl::string<72> msg("MCU_STACK_WATERMARK arch=ESP32 used=");
+#endif
+  (void)etl::to_string(wm.used_bytes, msg, true);
+  msg.append(" budget=");
+  (void)etl::to_string(wm.budget_bytes, msg, true);
+  (void)sendLogStream(pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(msg.data()), msg.size()));
+#endif
 }
 
 void BridgeClass::_timerTask() {

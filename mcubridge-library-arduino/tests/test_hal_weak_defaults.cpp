@@ -37,6 +37,10 @@ void test_hal_weak_defaults_without_mock() {
   TEST_ASSERT_EQUAL_UINT8(NUM_DIGITAL_PINS, caps.dig);
   TEST_ASSERT_EQUAL_UINT8(NUM_ANALOG_INPUTS, caps.ana);
 
+  const auto wm = bridge::hal::getStackWatermark();
+  TEST_ASSERT_EQUAL_UINT32(0U, wm.used_bytes);
+  TEST_ASSERT_EQUAL_UINT32(0U, wm.budget_bytes);
+
   g_host_has_sd = original_sd;
   g_host_fs_enabled = original_fs;
 }

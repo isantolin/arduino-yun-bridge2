@@ -805,8 +805,15 @@ jobs:
                           f"| {f'{elf_flash} B' if elf_flash is not None else '—'} "
                           f"| {f'{elf_ram} B' if elf_ram is not None else '—'} |\n"
                       )
-                  stack_reports = sorted(Path("simavr-logs").glob("*_stack_watermark.json"))
-                  output.write("\n### Runtime AVR stack watermark\n\n")
+                  stack_reports = sorted(
+                      [
+                          *Path("simavr-logs").glob("*_stack_watermark.json"),
+                          *Path("renode-logs").glob("*_stack_watermark.json"),
+                          *Path("qemu-logs").glob("*_stack_watermark.json"),
+                      ],
+                      key=lambda p: p.name,
+                  )
+                  output.write("\n### Runtime MCU stack watermark\n\n")
                   if stack_reports:
                       output.write("| Target | Stack used | Stack budget | Remaining margin |\n")
                       output.write("|---|---:|---:|---:|\n")
@@ -822,11 +829,8 @@ jobs:
                           )
                   else:
                       output.write(
-                          "No simavr stack watermark report was produced for this run.\n"
+                          "No MCU stack watermark report was produced for this run.\n"
                       )
-                  output.write(
-                      "\nSAMD21 and ESP32-S3 runtime stack high-water instrumentation remains pending.\n"
-                  )
           PY
       - name: Generate Memory & Hardware Emulation Summary
         run: |

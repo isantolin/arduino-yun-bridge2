@@ -811,8 +811,9 @@ jobs:
                           f"- Static RAM: {enabled['static_ram_used_bytes'] - disabled['static_ram_used_bytes']:+d} B\n"
                       )
                   output.write(
-                      "\nRuntime stack peak is intentionally not inferred from static "
-                      "sections; see simavr runtime watermark artifacts.\n"
+                      "\nRuntime stack peak is not measured here: AVR simavr watermark "
+                      "context requires syncing the pinned port revision; SAMD21/ESP32-S3 "
+                      "need target-specific runtime instrumentation.\n"
                   )
           PY
       - name: Generate Memory & Hardware Emulation Summary

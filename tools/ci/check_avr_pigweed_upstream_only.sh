@@ -22,7 +22,7 @@ for path in CMakeLists.txt src tests tools/export_arduino_library.py; do
   fi
 done
 
-if grep -R -n -E 'pw_rpc_avr|rpc_dispatch_table\\.inc|RpcEnvelope' "${SCAN_PATHS[@]}"; then
+if grep -R -n -E 'pw_rpc_avr|rpc_dispatch_table\.inc|RpcEnvelope' "${SCAN_PATHS[@]}"; then
   echo "ERROR: project-owned legacy RPC implementation reference found." >&2
   exit 1
 fi

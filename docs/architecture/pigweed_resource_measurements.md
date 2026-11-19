@@ -67,10 +67,10 @@ stack comparison can be claimed.
   consumption after link-time optimization.
 - Static SRAM is not free stack. The remaining bytes are shared by heap and
   stack; a runtime stack watermark is required to establish the actual margin.
-- To quantify the incremental cost of upstream `pw_transfer`, compare the
-  same Mega 2560 sketch, toolchain, and build flags with
-  `BRIDGE_ENABLE_PW_TRANSFER=1` and `=0`. Do not use a standalone port probe
-  as a substitute for the complete Bridge firmware.
+- Measure only the canonical firmware build, with upstream `pw_transfer`
+  always present. Report total Flash, static SRAM, and runtime stack watermark
+  by target; do not create a disabled-transfer build or infer a removable
+  feature cost from a second product configuration.
 - Never extrapolate AVR resource costs to SAMD21 or ESP32-S3. Each architecture
   must be compiled and measured with its own toolchain and configuration.
 

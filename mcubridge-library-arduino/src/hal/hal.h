@@ -17,7 +17,6 @@
 #include <PigweedAVR.h>
 #else
 #include <pw_bytes/span.h>
-#include <pw_result/result.h>
 #include <pw_status/status.h>
 #endif
 #include <etl/string_view.h>
@@ -26,11 +25,6 @@
 #include "protocol/mcu_wire.pb.h"
 
 namespace bridge::hal {
-
-struct ChunkResult {
-  size_t bytes_read;
-  bool has_more;
-};
 
 /**
  * @brief Force all safety-critical pins to a safe state (e.g. LOW/Input).
@@ -72,17 +66,6 @@ void init();
  * @return true if SD is available, false otherwise.
  */
 bool hasSD();
-
-/**
- * @brief Write data to a file on the SD card.
- */
-pw::Status writeFile(etl::string_view path, pw::span<const uint8_t> data);
-
-/**
- * @brief Read a chunk from a file on the SD card.
- */
-pw::Result<ChunkResult> readFileChunk(etl::string_view path, size_t offset,
-                                      pw::span<uint8_t> buffer);
 
 /**
  * @brief Remove a file from the SD card.

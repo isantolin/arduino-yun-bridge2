@@ -129,11 +129,6 @@ message MailboxReadResponse {
   bytes content = 1;
 }
 
-message FileWrite {
-  string path = 1;
-  bytes data = 2;
-}
-
 message FileRemove {
   string path = 1;
 }
@@ -513,9 +508,6 @@ service SpiService {
 }
 
 service FileSystemService {
-  rpc Write(rpc.pb.FileWrite) returns (rpc.pb.Empty) {
-    option (auth_field) = "file_write";
-  }
   rpc Remove(rpc.pb.FileRemove) returns (rpc.pb.Empty) {
     option (auth_field) = "file_remove";
   }

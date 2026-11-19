@@ -768,7 +768,7 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     res_rm = await svc.file_remove(mcu_wire_pb2.FileRemove(path="valid.txt"))
     assert res_rm.status == "ok"
 
-    res_loc_w = await svc.file_write(mcu_wire_pb2.FileWrite(path="../outside.txt", data=b"data"))
+    res_loc_w = await svc.file_write("../outside.txt", b"data")
     assert res_loc_w.status == "error"
 
     real_file = tmp_path / "real.txt"
@@ -1409,8 +1409,8 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
     )
     assert res_unreg is None
 
-    # 3. File write with unsafe path
-    res_file_unsafe = await svc.file_write(mcu_wire_pb2.FileWrite(path="../../../etc/passwd", data=b"test"))
+    # 3. Local file write with unsafe path
+    res_file_unsafe = await svc.file_write("../../../etc/passwd", b"test")
     assert res_file_unsafe.status == "error"
 
     # 4. Process run with empty command
@@ -1701,16 +1701,23 @@ async def test_write_with_quota_enforces_managed_root_quota(mock_bridge_service:
     assert svc.state.file_storage_bytes_used == 6
 
 
-async def test_mcu_file_write_status_is_bound_to_the_mcu_call(
+async def test_retired_mcu_file_write_reports_unimplemented_on_its_call(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
-    """MCU-initiated FileSystemService/Write completes its own call id with OK or PERMISSION_DENIED."""
+    """ADR-0008: MCU packets targeting retired FileSystemService/Write are rejected with UNIMPLEMENTED."""
+    from pw_rpc import ids as pw_rpc_ids
+
     svc = mock_bridge_service
     svc.serial = mock_serial
-    spec = protocol.BY_NAME["rpc.pb.FileSystemService/Write"]
+    svc.state.connection_fsm.synchronize()
+    service_id = pw_rpc_ids.calculate("rpc.pb.FileSystemService")
+    method_id = pw_rpc_ids.calculate("Write")
+    before = svc.state.unknown_command_count
 
-    await svc.file_write(17, mcu_wire_pb2.FileWrite(path="../../etc/shadow", data=b"x"))
-    mock_serial.send_status.assert_awaited_once_with(Status.PERMISSION_DENIED, 17, spec.service_id, spec.method_id)
+    await svc.handle_mcu_frame((service_id, method_id), 17, b"")
+    mock_serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 17, service_id, method_id)
+    assert svc.state.unknown_command_count == before + 1
+    assert svc.state.unknown_command_last_id == method_id
 
 
 async def test_unknown_mcu_rpc_reports_unimplemented_on_its_call(
@@ -1998,6 +2005,7 @@ def test_file_upload_is_dispatched_from_the_mcu(mock_bridge_service: BridgeServi
     assert spec.auth_field == "file_write"
     handler = mock_bridge_service.mcu_registry[spec.name]
     assert getattr(handler, "__name__", "") == "file_upload"
+
 
 async def test_file_transfer_push_to_linux_success(
     mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

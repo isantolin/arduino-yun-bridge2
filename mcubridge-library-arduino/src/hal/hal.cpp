@@ -352,17 +352,6 @@ bool fillLinkNonce(pw::span<const uint8_t> secret, pw::span<uint8_t> out) {
 
 __attribute__((weak)) bool hasSD() { return false; }
 
-__attribute__((weak)) pw::Status writeFile(etl::string_view,
-                                           pw::span<const uint8_t>) {
-  return pw::Status::Unimplemented();
-}
-
-__attribute__((weak)) pw::Result<ChunkResult> readFileChunk(etl::string_view,
-                                                            size_t,
-                                                            pw::span<uint8_t>) {
-  return pw::Status::Unimplemented();
-}
-
 __attribute__((weak)) pw::Status removeFile(etl::string_view) {
   return pw::Status::Unimplemented();
 }

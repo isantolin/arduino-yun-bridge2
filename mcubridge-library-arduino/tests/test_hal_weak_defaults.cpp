@@ -19,15 +19,6 @@ void test_hal_weak_defaults_without_mock() {
 
   TEST_ASSERT_FALSE(bridge::hal::hasSD());
 
-  const auto write_res =
-      bridge::hal::writeFile("test.txt", pw::span<const uint8_t>());
-  TEST_ASSERT_TRUE(write_res.IsUnimplemented());
-
-  uint8_t buffer[8];
-  const auto read_res =
-      bridge::hal::readFileChunk("test.txt", 0, pw::span<uint8_t>(buffer, 8));
-  TEST_ASSERT_TRUE(read_res.status().IsUnimplemented());
-
   const auto remove_res = bridge::hal::removeFile("test.txt");
   TEST_ASSERT_TRUE(remove_res.IsUnimplemented());
 

@@ -103,16 +103,12 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
                        rpc_pb_AnalogWrite_fields, awrite_msg);
 
-  // 5. FileWrite
-  rpc_pb_FileWrite fw_msg = rpc_pb_FileWrite_init_default;
-  strncpy(fw_msg.path, "edge.bin", sizeof(fw_msg.path));
-  fw_msg.data.size = 4;
-  fw_msg.data.bytes[0] = 1;
-  fw_msg.data.bytes[1] = 2;
-  fw_msg.data.bytes[2] = 3;
-  fw_msg.data.bytes[3] = 4;
-  feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Write"),
-                       rpc_pb_FileWrite_fields, fw_msg);
+  // 5. FileUpload (inbound rejected as UNIMPLEMENTED on MCU server)
+  rpc_pb_FileUpload fu_msg = rpc_pb_FileUpload_init_default;
+  strncpy(fu_msg.path, "edge.bin", sizeof(fu_msg.path) - 1U);
+  fu_msg.size = 4U;
+  feed_rpc_request_msg(ba, kFsSvc, pw::tokenizer::Hash("Upload"),
+                       rpc_pb_FileUpload_fields, fu_msg);
 
   // 7. FileRemove
   rpc_pb_FileRemove frm_msg = rpc_pb_FileRemove_init_default;
@@ -472,12 +468,9 @@ void test_filesystem_spi_fsm_edges() {
 
   constexpr uint32_t kSpiSvc = pw::tokenizer::Hash("rpc.pb.SpiService");
 
-  etl::array<uint8_t, 2> fs_data = {1, 2};
-  rpc_pb_FileWrite fwp = rpc_pb_FileWrite_init_default;
-  strncpy(fwp.path, "/bad", sizeof(fwp.path));
-  fwp.data.size = fs_data.size();
-  etl::copy_n(fs_data.data(), fs_data.size(), fwp.data.bytes);
-  FileSystem._onWrite(fwp);
+  rpc_pb_FileRemove frp = rpc_pb_FileRemove_init_default;
+  strncpy(frp.path, "/bad", sizeof(frp.path) - 1U);
+  FileSystem._onRemove(frp);
 
   feed_rpc_request(ba, kSpiSvc, pw::tokenizer::Hash("Begin"));
 

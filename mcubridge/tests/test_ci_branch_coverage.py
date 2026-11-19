@@ -60,7 +60,7 @@ async def test_on_serial_connected_rejects_unsynchronized_link(
 async def test_file_write_unsafe_path_returns_error(
     mock_bridge_service: BridgeService,
 ) -> None:
-    response = await mock_bridge_service.file_write(pb.FileWrite(path="../../../etc/passwd", data=b"secret"))
+    response = await mock_bridge_service.file_write("../../../etc/passwd", b"secret")
     assert response.status == "error"
 
 

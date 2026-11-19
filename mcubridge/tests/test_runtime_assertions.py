@@ -263,22 +263,34 @@ async def test_cloud_spi_transfer_asserts_serial(
     assert serial.send.call_args[0][1].data == b"\x01\x02\x03"
 
 
-async def test_cloud_file_host_write_asserts_cache(
+async def test_cloud_retired_file_write_is_rejected_and_remove_works(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
+    """Retired rpc.pb.FileSystemService/Write is ignored; Remove remains active."""
     service, state, _serial = service_setup
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
+    retired_msg = cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.FileSystemService/Write",
-        payload=pb.FileWrite(path="test.txt", data=b"host_file_payload").SerializeToString(),
+        payload=b"legacy_payload",
     )
 
-    await service.handle_request(msg)
+    await service.handle_request(retired_msg)
 
-    assert (Path(service.config.file_system_root) / "test.txt").read_bytes() == b"host_file_payload"
+    assert not (Path(service.config.file_system_root) / "test.txt").exists()
     mock_pub = cast(AsyncMock, service.cloud_publisher)
+    mock_pub.assert_not_called()
+
+    target = Path(service.config.file_system_root) / "to_remove.txt"
+    target.write_bytes(b"host_file_payload")
+    remove_msg = cloud_gateway_pb2.CloudQueuedPublish(
+        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.FileSystemService/Remove",
+        payload=pb.FileRemove(path="to_remove.txt").SerializeToString(),
+    )
+    await service.handle_request(remove_msg)
+
+    assert not target.exists()
     mock_pub.assert_called_once()
     queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.FileSystemService/Write"
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.FileSystemService/Remove"
     resp = cloud_gateway_pb2.GenericResponse.FromString(queued_pub.payload)
     assert resp.status == "ok"
 

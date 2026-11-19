@@ -54,7 +54,7 @@ jobs:
           python -m pip install semgrep vulture pytest pyrefly types-psutil types-pexpect flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
-        run: sudo apt-get install -y g++ make gcc-avr avr-libc
+        run: sudo apt-get install -y --no-install-recommends g++ make gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
         run: |

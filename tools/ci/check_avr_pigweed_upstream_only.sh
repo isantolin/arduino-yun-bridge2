@@ -32,7 +32,7 @@ if ! grep -R -q 'pw::rpc::Server' "${SCAN_PATHS[@]}"; then
   exit 1
 fi
 
-if ! grep -R -q 'pw_transfer::TransferService' "${SCAN_PATHS[@]}"; then
+if ! grep -R -q 'pw::transfer::TransferService' "${SCAN_PATHS[@]}"; then
   echo "ERROR: upstream pw_transfer::TransferService is not referenced by the AVR port." >&2
   exit 1
 fi

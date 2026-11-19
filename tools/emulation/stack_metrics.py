@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import binascii
 import json
 import re
 from pathlib import Path
@@ -50,7 +49,7 @@ def parse_mcu_stack_watermark_line(line: str) -> dict[str, int | str] | None:
         for b64_match in _TOKEN_B64_RE.finditer(line):
             try:
                 decoded = base64.b64decode(b64_match.group(1), validate=True).decode("utf-8")
-            except (binascii.Error, ValueError, UnicodeDecodeError):
+            except ValueError:
                 continue
             if marker in decoded:
                 candidate = decoded

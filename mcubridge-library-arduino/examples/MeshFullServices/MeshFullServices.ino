@@ -137,7 +137,7 @@ void loop() {
     s_initStep = InitStep::INIT_FILESYSTEM;
     s_lastInitMs = millis();
   } else if (s_initStep == InitStep::INIT_FILESYSTEM &&
-             (millis() - s_lastInitMs >= 1000) && !Bridge.hasPendingTx()) {
+             (millis() - s_lastInitMs >= 1000)) {
     // Keep the backing bytes static: pw_transfer reads this resource
     // asynchronously until the daemon completes the Upload RPC.
     const bool started = FileSystem.upload(

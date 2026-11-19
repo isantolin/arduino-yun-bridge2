@@ -38,8 +38,6 @@ type McuDispatchTable = dict[int | str | tuple[int, int], Callable[..., Any]]
 
 logger = structlog.get_logger(__name__)
 
-CLOUD_WILDCARD_SINGLE: Final[str] = "+"
-CLOUD_WILDCARD_MULTI: Final[str] = "#"
 _FLEET_TOPIC_PARSER: Final = parse.compile("devices/{device_id}/{direction}/{method}")
 _DIRECTION_TOPIC_PARSER: Final = parse.compile("{direction}/{method}")
 

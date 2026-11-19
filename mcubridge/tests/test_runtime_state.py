@@ -125,33 +125,6 @@ def test_build_bridge_snapshot_capabilities_dict(runtime_config: RuntimeConfig) 
         state.cleanup()
 
 
-def test_build_serial_pipeline_snapshot_with_data(runtime_config: RuntimeConfig) -> None:
-    state = create_runtime_state(runtime_config)
-    try:
-        state.serial_pipeline_inflight = {
-            "event": "send",
-            "command_id": 0x10,
-            "attempt": 1,
-            "ack_received": False,
-            "status": 0,
-            "timestamp": 1234567890.0,
-        }
-        state.serial_pipeline_last = {
-            "event": "complete",
-            "command_id": 0x10,
-            "attempt": 1,
-            "ack_received": True,
-            "status": 1,
-            "timestamp": 1234567891.0,
-        }
-
-        snapshot = state.build_serial_pipeline_snapshot()
-        assert snapshot.inflight.event == "send"
-        assert snapshot.last_completion.event == "complete"
-    finally:
-        state.cleanup()
-
-
 def test_handshake_duration_since_start(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
@@ -233,21 +206,12 @@ def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig)
 
     st_cloud = create_runtime_state(runtime_config)
     st_cloud.cloud_fsm.start_connecting()
-    st_cloud.cloud_fsm.connect_http3()
+    st_cloud.cloud_fsm.connect_tls()
     st_cloud.cloud_spool_degraded = True
     assert st_cloud.cloud_spool_degraded
     st_cloud.cloud_spool_degraded = False
     assert not st_cloud.cloud_spool_degraded
-    assert st_cloud.cloud_fsm.connected_http3.is_active
-
-    st_cloud2 = create_runtime_state(runtime_config)
-    st_cloud2.cloud_fsm.start_connecting()
-    st_cloud2.cloud_fsm.connect_http2()
-    st_cloud2.cloud_spool_degraded = True
-    assert st_cloud2.cloud_spool_degraded
-    st_cloud2.cloud_spool_degraded = False
-    assert not st_cloud2.cloud_spool_degraded
-    assert st_cloud2.cloud_fsm.connected_http2.is_active
+    assert st_cloud.cloud_fsm.connected_tls.is_active
 
     st2 = create_runtime_state(runtime_config)
     st2.mailbox_queue = cast(Any, object())
@@ -405,13 +369,11 @@ def test_runtime_state_fsm_properties_and_branches() -> None:
         state="synchronized",
         mcu_is_paused=True,
         cloud_link_state="connecting",
-        connected_via_http3=True,
     )
     try:
         assert state.mcu_is_paused
         assert state.is_connected
         assert state.is_synchronized
-        assert state.connected_via_http3
         assert not state.cloud_spool_degraded
 
         # MCU pause/resume property
@@ -425,26 +387,15 @@ def test_runtime_state_fsm_properties_and_branches() -> None:
         assert state.mcu_is_paused
 
         # Cloud degraded property
-        state.cloud_fsm.connect_http3()
-        assert state.cloud_fsm.connected_http3.is_active
+        state.cloud_fsm.connect_tls()
+        assert state.cloud_fsm.connected_tls.is_active
         state.cloud_spool_degraded = True
         assert state.cloud_spool_degraded
         state.cloud_spool_degraded = True
         assert state.cloud_spool_degraded
         state.cloud_spool_degraded = False
         assert not state.cloud_spool_degraded
-        state.cloud_fsm.connect_http2()
-        state.cloud_spool_degraded = True
-        state.cloud_spool_degraded = False
-        assert not state.cloud_spool_degraded
-
-        # HTTP3 property
-        state.connected_via_http3 = True
-        assert state.connected_via_http3
-        state.connected_via_http3 = True
-        assert state.connected_via_http3
-        state.connected_via_http3 = False
-        assert not state.connected_via_http3
+        assert state.cloud_fsm.connected_tls.is_active
 
         # Native hooks
         state.connection_fsm.fail()

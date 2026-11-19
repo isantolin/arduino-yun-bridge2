@@ -107,7 +107,7 @@ async def test_publish_cloud_message_wraps_command_response(
     seq_id: int,
     payload: bytes,
 ) -> None:
-    """Validate that _publish_cloud_message builds CommandResponse envelope when correlation_data is present."""
+    """Validate that publish_cloud_message routes payload through send_cloud_telemetry."""
     svc, state, _, _ = _make_service()
     try:
         mock_client = AsyncMock()

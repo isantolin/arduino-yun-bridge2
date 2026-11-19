@@ -67,7 +67,6 @@ ALLOWLIST_PY_HELPERS = {
     "connect_cloud_session",
     "send_cloud_event",
     "register_methods",
-    "build_serial_pipeline_snapshot",
     "write_status_file",
     "resolve_serial_url",
     "switch_local_baudrate",

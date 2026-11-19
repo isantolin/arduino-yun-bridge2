@@ -34,6 +34,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - name: Enforce upstream Pigweed RPC and transfer
+        if: matrix.env == 'arduino'
+        run: bash tools/ci/check_avr_pigweed_upstream_only.sh
       - uses: ./.github/actions/setup-ccache
         if: matrix.env == 'arduino'
       - uses: ./.github/actions/setup-arduino-cache

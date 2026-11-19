@@ -8,6 +8,7 @@ running full E2E client verification suites.
 
 from __future__ import annotations
 
+import json
 import os
 import pty
 import subprocess
@@ -34,6 +35,7 @@ from tools.emulation.emulation_runner import (
     setup_fake_uci,
     write_matrix_summary,
 )
+from tools.emulation.stack_metrics import stack_watermark_metrics
 from tools.emulation.process_utils import (
     cleanup_paths,
     start_daemon_thread,
@@ -239,23 +241,40 @@ def _scan_return_addresses(stack: bytes, address_size: int, text_end: int) -> li
     return candidates[:_MAX_PEAK_FRAMES]
 
 
-def _report_stack_peak(firmware_path: Path, lines: list[str], heap_start: int | None) -> None:
+def _report_stack_peak(
+    firmware_path: Path, lines: list[str], heap_start: int | None
+) -> dict[str, Any] | None:
     peak = next((res for line in reversed(lines) if (res := _PEAK_CONTEXT_PARSER.parse(line))), None)
     low_water = next((res for line in reversed(lines) if (res := _LOW_WATER_PARSER.parse(line))), None)
     if peak is None or low_water is None:
-        return
+        return None
     stack = bytes.fromhex(str(peak["stack"]).replace(" ", ""))
     text_end = _avr_symbol_address(firmware_path, "_etext", data_space=False)
     frames = _scan_return_addresses(stack, peak["address_size"], text_end) if text_end else []
     pc_function = _symbolize(firmware_path, [peak["pc"]])
+    call_chain_candidates = _symbolize(firmware_path, frames)
+    metrics = stack_watermark_metrics(low_water["min_sp"], low_water["ramend"], heap_start)
+    report: dict[str, Any] = {
+        "schema_version": 1,
+        "target": firmware_path.parent.name,
+        **metrics,
+        "min_sp": low_water["min_sp"],
+        "ramend": low_water["ramend"],
+        "heap_start": heap_start,
+        "peak_pc": peak["pc"],
+        "peak_function": pc_function[0] if pc_function else None,
+        "call_chain_candidates": call_chain_candidates,
+    }
     logger.info(
         "simavr stack peak context",
-        stack_used_bytes=low_water["ramend"] - low_water["min_sp"],
-        stack_budget_bytes=(low_water["ramend"] - heap_start) if heap_start is not None else None,
+        stack_used_bytes=metrics["stack_used_bytes"],
+        stack_budget_bytes=metrics["stack_budget_bytes"],
+        stack_margin_bytes=metrics["stack_margin_bytes"],
         pc=hex(peak["pc"]),
-        function=pc_function[0] if pc_function else None,
-        call_chain_candidates=_symbolize(firmware_path, frames),
+        function=report["peak_function"],
+        call_chain_candidates=call_chain_candidates,
     )
+    return report
 
 
 def report_simavr_crash(firmware_path: Path, state: EmulationState) -> None:
@@ -302,7 +321,15 @@ def report_simavr_crash(firmware_path: Path, state: EmulationState) -> None:
         # __heap_start means the stack overwrote static data.
         stack_overflowed_into_bss=(min_sp < heap_start) if min_sp is not None and heap_start is not None else None,
     )
-    _report_stack_peak(firmware_path, lines, heap_start)
+    stack_report = _report_stack_peak(firmware_path, lines, heap_start)
+    if stack_report is not None:
+        metrics_dir = Path(os.environ.get("SIMAVR_METRICS_DIR", firmware_path.parent))
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        report_path = metrics_dir / f"{firmware_path.parent.name}_stack_watermark.json"
+        report_path.write_text(
+            json.dumps(stack_report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
 
 
 def _teardown_simavr(

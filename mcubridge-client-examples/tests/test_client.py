@@ -405,7 +405,6 @@ async def test_gateway_client_all_convenience_methods(monkeypatch: pytest.Monkey
             finished=True, exit_code=0
         ).SerializeToString(),
         "rpc.pb.ProcessService/Kill": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
-        "rpc.pb.FileSystemService/Write": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         "rpc.pb.FileSystemService/Remove": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         "rpc.pb.SpiService/Begin": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),
         "rpc.pb.SpiService/End": lambda _req: mcu_wire_pb2.Empty().SerializeToString(),

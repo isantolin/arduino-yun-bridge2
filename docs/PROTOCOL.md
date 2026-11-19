@@ -377,7 +377,7 @@ El estado de salud del enlace se expone en:
 | `status_interval` | Intervalo de emisión periódica de telemetría y snapshots. | `1.0` |
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
-| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `rpc.pb.FileSystemService/Write`). | `262144` |
+| `file_write_max_bytes` | Máximo por escritura de archivo (`FileTransferService/PushToLinux`, `FileSystemService/Upload` y UBUS `file_write`). | `262144` |
 | `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `2097152` |
 
 ## Flujo de inicio (resumen)
@@ -446,7 +446,8 @@ El enlace binario entre el microcontrolador (MCU) y el procesador Linux (MPU) se
   - `rpc.pb.ConsoleService/Write` (bidireccional; servicio del lado Linux, no un servicio `pw_rpc` del MCU)
   - `rpc.pb.DataStoreService/Put` (MCU → Linux)
   - `rpc.pb.MailboxService/Push` (bidireccional)
-  - `rpc.pb.FileSystemService/Write` (MCU → MPU, unary legado)
+  - `rpc.pb.FileSystemService/Remove` (MCU → MPU)
+  - `rpc.pb.FileSystemService/Upload` (MCU → MPU, inicia lectura `pw_transfer` sobre `FILE_UPLOAD_RESOURCE_ID`)
 
 ## 2. Transporte y Multiplexación de Canales HDLC (`pw_hdlc`)
 
@@ -754,9 +755,10 @@ Notas operativas:
 
 ### 5.6 Sistema de archivos (`rpc.pb.FileSystemService`)
 
-- **Transferencia de contenido**: upstream `pw_transfer` (`pw.transfer.Transfer.Read/Write`) es el único protocolo de transferencia de contenido. En Mega 2560 ya existe un handler de lectura/escritura para la EEPROM interna (4 KiB, recurso fijo `0x4D454741`); no implementa filesystem. El endpoint Linux para `file_system_root`, la migración de clientes MPU y las pruebas interoperables siguen pendientes; no existe todavía transferencia de archivos end-to-end.
-- **APIs locales MPU heredadas**: `rpc.pb.FileSystemService/Write` y `Remove` siguen temporalmente expuestas mientras se implementa y valida el endpoint Linux `pw_transfer`. No son el diseño final.
-- **APIs MCU heredadas**: `rpc.pb.FileSystemService/Write` y `Remove` siguen temporalmente en el protocolo Nanopb; no acceden al recurso EEPROM. Deben retirarse cuando se complete la migración de clientes y se determine si queda alguna operación administrativa real que conservar.
+- **Transferencia de contenido**: upstream `pw_transfer` (`pw.transfer.Transfer.Read/Write`) es el único protocolo de transferencia de contenido en AVR Mega 2560, SAMD21 MKR WiFi 1010 y ESP32-S3 Nano ESP32. En Mega 2560 existe un handler de lectura/escritura para la EEPROM interna (4.080 bytes útiles, recurso fijo `0x4D454741`, reservando los últimos 16 bytes para el epoch de ADR-0005); no implementa filesystem. La sincronización Cloud ↔ Linux opera vía `FileTransferService` (`PushToLinux` / `FetchFromLinux`).
+- **`rpc.pb.FileSystemService/Upload` (MCU → MPU)**: Payload `FileUpload { path, size }`. El MCU expone los bytes en `FILE_UPLOAD_RESOURCE_ID` (`0x55504C44`) vía `FileSystem.upload(path, data)`; el daemon valida ruta, `file_write_max_bytes` y `file_storage_quota_bytes`, lee el recurso con su cliente `pw_transfer` y completa la llamada con el `pw::Status` resultante. Requiere permiso `file_write`.
+- **`rpc.pb.FileSystemService/Remove` (MCU/Cloud → MPU)**: Payload `FileRemove { path }`. Elimina archivos bajo `file_system_root`. Requiere permiso `file_remove`.
+- **Retiro de `FileSystemService/Write` (ADR-0008)**: el RPC unario transicional `rpc.pb.FileSystemService/Write` y el mensaje `FileWrite` fueron retirados del esquema y firmware; las invocaciones entrantes hacia el método retirado se rechazan (`UNIMPLEMENTED`). La interfaz local OpenWrt UBUS `mcubridge.file_write` permanece disponible solo en el MPU para herramientas locales (`mcubridge-file-push`).
 
 ### 5.7 Gestión de procesos (`rpc.pb.ProcessService`)
 
@@ -985,7 +987,7 @@ El daemon registra el objeto `mcubridge` en el bus de sistema `ubusd` de OpenWrt
 | `mailbox_read` | `{}` | `{"status": "ok", "message": string}` o `{"status": "empty"}` | Lectura de mensajes pendientes desde el buzón del MCU. |
 | `datastore_set` | `{"key": string, "value": string}` | `{"status": "accepted", "key": string}` | Solicitud de actualización del datastore aceptada para ejecución asíncrona. |
 | `datastore_get` | `{"key": string}` | `{"status": "ok", "key": string, "value": string}` | Lectura de clave en el datastore transaccional LMDB. |
-| `file_write` | `{"path": string, "data": string}` | `{"status": "accepted", "path": string, "bytes_requested": int}` | Solicitud de escritura hacia almacenamiento MCU o tmpfs aceptada para ejecución asíncrona. |
+| `file_write` | `{"path": string, "data": string, "encoding": string}` | `{"status": "accepted", "path": string, "bytes_requested": int}` | Solicitud local de escritura en `file_system_root` del MPU (OpenWrt UBUS IPC, sin RPC hacia el MCU). |
 | `process_run` | `{"command": string}` | `{"status": "ok", "pid": int}` | Ejecución de subproceso gestionado por `psutil`. |
 | `process_kill` | `{"pid": int32}` | `{"status": "ok", "pid": int, "error": string}` | Terminación en cascada de subproceso vía `psutil`. |
 | `process_poll` | `{"pid": int32}` | `{"status": "ok", "exit_code": int, "finished": bool, "stdout": str, "stderr": str}` | Monitoreo del estado y salida de subprocesos. |

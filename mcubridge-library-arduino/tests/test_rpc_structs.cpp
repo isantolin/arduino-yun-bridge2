@@ -211,11 +211,10 @@ void test_all_wire_messages_roundtrip() {
   }
 
   {
-    rpc_pb_FileWrite p = rpc_pb_FileWrite_init_default;
-    strncpy(p.path, "/tmp/foo", sizeof(p.path) - 1);
-    p.data.size = 4;
-    memcpy(p.data.bytes, "1234", 4);
-    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileWrite_fields, p));
+    rpc_pb_FileUpload p = rpc_pb_FileUpload_init_default;
+    strncpy(p.path, "logs/foo.bin", sizeof(p.path) - 1);
+    p.size = 1024;
+    TEST_ASSERT_TRUE(roundtrip_verify(rpc_pb_FileUpload_fields, p));
     count++;
   }
 

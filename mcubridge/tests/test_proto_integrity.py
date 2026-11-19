@@ -199,9 +199,11 @@ def test_protobuf_descriptor_purged_elements() -> None:
     """SIL-2: Verify compiled descriptor does not contain any abandoned messages or fields."""
     all_descriptors = (cloud_gateway_pb2.DESCRIPTOR, mcu_wire_pb2.DESCRIPTOR, config_schema_pb2.DESCRIPTOR)
 
-    # 1. No DataFormats message
+    # 1. No DataFormats or retired FileWrite messages (ADR-0008)
     for fd in all_descriptors:
         assert "DataFormats" not in fd.message_types_by_name
+        assert "FileWrite" not in fd.message_types_by_name
+    assert "Write" not in mcu_wire_pb2.DESCRIPTOR.services_by_name["FileSystemService"].methods_by_name
 
     # 2. No data_formats file extension
     for fd in all_descriptors:
@@ -524,8 +526,9 @@ def test_proto_dispatch_handlers_ssot() -> None:
     import operator
     from mcubridge.services.runtime import BridgeService
 
-    # ADR-0007 adds the EepromService read/write and FileSystemService upload handlers.
-    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 21
+    # ADR-0007 adds EepromService read/write and FileSystemService upload; ADR-0008 retires FileSystemService/Write.
+    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 20
+    assert "rpc.pb.FileSystemService/Write" not in BridgeService.LOCAL_RPC_HANDLERS
     for name, handler_path in BridgeService.LOCAL_RPC_HANDLERS.items():
         assert isinstance(name, str)
         assert name in protocol.BY_NAME

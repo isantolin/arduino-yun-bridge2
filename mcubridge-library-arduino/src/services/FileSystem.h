@@ -17,10 +17,8 @@
 class FileSystemClass {
  public:
   FileSystemClass() = default;
-  static void write(etl::string_view path, pw::span<const uint8_t> data);
   static void remove(etl::string_view path);
 
-  static void _onWrite(const rpc_pb_FileWrite& msg);
   static void _onRemove(const rpc_pb_FileRemove& msg);
 
   // ADR-0007 (E6): store `data` at `path` under the MPU file_system_root via

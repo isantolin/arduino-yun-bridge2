@@ -196,11 +196,6 @@ class FileSystemRpcService final
     : public rpc::pb::pw_rpc::nanopb::FileSystemService::Service<
           FileSystemRpcService> {
  public:
-  pw::Status Write(const rpc_pb_FileWrite& request, rpc_pb_Empty&) {
-    FileSystem._onWrite(request);
-    return pw::OkStatus();
-  }
-
   pw::Status Remove(const rpc_pb_FileRemove& request, rpc_pb_Empty&) {
     FileSystem._onRemove(request);
     return pw::OkStatus();

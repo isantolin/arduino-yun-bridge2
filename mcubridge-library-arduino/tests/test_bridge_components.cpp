@@ -270,7 +270,11 @@ void test_component_extended_operations() {
   Mailbox.signalProcessed(123);
 
   // FileSystem
-  FileSystem.write("test.txt", pw::span<const uint8_t>(mbox_data, 3));
+  TEST_ASSERT_TRUE(
+      FileSystem.upload("test.txt", pw::span<const uint8_t>(mbox_data, 3)));
+  TEST_ASSERT_TRUE(FileSystem.uploadPending());
+  FileSystem._resetUpload();
+  TEST_ASSERT_FALSE(FileSystem.uploadPending());
   FileSystem.remove("test.txt");
 
   // Process
@@ -548,12 +552,13 @@ void test_filesystem_edges() {
   reset_bridge_comp(stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  FileSystem.write(etl::string_view(), pw::span<const uint8_t>());
+  TEST_ASSERT_FALSE(
+      FileSystem.upload(etl::string_view(), pw::span<const uint8_t>()));
   FileSystem.remove(etl::string_view());
 
   ba.setTxEnabled(false);
-  rpc_pb_FileWrite write_request = {};
-  FileSystem._onWrite(write_request);
+  const uint8_t payload[] = {0x01U, 0x02U};
+  TEST_ASSERT_FALSE(FileSystem.upload("offline.bin", payload));
   rpc_pb_FileRemove remove_request = {};
   FileSystem._onRemove(remove_request);
   ba.setTxEnabled(true);

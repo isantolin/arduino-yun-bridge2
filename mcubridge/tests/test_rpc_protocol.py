@@ -13,7 +13,7 @@ from tests.conftest import (
     st_analog_write,
     st_datastore_put,
     st_digital_write,
-    st_file_write,
+    st_file_upload,
     st_mailbox_push,
     st_pin_mode,
     st_spi_transfer,
@@ -120,7 +120,7 @@ def test_hdlc_detects_corrupted_fcs(command_id: int, sequence_id: int, payload: 
         st_analog_write(),
         st_datastore_put(),
         st_mailbox_push(),
-        st_file_write(),
+        st_file_upload(),
         st_spi_transfer(),
     ),
 )

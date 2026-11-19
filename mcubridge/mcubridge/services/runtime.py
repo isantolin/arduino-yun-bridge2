@@ -132,7 +132,6 @@ class BridgeService:
         "rpc.pb.SystemService/LinkSync": "handshake.handle_link_sync_resp",
         "rpc.pb.SystemService/Xoff": "mcu_xoff",
         "rpc.pb.SystemService/Xon": "mcu_xon",
-        "rpc.pb.FileSystemService/Write": "file_write",
         "rpc.pb.FileSystemService/Remove": "file_remove",
         "rpc.pb.FileSystemService/Upload": "file_upload",
         "rpc.pb.FileTransferService/PushToLinux": "file_transfer_push_to_linux",
@@ -665,17 +664,10 @@ class BridgeService:
 
     # --- Filesystem Subsystem ---
 
-    async def file_write(
-        self, path_or_req: str | mcu_wire_pb2.FileWrite | int, data: bytes | mcu_wire_pb2.FileWrite = b""
-    ) -> cloud_gateway_pb2.GenericResponse:
-        from_mcu = isinstance(data, mcu_wire_pb2.FileWrite)
-        src = data if from_mcu else path_or_req
-        path = src.path if isinstance(src, mcu_wire_pb2.FileWrite) else str(path_or_req)
-        payload_data = src.data if isinstance(src, mcu_wire_pb2.FileWrite) else cast(bytes, data)
+    async def file_write(self, path: str, data: bytes) -> cloud_gateway_pb2.GenericResponse:
+        """Write content directly to the local MPU file_system_root (OpenWrt UBUS IPC)."""
         safe_path = self._get_safe_path(path)
-        ok = bool(safe_path and await self.write_with_quota(safe_path, payload_data))
-        if from_mcu:
-            await self.send_mcu_status(Status.OK if ok else Status.PERMISSION_DENIED, cast(int, path_or_req), src)
+        ok = bool(safe_path and await self.write_with_quota(safe_path, data))
         return cloud_gateway_pb2.GenericResponse(status="ok" if ok else "error")
 
     async def file_upload(self, seq_id: int, p: mcu_wire_pb2.FileUpload) -> None:

@@ -140,25 +140,27 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
+      - name: Test firmware resource report parser
+        run: python -m unittest tools.ci.tests.test_firmware_resource_report -v
       - name: Compile BridgeControl for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino \
             arduino:avr:mega \
-            arduino-avr-mega/BridgeControl
+            arduino-logs/arduino-avr-mega/BridgeControl
       - name: Compile cooperative pw_transfer API for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \
             arduino:avr:mega \
-            arduino-avr-mega/pw_transfer_compile
+            arduino-logs/arduino-avr-mega/pw_transfer_compile
       - name: Profile Memory Usage
         if: always()
         run: |
           mkdir -p arduino-logs
           tox -e arduino-profile -- arduino-build --output arduino-logs/symbol_profile.md
-          tox -e arduino-profile -- arduino-avr-mega/BridgeControl --output arduino-logs/mega2560_bridge_profile.md
-          tox -e arduino-profile -- arduino-avr-mega/pw_transfer_compile --output arduino-logs/mega2560_pw_transfer_profile.md
+          tox -e arduino-profile -- arduino-logs/arduino-avr-mega/BridgeControl --output arduino-logs/mega2560_bridge_profile.md
+          tox -e arduino-profile -- arduino-logs/arduino-avr-mega/pw_transfer_compile --output arduino-logs/mega2560_pw_transfer_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7

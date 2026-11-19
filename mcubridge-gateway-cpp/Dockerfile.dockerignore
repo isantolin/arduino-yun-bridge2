@@ -1,0 +1,19 @@
+# BuildKit Dockerfile-scoped ignore file for mcubridge-gateway-cpp/Dockerfile.
+# Keeps the build context minimal from repository root without affecting
+# unrelated Dockerfiles (e.g. build-apk.yml's Dockerfile.apk-feed).
+*
+!mcubridge-gateway-cpp/
+!mcubridge-gateway-cpp/CMakeLists.txt
+!mcubridge-gateway-cpp/cmake/
+!mcubridge-gateway-cpp/cmake/**
+!mcubridge-gateway-cpp/src/
+!mcubridge-gateway-cpp/src/**
+!mcubridge-gateway-cpp/deploy/
+!mcubridge-gateway-cpp/deploy/**
+!tools/protocol/
+!tools/protocol/**
+!third_party/pigweed/
+!third_party/pigweed/**
+**/__pycache__/
+**/*.pyc
+**/*.pyo

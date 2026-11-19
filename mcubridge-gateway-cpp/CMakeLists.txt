@@ -95,3 +95,13 @@ if(ENABLE_COVERAGE)
   target_compile_options(mcubridge-gateway-cpp PRIVATE --coverage -O0 -g)
   target_link_options(mcubridge-gateway-cpp PRIVATE --coverage)
 endif()
+
+include(GNUInstallDirs)
+install(TARGETS mcubridge-gateway-cpp
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(FILES
+  deploy/mcubridge-gateway.service
+  deploy/mcubridge-gateway.env.example
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/mcubridge-gateway"
+)

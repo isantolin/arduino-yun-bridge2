@@ -14,7 +14,6 @@
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include "services/EepromTransfer.h"
 #endif
-#endif
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
@@ -279,16 +278,13 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
-      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-      ,
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _transfer_thread(pw::ByteSpan(_transfer_chunk_storage.data(),
                                     _transfer_chunk_storage.size()),
                        pw::ByteSpan(_transfer_encode_storage.data(),
                                     _transfer_encode_storage.size())),
       _transfer_service(_transfer_thread, 256),
-      _transfer_client(_rpc_client, 1, _transfer_thread, 256)
-#endif
-{
+      _transfer_client(_rpc_client, 1, _transfer_thread, 256) {
 #if defined(ARDUINO_ARCH_AVR)
   pw_assert_avr_SetPanicHook(BridgePanicHook);
 #endif
@@ -318,7 +314,6 @@ BridgeClass::~BridgeClass() {
 #endif
                                 ,
                                 _transfer_service
-#endif
   );
 }
 
@@ -373,7 +368,6 @@ void BridgeClass::_initializeRuntime() {
 #endif
                               ,
                               _transfer_service
-#endif
   );
   _rpc_services_registered = true;
 }
@@ -426,7 +420,6 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     }
   }
 #endif
-#endif
 
   _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
   if (!_state_flags.test(FLAG_POST_PASSED)) {
@@ -456,7 +449,6 @@ void BridgeClass::process() {
   if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);
   }
-#endif
   _timerTask();
   _subscriptionTask();
 #if BRIDGE_ENABLE_CONSOLE

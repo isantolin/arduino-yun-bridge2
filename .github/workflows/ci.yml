@@ -658,7 +658,7 @@ jobs:
     needs: [unified-tests, gateway-cpp, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
     # Publish the consolidated report on every successful CI event,
     # including pull requests, so the tested head exposes its own measurements.
-    if: ${{ always() && !cancelled() }}
+    if: ${{ success() && !cancelled() }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7
@@ -815,11 +815,13 @@ jobs:
                       output.write("|---|---:|---:|---:|\n")
                       for path in stack_reports:
                           report = json.loads(path.read_text(encoding="utf-8"))
+                          budget = report.get("stack_budget_bytes")
+                          margin = report.get("stack_margin_bytes")
                           output.write(
                               f"| {report['target']} "
                               f"| {report['stack_used_bytes']} B "
-                              f"| {report['stack_budget_bytes'] if report['stack_budget_bytes'] is not None else 'unknown'} "
-                              f"| {report['stack_margin_bytes'] if report['stack_margin_bytes'] is not None else 'unknown'} B |\n"
+                              f"| {f'{budget} B' if budget is not None else 'unknown'} "
+                              f"| {f'{margin} B' if margin is not None else 'unknown'} |\n"
                           )
                   else:
                       output.write(

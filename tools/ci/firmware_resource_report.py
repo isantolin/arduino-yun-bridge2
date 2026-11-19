@@ -83,8 +83,8 @@ def measure(
         **parse_build_summary(compile_log),
         "runtime_stack_peak_bytes": None,
         "runtime_stack_measurement": (
-            "not measured by this report; use the target runtime/emulator "
-            "stack watermark"
+            "not measured by this static build report; target-specific "
+            "runtime stack-watermark instrumentation is required"
         ),
     }
 

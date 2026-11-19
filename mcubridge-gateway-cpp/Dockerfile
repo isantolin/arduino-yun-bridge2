@@ -7,17 +7,31 @@
 
 FROM debian:bookworm-slim AS builder
 
+ARG PROTOC_VERSION=28.3
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
+      ca-certificates \
       cmake \
+      curl \
       libssl-dev \
       ninja-build \
-      protobuf-compiler \
       python3 \
       python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+      unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && arch="$(dpkg --print-architecture)" \
+    && case "${arch}" in \
+         amd64) protoc_arch="x86_64" ;; \
+         arm64) protoc_arch="aarch_64" ;; \
+         *) echo "Unsupported architecture: ${arch}" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL -o /tmp/protoc.zip \
+      "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${protoc_arch}.zip" \
+    && unzip -o /tmp/protoc.zip -d /usr/local bin/protoc 'include/*' \
+    && rm -f /tmp/protoc.zip \
+    && protoc --version
 
 # Match repository-pinned Pigweed and Protobuf codegen versions (pyproject.toml).
 RUN python3 -m venv /opt/venv \

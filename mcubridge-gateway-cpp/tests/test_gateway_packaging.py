@@ -21,6 +21,7 @@ DOCKERIGNORE = GATEWAY_DIR / "Dockerfile.dockerignore"
 SYSTEMD_UNIT = GATEWAY_DIR / "deploy" / "mcubridge-gateway.service"
 ENV_EXAMPLE = GATEWAY_DIR / "deploy" / "mcubridge-gateway.env.example"
 BUILD_APK_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "build-apk.yml"
+SETUP_PROTOC_ACTION = REPO_ROOT / ".github" / "actions" / "setup-protoc" / "action.yml"
 
 BINARY = Path(
     os.environ.get(
@@ -71,6 +72,9 @@ def test_dockerfile_is_hardened_multistage_and_matches_cli() -> None:
 
     assert re.search(r"^FROM\s+\S+\s+AS\s+builder$", content, re.MULTILINE)
     assert re.search(r"^FROM\s+\S+\s+AS\s+runtime$", content, re.MULTILINE)
+    protoc_match = re.search(r"default:\s*'([^']+)'", SETUP_PROTOC_ACTION.read_text(encoding="utf-8"))
+    assert protoc_match is not None, "Could not locate default protoc version in setup-protoc action"
+    assert f"ARG PROTOC_VERSION={protoc_match.group(1)}" in content
     assert f'"pigweed=={pinned["pigweed"]}"' in content
     assert f'"protobuf=={pinned["protobuf"]}"' in content
     assert "cmake --install" in content

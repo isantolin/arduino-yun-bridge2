@@ -10,7 +10,14 @@ implementation. The bridge uses the generated Nanopb service classes and
 Python's `pw_rpc.descriptors.Services` rather than a parallel service/method
 registry.
 
-`pw_transfer` is also upstream. The AVR-specific cooperative polling change is
+`pw_transfer` is also upstream. The bridge currently pins `third_party/avr_pigweed_port` to
+`026c5f6b4350e75641bc125d2098e53c7e2d317f`. The support repository's current
+`main` is `ee9708e34606c0775a433aa003e5006b50c456b0`, 17 commits ahead; those
+commits include a canonical idempotent Pigweed patch workflow and richer
+simavr stack-low-water context. The submodule gitlink still needs to be advanced
+and validated in the bridge before those newer diagnostics are available here.
+
+The AVR-specific cooperative polling change is
 a platform adaptation of Pigweed's `TransferThread`, not a second transfer
 protocol or dispatcher: the AVR runtime cannot host Pigweed's blocking thread
 loop, so the pinned upstream implementation exposes a bounded cooperative

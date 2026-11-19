@@ -80,7 +80,7 @@ As formalized in [ADR-0004](decisions/0004-linux-mpu-storage-ssot.md), the OpenW
 
 The MCU `FileSystemService.Read` RPC and the legacy `CloudBridge` / `LocalBridge` gRPC contracts have been removed. The current file-transfer boundaries are:
 
-- Cloud ↔ Linux staging uses the C++ Gateway's `FileTransferService` (`PushToLinux` / `FetchFromLinux`) and upstream `pw_transfer`.
+- Cloud ↔ Linux staging is orchestrated by the daemon's `FileTransferService` RPC (`PushToLinux` / `FetchFromLinux`), which transfers data through the C++ Gateway's upstream `pw_transfer::TransferService` resources.
 - MCU → Linux uploads use E6: `FileSystemService.Upload` announces the transfer, the daemon reads the MCU's `FILE_UPLOAD_RESOURCE_ID` through its upstream `pw_transfer` client, and the MPU stores the validated file under `file_system_root`.
 - AVR EEPROM access uses the fixed `0x4D454741` resource and the E5 cloud staging flow.
 - Bounded MCU `FileSystemService.Write` and `Remove` unary operations remain for small filesystem operations; they are not alternate bulk-transfer protocols.

@@ -504,7 +504,7 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Google Pigweed**: `pw::rpc::Server`, `pw::rpc::Client`, `pw::rpc::Channel` y `protoc_gen_mcu_rpc.py` (`rpc::pb::pw_rpc::nanopb::<Service>::Service` para 6 servicios servidor registrados y `Client` para `ProcessService` y `DataStoreService`). | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`) para los 8 contratos Protobuf. |
 | **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Google Pigweed**: fachada `pw::log::SetLogSink` (`pw_log` + `pw_tokenizer`). | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
 | **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono`). | Reloj monótono `time.monotonic()`. |
-| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / direct `*_pb2.py` modules, orquestado vía `PW_SERVICES`). |
+| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.3** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / direct `*_pb2.py` modules, orquestado vía `PW_SERVICES`). |
 
 ## 4. Códigos de estado (`Status` / `pw_status`)
 

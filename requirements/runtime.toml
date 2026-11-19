@@ -137,9 +137,9 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 [[dependency]]
 name = "nanopb"
 openwrt = "nanopb"
-pip = "nanopb==0.4.9.1"
+pip = "nanopb==0.4.9.3"
 check_latest = false
-rationale = "Nanopb generator pinned for Pigweed 0.0.24 / Protobuf 5.28.3 compatibility; paired with nanopb_core 0.4.9.2 [BUILD-ONLY]"
+rationale = "Nanopb generator pinned for Pigweed 0.0.24 / Protobuf 5.28.3 compatibility; paired with nanopb_core 0.4.9.3 [BUILD-ONLY]"
 
 [[dependency]]
 name = "lmdb"
@@ -173,7 +173,7 @@ rationale = "Host-based deterministic C/C++ unit testing harness for MCU compone
 name = "nanopb_core"
 github = "nanopb/nanopb"
 ref_type = "version"
-version = "0.4.9.2"
+version = "0.4.9.3"
 check_latest = false
 check_file = "pb.h"
 files = [

@@ -36,7 +36,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 - **PigweedAVR (`third_party/avr_pigweed_port`)**: Provides Google Pigweed modules adapted for bare-metal AVR/ARM/ESP32 (`pw_hdlc` framing with IEEE 802.3 CRC-32 FCS, upstream `pw_rpc` `pw::rpc::Server` and `pw::rpc::Client` and `pw::rpc::Channel` with `pw_rpc/nanopb` codegen, `pw_tokenizer` compile-time FNV-1a hashing, `pw_log` tokenized diagnostics via `pw::log::SetLogSink`, and `pw_chrono` atomic millisecond timekeeping via `pw::chrono::SystemClock`).
 - **Cryptographic providers**: PSA supplies SHA-256/HMAC-SHA256 and Mbed TLS platform zeroization. HKDF-SHA256 and ChaCha20-Poly1305 use Mbed TLS 4 on AVR/SAMD and wolfCrypt 5.8.4 on ESP32.
-- **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
+- **Nanopb (0.4.9.3)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` (`rpc::decode_pb`) and `pb_encode` (`rpc::encode_pb`) without redundant `memset` sweeps on statically allocated memory.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`, `span`) with strict Zero-STL (`-DETL_NO_STL`) compliance.
 
 ## SIL-2 & MIL-SPEC Design Principles
@@ -52,7 +52,7 @@ This library describes safety- and security-oriented design goals; it does not c
 - **Fail-Secure:** Initialization aborts and the system enters a safe state (`FAULT`) if cryptographic or SRAM March integrity checks fail.
 - **Handshake and Session Key Separation:** Uses distinct HKDF info strings for host and MCU HMAC proofs, then derives independent directional ChaCha20-Poly1305 session keys using the handshake nonce and the `session-key` context.
 - **Atomic Timekeeping (`pw::chrono::SystemClock`):** Uses `pw::chrono::SystemClock::now()` (backed by `pw_chrono` with 1 ms tick resolution) for deterministic timeout and interval tracking.
-- **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 (`rpc::decode_pb`) to eliminate initialization overhead on static memory structures.
+- **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.3 (`rpc::decode_pb`) to eliminate initialization overhead on static memory structures.
 - **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, SPI, WiFi, and Bluetooth.
 
 ## Best Practices

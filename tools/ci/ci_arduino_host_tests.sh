@@ -162,6 +162,8 @@ SOURCES=(
     "$PW_ROOT/pw_tokenizer/encode_args.cc"
     "$PW_ROOT/pw_tokenizer/tokenize.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
+    "$PW_ROOT/pw_chrono/epoch.cc"
+    "$PW_ROOT/pw_chrono_stl/system_clock.cc"
 )
 
 INC_FLAGS=(
@@ -182,6 +184,9 @@ INC_FLAGS=(
     -I"$PW_ROOT/pw_bytes/public"
     -I"$PW_ROOT/pw_containers/public"
     -I"$PW_ROOT/pw_stream/public"
+    -I"$PW_ROOT/pw_chrono/public"
+    -I"$PW_ROOT/pw_chrono_stl/public"
+    -I"$PW_ROOT/pw_chrono_stl/clock_public_overrides"
     -I"$PW_ROOT/pw_checksum/public"
     -I"$PW_ROOT/pw_hdlc/public"
     -I"$PW_ROOT/pw_rpc/public"

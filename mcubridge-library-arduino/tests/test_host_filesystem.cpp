@@ -209,7 +209,7 @@ void send_transfer_read_chunk(TestAccessor& ba, uint32_t resource_id,
   if (type != pw::transfer::internal::Chunk::Type::kStart) {
     chunk.set_offset(4U);
   }
-  etl::array<std::byte, 64> encoded_buf{};
+  etl::array<pw::ByteSpan::element_type, 64> encoded_buf{};
   auto encoded =
       chunk.Encode(pw::ByteSpan(encoded_buf.data(), encoded_buf.size()));
   TEST_ASSERT_TRUE(encoded.ok());

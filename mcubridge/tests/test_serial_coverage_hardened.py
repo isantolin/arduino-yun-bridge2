@@ -253,16 +253,31 @@ async def test_serial_transport_detokenizer_invalid_file(tmp_path: Path, monkeyp
 
 @pytest.mark.asyncio
 async def test_serial_transport_feed_hdlc_log_frame(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pw_tokenizer.tokens import pw_tokenizer_65599_hash
+
+    fmt = "Phase2 log value=%d"
+    token = pw_tokenizer_65599_hash(fmt)
     csv_file = tmp_path / "tokens.csv"
-    csv_file.write_text('12345678,,"MCU System Ready"\n', encoding="utf-8")
+    csv_file.write_text(f'{token:08x},,"{fmt}"\n', encoding="utf-8")
     monkeypatch.setenv("MCUBRIDGE_TOKEN_DATABASE", str(csv_file))
 
     state = RuntimeState()
     transport = SerialTransport(RuntimeConfig(), state, None)
-    log_payload = b"\x78\x56\x34\x12"
+    # 4-byte little-endian token + ZigZag varint for int 42 (84 = 0x54)
+    log_payload = token.to_bytes(4, "little") + b"\x54"
     log_frame = ui_frame(protocol.HDLC_ADDRESS_LOG, log_payload)
 
     await transport.feed_data(log_frame)
     assert transport.detokenizer is not None
     assert transport.detokenizer.database is not None
+    assert transport.decode_log_payload(log_payload) == "Phase2 log value=42"
+
+    # Also verify plain ASCII runtime diagnostic frames (such as MCU_STACK_WATERMARK)
+    ascii_payload = b"MCU_STACK_WATERMARK arch=SAMD21 used=1824 budget=26112"
+    ascii_frame = ui_frame(protocol.HDLC_ADDRESS_LOG, ascii_payload)
+    await transport.feed_data(ascii_frame)
+    assert transport.decode_log_payload(ascii_payload) == ascii_payload.decode("utf-8")
+    # And non-UTF8 unknown binary payload fallback
+    binary_frame = ui_frame(protocol.HDLC_ADDRESS_LOG, b"\xff\xfe\xfd\xfc")
+    await transport.feed_data(binary_frame)
     state.cleanup()

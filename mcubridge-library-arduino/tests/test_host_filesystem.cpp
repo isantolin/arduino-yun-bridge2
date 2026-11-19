@@ -387,6 +387,8 @@ void test_filesystem_upload_error_reset_and_unimplemented_server_rpc() {
   TEST_ASSERT_TRUE(FileSystem.uploadPending());
   FileSystem._resetUpload();
   TEST_ASSERT_FALSE(FileSystem.uploadPending());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Aborted().code()),
+                        static_cast<int>(FileSystem.lastUploadStatus().code()));
 
   // MCU server rejects inbound FileSystemService.Upload with UNIMPLEMENTED.
   stream.tx_buf.clear();

@@ -126,6 +126,7 @@ void loop() {
 
   static InitStep s_initStep = InitStep::INIT_DATASTORE;
   static unsigned long s_lastInitMs = 0;
+  static uint8_t s_uploadRetries = 0;
 
   if (s_initStep == InitStep::INIT_DATASTORE) {
     const char initialVal[] = "ONLINE";
@@ -154,11 +155,18 @@ void loop() {
              !FileSystem.uploadPending()) {
     if (FileSystem.lastUploadStatus().ok()) {
       Console.println(F("[FILE_UPLOAD] OK"));
+      s_initStep = InitStep::INIT_DONE;
     } else {
       Console.print(F("[FILE_UPLOAD] FAILED status="));
       Console.println(static_cast<int>(FileSystem.lastUploadStatus().code()));
+      if (s_uploadRetries < 3U) {
+        ++s_uploadRetries;
+        s_lastInitMs = millis();
+        s_initStep = InitStep::INIT_FILESYSTEM;
+      } else {
+        s_initStep = InitStep::INIT_DONE;
+      }
     }
-    s_initStep = InitStep::INIT_DONE;
   }
 
   static unsigned long lastConsoleProcess = 0;

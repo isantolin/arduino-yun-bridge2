@@ -101,7 +101,9 @@ PW_ALL_SRCS=(
 for source in "${PW_ALL_SRCS[@]}"; do
     object_name="${source#"$ROOT_DIR/"}"
     object_name="${object_name//\//_}"
-    object="${PW_OBJ_DIR}/${object_name%.cc}.o"
+    object_name="${object_name%.cc}"
+    object_name="${object_name%.cpp}"
+    object="${PW_OBJ_DIR}/${object_name}.o"
     g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter \
         -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
         "${PW_COOPERATIVE_DEFINES[@]}" \

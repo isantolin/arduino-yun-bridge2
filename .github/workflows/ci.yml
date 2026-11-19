@@ -790,10 +790,25 @@ jobs:
                           f"| {report['static_ram_used_bytes']} B "
                           f"| {report['static_ram_remaining_bytes']} B |\n"
                       )
+                  stack_reports = sorted(Path("simavr-logs").glob("*_stack_watermark.json"))
+                  output.write("\n### Runtime AVR stack watermark\n\n")
+                  if stack_reports:
+                      output.write("| Target | Stack used | Stack budget | Remaining margin |\n")
+                      output.write("|---|---:|---:|---:|\n")
+                      for path in stack_reports:
+                          report = json.loads(path.read_text(encoding="utf-8"))
+                          output.write(
+                              f"| {report['target']} "
+                              f"| {report['stack_used_bytes']} B "
+                              f"| {report['stack_budget_bytes'] if report['stack_budget_bytes'] is not None else 'unknown'} "
+                              f"| {report['stack_margin_bytes'] if report['stack_margin_bytes'] is not None else 'unknown'} B |\n"
+                          )
+                  else:
+                      output.write(
+                          "No simavr stack watermark report was produced for this run.\n"
+                      )
                   output.write(
-                      "\nRuntime stack peak is not measured here: AVR simavr watermark "
-                      "context requires syncing the pinned port revision; SAMD21/ESP32-S3 "
-                      "need target-specific runtime instrumentation.\n"
+                      "\nSAMD21 and ESP32-S3 runtime stack high-water instrumentation remains pending.\n"
                   )
           PY
       - name: Generate Memory & Hardware Emulation Summary

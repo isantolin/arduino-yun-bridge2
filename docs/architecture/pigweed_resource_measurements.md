@@ -17,13 +17,13 @@ idempotent Pigweed patch workflow and simavr stack-low-water context. This PR
 does not add further `pw_emu` integration; it only consumes the existing
 stack instrumentation for resource measurements.
 
-The AVR-specific cooperative polling change is
+The cooperative polling adaptation is
 a platform adaptation of Pigweed's `TransferThread`, not a second transfer
-protocol or dispatcher: the AVR runtime cannot host Pigweed's blocking thread
-loop, so the pinned upstream implementation exposes a bounded cooperative
-poll operation. The bridge owns one upstream `Thread<1, 1>` and uses its client
-and server roles sequentially. This single-role constraint is specific to the
-AVR target.
+protocol or dispatcher: the bare-metal Arduino loop cannot host Pigweed's
+blocking thread loop, so the pinned upstream implementation exposes a bounded
+cooperative poll operation (`_transfer_thread.Poll(2)`). The bridge owns one
+upstream `Thread<1, 1>` and uses its client and server roles sequentially
+across AVR Mega 2560, SAMD21 MKR WiFi 1010, and ESP32-S3 Nano ESP32.
 
 Application-specific code remains necessary at real system boundaries:
 
@@ -54,11 +54,23 @@ dedicated upstream `pw_transfer` API probe.
 
 The static `resource_report.json` intentionally leaves
 `runtime_stack_peak_bytes` null because it is generated before execution.
-The simavr runner writes
-`simavr-logs/<target>_stack_watermark.json` after successful and failed runs,
-using the low-water and peak-context records emitted by the pinned AVR port.
-SAMD21 and ESP32-S3 still need target-specific runtime watermarks before a
-cross-architecture stack comparison can be claimed.
+Runtime stack watermarks are measured during actual emulator execution across
+all three architectures:
+
+- **AVR Mega 2560 (`simavr`):** `simavr_runner.py` writes
+  `simavr-logs/arduino-avr-mega_stack_watermark.json` using the cycle-accurate
+  low-water SP and peak-context records emitted by `simavr_pty_runner`.
+- **SAMD21 MKR WiFi 1010 (`Renode`):** `bridge::hal::initStackCanary()` paints
+  the free SRAM region between `__bss_end__` and the initial stack pointer with
+  `0xA5` at startup, and `bridge::hal::getStackWatermark()` scans the untouched
+  prefix against `__StackTop - __bss_end__`. `BridgeClass` emits changes over
+  `HDLC_ADDRESS_LOG`, and `renode_runner.py` writes
+  `renode-logs/arduino-samd-mkrwifi1010_stack_watermark.json`.
+- **ESP32-S3 Nano ESP32 (`QEMU`):** `bridge::hal::getStackWatermark()` queries
+  FreeRTOS `uxTaskGetStackHighWaterMark(nullptr)` on the Arduino `loopTask`
+  against `getArduinoLoopTaskStackSize()`. `BridgeClass` emits changes over
+  `HDLC_ADDRESS_LOG`, and `qemu_runner.py` writes
+  `qemu-logs/esp32-esp32-nano_nora_stack_watermark.json`.
 
 ## Interpreting the numbers
 

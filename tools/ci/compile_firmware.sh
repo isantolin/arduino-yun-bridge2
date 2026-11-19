@@ -36,40 +36,6 @@ fi
 USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"
 mkdir -p "$USER_LIB_DIR"
 
-# The AVR library exporter packages generated upstream pw_transfer PWPB and
-# raw-RPC bindings. Generate them from the pinned port before installing the
-# Arduino library; host/SAMD/ESP32 builds do not need this AVR-only probe.
-if [[ "$FQBN" == "arduino:avr:mega" ]]; then
-    AVR_PORT_DIR="${ROOT_DIR}/third_party/avr_pigweed_port"
-    TRANSFER_BUILD_DIR="${AVR_PORT_DIR}/build-transfer-1284p"
-    if ! command -v avr-g++ >/dev/null 2>&1; then
-        echo "ERROR: avr-g++ is required to generate the pinned pw_transfer bindings." >&2
-        exit 1
-    fi
-    if ! command -v cmake >/dev/null 2>&1; then
-        echo "ERROR: CMake 3.20+ is required to generate the pinned pw_transfer bindings." >&2
-        exit 1
-    fi
-    CMAKE_GENERATOR_ARGS=()
-    if command -v ninja >/dev/null 2>&1; then
-        CMAKE_GENERATOR_ARGS=(-G Ninja)
-    fi
-    echo "[compile_firmware] Generating upstream pw_transfer AVR bindings..."
-    cmake -S "$AVR_PORT_DIR" -B "$TRANSFER_BUILD_DIR" "${CMAKE_GENERATOR_ARGS[@]}" \
-        -DCMAKE_TOOLCHAIN_FILE="$AVR_PORT_DIR/avr-toolchain.cmake" \
-        -DAVR_MCU=atmega1284p \
-        -DAVR_F_CPU=16000000UL \
-        -DAVR_CRC32_IMPL=PW_CHECKSUM_CRC32_4BITS
-    cmake --build "$TRANSFER_BUILD_DIR" --target pw_transfer_upstream_probe.elf
-    PWPB_HEADER="$(find "$TRANSFER_BUILD_DIR" -path '*/pwpb/pw_transfer/transfer.pwpb.h' -print -quit)"
-    RAW_RPC_HEADER="$(find "$TRANSFER_BUILD_DIR" -path '*/raw_rpc/pw_transfer/transfer.raw_rpc.pb.h' -print -quit)"
-    if [[ -z "$PWPB_HEADER" || -z "$RAW_RPC_HEADER" ]]; then
-        echo "ERROR: upstream pw_transfer PWPB/raw-RPC headers were not generated." >&2
-        find "$TRANSFER_BUILD_DIR" -name 'transfer*.h' -print >&2
-        exit 1
-    fi
-fi
-
 echo "[compile_firmware] Generating protocol bindings..."
 python3 "${ROOT_DIR}/tools/protocol/generate.py" \
     --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \

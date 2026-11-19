@@ -8,7 +8,6 @@
 
 #ifndef ETL_FORCE_STD_INITIALIZER_LIST
 #define ETL_FORCE_STD_INITIALIZER_LIST
-#endif
 
 #include <Arduino.h>
 #include <stddef.h>
@@ -16,20 +15,15 @@
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
-#endif
 
 #ifdef min
 #undef min
-#endif
 #ifdef max
 #undef max
-#endif
 #ifdef abs
 #undef abs
-#endif
 #ifdef round
 #undef round
-#endif
 
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
@@ -48,7 +42,6 @@
 #include <pw_stream/stream.h>
 #include <pw_tokenizer/hash.h>
 #include <pw_varint/varint.h>
-#endif
 #include <wolfssl.h>
 
 #include "hal/arduino_stream.h"
@@ -61,7 +54,6 @@
 #pragma pop_macro("ARDUINO_BOARD")
 #else
 #include <Embedded_Template_Library.h>
-#endif
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
@@ -90,12 +82,10 @@
 #include "protocol/mcu_wire.rpc.pb.h"
 #include "protocol/rpc_protocol.h"
 
-#if BRIDGE_ENABLE_PW_TRANSFER
 #include <pw_transfer/client.h>
 #include <pw_transfer/handler.h>
 #include <pw_transfer/transfer.h>
 #include <pw_transfer/transfer_thread.h>
-#endif
 
 namespace bridge {
 
@@ -256,13 +246,11 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
-#if BRIDGE_ENABLE_PW_TRANSFER
   // Upstream pw_transfer endpoints share one Thread<1, 1>.
   // On AVR, the cooperative role arbiter permits client/server transfers
   // sequentially.
   pw::transfer::Client& transferClient() { return _transfer_client; }
   pw::transfer::TransferService& transferService() { return _transfer_service; }
-#endif
 
   void _onBaudrateChange();
   void _onHandshakeTimeout();
@@ -272,7 +260,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   static void _handlePinWrite(const MsgType& m) {
 #if defined(ARDUINO_ARCH_ESP32)
     if (!digitalPinIsValid(m.pin)) return;
-#endif
     if constexpr (IsAnalog) {
       analogWrite(m.pin,
                   static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
@@ -317,7 +304,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
-#if BRIDGE_ENABLE_PW_TRANSFER
   static constexpr size_t kTransferChunkBufferSize = 128;
   // The encode buffer holds the outgoing RPC packet and must be larger than
   // the chunk staging buffer. Use the complete configured receive-frame size.
@@ -332,13 +318,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::transfer::Thread<1, 1> _transfer_thread;
   pw::transfer::TransferService _transfer_service;
   pw::transfer::Client _transfer_client;
-#endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
-#if BRIDGE_ENABLE_PW_TRANSFER
   bool _eeprom_transfer_registered{false};
   bool _upload_transfer_registered{false};
-#endif
   bool _rpc_plaintext_response{false};
 
   StatusHandler _status_handler;
@@ -389,6 +372,5 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
 #ifndef BRIDGE_NO_GLOBAL_EXTERN
 extern BridgeClass Bridge;
-#endif
 
 #endif  // BRIDGE_H

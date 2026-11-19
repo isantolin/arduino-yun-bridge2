@@ -4,6 +4,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PORT_ROOT="${ROOT_DIR}/third_party/avr_pigweed_port"
+BRIDGE_SOURCE_ROOT="${ROOT_DIR}/mcubridge-library-arduino"
+
+if grep -R -n --include='*.h' --include='*.cpp' --include='*.ino' \
+    'BRIDGE_ENABLE_PW_TRANSFER' "$BRIDGE_SOURCE_ROOT"; then
+  echo "ERROR: pw_transfer must not have a build-time or runtime enable/disable switch." >&2
+  exit 1
+fi
 
 if [[ ! -d "$PORT_ROOT" ]]; then
   echo "ERROR: AVR Pigweed port submodule is missing: $PORT_ROOT" >&2

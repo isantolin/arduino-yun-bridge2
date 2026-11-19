@@ -54,8 +54,11 @@ void integrated_test_bridge_core() {
 }
 
 void integrated_test_components() {
+  // Keep the single global Bridge instance alive for both integrated checks.
+  // Its upstream pw_rpc service implementations contain intrusive method
+  // nodes with process lifetime; destroying and reconstructing Bridge would
+  // attempt to register those same nodes with a second server instance.
   g_test_stream.clear();
-  reset_bridge_core(Bridge, g_test_stream, 0, "");
   auto& ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 

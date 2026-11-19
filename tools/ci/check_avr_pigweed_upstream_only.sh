@@ -32,8 +32,18 @@ if ! grep -R -q 'pw::rpc::Server' "${SCAN_PATHS[@]}"; then
   exit 1
 fi
 
-if ! grep -R -q 'pw::transfer::TransferService' "${SCAN_PATHS[@]}"; then
-  echo "ERROR: upstream pw_transfer::TransferService is not referenced by the AVR port." >&2
+# The AVR port supplies the upstream pw_transfer module and its cooperative
+# execution adaptation; the bridge firmware owns the concrete TransferService.
+if ! grep -q 'pw_transfer' "${PORT_ROOT}/CMakeLists.txt"; then
+  echo "ERROR: upstream pw_transfer module is not built by the AVR port." >&2
+  exit 1
+fi
+
+BRIDGE_HEADER="${ROOT_DIR}/mcubridge-library-arduino/src/Bridge.h"
+if ! grep -q 'pw::transfer::TransferService' "$BRIDGE_HEADER" ||
+   ! grep -q 'pw::transfer::Client' "$BRIDGE_HEADER" ||
+   ! grep -q 'pw::transfer::Thread<1, 1>' "$BRIDGE_HEADER"; then
+  echo "ERROR: Bridge firmware does not use the upstream pw_transfer service, client, and thread." >&2
   exit 1
 fi
 

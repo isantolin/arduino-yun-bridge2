@@ -11,7 +11,6 @@
 #include "config/bridge_config.h"
 #include "protocol/mcu_wire.pb.h"
 
-#if BRIDGE_ENABLE_PW_TRANSFER
 #include <pw_status/status.h>
 #include <pw_transfer/transfer.h>
 #endif
@@ -25,7 +24,6 @@ class FileSystemClass {
   static void _onWrite(const rpc_pb_FileWrite& msg);
   static void _onRemove(const rpc_pb_FileRemove& msg);
 
-#if BRIDGE_ENABLE_PW_TRANSFER
   // ADR-0007 (E6): store `data` at `path` under the MPU file_system_root via
   // pw_transfer. The bytes are exposed read-only on FILE_UPLOAD_RESOURCE_ID
   // and must stay valid and unchanged until uploadPending() returns false.

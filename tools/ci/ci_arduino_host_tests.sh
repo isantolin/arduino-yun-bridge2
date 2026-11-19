@@ -162,7 +162,6 @@ SOURCES=(
     "$PW_ROOT/pw_tokenizer/encode_args.cc"
     "$PW_ROOT/pw_tokenizer/tokenize.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
-    "$PW_ROOT/pw_chrono/epoch.cc"
     "$PW_ROOT/pw_chrono_stl/system_clock.cc"
 )
 

@@ -779,16 +779,23 @@ jobs:
               if not reports:
                   output.write("No resource reports were produced by the Arduino build job.\n")
               else:
-                  output.write("| Target / build | Flash used | Flash limit | Static RAM used | Static RAM remaining |\n")
-                  output.write("|---|---:|---:|---:|---:|\n")
+                  output.write(
+                      "| Target / build | Flash used | Flash limit | Static RAM used | "
+                      "Static RAM remaining | ELF Flash | ELF static RAM |\n"
+                  )
+                  output.write("|---|---:|---:|---:|---:|---:|---:|\n")
                   for path in reports:
                       report = json.loads(path.read_text(encoding="utf-8"))
+                      elf_flash = report.get("elf_flash_used_bytes")
+                      elf_ram = report.get("elf_static_ram_used_bytes")
                       output.write(
                           f"| {report['target']} / {path.parent.name} "
                           f"| {report['flash_used_bytes']} B "
                           f"| {report['flash_limit_bytes']} B "
                           f"| {report['static_ram_used_bytes']} B "
-                          f"| {report['static_ram_remaining_bytes']} B |\n"
+                          f"| {report['static_ram_remaining_bytes']} B "
+                          f"| {f'{elf_flash} B' if elf_flash is not None else '—'} "
+                          f"| {f'{elf_ram} B' if elf_ram is not None else '—'} |\n"
                       )
                   stack_reports = sorted(Path("simavr-logs").glob("*_stack_watermark.json"))
                   output.write("\n### Runtime AVR stack watermark\n\n")

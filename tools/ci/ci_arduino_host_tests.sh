@@ -258,7 +258,7 @@ fi
 UNITY_DIR="${TEST_DIR}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    g++ -std=c++17 -x c++ -c "${BASE_FLAGS[@]}" "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+    gcc -std=c99 -c "${BASE_FLAGS[@]}" "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
     echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
     UNITY_OBJ=""

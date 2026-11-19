@@ -3,7 +3,6 @@
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
 #include <etl/utility.h>
-#include <new>
 
 #include "hal/hal.h"
 #include "security/security.h"
@@ -239,34 +238,19 @@ class MailboxRpcService final
 };
 #endif
 
-// RPC service implementations contain intrusive method nodes and are intended
-// to live for the lifetime of the firmware. Give them static storage without
-// registering process-exit destructors: host test binaries repeatedly create
-// and destroy Bridge instances, but the service method nodes themselves must
-// remain valid until the process exits.
-template <typename ServiceType>
-ServiceType& PersistentRpcService() {
-  alignas(ServiceType) static uint8_t storage[sizeof(ServiceType)];
-  static ServiceType* const service =
-      ::new (static_cast<void*>(storage)) ServiceType();
-  return *service;
-}
-
-GpioRpcService& g_gpio_service = PersistentRpcService<GpioRpcService>();
-SystemRpcService& g_system_service = PersistentRpcService<SystemRpcService>();
-ClockSyncRpcService& g_clock_sync_service =
-    PersistentRpcService<ClockSyncRpcService>();
+GpioRpcService g_gpio_service;
+SystemRpcService g_system_service;
+ClockSyncRpcService g_clock_sync_service;
 #if BRIDGE_ENABLE_SPI
-SpiRpcService& g_spi_service = PersistentRpcService<SpiRpcService>();
+SpiRpcService g_spi_service;
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-FileSystemRpcService& g_file_system_service =
-    PersistentRpcService<FileSystemRpcService>();
+FileSystemRpcService g_file_system_service;
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-MailboxRpcService& g_mailbox_service =
-    PersistentRpcService<MailboxRpcService>();
+MailboxRpcService g_mailbox_service;
 #endif
+BridgeClass* g_rpc_services_owner = nullptr;
 
 }  // namespace
 
@@ -313,7 +297,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
   _hardware_serial = &serial;
 }
 
-BridgeClass::~BridgeClass() {
+void BridgeClass::_unregisterRpcServices() {
   if (!_rpc_services_registered) return;
   _rpc_server.UnregisterService(g_gpio_service, g_system_service,
                                 g_clock_sync_service
@@ -330,8 +314,25 @@ BridgeClass::~BridgeClass() {
                                 g_mailbox_service
 #endif
                                 ,
-                                _transfer_service
-  );
+                                _transfer_service);
+  _rpc_services_registered = false;
+  g_rpc_services_owner = nullptr;
+}
+
+BridgeClass::~BridgeClass() {
+  // Detach external stream references first so teardown never performs I/O on
+  // a stream whose lifetime has already ended.
+  _stream = nullptr;
+  _hardware_serial = nullptr;
+  _arduino_stream.setStream(static_cast<Stream*>(nullptr));
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+  bridge::services::unregisterEepromTransferHandler(_transfer_service);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  FileSystemClass::unregisterUploadHandler(_transfer_service);
+#endif
+  _pin_stream_writer = {};
+  _unregisterRpcServices();
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(pw::ConstByteSpan packet) {
@@ -369,6 +370,9 @@ void BridgeClass::_initializeRuntime() {
 #endif
 
   if (_rpc_services_registered) return;
+  if (g_rpc_services_owner != nullptr) {
+    g_rpc_services_owner->_unregisterRpcServices();
+  }
   _rpc_server.RegisterService(g_gpio_service, g_system_service,
                               g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
@@ -384,9 +388,9 @@ void BridgeClass::_initializeRuntime() {
                               g_mailbox_service
 #endif
                               ,
-                              _transfer_service
-  );
+                              _transfer_service);
   _rpc_services_registered = true;
+  g_rpc_services_owner = this;
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
@@ -416,25 +420,19 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   }
 
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
-  if (!_eeprom_transfer_registered) {
-    _eeprom_transfer_registered =
-        bridge::services::registerEepromTransferHandler(_transfer_service);
-    if (!_eeprom_transfer_registered) {
-      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
-      enterSafeState();
-      return;
-    }
+  if (!bridge::services::registerEepromTransferHandler(_transfer_service,
+                                                       _transfer_thread)) {
+    emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    enterSafeState();
+    return;
   }
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-  if (!_upload_transfer_registered) {
-    _upload_transfer_registered =
-        FileSystemClass::registerUploadHandler(_transfer_service);
-    if (!_upload_transfer_registered) {
-      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
-      enterSafeState();
-      return;
-    }
+  if (!FileSystemClass::registerUploadHandler(_transfer_service,
+                                              _transfer_thread)) {
+    emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    enterSafeState();
+    return;
   }
 #endif
 

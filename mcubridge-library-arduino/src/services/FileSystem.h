@@ -7,12 +7,12 @@
 
 #include <etl/string_view.h>
 #include <pw_span/span.h>
+#include <pw_status/status.h>
+#include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
 
 #include "config/bridge_config.h"
 #include "protocol/mcu_wire.pb.h"
-
-#include <pw_status/status.h>
-#include <pw_transfer/transfer.h>
 
 class FileSystemClass {
  public:
@@ -32,7 +32,10 @@ class FileSystemClass {
   static bool uploadPending();
   // Status reported by the daemon for the last finished upload.
   static pw::Status lastUploadStatus();
-  static bool registerUploadHandler(pw::transfer::TransferService& service);
+  static bool registerUploadHandler(pw::transfer::TransferService& service,
+                                    pw::transfer::TransferThread& thread);
+  static void unregisterUploadHandler(
+      const pw::transfer::TransferService& service);
   static void _resetUpload();
 };
 

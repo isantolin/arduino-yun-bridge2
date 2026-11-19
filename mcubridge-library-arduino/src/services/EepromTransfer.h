@@ -7,6 +7,7 @@
 
 #include <avr/io.h>
 #include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -28,7 +29,10 @@ static_assert(kEepromTransferResourceId == rpc::RPC_EEPROM_TRANSFER_RESOURCE_ID,
 static_assert(kEepromTransferResourceSize <= rpc::RPC_EEPROM_RESOURCE_MAX_BYTES,
               "EEPROM resource exceeds the cloud contract size");
 
-bool registerEepromTransferHandler(pw::transfer::TransferService& service);
+bool registerEepromTransferHandler(pw::transfer::TransferService& service,
+                                   pw::transfer::TransferThread& thread);
+void unregisterEepromTransferHandler(
+    const pw::transfer::TransferService& service);
 
 }  // namespace bridge::services
 

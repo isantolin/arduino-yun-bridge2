@@ -116,6 +116,9 @@ void finishUpload(pw::Status status) {
 void FileSystemClass::_resetUpload() {
   g_upload_handler.disarm();
   g_upload_call = {};
+  if (g_upload_pending) {
+    g_last_upload_status = pw::Status::Aborted();
+  }
   g_upload_pending = false;
 }
 

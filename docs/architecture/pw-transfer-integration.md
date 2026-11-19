@@ -1,6 +1,6 @@
 # Upstream pw_transfer integration (Arduino Mega 2560)
 
-The AVR build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. It is controlled by `BRIDGE_ENABLE_PW_TRANSFER`, **enabled by default** on AVR (the only port that implements it); building with `-DBRIDGE_ENABLE_PW_TRANSFER=0` removes the transfer thread, service, client, EEPROM handler and their 384 B of staging buffers to reclaim SRAM. Library sources compile separately from the sketch, so the macro must be a global build flag (for example `compiler.cpp.extra_flags`), not a `#define` in the sketch. `pw_transfer` is the only supported streaming-transfer protocol; the legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
+McuBridge uses upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel as its sole file-transfer architecture. The transfer thread, service, and client are always part of the firmware; there is no build-time or runtime enable/disable switch and no fallback transfer protocol. AVR-specific EEPROM handling is a hardware adapter registered on AVR, while the generic transfer service remains active. The legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
 
 ## Runtime ownership
 
@@ -24,7 +24,7 @@ Bridge.transferClient()
 
 ## Registering an application resource
 
-When `BRIDGE_ENABLE_PW_TRANSFER` is enabled (the AVR default), the EEPROM resource is registered automatically by `Bridge.begin()`. Its stable resource ID is `0x4D454741` and its resource size is 4,080 bytes (the last 16 bytes of the EEPROM hold the link boot epoch, ADR-0005). Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
+On AVR, the EEPROM resource is registered automatically by `Bridge.begin()` as a hardware-specific `pw_transfer` resource. Its stable resource ID is `0x4D454741` and its resource size is 4,080 bytes (the last 16 bytes of the EEPROM hold the link boot epoch, ADR-0005). Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
 
 ```cpp
 #include <etl/array.h>

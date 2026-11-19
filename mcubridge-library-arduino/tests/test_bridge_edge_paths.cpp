@@ -1264,6 +1264,70 @@ void test_pin_event_blocked_while_unsynchronized() {
   TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
 }
 
+// Log stream frames must respect FLAG_TX_ENABLED just like console stream
+// frames.
+void test_log_stream_blocked_while_tx_disabled() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  const etl::array<uint8_t, 3> msg = {'l', 'o', 'g'};
+  TEST_ASSERT_TRUE(Bridge.sendLogStream(msg));
+
+  ba.setTxEnabled(false);
+  TEST_ASSERT_FALSE(Bridge.sendLogStream(msg));
+}
+
+// Server-bound RPC frames addressing an unknown channel ID fail inside
+// pw::rpc::Server::ProcessPacket and report their status through onStatus.
+void test_unknown_channel_rpc_frame_emits_server_error_status() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  g_edge_last_status = rpc::StatusCode::STATUS_OK;
+  g_edge_status_calls = 0U;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
+
+  TEST_ASSERT_TRUE(
+      send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+                    pw::tokenizer::Hash("GetVersion"), {},
+                    pw::rpc::internal::pwpb::PacketType::REQUEST, 1U, 99U) > 0);
+  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_UNAVAILABLE),
+                        static_cast<int>(g_edge_last_status));
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
+// Before session keys are established on an authenticated link, malformed
+// non-RPC HDLC payloads on the RPC address must fail closed into safe state.
+void test_pre_handshake_malformed_rpc_frame_enters_safe_state() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream, 0, "top-secret-key");
+  auto& ba = TestAccessor::create(Bridge);
+
+  g_edge_last_status = rpc::StatusCode::STATUS_OK;
+  g_edge_status_calls = 0U;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
+
+  const etl::array<uint8_t, 3> garbage = {0xFFU, 0xFFU, 0xFFU};
+  pw::stream::MemoryWriterBuffer<32> frame;
+  TEST_ASSERT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
+                                          pw::as_bytes(pw::span(garbage)),
+                                          frame)
+                       .ok());
+  ba.feedHdlcBytes(pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
+
+  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(rpc::StatusCode::STATUS_UNAUTHENTICATED),
+      static_cast<int>(g_edge_last_status));
+  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
@@ -1289,5 +1353,8 @@ int main() {
   RUN_TEST(test_set_stream_selects_hardware_serial_by_type);
   RUN_TEST(test_console_stream_blocked_while_tx_disabled);
   RUN_TEST(test_pin_event_blocked_while_unsynchronized);
+  RUN_TEST(test_log_stream_blocked_while_tx_disabled);
+  RUN_TEST(test_unknown_channel_rpc_frame_emits_server_error_status);
+  RUN_TEST(test_pre_handshake_malformed_rpc_frame_enters_safe_state);
   return UNITY_END();
 }

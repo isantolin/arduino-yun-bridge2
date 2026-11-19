@@ -47,12 +47,21 @@ class GatewayConnection:
         ssl_context: ssl.SSLContext | None = None,
         timeout: float = 10.0,
     ) -> None:
+        logger.info("Gateway connection: opening TCP socket", host=host, port=port, timeout_seconds=timeout)
         raw_sock = socket.create_connection((host, port), timeout=timeout)
+        logger.info("Gateway connection: TCP established", host=host, port=port)
         self.sock: socket.socket | ssl.SSLSocket
         if ssl_context is not None:
-            self.sock = ssl_context.wrap_socket(raw_sock, server_hostname="localhost")
+            logger.info("Gateway connection: starting TLS handshake", tls_minimum=str(ssl_context.minimum_version))
+            try:
+                self.sock = ssl_context.wrap_socket(raw_sock, server_hostname="localhost")
+            except BaseException:
+                raw_sock.close()
+                raise
+            logger.info("Gateway connection: TLS handshake completed", tls_version=self.sock.version())
         else:
             self.sock = raw_sock
+            logger.info("Gateway connection: TLS disabled")
 
         # The connect timeout is only for establishing the TCP/TLS session.
         # Keep the reader alive across long-running RPCs and idle periods.
@@ -66,8 +75,9 @@ class GatewayConnection:
             [PwRpcChannel(1, self.send_frame)],
             PW_SERVICES,
         )
-        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True, name="mcubridge-gateway-reader")
         self.reader_thread.start()
+        logger.info("Gateway connection: RPC reader thread started")
 
     def send_frame(self, data: bytes) -> None:
         if self.sock:
@@ -89,6 +99,7 @@ class GatewayConnection:
                 break
 
     def close(self) -> None:
+        logger.info("Gateway connection: closing", reader_alive=self.reader_thread.is_alive())
         self.running = False
         # shutdown() wakes the reader thread blocked in recv() and sends EOF right
         # away. Without it the descriptor stays open until the reader returns, and
@@ -103,6 +114,7 @@ class GatewayConnection:
         except OSError as exc:
             logger.debug("Socket close error ignored", error=str(exc))
         self.reader_thread.join(timeout=2)
+        logger.info("Gateway connection: closed", reader_alive=self.reader_thread.is_alive())
 
 
 class GatewayClient:

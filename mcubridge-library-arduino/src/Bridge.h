@@ -337,6 +337,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   bool _rpc_services_registered{false};
 #if BRIDGE_ENABLE_PW_TRANSFER
   bool _eeprom_transfer_registered{false};
+  bool _upload_transfer_registered{false};
 #endif
   bool _rpc_plaintext_response{false};
 

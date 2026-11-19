@@ -39,6 +39,7 @@ Reglas obligatorias:
 | Transferencia de archivos | Upstream `pw_transfer` integrado en AVR, daemon y Gateway; E5 (#100) y E6 (#101) mergeados; las pruebas Fleet Mesh verifican las rutas de EEPROM y upload MCU → Linux. | Validación física UART/HDLC y medición de recursos por configuración. |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
+| Port AVR Pigweed | `pw_rpc` y `pw_transfer` upstream; el dispatcher `pw_rpc_avr` fue retirado. `pw_transfer` conserva solo la adaptación cooperativa requerida por bare-metal AVR. | El submódulo sigue fijado en `026c5f6`; `avr_pigweed_port/main` está 17 commits por delante (`ee9708e`) e incorpora patch único idempotente y contexto de stack simavr. Sincronizar el gitlink y validar el nuevo pin. |
 | CI y validación | CI del HEAD final de #101 aprobó la matriz de validación principal, incluidos los caminos que habían fallado en #85. | Verificar los artefactos consolidados de Summary y ejecutar validación física UART/HDLC; generar y conservar informes de Flash/SRAM por arquitectura. |
 
 ## Estado del corte coordinado y residuos erradicados (ADR-0003 en PR #85)

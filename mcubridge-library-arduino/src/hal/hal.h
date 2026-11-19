@@ -129,6 +129,22 @@ void initStackCanary();
  */
 bool checkStackOverflow();
 
+struct StackWatermark {
+  uint32_t used_bytes;
+  uint32_t budget_bytes;
+};
+
+/**
+ * @brief Measure runtime stack high-water usage and total stack budget.
+ *
+ * On SAMD21, measures the unpainted suffix of the 0xA5 pattern painted between
+ * `__bss_end__` and the stack pointer at `initStackCanary()`.
+ * On ESP32-S3, queries FreeRTOS `uxTaskGetStackHighWaterMark(nullptr)` against
+ * `getArduinoLoopTaskStackSize()`.
+ * Returns `{0, 0}` on targets that rely on external cycle-accurate SP tracking.
+ */
+StackWatermark getStackWatermark();
+
 /**
  * @brief Run Power-On Self-Tests (SRAM March Test, Memory
  * Sentinel & Crypto KATs).

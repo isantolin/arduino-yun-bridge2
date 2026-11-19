@@ -348,6 +348,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _timerTask();
   void _subscriptionTask();
   void _sendFlowControl(bool xoff);
+  void _emitStackWatermarkLog();
 
   enum StateFlags : uint8_t {
     FLAG_POST_PASSED = 0,
@@ -357,6 +358,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   };
 
   uint32_t _timer_last_tick_ms = 0;
+  uint32_t _last_reported_stack_used = 0;
   etl::bitset<FLAG_COUNT> _state_flags;
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   uint32_t _wcet_max_micros = 0;

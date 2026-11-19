@@ -410,7 +410,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
             if node.board.fqbn.startswith("arduino:avr:") and not await verify_eeprom_round_trip(node, stub):
                 return False
 
-            if node.board.fqbn.startswith("arduino:avr:") and not await verify_file_upload(node):
+            if not await verify_file_upload(node):
                 return False
 
     return True
@@ -490,6 +490,7 @@ async def verify_file_upload(node: NodeRuntime) -> bool:
         timeout_seconds=20,
     )
     return False
+
 
 def compile_fleet_firmwares() -> (
     tuple[tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata], tuple[Path, ArduinoCoreMetadata]]

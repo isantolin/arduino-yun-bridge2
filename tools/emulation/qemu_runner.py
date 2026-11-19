@@ -44,6 +44,10 @@ from tools.emulation.process_utils import (
     wait_for_path_ready,
     wait_for_tcp_ready,
 )
+from tools.emulation.stack_metrics import (
+    extract_latest_mcu_stack_watermark,
+    write_stack_watermark_report,
+)
 
 repo_root = Path(__file__).resolve().parents[2]
 
@@ -219,6 +223,32 @@ def run_qemu_emulation(
     finally:
         procs = [p for p in (daemon_proc, gateway_proc, socat_proc, qemu_proc) if p is not None]
         terminate_process_tree(procs, timeout=5.0)
+        with state.lock:
+            log_lines = [line for _src, line in state.output_lines]
+        watermark = extract_latest_mcu_stack_watermark(log_lines)
+        if watermark is not None:
+            metrics_dir_str = os.environ.get("QEMU_METRICS_DIR")
+            metrics_dir = Path(metrics_dir_str) if metrics_dir_str else (log_dir or flash_image.parent)
+            target_slug = flash_image.parent.name or "esp32-esp32-nano_nora"
+            report_path = write_stack_watermark_report(
+                metrics_dir,
+                target_slug,
+                stack_used_bytes=int(watermark["stack_used_bytes"]),
+                stack_budget_bytes=int(watermark["stack_budget_bytes"]),
+                stack_margin_bytes=int(watermark["stack_margin_bytes"]),
+                extra={
+                    "arch": watermark["arch"],
+                    "measurement_source": "esp32_freertos_uxTaskGetStackHighWaterMark",
+                },
+            )
+            logger.info(
+                "QEMU ESP32-S3 runtime stack watermark recorded",
+                target=target_slug,
+                stack_used_bytes=watermark["stack_used_bytes"],
+                stack_budget_bytes=watermark["stack_budget_bytes"],
+                stack_margin_bytes=watermark["stack_margin_bytes"],
+                report=str(report_path),
+            )
         if log_dir is not None:
             log_file = log_dir / "qemu_execution.log"
             try:

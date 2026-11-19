@@ -432,6 +432,13 @@ jobs:
           name: renode-logs
           path: renode-logs
           if-no-files-found: ignore
+      - name: Upload Renode firmware resource report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-resource-renode
+          path: build/renode/**/resource_report.json
+          if-no-files-found: ignore
 
   qemu-esp32-emulation:
     name: QEMU Xtensa Emulation (Arduino Nano ESP32)
@@ -499,6 +506,13 @@ jobs:
         with:
           name: qemu-logs
           path: qemu-logs
+          if-no-files-found: ignore
+      - name: Upload QEMU firmware resource report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-resource-qemu
+          path: build/qemu/**/resource_report.json
           if-no-files-found: ignore
 
   fleet-mesh-emulation:
@@ -668,6 +682,19 @@ jobs:
         with:
           name: arduino-logs
           path: arduino-logs
+        continue-on-error: true
+      - name: Download Renode firmware resource report
+        uses: actions/download-artifact@v8
+        with:
+          name: firmware-resource-renode
+          path: arduino-logs/renode
+        continue-on-error: true
+
+      - name: Download QEMU firmware resource report
+        uses: actions/download-artifact@v8
+        with:
+          name: firmware-resource-qemu
+          path: arduino-logs/qemu
         continue-on-error: true
 
       - name: Download simavr Logs

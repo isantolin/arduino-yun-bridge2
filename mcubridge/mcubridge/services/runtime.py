@@ -1278,7 +1278,7 @@ class BridgeService:
             protocol.PW_SERVICES,
         )
 
-        self.state.cloud_fsm.connect_http2()
+        self.state.cloud_fsm.connect_tls()
         logger.info("Connected to Cloud Gateway via Pigweed HDLC over TLS.")
 
         # The reader below is the only consumer of Gateway responses and EdgeControl

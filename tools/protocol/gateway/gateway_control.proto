@@ -16,8 +16,6 @@ message HealthResponse {
 // example "rpc.pb.GpioService/DigitalWrite". It is forwarded verbatim from the
 // northbound client to the edge daemon, which resolves it in its catalog.
 message DispatchRequest {
-  reserved 2, 3;
-  reserved "service_name", "method_name";
   string target_device_id = 1;
   string operation = 6;
   bytes request_payload = 4;
@@ -30,8 +28,6 @@ message DispatchResponse {
 }
 
 message EdgeDispatchRequest {
-  reserved 1, 2;
-  reserved "service_name", "method_name";
   string operation = 5;
   bytes request_payload = 3;
   uint32 timeout_ms = 4;

@@ -172,32 +172,17 @@ class CloudLinkStateMachine(RuleBasedStateMachine):
             assert self.fsm.current_state_value == prev
 
     @rule()
-    def connect_http3(self) -> None:
+    def connect_tls(self) -> None:
         prev = self.fsm.current_state_value
         can_trans = (
             self.fsm.connecting.is_active
             or self.fsm.reconnecting.is_active
             or self.fsm.spooling_degraded.is_active
-            or self.fsm.connected_http3.is_active
+            or self.fsm.connected_tls.is_active
         )
-        self.fsm.connect_http3()
+        self.fsm.connect_tls()
         if can_trans:
-            assert self.fsm.connected_http3.is_active
-        else:
-            assert self.fsm.current_state_value == prev
-
-    @rule()
-    def connect_http2(self) -> None:
-        prev = self.fsm.current_state_value
-        can_trans = (
-            self.fsm.connecting.is_active
-            or self.fsm.reconnecting.is_active
-            or self.fsm.spooling_degraded.is_active
-            or self.fsm.connected_http2.is_active
-        )
-        self.fsm.connect_http2()
-        if can_trans:
-            assert self.fsm.connected_http2.is_active
+            assert self.fsm.connected_tls.is_active
         else:
             assert self.fsm.current_state_value == prev
 
@@ -234,8 +219,7 @@ class CloudLinkStateMachine(RuleBasedStateMachine):
         assert current in (
             CloudLinkState.DISABLED.value,
             CloudLinkState.CONNECTING.value,
-            CloudLinkState.CONNECTED_HTTP3.value,
-            CloudLinkState.CONNECTED_HTTP2.value,
+            CloudLinkState.CONNECTED_TLS.value,
             CloudLinkState.SPOOLING_DEGRADED.value,
             CloudLinkState.RECONNECTING.value,
         )

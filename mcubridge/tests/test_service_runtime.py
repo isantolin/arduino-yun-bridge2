@@ -248,7 +248,7 @@ async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -
 
 async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     svc = mock_bridge_service
-    connect_http2 = mocker.spy(svc.state.cloud_fsm, "connect_http2")
+    connect_tls = mocker.spy(svc.state.cloud_fsm, "connect_tls")
 
     mock_reader = AsyncMock()
     mock_reader.read = AsyncMock(return_value=b"")
@@ -264,7 +264,7 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
     with pytest.raises(ConnectionError, match="Cloud Gateway connection closed by peer"):
         await svc.connect_cloud_session(None)
 
-    connect_http2.assert_called_once()
+    connect_tls.assert_called_once()
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 

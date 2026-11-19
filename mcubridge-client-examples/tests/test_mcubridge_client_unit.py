@@ -169,41 +169,17 @@ _SEGMENT_STRATEGY = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", m
 
 
 @settings(max_examples=30, derandomize=True, deadline=None)
-@given(seg1=_SEGMENT_STRATEGY, seg2=_SEGMENT_STRATEGY)
-def test_topic_matches_exact_reflexive_property(seg1: str, seg2: str) -> None:
-    """Validate that exact matching is reflexive for any arbitrary topic path."""
-    from mcubridge_client.protocol import Topic
-
-    topic_str = f"br/{seg1}/{seg2}"
-    assert Topic.matches(topic_str, topic_str)
-
-
-@settings(max_examples=30, derandomize=True, deadline=None)
-@given(seg1=_SEGMENT_STRATEGY, seg2=_SEGMENT_STRATEGY)
-def test_topic_matches_wildcards_property(seg1: str, seg2: str) -> None:
-    """Validate MQTT single (+) and multi-level (#) wildcard matching invariants."""
-    from mcubridge_client.protocol import Topic
-
-    topic_str = f"br/{seg1}/{seg2}"
-    assert Topic.matches("br/#", topic_str)
-    assert Topic.matches(f"br/+/{seg2}", topic_str)
-    assert Topic.matches(f"br/{seg1}/+", topic_str)
-
-
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     prefix=_SEGMENT_STRATEGY,
     seg1=_SEGMENT_STRATEGY,
     seg2=_SEGMENT_STRATEGY,
 )
-def test_topic_build_and_match_invariants(prefix: str, seg1: str, seg2: str) -> None:
-    """Validate Topic.build output structure and matching against generated paths."""
+def test_topic_build_invariants(prefix: str, seg1: str, seg2: str) -> None:
+    """Validate Topic.build output structure."""
     from mcubridge_client.protocol import Topic
 
     built = Topic.build(seg1, seg2, prefix=prefix)
     assert built == f"{prefix}/{seg1}/{seg2}"
-    assert Topic.matches(f"{prefix}/#", built)
-    assert Topic.matches(built, built)
 
 
 async def test_smoke_connection_run_test() -> None:

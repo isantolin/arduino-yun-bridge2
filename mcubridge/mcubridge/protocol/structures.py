@@ -15,11 +15,8 @@ from pathlib import Path
 from typing import (
     Any,
     Final,
-    Protocol,
 )
 
-import anyio
-from anyio.streams.memory import MemoryObjectSendStream
 import structlog
 from google.protobuf.descriptor import FieldDescriptor
 
@@ -288,38 +285,3 @@ def create_queued_publish(
     if message_expiry_interval is not None:
         msg.message_expiry_interval = message_expiry_interval
     return msg
-
-
-# --- Serial Flow Structures ---
-
-
-class ConsoleQueueTarget(Protocol):
-    def put_nowait(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None: ...
-    async def put(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None: ...
-
-
-class MemoryQueueAdapter:
-    """Adapts an AnyIO MemoryObjectSendStream to queue-compatible API. [SIL-2]"""
-
-    __slots__ = ("_send_stream",)
-    _send_stream: MemoryObjectSendStream[cloud_gateway_pb2.CloudQueuedPublish]
-
-    def __init__(self, send_stream: MemoryObjectSendStream[cloud_gateway_pb2.CloudQueuedPublish]) -> None:
-        self._send_stream = send_stream
-
-    def put_nowait(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None:
-        try:
-            self._send_stream.send_nowait(item)
-        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
-            logger.debug("Console stream subscriber disconnected during put_nowait", error=str(exc))
-        except anyio.WouldBlock as exc:
-            logger.warning("Console stream subscriber buffer full, dropping message", error=str(exc))
-
-    async def put(self, item: cloud_gateway_pb2.CloudQueuedPublish) -> None:
-        try:
-            await self._send_stream.send(item)
-        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as exc:
-            logger.debug("Console stream subscriber disconnected during put", error=str(exc))
-
-    def close(self) -> None:
-        self._send_stream.close()

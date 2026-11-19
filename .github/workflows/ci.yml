@@ -154,6 +154,13 @@ jobs:
             mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \
             arduino:avr:mega \
             arduino-logs/arduino-avr-mega/pw_transfer_compile
+      - name: Measure BridgeControl without pw_transfer
+        run: |
+          MCUBRIDGE_EXTRA_BUILD_FLAGS=-DBRIDGE_ENABLE_PW_TRANSFER=0 \
+            bash tools/ci/compile_firmware.sh \
+              mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino \
+              arduino:avr:mega \
+              arduino-logs/arduino-avr-mega/BridgeControl-no-pw-transfer
       - name: Profile Memory Usage
         if: always()
         run: |

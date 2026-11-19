@@ -3,6 +3,7 @@
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
 #include <etl/utility.h>
+#include <new>
 
 #include "hal/hal.h"
 #include "security/security.h"
@@ -238,17 +239,33 @@ class MailboxRpcService final
 };
 #endif
 
-GpioRpcService g_gpio_service;
-SystemRpcService g_system_service;
-ClockSyncRpcService g_clock_sync_service;
+// RPC service implementations contain intrusive method nodes and are intended
+// to live for the lifetime of the firmware. Give them static storage without
+// registering process-exit destructors: host test binaries repeatedly create
+// and destroy Bridge instances, but the service method nodes themselves must
+// remain valid until the process exits.
+template <typename ServiceType>
+ServiceType& PersistentRpcService() {
+  alignas(ServiceType) static uint8_t storage[sizeof(ServiceType)];
+  static ServiceType* const service =
+      ::new (static_cast<void*>(storage)) ServiceType();
+  return *service;
+}
+
+GpioRpcService& g_gpio_service = PersistentRpcService<GpioRpcService>();
+SystemRpcService& g_system_service = PersistentRpcService<SystemRpcService>();
+ClockSyncRpcService& g_clock_sync_service =
+    PersistentRpcService<ClockSyncRpcService>();
 #if BRIDGE_ENABLE_SPI
-SpiRpcService g_spi_service;
+SpiRpcService& g_spi_service = PersistentRpcService<SpiRpcService>();
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-FileSystemRpcService g_file_system_service;
+FileSystemRpcService& g_file_system_service =
+    PersistentRpcService<FileSystemRpcService>();
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-MailboxRpcService g_mailbox_service;
+MailboxRpcService& g_mailbox_service =
+    PersistentRpcService<MailboxRpcService>();
 #endif
 
 }  // namespace

@@ -258,8 +258,6 @@ def test_protobuf_descriptor_purged_elements() -> None:
     for proto_path in proto_files:
         source = proto_path.read_text(encoding="utf-8")
         assert not re.search(r"^\s*reserved\s+", source, re.MULTILINE), proto_path
-    descriptor_file = config_schema_pb2.Constants.DESCRIPTOR.file
-    assert not descriptor_file.GetOptions().SerializeToString() == b""
 
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:

@@ -383,8 +383,6 @@ option (rpc.pb.ubus_methods) = {
 };
 
 message Constants {
-  reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68, 73;
-  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask", "default_ipc_timeout_seconds";
   // ChaCha20-Poly1305 protects all HDLC channels after an authenticated handshake.
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
@@ -505,7 +503,6 @@ message Constants {
     (py_name) = "CLOUD_EXPIRY_PIN",
     (py_type) = "int"
   ];
-  reserved 58;
   uint32 cloud_expiry_datastore = 59 [
     (py_name) = "CLOUD_EXPIRY_DATASTORE",
     (py_type) = "int"
@@ -712,8 +709,6 @@ message Hardware {
   uint32 flow_control_xon_threshold_avr = 24;
   uint32 hkdf_key_length = 25;
   uint32 key_and_digest_buffer_size = 26;
-  reserved 3, 22, 27 to 31;
-  reserved "rx_history_size", "rx_dedupe_interval_ms", "avr_digital_pins", "avr_analog_pins", "samd_digital_pins", "samd_analog_pins", "fallback_max_pin";
   uint32 fallback_free_memory = 32;
   uint32 capabilities_feat_extended = 33;
   uint32 serial_timeout_ms = 34 [
@@ -884,8 +879,6 @@ message StatusReasons {
   string mailbox_processed_failed = 16;
   string sync_auth_mismatch = 17;
   string sync_length_mismatch = 18;
-  reserved 22, 23;
-  reserved "unsupported_digital_read", "unsupported_analog_read";
   string pending_pin_overflow = 21;
 }
 
@@ -928,8 +921,6 @@ extend google.protobuf.EnumOptions {
 }
 
 message StatusOptions {
-  reserved 2;
-  reserved "mcu_handler";
   string description = 1;
 }
 
@@ -981,7 +972,6 @@ extend google.protobuf.FileOptions {
   CloudSuffixes cloud_suffixes = 1005;
   CloudDefaults cloud_defaults = 1006;
   StatusReasons status_reasons = 1007;
-  // 1009, 1010: reserved for legacy topics and actions
   repeated ArchConfig architectures = 1011;
   repeated CapConfig capabilities = 1012;
   repeated UbusMethodConfig ubus_methods = 1035;

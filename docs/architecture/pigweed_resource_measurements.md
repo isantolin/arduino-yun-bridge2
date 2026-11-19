@@ -10,12 +10,11 @@ implementation. The bridge uses the generated Nanopb service classes and
 Python's `pw_rpc.descriptors.Services` rather than a parallel service/method
 registry.
 
-`pw_transfer` is also upstream. The bridge currently pins `third_party/avr_pigweed_port` to
-`026c5f6b4350e75641bc125d2098e53c7e2d317f`. The support repository's current
-`main` is `ee9708e34606c0775a433aa003e5006b50c456b0`, 17 commits ahead; those
-commits include a canonical idempotent Pigweed patch workflow and richer
-simavr stack-low-water context. The submodule gitlink still needs to be advanced
-and validated in the bridge before those newer diagnostics are available here.
+`pw_transfer` is also upstream. The bridge already pins
+`third_party/avr_pigweed_port` to `ee9708e34606c0775a433aa003e5006b50c456b0`,
+which includes the canonical idempotent Pigweed patch workflow and simavr
+stack-low-water context. Earlier migration-plan references to
+`026c5f6b4350e75641bc125d2098e53c7e2d317f` were stale.
 
 The AVR-specific cooperative polling change is
 a platform adaptation of Pigweed's `TransferThread`, not a second transfer
@@ -52,12 +51,14 @@ from `avr-size -A` on the linked ELF. The report is uploaded with the
 `arduino-logs` CI artifact for the Mega 2560 BridgeControl firmware and the
 dedicated upstream `pw_transfer` API probe.
 
-The report intentionally leaves `runtime_stack_peak_bytes` null. Compiler
-section sizes and `.su` frame reports are not a substitute for a runtime
-high-water measurement. AVR runtime stack usage must be taken from the simavr
-stack watermark under the relevant end-to-end workload; SAMD21 and ESP32-S3
-need their own target-specific runtime watermark before a cross-architecture
-stack comparison can be claimed.
+The static `resource_report.json` intentionally leaves
+`runtime_stack_peak_bytes` null because it is generated before execution.
+The simavr runner separately writes
+`simavr-logs/<target>_stack_watermark.json` from the measured stack low-water
+mark and captured peak context. The Final Summary combines those runtime
+measurements with the build reports. SAMD21 and ESP32-S3 still need their own
+target-specific runtime watermark before a cross-architecture stack comparison
+can be claimed.
 
 ## Interpreting the numbers
 

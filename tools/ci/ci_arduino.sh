@@ -68,13 +68,9 @@ echo "[ci_arduino] Refreshing Arduino libraries from the pinned source tree..."
 
 # Fail at the export boundary instead of producing confusing sketch-level
 # include errors when an incomplete/cached library was selected.
+# (Cooperative pw_transfer and pw_log headers are verified below by
+# stage_cooperative_pw_transfer in tools/ci/arduino_toolchains.sh.)
 for required_header in \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/handler.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer_thread.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer.pwpb.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer.raw_rpc.pb.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/client.h" \
     "$PWD/mcubridge-library-arduino/src/pb.h" \
     "$USER_LIB_DIR/McuBridge/src/pb.h"; do
     if [ ! -f "$required_header" ]; then

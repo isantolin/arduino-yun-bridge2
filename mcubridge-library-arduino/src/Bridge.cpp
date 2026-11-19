@@ -768,7 +768,7 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
 }
 
 void BridgeClass::enterSafeState() {
-#if BRIDGE_ENABLE_PW_TRANSFER && BRIDGE_ENABLE_FILESYSTEM
+#if BRIDGE_ENABLE_FILESYSTEM
   FileSystemClass::_resetUpload();
 #endif
   bridge::hal::forceSafeState();

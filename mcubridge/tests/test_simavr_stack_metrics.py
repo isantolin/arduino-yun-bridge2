@@ -33,5 +33,5 @@ def test_stack_watermark_without_heap_symbol_omits_budget() -> None:
 def test_stack_watermark_rejects_invalid_addresses(
     min_sp: int, ramend: int, heap_start: int | None
 ) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="invalid AVR stack pointer|heap_start must be non-negative"):
         stack_watermark_metrics(min_sp, ramend, heap_start)

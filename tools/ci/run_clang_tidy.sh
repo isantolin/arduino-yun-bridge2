@@ -27,6 +27,10 @@ source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
 WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
+PIGWEED_TRANSFER_INCLUDE_DIR="$METADATA_DIR/pigweed-transfer-include"
+rm -rf "$PIGWEED_TRANSFER_INCLUDE_DIR"
+mkdir -p "$PIGWEED_TRANSFER_INCLUDE_DIR"
+cp -a "$ARDUINO_LIBS/PigweedAVR/src/pw_transfer" "$PIGWEED_TRANSFER_INCLUDE_DIR/"
 
 INCLUDES=(
     "-I${SRC_DIR}"
@@ -34,6 +38,7 @@ INCLUDES=(
     "-I${SRC_DIR}/protocol"
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
+    "-I${PIGWEED_TRANSFER_INCLUDE_DIR}"
     "-I${PW_ROOT}/pw_sync/public_overrides"
     "-I${PW_ROOT}/pw_sync_stl/public_overrides"
     "-I${PW_ROOT}/pw_sync_stl/public"
@@ -51,6 +56,7 @@ COMPILE_FLAGS=(
     "-DETL_FORCE_STD_INITIALIZER_LIST"
     "-DWOLFSSL_USER_SETTINGS"
     "-DPW_RPC_USE_GLOBAL_MUTEX=0"
+    "-DPW_TRANSFER_COOPERATIVE=1"
     "${INCLUDES[@]}"
 )
 

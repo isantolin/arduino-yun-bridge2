@@ -1,6 +1,6 @@
 # Plan de migración a Pigweed: ejecución consolidada
 
-- **Estado:** la base de migración RPC/Pigweed y la retirada del Gateway Python se integraron mediante PR #85 (merge 2026-11-15). La CI de ese HEAD no quedó verde: fallaron `Arduino Emulation (Full Firmware)` y `Master Fleet Mesh Emulation`; los jobs Tox, Gateway C++, compilación Arduino, simavr y Renode finalizaron correctamente. E5 (PR #100, EEPROM cloud) y E6 (PR #101, upload MCU → Linux, apilado sobre #100) amplían la integración y están en corrección y validación. No considerar validada esta secuencia hasta que las CI de los HEAD definitivos de ambos PR pasen.
+- **Estado:** PR #100 (E5, acceso cloud a EEPROM) y PR #101 (E6, upload MCU → Linux) están mergeados en `main`. La CI del HEAD final de #101 pasó los jobs de validación requeridos, incluidos Gateway C++, Tox, cobertura, Mega, simavr, Renode, QEMU Xtensa, Fleet Mesh y fuzzing. `Final Summary` se omite en eventos `pull_request` por una condición del workflow; esto no equivale a un fallo de validación. La prueba física UART/HDLC sigue siendo un release gate independiente.
 - **Base:** ADR-0002 — `docs/architecture/decisions/0002-pigweed-hdlc-rpc-migration.md` y ADR-0003 — `docs/architecture/decisions/0003-pigweed-gateway-cpp-replacement.md`.
 - **Protocolo canónico:** `tools/protocol/mcu_wire.proto`, `tools/protocol/config_schema.proto` y `tools/protocol/cloud_gateway.proto`.
 - **Integración MCU:** submódulo `third_party/avr_pigweed_port`, exportado como biblioteca Arduino `PigweedAVR`.
@@ -36,10 +36,10 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos, UBUS del MPU y clientes northbound (`GatewayClient`) invocan métodos RPC por nombre canónico Pigweed (`rpc.pb.<Service>/<Method>`); `LocalBridge` y `CloudBridge` gRPC erradicados | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Base upstream `pw_transfer` implementada: TransferService en Gateway C++ (handlers de buffer y staging acotado), proxy `FileTransferService` en daemon MPU, clientes Python y handler EEPROM MCU. | E5 (#100) añade acceso cloud a EEPROM; E6 (#101) añade upload MCU → Linux. La validación de PR #85 detectó `Status.NOT_FOUND` en el recurso 2 durante `PushToLinux`; ambos PR deben demostrar la ruta completa en sus CI finales. |
+| Transferencia de archivos | Upstream `pw_transfer` integrado en AVR, daemon y Gateway; E5 (#100) y E6 (#101) mergeados; las pruebas Fleet Mesh verifican las rutas de EEPROM y upload MCU → Linux. | Validación física UART/HDLC y medición de recursos por configuración. |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
-| CI y validación | PR #85 fue mergeado; sus jobs Tox, Gateway C++, Arduino, simavr y Renode pasaron. | PR #85 dejó dos fallas de emulación: `Arduino Emulation (Full Firmware)` (PushToLinux recibió `Status.NOT_FOUND` en el recurso 2) y `Master Fleet Mesh Emulation` (el Mega no completó sincronización criptográfica/capabilities). PR #100/#101 deben revalidar y corregir estos caminos en sus HEAD finales; la prueba física UART/HDLC sigue siendo release gate. |
+| CI y validación | CI del HEAD final de #101 aprobó la matriz de validación principal, incluidos los caminos que habían fallado en #85. | Verificar los artefactos consolidados de Summary y ejecutar validación física UART/HDLC; generar y conservar informes de Flash/SRAM por arquitectura. |
 
 ## Estado del corte coordinado y residuos erradicados (ADR-0003 en PR #85)
 

@@ -144,7 +144,7 @@ jobs:
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
       - name: Test firmware resource report parser
-        run: python -m pytest -o addopts="" tools/ci/tests/test_firmware_resource_report.py -q
+        run: .tox/arduino-examples/bin/pytest -n 0 tools/ci/tests/test_firmware_resource_report.py -q
       - name: Compile BridgeControl for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \

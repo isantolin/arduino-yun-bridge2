@@ -382,7 +382,10 @@ def test_gateway_connection_raw_and_ssl(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
     monkeypatch.setattr(conn_tls.rpc_client, "process_packet", _on_packet)
     try:
-        expected = [f"tls-frame-{i:03d}".encode() for i in range(frame_count)]
+        # Include a >8 KiB payload so OpenSSL buffers >4096 decrypted bytes and
+        # exercises the ssl.SSLSocket.pending() > 0 continuation path natively.
+        expected = [f"tls-frame-{i:03d}".encode() for i in range(frame_count - 1)]
+        expected.append(b"L" * 9000)
         for payload in expected:
             conn_tls.send_frame(payload)
         assert done_event.wait(timeout=5.0), f"Only received {len(client_received)}/{frame_count} TLS frames"
@@ -615,6 +618,162 @@ def test_gateway_connection_tls_handshake_failure_closes_raw_socket(tmp_path: Pa
         assert accepted.is_set()
     finally:
         srv_thread.join(timeout=2.0)
+
+
+def test_gateway_connection_send_frame_retries_and_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    sock_srv, sock_cli = socket.socketpair()
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(sock_cli))
+    conn = GatewayConnection("127.0.0.1", 8443)
+    try:
+        # 1. Partial writes + SSLWantReadError + SSLWantWriteError + BlockingIOError all retry
+        # until the complete HDLC frame is sent.
+        attempts = 0
+        sent_chunks = bytearray()
+
+        class _FlakySendSocket:
+            def fileno(self) -> int:
+                return sock_cli.fileno()
+
+            def send(self, data: memoryview) -> int:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise ssl.SSLWantReadError()
+                if attempts == 2:
+                    raise ssl.SSLWantWriteError()
+                if attempts == 3:
+                    raise BlockingIOError()
+                chunk = bytes(data[:3])
+                sent_chunks.extend(chunk)
+                return len(chunk)
+
+            def shutdown(self, _how: int) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        def _ready_select(
+            r: list[Any], w: list[Any], _x: list[Any], _t: float
+        ) -> tuple[list[Any], list[Any], list[Any]]:
+            return (r, w, [])
+
+        flaky_sock = _FlakySendSocket()
+        conn.running = False
+        conn.reader_thread.join(timeout=2.0)
+        monkeypatch.setattr(conn, "sock", flaky_sock)
+        monkeypatch.setattr("mcubridge_client.client.select.select", _ready_select)
+
+        conn.send_frame(b"retry-payload")
+        assert bytes(sent_chunks) == pw_hdlc.encode.ui_frame(1, b"retry-payload")
+        assert attempts > 4
+
+        # 2. Zero-byte send signals peer disconnect.
+        def _send_zero(_data: memoryview) -> int:
+            return 0
+
+        monkeypatch.setattr(flaky_sock, "send", _send_zero)
+        with pytest.raises(ConnectionError, match="Gateway socket closed during send"):
+            conn.send_frame(b"eof")
+
+        # 3. select() OSError during retry exits cleanly (e.g. concurrent close).
+        select_errors = 0
+
+        def _raise_want_write(_data: memoryview) -> int:
+            raise BlockingIOError()
+
+        def _raise_select_err(*_args: Any) -> Any:
+            nonlocal select_errors
+            select_errors += 1
+            raise OSError("bad fd")
+
+        monkeypatch.setattr(flaky_sock, "send", _raise_want_write)
+        monkeypatch.setattr("mcubridge_client.client.select.select", _raise_select_err)
+        conn.send_frame(b"closed-mid-wait")
+        assert select_errors == 1
+
+        # 4. Deadline expiry raises TimeoutError.
+        clock = iter([100.0, 120.0])
+        monkeypatch.setattr("mcubridge_client.client.time.monotonic", lambda: next(clock))
+        with pytest.raises(TimeoutError, match="Timed out sending Gateway HDLC frame"):
+            conn.send_frame(b"timeout")
+    finally:
+        conn.close()
+        sock_srv.close()
+        sock_cli.close()
+
+
+def test_gateway_connection_reader_idle_retry_and_recv_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    sock_srv, sock_cli = socket.socketpair()
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(sock_cli))
+
+    select_calls = 0
+    recv_calls = 0
+
+    def _fake_select(
+        r: list[Any], w: list[Any], x: list[Any], timeout: float
+    ) -> tuple[list[Any], list[Any], list[Any]]:
+        nonlocal select_calls
+        select_calls += 1
+        if select_calls == 1:
+            return ([], [], [])
+        return (r, [], [])
+
+    class _FlakyRecvSocket:
+        def setblocking(self, _flag: bool) -> None:
+            return None
+
+        def fileno(self) -> int:
+            return sock_cli.fileno()
+
+        def recv(self, _size: int) -> bytes:
+            nonlocal recv_calls
+            recv_calls += 1
+            if recv_calls == 1:
+                raise BlockingIOError()
+            raise OSError("connection reset")
+
+        def shutdown(self, _how: int) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(socket, "create_connection", _fake_create_connection(_FlakyRecvSocket()))
+    monkeypatch.setattr("mcubridge_client.client.select.select", _fake_select)
+    conn = GatewayConnection("127.0.0.1", 8443)
+    try:
+        conn.reader_thread.join(timeout=2.0)
+        assert not conn.reader_thread.is_alive()
+        assert select_calls >= 3
+        assert recv_calls == 2
+    finally:
+        conn.close()
+        sock_srv.close()
+        sock_cli.close()
+
+
+async def test_gateway_client_dispatch_timeout_and_lazy_transfer_manager(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_conn = MagicMock()
+    mock_conn.rpc_client.channel.return_value.rpcs.mcubridge.gateway.GatewayControl.Dispatch.invoke = MagicMock()
+    client = GatewayClient(mock_conn, target_device_id="dev-timeout", default_timeout_ms=10)
+
+    # Exercise lazy PwTransferManager creation when no manager is injected.
+    created_mgr = MagicMock()
+    created_mgr.read.return_value = b"lazy-transfer"
+    monkeypatch.setattr("mcubridge_client.client.PwTransferManager", MagicMock(return_value=created_mgr))
+    assert await client.transfer_read(7) == b"lazy-transfer"
+    created_mgr.read.assert_called_once_with(7)
+
+    # Exercise dispatch() timeout error handling.
+    async def _raise_timeout(awaitable: Any, timeout: float) -> Any:
+        del timeout
+        awaitable.cancel()
+        raise TimeoutError("rpc timed out")
+
+    monkeypatch.setattr("mcubridge_client.client.asyncio.wait_for", _raise_timeout)
+    with pytest.raises(TimeoutError, match="rpc timed out"):
+        await client.dispatch("rpc.pb.SystemService/GetVersion")
 
 
 async def test_gateway_client_duplicate_callbacks() -> None:

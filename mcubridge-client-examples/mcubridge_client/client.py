@@ -91,35 +91,29 @@ class GatewayConnection:
             while view:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Timed out sending Gateway HDLC frame")
-                wait_read = False
-                wait_write = False
+                wait_lists: tuple[list[socket.socket], list[socket.socket]] | None = None
                 with self._io_lock:
                     if self._closed:
                         return
                     try:
                         sent = self.sock.send(view)
                     except ssl.SSLWantReadError:
-                        wait_read = True
+                        wait_lists = ([self.sock], [])
                     except (ssl.SSLWantWriteError, BlockingIOError):
-                        wait_write = True
+                        wait_lists = ([], [self.sock])
                     else:
                         if sent == 0:
                             raise ConnectionError("Gateway socket closed during send")
                         view = view[sent:]
-                if wait_read or wait_write:
+                if wait_lists is not None:
                     try:
-                        if wait_read:
-                            select.select([self.sock], [], [], 0.05)
-                        else:
-                            select.select([], [self.sock], [], 0.05)
+                        select.select(wait_lists[0], wait_lists[1], [], 0.05)
                     except (OSError, ValueError):
                         return
 
     def _reader_loop(self) -> None:
         while self.running:
             with self._io_lock:
-                if self._closed:
-                    break
                 has_pending = isinstance(self.sock, ssl.SSLSocket) and self.sock.pending() > 0
             if not has_pending:
                 try:
@@ -130,8 +124,6 @@ class GatewayConnection:
                 if not readable:
                     continue
             with self._io_lock:
-                if self._closed:
-                    break
                 try:
                     chunk = self.sock.recv(4096)
                 except (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError):

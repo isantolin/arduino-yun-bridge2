@@ -185,11 +185,34 @@ def test_installed_binary_cli_help_and_usage_contract(tmp_path: Path) -> None:
         staged_unit = tmp_path / "etc" / "systemd" / "system" / "mcubridge-gateway.service"
         staged_unit.parent.mkdir(parents=True)
         shutil.copy2(SYSTEMD_UNIT, staged_unit)
+        # Provide minimal implicit base targets/slices inside the isolated --root so
+        # systemd-analyze verify validates our unit across both Ubuntu and Fedora systemd.
+        sys_units = tmp_path / "usr" / "lib" / "systemd" / "system"
+        sys_units.mkdir(parents=True)
+        for target in (
+            "sysinit.target",
+            "basic.target",
+            "shutdown.target",
+            "network-online.target",
+            "multi-user.target",
+            "slices.target",
+        ):
+            (sys_units / target).write_text("[Unit]\nDescription=Test stub\n", encoding="utf-8")
+        for slice_name in ("system.slice", "-.slice"):
+            (sys_units / slice_name).write_text("[Unit]\nDescription=Test stub\n[Slice]\n", encoding="utf-8")
         verify = subprocess.run(
-            [systemd_analyze, "verify", "--man=no", f"--root={tmp_path}", "mcubridge-gateway.service"],
+            [
+                systemd_analyze,
+                "verify",
+                "--man=no",
+                "--recursive-errors=no",
+                f"--root={tmp_path}",
+                "mcubridge-gateway.service",
+            ],
             capture_output=True,
             text=True,
             timeout=15,
             check=False,
         )
         assert verify.returncode == 0, f"systemd-analyze verify failed:\n{verify.stdout}\n{verify.stderr}"
+        assert verify.stderr.strip() == "", f"systemd-analyze verify reported warnings:\n{verify.stderr}"

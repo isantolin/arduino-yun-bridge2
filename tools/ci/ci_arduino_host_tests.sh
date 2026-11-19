@@ -167,6 +167,7 @@ SOURCES=(
     "$PW_ROOT/pw_status/status.cc"
     "$PW_ROOT/pw_tokenizer/encode_args.cc"
     "$PW_ROOT/pw_tokenizer/tokenize.cc"
+    "$PW_ROOT/pw_log/rate_limited.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
 )
 

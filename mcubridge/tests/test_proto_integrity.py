@@ -2,11 +2,11 @@
 
 from collections.abc import Sequence
 import json
+import re
 from pathlib import Path
 import subprocess
 from typing import Any, cast
 
-from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 import pytest
 from pytest_mock import MockerFixture
@@ -216,7 +216,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert "aead_algorithm" not in handshake_fields
     assert "aead_description" not in handshake_fields
 
-    # 4. Retired constants are absent and their field numbers/names remain reserved.
+    # 4. Retired constants are absent from the canonical descriptor.
     constant_fields = config_schema_pb2.Constants.DESCRIPTOR.fields_by_name
     retired_constants = {
         "max_command_id",
@@ -252,15 +252,12 @@ def test_protobuf_descriptor_purged_elements() -> None:
     }
     assert retired_constants.isdisjoint(constant_fields)
 
-    descriptor_file = descriptor_pb2.FileDescriptorProto()
-    descriptor_file.ParseFromString(config_schema_pb2.Constants.DESCRIPTOR.file.serialized_pb)
-    constants_proto = next(message for message in descriptor_file.message_type if message.name == "Constants")
-    reserved_constant_numbers = {
-        number for item in constants_proto.reserved_range for number in range(item.start, item.end)
-    }
-    expected_reserved_numbers = set(range(14, 21)) | {24, 27, 29, 31, 33, 34} | set(range(39, 54)) | {67, 68}
-    assert expected_reserved_numbers <= reserved_constant_numbers
-    assert retired_constants <= set(constants_proto.reserved_name)
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    proto_files = sorted((repo_root / "tools" / "protocol").glob("*.proto"))
+    assert proto_files
+    for proto_path in proto_files:
+        source = proto_path.read_text(encoding="utf-8")
+        assert not re.search(r"^\s*reserved\s+", source, re.MULTILINE), proto_path
 
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:

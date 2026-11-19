@@ -11,7 +11,7 @@
 #endif
 #include "services/Console.h"
 #include "services/DataStore.h"
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include "services/EepromTransfer.h"
 #endif
 #include "services/FileSystem.h"
@@ -250,6 +250,7 @@ FileSystemRpcService g_file_system_service;
 #if BRIDGE_ENABLE_MAILBOX
 MailboxRpcService g_mailbox_service;
 #endif
+BridgeClass* g_rpc_services_owner = nullptr;
 
 }  // namespace
 
@@ -278,17 +279,13 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
-      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-#if BRIDGE_ENABLE_PW_TRANSFER
-      ,
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _transfer_thread(pw::ByteSpan(_transfer_chunk_storage.data(),
                                     _transfer_chunk_storage.size()),
                        pw::ByteSpan(_transfer_encode_storage.data(),
                                     _transfer_encode_storage.size())),
       _transfer_service(_transfer_thread, 256),
-      _transfer_client(_rpc_client, 1, _transfer_thread, 256)
-#endif
-{
+      _transfer_client(_rpc_client, 1, _transfer_thread, 256) {
 #if defined(ARDUINO_ARCH_AVR)
   pw_assert_avr_SetPanicHook(BridgePanicHook);
 #endif
@@ -300,7 +297,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
   _hardware_serial = &serial;
 }
 
-BridgeClass::~BridgeClass() {
+void BridgeClass::_unregisterRpcServices() {
   if (!_rpc_services_registered) return;
   _rpc_server.UnregisterService(g_gpio_service, g_system_service,
                                 g_clock_sync_service
@@ -316,11 +313,26 @@ BridgeClass::~BridgeClass() {
                                 ,
                                 g_mailbox_service
 #endif
-#if BRIDGE_ENABLE_PW_TRANSFER
                                 ,
-                                _transfer_service
+                                _transfer_service);
+  _rpc_services_registered = false;
+  g_rpc_services_owner = nullptr;
+}
+
+BridgeClass::~BridgeClass() {
+  // Detach external stream references first so teardown never performs I/O on
+  // a stream whose lifetime has already ended.
+  _stream = nullptr;
+  _hardware_serial = nullptr;
+  _arduino_stream.setStream(static_cast<Stream*>(nullptr));
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+  bridge::services::unregisterEepromTransferHandler(_transfer_service);
 #endif
-  );
+#if BRIDGE_ENABLE_FILESYSTEM
+  FileSystemClass::unregisterUploadHandler(_transfer_service);
+#endif
+  _pin_stream_writer = {};
+  _unregisterRpcServices();
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(pw::ConstByteSpan packet) {
@@ -358,6 +370,9 @@ void BridgeClass::_initializeRuntime() {
 #endif
 
   if (_rpc_services_registered) return;
+  if (g_rpc_services_owner != nullptr) {
+    g_rpc_services_owner->_unregisterRpcServices();
+  }
   _rpc_server.RegisterService(g_gpio_service, g_system_service,
                               g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
@@ -372,12 +387,10 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
-#if BRIDGE_ENABLE_PW_TRANSFER
                               ,
-                              _transfer_service
-#endif
-  );
+                              _transfer_service);
   _rpc_services_registered = true;
+  g_rpc_services_owner = this;
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
@@ -406,27 +419,21 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
-#if BRIDGE_ENABLE_PW_TRANSFER
-  if (!_eeprom_transfer_registered) {
-    _eeprom_transfer_registered =
-        bridge::services::registerEepromTransferHandler(_transfer_service);
-    if (!_eeprom_transfer_registered) {
-      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
-      enterSafeState();
-      return;
-    }
-  }
-#if BRIDGE_ENABLE_FILESYSTEM
-  if (!_upload_transfer_registered) {
-    _upload_transfer_registered =
-        FileSystemClass::registerUploadHandler(_transfer_service);
-    if (!_upload_transfer_registered) {
-      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
-      enterSafeState();
-      return;
-    }
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+  if (!bridge::services::registerEepromTransferHandler(_transfer_service,
+                                                       _transfer_thread)) {
+    emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    enterSafeState();
+    return;
   }
 #endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  if (!FileSystemClass::registerUploadHandler(_transfer_service,
+                                              _transfer_thread)) {
+    emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    enterSafeState();
+    return;
+  }
 #endif
 
   _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
@@ -453,12 +460,10 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
-#if BRIDGE_ENABLE_PW_TRANSFER
   const pw::Status transfer_status = _transfer_thread.Poll(2);
   if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);
   }
-#endif
   _timerTask();
   _subscriptionTask();
 #if BRIDGE_ENABLE_CONSOLE
@@ -733,7 +738,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
 }
 
 void BridgeClass::_clearLinkSession() {
-#if BRIDGE_ENABLE_PW_TRANSFER && BRIDGE_ENABLE_FILESYSTEM
+#if BRIDGE_ENABLE_FILESYSTEM
   FileSystemClass::_resetUpload();
 #endif
   _pin_stream_writer = {};
@@ -778,7 +783,7 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
 }
 
 void BridgeClass::enterSafeState() {
-#if BRIDGE_ENABLE_PW_TRANSFER && BRIDGE_ENABLE_FILESYSTEM
+#if BRIDGE_ENABLE_FILESYSTEM
   FileSystemClass::_resetUpload();
 #endif
   bridge::hal::forceSafeState();

@@ -98,20 +98,9 @@ inline constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 // resource.
 inline constexpr size_t LINK_EPOCH_EEPROM_RESERVED_BYTES = 16U;
 
-// Upstream pw_transfer endpoints (TransferService, Client, Thread<1, 1>) and
-// the built-in EEPROM resource 0x4D454741. Enabled by default wherever it is
-// implemented (currently the AVR port only); define it to 0 as a global build
-// flag to reclaim ~0.5 KB of SRAM on the ATmega2560.
-#ifndef BRIDGE_ENABLE_PW_TRANSFER
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
-#define BRIDGE_ENABLE_PW_TRANSFER 1
-#else
-#define BRIDGE_ENABLE_PW_TRANSFER 0
-#endif
-#endif
-#if BRIDGE_ENABLE_PW_TRANSFER && !defined(ARDUINO_ARCH_AVR) && !defined(__AVR__)
-#error "BRIDGE_ENABLE_PW_TRANSFER is only implemented for AVR targets"
-#endif
+// Upstream pw_transfer is the sole MCU file-transfer protocol. Its
+// cooperative AVR execution model is an implementation detail, not a feature
+// toggle; the transfer service is always part of the firmware.
 
 inline constexpr bool ENABLE_CONSOLE = BRIDGE_ENABLE_CONSOLE;
 inline constexpr bool ENABLE_DATASTORE = BRIDGE_ENABLE_DATASTORE;

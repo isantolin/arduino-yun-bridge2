@@ -7,14 +7,12 @@
 
 #include <etl/string_view.h>
 #include <pw_span/span.h>
+#include <pw_status/status.h>
+#include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
 
 #include "config/bridge_config.h"
 #include "protocol/mcu_wire.pb.h"
-
-#if BRIDGE_ENABLE_PW_TRANSFER
-#include <pw_status/status.h>
-#include <pw_transfer/transfer.h>
-#endif
 
 class FileSystemClass {
  public:
@@ -25,7 +23,6 @@ class FileSystemClass {
   static void _onWrite(const rpc_pb_FileWrite& msg);
   static void _onRemove(const rpc_pb_FileRemove& msg);
 
-#if BRIDGE_ENABLE_PW_TRANSFER
   // ADR-0007 (E6): store `data` at `path` under the MPU file_system_root via
   // pw_transfer. The bytes are exposed read-only on FILE_UPLOAD_RESOURCE_ID
   // and must stay valid and unchanged until uploadPending() returns false.
@@ -35,9 +32,11 @@ class FileSystemClass {
   static bool uploadPending();
   // Status reported by the daemon for the last finished upload.
   static pw::Status lastUploadStatus();
-  static bool registerUploadHandler(pw::transfer::TransferService& service);
+  static bool registerUploadHandler(pw::transfer::TransferService& service,
+                                    pw::transfer::TransferThread& thread);
+  static void unregisterUploadHandler(
+      const pw::transfer::TransferService& service);
   static void _resetUpload();
-#endif
 };
 
 using FileSystemType = FileSystemClass;

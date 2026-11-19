@@ -11,7 +11,6 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
-#if BRIDGE_ENABLE_PW_TRANSFER
 #include <etl/optional.h>
 #include <pw_stream/memory_stream.h>
 #include <pw_transfer/handler.h>
@@ -20,6 +19,8 @@
 
 namespace {
 
+bool g_upload_handler_destroyed = false;
+
 // Read-only view over the sketch buffer of the upload in progress. The
 // daemon may retry reads; the resource stays armed until the Upload call
 // completes.
@@ -27,6 +28,48 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
  public:
   UploadTransferHandler()
       : pw::transfer::ReadOnlyHandler(rpc::RPC_FILE_UPLOAD_RESOURCE_ID) {}
+
+  ~UploadTransferHandler() override {
+    detach();
+    g_upload_handler_destroyed = true;
+  }
+
+  bool attach(pw::transfer::TransferService& service,
+              pw::transfer::TransferThread& thread) {
+    if (service_ == &service) {
+      return true;
+    }
+    detach();
+    drain(thread);
+    if (!service.RegisterHandler(*this)) {
+      return false;
+    }
+    drain(thread);
+    service_ = &service;
+    thread_ = &thread;
+    return true;
+  }
+
+  void detach() {
+    if (service_ == nullptr) {
+      return;
+    }
+    pw::transfer::TransferService* const service = service_;
+    pw::transfer::TransferThread* const thread = thread_;
+    service_ = nullptr;
+    thread_ = nullptr;
+    drain(*thread);
+    (void)service->UnregisterHandler(*this);
+    drain(*thread);
+  }
+
+  bool detachFrom(const pw::transfer::TransferService& service) {
+    if (service_ != &service) {
+      return false;
+    }
+    detach();
+    return true;
+  }
 
   void arm(pw::ConstByteSpan data) { data_ = data; }
 
@@ -43,6 +86,16 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
  private:
+  static void drain(pw::transfer::TransferThread& thread) {
+#if defined(PW_TRANSFER_COOPERATIVE)
+    (void)thread.Poll(PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY);
+#else
+    (void)thread;
+#endif
+  }
+
+  pw::transfer::TransferService* service_ = nullptr;
+  pw::transfer::TransferThread* thread_ = nullptr;
   pw::ConstByteSpan data_;
   etl::optional<pw::stream::MemoryReader> reader_;
 };
@@ -67,8 +120,17 @@ void FileSystemClass::_resetUpload() {
 }
 
 bool FileSystemClass::registerUploadHandler(
-    pw::transfer::TransferService& service) {
-  return service.RegisterHandler(g_upload_handler);
+    pw::transfer::TransferService& service,
+    pw::transfer::TransferThread& thread) {
+  return g_upload_handler.attach(service, thread);
+}
+
+void FileSystemClass::unregisterUploadHandler(
+    const pw::transfer::TransferService& service) {
+  if (g_upload_handler_destroyed) return;
+  if (g_upload_handler.detachFrom(service)) {
+    _resetUpload();
+  }
 }
 
 bool FileSystemClass::uploadPending() { return g_upload_pending; }
@@ -97,7 +159,6 @@ bool FileSystemClass::upload(etl::string_view path,
       [](pw::Status status) { finishUpload(status); });
   return true;
 }
-#endif  // BRIDGE_ENABLE_PW_TRANSFER
 
 void FileSystemClass::write(etl::string_view path,
                             pw::span<const uint8_t> data) {

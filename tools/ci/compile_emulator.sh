@@ -36,6 +36,9 @@ echo "[emulator] Installing library dependencies..."
 # shellcheck source=tools/ci/arduino_toolchains.sh
 source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
 
+mkdir -p "${METADATA_DIR}"
+stage_cooperative_pw_transfer "${METADATA_DIR}/pw_transfer" "${ARDUINO_LIBS}"
+
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
@@ -57,7 +60,6 @@ WOLF_SOURCES=(
     "$WOLFCRYPT_SRC/misc.c"
 )
 
-mkdir -p "${METADATA_DIR}"
 "${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
     --host-test \
     --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h" \
@@ -88,9 +90,31 @@ for source in "${WOLF_SOURCES[@]}"; do
     WOLF_OBJECTS+=("$object")
 done
 
+PW_OBJ_DIR="${METADATA_DIR}/pigweed"
+rm -rf "$PW_OBJ_DIR"
+mkdir -p "$PW_OBJ_DIR"
+PW_OBJECTS=()
+PW_ALL_SRCS=(
+    "${PW_PIGWEED_SRCS[@]}"
+    "${PW_TRANSFER_STAGED_SRCS[@]}"
+)
+for source in "${PW_ALL_SRCS[@]}"; do
+    object_name="${source#"$ROOT_DIR/"}"
+    object_name="${object_name//\//_}"
+    object="${PW_OBJ_DIR}/${object_name%.cc}.o"
+    g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter \
+        -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
+        "${PW_COOPERATIVE_DEFINES[@]}" \
+        -I"${SRC_DIR}" \
+        "${PW_HOST_INC_FLAGS[@]}" \
+        -c "$source" -o "$object"
+    PW_OBJECTS+=("$object")
+done
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
+    "${PW_COOPERATIVE_DEFINES[@]}" \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -100,13 +124,13 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    "${PW_INC_FLAGS[@]}" \
+    "${PW_HOST_INC_FLAGS[@]}" \
     -I"${WOLFSSL_INC}" \
     -I"${WOLFSSL_PATH}" \
     -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
     "${WOLF_OBJECTS[@]}" \
-    "${PW_PIGWEED_SRCS[@]}" \
+    "${PW_OBJECTS[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -127,6 +151,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
+    "${PW_COOPERATIVE_DEFINES[@]}" \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
@@ -136,13 +161,13 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
-    "${PW_INC_FLAGS[@]}" \
+    "${PW_HOST_INC_FLAGS[@]}" \
     -I"${WOLFSSL_INC}" \
     -I"${WOLFSSL_PATH}" \
     -DWOLFSSL_USER_SETTINGS \
     "${NANOPB_SOURCES[@]}" \
     "${WOLF_OBJECTS[@]}" \
-    "${PW_PIGWEED_SRCS[@]}" \
+    "${PW_OBJECTS[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

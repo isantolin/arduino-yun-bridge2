@@ -1,6 +1,6 @@
 # Upstream pw_transfer integration (Arduino Mega 2560)
 
-The AVR build of McuBridge exposes upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel. It is controlled by `BRIDGE_ENABLE_PW_TRANSFER`, **enabled by default** on AVR (the only port that implements it); building with `-DBRIDGE_ENABLE_PW_TRANSFER=0` removes the transfer thread, service, client, EEPROM handler and their 384 B of staging buffers to reclaim SRAM. Library sources compile separately from the sketch, so the macro must be a global build flag (for example `compiler.cpp.extra_flags`), not a `#define` in the sketch. `pw_transfer` is the only supported streaming-transfer protocol; the legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
+McuBridge uses upstream Pigweed `pw_transfer` through the existing `pw_rpc` / HDLC channel as its sole file-transfer architecture. The transfer thread, service, and client are always part of the firmware; there is no build-time or runtime enable/disable switch and no fallback transfer protocol. AVR-specific EEPROM handling is a hardware adapter registered on AVR, while the generic transfer service remains active. The legacy `FileSystemService.Read` Nanopb stream has been removed from the schema, firmware, and host tests.
 
 ## Runtime ownership
 
@@ -24,7 +24,7 @@ Bridge.transferClient()
 
 ## Registering an application resource
 
-When `BRIDGE_ENABLE_PW_TRANSFER` is enabled (the AVR default), the EEPROM resource is registered automatically by `Bridge.begin()`. Its stable resource ID is `0x4D454741` and its resource size is 4,080 bytes (the last 16 bytes of the EEPROM hold the link boot epoch, ADR-0005). Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
+On AVR, the EEPROM resource is registered automatically by `Bridge.begin()` as a hardware-specific `pw_transfer` resource. Its stable resource ID is `0x4D454741` and its resource size is 4,080 bytes (the last 16 bytes of the EEPROM hold the link boot epoch, ADR-0005). Applications can still register additional resources, provided handlers and backing streams have static or otherwise transfer-long lifetime. For example, a read-only in-memory resource can be registered after `Bridge.begin()`:
 
 ```cpp
 #include <etl/array.h>
@@ -71,14 +71,21 @@ As formalized in [ADR-0004](decisions/0004-linux-mpu-storage-ssot.md), the OpenW
 
 ## Validation and release gates
 
-- The port includes [avr_pigweed_port PR #8](https://github.com/isantolin/avr_pigweed_port/pull/8), [PR #10](https://github.com/isantolin/avr_pigweed_port/pull/10), [PR #11](https://github.com/isantolin/avr_pigweed_port/pull/11), and [PR #12](https://github.com/isantolin/avr_pigweed_port/pull/12), merged as `026c5f6b4350e75641bc125d2098e53c7e2d317f`. The Bridge PR submodule is pinned to that merge commit. Both CRC32 CI configurations passed in PR #10; the Bridge PR's final-head matrix remains a separate release gate.
+- The port's upstream `pw_rpc`/`pw_transfer` foundation includes [PR #8](https://github.com/isantolin/avr_pigweed_port/pull/8), [PR #10](https://github.com/isantolin/avr_pigweed_port/pull/10), [PR #11](https://github.com/isantolin/avr_pigweed_port/pull/11), and [PR #12](https://github.com/isantolin/avr_pigweed_port/pull/12), merged as `026c5f6b4350e75641bc125d2098e53c7e2d317f`. The repository's current submodule pin is the later `ee9708e34606c0775a433aa003e5006b50c456b0`, which also carries simavr stack-low-water and peak-context diagnostics. This PR consumes that existing instrumentation and does not add further `pw_emu` integration. Both CRC32 CI configurations passed in PR #10; the Bridge PR's final-head matrix remains a separate release gate.
 - CI compiles both BridgeControl and a dedicated `pw_transfer` API sketch for Arduino Mega 2560 (default build, `pw_transfer` enabled).
 - Fleet Mesh now runs the canonical sketch on simavr, initiates `FileSystem.upload()` from the Mega, and verifies the exact uploaded bytes under that node's isolated MPU `file_system_root`. This is the end-to-end MCU → serial/HDLC → daemon → MPU filesystem check; it does not replace a physical UART/HDLC test.
 - The port CI exercises upstream transfer reads/writes, retries, cancellation, timeout, bounded-queue saturation, and sequential role reuse under `simavr`.
 - The complete Bridge firmware's Flash, static SRAM, and worst-case stack must be measured from the Mega 2560 ELF. Standalone port measurements are not a substitute.
 - Hardware UART/HDLC transfer against a live MPU remains a separate release gate.
 
-This PR removes only the MCU `FileSystemService.Read` RPC. The `mcubridge-gateway` central Linux service still exposes the existing `LocalBridge.FileRead` / `FileWrite` APIs, and the edge MPU daemon still owns the actual device filesystem. Their `mcu/eeprom` route now uses upstream `pw_transfer`; ordinary paths still use the MPU filesystem.
+The MCU `FileSystemService.Read` RPC and the legacy `CloudBridge` / `LocalBridge` gRPC contracts have been removed. The current file-transfer boundaries are:
+
+- Cloud ↔ Linux staging is orchestrated by the daemon's `FileTransferService` RPC (`PushToLinux` / `FetchFromLinux`), which transfers data through the C++ Gateway's upstream `pw_transfer::TransferService` resources.
+- MCU → Linux uploads use E6: `FileSystemService.Upload` announces the transfer, the daemon reads the MCU's `FILE_UPLOAD_RESOURCE_ID` through its upstream `pw_transfer` client, and the MPU stores the validated file under `file_system_root`.
+- AVR EEPROM access uses the fixed `0x4D454741` resource and the E5 cloud staging flow.
+- Bounded MCU `FileSystemService.Write` and `Remove` unary operations remain for small filesystem operations; they are not alternate bulk-transfer protocols.
+
+The Python daemon still owns the edge MPU filesystem. The C++ Gateway is the sole central Gateway implementation; its complete service parity and production cutover remain governed by the separate Gateway release gates below.
 
 The Linux endpoint is a **replacement Gateway**, not an extension or sidecar to the existing Python/grpclib Gateway. ADR-0003 defines the production target: one standalone C++ Linux service using upstream `pw::rpc::Server`, `pw::transfer::TransferService`, `pw_hdlc`, and mutually authenticated TLS. Python Pigweed packages remain clients.
 

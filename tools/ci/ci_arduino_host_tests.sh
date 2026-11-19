@@ -85,6 +85,27 @@ WOLF_SOURCES=(
     "$WOLFCRYPT_SRC/misc.c"
 )
 
+PIGWEED_TRANSFER_DIR="$ARDUINO_LIBS/PigweedAVR/src"
+PIGWEED_TRANSFER_INCLUDE_DIR="$BUILD_DIR/pigweed-transfer-include"
+PIGWEED_TRANSFER_SOURCE_DIR="$BUILD_DIR/pigweed-transfer-sources"
+rm -rf "$PIGWEED_TRANSFER_INCLUDE_DIR" "$PIGWEED_TRANSFER_SOURCE_DIR"
+mkdir -p "$PIGWEED_TRANSFER_INCLUDE_DIR" "$PIGWEED_TRANSFER_SOURCE_DIR"
+cp -a "$PIGWEED_TRANSFER_DIR/pw_transfer" "$PIGWEED_TRANSFER_INCLUDE_DIR/"
+for transfer_header in pw_transfer/client.h pw_transfer/transfer.h pw_transfer/transfer_thread.h; do
+    if [[ ! -f "$PIGWEED_TRANSFER_DIR/$transfer_header" ]]; then
+        echo "[host-cpp] ERROR: exported upstream header is missing: $PIGWEED_TRANSFER_DIR/$transfer_header" >&2
+        exit 1
+    fi
+done
+find "$PIGWEED_TRANSFER_DIR" -maxdepth 1 -type f \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' \) -exec cp {} "$PIGWEED_TRANSFER_SOURCE_DIR/" \;
+mapfile -t PIGWEED_TRANSFER_SOURCES < <(
+    find "$PIGWEED_TRANSFER_SOURCE_DIR" -maxdepth 1 -type f \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' \) -print | sort
+)
+if [[ ${#PIGWEED_TRANSFER_SOURCES[@]} -eq 0 ]]; then
+    echo "[host-cpp] ERROR: no exported upstream pw_transfer implementation sources found." >&2
+    exit 1
+fi
+
 PIGWEED_RPC_SOURCES=(
     "$PW_ROOT/pw_rpc/call.cc"
     "$PW_ROOT/pw_rpc/client.cc"
@@ -138,6 +159,7 @@ SOURCES=(
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
     "${PIGWEED_RPC_SOURCES[@]}"
+    "${PIGWEED_TRANSFER_SOURCES[@]}"
     "$PW_ROOT/pw_checksum/crc32.cc"
     "$PW_ROOT/pw_hdlc/decoder.cc"
     "$PW_ROOT/pw_hdlc/encoder.cc"
@@ -145,6 +167,7 @@ SOURCES=(
     "$PW_ROOT/pw_status/status.cc"
     "$PW_ROOT/pw_tokenizer/encode_args.cc"
     "$PW_ROOT/pw_tokenizer/tokenize.cc"
+    "$PW_ROOT/pw_log/rate_limited.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
 )
 
@@ -156,6 +179,10 @@ INC_FLAGS=(
     -I"${METADATA_DIR}"
     -I"${STUB_DIR}"
     -I"${TEST_DIR}"
+    -I"$PW_ROOT/pw_chrono_stl/clock_public_overrides"
+    -I"$PW_ROOT/pw_chrono_stl/public"
+    -I"$PW_ROOT/pw_chrono/public"
+    -I"$PIGWEED_TRANSFER_INCLUDE_DIR"
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
@@ -187,6 +214,9 @@ INC_FLAGS=(
     -I"$PW_ROOT/pw_memory/public"
     -I"$PW_ROOT/pw_protobuf/public"
     -I"$PW_ROOT/pw_sync/public"
+    -I"$PW_ROOT/pw_sync/public_overrides"
+    -I"$PW_ROOT/pw_sync_stl/public_overrides"
+    -I"$PW_ROOT/pw_sync_stl/public"
     -I"$PW_ROOT/pw_thread/public"
     -I"$PW_ROOT/pw_toolchain/public"
     -I"$PW_ROOT/third_party/fuchsia/repo/sdk/lib/stdcompat/include"
@@ -207,6 +237,9 @@ COMMON_DEFS=(
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
     -DPW_RPC_USE_GLOBAL_MUTEX=0
+    -DPW_TRANSFER_COOPERATIVE=1
+    -DPW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY=2
+    -DPW_TRANSFER_COOPERATIVE_CHUNK_BUFFER_SIZE=128
 )
 
 if [ "$COVERAGE_MODE" = true ]; then
@@ -241,7 +274,7 @@ fi
 UNITY_DIR="${TEST_DIR}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    g++ -std=c++17 -x c++ -c "${BASE_FLAGS[@]}" "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+    gcc -std=c99 -c "${BASE_FLAGS[@]}" "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
     echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
     UNITY_OBJ=""

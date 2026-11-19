@@ -795,6 +795,22 @@ jobs:
                           f"| {report['static_ram_used_bytes']} B "
                           f"| {report['static_ram_remaining_bytes']} B |\n"
                       )
+                  enabled_path = next(
+                      (p for p in reports if p.parent.name == "BridgeControl"), None
+                  )
+                  disabled_path = next(
+                      (p for p in reports if p.parent.name == "BridgeControl-no-pw-transfer"), None
+                  )
+                  if enabled_path and disabled_path:
+                      enabled = json.loads(enabled_path.read_text(encoding="utf-8"))
+                      disabled = json.loads(disabled_path.read_text(encoding="utf-8"))
+                      output.write("\n### Incremental AVR pw_transfer cost (BridgeControl)\n\n")
+                      output.write(
+                          f"- Flash: {enabled['flash_used_bytes'] - disabled['flash_used_bytes']:+d} B\n"
+                      )
+                      output.write(
+                          f"- Static RAM: {enabled['static_ram_used_bytes'] - disabled['static_ram_used_bytes']:+d} B\n"
+                      )
                   output.write(
                       "\nRuntime stack peak is intentionally not inferred from static "
                       "sections; see simavr runtime watermark artifacts.\n"

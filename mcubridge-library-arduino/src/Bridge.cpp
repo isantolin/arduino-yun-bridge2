@@ -11,8 +11,9 @@
 #endif
 #include "services/Console.h"
 #include "services/DataStore.h"
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include "services/EepromTransfer.h"
+#endif
 #endif
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
@@ -279,7 +280,6 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-#if BRIDGE_ENABLE_PW_TRANSFER
       ,
       _transfer_thread(pw::ByteSpan(_transfer_chunk_storage.data(),
                                     _transfer_chunk_storage.size()),
@@ -316,7 +316,6 @@ BridgeClass::~BridgeClass() {
                                 ,
                                 g_mailbox_service
 #endif
-#if BRIDGE_ENABLE_PW_TRANSFER
                                 ,
                                 _transfer_service
 #endif
@@ -372,7 +371,6 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
-#if BRIDGE_ENABLE_PW_TRANSFER
                               ,
                               _transfer_service
 #endif
@@ -406,7 +404,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   if (!_eeprom_transfer_registered) {
     _eeprom_transfer_registered =
         bridge::services::registerEepromTransferHandler(_transfer_service);
@@ -416,6 +414,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
       return;
     }
   }
+#endif
 #if BRIDGE_ENABLE_FILESYSTEM
   if (!_upload_transfer_registered) {
     _upload_transfer_registered =
@@ -453,7 +452,6 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
-#if BRIDGE_ENABLE_PW_TRANSFER
   const pw::Status transfer_status = _transfer_thread.Poll(2);
   if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);
@@ -733,7 +731,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
 }
 
 void BridgeClass::_clearLinkSession() {
-#if BRIDGE_ENABLE_PW_TRANSFER && BRIDGE_ENABLE_FILESYSTEM
+#if BRIDGE_ENABLE_FILESYSTEM
   FileSystemClass::_resetUpload();
 #endif
   _pin_stream_writer = {};

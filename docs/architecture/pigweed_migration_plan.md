@@ -64,10 +64,10 @@ El corte coordinado ordenado por ADR-0003 se ejecutó en PR #85 (`feat/multi-arc
 | 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, sin `CMD_*`; mantener UBUS y contratos externos sin capas de compatibilidad innecesarias | **Completada** |
 | 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y tablas `commands` | **Completada** |
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
-| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **Implementada; validación end-to-end pendiente** — PR #85 tuvo una falla `Status.NOT_FOUND` en el recurso 2 durante `PushToLinux`; E5 (#100) y E6 (#101) añaden los flujos EEPROM y MCU upload y deben pasar la matriz final |
+| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU y migrar clientes en ambos sentidos | **Implementada y validada en CI** — #100 y #101 mergeados; Fleet Mesh valida EEPROM y upload MCU → Linux. Pendiente prueba física UART/HDLC |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
-| 10 | Validación integral | Las métricas históricas citadas son un baseline anterior, no una validación del HEAD actual. PR #85 debe superar la matriz completa, incluida cobertura Python/C++, AVR Mega 2560, Renode, QEMU, fuzzing, OpenWrt y el Gateway C++ | **En curso — supervisión activa en CI de PR #85** |
+| 10 | Validación integral | CI del HEAD final de #101: matriz principal aprobada, incluidos Mega, Gateway C++, simavr, Renode, QEMU Xtensa, Fleet Mesh, fuzzing y cobertura. OpenWrt APK no es criterio de aceptación del usuario para esta etapa | **Validación automatizada completada; hardware físico pendiente** |
 | 11 | Unificación Canónica de Tópicos y Manejadores | Contratos unificados al espacio canónico `rpc.pb.<Service>/<Method>`. Erradicación completa de `grpclib`, `CloudBridge`, `LocalBridge`, feeds y mocks asociados. Gateway C++ Pigweed (`mcubridge-gateway-cpp`) con `GatewayControl`, `EdgeControl`, `DeviceTelemetry` y mTLS 1.3 SPIFFE validado | **Completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
@@ -92,7 +92,7 @@ Criterios de aceptación:
 
 ## Detalle de la etapa 3: streaming GPIO (`SERVER_STREAMING`)
 
-El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. La transferencia de archivos no usa server-streaming Nanopb: `FileSystemService.Read` fue eliminado. `pw_transfer` tiene un handler de lectura/escritura para la EEPROM interna de 4 KiB del ATmega2560 (recurso fijo `0x4D454741`, sin semántica de filesystem). El endpoint de almacenamiento Linux y la migración de las APIs locales `FileRead`/`FileWrite` siguen pendientes.
+El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>` y `pw_transfer` gestiona contenido binario. El handler EEPROM del ATmega2560 expone el recurso fijo `0x4D454741`; E5 (#100) completa su acceso cloud. E6 (#101) completa la ruta MCU → Linux mediante el recurso `FILE_UPLOAD_RESOURCE_ID`. Los handlers Linux/Gateway mantienen los límites de almacenamiento, cuotas, autorización y staging.
 
 Cambios en el daemon y el contrato:
 
@@ -137,13 +137,13 @@ Cambios en el daemon y el contrato:
 ## Detalle de la etapa 10: Validación integral y métricas finales
 
 1. **Evidencia de pruebas y análisis estático:**
-   - **Pruebas y cobertura C++ (`tools/ci/coverage_arduino.sh`):**
+   - **Pruebas y cobertura C++ (`tools/ci/coverage_arduino.sh`, baseline histórico; no atribuir estos porcentajes al HEAD actual sin el artefacto correspondiente):**
      - Líneas: 99.8%
      - Funciones: 100.0%
      - Ramas: 97.8% (supera el umbral mandatorio $\ge 95\%$)
      - Clang-Tidy: 0 advertencias, 0 supresiones `NOLINT`.
      - Cppcheck: 0 advertencias, 0 errores.
-   - **Pruebas y cobertura Python (`tools/ci/coverage_python.py`):**
+   - **Pruebas y cobertura Python (`tools/ci/coverage_python.py`, baseline histórico; no atribuir estos porcentajes al HEAD actual sin el artefacto correspondiente):**
      - 899 pruebas unitarias y de integración superadas (899 passed, 0 failed en 134s).
      - Cobertura total de líneas: 97.81% (supera $\ge 95\%$).
      - Cobertura pura de ramas: 96.86% (1017/1050, supera $\ge 95\%$).
@@ -181,13 +181,13 @@ Cambios en el daemon y el contrato:
 
 ## Medición y reporte por etapa
 
-Cada PR debe reportar:
+Cada cambio de implementación debe reportar:
 
 - Archivos y rutas legacy eliminadas o reducidas.
 - APIs Pigweed usadas directamente y justificación de cada adaptador restante.
 - Número de líneas manuales antes/después, separando producción, tests y código generado.
 - Resultados de tests y CI por arquitectura.
-- Flash, SRAM estática, stack máximo y buffers para AVR/SAMD/ESP32 cuando cambien.
+- Flash y SRAM estática mediante `resource_report.json`; stack máximo solo cuando exista una medición runtime de la arquitectura. Los reportes y el método están documentados en `docs/architecture/pigweed_resource_measurements.md`.
 - Riesgos de despliegue y si se requiere actualizar firmware y daemon juntos.
 
 No contabilizar código generado como reducción de código manual ni comparar líneas sin separar tests y scaffolding. No eliminar código únicamente por su nombre: verificar todos los productores, consumidores y rutas de seguridad antes de retirarlo.

@@ -51,6 +51,12 @@ Side effects:
 
 CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by users never had it; this aligns CI with them. No user action is needed.
 
+### 7. Transitional unary `FileSystemService.Write` retired (ADR-0008)
+
+`rpc.pb.FileSystemService/Write`, `message FileWrite`, `FileSystem.write()`, `FileSystem._onWrite()`, and the unused MCU SD-card HAL hooks (`bridge::hal::writeFile`, `bridge::hal::readFileChunk`) have been removed. MCU → Linux file writes now run exclusively over `pw_transfer` via `FileSystem.upload(path, data)` across AVR Mega 2560, SAMD21 MKR WiFi 1010, and ESP32-S3 Nano ESP32. `Bridge.transferClient()`, `FileSystemService.Remove`, `cloud_allow_file_write`, and MPU-local UBUS `mcubridge.file_write` are preserved.
+
+**Migration:** update Arduino sketches from `FileSystem.write(path, data)` to `FileSystem.upload(path, data)` (keeping the buffer alive until `FileSystem.uploadPending()` is false) and deploy firmware and daemon together.
+
 ## Fixes
 
 - **Gateway device transfers (PR #86).** Device sessions registered their `pw_transfer` handlers before starting the transfer thread, so every device-side transfer failed with `NOT_FOUND`. Registration failures are now logged.
@@ -67,7 +73,7 @@ CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by us
 ## Features
 
 - **Cloud access to the AVR EEPROM (ADR-0007).** `EepromService.Read/Write` copies the EEPROM image (up to 4,080 bytes) between the gateway and the MCU. The client library adds `read_mcu_eeprom()` and `write_mcu_eeprom()`. It requires the `cloud_allow_eeprom_read` / `cloud_allow_eeprom_write` permissions and a gateway ACL rule; writes are not transactional.
-- **MCU → Linux uploads over `pw_transfer` (AVR, ADR-0007).** `FileSystem.upload(path, data)` sends files of any size up to `file_write_max_bytes` to the MPU storage, instead of 64-byte `FileSystem.write()` calls. Check `FileSystem.uploadPending()` / `lastUploadStatus()`.
+- **MCU → Linux uploads over `pw_transfer` (AVR, SAMD21, ESP32-S3; ADR-0007 / ADR-0008).** `FileSystem.upload(path, data)` sends files of any size up to `file_write_max_bytes` to the MPU storage, replacing the retired 64-byte `FileSystem.write()` RPC. Check `FileSystem.uploadPending()` / `lastUploadStatus()`.
 - `pw_transfer` is the only MCU file-transfer architecture and is always active; no feature toggle or alternate transfer build exists.
 - simavr diagnostics (`avr_pigweed_port` #17/#18):
   - the runner reports the PC, SP and stack low-water mark on a crash;

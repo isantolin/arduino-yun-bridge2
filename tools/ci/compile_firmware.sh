@@ -87,6 +87,7 @@ OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 TMP_LOG="$(mktemp /tmp/compile_firmware_XXXXXX.log)"
 STUBS_OBJ=""
 PW_LIB_ARCHIVE=""
+PW_STAGE_DIR=""
 
 cleanup() {
     rm -f "$TMP_LOG"
@@ -95,6 +96,9 @@ cleanup() {
     fi
     if [ -n "$PW_LIB_ARCHIVE" ] && [ -f "$PW_LIB_ARCHIVE" ]; then
         rm -f "$PW_LIB_ARCHIVE"
+    fi
+    if [ -n "$PW_STAGE_DIR" ] && [ -d "$PW_STAGE_DIR" ]; then
+        rm -rf "$PW_STAGE_DIR"
     fi
 }
 trap cleanup EXIT
@@ -139,10 +143,13 @@ elif [ "$EMULATOR" = "renode" ]; then
     source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
     samd_toolchain_props || exit 1
 
-    PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_samd_XXXXXX.a)"
-    build_pigweed_archive_samd "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" || exit 1
+    PW_STAGE_DIR="$(mktemp -d /tmp/pw_stage_samd_XXXXXX)"
+    stage_cooperative_pw_transfer "$PW_STAGE_DIR" "$USER_LIB_DIR" || exit 1
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0"
+    PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_samd_XXXXXX.a)"
+    build_pigweed_archive_samd "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" "$USER_LIB_DIR" || exit 1
+
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 $PW_COOPERATIVE_DEFS"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
@@ -150,8 +157,8 @@ elif [ "$EMULATOR" = "renode" ]; then
         "--warnings" "default"
         "${SAMD_TOOLCHAIN_PROPS[@]}"
         "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1 $PW_INC"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_INC"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1 $PW_SAMD_INC"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_SAMD_INC"
         "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive"
         "--build-path" "$OUTPUT_DIR"
     )
@@ -160,21 +167,24 @@ elif [ "$EMULATOR" = "qemu" ]; then
     source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
     find_esp32_toolchain || exit 1
 
+    PW_STAGE_DIR="$(mktemp -d /tmp/pw_stage_esp32_XXXXXX)"
+    stage_cooperative_pw_transfer "$PW_STAGE_DIR" "$USER_LIB_DIR" || exit 1
+
     STUBS_SRC="${ROOT_DIR}/tools/emulation/qemu/esp32_qemu_stubs.c"
     STUBS_OBJ="$(mktemp /tmp/esp32_qemu_stubs_XXXXXX.o)"
     "$XTENSA_GCC" -c "$STUBS_SRC" -o "$STUBS_OBJ"
 
     PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_esp32_XXXXXX.a)"
-    build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" || exit 1
+    build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" "$USER_LIB_DIR" || exit 1
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT -DPW_RPC_USE_GLOBAL_MUTEX=0"
+    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT -DPW_RPC_USE_GLOBAL_MUTEX=0 $PW_COOPERATIVE_DEFS"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
         "--libraries" "$USER_LIB_DIR"
         "--warnings" "default"
-        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -DETL_NO_STL $COMMON_FLAGS $PW_INC"
-        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_INC"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -DETL_NO_STL $COMMON_FLAGS $PW_ESP32_INC"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_ESP32_INC"
         "--build-property" "build.psram_type=qspi"
         "--build-property" "build.cdc_on_boot=0"
         "--build-property" "build.dfu_on_boot=0"
@@ -186,7 +196,7 @@ fi
 
 echo "[compile_firmware] Compiling $SKETCH_PATH for $FQBN (${EMULATOR})..."
 
-if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2>&1; then
+if LC_ALL=C LANG=C arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2>&1; then
     cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
     python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
         --fqbn "$FQBN" \

@@ -13,7 +13,6 @@
 
 #include <pw_status/status.h>
 #include <pw_transfer/transfer.h>
-#endif
 
 class FileSystemClass {
  public:
@@ -35,7 +34,6 @@ class FileSystemClass {
   static pw::Status lastUploadStatus();
   static bool registerUploadHandler(pw::transfer::TransferService& service);
   static void _resetUpload();
-#endif
 };
 
 using FileSystemType = FileSystemClass;

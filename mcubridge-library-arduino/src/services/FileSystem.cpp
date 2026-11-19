@@ -11,6 +11,7 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
+#if BRIDGE_ENABLE_PW_TRANSFER
 #include <etl/optional.h>
 #include <pw_stream/memory_stream.h>
 #include <pw_transfer/handler.h>
@@ -96,6 +97,7 @@ bool FileSystemClass::upload(etl::string_view path,
       [](pw::Status status) { finishUpload(status); });
   return true;
 }
+#endif  // BRIDGE_ENABLE_PW_TRANSFER
 
 void FileSystemClass::write(etl::string_view path,
                             pw::span<const uint8_t> data) {

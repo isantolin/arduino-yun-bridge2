@@ -36,7 +36,6 @@
 #ifndef BRIDGE_SERIAL_SHARED_SECRET
 #define BRIDGE_SERIAL_SHARED_SECRET \
   "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
-#endif
 
 #if defined(ARDUINO_ARCH_AVR)
 inline constexpr uint8_t TEST_PWM_PIN = 9;
@@ -110,7 +109,6 @@ void setup() {
 enum class InitStep : uint8_t {
   INIT_DATASTORE = 0,
   INIT_FILESYSTEM,
-#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_PW_TRANSFER
   INIT_FILE_UPLOAD,
 #endif
   INIT_DONE

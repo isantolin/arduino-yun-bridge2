@@ -85,6 +85,21 @@ WOLF_SOURCES=(
     "$WOLFCRYPT_SRC/misc.c"
 )
 
+PIGWEED_TRANSFER_DIR="$ARDUINO_LIBS/PigweedAVR/src"
+for transfer_header in pw_transfer/client.h pw_transfer/transfer.h pw_transfer/transfer_thread.h; do
+    if [[ ! -f "$PIGWEED_TRANSFER_DIR/$transfer_header" ]]; then
+        echo "[host-cpp] ERROR: exported upstream header is missing: $PIGWEED_TRANSFER_DIR/$transfer_header" >&2
+        exit 1
+    fi
+done
+mapfile -t PIGWEED_TRANSFER_SOURCES < <(
+    find "$PIGWEED_TRANSFER_DIR" -maxdepth 1 -type f -name 'pw_transfer_*.cc' -print | sort
+)
+if [[ ${#PIGWEED_TRANSFER_SOURCES[@]} -eq 0 ]]; then
+    echo "[host-cpp] ERROR: no exported upstream pw_transfer implementation sources found." >&2
+    exit 1
+fi
+
 PIGWEED_RPC_SOURCES=(
     "$PW_ROOT/pw_rpc/call.cc"
     "$PW_ROOT/pw_rpc/client.cc"
@@ -138,6 +153,7 @@ SOURCES=(
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
     "${PIGWEED_RPC_SOURCES[@]}"
+    "${PIGWEED_TRANSFER_SOURCES[@]}"
     "$PW_ROOT/pw_checksum/crc32.cc"
     "$PW_ROOT/pw_hdlc/decoder.cc"
     "$PW_ROOT/pw_hdlc/encoder.cc"
@@ -156,6 +172,7 @@ INC_FLAGS=(
     -I"${METADATA_DIR}"
     -I"${STUB_DIR}"
     -I"${TEST_DIR}"
+    -I"$PIGWEED_TRANSFER_DIR"
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"

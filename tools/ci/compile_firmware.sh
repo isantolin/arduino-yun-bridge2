@@ -210,6 +210,18 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2
     fi
     cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
 
+    # Emit a machine-readable report from the compiler's measured summary.
+    # AVR additionally gets section accounting from its linked ELF.
+    RESOURCE_REPORT_ARGS=(
+        --compile-log "${OUTPUT_DIR}/compile.log"
+        --fqbn "$FQBN"
+        --output "${OUTPUT_DIR}/resource_report.json"
+    )
+    if [ "$EMULATOR" = "simavr" ] && command -v avr-size >/dev/null 2>&1; then
+        RESOURCE_REPORT_ARGS+=(--elf "${OUTPUT_DIR}/firmware.elf" --size-tool avr-size)
+    fi
+    python3 "${ROOT_DIR}/tools/ci/firmware_resource_report.py" "${RESOURCE_REPORT_ARGS[@]}"
+
     if [ "$EMULATOR" = "simavr" ] && command -v avr-size >/dev/null 2>&1; then
         # Static RAM report: the ATmega2560 has 8 KiB SRAM shared by .data,
         # .bss, heap and stack, so log what the image leaves for the stack.

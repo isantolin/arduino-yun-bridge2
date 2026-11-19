@@ -259,10 +259,15 @@ class TlsSocket {
   }
 
  private:
-  bool Wait(short events, const std::atomic<bool>& stopping) const {
+  bool HasPending() {
+    std::lock_guard lock(ssl_mutex_);
+    return SSL_pending(ssl_) > 0;
+  }
+  bool Wait(short events, const std::atomic<bool>& stopping) {
     pollfd descriptor{fd_, events, 0};
     while (!stopping.load()) {
-      const int result = poll(&descriptor, 1, 500);
+      if ((events & POLLIN) != 0 && HasPending()) return true;
+      const int result = poll(&descriptor, 1, 250);
       if (result > 0) {
         if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
           return false;
@@ -1353,6 +1358,8 @@ TlsContext CreateTlsContext(const std::string& certificate,
   SSL_CTX_set_session_cache_mode(context.get(), SSL_SESS_CACHE_OFF);
   SSL_CTX_set_options(context.get(),
                       SSL_OP_NO_RENEGOTIATION | SSL_OP_NO_TICKET);
+  SSL_CTX_set_mode(context.get(), SSL_MODE_ENABLE_PARTIAL_WRITE |
+                                      SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
   SSL_CTX_set_verify(context.get(),
                      SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
                      nullptr);

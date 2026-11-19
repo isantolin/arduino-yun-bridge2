@@ -17,6 +17,7 @@ PW_ROOT="${TOOLCHAIN_REPO_ROOT}/third_party/pigweed"
 PW_INC_FLAGS=(
     -I"${PW_ROOT}/pw_transfer/public"
     -I"${PW_ROOT}/pw_chrono/public"
+    -I"${PW_ROOT}/pw_chrono_stl/public"
     -I"${PW_ROOT}/pw_chrono_stl/clock_public_overrides"
     -I"${PW_ROOT}/pw_status/public"
     -I"${PW_ROOT}/pw_result/public"

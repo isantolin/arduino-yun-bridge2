@@ -10,11 +10,13 @@ implementation. The bridge uses the generated Nanopb service classes and
 Python's `pw_rpc.descriptors.Services` rather than a parallel service/method
 registry.
 
-`pw_transfer` is also upstream. The bridge already pins
-`third_party/avr_pigweed_port` to `ee9708e34606c0775a433aa003e5006b50c456b0`,
-which includes the canonical idempotent Pigweed patch workflow and simavr
-stack-low-water context. Earlier migration-plan references to
-`026c5f6b4350e75641bc125d2098e53c7e2d317f` were stale.
+`pw_transfer` is also upstream. This PR currently pins
+`third_party/avr_pigweed_port` to
+`026c5f6b4350e75641bc125d2098e53c7e2d317f`. The port's newer main commit
+`ee9708e34606c0775a433aa003e5006b50c456b0` contains an idempotent patch
+workflow and simavr stack-low-water context, but it has not been adopted here:
+that branch also includes `pw_emu` work, whose integration is explicitly
+deferred. The migration plan's reference to the newer pin was incorrect.
 
 The AVR-specific cooperative polling change is
 a platform adaptation of Pigweed's `TransferThread`, not a second transfer
@@ -53,12 +55,14 @@ dedicated upstream `pw_transfer` API probe.
 
 The static `resource_report.json` intentionally leaves
 `runtime_stack_peak_bytes` null because it is generated before execution.
-The simavr runner separately writes
-`simavr-logs/<target>_stack_watermark.json` from the measured stack low-water
-mark and captured peak context. The Final Summary combines those runtime
-measurements with the build reports. SAMD21 and ESP32-S3 still need their own
-target-specific runtime watermark before a cross-architecture stack comparison
-can be claimed.
+The simavr runner now attempts to write
+`simavr-logs/<target>_stack_watermark.json` after both successful and failed
+runs. However, the currently pinned AVR port does not emit the low-water and
+peak-context records required by that parser. Consequently, AVR runtime stack
+peak remains unmeasured until compatible instrumentation is backported or a
+port revision without the deferred `pw_emu` integration is selected. SAMD21
+and ESP32-S3 also need target-specific runtime watermarks before a
+cross-architecture stack comparison can be claimed.
 
 ## Interpreting the numbers
 

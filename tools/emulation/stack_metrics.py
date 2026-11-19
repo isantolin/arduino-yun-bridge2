@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,10 @@ def parse_mcu_stack_watermark_line(line: str) -> dict[str, int | str] | None:
     over ``HDLC_ADDRESS_LOG``.
     """
     marker = "MCU_STACK_WATERMARK "
+    if marker not in line and "$TUNVX1NUQUNLX1dBVEVSTUFSSy" in line:
+        b64_part = line.split("$", 1)[1].split('"', 1)[0].split("'", 1)[0].split()[0]
+        padded = b64_part + ("=" * (-len(b64_part) % 4))
+        line = base64.b64decode(padded).decode("utf-8", errors="ignore")
     if marker not in line:
         return None
     tail = line.split(marker, 1)[1]

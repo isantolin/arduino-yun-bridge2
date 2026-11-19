@@ -1,0 +1,75 @@
+[Unit]
+Description=Arduino MCU Bridge 2 Standalone Pigweed mTLS Gateway
+Documentation=https://github.com/isantolin/arduino-yun-bridge2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mcubridge
+Group=mcubridge
+
+# Defaults aligned with mcubridge-gateway-cpp/src/gateway_main.cc CLI flags.
+# Override any variable in /etc/mcubridge-gateway/env.
+Environment=MCUBRIDGE_GATEWAY_CERT=/etc/mcubridge-gateway/gateway.crt
+Environment=MCUBRIDGE_GATEWAY_KEY=/etc/mcubridge-gateway/gateway.key
+Environment=MCUBRIDGE_GATEWAY_CLIENT_CA=/etc/mcubridge-gateway/clients-ca.crt
+Environment=MCUBRIDGE_GATEWAY_ACL=/etc/mcubridge-gateway/gateway.acl
+Environment=MCUBRIDGE_GATEWAY_STAGING_DIR=/var/lib/mcubridge-gateway
+Environment=MCUBRIDGE_GATEWAY_BIND=*
+Environment=MCUBRIDGE_GATEWAY_PORT=8443
+EnvironmentFile=-/etc/mcubridge-gateway/env
+
+# Quoted expansions preserve an intentionally empty MCUBRIDGE_GATEWAY_ACL (deny-all).
+ExecStart=/usr/local/bin/mcubridge-gateway-cpp \
+  --cert "${MCUBRIDGE_GATEWAY_CERT}" \
+  --key "${MCUBRIDGE_GATEWAY_KEY}" \
+  --client-ca "${MCUBRIDGE_GATEWAY_CLIENT_CA}" \
+  --acl "${MCUBRIDGE_GATEWAY_ACL}" \
+  --staging-dir "${MCUBRIDGE_GATEWAY_STAGING_DIR}" \
+  --bind "${MCUBRIDGE_GATEWAY_BIND}" \
+  --port "${MCUBRIDGE_GATEWAY_PORT}"
+
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+StandardOutput=journal
+StandardError=journal
+
+# Managed directories matching PrepareStagingRoot() (mode 0700 owned by service user).
+StateDirectory=mcubridge-gateway
+StateDirectoryMode=0700
+ConfigurationDirectory=mcubridge-gateway
+ConfigurationDirectoryMode=0750
+UMask=0077
+LimitNOFILE=4096
+
+# Hardened Linux sandboxing (unprivileged port >= 1024; zero Linux capabilities).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ReadOnlyPaths=/etc/mcubridge-gateway
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+[Install]
+WantedBy=multi-user.target

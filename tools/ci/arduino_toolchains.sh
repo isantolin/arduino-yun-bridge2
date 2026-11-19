@@ -47,6 +47,11 @@ PW_CHRONO_STL_INC_FLAGS=(
     -I"${PW_ROOT}/pw_chrono/public"
 )
 
+PW_SYNC_STL_INC_FLAGS=(
+    -I"${PW_ROOT}/pw_sync_stl/public_overrides"
+    -I"${PW_ROOT}/pw_sync_stl/public"
+)
+
 # Common upstream Pigweed include paths (excluding pw_transfer and pw_chrono
 # backend overrides, which are prepended by stage_cooperative_pw_transfer).
 PW_COMMON_INC_FLAGS=(
@@ -200,6 +205,7 @@ stage_cooperative_pw_transfer() {
     PW_HOST_INC_FLAGS=(
         -I"${PW_TRANSFER_STAGED_INC_DIR}"
         "${PW_CHRONO_STL_INC_FLAGS[@]}"
+        "${PW_SYNC_STL_INC_FLAGS[@]}"
         "${PW_COMMON_INC_FLAGS[@]}"
     )
     PW_HOST_INC="${PW_HOST_INC_FLAGS[*]}"

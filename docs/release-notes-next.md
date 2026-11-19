@@ -74,6 +74,9 @@ CI no longer forces `SERIAL_RX/TX_BUFFER_SIZE=256` for AVR. Sketches built by us
 
 - **Cloud access to the AVR EEPROM (ADR-0007).** `EepromService.Read/Write` copies the EEPROM image (up to 4,080 bytes) between the gateway and the MCU. The client library adds `read_mcu_eeprom()` and `write_mcu_eeprom()`. It requires the `cloud_allow_eeprom_read` / `cloud_allow_eeprom_write` permissions and a gateway ACL rule; writes are not transactional.
 - **MCU → Linux uploads over `pw_transfer` (AVR, SAMD21, ESP32-S3; ADR-0007 / ADR-0008).** `FileSystem.upload(path, data)` sends files of any size up to `file_write_max_bytes` to the MPU storage, replacing the retired 64-byte `FileSystem.write()` RPC. Check `FileSystem.uploadPending()` / `lastUploadStatus()`.
+- **Standalone Gateway production packaging (Phase 4).** `mcubridge-gateway-cpp` adds `GNUInstallDirs` CMake install targets, a `--help` CLI flag, a hardened multi-stage OCI `Dockerfile` (+ scoped `Dockerfile.dockerignore`), a sandboxed Linux `systemd` unit (`deploy/mcubridge-gateway.service` + `mcubridge-gateway.env.example`), automated CI install/packaging verification, and consolidated cooperative `pw_transfer`/`pw_log` staging across CI build scripts (`tools/ci/arduino_toolchains.sh`).
+- **Tokenized `pw_log` across 32-bit targets (PR #104).** SAMD21, ESP32-S3, and host builds share the tokenized `pw_log` / `pw_tokenizer` pipeline with AVR, decoded end-to-end by `SerialTransport`.
+- **32-bit `FileSystem.upload()` parity & runtime stack watermarks (PR #103).** Cooperative `pw_transfer` uploads and runtime stack watermark telemetry operate across AVR (`simavr`), SAMD21 (`Renode`), and ESP32-S3 (`QEMU`).
 - `pw_transfer` is the only MCU file-transfer architecture and is always active; no feature toggle or alternate transfer build exists.
 - simavr diagnostics (`avr_pigweed_port` #17/#18):
   - the runner reports the PC, SP and stack low-water mark on a crash;

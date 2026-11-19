@@ -17,6 +17,8 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
    [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ] || \
    [ ! -d "$ARDUINO_LIBS/PigweedAVR/src/pw_transfer" ] || \
    [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/pw_transfer/transfer_thread.h" ] || \
+   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/pw_log_avr/log_avr.h" ] || \
+   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/pw_log_backend/log_backend.h" ] || \
    [ ! -f "$SRC_DIR/pb_common.h" ] || \
    [ ! -f "$SRC_DIR/pb_decode.h" ] || \
    [ ! -f "$SRC_DIR/pb_encode.h" ]; then
@@ -37,8 +39,6 @@ INCLUDES=(
     "-I${SRC_DIR}/protocol"
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
-    "-I${PW_ROOT}/pw_sync_stl/public_overrides"
-    "-I${PW_ROOT}/pw_sync_stl/public"
     "-isystem${ETL_INC}"
     "-isystem${WOLFSSL_INC}"
     "-isystem${ARDUINO_LIBS}/wolfssl"

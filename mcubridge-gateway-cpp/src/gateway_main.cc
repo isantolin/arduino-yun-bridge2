@@ -1409,6 +1409,17 @@ void ReapTasks(std::vector<std::unique_ptr<SessionTask>>& tasks) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  constexpr std::string_view kUsage =
+      "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
+      "--client-ca FILE [--acl FILE] [--staging-dir DIR] [--bind ADDRESS] "
+      "[--port PORT]\n";
+  for (int i = 1; i < argc; ++i) {
+    const std::string_view arg(argv[i]);
+    if (arg == "--help" || arg == "-h") {
+      std::cout << kUsage;
+      return 0;
+    }
+  }
   const std::string certificate = Argument(argc, argv, "--cert");
   const std::string private_key = Argument(argc, argv, "--key");
   const std::string client_ca = Argument(argc, argv, "--client-ca");
@@ -1418,9 +1429,7 @@ int main(int argc, char** argv) {
   const std::string staging_dir =
       Argument(argc, argv, "--staging-dir", "/var/lib/mcubridge-gateway");
   if (certificate.empty() || private_key.empty() || client_ca.empty()) {
-    std::cerr << "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
-                 "--client-ca FILE [--acl FILE] [--staging-dir DIR] [--bind ADDRESS] "
-                 "[--port PORT]\n";
+    std::cerr << kUsage;
     return 2;
   }
   std::string error;

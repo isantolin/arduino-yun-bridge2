@@ -621,6 +621,13 @@ jobs:
         run: |
           . .venv-gateway/bin/activate
           cmake --build build/mcubridge-gateway --parallel 2
+      - name: Verify Gateway CMake install and packaging
+        run: |
+          cmake --install build/mcubridge-gateway --prefix build/mcubridge-gateway-stage/usr/local
+          test -x build/mcubridge-gateway-stage/usr/local/bin/mcubridge-gateway-cpp
+          test -f build/mcubridge-gateway-stage/usr/local/share/mcubridge-gateway/mcubridge-gateway.service
+          test -f build/mcubridge-gateway-stage/usr/local/share/mcubridge-gateway/mcubridge-gateway.env.example
+          build/mcubridge-gateway-stage/usr/local/bin/mcubridge-gateway-cpp --help
       - name: Upload standalone Gateway binary for emulation jobs
         uses: actions/upload-artifact@v7
         with:
@@ -645,6 +652,13 @@ jobs:
           name: coverage-gateway
           path: coverage/gateway
           if-no-files-found: ignore
+      - name: Build and verify Gateway OCI image
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          docker build -f mcubridge-gateway-cpp/Dockerfile -t mcubridge-gateway-cpp:ci .
+          docker run --rm mcubridge-gateway-cpp:ci --help
+          test "$(docker run --rm --entrypoint id mcubridge-gateway-cpp:ci -u)" = "10001"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min

@@ -213,7 +213,7 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2
         --fqbn "$FQBN"
         --output "${OUTPUT_DIR}/resource_report.json"
     )
-    if [ "$EMULATOR" = "simavr" ] && command -v avr-size >/dev/null 2>&1; then
+    if [[ "$FQBN" == arduino:avr:* ]] && command -v avr-size >/dev/null 2>&1; then
         RESOURCE_REPORT_ARGS+=(--elf "${OUTPUT_DIR}/firmware.elf" --size-tool avr-size)
     fi
     python3 "${ROOT_DIR}/tools/ci/firmware_resource_report.py" "${RESOURCE_REPORT_ARGS[@]}"

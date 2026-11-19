@@ -34,6 +34,8 @@ INCLUDES=(
     "-I${SRC_DIR}/protocol"
     "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
+    "-I${PW_ROOT}/pw_sync_stl/public_overrides"
+    "-I${PW_ROOT}/pw_sync_stl/public"
     "-isystem${ETL_INC}"
     "-isystem${WOLFSSL_INC}"
     "-isystem${ARDUINO_LIBS}/wolfssl"

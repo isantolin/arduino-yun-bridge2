@@ -94,7 +94,6 @@
 #include <pw_transfer/handler.h>
 #include <pw_transfer/transfer.h>
 #include <pw_transfer/transfer_thread.h>
-#endif
 
 namespace bridge {
 
@@ -260,7 +259,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   // sequentially.
   pw::transfer::Client& transferClient() { return _transfer_client; }
   pw::transfer::TransferService& transferService() { return _transfer_service; }
-#endif
 
   void _onBaudrateChange();
   void _onHandshakeTimeout();
@@ -329,12 +327,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::transfer::Thread<1, 1> _transfer_thread;
   pw::transfer::TransferService _transfer_service;
   pw::transfer::Client _transfer_client;
-#endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
   bool _eeprom_transfer_registered{false};
   bool _upload_transfer_registered{false};
-#endif
   bool _rpc_plaintext_response{false};
 
   StatusHandler _status_handler;

@@ -15,11 +15,13 @@ APT_OPTIONS=(
   -o Acquire::https::Timeout=25
 )
 FALLBACK_MIRRORS=(
-  "https://ubuntu.c3sl.ufpr.br/ubuntu"
   "https://mirrors.edge.kernel.org/ubuntu"
+  "https://ubuntu.c3sl.ufpr.br/ubuntu"
   "https://mirror.units.it/ubuntu/ubuntu"
 )
 
+APT_UPDATE_TIMEOUT="${APT_UPDATE_TIMEOUT:-90}"
+APT_DOWNLOAD_TIMEOUT="${APT_DOWNLOAD_TIMEOUT:-240}"
 SOURCES_FILE="${APT_SOURCES_FILE:-/etc/apt/sources.list.d/ubuntu.sources}"
 APT_RETRIES_CONF="${APT_RETRIES_CONF:-/etc/apt/apt.conf.d/99-mcubridge-ci-retries}"
 APT_SUDO="${APT_SUDO-sudo}"
@@ -101,7 +103,14 @@ apt_update() {
   for attempt in 1 2 3; do
     apt_log="$(mktemp)"
     apt_status=0
-    run_priv apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
+    run_priv timeout --kill-after=15 "$APT_UPDATE_TIMEOUT" \
+      apt-get "${APT_OPTIONS[@]}" update 2>&1 | tee "$apt_log" || apt_status=$?
+
+    if (( apt_status == 124 || apt_status == 137 )); then
+      echo "::warning::APT update exceeded ${APT_UPDATE_TIMEOUT}s timeout; switching to a fallback mirror."
+      rm -f "$apt_log"
+      return 10
+    fi
 
     # Microsoft package feeds can rate-limit shared GitHub runners even
     # when every Ubuntu index was downloaded successfully. If APT itself
@@ -147,18 +156,28 @@ apt_install() {
   local apt_log apt_status
   apt_log="$(mktemp)"
   apt_status=0
-  run_priv env DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTIONS[@]}" install -y "$@" 2>&1 | tee "$apt_log" || apt_status=$?
+  run_priv timeout --kill-after=15 "$APT_DOWNLOAD_TIMEOUT" \
+    env DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTIONS[@]}" install --download-only -y "$@" \
+    2>&1 | tee "$apt_log" || apt_status=$?
 
-  if (( apt_status == 0 )); then
-    rm -f "$apt_log"
-    return 0
-  fi
-  if is_recoverable_ubuntu_mirror_failure "$apt_log"; then
+  if (( apt_status == 124 || apt_status == 137 )); then
+    echo "::warning::APT package download exceeded ${APT_DOWNLOAD_TIMEOUT}s timeout; switching to a fallback mirror while keeping cached archives."
     rm -f "$apt_log"
     return 10
   fi
+  if (( apt_status != 0 )); then
+    if is_recoverable_ubuntu_mirror_failure "$apt_log"; then
+      rm -f "$apt_log"
+      return 10
+    fi
+    rm -f "$apt_log"
+    return "$apt_status"
+  fi
   rm -f "$apt_log"
-  return "$apt_status"
+
+  # Every required .deb archive is verified and cached locally; unpack and
+  # configure offline without a network timeout so dpkg is never interrupted.
+  run_priv env DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTIONS[@]}" install --no-download -y "$@"
 }
 
 apt_run_cycle() {

@@ -144,7 +144,7 @@ jobs:
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
       - name: Test firmware resource report parser
-        run: python -m pytest tools/ci/tests/test_firmware_resource_report.py -q
+        run: python -m pytest -o addopts="" tools/ci/tests/test_firmware_resource_report.py -q
       - name: Compile BridgeControl for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \
@@ -531,7 +531,7 @@ jobs:
     name: Master Fleet Mesh Emulation (simavr + Renode + QEMU)
     runs-on: ubuntu-26.04
     needs: [tox-checks, gateway-cpp]
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:

@@ -101,10 +101,6 @@ trap cleanup EXIT
 
 if [ "$EMULATOR" = "simavr" ]; then
     COMMON_FLAGS="-flto -fstack-usage -fno-strict-aliasing -Wno-lto-type-mismatch -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
-    # Optional per-sketch library configuration, e.g. -DBRIDGE_ENABLE_PW_TRANSFER=1.
-    # Library sources are compiled separately from the sketch, so feature
-    # macros must reach them as global build flags.
-    COMMON_FLAGS+=" ${MCUBRIDGE_EXTRA_BUILD_FLAGS:-}"
     AVR_PROPS=()
     AVR_STDCPP_INC=""
     if command -v avr-gcc >/dev/null 2>&1; then

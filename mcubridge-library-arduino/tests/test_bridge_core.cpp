@@ -124,9 +124,7 @@ void test_bridge_send_frame() {
       Bridge.sendConsoleStream(pw::span<const uint8_t>(payload.data(), 2)));
   TEST_ASSERT_TRUE(
       Bridge.sendLogStream(pw::span<const uint8_t>(payload.data(), 2)));
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   pw_log_avr_HandleLog(1, payload.data(), payload.size());
-#endif
 
   rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
   sub_req.pin = 13;
@@ -732,6 +730,39 @@ void test_bridge_edge_paths_and_post() {
   reset_bridge_core(Bridge, stream);
 }
 
+void test_bridge_pw_log_tokenized_hdlc_frame() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  stream.tx_buf.clear();
+
+  PW_LOG_INFO("Phase2 log value=%d", 42);
+  TEST_ASSERT_GREATER_THAN(0U, stream.tx_buf.len);
+
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto res = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+    if (res.ok() && res.value().address() == rpc::RPC_HDLC_ADDRESS_LOG) {
+      decoded = res;
+      break;
+    }
+  }
+  TEST_ASSERT_TRUE(decoded.ok());
+  const pw::hdlc::Frame& frame = decoded.value();
+  // 4-byte 32-bit token + 1-byte varint argument (ZigZag(42) = 84 = 0x54)
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(5U, frame.data().size());
+
+  const uint32_t expected_token =
+      PW_TOKENIZER_STRING_TOKEN("Phase2 log value=%d");
+  uint32_t actual_token = 0;
+  memcpy(&actual_token, frame.data().data(), sizeof(uint32_t));
+  TEST_ASSERT_EQUAL_HEX32(expected_token, actual_token);
+  TEST_ASSERT_EQUAL_HEX8(0x54U, static_cast<uint8_t>(frame.data()[4]));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -759,5 +790,6 @@ int main() {
   RUN_TEST(test_bridge_authenticated_digital_write_frame);
   RUN_TEST(test_bridge_receive_security_gate_variants);
   RUN_TEST(test_bridge_edge_paths_and_post);
+  RUN_TEST(test_bridge_pw_log_tokenized_hdlc_frame);
   return UNITY_END();
 }

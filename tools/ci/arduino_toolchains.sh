@@ -66,8 +66,6 @@ PW_COMMON_INC_FLAGS=(
     -I"${PW_ROOT}/pw_function/public"
     -I"${PW_ROOT}/pw_string/public"
     -I"${PW_ROOT}/pw_log/public"
-    -I"${PW_ROOT}/pw_log_null/public_overrides"
-    -I"${PW_ROOT}/pw_log_null/public"
     -I"${PW_ROOT}/pw_assert/print_and_abort_assert_public_overrides"
     -I"${PW_ROOT}/pw_assert/print_and_abort_check_public_overrides"
     -I"${PW_ROOT}/pw_assert/public"
@@ -157,9 +155,11 @@ stage_cooperative_pw_transfer() {
         pw_transfer/transfer.h \
         pw_transfer/transfer_thread.h \
         pw_transfer/transfer.pwpb.h \
-        pw_transfer/transfer.raw_rpc.pb.h; do
+        pw_transfer/transfer.raw_rpc.pb.h \
+        pw_log_avr/log_avr.h \
+        pw_log_backend/log_backend.h; do
         if [ ! -f "${export_src}/${req_hdr}" ]; then
-            echo "ERROR: exported cooperative pw_transfer header missing: ${export_src}/${req_hdr}" >&2
+            echo "ERROR: exported cooperative pw_transfer/pw_log header missing: ${export_src}/${req_hdr}" >&2
             return 1
         fi
     done
@@ -169,12 +169,14 @@ stage_cooperative_pw_transfer() {
     rm -rf "${PW_TRANSFER_STAGED_INC_DIR}" "${PW_TRANSFER_STAGED_SRC_DIR}"
     mkdir -p "${PW_TRANSFER_STAGED_INC_DIR}" "${PW_TRANSFER_STAGED_SRC_DIR}"
     cp -a "${export_src}/pw_transfer" "${PW_TRANSFER_STAGED_INC_DIR}/"
+    cp -a "${export_src}/pw_log_avr" "${PW_TRANSFER_STAGED_INC_DIR}/"
+    cp -a "${export_src}/pw_log_backend" "${PW_TRANSFER_STAGED_INC_DIR}/"
     find "${export_src}" -maxdepth 1 -type f \
-        \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' \) \
+        \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' -o -name 'log_avr.cpp' \) \
         -exec cp {} "${PW_TRANSFER_STAGED_SRC_DIR}/" \;
     mapfile -t PW_TRANSFER_STAGED_SRCS < <(
         find "${PW_TRANSFER_STAGED_SRC_DIR}" -maxdepth 1 -type f \
-            \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' \) -print | sort
+            \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' -o -name 'log_avr.cpp' \) -print | sort
     )
     if [ "${#PW_TRANSFER_STAGED_SRCS[@]}" -eq 0 ]; then
         echo "ERROR: no exported cooperative pw_transfer sources found in ${export_src}" >&2

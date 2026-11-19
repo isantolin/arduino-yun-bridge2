@@ -324,6 +324,7 @@ void BridgeClass::_unregisterRpcServices() {
 BridgeClass::~BridgeClass() {
   // Detach external stream references first so teardown never performs I/O on
   // a stream whose lifetime has already ended.
+  pw_log_avr_SetLogSink(nullptr);
   _stream = nullptr;
   _hardware_serial = nullptr;
   _arduino_stream.setStream(static_cast<Stream*>(nullptr));
@@ -364,12 +365,10 @@ void BridgeClass::_initializeRuntime() {
   _state_flags.reset();
   _clearLinkSession();
 
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   pw_log_avr_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
         (void)Bridge.sendLogStream(pw::span<const uint8_t>(log_data, size));
       });
-#endif
 
   if (_rpc_services_registered) return;
   if (g_rpc_services_owner != nullptr) {

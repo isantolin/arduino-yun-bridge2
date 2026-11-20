@@ -7,6 +7,8 @@ using Semgrep declarative analysis, strict config suppression audits, and Protob
 from __future__ import annotations
 
 import ast
+from collections import deque
+from collections.abc import Iterator, Sequence
 import io
 import json
 import os
@@ -18,7 +20,7 @@ import tokenize
 import tomllib
 from typing import cast
 
-from google.protobuf.descriptor import FileDescriptor
+from google.protobuf.descriptor import Descriptor, EnumDescriptor, FileDescriptor
 
 import sys
 import typer
@@ -358,7 +360,7 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     ]
 
 
-_PROTO_USAGE_SUFFIXES = {".py", ".pyi", ".h", ".hpp", ".cpp", ".c", ".ino", ".js", ".uc", ".sh", ".j2"}
+_PROTO_USAGE_SUFFIXES = {".py", ".pyi", ".h", ".hpp", ".cpp", ".cc", ".c", ".ino", ".js", ".uc", ".sh", ".j2"}
 _PROTO_USAGE_IGNORED = {
     ".git",
     ".tox",
@@ -370,6 +372,8 @@ _PROTO_USAGE_IGNORED = {
     "node_modules",
     "openwrt-sdk",
     "__pycache__",
+    "third_party",
+    "Unity",
 }
 _PROTO_GENERATED_NAMES = {
     "config_schema.json",
@@ -378,17 +382,42 @@ _PROTO_GENERATED_NAMES = {
     "config_schema.pb.h",
     "mcu_wire.pb.c",
     "mcu_wire.pb.h",
+    "mcu_wire.rpc.pb.h",
     "rpc_hw_config.h",
     "rpc_protocol.h",
 }
+_PROTO_GENERATED_SUFFIXES = ("_pb2.py", "_pb2.pyi", "_grpc.py", ".pb.h", ".pb.c", ".pwpb.h", ".rpc.pb.h")
+_PROD_PROTO_REL_ROOTS: tuple[tuple[str, ...], ...] = (
+    ("mcubridge", "mcubridge"),
+    ("mcubridge", "scripts"),
+    ("mcubridge-client-examples", "mcubridge_client"),
+    ("mcubridge-client-examples", "examples"),
+    ("mcubridge-library-arduino",),
+    ("mcubridge-gateway-cpp",),
+    ("luci-app-mcubridge",),
+    ("tools", "protocol"),
+)
+_ALL_PROTO_REL_ROOTS: tuple[tuple[str, ...], ...] = (
+    *_PROD_PROTO_REL_ROOTS,
+    ("mcubridge", "tests"),
+    ("mcubridge-client-examples", "tests"),
+    ("tools",),
+)
 
 
-def _is_scannable_proto_source(path: Path) -> bool:
+def _is_scannable_proto_source(path: Path, *, root: Path | None = None, include_tests: bool = False) -> bool:
     if not path.is_file() or path.suffix not in _PROTO_USAGE_SUFFIXES:
         return False
-    if _PROTO_USAGE_IGNORED.intersection(path.parts) or path.name in _PROTO_GENERATED_NAMES:
+    base_root = root or ROOT
+    try:
+        rel_path = path.relative_to(base_root)
+    except ValueError:
+        rel_path = path
+    if _PROTO_USAGE_IGNORED.intersection(rel_path.parts) or path.name in _PROTO_GENERATED_NAMES:
         return False
-    if path.name.endswith(("_pb2.py", "_pb2.pyi", "_grpc.py")):
+    if not include_tests and ("tests" in rel_path.parts[:-1] or rel_path.parts[:2] == ("tools", "audit")):
+        return False
+    if path.name.endswith(_PROTO_GENERATED_SUFFIXES):
         return False
     return not (path.name == "protocol.py" and path.parent.name in {"protocol", "mcubridge_client"})
 
@@ -405,23 +434,25 @@ def _extract_file_identifiers(path: Path) -> set[str]:
     return set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", content_without_comments))
 
 
-def _collect_identifier_suffixes() -> set[str]:
-    source_roots = (
-        ROOT / "mcubridge" / "mcubridge",
-        ROOT / "mcubridge" / "scripts",
-        ROOT / "mcubridge" / "tests",
-        ROOT / "mcubridge-client-examples",
-        ROOT / "mcubridge-library-arduino",
-        ROOT / "luci-app-mcubridge",
-        ROOT / "tools",
-    )
+def _collect_proto_identifiers(*, root: Path | None = None, include_tests: bool = False) -> set[str]:
+    base_root = root or ROOT
+    rel_roots = _ALL_PROTO_REL_ROOTS if include_tests else _PROD_PROTO_REL_ROOTS
     identifiers: set[str] = set()
-    for source_root in source_roots:
-        if source_root.exists():
-            for path in source_root.rglob("*"):
-                if _is_scannable_proto_source(path):
-                    identifiers.update(_extract_file_identifiers(path))
+    seen_paths: set[Path] = set()
+    for rel_parts in rel_roots:
+        source_root = base_root.joinpath(*rel_parts)
+        if not source_root.exists():
+            continue
+        for path in source_root.rglob("*"):
+            if path in seen_paths or not _is_scannable_proto_source(path, root=base_root, include_tests=include_tests):
+                continue
+            seen_paths.add(path)
+            identifiers.update(_extract_file_identifiers(path))
+    return identifiers
 
+
+def _collect_identifier_suffixes(root: Path | None = None) -> set[str]:
+    identifiers = _collect_proto_identifiers(root=root, include_tests=True)
     identifier_suffixes = identifiers.copy()
     for token in identifiers:
         suffix = token
@@ -431,20 +462,144 @@ def _collect_identifier_suffixes() -> set[str]:
     return identifier_suffixes
 
 
-def _collect_extension_message_types(descriptor: FileDescriptor) -> set[str]:
+def collect_production_proto_identifiers(root: Path | None = None) -> set[str]:
+    """Collect identifiers from production, C++, LuCI, and codegen sources (excluding tests and generated files)."""
+    identifiers = _collect_proto_identifiers(root=root, include_tests=False)
+    return identifiers | {token.removeprefix("rpc_pb_") for token in identifiers}
+
+
+def _is_map_entry_message(message_desc: Descriptor) -> bool:
+    return message_desc.GetOptions().map_entry
+
+
+def _iter_descriptor_messages(descriptor: FileDescriptor) -> Iterator[Descriptor]:
+    stack: list[Descriptor] = list(descriptor.message_types_by_name.values())
+    while stack:
+        message_desc = stack.pop()
+        if _is_map_entry_message(message_desc):
+            continue
+        yield message_desc
+        stack.extend(message_desc.nested_types)
+
+
+def _iter_descriptor_enums(descriptor: FileDescriptor) -> Iterator[EnumDescriptor]:
+    yield from descriptor.enum_types_by_name.values()
+    for message_desc in _iter_descriptor_messages(descriptor):
+        yield from message_desc.enum_types
+
+
+def _collect_extension_type_names(descriptors: Sequence[FileDescriptor]) -> set[str]:
+    """Collect full names of message/enum types used exclusively as google.protobuf.*Options extensions."""
     ext_types: set[str] = set()
-    for ext in descriptor.extensions_by_name.values():
-        if ext.message_type:
-            ext_types.add(ext.message_type.name)
-            ext_types.update(field.message_type.name for field in ext.message_type.fields if field.message_type)
+    pending_messages: deque[Descriptor] = deque()
+    for descriptor in descriptors:
+        for ext in descriptor.extensions_by_name.values():
+            if ext.message_type is not None:
+                pending_messages.append(ext.message_type)
+            if ext.enum_type is not None:
+                ext_types.add(ext.enum_type.full_name)
+    while pending_messages:
+        message_desc = pending_messages.popleft()
+        if message_desc.full_name in ext_types:
+            continue
+        ext_types.add(message_desc.full_name)
+        for field in message_desc.fields:
+            if field.message_type is not None and field.message_type.full_name not in ext_types:
+                pending_messages.append(field.message_type)
+            if field.enum_type is not None:
+                ext_types.add(field.enum_type.full_name)
     return ext_types
 
 
-def audit_proto_usage() -> list[str]:
-    """Find generated constants and enum values with no source or test references."""
-    from mcubridge.protocol import config_schema_pb2 as pb
+def _relative_proto_name(descriptor: FileDescriptor, full_name: str) -> str:
+    prefix = f"{descriptor.package}."
+    return full_name.removeprefix(prefix) if descriptor.package and full_name.startswith(prefix) else full_name
 
-    identifier_suffixes = _collect_identifier_suffixes()
+
+def audit_proto_descriptors_reachability(
+    descriptors: Sequence[FileDescriptor],
+    prod_identifiers: set[str],
+) -> list[str]:
+    """Verify every non-extension message and enum is reachable from production/codegen callers."""
+    ext_type_names = _collect_extension_type_names(descriptors)
+    direct_tokens = prod_identifiers | {token.removeprefix("rpc_pb_") for token in prod_identifiers}
+
+    messages_by_full_name: dict[str, tuple[FileDescriptor, Descriptor]] = {}
+    enums_by_full_name: dict[str, tuple[FileDescriptor, EnumDescriptor]] = {}
+    for file_desc in descriptors:
+        for message_desc in _iter_descriptor_messages(file_desc):
+            if message_desc.full_name not in ext_type_names:
+                messages_by_full_name[message_desc.full_name] = (file_desc, message_desc)
+        for enum_desc in _iter_descriptor_enums(file_desc):
+            if enum_desc.full_name not in ext_type_names:
+                enums_by_full_name[enum_desc.full_name] = (file_desc, enum_desc)
+
+    reachable: set[str] = set()
+    queue: deque[Descriptor] = deque()
+
+    for full_name, (_, message_desc) in messages_by_full_name.items():
+        if message_desc.name in direct_tokens:
+            reachable.add(full_name)
+            queue.append(message_desc)
+
+    for full_name, (_, enum_desc) in enums_by_full_name.items():
+        if enum_desc.name in direct_tokens or any(
+            not val.name.endswith("_UNSPECIFIED")
+            and (val.name in direct_tokens or f"{enum_desc.name}_{val.name}" in direct_tokens)
+            for val in enum_desc.values
+        ):
+            reachable.add(full_name)
+
+    while queue:
+        current = queue.popleft()
+        for field in current.fields:
+            target_msg = field.message_type
+            if target_msg is not None and _is_map_entry_message(target_msg):
+                value_field = target_msg.fields_by_name.get("value")
+                if value_field is not None:
+                    if (
+                        value_field.message_type is not None
+                        and value_field.message_type.full_name in messages_by_full_name
+                        and value_field.message_type.full_name not in reachable
+                    ):
+                        reachable.add(value_field.message_type.full_name)
+                        queue.append(value_field.message_type)
+                    if value_field.enum_type is not None and value_field.enum_type.full_name in enums_by_full_name:
+                        reachable.add(value_field.enum_type.full_name)
+                continue
+            if (
+                target_msg is not None
+                and target_msg.full_name in messages_by_full_name
+                and target_msg.full_name not in reachable
+            ):
+                reachable.add(target_msg.full_name)
+                queue.append(target_msg)
+            if field.enum_type is not None and field.enum_type.full_name in enums_by_full_name:
+                reachable.add(field.enum_type.full_name)
+
+    findings: list[str] = []
+    for file_desc in descriptors:
+        unreachable_msgs = sorted(
+            _relative_proto_name(file_desc, msg.full_name)
+            for msg in _iter_descriptor_messages(file_desc)
+            if msg.full_name in messages_by_full_name and msg.full_name not in reachable
+        )
+        findings.extend(f"Unused Protobuf message: {file_desc.name}:{name}" for name in unreachable_msgs)
+        unreachable_enums = sorted(
+            _relative_proto_name(file_desc, enum_desc.full_name)
+            for enum_desc in _iter_descriptor_enums(file_desc)
+            if enum_desc.full_name in enums_by_full_name and enum_desc.full_name not in reachable
+        )
+        findings.extend(f"Unused Protobuf enum: {file_desc.name}:{name}" for name in unreachable_enums)
+    return findings
+
+
+def audit_proto_usage(root: Path | None = None) -> list[str]:
+    """Find unused constants, enum values, and unreachable Protobuf messages/enums across all schemas."""
+    from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2 as pb, mcu_wire_pb2
+    from mcubridge.protocol.gateway import gateway_control_pb2
+
+    identifier_suffixes = _collect_identifier_suffixes(root)
     findings: list[str] = []
     constants = pb.DESCRIPTOR.GetOptions().Extensions[pb.constants]
     config_references = {
@@ -470,12 +625,14 @@ def audit_proto_usage() -> list[str]:
                 if not value_desc.name.endswith("_UNSPECIFIED") and value_desc.name not in identifier_suffixes
             )
 
-    extension_message_types = _collect_extension_message_types(pb.DESCRIPTOR)
-    findings.extend(
-        f"Unused Protobuf message: {message_desc.name}"
-        for message_desc in pb.DESCRIPTOR.message_types_by_name.values()
-        if message_desc.name not in extension_message_types and message_desc.name not in identifier_suffixes
+    descriptors: tuple[FileDescriptor, ...] = (
+        pb.DESCRIPTOR,
+        mcu_wire_pb2.DESCRIPTOR,
+        cloud_gateway_pb2.DESCRIPTOR,
+        gateway_control_pb2.DESCRIPTOR,
     )
+    prod_identifiers = collect_production_proto_identifiers(root)
+    findings.extend(audit_proto_descriptors_reachability(descriptors, prod_identifiers))
     return findings
 
 

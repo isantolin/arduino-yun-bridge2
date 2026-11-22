@@ -5,7 +5,8 @@
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestArgs": [
-    "."
+    "mcubridge/tests",
+    "mcubridge-client-examples/tests"
   ],
   "flake8.args": [
     "--max-line-length=120",
@@ -46,11 +47,6 @@
       "makeDirectory": "${workspaceFolder}/mcubridge"
     },
     {
-      "name": "mcubridge-gateway",
-      "makefilePath": "${workspaceFolder}/mcubridge-gateway/Makefile",
-      "makeDirectory": "${workspaceFolder}/mcubridge-gateway"
-    },
-    {
       "name": "luci-app-mcubridge",
       "makefilePath": "${workspaceFolder}/luci-app-mcubridge/Makefile",
       "makeDirectory": "${workspaceFolder}/luci-app-mcubridge"
@@ -73,6 +69,7 @@
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "**/*_grpc.py",
+    "**/third_party/**",
     ".tox",
     ".venv"
   ],
@@ -80,19 +77,22 @@
     "**/_pyrefly_virtual__/**",
     "**/__pyrefly_virtual__/**",
     "**/inmemory/**",
-    "/__pyrefly_virtual__/**"
+    "/__pyrefly_virtual__/**",
+    "**/third_party/**"
   ],
   "pyrefly.analysis.exclude": [
     "**/_pyrefly_virtual__/**",
     "**/__pyrefly_virtual__/**",
     "**/inmemory/**",
-    "/__pyrefly_virtual__/**"
+    "/__pyrefly_virtual__/**",
+    "**/third_party/**"
   ],
   "pyrefly.analysis.ignore": [
     "**/_pyrefly_virtual__/**",
     "**/__pyrefly_virtual__/**",
     "**/inmemory/**",
-    "/__pyrefly_virtual__/**"
+    "/__pyrefly_virtual__/**",
+    "**/third_party/**"
   ],
   "files.exclude": {
     "**/_pyrefly_virtual__/**": true,
@@ -129,5 +129,25 @@
   },
   "python-envs.defaultEnvManager": "ms-python.python:system",
   "python.analysis.diagnosticsSource": "Pylance + Pyrefly",
-  "cmake.sourceDirectory": "/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/tests/Unity"
+  "cmake.sourceDirectory": "${workspaceFolder}/mcubridge-gateway-cpp",
+  "pigweed.projectRoot": "${workspaceFolder}",
+  "pigweed.projectType": "bootstrap",
+  "pigweed.supportBazelTargets": false,
+  "pigweed.supportCmakeTargets": true,
+  "pigweed.supportGnTargets": false,
+  "pigweed.clangdAlternatePath": "/usr/bin/clangd",
+  "pigweed.disableInactiveFileCodeIntelligence": false,
+  "pigweed.disableInactiveFileNotice": true,
+  "pigweed.hideInactiveFileIndicators": true,
+  "pigweed.enforceExtensionRecommendations": false,
+  "pigweed.compDbSearchPaths": [
+    {
+      "pathGlob": "build/*",
+      "targetInferencePattern": "?"
+    },
+    {
+      "pathGlob": "mcubridge-gateway-cpp/build*",
+      "targetInferencePattern": "?"
+    }
+  ]
 }

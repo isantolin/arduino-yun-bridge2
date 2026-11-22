@@ -1,0 +1,48 @@
+{
+  "pw": {
+    "pw_cli": {
+      "plugins": {
+        "emu": {
+          "module": "pw_emu.__main__",
+          "function": "main"
+        },
+        "ide": {
+          "module": "pw_ide.__main__",
+          "function": "main"
+        },
+        "rpc": {
+          "module": "pw_hdlc.rpc_console",
+          "function": "main"
+        }
+      }
+    },
+    "pw_emu": {
+      "emulators": {
+        "qemu": {
+          "connector": "pw_emu.qemu.QemuConnector",
+          "launcher": "pw_emu.qemu.QemuLauncher"
+        },
+        "renode": {
+          "connector": "pw_emu.renode.RenodeConnector",
+          "launcher": "pw_emu.renode.RenodeLauncher"
+        },
+        "simavr": {
+          "connector": "pw_emu_avr.simavr.SimavrConnector",
+          "launcher": "pw_emu_avr.simavr.SimavrLauncher"
+        }
+      },
+      "simavr": {
+        "executable": "build/simavr/simavr_pty_runner",
+        "channels": {
+          "type": "pty",
+          "gdb": {
+            "enabled": false
+          }
+        }
+      },
+      "target_files": [
+        "third_party/avr_pigweed_port/tools/pw_emu_avr/targets.json"
+      ]
+    }
+  }
+}

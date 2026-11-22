@@ -47,6 +47,7 @@ pythonpath = [".", "mcubridge", "mcubridge-client-examples", "third_party/avr_pi
 norecursedirs = [
     "openwrt-sdk",
     "feeds",
+    "third_party",
     ".git",
     ".tox",
     ".venv*",
@@ -89,6 +90,7 @@ strict = [
 ]
 exclude = [
     "openwrt-sdk",
+    "third_party",
     "tools/protocol/templates",
     ".tox",
     ".venv",
@@ -239,6 +241,8 @@ project-includes = [
 ]
 project-excludes = [
     "openwrt-sdk",
+    "third_party",
+    "**/third_party/**",
     "tools/protocol/templates",
     ".tox",
     ".venv",

@@ -1,0 +1,11 @@
+load(
+    "@pigweed//pw_ide/bazel/compile_commands:pw_compile_commands_generator.bzl",
+    "pw_compile_commands_generator",
+)
+
+pw_compile_commands_generator(
+    name = "compile_commands",
+    target_patterns = [
+        "//...",
+    ],
+)

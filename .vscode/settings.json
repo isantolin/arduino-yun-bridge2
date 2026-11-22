@@ -132,9 +132,9 @@
   "cmake.sourceDirectory": "${workspaceFolder}/mcubridge-gateway-cpp",
   "pigweed.projectRoot": "${workspaceFolder}",
   "pigweed.projectType": "bootstrap",
-  "pigweed.supportBazelTargets": false,
-  "pigweed.supportCmakeTargets": true,
-  "pigweed.supportGnTargets": false,
+  "pigweed.supportBazelTargets": true,
+  "pigweed.supportCmakeTargets": false,
+  "pigweed.supportGnTargets": false
   "pigweed.clangdAlternatePath": "/usr/bin/clangd",
   "pigweed.disableInactiveFileCodeIntelligence": false,
   "pigweed.disableInactiveFileNotice": true,

@@ -29,9 +29,6 @@ class FloatGaugeMetric:
     def set(self, val: float) -> None:
         self.value = val
 
-    def observe(self, val: float) -> None:
-        self.value = val
-
 
 @dataclass
 class StateMetric:

@@ -56,7 +56,12 @@ async def bridge_session(
     effective_port = int(str(bridge_args["port"]))
     effective_device = str(bridge_args["device_id"])
 
-    logger.info("bridge_session: creating GatewayConnection", host=effective_host, port=effective_port, device_id=effective_device)
+    logger.info(
+        "bridge_session: creating GatewayConnection",
+        host=effective_host,
+        port=effective_port,
+        device_id=effective_device,
+    )
     connection = (
         connection_factory(effective_host, effective_port)
         if connection_factory is not None

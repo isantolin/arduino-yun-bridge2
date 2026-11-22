@@ -31,6 +31,7 @@ import structlog
 import tenacity
 import typer
 from google.protobuf.message import DecodeError
+from pw_emu.frontend import Emulator
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
@@ -65,9 +66,10 @@ from tools.emulation.process_utils import (
 )
 from tools.emulation.qemu_runner import find_qemu_binary
 from tools.emulation.simavr_runner import (
-    build_simavr_harness,
-    report_simavr_crash,
-    spawn_simavr,
+    build_simavr_runner,
+    report_simavr_diagnostics,
+    start_simavr_emulator,
+    stop_simavr_emulator,
 )
 
 repo_root = Path(__file__).resolve().parents[2]
@@ -286,9 +288,20 @@ def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
 EMULATOR_LIVENESS_POLL_SECONDS = 0.5
 
 
+def emulator_exit_reason(name: str, handle: subprocess.Popen[str] | Emulator) -> str | None:
+    """Return a failure reason if an emulator subprocess or pw_emu Emulator has exited."""
+    if isinstance(handle, subprocess.Popen):
+        if handle.poll() is not None:
+            return f"emulator {name} exited with code {handle.returncode} during verification"
+        return None
+    if not handle.running():
+        return f"emulator {name} exited during verification"
+    return None
+
+
 async def verify_with_emulator_watchdog(
     nodes: tuple[NodeRuntime, ...],
-    emulators: dict[str, subprocess.Popen[str]],
+    emulators: dict[str, subprocess.Popen[str] | Emulator],
 ) -> str | None:
     """Run mesh verification, aborting as soon as any emulator process exits.
 
@@ -297,12 +310,11 @@ async def verify_with_emulator_watchdog(
     """
     verification = asyncio.create_task(verify_mesh_interoperability(nodes))
     while not verification.done():
-        exited = next(((name, proc) for name, proc in emulators.items() if proc.poll() is not None), None)
-        if exited is not None:
+        reason = next((r for name, handle in emulators.items() if (r := emulator_exit_reason(name, handle))), None)
+        if reason is not None:
             verification.cancel()
             await asyncio.gather(verification, return_exceptions=True)
-            name, proc = exited
-            return f"emulator {name} exited with code {proc.returncode} during verification"
+            return reason
         await asyncio.wait({verification}, timeout=EMULATOR_LIVENESS_POLL_SECONDS)
     return None if verification.result() else "cross-node mesh verification failed"
 
@@ -526,11 +538,10 @@ def compile_fleet_firmwares() -> (
 
 
 def verify_host_binaries() -> tuple[Path, str, str, str] | None:
-    """Locate and verify all host emulation binaries (simavr, harness, renode, qemu, socat)."""
-    simavr_bin = shutil.which("simavr")
-    harness_bin = build_simavr_harness()
-    if not simavr_bin or not harness_bin:
-        logger.error("simavr or simavr_harness not available on host system")
+    """Locate and verify all host emulation binaries (simavr_pty_runner, renode, qemu, socat)."""
+    runner_bin = build_simavr_runner()
+    if not runner_bin:
+        logger.error("pw_emu_avr simavr_pty_runner could not be built on host system")
         return None
 
     renode_bin = shutil.which("renode")
@@ -553,7 +564,7 @@ def verify_host_binaries() -> tuple[Path, str, str, str] | None:
         logger.error("socat binary not found on host system")
         return None
 
-    return harness_bin, renode_bin, qemu_bin, socat_bin
+    return runner_bin, renode_bin, qemu_bin, socat_bin
 
 
 def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
@@ -567,11 +578,13 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
     binaries = verify_host_binaries()
     if binaries is None:
         return False
-    harness_bin, renode_bin, qemu_bin, socat_bin = binaries
+    _runner_bin, renode_bin, qemu_bin, socat_bin = binaries
 
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
     log_collector = EmulationState()
     all_procs: list[subprocess.Popen[str]] = []
+    simavr_emu: Emulator | None = None
+    simavr_wdir: Path | None = None
     node_mega: NodeRuntime | None = None
     node_mkr: NodeRuntime | None = None
     node_esp32: NodeRuntime | None = None
@@ -581,7 +594,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
         if gw_proc:
             all_procs.append(gw_proc)
 
-        # Node 1: Arduino Mega 2560 (simavr)
+        # Node 1: Arduino Mega 2560 (simavr via Pigweed pw_emu)
         node_mega = NodeRuntime(
             name="mega-01",
             board=BOARD_MEGA,
@@ -591,17 +604,14 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
             status_file=base_temp_dir / f"status_{BOARD_MEGA.slug}.json",
         )
         node_mega.temp_dir.mkdir(parents=True, exist_ok=True)
-        simavr_proc, pty_mega, _ = spawn_simavr(
-            harness_bin,
+        simavr_wdir = node_mega.temp_dir / "pw_emu"
+        simavr_emu, pty_mega = start_simavr_emulator(
+            simavr_wdir,
             node_mega.firmware_path,
             node_mega.metadata.mcu,
             node_mega.metadata.frequency_hz,
             "0",
-            log_collector,
         )
-        if not simavr_proc or not pty_mega:
-            raise RuntimeError("simavr failed to spawn or emit a valid PTY slave path")
-        all_procs.append(simavr_proc)
         node_mega.pty_path = pty_mega
 
         # Node 2: Arduino MKR WiFi 1010 (Renode)
@@ -759,7 +769,11 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
                 return False
             logger.info("Node synchronized successfully", node=node.name, board=node.board.label)
 
-        emulators = {"simavr": simavr_proc, "renode": renode_proc, "qemu": qemu_proc}
+        emulators: dict[str, subprocess.Popen[str] | Emulator] = {
+            "simavr": simavr_emu,
+            "renode": renode_proc,
+            "qemu": qemu_proc,
+        }
         failure = asyncio.run(verify_with_emulator_watchdog(nodes, emulators))
         if failure is not None:
             logger.error("Cross-node mesh verification failed", reason=failure)
@@ -784,12 +798,13 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
             if node_ref is not None:
                 daemon_procs.extend(node_ref.procs)
         terminate_process_tree(daemon_procs, timeout=3.0)
+        stop_simavr_emulator(simavr_emu)
         emulation_procs = [p for p in all_procs if p not in daemon_procs]
         terminate_process_tree(emulation_procs, timeout=3.0)
-        if node_mega is not None:
-            # The runner prints its crash report and stack low-water mark on
-            # exit (crash or SIGTERM); symbolize it against the firmware ELF.
-            report_simavr_crash(node_mega.firmware_path, log_collector)
+        if node_mega is not None and simavr_wdir is not None:
+            # The runner persists diagnostics.json atomically on exit/crash;
+            # symbolize it against the firmware ELF before cleaning up temp dirs.
+            report_simavr_diagnostics(node_mega.firmware_path, simavr_wdir)
         cleanup_paths(base_temp_dir)
 
 

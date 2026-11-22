@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Hardware-accurate AVR CPU Emulation Runner using simavr.
+"""Hardware-accurate AVR CPU Emulation Runner using Pigweed pw_emu + simavr.
 
-Executes AVR ELF binaries in simavr, using ATmega2560 as the supported application
-target, binding the virtual UART to the mcubridge Python daemon and
+Executes AVR ELF binaries in simavr through ``pw_emu.frontend.Emulator`` and
+``pw_emu_avr``, binding the virtual UART PTY to the mcubridge Python daemon and
 running full E2E client verification suites.
 """
 
@@ -10,17 +10,19 @@ from __future__ import annotations
 
 import json
 import os
-import pty
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
-import parse
 import structlog
-import tenacity
 import typer
+from pw_emu.core import Error as PwEmuError
+from pw_emu.frontend import Emulator
+from pw_emu_avr.diagnostics import symbolize_diagnostics
+
 from mcubridge.config.logging import configure_logging
 from tools.arduino_core_metadata import read_metadata_json, resolve_core_metadata
 from tools.boards import SIMAVR_BOARDS as MATRIX_BOARDS
@@ -35,7 +37,6 @@ from tools.emulation.emulation_runner import (
     setup_fake_uci,
     write_matrix_summary,
 )
-from tools.emulation.stack_metrics import stack_watermark_metrics
 from tools.emulation.process_utils import (
     cleanup_paths,
     start_daemon_thread,
@@ -43,130 +44,32 @@ from tools.emulation.process_utils import (
     terminate_process_tree,
     wait_for_tcp_ready,
 )
+from tools.emulation.stack_metrics import stack_watermark_metrics, write_stack_watermark_report
 
 repo_root = Path(__file__).resolve().parents[2]
 
 configure_logging(console=True)
 logger = structlog.get_logger("simavr_runner")
 
-_PTY_PARSER = parse.compile("[SIMAVR] UART{id:w} PTY ready on: {pty}")
-_CRASH_PARSER = parse.compile(
-    "AVR crash diagnostics: pc=0x{pc:x} sp=0x{sp:x} min_sp=0x{min_sp:x} "
-    "ramend=0x{ramend:x} sreg=0x{sreg:x} cycle={cycle:d}"
-)
-_LOW_WATER_PARSER = parse.compile("AVR stack low-water mark: min_sp=0x{min_sp:x} ramend=0x{ramend:x}")
-_PEAK_CONTEXT_PARSER = parse.compile(
-    "AVR stack low-water context: pc=0x{pc:x} address_size={address_size:d} stack:{stack}"
-)
-_MAX_PEAK_FRAMES = 16
-# avr-nm reports data-space symbols with the 0x800000 SRAM offset.
-_AVR_DATA_SPACE_MASK = 0xFFFF
 SIMAVR_STARTUP_SETTLE_SECONDS = 5.0
 
 
-def _read_pty_from_stream(proc_stdout: Any, state: EmulationState) -> str:
-    """Read PTY line emitted by simavr harness with tenacity retry."""
+def pw_emu_config_path() -> Path:
+    """Return the canonical Pigweed pw_emu configuration for this repository."""
+    return repo_root / "tools" / "emulation" / "pw_emu_config.json"
 
-    def _read_line() -> str | None:
-        line = proc_stdout.readline()
-        if line:
-            state.on_line(line, "simavr-stdout")
-            res = _PTY_PARSER.parse(line.strip())
-            if res:
-                return str(res["pty"])
+
+def build_simavr_runner() -> Path | None:
+    """Build the host-side pw_emu_avr simavr_pty_runner binary if stale or missing."""
+    runner_src = repo_root / "third_party" / "avr_pigweed_port" / "tools" / "pw_emu_avr" / "simavr_pty_runner.c"
+    runner_bin = repo_root / "build" / "simavr" / "simavr_pty_runner"
+    if not runner_src.exists():
         return None
 
-    retryer = tenacity.Retrying(
-        stop=tenacity.stop_after_delay(10.0),
-        wait=tenacity.wait_fixed(0.05),
-        retry=tenacity.retry_if_result(lambda res: res is None),
-        reraise=False,
-    )
-    try:
-        detected = retryer(_read_line)
-        return detected if isinstance(detected, str) else ""
-    except tenacity.RetryError as exc:
-        logger.warning("Timeout waiting for PTY ready line from simavr", error=str(exc))
-        return ""
+    if runner_bin.exists() and runner_bin.stat().st_mtime >= runner_src.stat().st_mtime:
+        return runner_bin
 
-
-def spawn_simavr(
-    harness_bin: Path | None,
-    firmware_path: Path,
-    mcu: str,
-    frequency: int,
-    uart_id: str | None,
-    state: EmulationState,
-) -> tuple[subprocess.Popen[str] | None, str, int]:
-    """Spawn simavr subprocess via harness or direct fallback."""
-    master_fd = -1
-    slave_name = ""
-    simavr_proc: subprocess.Popen[str] | None = None
-
-    if harness_bin and harness_bin.exists():
-        simavr_cmd = [
-            str(harness_bin),
-            "--firmware",
-            str(firmware_path),
-            "--mcu",
-            mcu,
-            "--frequency",
-            str(frequency),
-        ]
-        if uart_id:
-            simavr_cmd.extend(["--uart", uart_id])
-        logger.info("Spawning pw_emu_avr simavr_pty_runner", cmd=simavr_cmd)
-        simavr_proc = subprocess.Popen(
-            simavr_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            bufsize=1,
-        )
-        if simavr_proc.stdout is not None:
-            slave_name = _read_pty_from_stream(simavr_proc.stdout, state)
-        start_daemon_thread(stream_pump, "simavr-stdout", simavr_proc.stdout, state.on_line, "simavr-stdout")
-        start_daemon_thread(stream_pump, "simavr-stderr", simavr_proc.stderr, state.on_line, "simavr-stderr")
-    else:
-        master_fd, slave_fd = pty.openpty()
-        slave_name = os.ttyname(slave_fd)
-        logger.info("Created virtual PTY for simavr", master=master_fd, pty=slave_name)
-        simavr_cmd = ["simavr", "-m", mcu, "-f", str(frequency), str(firmware_path)]
-        logger.info("Spawning simavr process", cmd=simavr_cmd)
-        try:
-            simavr_proc = subprocess.Popen(
-                simavr_cmd,
-                stdin=slave_fd,
-                stdout=slave_fd,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                bufsize=1,
-                close_fds=True,
-            )
-            os.close(slave_fd)
-            start_daemon_thread(stream_pump, "simavr-stderr", simavr_proc.stderr, state.on_line, "simavr-stderr")
-        except FileNotFoundError:
-            logger.error("simavr binary not found on system. Please install libsimavr-dev and simavr")
-            os.close(slave_fd)
-            if master_fd >= 0:
-                os.close(master_fd)
-            return None, "", -1
-
-    return simavr_proc, slave_name, master_fd
-
-
-def build_simavr_harness() -> Path | None:
-    harness_src = repo_root / "third_party" / "avr_pigweed_port" / "tools" / "pw_emu_avr" / "simavr_pty_runner.c"
-    harness_bin = repo_root / "build" / "simavr" / "simavr_pty_runner"
-    if not harness_src.exists():
-        return None
-
-    if harness_bin.exists() and harness_bin.stat().st_mtime >= harness_src.stat().st_mtime:
-        return harness_bin
-
-    harness_bin.parent.mkdir(parents=True, exist_ok=True)
+    runner_bin.parent.mkdir(parents=True, exist_ok=True)
 
     compile_cmd = [
         "gcc",
@@ -176,179 +79,166 @@ def build_simavr_harness() -> Path | None:
         "-Wextra",
         "-I/usr/include/simavr",
         "-I/usr/local/include/simavr",
-        str(harness_src),
+        str(runner_src),
         "-lsimavr",
         "-lutil",
         "-o",
-        str(harness_bin),
+        str(runner_bin),
     ]
     try:
         res = subprocess.run(compile_cmd, capture_output=True, text=True, check=False)
-        if res.returncode == 0 and harness_bin.exists():
-            logger.info("Compiled pw_emu_avr simavr_pty_runner binary", binary=str(harness_bin))
-            return harness_bin
+        if res.returncode == 0 and runner_bin.exists():
+            logger.info("Compiled pw_emu_avr simavr_pty_runner binary", binary=str(runner_bin))
+            return runner_bin
         logger.warning("Failed to compile simavr_pty_runner via gcc", stderr=res.stderr)
     except (subprocess.SubprocessError, OSError) as exc:
         logger.warning("gcc not available to build simavr_pty_runner", error=str(exc))
     return None
 
 
-def _run_avr_tool(args: list[str]) -> str | None:
-    """Run an avr-binutils tool and return its stdout, or None when unavailable."""
-    try:
-        res = subprocess.run(args, capture_output=True, text=True, check=False, timeout=10)
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.warning("avr-binutils tool unavailable", tool=args[0], error=str(exc))
-        return None
-    return res.stdout if res.returncode == 0 else None
-
-
-def _avr_symbol_address(firmware_path: Path, symbol: str, *, data_space: bool = True) -> int | None:
-    output = _run_avr_tool(["avr-nm", str(firmware_path)])
-    if output is None:
-        return None
-    for line in output.splitlines():
-        fields = line.split()
-        if len(fields) == 3 and fields[2] == symbol:
-            address = int(fields[0], 16)
-            return address & _AVR_DATA_SPACE_MASK if data_space else address
-    return None
-
-
-def _symbolize(firmware_path: Path, byte_addresses: list[int]) -> list[str]:
-    if not byte_addresses:
-        return []
-    output = _run_avr_tool(
-        ["avr-addr2line", "-f", "-C", "-p", "-e", str(firmware_path), *(hex(a) for a in byte_addresses)]
+def start_simavr_emulator(
+    wdir: Path,
+    firmware_path: Path,
+    mcu: str,
+    frequency: int,
+    uart_id: str | None = None,
+    *,
+    pause: bool = False,
+) -> tuple[Emulator, str]:
+    """Start an AVR target via Pigweed ``pw_emu.frontend.Emulator`` and return ``(emu, pty_path)``."""
+    config_path = pw_emu_config_path()
+    emu = Emulator(wdir, config_path=config_path)
+    extra_args = f"--frequency {frequency}" if frequency > 0 else None
+    uart_channel = f"uart{uart_id or '0'}"
+    logger.info(
+        "Starting simavr via pw_emu",
+        target=mcu,
+        frequency=frequency,
+        firmware=str(firmware_path),
+        uart_channel=uart_channel,
+        wdir=str(wdir),
     )
-    return output.splitlines() if output else []
+    emu.start(
+        target=mcu,
+        file=firmware_path,
+        pause=pause,
+        args=extra_args,
+    )
+    pty_path = emu.get_channel_path(uart_channel)
+    logger.info("pw_emu simavr UART PTY ready", channel=uart_channel, pty=pty_path)
+    return emu, pty_path
 
 
-def _scan_return_addresses(stack: bytes, address_size: int, text_end: int) -> list[int]:
-    """Return candidate return addresses (byte addresses) found on an AVR stack.
-
-    CALL pushes the word address low byte first, so it reads big-endian from SP+1
-    upward. Values that fall inside .text are kept; this is a heuristic stack
-    scan, so stale or data values that look like code addresses can appear.
-    """
-    candidates: list[int] = []
-    for start in range(len(stack) - address_size + 1):
-        end = start + address_size
-        word_address = int.from_bytes(stack[start:end], "big")
-        byte_address = word_address * 2
-        if 0 < byte_address < text_end and byte_address not in candidates:
-            candidates.append(byte_address)
-    return candidates[:_MAX_PEAK_FRAMES]
+def stop_simavr_emulator(emu: Emulator | None) -> None:
+    """Stop a running ``pw_emu`` Emulator cleanly without masking prior errors."""
+    if emu is None:
+        return
+    try:
+        emu.stop()
+    except (PwEmuError, OSError) as exc:
+        logger.debug("Ignoring expected error while stopping pw_emu simavr", error=str(exc))
 
 
-def _report_stack_peak(
-    firmware_path: Path, lines: list[str], heap_start: int | None
-) -> dict[str, Any] | None:
-    peak = next((res for line in reversed(lines) if (res := _PEAK_CONTEXT_PARSER.parse(line))), None)
-    low_water = next((res for line in reversed(lines) if (res := _LOW_WATER_PARSER.parse(line))), None)
-    if peak is None or low_water is None:
+def report_simavr_diagnostics(firmware_path: Path, wdir: Path) -> dict[str, Any] | None:
+    """Symbolize ``diagnostics.json`` produced by ``simavr_pty_runner`` and persist watermark metrics."""
+    diag_path = wdir / "diagnostics.json"
+    if not diag_path.is_file():
+        logger.warning("simavr exited without writing diagnostics.json", wdir=str(wdir))
         return None
-    stack = bytes.fromhex(str(peak["stack"]).replace(" ", ""))
-    text_end = _avr_symbol_address(firmware_path, "_etext", data_space=False)
-    frames = _scan_return_addresses(stack, peak["address_size"], text_end) if text_end else []
-    pc_function = _symbolize(firmware_path, [peak["pc"]])
-    call_chain_candidates = _symbolize(firmware_path, frames)
-    metrics = stack_watermark_metrics(low_water["min_sp"], low_water["ramend"], heap_start)
-    report: dict[str, Any] = {
-        "schema_version": 1,
-        "target": firmware_path.parent.name,
-        **metrics,
-        "min_sp": low_water["min_sp"],
-        "ramend": low_water["ramend"],
-        "heap_start": heap_start,
-        "peak_pc": peak["pc"],
-        "peak_function": pc_function[0] if pc_function else None,
-        "call_chain_candidates": call_chain_candidates,
-    }
+
+    try:
+        raw_obj = json.loads(diag_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed reading simavr diagnostics.json", path=str(diag_path), error=str(exc))
+        return None
+
+    if not isinstance(raw_obj, dict):
+        logger.warning("Unexpected non-object diagnostics.json payload", path=str(diag_path))
+        return None
+
+    raw_diag = cast(dict[str, Any], raw_obj)
+    sym = symbolize_diagnostics(firmware_path, raw_diag)
+    crashed = bool(sym.get("crashed", False))
+    min_sp = sym.get("min_sp")
+    ramend = sym.get("ramend")
+    heap_start = sym.get("heap_start")
+    crash_pc = sym.get("crash_pc")
+    crash_sp = sym.get("crash_sp")
+
+    log = logger.error if crashed else logger.info
+    log(
+        "simavr firmware exit diagnostics",
+        crashed=crashed,
+        pc=hex(crash_pc) if isinstance(crash_pc, int) else None,
+        function=sym.get("crash_function"),
+        sp=hex(crash_sp) if isinstance(crash_sp, int) else None,
+        stack_low_water=hex(min_sp) if isinstance(min_sp, int) else None,
+        heap_start=hex(heap_start) if isinstance(heap_start, int) else None,
+        stack_overflowed_into_bss=sym.get("stack_overflowed_into_bss"),
+    )
+
+    if crashed:
+        simavr_log = wdir / "simavr.log"
+        if simavr_log.is_file():
+            try:
+                tail = simavr_log.read_text(encoding="utf-8").splitlines()[-20:]
+                if tail:
+                    logger.error("simavr runner log tail", lines=tail)
+            except (OSError, UnicodeDecodeError) as exc:
+                logger.debug("Could not read simavr.log", error=str(exc))
+
+    if not isinstance(min_sp, int) or not isinstance(ramend, int):
+        return sym
+
+    metrics = stack_watermark_metrics(
+        min_sp,
+        ramend,
+        heap_start if isinstance(heap_start, int) else None,
+    )
+    peak_pc = sym.get("peak_pc")
+    peak_function = sym.get("peak_function")
+    call_chain = sym.get("call_chain_candidates", [])
     logger.info(
         "simavr stack peak context",
         stack_used_bytes=metrics["stack_used_bytes"],
         stack_budget_bytes=metrics["stack_budget_bytes"],
         stack_margin_bytes=metrics["stack_margin_bytes"],
-        pc=hex(peak["pc"]),
-        function=report["peak_function"],
-        call_chain_candidates=call_chain_candidates,
+        pc=hex(peak_pc) if isinstance(peak_pc, int) else None,
+        function=peak_function,
+        call_chain_candidates=call_chain,
     )
-    return report
 
-
-def report_simavr_crash(firmware_path: Path, state: EmulationState) -> None:
-    """Symbolize the simavr_pty_runner crash report against the firmware ELF.
-
-    The runner prints its diagnostics on stderr when it exits; wait briefly for
-    the stderr pump to deliver the final low-water-mark line before reading.
-    """
-
-    def _stderr_lines() -> list[str]:
-        with state.lock:
-            return [line for source, line in state.output_lines if source == "simavr-stderr"]
-
-    try:
-        tenacity.Retrying(
-            stop=tenacity.stop_after_delay(2.0),
-            wait=tenacity.wait_fixed(0.05),
-            # The peak-context line is the runner's last output on exit.
-            retry=tenacity.retry_if_result(lambda lines: not any(_PEAK_CONTEXT_PARSER.parse(x) for x in lines)),
-        )(_stderr_lines)
-    except tenacity.RetryError:
-        logger.warning("simavr exited without a stack peak report")
-
-    lines = _stderr_lines()
-    crash = next((res for line in lines if (res := _CRASH_PARSER.parse(line))), None)
-    low_water = next((res for line in reversed(lines) if (res := _LOW_WATER_PARSER.parse(line))), None)
-    heap_start = _avr_symbol_address(firmware_path, "__heap_start")
-    min_sp = crash["min_sp"] if crash else (low_water["min_sp"] if low_water else None)
-    function = None
-    if crash:
-        output = _run_avr_tool(["avr-addr2line", "-f", "-C", "-p", "-e", str(firmware_path), hex(crash["pc"])])
-        function = output.strip() if output else None
-
-    log = logger.error if crash else logger.info
-    log(
-        "simavr firmware exit diagnostics",
-        crashed=crash is not None,
-        pc=hex(crash["pc"]) if crash else None,
-        function=function,
-        sp=hex(crash["sp"]) if crash else None,
-        stack_low_water=hex(min_sp) if min_sp is not None else None,
-        heap_start=hex(heap_start) if heap_start is not None else None,
-        # The stack grows down toward .bss; a low-water mark below
-        # __heap_start means the stack overwrote static data.
-        stack_overflowed_into_bss=(min_sp < heap_start) if min_sp is not None and heap_start is not None else None,
-    )
-    stack_report = _report_stack_peak(firmware_path, lines, heap_start)
-    if stack_report is not None:
+    stack_used = metrics["stack_used_bytes"]
+    if stack_used is not None:
         metrics_dir = Path(os.environ.get("SIMAVR_METRICS_DIR", firmware_path.parent))
-        metrics_dir.mkdir(parents=True, exist_ok=True)
-        report_path = metrics_dir / f"{firmware_path.parent.name}_stack_watermark.json"
-        report_path.write_text(
-            json.dumps(stack_report, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+        write_stack_watermark_report(
+            metrics_dir,
+            firmware_path.parent.name,
+            stack_used_bytes=stack_used,
+            stack_budget_bytes=metrics["stack_budget_bytes"],
+            stack_margin_bytes=metrics["stack_margin_bytes"],
+            extra={
+                "min_sp": min_sp,
+                "ramend": ramend,
+                "heap_start": heap_start,
+                "peak_pc": peak_pc,
+                "peak_function": peak_function,
+                "call_chain_candidates": call_chain,
+            },
         )
+    return sym
 
 
 def _teardown_simavr(
     daemon_proc: subprocess.Popen[Any] | None,
-    simavr_proc: subprocess.Popen[Any] | None,
+    emu: Emulator | None,
     gateway_proc: subprocess.Popen[Any] | None,
-    master_fd: int,
     fake_uci_dir: Path | str | None = None,
     storage_path: Path | str | None = None,
 ) -> None:
-    procs = [p for p in (daemon_proc, simavr_proc, gateway_proc) if p is not None]
+    procs = [p for p in (daemon_proc, gateway_proc) if p is not None]
     terminate_process_tree(procs, timeout=5.0)
-
-    if master_fd >= 0:
-        try:
-            os.close(master_fd)
-        except OSError as exc:
-            logger.debug("Failed closing master_fd during teardown", error=str(exc))
-
+    stop_simavr_emulator(emu)
     cleanup_paths(fake_uci_dir, storage_path)
 
 
@@ -361,65 +251,77 @@ def run_simavr_emulation(
     timeout_seconds: float = 90.0,
     uart_id: str | None = None,
 ) -> bool:
-    """Run full E2E tests against an AVR ELF running in simavr."""
+    """Run full E2E tests against an AVR ELF running in simavr via Pigweed pw_emu."""
     if not firmware_path.exists():
         logger.error("Firmware ELF not found", path=str(firmware_path))
         return False
 
+    runner_bin = build_simavr_runner()
+    if runner_bin is None:
+        logger.error("simavr_pty_runner could not be built; install libsimavr-dev and gcc")
+        return False
+
     state = EmulationState()
-    harness_bin = build_simavr_harness()
+    wdir = Path(tempfile.mkdtemp(prefix="pw_emu_simavr_"))
+    emu: Emulator | None = None
+    daemon_proc: subprocess.Popen[str] | None = None
+    gateway_proc: subprocess.Popen[str] | None = None
+    fake_uci_dir: Path | None = None
+    storage_path: Path | None = None
 
-    gateway_proc = ensure_cloud_gateway(state)
-    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
-        _teardown_simavr(None, None, gateway_proc, -1, None, None)
-        return False
+    try:
+        gateway_proc = ensure_cloud_gateway(state)
+        if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+            return False
 
-    simavr_proc, slave_name, master_fd = spawn_simavr(harness_bin, firmware_path, mcu, frequency, uart_id, state)
-    if not slave_name or not simavr_proc:
-        logger.error("Failed to allocate virtual UART PTY device")
-        _teardown_simavr(None, simavr_proc, gateway_proc, master_fd, None, None)
-        return False
+        try:
+            emu, slave_name = start_simavr_emulator(wdir, firmware_path, mcu, frequency, uart_id)
+        except (PwEmuError, OSError) as exc:
+            logger.error("Failed to start simavr via pw_emu", error=str(exc))
+            return False
 
-    # Allow AVR cryptographic POST to finish before the daemon opens the UART.
-    time.sleep(SIMAVR_STARTUP_SETTLE_SECONDS)
-    fake_uci_dir, storage_path, daemon_env = setup_fake_uci(slave_name, device_id="yun-01", label="simavr runner")
+        # Allow AVR cryptographic POST to finish before the daemon opens the UART.
+        time.sleep(SIMAVR_STARTUP_SETTLE_SECONDS)
+        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(
+            slave_name,
+            device_id="yun-01",
+            label="simavr runner",
+        )
 
-    daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
-    logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
-    daemon_proc = subprocess.Popen(
-        daemon_cmd,
-        env=daemon_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        bufsize=1,
-    )
+        daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
+        logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
+        daemon_proc = subprocess.Popen(
+            daemon_cmd,
+            env=daemon_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+        )
 
-    start_daemon_thread(stream_pump, "daemon-stdout", daemon_proc.stdout, state.on_line, "daemon-stdout")
-    start_daemon_thread(stream_pump, "daemon-stderr", daemon_proc.stderr, state.on_line, "daemon-stderr")
+        start_daemon_thread(stream_pump, "daemon-stdout", daemon_proc.stdout, state.on_line, "daemon-stdout")
+        start_daemon_thread(stream_pump, "daemon-stderr", daemon_proc.stderr, state.on_line, "daemon-stderr")
 
-    time.sleep(0.5)
-    if daemon_proc.poll() is not None:
-        logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
-        _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
-        report_simavr_crash(firmware_path, state)
-        return False
+        time.sleep(0.5)
+        if daemon_proc.poll() is not None:
+            logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
+            return False
 
-    logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
-    if not state.sync_event.wait(timeout=max(timeout_seconds, 60.0)):
-        _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
-        report_simavr_crash(firmware_path, state)
-        return False
+        logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
+        if not state.sync_event.wait(timeout=max(timeout_seconds, 60.0)):
+            return False
 
-    logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
-    state.capabilities_event.wait(timeout=30.0)
-    time.sleep(1.0)
+        logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
+        state.capabilities_event.wait(timeout=30.0)
+        time.sleep(1.0)
 
-    all_passed = run_client_scripts(test_scripts, led_builtin_pin=led_builtin_pin) and audit_post_execution_status()
-    _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
-    report_simavr_crash(firmware_path, state)
-    return all_passed
+        return run_client_scripts(test_scripts, led_builtin_pin=led_builtin_pin) and audit_post_execution_status()
+    finally:
+        _teardown_simavr(daemon_proc, emu, gateway_proc, fake_uci_dir, storage_path)
+        if emu is not None:
+            report_simavr_diagnostics(firmware_path, wdir)
+        cleanup_paths(wdir)
 
 
 def run_matrix(
@@ -507,7 +409,7 @@ def run_matrix(
 
 
 app = typer.Typer(
-    help="Cycle-accurate AVR hardware emulation using simavr.",
+    help="Cycle-accurate AVR hardware emulation using Pigweed pw_emu + simavr.",
     add_completion=False,
 )
 
@@ -574,7 +476,7 @@ def main(
     ] = 90.0,
     uart: Annotated[
         str | None,
-        typer.Option("--uart", "-u", help="UART peripheral ID (e.g. 0, 1, or auto)"),
+        typer.Option("--uart", "-u", help="UART peripheral ID (e.g. 0, 1)"),
     ] = None,
 ) -> None:
     """Entrypoint for the simavr hardware emulation runner."""

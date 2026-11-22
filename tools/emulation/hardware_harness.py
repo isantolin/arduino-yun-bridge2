@@ -362,10 +362,9 @@ def rotate(
             "#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)\n"
         )
         emit_sketch_snippet.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(emit_sketch_snippet, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(snippet)
+        emit_sketch_snippet.touch(mode=0o600, exist_ok=True)
         emit_sketch_snippet.chmod(0o600)
+        emit_sketch_snippet.write_text(snippet, encoding="utf-8")
         print(f"[INFO] Wrote sketch snippet to {emit_sketch_snippet}")
 
     print(f"[INFO] Rotated BRIDGE_SERIAL_SHARED_SECRET ({key_bytes} bytes; redacted from stdout).")

@@ -4,6 +4,7 @@ module(
 )
 
 bazel_dep(name = "pigweed", version = "0.0.24")
+bazel_dep(name = "rules_cc", version = "0.1.1")
 local_path_override(
     module_name = "pigweed",
     path = "third_party/pigweed",

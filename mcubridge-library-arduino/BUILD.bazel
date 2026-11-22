@@ -1,0 +1,10 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "bridge_core",
+    srcs = glob(["src/**/*.cpp", "src/**/*.cc"], allow_empty = True),
+    hdrs = glob(["src/**/*.h", "src/**/*.hpp"], allow_empty = True),
+    includes = ["src"],
+    deps = ["//tools/arduino_stub"],
+    visibility = ["//visibility:public"],
+)

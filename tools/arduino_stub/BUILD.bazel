@@ -1,0 +1,9 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "arduino_stub",
+    srcs = glob(["*.cpp"], allow_empty = True),
+    hdrs = glob(["include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)

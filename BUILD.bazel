@@ -6,6 +6,7 @@ load(
 pw_compile_commands_generator(
     name = "compile_commands",
     target_patterns = [
-        "//...",
+        "//mcubridge-gateway-cpp/...",
+        "//mcubridge-library-arduino/...",
     ],
 )

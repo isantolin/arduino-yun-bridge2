@@ -1,0 +1,9 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+cc_library(
+    name = "gateway_lib",
+    srcs = glob(["src/**/*.cc", "src/**/*.cpp"], allow_empty = True),
+    hdrs = glob(["src/**/*.h", "src/**/*.hpp", "include/**/*.h", "include/**/*.hpp"], allow_empty = True),
+    includes = ["src", "include"],
+    visibility = ["//visibility:public"],
+)

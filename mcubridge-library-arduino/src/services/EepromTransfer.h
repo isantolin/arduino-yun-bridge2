@@ -1,11 +1,13 @@
 #pragma once
 
 #include "config/bridge_config.h"
+#include "protocol/rpc_protocol.h"
 
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 
 #include <avr/io.h>
 #include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -20,9 +22,18 @@ inline constexpr size_t kEepromPhysicalSize = 4096U;
 // The EEPROM tail holds the link boot epoch (ADR-0005) and is never exposed.
 inline constexpr size_t kEepromTransferResourceSize =
     kEepromPhysicalSize - bridge::config::LINK_EPOCH_EEPROM_RESERVED_BYTES;
+// The cloud contract (ADR-0007) publishes this resource ID and the largest
+// image size; keep the firmware in lock-step with the canonical constants.
+static_assert(kEepromTransferResourceId == rpc::RPC_EEPROM_TRANSFER_RESOURCE_ID,
+              "EEPROM resource ID diverges from config_schema.proto");
+static_assert(kEepromTransferResourceSize <= rpc::RPC_EEPROM_RESOURCE_MAX_BYTES,
+              "EEPROM resource exceeds the cloud contract size");
 
-bool registerEepromTransferHandler(pw::transfer::TransferService& service);
+bool registerEepromTransferHandler(pw::transfer::TransferService& service,
+                                   pw::transfer::TransferThread& thread);
+void unregisterEepromTransferHandler(
+    const pw::transfer::TransferService& service);
 
 }  // namespace bridge::services
 
-#endif  // BRIDGE_ENABLE_PW_TRANSFER
+#endif  // AVR EEPROM hardware resource

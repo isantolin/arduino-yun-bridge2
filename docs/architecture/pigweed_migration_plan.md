@@ -1,6 +1,6 @@
 # Plan de migración a Pigweed: ejecución consolidada
 
-- **Estado:** migración RPC y transferencias `pw_transfer` integradas en Gateway C++ y firmware MCU (Etapa 7 completada); Gateway Legacy Python erradicado. Validación integral en CI en curso en PR #85 (`feat/multi-arch-pigweed-clean-compilers`). PR abierto y sin merge; la CI del HEAD debe aprobarse antes de considerar validada esta revisión.
+- **Estado:** PR #100 (E5, acceso cloud a EEPROM), PR #101 (E6, upload MCU → Linux), PR #102 (medición automatizada de recursos firmware), PR #103 (Fase 1: paridad `FileSystem.upload()` 32-bit, runtime stack watermarks y limpieza CMake) y PR #104 (Fase 2: `pw_log` tokenizado en AVR/SAMD21/ESP32-S3/host y endurecimiento del detokenizer) están mergeados en `main`. Fase 3 (PR #105, ADR-0008: retiro de `FileSystemService.Write`) y Fase 4 (empaquetado de producción de `mcubridge-gateway-cpp` y deduplicación del staging cooperativo de `pw_transfer`/`pw_log` en scripts CI) completan la consolidación del ecosistema. La prueba física UART/HDLC en hardware real sigue siendo un release gate independiente diferido/pendiente de hardware físico.
 - **Base:** ADR-0002 — `docs/architecture/decisions/0002-pigweed-hdlc-rpc-migration.md` y ADR-0003 — `docs/architecture/decisions/0003-pigweed-gateway-cpp-replacement.md`.
 - **Protocolo canónico:** `tools/protocol/mcu_wire.proto`, `tools/protocol/config_schema.proto` y `tools/protocol/cloud_gateway.proto`.
 - **Integración MCU:** submódulo `third_party/avr_pigweed_port`, exportado como biblioteca Arduino `PigweedAVR`.
@@ -28,7 +28,7 @@ Reglas obligatorias:
 
 | Subsistema | Estado comprobado | Pendiente |
 |---|---|---|
-| HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log y consola; decodificación nativa con `pw_hdlc.decode.FrameDecoder` | Ninguno; rutas manuales redundantes purgadas |
+| HDLC y canales lógicos | Integrados en firmware y daemon; canales RPC, log (`HDLC_ADDRESS_LOG`) y consola; decodificación nativa con `pw_hdlc.decode.FrameDecoder` y detokenización de `pw_log` / `pw_tokenizer` activa en AVR, SAMD21, ESP32-S3 y host | Ninguno; rutas manuales redundantes purgadas |
 | RPC MCU | Servicios Nanopb generados y registrados en firmware; `pw::rpc::Server` y `pw::rpc::Client` integrados sin capas de compatibilidad intermedias | Ninguno |
 | Esquema Protobuf | `tools/protocol/mcu_wire.proto` y `config_schema.proto` 100% migrados a RPC Pigweed nativo; `enum Command`, `CMD_*`, `cmd_opts` eliminados | Ninguno |
 | Descriptores Python | `PW_SERVICES` se construye con `pw_rpc.descriptors.Services`; `OperationSpec` desacoplado de IDs legacy; `BY_COMMAND_ID` eliminado | Ninguno |
@@ -36,10 +36,12 @@ Reglas obligatorias:
 | GPIO streaming | Firmware expone `SubscribePins` con `NanopbServerWriter` y el daemon consume el stream nativo vía `pw_rpc.Client` con backpressure | Ninguno |
 | API de aplicación | Servicios internos, UBUS del MPU y clientes northbound (`GatewayClient`) invocan métodos RPC por nombre canónico Pigweed (`rpc.pb.<Service>/<Method>`); `LocalBridge` y `CloudBridge` gRPC erradicados | Ninguno |
 | Generador | Generador `generate.py` limpio de catálogos y tablas de comandos obsoletas | Ninguno |
-| Transferencia de archivos | Upstream pw_transfer completo e integrado end-to-end: TransferService en Gateway C++ (handlers de buffer y BoundedFileTransferHandler staging en recurso 2 para clientes y dispositivos edge); proxy FileTransferService (PushToLinux/FetchFromLinux) en daemon MPU con validación de rutas y cuotas; cliente Python con push_file_to_device/fetch_file_from_device; handler EEPROM MCU | Ninguno |
+| Transferencia de archivos | Upstream `pw_transfer` integrado en AVR Mega 2560, SAMD21 MKR WiFi 1010, ESP32-S3 Nano ESP32, daemon y Gateway; E5 (#100), E6 (#101) y E9 (ADR-0008: retiro coordinado de `FileSystemService.Write`, `message FileWrite` y hooks SD sin uso `writeFile`/`readFileChunk`) completados; `Bridge.transferClient()` conservado; las pruebas Fleet Mesh verifican EEPROM en AVR y `FileSystem.upload()` MCU → Linux en las 3 arquitecturas. | Validación física UART/HDLC. |
 | Estructura C++ | 0 supresiones `NOLINT`, sin shims legacy, llamadas directas a APIs de Nanopb y Pigweed | Ninguno |
 | Contenedores | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR | Ninguno |
-| CI y validación | Matriz de CI completa de PR #85 en ejecución y supervisión en GitHub Actions HEAD actual (Tox, Gateway C++, simavr, Renode, QEMU, Arduino) | CI verde en HEAD de PR #85 y validación física UART/HDLC |
+| Port AVR Pigweed | `pw_rpc` y `pw_transfer` upstream; el dispatcher `pw_rpc_avr` fue retirado. `pw_transfer` conserva solo la adaptación cooperativa requerida por bare-metal Arduino. El staging cooperativo de `pw_transfer`/`pw_log` está consolidado en `tools/ci/arduino_toolchains.sh` y compartido por todos los scripts de host, lint, emulador y firmware. | Validación física UART/HDLC en hardware real. |
+| Gateway C++ (`mcubridge-gateway-cpp`) | Servicio Linux C++20 standalone con `pw::rpc::Server`, `pw::transfer::TransferService`, mTLS 1.3 SPIFFE, ACL deny-by-default y empaquetado de producción (`GNUInstallDirs` `cmake --install`, `Dockerfile` multi-stage endurecido + `Dockerfile.dockerignore`, unidad `systemd` sandboxed + `env.example`, y verificación de empaquetado en CI). Fuera de OpenWrt APK por diseño (colector upstream, no paquete de router). | Validación en despliegue físico de flota. |
+| CI y validación | Matriz automatizada cubre Tox, cobertura Python/Arduino/Gateway, `arduino-examples`, `simavr`, `Renode`, `QEMU Xtensa`, `Fleet Mesh`, fuzzing y verificación de `cmake --install` / unidad `systemd` / contrato CLI del Gateway. | Validación física UART/HDLC pendiente de hardware real. |
 
 ## Estado del corte coordinado y residuos erradicados (ADR-0003 en PR #85)
 
@@ -64,10 +66,10 @@ El corte coordinado ordenado por ADR-0003 se ejecutó en PR #85 (`feat/multi-arc
 | 4 | API de aplicación | Cambiar los servicios Python y clientes para invocar métodos RPC por contrato/descriptores, sin `CMD_*`; mantener UBUS y contratos externos sin capas de compatibilidad innecesarias | **Completada** |
 | 5 | Generador | Derivar tipos, cardinalidad, service/method IDs, handlers y validaciones desde descriptors Protobuf/Pigweed; retirar catálogos duplicados y tablas `commands` | **Completada** |
 | 6 | Firmware | Consolidar los servicios MCU generados y `pw::rpc::Server` y `pw::rpc::Client`; retirar adaptadores de paquetes y despacho manual de comandos legacy. Mantener HAL, AEAD y restricciones AVR | **Completada** |
-| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU, migrar clientes en ambos sentidos y retirar APIs unary de contenido | **Completada** — handlers EEPROM MCU, cliente Python `pw_transfer.Manager`, Gateway C++ con handlers acotados y atómicos en disco (`BoundedFileTransferHandler`) integrados y validados |
+| 7 | Transferencias | Adoptar upstream `pw_transfer` como único protocolo de contenido de archivos; implementar backends Linux/MCU y migrar clientes en ambos sentidos | **Implementada y validada en CI** — #100 y #101 mergeados; Fleet Mesh valida EEPROM y upload MCU → Linux. Pendiente prueba física UART/HDLC |
 | 8 | Estructura C++ | Eliminación total de capas de compatibilidad o shims legacy; 0 supresiones `NOLINT` en todo el código C++ de producción y tests | **Completada** |
 | 9 | Contenedores y buffers | Buffers y almacenamiento estático Zero-STL sin asignación dinámica en AVR; uso exclusivo y unificado de `pw::span` | **Completada** |
-| 10 | Validación integral | Las métricas históricas citadas son un baseline anterior, no una validación del HEAD actual. PR #85 debe superar la matriz completa, incluida cobertura Python/C++, AVR Mega 2560, Renode, QEMU, fuzzing, OpenWrt y el Gateway C++ | **En curso — supervisión activa en CI de PR #85** |
+| 10 | Validación integral | CI del HEAD final de #101: matriz principal aprobada, incluidos Mega, Gateway C++, simavr, Renode, QEMU Xtensa, Fleet Mesh, fuzzing y cobertura. OpenWrt APK no es criterio de aceptación del usuario para esta etapa | **Validación automatizada completada; hardware físico pendiente** |
 | 11 | Unificación Canónica de Tópicos y Manejadores | Contratos unificados al espacio canónico `rpc.pb.<Service>/<Method>`. Erradicación completa de `grpclib`, `CloudBridge`, `LocalBridge`, feeds y mocks asociados. Gateway C++ Pigweed (`mcubridge-gateway-cpp`) con `GatewayControl`, `EdgeControl`, `DeviceTelemetry` y mTLS 1.3 SPIFFE validado | **Completada** |
 
 ## Detalle de la etapa 2: cliente RPC Python (PR #68)
@@ -92,7 +94,7 @@ Criterios de aceptación:
 
 ## Detalle de la etapa 3: streaming GPIO (`SERVER_STREAMING`)
 
-El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>`: rechaza suscripciones inválidas o sin slots libres con `pw::Status::ResourceExhausted()`, emite eventos `PinUpdateEvent` como paquetes `PacketType::SERVER_STREAM` en `Bridge.sendPinEvent()`, y cierra el stream con `pw::OkStatus()` cuando no quedan pines suscritos. La transferencia de archivos no usa server-streaming Nanopb: `FileSystemService.Read` fue eliminado. `pw_transfer` tiene un handler de lectura/escritura para la EEPROM interna de 4 KiB del ATmega2560 (recurso fijo `0x4D454741`, sin semántica de filesystem). El endpoint de almacenamiento Linux y la migración de las APIs locales `FileRead`/`FileWrite` siguen pendientes.
+El firmware (`mcubridge-library-arduino/src/Bridge.cpp`) expone `GpioService::SubscribePins` mediante `pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>` y `pw_transfer` gestiona contenido binario. El handler EEPROM del ATmega2560 expone el recurso fijo `0x4D454741`; E5 (#100) completa su acceso cloud. E6 (#101) completa la ruta MCU → Linux mediante el recurso `FILE_UPLOAD_RESOURCE_ID`. Los handlers Linux/Gateway mantienen los límites de almacenamiento, cuotas, autorización y staging.
 
 Cambios en el daemon y el contrato:
 
@@ -115,9 +117,10 @@ Cambios en el daemon y el contrato:
 1. **Firmware C++ Nanopb y Pigweed RPC:**
    - Se eliminó el dispatch manual de comandos numéricos y sus estructuras intermedias en `Bridge.cpp`.
    - Registro y ciclo de vida de servicios mediante `pw::rpc::Server` y `pw::rpc::Client`.
+   - Paridad multi-arquitectura de `pw_log` + `pw_tokenizer`: el backend tokenizado (`PW_TOKENIZE_TO_BUFFER` -> `pw_log_avr_SetLogSink` -> `HDLC_ADDRESS_LOG`) está activo en AVR ATmega2560, SAMD21 MKR WiFi 1010, ESP32-S3 Nano ESP32 y compilaciones host, reemplazando `pw_log_null` y permitiendo detokenización end-to-end en `SerialTransport`.
 2. **Transferencias de archivos (upstream `pw_transfer`):**
-   - `pw_transfer` es el único protocolo de streaming de archivos; el RPC legacy `FileSystemService.Read` y las intercepciones unarias en `runtime.py` (antiguo desvío `mcu/eeprom`) se eliminaron en favor de streaming nativo `pw_transfer`.
-   - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados para ATmega2560 en `third_party/avr_pigweed_port`, manteniéndose las características cooperativas y de árbitro mono-rol estrictamente en AVR bajo condicionales de plataforma.
+   - `pw_transfer` es el único protocolo de transferencia de archivos; el RPC legacy `FileSystemService.Read`, el RPC unario transicional `FileSystemService.Write` (ADR-0008 / E9), los hooks HAL SD sin uso (`writeFile`, `readFileChunk`) y las intercepciones unarias en `runtime.py` (antiguo desvío `mcu/eeprom`) se eliminaron en favor de streaming nativo `pw_transfer`. `Bridge.transferClient()` se conserva explícitamente junto a `Bridge.transferService()`.
+   - El servicio upstream `pw.transfer.Transfer` y su `Thread<1, 1>` cooperativo están integrados en las tres arquitecturas soportadas (AVR ATmega2560, SAMD21 MKR WiFi 1010 y ESP32-S3 Nano ESP32), y Fleet Mesh verifica `FileSystem.upload()` en los 3 nodos simultáneamente.
    - En el Gateway C++ standalone (`mcubridge-gateway-cpp`), tanto `GatewayClientSession` como `GatewaySession` registran `pw::transfer::TransferService` con `BufferTransferHandler` y `BoundedFileTransferHandler` (`staging.bin` en recurso 2). `GatewayControlService::Dispatch` coordina la sincronización de archivos de staging entre el cliente autenticado y el dispositivo edge de destino.
    - En el daemon MPU (`mcubridge`), el servicio de control registra `rpc.pb.FileTransferService` (`PushToLinux` y `FetchFromLinux`), interactuando como cliente `pw_transfer` con el Gateway mediante `PwTransferManager`, aplicando validación de seguridad de rutas `_get_safe_path` y cuotas de almacenamiento `write_with_quota`.
    - En `mcubridge-client-examples`, `GatewayClient` incorpora `push_file_to_device` y `fetch_file_from_device` de alto nivel, completando el canal de transferencia end-to-end hacia el filesystem local de OpenWrt.
@@ -137,13 +140,13 @@ Cambios en el daemon y el contrato:
 ## Detalle de la etapa 10: Validación integral y métricas finales
 
 1. **Evidencia de pruebas y análisis estático:**
-   - **Pruebas y cobertura C++ (`tools/ci/coverage_arduino.sh`):**
+   - **Pruebas y cobertura C++ (`tools/ci/coverage_arduino.sh`, baseline histórico; no atribuir estos porcentajes al HEAD actual sin el artefacto correspondiente):**
      - Líneas: 99.8%
      - Funciones: 100.0%
      - Ramas: 97.8% (supera el umbral mandatorio $\ge 95\%$)
      - Clang-Tidy: 0 advertencias, 0 supresiones `NOLINT`.
      - Cppcheck: 0 advertencias, 0 errores.
-   - **Pruebas y cobertura Python (`tools/ci/coverage_python.py`):**
+   - **Pruebas y cobertura Python (`tools/ci/coverage_python.py`, baseline histórico; no atribuir estos porcentajes al HEAD actual sin el artefacto correspondiente):**
      - 899 pruebas unitarias y de integración superadas (899 passed, 0 failed en 134s).
      - Cobertura total de líneas: 97.81% (supera $\ge 95\%$).
      - Cobertura pura de ramas: 96.86% (1017/1050, supera $\ge 95\%$).
@@ -181,13 +184,13 @@ Cambios en el daemon y el contrato:
 
 ## Medición y reporte por etapa
 
-Cada PR debe reportar:
+Cada cambio de implementación debe reportar:
 
 - Archivos y rutas legacy eliminadas o reducidas.
 - APIs Pigweed usadas directamente y justificación de cada adaptador restante.
 - Número de líneas manuales antes/después, separando producción, tests y código generado.
 - Resultados de tests y CI por arquitectura.
-- Flash, SRAM estática, stack máximo y buffers para AVR/SAMD/ESP32 cuando cambien.
+- Flash y SRAM estática mediante `resource_report.json`; stack máximo solo cuando exista una medición runtime de la arquitectura. Los reportes y el método están documentados en `docs/architecture/pigweed_resource_measurements.md`.
 - Riesgos de despliegue y si se requiere actualizar firmware y daemon juntos.
 
 No contabilizar código generado como reducción de código manual ni comparar líneas sin separar tests y scaffolding. No eliminar código únicamente por su nombre: verificar todos los productores, consumidores y rutas de seguridad antes de retirarlo.

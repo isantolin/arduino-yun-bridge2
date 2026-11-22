@@ -24,7 +24,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import serial
 import structlog
@@ -32,6 +32,7 @@ import tenacity
 import typer
 from google.protobuf.message import DecodeError
 from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
@@ -172,10 +173,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
             # overlapping probes leave stale nonce responses for the daemon.
             if pending_sync is None and now >= next_probe:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
-                reset_request = protocol.encode_hdlc_rpc(
-                    "rpc.pb.SystemService/LinkReset",
-                    b"",
-                    call_id=call_id,
+                reset_request = ui_frame(
+                    protocol.HDLC_ADDRESS_RPC,
+                    protocol.encode_rpc_packet(
+                        "rpc.pb.SystemService/LinkReset",
+                        b"",
+                        call_id=call_id,
+                    ),
                 )
                 if ser.write(reset_request) != len(reset_request):
                     raise OSError("Partial write while resetting MCU link readiness probe")
@@ -183,10 +187,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
                 nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
                 request_tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
-                sync_request = protocol.encode_hdlc_rpc(
-                    "rpc.pb.SystemService/LinkSync",
-                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
-                    call_id=call_id,
+                sync_request = ui_frame(
+                    protocol.HDLC_ADDRESS_RPC,
+                    protocol.encode_rpc_packet(
+                        "rpc.pb.SystemService/LinkSync",
+                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
+                        call_id=call_id,
+                    ),
                 )
                 if ser.write(sync_request) != len(sync_request):
                     raise OSError("Partial write while probing MCU UART readiness")
@@ -300,40 +307,65 @@ async def verify_with_emulator_watchdog(
     return None if verification.result() else "cross-node mesh verification failed"
 
 
+async def get_node_version_with_reconnect(node: NodeRuntime) -> mcu_wire_pb2.VersionResponse | None:
+    """Probe GetVersion over a fresh Gateway session for each attempt.
+
+    A timed-out Gateway dispatch may leave both the client socket and the
+    device-side dispatch path unusable. Retrying the same stub then only
+    produces ConnectionResetError/BrokenPipeError. Closing that session and
+    reconnecting gives the Gateway a clean client session before retrying.
+    """
+    for attempt in range(5):
+        try:
+            async with bridge_session(
+                host=CLOUD_HOST,
+                port=CLOUD_PORT,
+                device_id=node.name,
+                timeout_ms=10000,
+            ) as (_channel, stub):
+                response = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
+            if response.major == 2 and response.minor == 8:
+                logger.info(
+                    "Node GetVersion verified",
+                    node=node.name,
+                    version=f"{response.major}.{response.minor}.{response.patch}",
+                    attempt=attempt,
+                )
+                return response
+            logger.warning(
+                "GetVersion returned an unexpected version; reconnecting...",
+                node=node.name,
+                attempt=attempt,
+                major=response.major,
+                minor=response.minor,
+            )
+        except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
+            logger.warning(
+                "GetVersion attempt failed; reconnecting with a fresh Gateway session...",
+                node=node.name,
+                attempt=attempt,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+        if attempt < 4:
+            await asyncio.sleep(1.0)
+    logger.error("GetVersion failed after reconnect attempts", node=node.name)
+    return None
+
+
 async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     """Verify that all nodes are independently reachable, responsive to RPCs, and communicating."""
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
+        ver_resp = await get_node_version_with_reconnect(node)
+        if ver_resp is None:
+            return False
+
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000) as (
             _channel,
             stub,
         ):
-            ver_resp: mcu_wire_pb2.VersionResponse | None = None
-            for attempt in range(5):
-                try:
-                    ver_resp = await stub.GetVersion(mcu_wire_pb2.SubscribeRequest())
-                    if ver_resp.major == 2 and ver_resp.minor == 8:
-                        break
-                except (RuntimeError, TimeoutError) as exc:
-                    logger.warning(
-                        "GetVersion attempt failed, retrying...",
-                        node=node.name,
-                        attempt=attempt,
-                        error=str(exc),
-                    )
-                await asyncio.sleep(1.0)
-            if ver_resp is None or ver_resp.major != 2 or ver_resp.minor != 8:
-                major = ver_resp.major if ver_resp else -1
-                minor = ver_resp.minor if ver_resp else -1
-                logger.error("Unexpected version response", node=node.name, major=major, minor=minor)
-                return False
-            logger.info(
-                "Node GetVersion verified",
-                node=node.name,
-                version=f"{ver_resp.major}.{ver_resp.minor}.{ver_resp.patch}",
-            )
-
             mem_resp: mcu_wire_pb2.FreeMemoryResponse | None = None
             for attempt in range(5):
                 try:
@@ -345,7 +377,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                         node=node.name,
                         attempt=attempt,
                     )
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     logger.warning(
                         "GetFreeMemory attempt failed, retrying...",
                         node=node.name,
@@ -364,7 +396,7 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                     await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
                     await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
                     break
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     if attempt == 4:
                         logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
                         return False
@@ -375,14 +407,96 @@ async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
                 try:
                     await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
                     break
-                except (RuntimeError, TimeoutError) as exc:
+                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
                     if attempt == 4:
                         logger.error("MailboxPush failed", node=node.name, error=str(exc))
                         return False
                     await asyncio.sleep(1.5)
             logger.info("Node MailboxPush verified", node=node.name)
 
+            if node.board.fqbn.startswith("arduino:avr:") and not await verify_eeprom_round_trip(node, stub):
+                return False
+
+            if not await verify_file_upload(node):
+                return False
+
     return True
+
+
+# ADR-0007: a partial image keeps the emulated run short; the per-byte cost
+# is logged so the full 4,080-byte write time can be extrapolated.
+_EEPROM_PROBE = bytes((0xA5 ^ i) & 0xFF for i in range(128))
+
+
+async def verify_eeprom_round_trip(node: NodeRuntime, stub: Any) -> bool:
+    """Write the AVR EEPROM through client -> gateway -> daemon -> MCU and read it back."""
+    started = time.monotonic()
+    stage = "write"
+    try:
+        written = await stub.write_mcu_eeprom(_EEPROM_PROBE, timeout_ms=120000)
+        elapsed = time.monotonic() - started
+        stage = "read"
+        image = await stub.read_mcu_eeprom(timeout_ms=120000)
+    except (RuntimeError, TimeoutError, ValueError) as exc:
+        logger.error(
+            "EEPROM round trip failed",
+            node=node.name,
+            stage=stage,
+            error=str(exc),
+            error_type=type(exc).__name__,
+            error_repr=repr(exc),
+        )
+        return False
+    if written != len(_EEPROM_PROBE) or image[: len(_EEPROM_PROBE)] != _EEPROM_PROBE:
+        logger.error("EEPROM read-back mismatch", node=node.name, written=written, read=len(image))
+        return False
+    per_byte = elapsed / len(_EEPROM_PROBE)
+    logger.info(
+        "Node EEPROM round trip verified",
+        node=node.name,
+        write_seconds=round(elapsed, 2),
+        image_bytes=len(image),
+        extrapolated_full_write_seconds=round(per_byte * protocol.EEPROM_RESOURCE_MAX_BYTES, 1),
+    )
+    return True
+
+
+_FILE_UPLOAD_PROBE = b"MCUBRIDGE_UPLOAD_E6"
+
+
+async def verify_file_upload(node: NodeRuntime) -> bool:
+    """Verify the sketch-driven MCU pw_transfer upload reached the MPU filesystem."""
+    uploaded_path = node.temp_dir / "fs" / "fleet_upload_probe.bin"
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline:
+        try:
+            content = uploaded_path.read_bytes()
+        except OSError:
+            await asyncio.sleep(0.1)
+            continue
+        if content == _FILE_UPLOAD_PROBE:
+            logger.info(
+                "Node MCU-to-Linux file upload verified",
+                node=node.name,
+                path=str(uploaded_path),
+                size=len(content),
+            )
+            return True
+        logger.error(
+            "MCU-to-Linux upload content mismatch",
+            node=node.name,
+            path=str(uploaded_path),
+            expected=len(_FILE_UPLOAD_PROBE),
+            received=len(content),
+        )
+        return False
+    logger.error(
+        "MCU-to-Linux upload did not reach the MPU filesystem before timeout",
+        node=node.name,
+        path=str(uploaded_path),
+        timeout_seconds=20,
+    )
+    return False
 
 
 def compile_fleet_firmwares() -> (

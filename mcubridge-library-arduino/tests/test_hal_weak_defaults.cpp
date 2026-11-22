@@ -19,15 +19,6 @@ void test_hal_weak_defaults_without_mock() {
 
   TEST_ASSERT_FALSE(bridge::hal::hasSD());
 
-  const auto write_res =
-      bridge::hal::writeFile("test.txt", pw::span<const uint8_t>());
-  TEST_ASSERT_TRUE(write_res.IsUnimplemented());
-
-  uint8_t buffer[8];
-  const auto read_res =
-      bridge::hal::readFileChunk("test.txt", 0, pw::span<uint8_t>(buffer, 8));
-  TEST_ASSERT_TRUE(read_res.status().IsUnimplemented());
-
   const auto remove_res = bridge::hal::removeFile("test.txt");
   TEST_ASSERT_TRUE(remove_res.IsUnimplemented());
 
@@ -36,6 +27,10 @@ void test_hal_weak_defaults_without_mock() {
   TEST_ASSERT_FALSE(caps.sd);
   TEST_ASSERT_EQUAL_UINT8(NUM_DIGITAL_PINS, caps.dig);
   TEST_ASSERT_EQUAL_UINT8(NUM_ANALOG_INPUTS, caps.ana);
+
+  const auto wm = bridge::hal::getStackWatermark();
+  TEST_ASSERT_EQUAL_UINT32(0U, wm.used_bytes);
+  TEST_ASSERT_EQUAL_UINT32(0U, wm.budget_bytes);
 
   g_host_has_sd = original_sd;
   g_host_fs_enabled = original_fs;

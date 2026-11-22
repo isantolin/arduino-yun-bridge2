@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 import lmdb
 import pw_hdlc.decode
 import pw_rpc.packets
@@ -199,22 +200,11 @@ async def test_handle_cloud_pin_overflow_reports_error() -> None:
         state.state = "synchronized"
         state.link_sync_event.set()
 
-        captured: list[cloud_gateway_pb2.CloudQueuedPublish] = []
-
-        async def capture_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
-            captured.append(message)
-
-        service.cloud_publisher = capture_enqueue
-
-        message = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{config.topic_prefix}/req/rpc.pb.GpioService/DigitalRead",
-            payload=mcu_wire_pb2.PinRead(pin=13).SerializeToString(),
-        )
-
-        await service.handle_request(message)
-
-        assert captured
-        assert b"error:serial-transport-error" in captured[0].payload
+        with pytest.raises(RuntimeError, match="serial-transport-error"):
+            await service.execute_rpc(
+                "rpc.pb.GpioService/DigitalRead",
+                mcu_wire_pb2.PinRead(pin=13).SerializeToString(),
+            )
     finally:
         if service is not None:
             service.cleanup()
@@ -248,7 +238,7 @@ async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -
 
 async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     svc = mock_bridge_service
-    connect_http2 = mocker.spy(svc.state.cloud_fsm, "connect_http2")
+    connect_tls = mocker.spy(svc.state.cloud_fsm, "connect_tls")
 
     mock_reader = AsyncMock()
     mock_reader.read = AsyncMock(return_value=b"")
@@ -264,7 +254,7 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
     with pytest.raises(ConnectionError, match="Cloud Gateway connection closed by peer"):
         await svc.connect_cloud_session(None)
 
-    connect_http2.assert_called_once()
+    connect_tls.assert_called_once()
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
@@ -329,30 +319,25 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
         mock_serial.send = AsyncMock(return_value=True)
         service = BridgeService(cfg, state, mock_serial)
 
-        inbound_put = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{cfg.topic_prefix}/req/rpc.pb.DataStoreService/Put",
-            payload=mcu_wire_pb2.DatastorePut(key=key, value=value).SerializeToString(),
+        put_resp = await service.execute_rpc(
+            "rpc.pb.DataStoreService/Put",
+            mcu_wire_pb2.DatastorePut(key=key, value=value).SerializeToString(),
         )
-        await service.handle_request(inbound_put)
+        assert cloud_gateway_pb2.GenericResponse.FromString(put_resp).status == "ok"
         assert state.datastore_cache is not None
         assert await state.datastore_cache.get(key) == value
 
-        mock_enqueue = AsyncMock()
-        service.cloud_publisher = mock_enqueue
-        inbound_get = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{cfg.topic_prefix}/req/rpc.pb.DataStoreService/Get",
-            payload=mcu_wire_pb2.DatastoreGet(key=key).SerializeToString(),
+        get_resp = await service.execute_rpc(
+            "rpc.pb.DataStoreService/Get",
+            mcu_wire_pb2.DatastoreGet(key=key).SerializeToString(),
         )
-        await service.handle_request(inbound_get)
-        assert mock_enqueue.await_count == 1
+        assert mcu_wire_pb2.DatastoreGetResponse.FromString(get_resp).value == value
 
-        mock_enqueue.reset_mock()
-        inbound_get_miss = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{cfg.topic_prefix}/req/rpc.pb.DataStoreService/Get",
-            payload=mcu_wire_pb2.DatastoreGet(key=f"non_existing_{key}").SerializeToString(),
+        get_miss_resp = await service.execute_rpc(
+            "rpc.pb.DataStoreService/Get",
+            mcu_wire_pb2.DatastoreGet(key=f"non_existing_{key}").SerializeToString(),
         )
-        await service.handle_request(inbound_get_miss)
-        assert mock_enqueue.await_count == 1
+        assert mcu_wire_pb2.DatastoreGetResponse.FromString(get_miss_resp).value == b""
 
         state.cleanup()
 
@@ -392,16 +377,14 @@ def test_runtime_request_mcu_version_and_system_version(
 
         v_resp = mcu_wire_pb2.VersionResponse(major=major, minor=minor, patch=patch_ver)
         mock_serial.send = AsyncMock(return_value=v_resp)
-        inbound = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{cfg.topic_prefix}/req/rpc.pb.SystemService/GetVersion", payload=b""
-        )
 
-        req_mcu_version: Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[bool]] = service.request_mcu_version
-        res = await req_mcu_version(inbound)
+        res = await service.request_mcu_version()
         assert res is True
         assert state.mcu_version == (major, minor, patch_ver)
 
-        await service.handle_request(inbound)
+        rpc_bytes = await service.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
+        decoded = mcu_wire_pb2.VersionResponse.FromString(rpc_bytes)
+        assert (decoded.major, decoded.minor, decoded.patch) == (major, minor, patch_ver)
         state.cleanup()
 
     asyncio.run(_run())
@@ -423,20 +406,18 @@ def test_runtime_pin_analog_and_invalid_digits(
         mock_serial.send = AsyncMock(return_value=True)
         service = BridgeService(cfg, state, mock_serial)
 
-        inbound_aw = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{cfg.topic_prefix}/req/rpc.pb.GpioService/AnalogWrite",
-            payload=mcu_wire_pb2.AnalogWrite(pin=pin, value=analog_val).SerializeToString(),
+        await service.execute_rpc(
+            "rpc.pb.GpioService/AnalogWrite",
+            mcu_wire_pb2.AnalogWrite(pin=pin, value=analog_val).SerializeToString(),
         )
-        await service.handle_request(inbound_aw)
         mock_serial.send.assert_called_with(
             "rpc.pb.GpioService/AnalogWrite", mcu_wire_pb2.AnalogWrite(pin=pin, value=analog_val)
         )
 
-        inbound_dw = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{cfg.topic_prefix}/req/rpc.pb.GpioService/DigitalWrite",
-            payload=mcu_wire_pb2.DigitalWrite(pin=pin, value=0).SerializeToString(),
+        await service.execute_rpc(
+            "rpc.pb.GpioService/DigitalWrite",
+            mcu_wire_pb2.DigitalWrite(pin=pin, value=0).SerializeToString(),
         )
-        await service.handle_request(inbound_dw)
         mock_serial.send.assert_called_with(
             "rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=pin, value=0)
         )
@@ -570,26 +551,6 @@ async def test_runtime_flush_console_queue_send_failed(
     assert len(svc.state.console_to_mcu_queue) == 1
 
 
-@given(
-    action=st.sampled_from(["read", "write", "mode", "toggle"]),
-    topic_str=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=20),
-)
-def test_runtime_reject_cloud_topic_variants(action: str, topic_str: str) -> None:
-    async def _run() -> None:
-        svc = MagicMock(spec=BridgeService)
-        svc.enqueue_cloud_status_report = AsyncMock()
-
-        reject_cloud_fn: Callable[..., Awaitable[None]] = BridgeService.reject_cloud
-        await reject_cloud_fn(svc, cloud_gateway_pb2.CloudQueuedPublish(), "rpc.pb.GpioService/DigitalWrite", action)
-        svc.enqueue_cloud_status_report.assert_awaited_once()
-
-        svc.enqueue_cloud_status_report.reset_mock()
-        await reject_cloud_fn(svc, cloud_gateway_pb2.CloudQueuedPublish(), topic_str, action)
-        svc.enqueue_cloud_status_report.assert_awaited_once()
-
-    asyncio.run(_run())
-
-
 async def test_runtime_cloud_spool_trimming_and_drop(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
 
@@ -628,18 +589,6 @@ async def test_runtime_cleanup_and_lifecycle(
     assert svc.ubus_service.stop.called
 
 
-async def test_runtime_file_dispatch_local_methods_none_path(
-    runtime_config: RuntimeConfig, mock_bridge_service: BridgeService, mock_serial: AsyncMock
-) -> None:
-    svc = mock_bridge_service
-    req = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{runtime_config.topic_prefix}/req/fs.read",
-        payload=b"../../secret",
-    )
-    await svc.handle_request(req)
-    assert mock_serial.send.call_count == 0
-
-
 async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
 
@@ -674,71 +623,34 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     called_async.assert_awaited_once()
 
 
-async def test_runtime_handle_request_route_none_and_inbound_props(
-    mock_bridge_service: BridgeService, mock_serial: AsyncMock
-) -> None:
-    svc = mock_bridge_service
-
-    await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name="unmatched/topic", payload=b""))
-    assert not mock_serial.send.called
-
-    class InboundProps:
-        ResponseTopic = "cloud/resp"
-        CorrelationData = b"corr456"
-
-    class InboundObj:
-        properties = InboundProps()
-        topic = "bridge/unmatched"
-        payload = b"testpayload"
-
-    await svc.handle_request(InboundObj())
-    assert not mock_serial.send.called
-
-
 async def test_runtime_handle_console_empty_payload(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
-    await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name="bridge/req/ConsoleWrite", payload=b""))
+    resp_bytes = await svc.execute_rpc(
+        "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"").SerializeToString()
+    )
+    assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
     assert not mock_serial.send.called
 
 
 async def test_runtime_handle_datastore_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
 
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/rpc.pb.DataStoreService/Put",
-            payload=mcu_wire_pb2.DatastorePut(key="mykey", value=b"x" * 600).SerializeToString(),
-        )
+    put_resp = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Put",
+        mcu_wire_pb2.DatastorePut(key="mykey", value=b"x" * 600).SerializeToString(),
     )
+    assert cloud_gateway_pb2.GenericResponse.FromString(put_resp).status == "error"
     assert not mock_serial.send.called
 
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/rpc.pb.DataStoreService/Get",
-            payload=mcu_wire_pb2.DatastoreGet(key="missingkey").SerializeToString(),
-        )
+    get_resp = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Get",
+        mcu_wire_pb2.DatastoreGet(key="missingkey").SerializeToString(),
     )
+    assert mcu_wire_pb2.DatastoreGetResponse.FromString(get_resp).value == b""
     assert not mock_serial.send.called
 
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/unknown_act",
-            payload=b"",
-        )
-    )
-    assert not mock_serial.send.called
-
-
-async def test_runtime_handle_mailbox_unknown_identifier(
-    mock_bridge_service: BridgeService, mock_serial: AsyncMock
-) -> None:
-    svc = mock_bridge_service
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/mailbox.unknown",
-            payload=b"test",
-        )
-    )
+    with pytest.raises(ValueError, match="Unknown RPC method"):
+        await svc.execute_rpc("unknown_act", b"")
     assert not mock_serial.send.called
 
 
@@ -746,13 +658,6 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock, tmp_path: Path
 ) -> None:
     svc = mock_bridge_service
-
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/file.custom_act",
-            payload=b"data",
-        )
-    )
 
     mock_serial.transfer_write = AsyncMock()
     await mock_serial.transfer_write(0x4D454741, b"data")
@@ -768,7 +673,7 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     res_rm = await svc.file_remove(mcu_wire_pb2.FileRemove(path="valid.txt"))
     assert res_rm.status == "ok"
 
-    res_loc_w = await svc.file_write(mcu_wire_pb2.FileWrite(path="../outside.txt", data=b"data"))
+    res_loc_w = await svc.file_write("../outside.txt", b"data")
     assert res_loc_w.status == "error"
 
     real_file = tmp_path / "real.txt"
@@ -782,44 +687,12 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
 async def test_runtime_handle_shell_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
 
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/shell.unknown_act",
-            payload=b"",
-        )
-    )
-    assert not mock_serial.send.called
-
     proto_cmd = mcu_wire_pb2.ProcessRunAsync(command="echo hello").SerializeToString()
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/rpc.pb.ProcessService/RunAsync",
-            payload=proto_cmd,
-        )
-    )
+    run_resp = await svc.execute_rpc("rpc.pb.ProcessService/RunAsync", proto_cmd)
+    assert mcu_wire_pb2.ProcessRunAsyncResponse.FromString(run_resp).pid == 0
 
     await svc.process_kill(99999)
     assert 99999 not in svc.state.running_processes
-
-
-async def test_runtime_handle_spi_and_pin_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
-    svc = mock_bridge_service
-
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/rpc.pb.SpiService/Transfer",
-            payload=b"",
-        )
-    )
-    assert not mock_serial.send.called
-
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name="bridge/req/gpio.unknown_action",
-            payload=b"1",
-        )
-    )
-    assert not mock_serial.send.called
 
 
 async def test_runtime_handle_system_free_memory_non_bytes(
@@ -828,21 +701,13 @@ async def test_runtime_handle_system_free_memory_non_bytes(
     mock_serial.send = AsyncMock(return_value=False)
     svc = mock_bridge_service
 
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{svc.state.cloud_topic_prefix}/req/rpc.pb.SystemService/GetFreeMemory",
-            payload=b"",
-        )
-    )
+    with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
+        await svc.execute_rpc("rpc.pb.SystemService/GetFreeMemory", b"")
     assert mock_serial.send.called
 
     mock_serial.send = AsyncMock(return_value=mcu_wire_pb2.FreeMemoryResponse(value=1024))
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{svc.state.cloud_topic_prefix}/req/rpc.pb.SystemService/GetFreeMemory",
-            payload=b"",
-        )
-    )
+    resp_bytes = await svc.execute_rpc("rpc.pb.SystemService/GetFreeMemory", b"")
+    assert mcu_wire_pb2.FreeMemoryResponse.FromString(resp_bytes).value == 1024
     assert mock_serial.send.called
 
 
@@ -978,25 +843,17 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
 ) -> None:
     svc = mock_bridge_service
 
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{svc.state.cloud_topic_prefix}/req/rpc.pb.DataStoreService/Put",
-            payload=mcu_wire_pb2.DatastorePut(key="", value=b"val").SerializeToString(),
-        )
+    put_resp = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Put",
+        mcu_wire_pb2.DatastorePut(key="", value=b"val").SerializeToString(),
     )
+    assert cloud_gateway_pb2.GenericResponse.FromString(put_resp).status == "error"
 
-    mock_pub = AsyncMock()
-    svc.cloud_publisher = mock_pub
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=f"{svc.state.cloud_topic_prefix}/req/rpc.pb.DataStoreService/Get",
-            payload=mcu_wire_pb2.DatastoreGet(key="key1").SerializeToString(),
-        )
+    get_resp = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Get",
+        mcu_wire_pb2.DatastoreGet(key="key1").SerializeToString(),
     )
-    assert mock_pub.await_count == 1
-    assert mock_pub.await_args is not None
-    published: cloud_gateway_pb2.CloudQueuedPublish = mock_pub.await_args.args[0]
-    assert "rpc.pb.DataStoreService/Get" in published.topic_name
+    assert mcu_wire_pb2.DatastoreGetResponse.FromString(get_resp).value == b""
 
 
 async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
@@ -1271,22 +1128,20 @@ async def test_runtime_service_edge_branches(
     svc = BridgeService(runtime_config, runtime_state, mock_serial)
 
     # 1. Datastore PUT when payload is malformed / invalid protobuf
-    inbound_bad = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name="br/req/rpc.pb.DataStoreService/Put", payload=b"\xff\xff\xff"
-    )
-    await svc.handle_request(inbound_bad)
+    with pytest.raises(ProtobufDecodeError):
+        await svc.execute_rpc("rpc.pb.DataStoreService/Put", b"\xff\xff\xff")
 
     # 2. Datastore PUT when state.datastore_cache is None
     mocker.stopall()
     runtime_state.datastore_cache = None
     mock_publisher = AsyncMock()
     svc.cloud_publisher = mock_publisher
-    inbound_put = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name="br/req/rpc.pb.DataStoreService/Put",
-        payload=mcu_wire_pb2.DatastorePut(key="k", value=b"val").SerializeToString(),
+    resp_bytes = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Put",
+        mcu_wire_pb2.DatastorePut(key="k", value=b"val").SerializeToString(),
     )
-    await svc.handle_request(inbound_put)
-    assert mock_publisher.await_count == 2
+    assert cloud_gateway_pb2.GenericResponse.FromString(resp_bytes).status == "ok"
+    assert mock_publisher.await_count == 1
 
     # 3. connect_cloud_session stream connection error
     mock_tls = MagicMock()
@@ -1394,30 +1249,22 @@ def test_runtime_action_dispatch_canonical_completeness(mock_bridge_service: Bri
 
 
 async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
-    """[SIL-2] Ensure edge branches for unmapped topics and actions in dispatchers are covered."""
+    """[SIL-2] Ensure edge branches for unmapped RPC methods and actions in dispatchers are covered."""
     svc = mock_bridge_service
 
-    # 1. Unroutable cloud topic
-    res_clock = await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(topic_name="bridge/unroutable/topic", payload=b"")
-    )
-    assert res_clock is None
+    # 1. Unregistered RPC method
+    with pytest.raises(ValueError, match="Unknown RPC method"):
+        await svc.execute_rpc("unknown.rpc", b"")
 
-    # 2. Unregistered RPC method
-    res_unreg = await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(topic_name="bridge/req/unknown.rpc", payload=b"")
-    )
-    assert res_unreg is None
-
-    # 3. File write with unsafe path
-    res_file_unsafe = await svc.file_write(mcu_wire_pb2.FileWrite(path="../../../etc/passwd", data=b"test"))
+    # 2. Local file write with unsafe path
+    res_file_unsafe = await svc.file_write("../../../etc/passwd", b"test")
     assert res_file_unsafe.status == "error"
 
-    # 4. Process run with empty command
+    # 3. Process run with empty command
     res_sh_empty = await svc.process_run_async(mcu_wire_pb2.ProcessRunAsync(command=""))
     assert res_sh_empty.pid == 0
 
-    # 5. SPI configure when serial is None
+    # 4. SPI configure when serial is None
     serial_bak = svc.serial
     svc.serial = None
     with pytest.raises(ConnectionError):
@@ -1428,56 +1275,59 @@ async def test_runtime_dispatch_unmapped_branches(mock_bridge_service: BridgeSer
 async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     svc.state.link_sync_event.set()
-
-    prefix = svc.state.cloud_topic_prefix
-
-    # 1. Successful RPC dispatch on {prefix}/req/rpc.pb.GpioService/DigitalWrite
     req_dw = mcu_wire_pb2.DigitalWrite(pin=13, value=1)
-    pub_req = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{prefix}/req/rpc.pb.GpioService/DigitalWrite",
-        payload=req_dw.SerializeToString(),
-    )
+
+    def _edge_packet(operation: str, payload: bytes, call_id: int) -> MagicMock:
+        edge_req = gateway_control_pb2.EdgeDispatchRequest(operation=operation, request_payload=payload)
+        pkt = MagicMock()
+        pkt.payload = edge_req.SerializeToString()
+        pkt.call_id = call_id
+        pkt.service_id = 1
+        pkt.method_id = 1
+        pkt.channel_id = 1
+        return pkt
+
+    def _decode_edge_response(frame_bytes: bytes) -> gateway_control_pb2.EdgeDispatchResponse:
+        frames = list(pw_hdlc.decode.FrameDecoder().process_valid_frames(frame_bytes))
+        assert len(frames) == 1
+        resp_pkt = pw_rpc.packets.decode(frames[0].data)
+        return gateway_control_pb2.EdgeDispatchResponse.FromString(resp_pkt.payload)
+
+    written_frames: list[bytes] = []
+    mock_writer = MagicMock()
+    mock_writer.write = MagicMock(side_effect=written_frames.append)
+    mock_writer.drain = AsyncMock()
+
+    # 1. Successful RPC dispatch via handle_cloud_edge_dispatch
     mock_serial.send.return_value = True
-
-    enqueued: list[tuple[str, bytes]] = []
-
-    async def mock_enqueue(topic_name: str, payload: bytes, *args: Any, **kwargs: Any) -> None:
-        enqueued.append((topic_name, payload))
-
-    svc.enqueue_cloud_publish = mock_enqueue
-
-    await svc.handle_request(pub_req)
-    assert len(enqueued) == 1
-    assert enqueued[0][0] == f"{prefix}/res/rpc.pb.GpioService/DigitalWrite"
-    resp = mcu_wire_pb2.Empty()
-    resp.ParseFromString(enqueued[0][1])
-    assert resp is not None
-
-    # 2. Fleet topic: devices/yun-01/req/rpc.pb.GpioService/DigitalWrite
-    enqueued.clear()
-    pub_fleet = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name="devices/yun-01/req/rpc.pb.GpioService/DigitalWrite",
-        payload=req_dw.SerializeToString(),
+    await svc.handle_cloud_edge_dispatch(
+        _edge_packet("rpc.pb.GpioService/DigitalWrite", req_dw.SerializeToString(), 1),
+        mock_writer,
     )
-    await svc.handle_request(pub_fleet)
-    assert len(enqueued) == 1
-    assert enqueued[0][0] == "devices/yun-01/res/rpc.pb.GpioService/DigitalWrite"
+    assert len(written_frames) == 1
+    edge_ok = _decode_edge_response(written_frames[-1])
+    assert edge_ok.status_code == 200
+    assert edge_ok.response_payload == mcu_wire_pb2.Empty().SerializeToString()
 
-    # 3. RPC execution exception: replies with error
-    enqueued.clear()
+    # 2. RPC execution exception: replies with 500
+    written_frames.clear()
     with patch.object(svc, "execute_rpc", side_effect=RuntimeError("hardware failure")):
-        await svc.handle_request(pub_req)
-    assert len(enqueued) == 1
-    assert enqueued[0][0] == f"{prefix}/res/rpc.pb.GpioService/DigitalWrite"
-    assert b"error:hardware failure" in enqueued[0][1]
+        await svc.handle_cloud_edge_dispatch(
+            _edge_packet("rpc.pb.GpioService/DigitalWrite", req_dw.SerializeToString(), 2),
+            mock_writer,
+        )
+    assert len(written_frames) == 1
+    assert _decode_edge_response(written_frames[-1]).status_code == 500
 
-    # 4. Unauthorized RPC method
-    enqueued.clear()
-    auth = config_schema_pb2.TopicAuthorization(digital_write=False)
-    svc.state.topic_authorization = auth
-    await svc.handle_request(pub_req)
-    # Rejected -> nothing enqueued on res topic
-    assert not any(topic.endswith("/res/rpc.pb.GpioService/DigitalWrite") for topic, _ in enqueued)
+    # 3. Unauthorized RPC method: replies with 403
+    written_frames.clear()
+    svc.state.topic_authorization = config_schema_pb2.TopicAuthorization(digital_write=False)
+    await svc.handle_cloud_edge_dispatch(
+        _edge_packet("rpc.pb.GpioService/DigitalWrite", req_dw.SerializeToString(), 3),
+        mock_writer,
+    )
+    assert len(written_frames) == 1
+    assert _decode_edge_response(written_frames[-1]).status_code == 403
 
 
 async def test_runtime_cloud_spool_and_subscribe_branches(mock_bridge_service: BridgeService) -> None:
@@ -1565,7 +1415,7 @@ async def test_runtime_console_write_both_directions(
 ) -> None:
     svc = mock_bridge_service
 
-    # MCU -> Linux: console frames are published on the canonical cloud topic with the console expiry.
+    # MCU -> Linux: console frames are published on the canonical cloud topic.
     mock_pub = AsyncMock()
     svc.cloud_publisher = mock_pub
     inbound = await svc.console_write(0, mcu_wire_pb2.ConsoleWrite(data=b"hello from mcu"))
@@ -1575,7 +1425,6 @@ async def test_runtime_console_write_both_directions(
     published: cloud_gateway_pb2.CloudQueuedPublish = mock_pub.await_args.args[0]
     assert published.topic_name == f"{svc.state.cloud_topic_prefix}/evt/rpc.pb.ConsoleService/Write"
     assert published.payload == b"hello from mcu"
-    assert published.message_expiry_interval == protocol.CLOUD_EXPIRY_CONSOLE
 
     # Empty MCU frames are ignored without publishing.
     await svc.console_write(0, mcu_wire_pb2.ConsoleWrite(data=b""))
@@ -1701,16 +1550,23 @@ async def test_write_with_quota_enforces_managed_root_quota(mock_bridge_service:
     assert svc.state.file_storage_bytes_used == 6
 
 
-async def test_mcu_file_write_status_is_bound_to_the_mcu_call(
+async def test_retired_mcu_file_write_reports_unimplemented_on_its_call(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
-    """MCU-initiated FileSystemService/Write completes its own call id with OK or PERMISSION_DENIED."""
+    """ADR-0008: MCU packets targeting retired FileSystemService/Write are rejected with UNIMPLEMENTED."""
+    from pw_rpc import ids as pw_rpc_ids
+
     svc = mock_bridge_service
     svc.serial = mock_serial
-    spec = protocol.BY_NAME["rpc.pb.FileSystemService/Write"]
+    svc.state.connection_fsm.synchronize()
+    service_id = pw_rpc_ids.calculate("rpc.pb.FileSystemService")
+    method_id = pw_rpc_ids.calculate("Write")
+    before = svc.state.unknown_command_count
 
-    await svc.file_write(17, mcu_wire_pb2.FileWrite(path="../../etc/shadow", data=b"x"))
-    mock_serial.send_status.assert_awaited_once_with(Status.PERMISSION_DENIED, 17, spec.service_id, spec.method_id)
+    await svc.handle_mcu_frame((service_id, method_id), 17, b"")
+    mock_serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 17, service_id, method_id)
+    assert svc.state.unknown_command_count == before + 1
+    assert svc.state.unknown_command_last_id == method_id
 
 
 async def test_unknown_mcu_rpc_reports_unimplemented_on_its_call(
@@ -1750,6 +1606,262 @@ async def test_send_cloud_telemetry_resolves_pw_rpc_callbacks(
 
     async with asyncio.timeout(1.0):
         assert await svc.send_cloud_telemetry(system_status_blob=b"x") is expected
+
+
+_EEPROM_IMAGE = bytes(range(256)) * 15 + bytes(240)
+
+
+async def test_eeprom_read_copies_mcu_image_to_gateway(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0007: Read pulls the MCU resource and stages it on the Gateway unchanged."""
+    svc = mock_bridge_service
+    assert len(_EEPROM_IMAGE) == protocol.EEPROM_RESOURCE_MAX_BYTES
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    stage = AsyncMock()
+    monkeypatch.setattr(svc, "cloud_transfer_write", stage)
+
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is True
+    assert resp.bytes_transferred == protocol.EEPROM_RESOURCE_MAX_BYTES
+    cast(AsyncMock, svc.serial.transfer_read).assert_awaited_once_with(protocol.EEPROM_TRANSFER_RESOURCE_ID)
+    stage.assert_awaited_once_with(protocol.EEPROM_TRANSFER_RESOURCE_ID, _EEPROM_IMAGE)
+
+
+@pytest.mark.parametrize("image", [b"", _EEPROM_IMAGE + b"\x00"])
+async def test_eeprom_read_rejects_unexpected_image_size(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, image: bytes
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=image))
+    stage = AsyncMock()
+    monkeypatch.setattr(svc, "cloud_transfer_write", stage)
+
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is False
+    assert "Unexpected EEPROM image size" in resp.message
+    stage.assert_not_awaited()
+
+
+async def test_eeprom_read_reports_mcu_failure(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(side_effect=ConnectionError("link down")))
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "link down" in resp.message
+
+
+async def test_eeprom_write_programs_staged_image(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-0007: Write pulls the staged image from the Gateway and programs the MCU resource."""
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    program = AsyncMock()
+    monkeypatch.setattr(svc.serial, "transfer_write", program)
+
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is True
+    assert resp.bytes_transferred == len(_EEPROM_IMAGE)
+    program.assert_awaited_once_with(protocol.EEPROM_TRANSFER_RESOURCE_ID, _EEPROM_IMAGE)
+
+
+@pytest.mark.parametrize("image", [b"", _EEPROM_IMAGE + b"\x00"])
+async def test_eeprom_write_rejects_invalid_image_size(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, image: bytes
+) -> None:
+    """An oversized image would overwrite the ADR-0005 boot epoch; it must never reach the MCU."""
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=image))
+    program = AsyncMock()
+    monkeypatch.setattr(svc.serial, "transfer_write", program)
+
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+
+    assert resp.success is False
+    assert f"1..{protocol.EEPROM_RESOURCE_MAX_BYTES} bytes" in resp.message
+    program.assert_not_awaited()
+
+
+async def test_eeprom_write_failure_warns_about_partial_image(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    monkeypatch.setattr(svc.serial, "transfer_write", AsyncMock(side_effect=RuntimeError("transfer aborted")))
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "may be partial" in resp.message
+
+
+async def test_eeprom_write_gateway_staging_failure(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    monkeypatch.setattr(svc, "cloud_transfer_read", AsyncMock(side_effect=OSError("no staged image")))
+    resp = await svc.eeprom_write(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "no staged image" in resp.message
+
+
+async def test_eeprom_read_gateway_staging_failure(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    assert svc.serial is not None
+    monkeypatch.setattr(svc.serial, "transfer_read", AsyncMock(return_value=_EEPROM_IMAGE))
+    monkeypatch.setattr(svc, "cloud_transfer_write", AsyncMock(side_effect=OSError("gateway gone")))
+    resp = await svc.eeprom_read(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "gateway gone" in resp.message
+
+
+@pytest.mark.parametrize("handler", ["eeprom_read", "eeprom_write"])
+async def test_eeprom_handlers_require_serial(mock_bridge_service: BridgeService, handler: str) -> None:
+    svc = mock_bridge_service
+    svc.serial = None
+    resp = await getattr(svc, handler)(cloud_gateway_pb2.EepromSyncRequest())
+    assert resp.success is False
+    assert "serial transport unavailable" in resp.message
+
+
+@pytest.mark.parametrize(
+    ("operation", "permission"),
+    [("rpc.pb.EepromService/Read", "eeprom_read"), ("rpc.pb.EepromService/Write", "eeprom_write")],
+)
+def test_eeprom_operations_require_their_permission(operation: str, permission: str) -> None:
+    """ADR-0007: EEPROM access is gated by dedicated, deny-by-default permissions."""
+    spec = protocol.BY_NAME[operation]
+    assert spec.auth_field == permission
+    assert not protocol.allows_method(config_schema_pb2.TopicAuthorization(), spec)
+    assert protocol.allows_method(config_schema_pb2.TopicAuthorization(**{permission: True}), spec)
+
+
+def _status_args(status: AsyncMock) -> tuple[Any, ...]:
+    """Return positional arguments of the last send_mcu_status call."""
+    call = status.await_args
+    assert call is not None
+    return tuple(call.args)
+
+
+async def _run_upload(svc: BridgeService, request: mcu_wire_pb2.FileUpload) -> None:
+    """Run file_upload and wait for its background completion."""
+    before = asyncio.all_tasks()
+    await svc.file_upload(7, request)
+    spawned = asyncio.all_tasks() - before
+    if spawned:
+        await asyncio.gather(*spawned)
+
+
+async def test_file_upload_reads_mcu_resource_and_stores_file(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The daemon pulls announced bytes from the MCU resource and stores them."""
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.state.file_system_root = str(tmp_path)
+    serial = svc.serial
+    assert serial is not None
+    monkeypatch.setattr(serial, "transfer_read", AsyncMock(return_value=b"sensor-log"))
+    status = AsyncMock(return_value=True)
+    monkeypatch.setattr(svc, "send_mcu_status", status)
+    await _run_upload(svc, mcu_wire_pb2.FileUpload(path="logs/today.bin", size=10))
+    cast(AsyncMock, serial.transfer_read).assert_awaited_once_with(protocol.FILE_UPLOAD_RESOURCE_ID)
+    assert (tmp_path / "logs" / "today.bin").read_bytes() == b"sensor-log"
+    assert _status_args(status)[:2] == (Status.OK, 7)
+
+
+@pytest.mark.parametrize(
+    ("request_msg", "expected"),
+    [
+        (mcu_wire_pb2.FileUpload(path="../../etc/passwd", size=4), Status.PERMISSION_DENIED),
+        (mcu_wire_pb2.FileUpload(path="empty.bin", size=0), Status.OUT_OF_RANGE),
+        (mcu_wire_pb2.FileUpload(path="huge.bin", size=10_000_000), Status.OUT_OF_RANGE),
+    ],
+)
+async def test_file_upload_rejects_before_reading(
+    mock_bridge_service: BridgeService,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    request_msg: mcu_wire_pb2.FileUpload,
+    expected: Status,
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.state.file_system_root = str(tmp_path)
+    svc.state.file_write_max_bytes = 1024
+    read = AsyncMock(return_value=b"x")
+    monkeypatch.setattr(svc.serial, "transfer_read", read)
+    status = AsyncMock(return_value=True)
+    monkeypatch.setattr(svc, "send_mcu_status", status)
+    await _run_upload(svc, request_msg)
+    read.assert_not_awaited()
+    assert _status_args(status)[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("read_result", "write_ok", "expected"),
+    [
+        (b"short", True, Status.DATA_LOSS),
+        (ConnectionError("link down"), True, Status.UNAVAILABLE),
+        (b"0123456789", False, Status.RESOURCE_EXHAUSTED),
+    ],
+)
+async def test_file_upload_reports_transfer_and_storage_failures(
+    mock_bridge_service: BridgeService,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    read_result: bytes | Exception,
+    write_ok: bool,
+    expected: Status,
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.state.file_system_root = str(tmp_path)
+    read = (
+        AsyncMock(side_effect=read_result)
+        if isinstance(read_result, Exception)
+        else AsyncMock(return_value=read_result)
+    )
+    monkeypatch.setattr(svc.serial, "transfer_read", read)
+    monkeypatch.setattr(svc, "write_with_quota", AsyncMock(return_value=write_ok))
+    status = AsyncMock(return_value=True)
+    monkeypatch.setattr(svc, "send_mcu_status", status)
+    await _run_upload(svc, mcu_wire_pb2.FileUpload(path="data.bin", size=10))
+    assert _status_args(status)[0] == expected
+
+
+async def test_file_upload_completion_without_serial(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """If the serial link disappears, the MCU receives UNAVAILABLE."""
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.state.file_system_root = str(tmp_path)
+    monkeypatch.setattr(svc, "serial", None)
+    status = AsyncMock(return_value=True)
+    monkeypatch.setattr(svc, "send_mcu_status", status)
+    await _run_upload(svc, mcu_wire_pb2.FileUpload(path="a.bin", size=1))
+    assert _status_args(status)[:2] == (Status.UNAVAILABLE, 7)
+
+
+def test_file_upload_is_dispatched_from_the_mcu(mock_bridge_service: BridgeService) -> None:
+    """The MCU-originated Upload call reaches file_upload through the dispatch table."""
+    spec = protocol.BY_NAME["rpc.pb.FileSystemService/Upload"]
+    assert spec.auth_field == "file_write"
+    handler = mock_bridge_service.mcu_registry[spec.name]
+    assert getattr(handler, "__name__", "") == "file_upload"
 
 
 async def test_file_transfer_push_to_linux_success(

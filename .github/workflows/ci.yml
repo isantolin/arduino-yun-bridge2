@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -34,6 +34,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: recursive
+      - name: Enforce upstream Pigweed RPC and transfer
+        if: matrix.env == 'arduino'
+        run: bash tools/ci/check_avr_pigweed_upstream_only.sh
       - uses: ./.github/actions/setup-ccache
         if: matrix.env == 'arduino'
       - uses: ./.github/actions/setup-arduino-cache
@@ -46,12 +49,12 @@ jobs:
       - name: Install System Dependencies
         if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor' || matrix.env == 'arduino'
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y cppcheck unzip clang-tidy
+          bash tools/ci/apt_update_with_fallback.sh cppcheck unzip clang-tidy
           sudo npm install -g --allow-scripts=@bufbuild/buf @bufbuild/buf
-          python -m pip install semgrep vulture pytest pyrefly types-psutil types-pexpect flake8 ruff pyelftools
+          python -m pip install semgrep vulture pytest pyrefly types-psutil==7.2.2.20261111 types-pexpect==4.9.0.20260518 types-pyserial==3.5.0.20261030 types-PyYAML==6.0.12.20261113 flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
-        run: bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y g++ make gcc-avr avr-libc
+        run: bash tools/ci/apt_update_with_fallback.sh --no-install-recommends g++ make gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
         run: |
@@ -109,7 +112,7 @@ jobs:
       - uses: ./.github/actions/setup-protoc
       - name: Setup Arduino CLI
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          bash tools/ci/apt_update_with_fallback.sh gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores and Dependencies
@@ -140,25 +143,38 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
+      - name: Test firmware resource report parser
+        run: .tox/arduino-examples/bin/pytest -n 0 tools/ci/tests/test_firmware_resource_report.py -q
       - name: Compile BridgeControl for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino \
             arduino:avr:mega \
-            arduino-avr-mega/BridgeControl
+            arduino-logs/arduino-avr-mega/BridgeControl
       - name: Compile cooperative pw_transfer API for Arduino Mega 2560
         run: |
           bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \
             arduino:avr:mega \
-            arduino-avr-mega/pw_transfer_compile
+            arduino-logs/arduino-avr-mega/pw_transfer_compile
+      - name: Verify mandatory AVR resource reports
+        run: |
+          for report in \
+            arduino-logs/arduino-avr-mega/BridgeControl/resource_report.json \
+            arduino-logs/arduino-avr-mega/pw_transfer_compile/resource_report.json; do
+            if [ ! -s "$report" ]; then
+              echo "::error::Missing firmware resource report: $report"
+              exit 1
+            fi
+            python -m json.tool "$report" >/dev/null
+          done
       - name: Profile Memory Usage
         if: always()
         run: |
           mkdir -p arduino-logs
           tox -e arduino-profile -- arduino-build --output arduino-logs/symbol_profile.md
-          tox -e arduino-profile -- arduino-avr-mega/BridgeControl --output arduino-logs/mega2560_bridge_profile.md
-          tox -e arduino-profile -- arduino-avr-mega/pw_transfer_compile --output arduino-logs/mega2560_pw_transfer_profile.md
+          tox -e arduino-profile -- arduino-logs/arduino-avr-mega/BridgeControl --output arduino-logs/mega2560_bridge_profile.md
+          tox -e arduino-profile -- arduino-logs/arduino-avr-mega/pw_transfer_compile --output arduino-logs/mega2560_pw_transfer_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -187,7 +203,7 @@ jobs:
           cache-suffix: coverage
       - name: Install Build Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y g++ make gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh g++ make gcc-avr avr-libc
       - name: Setup Arduino CLI
         run: |
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
@@ -262,8 +278,7 @@ jobs:
           pip install nanopb==0.4.9.1 black
       - name: Install Emulation Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh
-          sudo apt-get install -y g++ socat gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh g++ socat gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core metadata
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -312,8 +327,7 @@ jobs:
           cache-suffix: fuzz
       - name: Install Emulation Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh
-          sudo apt-get install -y g++ socat gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh g++ socat gcc-avr avr-libc
       - name: Install Arduino CLI and AVR core
         run: |
           mkdir -p "$GITHUB_WORKSPACE/bin"
@@ -345,7 +359,7 @@ jobs:
           cache-suffix: simavr
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y simavr libsimavr-dev socat gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh simavr libsimavr-dev socat gcc-avr avr-libc
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino AVR Core & Libraries
@@ -402,7 +416,7 @@ jobs:
           cache-suffix: renode
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y socat gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          bash tools/ci/apt_update_with_fallback.sh socat gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino SAMD Core & Libraries
@@ -430,6 +444,13 @@ jobs:
           name: renode-logs
           path: renode-logs
           if-no-files-found: ignore
+      - name: Upload Renode firmware resource report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-resource-renode
+          path: build/renode/**/resource_report.json
+          if-no-files-found: ignore
 
   qemu-esp32-emulation:
     name: QEMU Xtensa Emulation (Arduino Nano ESP32)
@@ -450,7 +471,7 @@ jobs:
           cache-suffix: qemu-esp32
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          bash tools/ci/apt_update_with_fallback.sh socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino ESP32 Core & Tools
@@ -498,12 +519,19 @@ jobs:
           name: qemu-logs
           path: qemu-logs
           if-no-files-found: ignore
+      - name: Upload QEMU firmware resource report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-resource-qemu
+          path: build/qemu/**/resource_report.json
+          if-no-files-found: ignore
 
   fleet-mesh-emulation:
     name: Master Fleet Mesh Emulation (simavr + Renode + QEMU)
     runs-on: ubuntu-26.04
     needs: [tox-checks, gateway-cpp]
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
@@ -518,7 +546,7 @@ jobs:
           cache-suffix: fleet-mesh
       - name: Setup System Packages & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh && sudo apt-get install -y simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          bash tools/ci/apt_update_with_fallback.sh simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores & Libraries
@@ -578,8 +606,7 @@ jobs:
           cache-suffix: gateway
       - name: Install Gateway build dependencies
         run: |
-          bash tools/ci/apt_update_with_fallback.sh
-          sudo apt-get install -y build-essential cmake ninja-build libssl-dev protobuf-compiler python3-venv
+          bash tools/ci/apt_update_with_fallback.sh build-essential cmake ninja-build libssl-dev protobuf-compiler python3-venv
           python3 -m venv .venv-gateway
           . .venv-gateway/bin/activate
           python -m pip install --upgrade pip
@@ -594,6 +621,13 @@ jobs:
         run: |
           . .venv-gateway/bin/activate
           cmake --build build/mcubridge-gateway --parallel 2
+      - name: Verify Gateway CMake install and packaging
+        run: |
+          cmake --install build/mcubridge-gateway --prefix build/mcubridge-gateway-stage/usr/local
+          test -x build/mcubridge-gateway-stage/usr/local/bin/mcubridge-gateway-cpp
+          test -f build/mcubridge-gateway-stage/usr/local/share/mcubridge-gateway/mcubridge-gateway.service
+          test -f build/mcubridge-gateway-stage/usr/local/share/mcubridge-gateway/mcubridge-gateway.env.example
+          build/mcubridge-gateway-stage/usr/local/bin/mcubridge-gateway-cpp --help
       - name: Upload standalone Gateway binary for emulation jobs
         uses: actions/upload-artifact@v7
         with:
@@ -618,6 +652,13 @@ jobs:
           name: coverage-gateway
           path: coverage/gateway
           if-no-files-found: ignore
+      - name: Build and verify Gateway OCI image
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          docker build -f mcubridge-gateway-cpp/Dockerfile -t mcubridge-gateway-cpp:ci .
+          docker run --rm mcubridge-gateway-cpp:ci --help
+          test "$(docker run --rm --entrypoint id mcubridge-gateway-cpp:ci -u)" = "10001"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
@@ -626,10 +667,9 @@ jobs:
     name: Final Summary
     runs-on: ubuntu-26.04
     needs: [unified-tests, gateway-cpp, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation, renode-emulation, qemu-esp32-emulation, fleet-mesh-emulation]
-    # Build the consolidated report on main/manual runs only. PR jobs already
-    # publish their individual artifacts; avoid a slow summary runner delaying
-    # the next head when concurrency cancels an obsolete PR run.
-    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    # Publish the consolidated report on every successful CI event,
+    # including pull requests, so the tested head exposes its own measurements.
+    if: ${{ success() && !cancelled() }}
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7
@@ -666,6 +706,19 @@ jobs:
         with:
           name: arduino-logs
           path: arduino-logs
+        continue-on-error: true
+      - name: Download Renode firmware resource report
+        uses: actions/download-artifact@v8
+        with:
+          name: firmware-resource-renode
+          path: arduino-logs/renode
+        continue-on-error: true
+
+      - name: Download QEMU firmware resource report
+        uses: actions/download-artifact@v8
+        with:
+          name: firmware-resource-qemu
+          path: arduino-logs/qemu
         continue-on-error: true
 
       - name: Download simavr Logs
@@ -735,6 +788,64 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Generate Firmware Resource Summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          reports = sorted(Path("arduino-logs").rglob("resource_report.json"))
+          summary = Path(__import__("os").environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as output:
+              output.write("## Firmware resource measurements\n\n")
+              if not reports:
+                  output.write("No resource reports were produced by the Arduino build job.\n")
+              else:
+                  output.write(
+                      "| Target / build | Flash used | Flash limit | Static RAM used | "
+                      "Static RAM remaining | ELF Flash | ELF static RAM |\n"
+                  )
+                  output.write("|---|---:|---:|---:|---:|---:|---:|\n")
+                  for path in reports:
+                      report = json.loads(path.read_text(encoding="utf-8"))
+                      elf_flash = report.get("elf_flash_used_bytes")
+                      elf_ram = report.get("elf_static_ram_used_bytes")
+                      output.write(
+                          f"| {report['target']} / {path.parent.name} "
+                          f"| {report['flash_used_bytes']} B "
+                          f"| {report['flash_limit_bytes']} B "
+                          f"| {report['static_ram_used_bytes']} B "
+                          f"| {report['static_ram_remaining_bytes']} B "
+                          f"| {f'{elf_flash} B' if elf_flash is not None else '—'} "
+                          f"| {f'{elf_ram} B' if elf_ram is not None else '—'} |\n"
+                      )
+                  stack_reports = sorted(
+                      [
+                          *Path("simavr-logs").glob("*_stack_watermark.json"),
+                          *Path("renode-logs").glob("*_stack_watermark.json"),
+                          *Path("qemu-logs").glob("*_stack_watermark.json"),
+                      ],
+                      key=lambda p: p.name,
+                  )
+                  output.write("\n### Runtime MCU stack watermark\n\n")
+                  if stack_reports:
+                      output.write("| Target | Stack used | Stack budget | Remaining margin |\n")
+                      output.write("|---|---:|---:|---:|\n")
+                      for path in stack_reports:
+                          report = json.loads(path.read_text(encoding="utf-8"))
+                          budget = report.get("stack_budget_bytes")
+                          margin = report.get("stack_margin_bytes")
+                          output.write(
+                              f"| {report['target']} "
+                              f"| {report['stack_used_bytes']} B "
+                              f"| {f'{budget} B' if budget is not None else 'unknown'} "
+                              f"| {f'{margin} B' if margin is not None else 'unknown'} |\n"
+                          )
+                  else:
+                      output.write(
+                          "No MCU stack watermark report was produced for this run.\n"
+                      )
+          PY
       - name: Generate Memory & Hardware Emulation Summary
         run: |
           # 1. Advanced Symbol Profiling (cat pre-generated report via pyelftools)

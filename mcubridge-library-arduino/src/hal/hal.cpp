@@ -9,6 +9,8 @@
 #endif
 #if defined(ARDUINO_ARCH_ESP32)
 #include <esp_random.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #endif
 #if defined(ARDUINO_ARCH_SAMD)
 #include <FlashStorage.h>
@@ -23,6 +25,12 @@
 extern "C" {
 extern char* __brkval;
 extern char __heap_start;
+}
+#endif
+#if defined(ARDUINO_ARCH_SAMD)
+extern "C" {
+extern uint32_t __bss_end__;
+extern uint32_t __StackTop;
 }
 #endif
 
@@ -113,6 +121,13 @@ uint32_t getFreeMemory() {
         (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start)
                        : reinterpret_cast<uintptr_t>(__brkval)));
 #endif
+  } else if constexpr (Traits::id == ArchId::ARCH_SAMD) {
+#if defined(ARDUINO_ARCH_SAMD)
+    volatile uint8_t sp_probe = 0;
+    const uintptr_t sp_addr = reinterpret_cast<uintptr_t>(&sp_probe);
+    const uintptr_t bss_end = reinterpret_cast<uintptr_t>(&__bss_end__);
+    return (sp_addr > bss_end) ? static_cast<uint32_t>(sp_addr - bss_end) : 0U;
+#endif
   } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
     return static_cast<uint32_t>(ESP.getFreeHeap());
@@ -122,11 +137,36 @@ uint32_t getFreeMemory() {
 }
 
 static volatile uint32_t s_stack_canary = STACK_CANARY_VALUE;
+#if defined(ARDUINO_ARCH_SAMD)
+namespace {
+constexpr uint8_t kSamdStackPaintByte = 0xA5U;
+constexpr uintptr_t kSamdStackPaintSafetyBytes = 64U;
+bool s_samd_stack_painted = false;
+
+__attribute__((noinline)) void paintSamdFreeStack() {
+  volatile uint8_t sp_probe = 0;
+  const uintptr_t sp_addr = reinterpret_cast<uintptr_t>(&sp_probe);
+  const uintptr_t paint_start = reinterpret_cast<uintptr_t>(&__bss_end__);
+  if (sp_addr <= paint_start + kSamdStackPaintSafetyBytes) {
+    return;
+  }
+  const uintptr_t paint_end = sp_addr - kSamdStackPaintSafetyBytes;
+  uint8_t* ptr = reinterpret_cast<uint8_t*>(paint_start);
+  uint8_t* const end = reinterpret_cast<uint8_t*>(paint_end);
+  etl::fill(ptr, end, kSamdStackPaintByte);
+  s_samd_stack_painted = true;
+}
+}  // namespace
+#endif
 
 void initStackCanary() {
 #if defined(ARDUINO_ARCH_AVR)
   char* heap_ptr = (__brkval == 0 ? &__heap_start : __brkval);
   *reinterpret_cast<volatile uint32_t*>(heap_ptr) = STACK_CANARY_VALUE;
+#elif defined(ARDUINO_ARCH_SAMD)
+  if (!s_samd_stack_painted) {
+    paintSamdFreeStack();
+  }
 #endif
   s_stack_canary = STACK_CANARY_VALUE;
 }
@@ -140,6 +180,35 @@ bool checkStackOverflow() {
 #endif
   return (s_stack_canary == STACK_CANARY_VALUE) &&
          (getFreeMemory() >= MIN_STACK_MARGIN_BYTES);
+}
+
+StackWatermark getStackWatermark() {
+#if defined(ARDUINO_ARCH_SAMD)
+  const uintptr_t bss_end = reinterpret_cast<uintptr_t>(&__bss_end__);
+  const uintptr_t stack_top = reinterpret_cast<uintptr_t>(&__StackTop);
+  if (!s_samd_stack_painted || stack_top <= bss_end) {
+    return {0U, 0U};
+  }
+  const uint32_t budget = static_cast<uint32_t>(stack_top - bss_end);
+  const uint8_t* const start = reinterpret_cast<const uint8_t*>(bss_end);
+  const uint8_t* const top = reinterpret_cast<const uint8_t*>(stack_top);
+  const uint8_t* const it = etl::find_if(
+      start, top, [](uint8_t b) { return b != kSamdStackPaintByte; });
+  const uint32_t untouched = static_cast<uint32_t>(it - start);
+  const uint32_t used = (budget >= untouched) ? (budget - untouched) : budget;
+  return {used, budget};
+#elif defined(ARDUINO_ARCH_ESP32)
+  const uint32_t budget = static_cast<uint32_t>(getArduinoLoopTaskStackSize());
+  const uint32_t min_free =
+      static_cast<uint32_t>(uxTaskGetStackHighWaterMark(nullptr));
+  if (budget == 0U) {
+    return {0U, 0U};
+  }
+  const uint32_t used = (budget >= min_free) ? (budget - min_free) : budget;
+  return {used, budget};
+#else
+  return {0U, 0U};
+#endif
 }
 
 static bool run_sram_march_test() {
@@ -282,17 +351,6 @@ bool fillLinkNonce(pw::span<const uint8_t> secret, pw::span<uint8_t> out) {
 }
 
 __attribute__((weak)) bool hasSD() { return false; }
-
-__attribute__((weak)) pw::Status writeFile(etl::string_view,
-                                           pw::span<const uint8_t>) {
-  return pw::Status::Unimplemented();
-}
-
-__attribute__((weak)) pw::Result<ChunkResult> readFileChunk(etl::string_view,
-                                                            size_t,
-                                                            pw::span<uint8_t>) {
-  return pw::Status::Unimplemented();
-}
 
 __attribute__((weak)) pw::Status removeFile(etl::string_view) {
   return pw::Status::Unimplemented();

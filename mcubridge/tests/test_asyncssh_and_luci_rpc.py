@@ -211,9 +211,43 @@ FAIL
 def test_hardware_harness_rotate_local(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     fake_uci_dir = tmp_path / "etc" / "config"
     fake_uci_dir.mkdir(parents=True)
+    snippet_path = tmp_path / "secret.h"
     mock_mod = MagicMock()
-    mock_mod.generate_and_apply_credentials.return_value = ("aabbccddeeff11223344556677889900", "cloudpass12345")
-    hardware_harness.rotate(local=fake_uci_dir, length=32, force=True, no_restart=True, rotate_loader=lambda: mock_mod)
+    mock_mod.generate_and_apply_credentials.return_value = "aabbccddeeff11223344556677889900"
+    hardware_harness.rotate(
+        local=fake_uci_dir,
+        emit_sketch_snippet=snippet_path,
+        length=32,
+        force=True,
+        no_restart=True,
+        rotate_loader=lambda: mock_mod,
+    )
     captured = capsys.readouterr()
     assert "BRIDGE_SERIAL_SHARED_SECRET" in captured.out
-    assert "aabbccddeeff11223344556677889900" in captured.out
+    assert "redacted from stdout" in captured.out
+    assert "aabbccddeeff11223344556677889900" not in captured.out
+    assert "aabbccddeeff11223344556677889900" not in captured.err
+    assert snippet_path.is_file()
+    assert (snippet_path.stat().st_mode & 0o777) == 0o600
+    snippet_text = snippet_path.read_text(encoding="utf-8")
+    assert '#define BRIDGE_SERIAL_SHARED_SECRET "aabbccddeeff11223344556677889900"' in snippet_text
+
+
+def test_hardware_harness_rotate_missing_secret_redacts_stderr(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake_uci_dir = tmp_path / "etc" / "config"
+    fake_uci_dir.mkdir(parents=True)
+    mock_mod = MagicMock()
+    mock_mod.generate_and_apply_credentials.return_value = "ZZZ_NOT_HEX_SENSITIVE_TOKEN"
+    hardware_harness.rotate(
+        local=fake_uci_dir,
+        length=32,
+        force=True,
+        no_restart=True,
+        rotate_loader=lambda: mock_mod,
+    )
+    captured = capsys.readouterr()
+    assert "Warning: Could not extract SERIAL_SECRET from rotation output." in captured.err
+    assert "ZZZ_NOT_HEX_SENSITIVE_TOKEN" not in captured.out
+    assert "ZZZ_NOT_HEX_SENSITIVE_TOKEN" not in captured.err

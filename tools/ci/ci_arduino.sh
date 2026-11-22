@@ -49,7 +49,8 @@ if [ ! -d "$USER_LIB_DIR/WiFiNINA" ]; then
 fi
 
 # Install dependencies if not already generated/installed by CI workflow
-if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ]; then
+if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ] || \
+   [ ! -f "./build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h" ]; then
     echo "Generating protocol bindings..."
     python3 ./tools/protocol/generate.py \
         --spec ./tools/protocol/cloud_gateway.proto \
@@ -58,42 +59,18 @@ if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ]; then
         --py-client mcubridge-client-examples/mcubridge_client/protocol.py
 fi
 
-# The Arduino exporter only includes upstream pw_transfer when its generated
-# PWPB bindings exist. Build those bindings before installing/exporting the
-# library; otherwise the Mega 2560 header advertises pw_transfer but the
-# exported library silently omits the handler headers.
-if command -v avr-g++ >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
-    AVR_PORT_DIR="$PWD/third_party/avr_pigweed_port"
-    TRANSFER_BUILD_DIR="$AVR_PORT_DIR/build-transfer-1284p"
-    CMAKE_GENERATOR_ARGS=()
-    if command -v ninja >/dev/null 2>&1; then
-        CMAKE_GENERATOR_ARGS=(-G Ninja)
-    fi
-    echo "[ci_arduino] Generating upstream pw_transfer AVR bindings before library export..."
-    cmake -S "$AVR_PORT_DIR" -B "$TRANSFER_BUILD_DIR" "${CMAKE_GENERATOR_ARGS[@]}" \
-        -DCMAKE_TOOLCHAIN_FILE="$AVR_PORT_DIR/avr-toolchain.cmake" \
-        -DAVR_MCU=atmega1284p \
-        -DAVR_F_CPU=16000000UL \
-        -DAVR_CRC32_IMPL=PW_CHECKSUM_CRC32_4BITS
-    cmake --build "$TRANSFER_BUILD_DIR" --target pw_transfer_upstream_probe.elf
-else
-    echo "[ci_arduino] ERROR: avr-g++ and CMake are required to export Mega 2560 pw_transfer headers." >&2
-    exit 1
-fi
-
-# Always refresh the generated Arduino exports after the Pigweed probe.
-# The cached library directory may exist but predate pw_transfer, Nanopb
-# headers, or the pinned submodule revision. Existence is not a validity check.
+# Always refresh the generated Arduino exports from the pinned source tree.
+# install.sh invokes export_arduino_library.py, which generates both
+# pw_rpc/internal/packet.pwpb.h and pw_transfer/{transfer.pwpb.h,transfer.raw_rpc.pb.h}
+# directly via protoc without needing a CMake build.
 echo "[ci_arduino] Refreshing Arduino libraries from the pinned source tree..."
 ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
 
 # Fail at the export boundary instead of producing confusing sketch-level
 # include errors when an incomplete/cached library was selected.
+# (Cooperative pw_transfer and pw_log headers are verified below by
+# stage_cooperative_pw_transfer in tools/ci/arduino_toolchains.sh.)
 for required_header in \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/handler.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer_thread.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/transfer.h" \
-    "$USER_LIB_DIR/PigweedAVR/src/pw_transfer/client.h" \
     "$PWD/mcubridge-library-arduino/src/pb.h" \
     "$USER_LIB_DIR/McuBridge/src/pb.h"; do
     if [ ! -f "$required_header" ]; then
@@ -142,6 +119,11 @@ MAX_JOBS=${MAX_JOBS:-4}
 _LOG_DIR=$(mktemp -d)
 trap 'rm -rf "$_LOG_DIR"' EXIT
 
+# Stage cooperative pw_transfer once for all 32-bit board workers so SAMD21
+# and ESP32-S3 compile against the exact cooperative headers/sources exported
+# by install.sh without sharing AVR-only headers from PigweedAVR/src.
+stage_cooperative_pw_transfer "${_LOG_DIR}/pw_transfer" "$USER_LIB_DIR" || exit 1
+
 # Compile a single sketch for a given board.
 # Runs sequentially per board inside compile_board() so it can reuse the
 # per-board compiled core.a and libraries (MbedTLS, wolfssl, PigweedAVR, McuBridge).
@@ -168,21 +150,23 @@ compile_sketch() {
         AVR_PROPS+=("${SAMD_TOOLCHAIN_PROPS[@]}")
         local PW_LIB_ARCHIVE_SAMD="${_LOG_DIR}/libpigweed_samd.a"
         if [ ! -f "$PW_LIB_ARCHIVE_SAMD" ]; then
-            build_pigweed_archive_samd "$PW_LIB_ARCHIVE_SAMD" "${LIB_PATH}/src" || return 1
+            build_pigweed_archive_samd "$PW_LIB_ARCHIVE_SAMD" "${LIB_PATH}/src" "$USER_LIB_DIR" || return 1
         fi
         LINK_FLAGS=(
             "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_SAMD},--no-whole-archive"
         )
-        ARCH_INC="$PW_INC"
+        COMMON_FLAGS+=" -Wno-psabi $PW_COOPERATIVE_DEFS"
+        ARCH_INC="$PW_SAMD_INC"
     elif [[ "$FQBN" == esp32:esp32:* ]]; then
         local PW_LIB_ARCHIVE_ESP32="${_LOG_DIR}/libpigweed_esp32.a"
         if [ ! -f "$PW_LIB_ARCHIVE_ESP32" ]; then
-            build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE_ESP32" "${LIB_PATH}/src" || return 1
+            build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE_ESP32" "${LIB_PATH}/src" "$USER_LIB_DIR" || return 1
         fi
         LINK_FLAGS=(
             "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_ESP32},--no-whole-archive"
         )
-        ARCH_INC="$PW_INC"
+        COMMON_FLAGS+=" $PW_COOPERATIVE_DEFS"
+        ARCH_INC="$PW_ESP32_INC"
     elif [[ "$FQBN" == arduino:avr:* ]]; then
         COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
         if command -v avr-gcc >/dev/null 2>&1; then
@@ -241,7 +225,7 @@ with open(opts_path, "w", encoding="utf-8") as f:
         rm -rf "$BOARD_WORK_DIR/sketch" "$BOARD_WORK_DIR"/*.elf "$BOARD_WORK_DIR"/*.bin "$BOARD_WORK_DIR"/*.hex "$BOARD_WORK_DIR"/*.eep "$BOARD_WORK_DIR"/*.map
     fi
 
-    if arduino-cli compile "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
+    if LC_ALL=C LANG=C arduino-cli compile "${BUILD_FLAGS[@]}" "$sketch" > "$LOG_FILE" 2>&1; then
         echo "✓ $sketch_name ($FQBN)"
         if [ -n "$BUILD_OUTPUT_DIR" ]; then
             local SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${BOARD_NAME}/$sketch_name"

@@ -15,6 +15,10 @@ python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
 # Ensure Arduino libraries are present
 if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ] || \
    [ ! -f "$ARDUINO_LIBS/wolfssl/src/user_settings.h" ] || \
+   [ ! -d "$ARDUINO_LIBS/PigweedAVR/src/pw_transfer" ] || \
+   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/pw_transfer/transfer_thread.h" ] || \
+   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/pw_log_avr/log_avr.h" ] || \
+   [ ! -f "$ARDUINO_LIBS/PigweedAVR/src/pw_log_backend/log_backend.h" ] || \
    [ ! -f "$SRC_DIR/pb_common.h" ] || \
    [ ! -f "$SRC_DIR/pb_decode.h" ] || \
    [ ! -f "$SRC_DIR/pb_encode.h" ]; then
@@ -27,6 +31,7 @@ source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
 WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
+stage_cooperative_pw_transfer "$METADATA_DIR/pw_transfer" "$ARDUINO_LIBS"
 
 INCLUDES=(
     "-I${SRC_DIR}"
@@ -37,7 +42,7 @@ INCLUDES=(
     "-isystem${ETL_INC}"
     "-isystem${WOLFSSL_INC}"
     "-isystem${ARDUINO_LIBS}/wolfssl"
-    "${PW_INC_FLAGS[@]}"
+    "${PW_HOST_INC_FLAGS[@]}"
 )
 
 COMPILE_FLAGS=(
@@ -48,6 +53,7 @@ COMPILE_FLAGS=(
     "-DETL_FORCE_STD_INITIALIZER_LIST"
     "-DWOLFSSL_USER_SETTINGS"
     "-DPW_RPC_USE_GLOBAL_MUTEX=0"
+    "${PW_COOPERATIVE_DEFINES[@]}"
     "${INCLUDES[@]}"
 )
 

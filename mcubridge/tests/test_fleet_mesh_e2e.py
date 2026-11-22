@@ -18,7 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pw_hdlc.decode import FrameDecoder
-from pw_rpc.internal.packet_pb2 import RpcPacket
+from pw_hdlc.encode import ui_frame
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
@@ -103,11 +104,14 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
 
         def _queue_response(self, call_id: int, nonce: bytes, tag: bytes) -> None:
             self.incoming.extend(
-                fleet_mesh.protocol.encode_hdlc_rpc(
-                    "rpc.pb.SystemService/LinkSync",
-                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
-                    call_id=call_id,
-                    packet_type=1,
+                ui_frame(
+                    protocol.HDLC_ADDRESS_RPC,
+                    fleet_mesh.protocol.encode_rpc_packet(
+                        "rpc.pb.SystemService/LinkSync",
+                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
+                        call_id=call_id,
+                        packet_type=int(PacketType.RESPONSE),
+                    ),
                 )
             )
 
@@ -171,11 +175,14 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
             self.pending = [item for item in self.pending if item[0] > now]
             for _, call_id, nonce, tag in ready:
                 self.incoming.extend(
-                    fleet_mesh.protocol.encode_hdlc_rpc(
-                        "rpc.pb.SystemService/LinkSync",
-                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
-                        call_id=call_id,
-                        packet_type=1,
+                    ui_frame(
+                        protocol.HDLC_ADDRESS_RPC,
+                        fleet_mesh.protocol.encode_rpc_packet(
+                            "rpc.pb.SystemService/LinkSync",
+                            mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
+                            call_id=call_id,
+                            packet_type=int(PacketType.RESPONSE),
+                        ),
                     )
                 )
             if not self.incoming:

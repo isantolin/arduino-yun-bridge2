@@ -20,8 +20,6 @@ def test_load_runtime_config_applies_env_and_defaults() -> None:
         "serial_safe_baud": 9600,
         "cloud_host": "broker",
         "cloud_port": 321,
-        "cloud_user": " user ",
-        "cloud_pass": " pass ",
         "cloud_tls": True,
         "cloud_cafile": " /etc/cafile ",
         "cloud_certfile": " ",
@@ -51,8 +49,6 @@ def test_load_runtime_config_applies_env_and_defaults() -> None:
         "serial_baud": 57600,
         "cloud_host": "broker",
         "cloud_port": 321,
-        "cloud_user": "user",
-        "cloud_pass": "pass",
         "cloud_tls": True,
         "cloud_cafile": "/etc/cafile",
         "cloud_certfile": "",
@@ -96,16 +92,6 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled() -> None:
     }
     with pytest.raises(ValueError, match="must be in volatile storage"):
         settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
-
-
-def test_load_runtime_config_allows_empty_cloud_user_value() -> None:
-    raw_config = {
-        "cloud_user": "",
-        "cloud_pass": " ",
-    }
-    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
-    assert config.cloud_user == ""
-    assert config.cloud_pass == ""
 
 
 def test_load_runtime_config_prefers_uci_config() -> None:
@@ -163,18 +149,6 @@ def test_load_runtime_config_parses_watchdog() -> None:
     config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
     assert config.watchdog_enabled
     assert config.watchdog_interval == 0.5
-
-
-def test_load_runtime_config_http3() -> None:
-    raw_config = {
-        "cloud_http3_enabled": True,
-        "cloud_http3_port": 8843,
-        "cloud_http3_congestion_control": "cubic",
-    }
-    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
-    assert config.cloud_http3_enabled is True
-    assert config.cloud_http3_port == 8843
-    assert config.cloud_http3_congestion_control == "cubic"
 
 
 def test_settings_load_raw_config_empty_uci() -> None:

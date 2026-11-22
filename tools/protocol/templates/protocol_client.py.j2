@@ -21,12 +21,6 @@ CLOUD_DEFAULT_TOPIC_PREFIX: Final[str] = {{ cloud_defaults.default_topic_prefix|
 CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}
 {% endfor %}
 
-# Status Codes
-class Status(IntEnum):
-    {%- for status in statuses %}
-    {{ status.name }} = {{ status.value }}  # {{ status.description|wordwrap(80)|replace('\n', '\n    # ') }}
-    {%- endfor %}
-
 # SPI Enums
 class SpiBitOrder(IntEnum):
     {%- for value in spi_bit_orders %}
@@ -48,9 +42,3 @@ class Topic:
         """Build an CLOUD topic path. Identical algorithm to daemon topic_path()."""
         parts = [str(s).strip("/") for s in (prefix or Topic.PREFIX, *segments) if str(s).strip("/")]
         return posixpath.join(*parts) if parts else ""
-
-    @staticmethod
-    def matches(pattern: str, topic: str) -> bool:
-        """Check if a topic matches an CLOUD wildcard pattern."""
-        import fnmatch
-        return fnmatch.fnmatch(topic, pattern.replace("+", "*").replace("#", "*"))

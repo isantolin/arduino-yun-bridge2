@@ -2,11 +2,11 @@
 
 from collections.abc import Sequence
 import json
+import re
 from pathlib import Path
 import subprocess
 from typing import Any, cast
 
-from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 import pytest
 from pytest_mock import MockerFixture
@@ -199,9 +199,22 @@ def test_protobuf_descriptor_purged_elements() -> None:
     """SIL-2: Verify compiled descriptor does not contain any abandoned messages or fields."""
     all_descriptors = (cloud_gateway_pb2.DESCRIPTOR, mcu_wire_pb2.DESCRIPTOR, config_schema_pb2.DESCRIPTOR)
 
-    # 1. No DataFormats message
+    # 1. No DataFormats, UserProperty, CloudSuffixes, or retired FileWrite messages (ADR-0008)
     for fd in all_descriptors:
         assert "DataFormats" not in fd.message_types_by_name
+        assert "FileWrite" not in fd.message_types_by_name
+        assert "UserProperty" not in fd.message_types_by_name
+        assert "CloudSuffixes" not in fd.message_types_by_name
+    assert "Write" not in mcu_wire_pb2.DESCRIPTOR.services_by_name["FileSystemService"].methods_by_name
+    assert set(cloud_gateway_pb2.CloudQueuedPublish.DESCRIPTOR.fields_by_name) == {"topic_name", "payload"}
+    assert set(config_schema_pb2.StatusReasons.DESCRIPTOR.fields_by_name) == {
+        "sync_auth_mismatch",
+        "sync_length_mismatch",
+    }
+    runtime_cfg_fields = set(config_schema_pb2.RuntimeConfig.DESCRIPTOR.fields_by_name)
+    assert runtime_cfg_fields.isdisjoint(
+        {"cloud_user", "cloud_pass", "cloud_http3_enabled", "cloud_http3_port", "cloud_http3_congestion_control"}
+    )
 
     # 2. No data_formats file extension
     for fd in all_descriptors:
@@ -216,7 +229,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert "aead_algorithm" not in handshake_fields
     assert "aead_description" not in handshake_fields
 
-    # 4. Retired constants are absent and their field numbers/names remain reserved.
+    # 4. Retired constants are absent from the canonical descriptor.
     constant_fields = config_schema_pb2.Constants.DESCRIPTOR.fields_by_name
     retired_constants = {
         "max_command_id",
@@ -249,18 +262,19 @@ def test_protobuf_descriptor_purged_elements() -> None:
         "default_reconnect_delay",
         "clock_command_min",
         "clock_command_max",
+        "cloud_expiry_pin",
+        "cloud_expiry_datastore",
+        "cloud_expiry_console",
+        "bridge_snapshot_expiry_seconds",
     }
     assert retired_constants.isdisjoint(constant_fields)
 
-    descriptor_file = descriptor_pb2.FileDescriptorProto()
-    descriptor_file.ParseFromString(config_schema_pb2.Constants.DESCRIPTOR.file.serialized_pb)
-    constants_proto = next(message for message in descriptor_file.message_type if message.name == "Constants")
-    reserved_constant_numbers = {
-        number for item in constants_proto.reserved_range for number in range(item.start, item.end)
-    }
-    expected_reserved_numbers = set(range(14, 21)) | {24, 27, 29, 31, 33, 34} | set(range(39, 54)) | {67, 68}
-    assert expected_reserved_numbers <= reserved_constant_numbers
-    assert retired_constants <= set(constants_proto.reserved_name)
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    proto_files = sorted((repo_root / "tools" / "protocol").glob("*.proto"))
+    assert proto_files
+    for proto_path in proto_files:
+        source = proto_path.read_text(encoding="utf-8")
+        assert not re.search(r"^\s*reserved\s+", source, re.MULTILINE), proto_path
 
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:
@@ -402,7 +416,6 @@ def test_runtime_config_defaults_reference_canonical_metadata() -> None:
         "console_queue_limit_bytes": "constants.default_console_queue_limit_bytes",
         "serial_handshake_fatal_failures": "constants.default_serial_handshake_fatal_failures",
         "process_max_output_bytes": "constants.default_process_max_output_bytes",
-        "cloud_http3_port": "constants.default_cloud_port",
     }
     for field_name, reference in expected_references.items():
         options = fields[field_name].GetOptions()
@@ -413,7 +426,6 @@ def test_runtime_config_defaults_reference_canonical_metadata() -> None:
     assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_baud"] == protocol.DEFAULT_BAUDRATE
     assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_safe_baud"] == protocol.DEFAULT_SAFE_BAUDRATE
     assert protocol.RUNTIME_CONFIG_DEFAULTS["cloud_port"] == protocol.DEFAULT_CLOUD_PORT
-    assert protocol.RUNTIME_CONFIG_DEFAULTS["cloud_http3_port"] == protocol.DEFAULT_CLOUD_PORT
     assert protocol.RUNTIME_CONFIG_DEFAULTS["topic_prefix"] == protocol.CLOUD_DEFAULT_TOPIC_PREFIX
     assert protocol.RUNTIME_CONFIG_DEFAULTS["reconnect_delay"] == protocol.DEFAULT_RECONNECT_DELAY
     assert protocol.RUNTIME_CONFIG_DEFAULTS["console_queue_limit_bytes"] == protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
@@ -527,7 +539,9 @@ def test_proto_dispatch_handlers_ssot() -> None:
     import operator
     from mcubridge.services.runtime import BridgeService
 
-    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 18
+    # ADR-0007 adds EepromService read/write and FileSystemService upload; ADR-0008 retires FileSystemService/Write.
+    assert len(BridgeService.LOCAL_RPC_HANDLERS) == 20
+    assert "rpc.pb.FileSystemService/Write" not in BridgeService.LOCAL_RPC_HANDLERS
     for name, handler_path in BridgeService.LOCAL_RPC_HANDLERS.items():
         assert isinstance(name, str)
         assert name in protocol.BY_NAME

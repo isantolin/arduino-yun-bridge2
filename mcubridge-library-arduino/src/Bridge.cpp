@@ -2,6 +2,8 @@
 
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
+#include <etl/string.h>
+#include <etl/to_string.h>
 #include <etl/utility.h>
 
 #include "hal/hal.h"
@@ -11,7 +13,7 @@
 #endif
 #include "services/Console.h"
 #include "services/DataStore.h"
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include "services/EepromTransfer.h"
 #endif
 #include "services/FileSystem.h"
@@ -204,14 +206,15 @@ class FileSystemRpcService final
     : public rpc::pb::pw_rpc::nanopb::FileSystemService::Service<
           FileSystemRpcService> {
  public:
-  pw::Status Write(const rpc_pb_FileWrite& request, rpc_pb_Empty&) {
-    FileSystem._onWrite(request);
-    return pw::OkStatus();
-  }
-
   pw::Status Remove(const rpc_pb_FileRemove& request, rpc_pb_Empty&) {
     FileSystem._onRemove(request);
     return pw::OkStatus();
+  }
+
+  // Uploads only flow MCU -> MPU (FileSystem.upload()); the MCU never
+  // serves them.
+  pw::Status Upload(const rpc_pb_FileUpload&, rpc_pb_Empty&) {
+    return pw::Status::Unimplemented();
   }
 };
 #endif
@@ -254,6 +257,7 @@ FileSystemRpcService g_file_system_service;
 #if BRIDGE_ENABLE_MAILBOX
 MailboxRpcService g_mailbox_service;
 #endif
+BridgeClass* g_rpc_services_owner = nullptr;
 
 }  // namespace
 
@@ -282,17 +286,13 @@ BridgeClass::BridgeClass(Stream& stream)
       _rpc_channel_output(*this),
       _rpc_channel(pw::rpc::Channel::Create<1>(&_rpc_channel_output)),
       _rpc_client(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
-      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1))
-#if BRIDGE_ENABLE_PW_TRANSFER
-      ,
+      _rpc_server(pw::span<pw::rpc::Channel>(&_rpc_channel, 1)),
       _transfer_thread(pw::ByteSpan(_transfer_chunk_storage.data(),
                                     _transfer_chunk_storage.size()),
                        pw::ByteSpan(_transfer_encode_storage.data(),
                                     _transfer_encode_storage.size())),
       _transfer_service(_transfer_thread, 256),
-      _transfer_client(_rpc_client, 1, _transfer_thread, 256)
-#endif
-{
+      _transfer_client(_rpc_client, 1, _transfer_thread, 256) {
 #if defined(ARDUINO_ARCH_AVR)
   pw_assert_avr_SetPanicHook(BridgePanicHook);
 #endif
@@ -304,7 +304,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
   _hardware_serial = &serial;
 }
 
-BridgeClass::~BridgeClass() {
+void BridgeClass::_unregisterRpcServices() {
   if (!_rpc_services_registered) return;
   _rpc_server.UnregisterService(g_gpio_service, g_system_service,
                                 g_clock_sync_service
@@ -320,11 +320,27 @@ BridgeClass::~BridgeClass() {
                                 ,
                                 g_mailbox_service
 #endif
-#if BRIDGE_ENABLE_PW_TRANSFER
                                 ,
-                                _transfer_service
+                                _transfer_service);
+  _rpc_services_registered = false;
+  g_rpc_services_owner = nullptr;
+}
+
+BridgeClass::~BridgeClass() {
+  // Detach external stream references first so teardown never performs I/O on
+  // a stream whose lifetime has already ended.
+  pw_log_avr_SetLogSink(nullptr);
+  _stream = nullptr;
+  _hardware_serial = nullptr;
+  _arduino_stream.setStream(static_cast<Stream*>(nullptr));
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+  bridge::services::unregisterEepromTransferHandler(_transfer_service);
 #endif
-  );
+#if BRIDGE_ENABLE_FILESYSTEM
+  FileSystemClass::unregisterUploadHandler(_transfer_service);
+#endif
+  _pin_stream_writer = {};
+  _unregisterRpcServices();
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(pw::ConstByteSpan packet) {
@@ -354,14 +370,15 @@ void BridgeClass::_initializeRuntime() {
   _state_flags.reset();
   _clearLinkSession();
 
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   pw_log_avr_SetLogSink(
       [](uint8_t /*level*/, const uint8_t* log_data, size_t size) {
         (void)Bridge.sendLogStream(pw::span<const uint8_t>(log_data, size));
       });
-#endif
 
   if (_rpc_services_registered) return;
+  if (g_rpc_services_owner != nullptr) {
+    g_rpc_services_owner->_unregisterRpcServices();
+  }
   _rpc_server.RegisterService(g_gpio_service, g_system_service,
                               g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
@@ -376,12 +393,10 @@ void BridgeClass::_initializeRuntime() {
                               ,
                               g_mailbox_service
 #endif
-#if BRIDGE_ENABLE_PW_TRANSFER
                               ,
-                              _transfer_service
-#endif
-  );
+                              _transfer_service);
   _rpc_services_registered = true;
+  g_rpc_services_owner = this;
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
@@ -410,15 +425,20 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     return;
   }
 
-#if BRIDGE_ENABLE_PW_TRANSFER
-  if (!_eeprom_transfer_registered) {
-    _eeprom_transfer_registered =
-        bridge::services::registerEepromTransferHandler(_transfer_service);
-    if (!_eeprom_transfer_registered) {
-      emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
-      enterSafeState();
-      return;
-    }
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+  if (!bridge::services::registerEepromTransferHandler(_transfer_service,
+                                                       _transfer_thread)) {
+    emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    enterSafeState();
+    return;
+  }
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  if (!FileSystemClass::registerUploadHandler(_transfer_service,
+                                              _transfer_thread)) {
+    emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    enterSafeState();
+    return;
   }
 #endif
 
@@ -446,12 +466,10 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
-#if BRIDGE_ENABLE_PW_TRANSFER
   const pw::Status transfer_status = _transfer_thread.Poll(2);
   if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);
   }
-#endif
   _timerTask();
   _subscriptionTask();
 #if BRIDGE_ENABLE_CONSOLE
@@ -514,6 +532,15 @@ void BridgeClass::_serialTask() {
   }
 }
 
+namespace {
+// Received plaintext lives in the HDLC decoder buffer (decrypted in place).
+void zeroReceivedPlaintext(pw::span<const uint8_t> plaintext) {
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+  rpc::security::secure_zero(pw::span<uint8_t>(
+      const_cast<uint8_t*>(plaintext.data()), plaintext.size()));
+}
+}  // namespace
+
 void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   _last_rx_ms = NowMillis();
   const uint64_t addr = frame.address();
@@ -561,7 +588,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
     }
     if (!meta_result.ok()) {
       if (decrypted) {
-        rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+        zeroReceivedPlaintext(data);
       }
       emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
       return;
@@ -572,7 +599,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
           isLinkSyncRequest(meta)) {
         emitStatus(rpc::StatusCode::STATUS_FAILED_PRECONDITION);
         if (decrypted) {
-          rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+          zeroReceivedPlaintext(data);
         }
         return;
       }
@@ -581,7 +608,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         emitStatus(rpc::StatusCode::STATUS_FAILED_PRECONDITION);
         enterSafeState();
         if (decrypted) {
-          rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+          zeroReceivedPlaintext(data);
         }
         return;
       }
@@ -589,8 +616,10 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       const auto status = _rpc_server.ProcessPacket(pw::as_bytes(data));
       _rpc_plaintext_response = false;
       if (!status.ok()) emitStatus(status);
+      _emitStackWatermarkLog();
     } else if (meta.destination_is_client()) {
       (void)_rpc_client.ProcessPacket(pw::as_bytes(data));
+      _emitStackWatermarkLog();
     }
   }
 #if BRIDGE_ENABLE_CONSOLE
@@ -599,7 +628,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   }
 #endif
   if (decrypted) {
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+    zeroReceivedPlaintext(data);
   }
 }
 
@@ -667,9 +696,7 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   plaintext = {};
   const size_t overhead = rpc::RPC_AEAD_COUNTER_SIZE + rpc::RPC_AEAD_TAG_SIZE;
   if (!_session_keys_ready || address > UINT8_MAX ||
-      envelope.size() < overhead ||
-      envelope.size() - overhead > _rx_plaintext.size()) {
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
+      envelope.size() < overhead) {
     return false;
   }
 
@@ -688,38 +715,67 @@ bool BridgeClass::_decryptHdlcFrame(uint64_t address,
   if (counter == 0 || counter <= _rx_aead_counter) {
     rpc::security::secure_zero(pw::span<uint8_t>(nonce));
     rpc::security::secure_zero(pw::span<uint8_t>(aad));
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
     return false;
   }
 
   const size_t ciphertext_size = envelope.size() - overhead;
   const uint8_t* ciphertext = envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE;
   const uint8_t* tag = ciphertext + ciphertext_size;
+  // Decrypt in place inside the HDLC decoder buffer, which this object owns
+  // and which is not reused until the frame handler returns. wolfCrypt
+  // authenticates the ciphertext before the ChaCha20 pass overwrites it, so
+  // a dedicated RX_BUFFER_SIZE plaintext copy is not needed on the 8 KiB AVR.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+  uint8_t* const in_place = const_cast<uint8_t*>(ciphertext);
   const bool decrypted = rpc::security::aead_decrypt(
       pw::span<const uint8_t>(_session_aead_keys.data(),
                               rpc::RPC_AEAD_KEY_SIZE),
       pw::span<const uint8_t>(nonce), pw::span<const uint8_t>(aad),
       pw::span<const uint8_t>(ciphertext, ciphertext_size),
       pw::span<const uint8_t>(tag, rpc::RPC_AEAD_TAG_SIZE),
-      pw::span<uint8_t>(_rx_plaintext.data(), ciphertext_size));
+      pw::span<uint8_t>(in_place, ciphertext_size));
   rpc::security::secure_zero(pw::span<uint8_t>(nonce));
   rpc::security::secure_zero(pw::span<uint8_t>(aad));
   if (!decrypted) {
-    rpc::security::secure_zero(pw::span<uint8_t>(_rx_plaintext));
     return false;
   }
 
   _rx_aead_counter = counter;
-  plaintext = pw::span<const uint8_t>(_rx_plaintext.data(), ciphertext_size);
+  plaintext = pw::span<const uint8_t>(in_place, ciphertext_size);
   return true;
 }
 
 void BridgeClass::_clearLinkSession() {
+#if BRIDGE_ENABLE_FILESYSTEM
+  FileSystemClass::_resetUpload();
+#endif
   _pin_stream_writer = {};
   rpc::security::secure_zero(pw::span<uint8_t>(_session_aead_keys));
   _tx_aead_counter = 0;
   _rx_aead_counter = 0;
   _session_keys_ready = false;
+  _last_reported_stack_used = 0;
+}
+
+void BridgeClass::_emitStackWatermarkLog() {
+#if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_ESP32)
+  if (!isSynchronized() || !isRpcTxReady()) return;
+  const auto wm = bridge::hal::getStackWatermark();
+  if (wm.budget_bytes == 0U || wm.used_bytes == _last_reported_stack_used) {
+    return;
+  }
+  _last_reported_stack_used = wm.used_bytes;
+#if defined(ARDUINO_ARCH_SAMD)
+  etl::string<72> msg("MCU_STACK_WATERMARK arch=SAMD21 used=");
+#else
+  etl::string<72> msg("MCU_STACK_WATERMARK arch=ESP32 used=");
+#endif
+  (void)etl::to_string(wm.used_bytes, msg, true);
+  msg.append(" budget=");
+  (void)etl::to_string(wm.budget_bytes, msg, true);
+  (void)sendLogStream(pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(msg.data()), msg.size()));
+#endif
 }
 
 void BridgeClass::_timerTask() {
@@ -763,7 +819,6 @@ void BridgeClass::enterSafeState() {
                 [](const SafetyPinEntry& entry) {
                   bridge::hal::applySafetyPin(entry.pin, entry.state);
                 });
-  _pin_stream_writer = {};
   _state_flags.set(FLAG_TX_ENABLED, false);
   _state_flags.set(FLAG_SERIAL_XOFF, false);
   _fsm.receive(bridge::fsm::EvReset());

@@ -5,21 +5,24 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+import select
 import socket
 import ssl
 import threading
+import time
 from typing import Any, Final, cast
 
 import pw_hdlc.decode
 import pw_hdlc.encode
 import structlog
+from google.protobuf.message import Message as ProtobufMessage
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
 from pw_transfer import transfer_pb2
 from pw_transfer.client import Manager as PwTransferManager
 
-from . import cloud_gateway_pb2, mcu_wire_pb2
+from . import cloud_gateway_pb2, mcu_wire_pb2, protocol
 from .gateway import gateway_control_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
@@ -47,14 +50,29 @@ class GatewayConnection:
         ssl_context: ssl.SSLContext | None = None,
         timeout: float = 10.0,
     ) -> None:
+        logger.info("Gateway connection: opening TCP socket", host=host, port=port, timeout_seconds=timeout)
         raw_sock = socket.create_connection((host, port), timeout=timeout)
+        logger.info("Gateway connection: TCP established", host=host, port=port)
         self.sock: socket.socket | ssl.SSLSocket
         if ssl_context is not None:
-            self.sock = ssl_context.wrap_socket(raw_sock, server_hostname="localhost")
+            logger.info("Gateway connection: starting TLS handshake", tls_minimum=str(ssl_context.minimum_version))
+            try:
+                self.sock = ssl_context.wrap_socket(raw_sock, server_hostname="localhost")
+            except BaseException:
+                raw_sock.close()
+                raise
+            logger.info("Gateway connection: TLS handshake completed", tls_version=self.sock.version())
         else:
             self.sock = raw_sock
+            logger.info("Gateway connection: TLS disabled")
+
+        # Non-blocking I/O with select() outside the lock lets reader and writer
+        # share a single ssl.SSLSocket safely without concurrent OpenSSL calls.
+        self.sock.setblocking(False)
 
         self.running = True
+        self._closed = False
+        self._io_lock = threading.Lock()
         self._send_lock = threading.Lock()
         self.decoder = pw_hdlc.decode.FrameDecoder()
         self.rpc_client = PwRpcClient(
@@ -62,42 +80,82 @@ class GatewayConnection:
             [PwRpcChannel(1, self.send_frame)],
             PW_SERVICES,
         )
-        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+        self.reader_thread = threading.Thread(target=self._reader_loop, daemon=True, name="mcubridge-gateway-reader")
         self.reader_thread.start()
+        logger.info("Gateway connection: RPC reader thread started")
 
     def send_frame(self, data: bytes) -> None:
-        if self.sock:
-            with self._send_lock:
-                self.sock.sendall(pw_hdlc.encode.ui_frame(1, data))
+        frame = pw_hdlc.encode.ui_frame(1, data)
+        view = memoryview(frame)
+        deadline = time.monotonic() + 10.0
+        with self._send_lock:
+            while view:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Timed out sending Gateway HDLC frame")
+                wait_lists: tuple[list[socket.socket], list[socket.socket]] | None = None
+                with self._io_lock:
+                    if self._closed:
+                        return
+                    try:
+                        sent = self.sock.send(view)
+                    except ssl.SSLWantReadError:
+                        wait_lists = ([self.sock], [])
+                    except (ssl.SSLWantWriteError, BlockingIOError):
+                        wait_lists = ([], [self.sock])
+                    else:
+                        if sent == 0:
+                            raise ConnectionError("Gateway socket closed during send")
+                        view = view[sent:]
+                if wait_lists is not None:
+                    try:
+                        select.select(wait_lists[0], wait_lists[1], [], 0.05)
+                    except (OSError, ValueError):
+                        return
 
     def _reader_loop(self) -> None:
         while self.running:
-            try:
-                chunk = self.sock.recv(4096)
-                if not chunk:
+            with self._io_lock:
+                has_pending = isinstance(self.sock, ssl.SSLSocket) and self.sock.pending() > 0
+            if not has_pending:
+                try:
+                    readable, _, _ = select.select([self.sock], [], [], 0.05)
+                except (OSError, ValueError) as exc:
+                    logger.debug("Reader loop select error", error=str(exc))
                     break
-                for frame in self.decoder.process(chunk):
-                    if frame.ok() and frame.address == 1:
-                        self.rpc_client.process_packet(frame.data)
-            except (OSError, ValueError) as exc:
-                logger.debug("Reader loop socket error", error=str(exc))
+                if not readable:
+                    continue
+            with self._io_lock:
+                try:
+                    chunk = self.sock.recv(4096)
+                except (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError):
+                    continue
+                except (OSError, ValueError) as exc:
+                    logger.debug("Reader loop socket error", error=str(exc))
+                    break
+            if not chunk:
                 break
+            for frame in self.decoder.process(chunk):
+                if frame.ok() and frame.address == 1:
+                    logger.debug("Gateway RPC frame received", frame_bytes=len(frame.data))
+                    self.rpc_client.process_packet(frame.data)
 
     def close(self) -> None:
+        logger.info("Gateway connection: closing", reader_alive=self.reader_thread.is_alive())
         self.running = False
-        # shutdown() wakes the reader thread blocked in recv() and sends EOF right
-        # away. Without it the descriptor stays open until the reader returns, and
-        # the Gateway keeps the client principal registered, rejecting the next
-        # session with the same identity as a duplicate.
-        try:
-            self.sock.shutdown(socket.SHUT_RDWR)
-        except OSError as exc:
-            logger.debug("Socket shutdown error ignored", error=str(exc))
-        try:
-            self.sock.close()
-        except OSError as exc:
-            logger.debug("Socket close error ignored", error=str(exc))
         self.reader_thread.join(timeout=2)
+        with self._io_lock:
+            self._closed = True
+            # shutdown() sends EOF immediately so the Gateway releases the
+            # client principal before any subsequent session with the same ID.
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR)
+            except OSError as exc:
+                logger.debug("Socket shutdown error ignored", error=str(exc))
+            try:
+                self.sock.close()
+            except OSError as exc:
+                logger.debug("Socket close error ignored", error=str(exc))
+        logger.info("Gateway connection: closed", reader_alive=self.reader_thread.is_alive())
 
 
 class GatewayClient:
@@ -184,13 +242,32 @@ class GatewayClient:
         # final Status (the unary response is call.response); on_error the error Status.
         # Callbacks run in reader_thread, so threadsafe dispatch into the event loop is required.
         def _on_completed(call: Any, status: Any) -> None:
+            logger.debug(
+                "Gateway RPC dispatch callback completed",
+                operation=operation,
+                status=str(status),
+            )
             loop.call_soon_threadsafe(_set_result, (status, call.response))
 
         def _on_error(_call: Any, error: Any) -> None:
+            logger.error(
+                "Gateway RPC dispatch callback failed",
+                operation=operation,
+                error=str(error),
+            )
             loop.call_soon_threadsafe(_set_result, (error, None))
 
         dispatch_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
-        status, resp = await asyncio.wait_for(fut, timeout=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0)
+        try:
+            status, resp = await asyncio.wait_for(fut, timeout=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0)
+        except TimeoutError:
+            logger.error(
+                "Gateway RPC dispatch response timed out",
+                operation=operation,
+                timeout_ms=effective_timeout_ms,
+                target_device_id=self.target_device_id,
+            )
+            raise
         if not status.ok():
             raise RuntimeError(f"Pigweed RPC dispatch failed: {status}")
         return resp.response_payload
@@ -219,137 +296,81 @@ class GatewayClient:
             raise RuntimeError(f"Health check failed: {status}")
         return resp
 
+    async def _call[T: ProtobufMessage](
+        self,
+        operation: str,
+        req: ProtobufMessage | None,
+        response_cls: type[T],
+        *,
+        timeout_ms: int | None = None,
+    ) -> T:
+        return response_cls.FromString(await self.dispatch(operation, req, timeout_ms=timeout_ms))
+
     async def DigitalWrite(self, req: mcu_wire_pb2.DigitalWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService/DigitalWrite", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.GpioService/DigitalWrite", req, mcu_wire_pb2.Empty)
 
     async def DigitalRead(self, req: mcu_wire_pb2.PinRead) -> mcu_wire_pb2.DigitalReadResponse:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService/DigitalRead", req)
-        resp = mcu_wire_pb2.DigitalReadResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.GpioService/DigitalRead", req, mcu_wire_pb2.DigitalReadResponse)
 
     async def AnalogWrite(self, req: mcu_wire_pb2.AnalogWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService/AnalogWrite", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.GpioService/AnalogWrite", req, mcu_wire_pb2.Empty)
 
     async def AnalogRead(self, req: mcu_wire_pb2.PinRead) -> mcu_wire_pb2.AnalogReadResponse:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService/AnalogRead", req)
-        resp = mcu_wire_pb2.AnalogReadResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.GpioService/AnalogRead", req, mcu_wire_pb2.AnalogReadResponse)
 
     async def PinSubscribe(self, req: mcu_wire_pb2.PinSubscribeRequest) -> mcu_wire_pb2.PinSubscribeResponse:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService/SubscribePins", req)
-        resp = mcu_wire_pb2.PinSubscribeResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.GpioService/SubscribePins", req, mcu_wire_pb2.PinSubscribeResponse)
 
     async def SetPinMode(self, req: mcu_wire_pb2.PinMode) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.GpioService/SetPinMode", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.GpioService/SetPinMode", req, mcu_wire_pb2.Empty)
 
     async def ConsoleWrite(self, req: mcu_wire_pb2.ConsoleWrite) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.ConsoleService/Write", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.ConsoleService/Write", req, mcu_wire_pb2.Empty)
 
     async def DatastorePut(self, req: mcu_wire_pb2.DatastorePut) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.DataStoreService/Put", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.DataStoreService/Put", req, mcu_wire_pb2.Empty)
 
     async def DatastoreGet(self, req: mcu_wire_pb2.DatastoreGet) -> mcu_wire_pb2.DatastoreGetResponse:
-        resp_bytes = await self.dispatch("rpc.pb.DataStoreService/Get", req)
-        resp = mcu_wire_pb2.DatastoreGetResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.DataStoreService/Get", req, mcu_wire_pb2.DatastoreGetResponse)
 
     async def MailboxPush(self, req: mcu_wire_pb2.MailboxPush) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.MailboxService/Push", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.MailboxService/Push", req, mcu_wire_pb2.Empty)
 
     async def MailboxRead(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.MailboxReadResponse:
-        resp_bytes = await self.dispatch("rpc.pb.MailboxService/Read", req)
-        resp = mcu_wire_pb2.MailboxReadResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.MailboxService/Read", req, mcu_wire_pb2.MailboxReadResponse)
 
     async def ProcessRunAsync(self, req: mcu_wire_pb2.ProcessRunAsync) -> mcu_wire_pb2.ProcessRunAsyncResponse:
-        resp_bytes = await self.dispatch("rpc.pb.ProcessService/RunAsync", req)
-        resp = mcu_wire_pb2.ProcessRunAsyncResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.ProcessService/RunAsync", req, mcu_wire_pb2.ProcessRunAsyncResponse)
 
     async def ProcessPoll(self, req: mcu_wire_pb2.ProcessPoll) -> mcu_wire_pb2.ProcessPollResponse:
-        resp_bytes = await self.dispatch("rpc.pb.ProcessService/Poll", req)
-        resp = mcu_wire_pb2.ProcessPollResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.ProcessService/Poll", req, mcu_wire_pb2.ProcessPollResponse)
 
     async def ProcessKill(self, req: mcu_wire_pb2.ProcessKill) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.ProcessService/Kill", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.ProcessService/Kill", req, mcu_wire_pb2.Empty)
 
     async def FileRemove(self, req: mcu_wire_pb2.FileRemove) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.FileSystemService/Remove", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.FileSystemService/Remove", req, mcu_wire_pb2.Empty)
 
     async def SpiBegin(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.SpiService/Begin", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SpiService/Begin", req, mcu_wire_pb2.Empty)
 
     async def SpiEnd(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.SpiService/End", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SpiService/End", req, mcu_wire_pb2.Empty)
 
     async def SpiConfigure(self, req: mcu_wire_pb2.SpiConfig) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.SpiService/SetConfig", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SpiService/SetConfig", req, mcu_wire_pb2.Empty)
 
     async def SpiTransfer(self, req: mcu_wire_pb2.SpiTransfer) -> mcu_wire_pb2.SpiTransferResponse:
-        resp_bytes = await self.dispatch("rpc.pb.SpiService/Transfer", req)
-        resp = mcu_wire_pb2.SpiTransferResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SpiService/Transfer", req, mcu_wire_pb2.SpiTransferResponse)
 
     async def GetVersion(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.VersionResponse:
-        resp_bytes = await self.dispatch("rpc.pb.SystemService/GetVersion", req)
-        resp = mcu_wire_pb2.VersionResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SystemService/GetVersion", req, mcu_wire_pb2.VersionResponse)
 
     async def GetFreeMemory(self, req: mcu_wire_pb2.SubscribeRequest) -> mcu_wire_pb2.FreeMemoryResponse:
-        resp_bytes = await self.dispatch("rpc.pb.SystemService/GetFreeMemory", req)
-        resp = mcu_wire_pb2.FreeMemoryResponse()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SystemService/GetFreeMemory", req, mcu_wire_pb2.FreeMemoryResponse)
 
     async def EnterBootloader(self, req: mcu_wire_pb2.EnterBootloader) -> mcu_wire_pb2.Empty:
-        resp_bytes = await self.dispatch("rpc.pb.SystemService/EnterBootloader", req)
-        resp = mcu_wire_pb2.Empty()
-        resp.ParseFromString(resp_bytes)
-        return resp
+        return await self._call("rpc.pb.SystemService/EnterBootloader", req, mcu_wire_pb2.Empty)
 
     async def push_bytes_to_device(
         self,
@@ -364,13 +385,12 @@ class GatewayClient:
             path=remote_device_path,
             resource_id=resource_id,
         )
-        resp_bytes = await self.dispatch(
+        resp = await self._call(
             "rpc.pb.FileTransferService/PushToLinux",
             req,
+            cloud_gateway_pb2.FileTransferSyncResponse,
             timeout_ms=timeout_ms,
         )
-        resp = cloud_gateway_pb2.FileTransferSyncResponse()
-        resp.ParseFromString(resp_bytes)
         if not resp.success:
             raise RuntimeError(f"Push to Linux device failed: {resp.message}")
         return resp.bytes_transferred
@@ -386,13 +406,12 @@ class GatewayClient:
             path=remote_device_path,
             resource_id=resource_id,
         )
-        resp_bytes = await self.dispatch(
+        resp = await self._call(
             "rpc.pb.FileTransferService/FetchFromLinux",
             req,
+            cloud_gateway_pb2.FileTransferSyncResponse,
             timeout_ms=timeout_ms,
         )
-        resp = cloud_gateway_pb2.FileTransferSyncResponse()
-        resp.ParseFromString(resp_bytes)
         if not resp.success:
             raise RuntimeError(f"Fetch from Linux device failed: {resp.message}")
         return await self.transfer_read(resource_id)
@@ -430,3 +449,34 @@ class GatewayClient:
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(data)
         return len(data)
+
+    async def read_mcu_eeprom(self, timeout_ms: int | None = None) -> bytes:
+        """Read the AVR EEPROM image of the target device (ADR-0007; needs eeprom_read)."""
+        resp = await self._call(
+            "rpc.pb.EepromService/Read",
+            cloud_gateway_pb2.EepromSyncRequest(),
+            cloud_gateway_pb2.FileTransferSyncResponse,
+            timeout_ms=timeout_ms,
+        )
+        if not resp.success:
+            raise RuntimeError(f"MCU EEPROM read failed: {resp.message}")
+        return await self.transfer_read(protocol.EEPROM_TRANSFER_RESOURCE_ID)
+
+    async def write_mcu_eeprom(self, image: bytes, timeout_ms: int | None = None) -> int:
+        """Program the AVR EEPROM of the target device from offset 0 (ADR-0007; needs eeprom_write).
+
+        Writes are not transactional and take tens of seconds for a full image;
+        pass a generous timeout_ms.
+        """
+        if not 0 < len(image) <= protocol.EEPROM_RESOURCE_MAX_BYTES:
+            raise ValueError(f"EEPROM image must be 1..{protocol.EEPROM_RESOURCE_MAX_BYTES} bytes, got {len(image)}")
+        await self.transfer_write(protocol.EEPROM_TRANSFER_RESOURCE_ID, image)
+        resp = await self._call(
+            "rpc.pb.EepromService/Write",
+            cloud_gateway_pb2.EepromSyncRequest(),
+            cloud_gateway_pb2.FileTransferSyncResponse,
+            timeout_ms=timeout_ms,
+        )
+        if not resp.success:
+            raise RuntimeError(f"MCU EEPROM write failed: {resp.message}")
+        return resp.bytes_transferred

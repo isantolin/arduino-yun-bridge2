@@ -5,10 +5,7 @@
 
 function redactSecretLines(output) {
 	if (!output) return '';
-	var redacted = output.replace(/SERIAL_SECRET=[^\r\n]*/g, 'SERIAL_SECRET=[redacted]');
-	redacted = redacted.replace(/CLOUD_PASSWORD=[^\r\n]*/g, 'CLOUD_PASSWORD=[redacted]');
-	redacted = redacted.replace(/CLOUD_PASS=[^\r\n]*/g, 'CLOUD_PASS=[redacted]');
-	return redacted;
+	return output.replace(/SERIAL_SECRET=[^\r\n]*/g, 'SERIAL_SECRET=[redacted]');
 }
 
 return view.extend({
@@ -82,7 +79,7 @@ return view.extend({
 
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, [_('Rotate Credentials')]),
-				E('p', {}, [_('This regenerates the serial shared secret (serial_shared_secret) and the Cloud password, writes them to UCI, and restarts the daemon.')]),
+				E('p', {}, [_('This regenerates the serial shared secret (serial_shared_secret), writes it to UCI, and restarts the daemon.')]),
 				rotateBtn,
 				rotateOutput,
 				snippetSection

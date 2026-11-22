@@ -161,27 +161,23 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 # -----------------------------------------------------------------------------
 
 
-async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+async def test_filesystem_local_write_and_remove_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = svc
-    on_write: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_write
     on_remove: Callable[..., Awaitable[cloud_gateway_pb2.GenericResponse]] = service.file_remove
 
-    # Without serial
-    service.serial = None
-    assert (await on_write(1, mcu_wire_pb2.FileWrite(path="test.txt", data=b"data"))).status == "ok"
+    # Retired unary RPC must no longer exist in the protocol registry (ADR-0008).
+    assert "rpc.pb.FileSystemService/Write" not in protocol.BY_NAME
 
-    # Path traversal protection
+    # Local MPU write helper (OpenWrt UBUS IPC) works without serial and enforces path sandbox.
+    service.serial = None
+    assert (await service.file_write("test.txt", b"data")).status == "ok"
+
     service.serial = serial
     state.allow_non_tmp_paths = False
     service.config.file_system_root = "/tmp/fs"
     serial.send.return_value = True
-    assert (await on_write(1, mcu_wire_pb2.FileWrite(path="../../../etc/shadow", data=b"evil"))).status == "error"
-    fw_spec = protocol.BY_NAME["rpc.pb.FileSystemService/Write"]
-    serial.send_status.assert_awaited_with(Status.PERMISSION_DENIED, 1, fw_spec.service_id, fw_spec.method_id)
-
-    # Successful write
-    assert (await on_write(2, mcu_wire_pb2.FileWrite(path="valid.txt", data=b"content"))).status == "ok"
-    serial.send_status.assert_awaited_with(Status.OK, 2, fw_spec.service_id, fw_spec.method_id)
+    assert (await service.file_write("../../../etc/shadow", b"evil")).status == "error"
+    assert (await service.file_write("valid.txt", b"content")).status == "ok"
 
     # Remove nonexistent file
     service.serial = serial
@@ -342,13 +338,13 @@ def test_mailbox_push_roundtrip_property(mailbox_push: mcu_wire_pb2.MailboxPush)
     assert decoded.data == mailbox_push.data
 
 
-@given(file_write=st.from_type(mcu_wire_pb2.FileWrite))
-def test_file_write_roundtrip_property(file_write: mcu_wire_pb2.FileWrite) -> None:
-    """Property: FileWrite message preserves fields across protobuf serialization."""
-    encoded = file_write.SerializeToString()
-    decoded = mcu_wire_pb2.FileWrite.FromString(encoded)
-    assert decoded.path == file_write.path
-    assert decoded.data == file_write.data
+@given(file_upload=st.from_type(mcu_wire_pb2.FileUpload))
+def test_file_upload_roundtrip_property(file_upload: mcu_wire_pb2.FileUpload) -> None:
+    """Property: FileUpload message preserves fields across protobuf serialization."""
+    encoded = file_upload.SerializeToString()
+    decoded = mcu_wire_pb2.FileUpload.FromString(encoded)
+    assert decoded.path == file_upload.path
+    assert decoded.size == file_upload.size
 
 
 @given(
@@ -381,7 +377,3 @@ def test_cloud_queued_publish_roundtrip_property(pub: cloud_gateway_pb2.CloudQue
     decoded = cloud_gateway_pb2.CloudQueuedPublish.FromString(encoded)
     assert decoded.topic_name == pub.topic_name
     assert decoded.payload == pub.payload
-    assert decoded.qos == pub.qos
-    assert decoded.retain == pub.retain
-    assert decoded.correlation_data == pub.correlation_data
-    assert decoded.response_topic == pub.response_topic

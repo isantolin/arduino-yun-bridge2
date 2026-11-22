@@ -35,7 +35,6 @@ from ..protocol.protocol import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
     get_topic_for_message,
 )
-from ..protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from ..state.context import RuntimeState
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
@@ -551,11 +550,9 @@ class SerialHandshakeManager:
         snapshot.detail = detail or ""
         snapshot.fsm_state = self.fsm_state
 
-        message = create_queued_publish(
+        message = cloud_gateway_pb2.CloudQueuedPublish(
             topic_name=self.topic_resolver(self._state.cloud_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
-            content_type=PROTOBUF_CONTENT_TYPE,
-            user_properties=(("bridge-event", "handshake"),),
         )
         if not message.topic_name:
             self._logger.warning(

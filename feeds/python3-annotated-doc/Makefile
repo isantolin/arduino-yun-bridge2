@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-annotated-doc
-PKG_VERSION:=0.0.6
+PKG_VERSION:=0.0.7
 PKG_RELEASE:=1
 
 PYPI_NAME:=annotated_doc
-PKG_HASH:=7969bb69912085b2285849c0dcac0b4b374fd180c13cf10a87f284ffcf347bbf
+PKG_HASH:=0a30ef8f5322a4173720ae6712dc9a5e58f5a19868f3f167b4b5778db066c2b5
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=MIT

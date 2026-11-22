@@ -35,7 +35,7 @@ def test_rotate_credentials_script(
     assert mock_cursor.commit.called
     captured = capsys.readouterr()
     assert "SERIAL_SECRET=" in captured.out
-    assert "CLOUD_PASSWORD=" in captured.out
+    assert "CLOUD_PASSWORD=" not in captured.out
 
 
 def test_rotate_credentials_abort(runtime_config: Any, mocker: MockerFixture) -> None:
@@ -53,9 +53,8 @@ def test_rotate_credentials_updates_expected_uci_keys() -> None:
     mock_uci = MagicMock()
     mock_uci.Uci.return_value = mock_cursor
     script.uci = mock_uci
-    script.update_uci_credentials("serial-secret", "cloud-password")
-    assert mock_cursor.set.call_args_list[0].args == ("mcubridge", "general", "serial_shared_secret", "serial-secret")
-    assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "cloud_pass", "cloud-password")
+    script.update_uci_credentials("serial-secret")
+    mock_cursor.set.assert_called_once_with("mcubridge", "general", "serial_shared_secret", "serial-secret")
 
 
 def test_restart_service_ubus_success() -> None:

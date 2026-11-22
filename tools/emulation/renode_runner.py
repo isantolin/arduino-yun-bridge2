@@ -41,6 +41,10 @@ from tools.emulation.process_utils import (
     wait_for_path_ready,
     wait_for_tcp_ready,
 )
+from tools.emulation.stack_metrics import (
+    extract_latest_mcu_stack_watermark,
+    write_stack_watermark_report,
+)
 
 repo_root = Path(__file__).resolve().parents[2]
 DEFAULT_RENODE_PORT = 12345
@@ -181,6 +185,32 @@ def run_renode_emulation(
     finally:
         procs = [p for p in (daemon_proc, gateway_proc, socat_proc, renode_proc) if p is not None]
         terminate_process_tree(procs, timeout=5.0)
+        with state.lock:
+            log_lines = [line for _src, line in state.output_lines]
+        watermark = extract_latest_mcu_stack_watermark(log_lines)
+        if watermark is not None:
+            metrics_dir_str = os.environ.get("RENODE_METRICS_DIR")
+            metrics_dir = Path(metrics_dir_str) if metrics_dir_str else (log_dir or firmware_path.parent)
+            target_slug = firmware_path.parent.name or "arduino-samd-mkrwifi1010"
+            report_path = write_stack_watermark_report(
+                metrics_dir,
+                target_slug,
+                stack_used_bytes=int(watermark["stack_used_bytes"]),
+                stack_budget_bytes=int(watermark["stack_budget_bytes"]),
+                stack_margin_bytes=int(watermark["stack_margin_bytes"]),
+                extra={
+                    "arch": watermark["arch"],
+                    "measurement_source": "samd21_sram_stack_paint_0xa5",
+                },
+            )
+            logger.info(
+                "Renode SAMD21 runtime stack watermark recorded",
+                target=target_slug,
+                stack_used_bytes=watermark["stack_used_bytes"],
+                stack_budget_bytes=watermark["stack_budget_bytes"],
+                stack_margin_bytes=watermark["stack_margin_bytes"],
+                report=str(report_path),
+            )
         if log_dir is not None:
             log_file = log_dir / "renode_execution.log"
             try:

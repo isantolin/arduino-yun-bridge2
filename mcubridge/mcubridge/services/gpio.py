@@ -9,13 +9,11 @@ import structlog
 
 from ..protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from ..protocol.protocol import (
-    CLOUD_EXPIRY_PIN,
     DEFAULT_PIN_HYSTERESIS,
     DEFAULT_PIN_INTERVAL_MS,
     MIN_PIN_INTERVAL_MS,
     topic_path,
 )
-from ..protocol.structures import create_queued_publish
 
 from mcubridge.state.context import RuntimeState
 
@@ -31,9 +29,7 @@ class GpioRuntime(Protocol):
     @property
     def state(self) -> RuntimeState: ...
 
-    async def enqueue_cloud(
-        self, message: cloud_gateway_pb2.CloudQueuedPublish, *, reply_context: Any | None = None
-    ) -> None: ...
+    async def enqueue_cloud(self, message: cloud_gateway_pb2.CloudQueuedPublish) -> None: ...
 
 
 class GpioService:
@@ -130,9 +126,10 @@ class GpioService:
 
         # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
         await self._runtime.enqueue_cloud(
-            create_queued_publish(
-                topic_path(state.cloud_topic_prefix, "evt", "rpc.pb.GpioService", "PinUpdateEvent", str(event.pin)),
-                str(event.value).encode("utf-8"),
-                message_expiry_interval=CLOUD_EXPIRY_PIN,
+            cloud_gateway_pb2.CloudQueuedPublish(
+                topic_name=topic_path(
+                    state.cloud_topic_prefix, "evt", "rpc.pb.GpioService", "PinUpdateEvent", str(event.pin)
+                ),
+                payload=str(event.value).encode("utf-8"),
             )
         )

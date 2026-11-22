@@ -32,10 +32,10 @@ import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
-from pw_rpc import packets as pw_packets
+from pw_rpc import ids as pw_ids, packets as pw_packets
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod
+from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod, RpcIds
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_tokenizer import detokenize
 from pw_tokenizer.tokens import DatabaseFormatError
@@ -59,6 +59,10 @@ from mcubridge.state.context import RuntimeState
 logger = structlog.get_logger("mcubridge.serial")
 
 _LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
+# Upstream pw_transfer is not a project operation: its calls are opened by the
+# pw_transfer Manager on this client, so every client-side packet of the
+# service belongs to the Pigweed client (transfer_read / transfer_write).
+_PW_TRANSFER_SERVICE_ID: Final[int] = pw_ids.calculate("pw.transfer.Transfer")
 _LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
 # Console bytes travel on HDLC_ADDRESS_CONSOLE, not as pw_rpc packets to the MCU.
 _CONSOLE_WRITE_SPEC: Final = protocol.BY_NAME["rpc.pb.ConsoleService/Write"]
@@ -213,6 +217,17 @@ class SerialTransport:
                 except (OSError, ValueError, TypeError, DatabaseFormatError) as exc:
                     logger.warning("Failed to load Pigweed tokenizer database", path=str(path), error=str(exc))
         return detokenize.Detokenizer()
+
+    def decode_log_payload(self, frame_data: bytes) -> str:
+        """Detokenize a Pigweed log payload or preserve printable UTF-8 diagnostic text."""
+        detokenized_msg = self.detokenizer.detokenize(frame_data)
+        if detokenized_msg.ok():
+            return str(detokenized_msg)
+        try:
+            candidate = frame_data.decode("utf-8")
+            return candidate if candidate.isprintable() else str(detokenized_msg)
+        except UnicodeDecodeError:
+            return str(detokenized_msg)
 
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:
@@ -396,6 +411,12 @@ class SerialTransport:
         for frame in self.decoder.process(raw_bytes):
             if not frame.ok():
                 self.state.serial_decode_errors += 1
+                logger.debug(
+                    "Dropping corrupt HDLC frame",
+                    status=str(frame.status),
+                    length=len(frame.raw_decoded),
+                    decode_errors=self.state.serial_decode_errors,
+                )
                 await self.check_baudrate_fallback()
                 continue
             self.consecutive_crc_errors = 0
@@ -415,6 +436,39 @@ class SerialTransport:
                 else:
                     logger.error("Error in serial read loop", error=str(exc))
                 break
+
+    async def _route_to_pigweed_client(self, pkt: Any, spec: Any, frame_data: bytes) -> bool:
+        """Hand client-side packets of Linux-initiated calls to the Pigweed client.
+
+        Pigweed's native client owns responses and server streams for those
+        calls: call-ID correlation, payload decoding, stream events and status.
+        """
+        if pw_packets.for_server(pkt):
+            return False
+        if pkt.service_id == _PW_TRANSFER_SERVICE_ID:
+            status = self.rpc_client.process_packet(frame_data)
+            logger.debug(
+                "Routed MCU pw_transfer packet",
+                packet_type=pkt.type,
+                call_id=pkt.call_id,
+                length=len(pkt.payload),
+                status=str(status),
+            )
+            return True
+        rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
+        is_client_rpc = (
+            spec is not None
+            and spec.name not in _HANDSHAKE_RAW_NAMES
+            and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
+            and rpc_packet_key in self._active_rpc_packet_ids
+        )
+        if not is_client_rpc:
+            return False
+        if pkt.type != PacketType.SERVER_STREAM:
+            self._active_rpc_packet_ids.discard(rpc_packet_key)
+        self.rpc_client.process_packet(frame_data)
+        await self._drain_stream_events()
+        return True
 
     async def process_hdlc_frame(self, frame: Any) -> None:
         """Processes a validated HDLC frame received from the serial link. [SIL-2]"""
@@ -438,8 +492,7 @@ class SerialTransport:
                     return
 
         if frame.address == protocol.HDLC_ADDRESS_LOG:
-            decoded_log = str(self.detokenizer.detokenize(frame_data))
-            logger.info("MCU log", log=decoded_log, raw=frame_data)
+            logger.info("MCU log", log=self.decode_log_payload(frame_data), raw=frame_data)
             return
 
         if frame.address == protocol.HDLC_ADDRESS_CONSOLE:
@@ -468,20 +521,7 @@ class SerialTransport:
                     logger.error("Dropping unprotected pre-handshake RPC frame")
                     return
 
-            # Pigweed's native client owns responses and server streams for Linux-initiated RPCs,
-            # including call-ID correlation, payload decoding, stream events, and completion status.
-            rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
-            is_client_rpc = (
-                spec is not None
-                and spec.name not in _HANDSHAKE_RAW_NAMES
-                and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR, PacketType.SERVER_STREAM)
-                and rpc_packet_key in self._active_rpc_packet_ids
-            )
-            if not pw_packets.for_server(pkt) and is_client_rpc:
-                if pkt.type != PacketType.SERVER_STREAM:
-                    self._active_rpc_packet_ids.discard(rpc_packet_key)
-                self.rpc_client.process_packet(frame_data)
-                await self._drain_stream_events()
+            if await self._route_to_pigweed_client(pkt, spec, frame_data):
                 return
 
             # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
@@ -651,37 +691,69 @@ class SerialTransport:
 
         task.add_done_callback(_finish)
 
-    async def _write_rpc_packet(self, packet: bytes) -> bool:
-        """Apply link security and HDLC framing to a packet produced by pw_rpc.Client."""
+    async def _write_hdlc_frame(
+        self,
+        address: int,
+        payload: bytes,
+        *,
+        encrypt: bool,
+        allow_during_baud_negotiation: bool = False,
+        label: str = "",
+    ) -> bool:
+        """Apply flow-control gating, optional AEAD encryption, HDLC framing, and serial TX."""
         serial_port = self.serial
-        if not serial_port or not serial_port.is_open:
+        if not serial_port or not getattr(serial_port, "is_open", True):
             return False
-        if not self.state.serial_tx_allowed.is_set() and not self.state.connection_fsm.negotiating_baud.is_active:
+
+        if not self.state.serial_tx_allowed.is_set() and not (
+            allow_during_baud_negotiation and self.state.connection_fsm.negotiating_baud.is_active
+        ):
             try:
                 async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
             except TimeoutError:
-                logger.warning("Timed out waiting for serial TX flow control before RPC write")
+                logger.warning(
+                    "Timed out waiting for serial TX flow control, auto-resuming TX",
+                    timeout=FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
+                )
                 self.state.mcu_is_paused = False
                 self.state.serial_tx_allowed.set()
 
         async with self._serial_write_lock:
             cipher = self.state.link_cipher
-            if self.config.serial_shared_secret and cipher is None:
-                logger.error("Refusing Pigweed RPC output before link authentication")
+            if encrypt and self.config.serial_shared_secret and cipher is None:
+                logger.error("Refusing unprotected serial frame before link authentication", label=label)
                 return False
 
-            frame_payload = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet) if cipher is not None else packet
-            encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, frame_payload)
+            frame_payload = cipher.encrypt(address, payload) if encrypt and cipher is not None else payload
+            encoded = ui_frame(address, frame_payload)
+
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "[SERIAL -> MCU] [OP:%s] [HDLC]: [%s]",
+                    label,
+                    encoded.hex().upper(),
+                )
 
             try:
                 await asyncio.to_thread(_write_and_flush, serial_port, encoded)
             except (AttributeError, OSError, RuntimeError, ValueError) as exc:
-                logger.error("Pigweed RPC serial write failed", error=str(exc))
+                logger.error("Serial write failed", label=label, error=str(exc))
                 return False
+
         self.state.metrics.serial_bytes_sent.inc(len(encoded))
         self.state.metrics.serial_frames_sent.inc()
         return True
+
+    async def _write_rpc_packet(self, packet: bytes) -> bool:
+        """Apply link security and HDLC framing to a packet produced by pw_rpc.Client."""
+        return await self._write_hdlc_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            packet,
+            encrypt=True,
+            allow_during_baud_negotiation=True,
+            label="pw_rpc",
+        )
 
     def _decode_rpc_request(self, spec: Any, payload: bytes | ProtobufMessage) -> ProtobufMessage | None:
         if spec.request_type is None:
@@ -921,15 +993,11 @@ class SerialTransport:
 
     async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
         """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""
-        packet_type = PacketType.RESPONSE if status is Status.OK else PacketType.SERVER_ERROR
-        packet = protocol.encode_rpc_packet(
-            1,
-            service_id,
-            method_id,
-            call_id=call_id,
-            payload=b"",
-            packet_type=int(packet_type),
-            status=status.value,
+        rpc_ids = RpcIds(protocol.HDLC_ADDRESS_RPC, service_id, method_id, call_id)
+        packet = (
+            pw_packets.encode_response(rpc_ids, status=Status.OK)
+            if status.ok()
+            else pw_packets.encode_server_error(rpc_ids, status)
         )
         self._active_server_call_ids.pop((service_id, method_id), None)
         return await self._rpc_packet_writer(packet)
@@ -943,18 +1011,6 @@ class SerialTransport:
         """Low-level send logic without tracking."""
         if not self.serial:
             return False
-
-        if not self.state.serial_tx_allowed.is_set():
-            try:
-                async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
-                    await self.state.serial_tx_allowed.wait()
-            except TimeoutError:
-                logger.warning(
-                    "Timed out waiting for serial TX flow control, auto-resuming TX",
-                    timeout=FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
-                )
-                self.state.mcu_is_paused = False
-                self.state.serial_tx_allowed.set()
 
         spec = get_operation(command_id)
         if seq_id is None:
@@ -984,59 +1040,29 @@ class SerialTransport:
                 self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
                 seq_id = self.tx_sequence_id
 
-        async with self._serial_write_lock:
-            serial_port = self.serial
-            if not serial_port:
-                return False
-
-            cipher = self.state.link_cipher
-            target = spec if spec is not None else command_id
-            is_link_reset = spec is _LINK_RESET_SPEC
-            is_link_sync = spec is _LINK_SYNC_SPEC
-            is_console_write = spec is _CONSOLE_WRITE_SPEC
-
-            if is_console_write:
-                if isinstance(payload, bytes):
-                    data = payload
-                elif hasattr(payload, "data"):
-                    data = cast(bytes, getattr(payload, "data", b""))
-                else:
-                    data = b""
-                if self.config.serial_shared_secret and cipher is None:
-                    return False
-                if cipher is None:
-                    encoded = protocol.encode_hdlc_console(data)
-                else:
-                    envelope = cipher.encrypt(protocol.HDLC_ADDRESS_CONSOLE, data)
-                    encoded = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, envelope)
+        label = spec.name if spec is not None else str(command_id)
+        if spec is _CONSOLE_WRITE_SPEC:
+            if isinstance(payload, bytes):
+                data = payload
+            elif hasattr(payload, "data"):
+                data = cast(bytes, getattr(payload, "data", b""))
             else:
-                if self.config.serial_shared_secret:
-                    if cipher is None and not (is_link_reset or is_link_sync):
-                        return False
-                    if cipher is not None and is_link_sync:
-                        return False
-                if cipher is not None and not is_link_reset:
-                    packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
-                    envelope = cipher.encrypt(protocol.HDLC_ADDRESS_RPC, packet)
-                    encoded = ui_frame(protocol.HDLC_ADDRESS_RPC, envelope)
-                else:
-                    encoded = protocol.encode_hdlc_rpc(target, payload, call_id=seq_id or 1)
+                data = b""
+            return await self._write_hdlc_frame(protocol.HDLC_ADDRESS_CONSOLE, data, encrypt=True, label=label)
 
-            if logger.is_enabled_for(logging.DEBUG):
-                logger.debug(
-                    "[SERIAL -> MCU] [OP:%s] [HDLC]: [%s]",
-                    spec.name if spec is not None else command_id,
-                    encoded.hex().upper(),
-                )
+        is_link_reset = spec is _LINK_RESET_SPEC
+        is_link_sync = spec is _LINK_SYNC_SPEC
+        if self.config.serial_shared_secret and self.state.link_cipher is not None and is_link_sync:
+            return False
 
-            try:
-                await asyncio.to_thread(_write_and_flush, serial_port, encoded)
-                self.state.metrics.serial_bytes_sent.inc(len(encoded))
-                self.state.metrics.serial_frames_sent.inc()
-                return True
-            except (AttributeError, OSError, RuntimeError, ValueError) as exc:
-                logger.error("Serial write failed", error=str(exc))
-                return False
+        target = spec if spec is not None else command_id
+        packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
+        return await self._write_hdlc_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            packet,
+            encrypt=not (is_link_reset or is_link_sync),
+            label=label,
+        )
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)

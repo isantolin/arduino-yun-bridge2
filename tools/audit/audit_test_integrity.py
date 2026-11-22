@@ -10,14 +10,28 @@ checks are delegated to Semgrep (.semgrep.yml) and Ruff (B018, PT).
 from __future__ import annotations
 
 import ast
+from collections import Counter
+from collections.abc import Iterator, Sequence
+import io
 from pathlib import Path
 import re
 import sys
+import tokenize
 from typing import Annotated
 
 import typer
 
 ROOT = Path(__file__).resolve().parents[2]
+
+_DOTTED_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+_DYNAMIC_DISPATCH_PREFIXES = (
+    "__",
+    "ubus_handle_",
+    "on_mcu_",
+    "_on_mcu_",
+    "on_enter_",
+    "on_exit_",
+)
 
 IGNORED_IDENTIFIERS = {
     "min",
@@ -50,42 +64,12 @@ IGNORED_IDENTIFIERS = {
 }
 
 ALLOWLIST_PY_HELPERS = {
-    "emit_bridge_snapshot",
-    "hexdump_processor",
-    "coerce_path",
-    "coerce_commands",
-    "check_rate_limit",
-    "synchronize_attempt",
-    "fetch_capabilities",
-    "wait_for_link_sync_confirmation",
-    "flush_cloud_spool",
-    "record_cloud_drop",
-    "spool_cloud_message_locked",
-    "write_with_quota",
-    "reject_cloud",
-    "run_cloud",
-    "connect_cloud_session",
-    "send_cloud_event",
-    "register_methods",
-    "build_serial_pipeline_snapshot",
-    "write_status_file",
-    "resolve_serial_url",
-    "switch_local_baudrate",
-    "toggle_dtr",
-    "read_loop",
-    "feed_data",
-    "check_baudrate_fallback",
-    "is_healthy",
-    "request_mcu_version",
-    "normalize_config_dict",
-    "vacuum_lmdb_env",
-    "connect_and_run",
-    "supervise",
-    "detect_ubus_fd",
-    "pump_events",
-    "process_hdlc_frame",
-    "transfer_read",
-    "transfer_write",
+    # Documented public GatewayClient SDK methods (ADR-0007 / ADR-0008) not yet exercised
+    # by a standalone script under mcubridge-client-examples/examples/.
+    "push_file_to_device",
+    "fetch_file_from_device",
+    "read_mcu_eeprom",
+    "write_mcu_eeprom",
 }
 
 
@@ -173,50 +157,144 @@ def audit_python_tests() -> list[str]:
     return findings
 
 
-def audit_test_only_hooks() -> list[str]:
-    """Scan production code for methods and functions called exclusively from tests (Rule 5 violation)."""
+def _iter_python_files(dirs: Sequence[Path]) -> list[Path]:
+    """Collect sorted non-generated Python files under the given directories."""
+    files: list[Path] = []
+    for directory in dirs:
+        if not directory.exists():
+            continue
+        files.extend(
+            path
+            for path in sorted(directory.rglob("*.py"))
+            if not path.name.endswith(("_pb2.py", "_grpc.py", "_pb2.pyi"))
+        )
+    return files
+
+
+def _collect_docstring_nodes(tree: ast.AST) -> set[ast.AST]:
+    """Collect AST Constant nodes that serve as module, class, or function docstrings."""
+    docstrings: set[ast.AST] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        ):
+            docstrings.add(node.body[0].value)
+    return docstrings
+
+
+def _count_code_identifiers(
+    content: str,
+    *,
+    tree: ast.AST | None = None,
+    include_dispatch_strings: bool = False,
+) -> Counter[str]:
+    """Count Python identifier tokens (excluding comments/docstrings) and optional dispatch strings."""
+    counts: Counter[str] = Counter(
+        tok.string for tok in tokenize.generate_tokens(io.StringIO(content).readline) if tok.type == tokenize.NAME
+    )
+    if include_dispatch_strings:
+        parsed_tree = tree if tree is not None else ast.parse(content)
+        docstrings = _collect_docstring_nodes(parsed_tree)
+        for node in ast.walk(parsed_tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node not in docstrings
+                and _DOTTED_IDENTIFIER_RE.fullmatch(node.value)
+            ):
+                counts.update(node.value.split("."))
+    return counts
+
+
+def _iter_module_and_class_defs(
+    body: Sequence[ast.stmt],
+) -> Iterator[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]:
+    """Yield module-level and class-level functions, methods, and classes."""
+    for stmt in body:
+        if isinstance(stmt, ast.ClassDef):
+            yield stmt
+            yield from _iter_module_and_class_defs(stmt.body)
+        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield stmt
+
+
+def audit_test_only_hooks(root: Path | None = None) -> list[str]:
+    """Scan production code for classes, methods, and functions called exclusively from tests (Rule 5)."""
     findings: list[str] = []
     print("Auditing test-only hooks and dead backdoors (Rule 5)...")
+    target_root = root or ROOT
 
-    # 1. Python Analysis
-    py_prod_files = [
-        f
-        for f in (ROOT / "mcubridge" / "mcubridge").rglob("*.py")
-        if not f.name.endswith(("_pb2.py", "_grpc.py", "_pb2.pyi"))
-    ]
-    py_test_files = list((ROOT / "mcubridge" / "tests").rglob("*.py"))
+    py_prod_def_files = _iter_python_files(
+        (
+            target_root / "mcubridge" / "mcubridge",
+            target_root / "mcubridge-client-examples" / "mcubridge_client",
+        )
+    )
+    py_prod_consumer_files = _iter_python_files(
+        (
+            target_root / "mcubridge-client-examples" / "examples",
+            target_root / "mcubridge" / "scripts",
+        )
+    )
+    py_test_files = _iter_python_files(
+        (
+            target_root / "mcubridge" / "tests",
+            target_root / "mcubridge-client-examples" / "tests",
+        )
+    )
 
-    py_prod_text = "\n".join(f.read_text(encoding="utf-8") for f in py_prod_files)
-    py_test_text = "\n".join(f.read_text(encoding="utf-8") for f in py_test_files)
-
-    for pfile in py_prod_files:
+    parsed_prod_defs: list[tuple[Path, ast.Module, Counter[str]]] = []
+    total_prod_counts: Counter[str] = Counter()
+    for pfile in py_prod_def_files:
         try:
-            file_content = pfile.read_text(encoding="utf-8")
-            tree = ast.parse(file_content, filename=str(pfile))
-        except (SyntaxError, UnicodeDecodeError):
+            content = pfile.read_text(encoding="utf-8")
+            tree = ast.parse(content, filename=str(pfile))
+            file_counts = _count_code_identifiers(content, tree=tree, include_dispatch_strings=True)
+        except (OSError, SyntaxError, UnicodeDecodeError, tokenize.TokenError):
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                name = node.name
-                if (
-                    name.startswith(("__", "ubus_handle_", "on_mcu_", "handle_", "_on_mcu_", "on_enter_", "on_exit_"))
-                    or name[0].isupper()
-                    or name in IGNORED_IDENTIFIERS
-                    or len(name) < 4
-                    or name in ALLOWLIST_PY_HELPERS
-                ):
-                    continue
+        parsed_prod_defs.append((pfile, tree, file_counts))
+        total_prod_counts += file_counts
 
-                pattern = rf"\b{re.escape(name)}\b"
-                prod_count = len(re.findall(pattern, py_prod_text))
-                file_count = len(re.findall(pattern, file_content))
-                test_count = len(re.findall(pattern, py_test_text))
+    for cfile in py_prod_consumer_files:
+        try:
+            content = cfile.read_text(encoding="utf-8")
+            total_prod_counts += _count_code_identifiers(content, include_dispatch_strings=True)
+        except (OSError, SyntaxError, UnicodeDecodeError, tokenize.TokenError):
+            continue
 
-                if prod_count == file_count and file_count == 1 and test_count > 0:
-                    findings.append(
-                        f"[{pfile.relative_to(ROOT)}:{node.lineno}] Rule 5 Violation: "
-                        f"Production function/method '{name}' is only invoked from test suites."
-                    )
+    total_test_counts: Counter[str] = Counter()
+    for tfile in py_test_files:
+        try:
+            content = tfile.read_text(encoding="utf-8")
+            total_test_counts += _count_code_identifiers(content, include_dispatch_strings=False)
+        except (OSError, SyntaxError, UnicodeDecodeError, tokenize.TokenError):
+            continue
+
+    for pfile, tree, file_counts in parsed_prod_defs:
+        for node in _iter_module_and_class_defs(tree.body):
+            name = node.name
+            if (
+                name.startswith(_DYNAMIC_DISPATCH_PREFIXES)
+                or name in IGNORED_IDENTIFIERS
+                or len(name) < 4
+                or name in ALLOWLIST_PY_HELPERS
+            ):
+                continue
+
+            prod_count = total_prod_counts[name]
+            file_count = file_counts[name]
+            test_count = total_test_counts[name]
+
+            if prod_count == file_count == 1 and test_count > 0:
+                kind = "class" if isinstance(node, ast.ClassDef) else "function/method"
+                findings.append(
+                    f"[{pfile.relative_to(target_root)}:{node.lineno}] Rule 5 Violation: "
+                    f"Production {kind} '{name}' is only invoked from test suites."
+                )
 
     return findings
 

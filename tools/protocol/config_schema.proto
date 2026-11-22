@@ -35,12 +35,6 @@ option (rpc.pb.architectures) = {
   display_name: "Raspberry Pi RP2040"
 };
 option (rpc.pb.cloud_defaults) = {default_topic_prefix: "br"};
-option (rpc.pb.cloud_suffixes) = {
-  incoming_available: "incoming_available"
-  outgoing_available: "outgoing_available"
-  response: "response"
-  error: "error"
-};
 option (rpc.pb.constants) = {
   aead_nonce_size: 12
   aead_tag_size: 16
@@ -65,15 +59,15 @@ option (rpc.pb.constants) = {
   hdlc_address_console: 3
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
-  cloud_expiry_pin: 5
-  cloud_expiry_console: 5
-  cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
   sync_timeout_ms: 30000
   max_datastore_value_size: 255
   default_pin_interval_ms: 50
   min_pin_interval_ms: 10
+  eeprom_transfer_resource_id: 0x4D454741
+  eeprom_resource_max_bytes: 4080
+  file_upload_resource_id: 0x55504C44
   default_pin_hysteresis: 1
   default_clock_sync_interval_seconds: 30
   default_clock_sync_timeout_ms: 1000
@@ -83,7 +77,6 @@ option (rpc.pb.constants) = {
   serial_baudrate_negotiation_timeout: 2
   serial_handshake_backoff_base: 1
   serial_handshake_backoff_max: 60
-  bridge_snapshot_expiry_seconds: 30
   watchdog_min_interval: 0.5
   supervisor_default_min_backoff: 1
   supervisor_default_max_backoff: 30
@@ -198,25 +191,8 @@ option (rpc.pb.hardware) = {
   max_mailbox_queue_size_avr: 4
 };
 option (rpc.pb.status_reasons) = {
-  invalid_path: "invalid_path"
-  read_failed: "read_failed"
-  remove_failed: "remove_failed"
-  write_failed: "write_failed"
-  mailbox_incoming_overflow: "mailbox_incoming_overflow"
-  mailbox_outgoing_overflow: "mailbox_outgoing_overflow"
-  process_limit_reached: "process_limit_reached"
-  command_validation_failed: "command_validation_failed"
-  process_run_async_failed: "process_run_async_failed"
-  process_run_internal_error: "process_run_internal_error"
-  process_kill_malformed: "process_kill_malformed"
-  process_not_found: "process_not_found"
-  process_kill_failed: "process_kill_failed"
-  datastore_put_failed: "datastore_put_failed"
-  mailbox_push_failed: "mailbox_push_failed"
-  mailbox_processed_failed: "mailbox_processed_failed"
   sync_auth_mismatch: "sync_auth_mismatch"
   sync_length_mismatch: "sync_length_mismatch"
-  pending_pin_overflow: "pending-pin-overflow"
 };
 option (rpc.pb.ubus_methods) = {
   name: "status"
@@ -380,8 +356,6 @@ option (rpc.pb.ubus_methods) = {
 };
 
 message Constants {
-  reserved 14 to 20, 24, 26 to 31, 33 to 34, 39 to 53, 67 to 68, 73;
-  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max", "crc_covered_header_size", "crc32_mask", "nonce_counter_mask", "default_ipc_timeout_seconds";
   // ChaCha20-Poly1305 protects all HDLC channels after an authenticated handshake.
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
@@ -498,15 +472,6 @@ message Constants {
     (py_name) = "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES",
     (py_type) = "int"
   ];
-  uint32 cloud_expiry_pin = 57 [
-    (py_name) = "CLOUD_EXPIRY_PIN",
-    (py_type) = "int"
-  ];
-  reserved 58;
-  uint32 cloud_expiry_datastore = 59 [
-    (py_name) = "CLOUD_EXPIRY_DATASTORE",
-    (py_type) = "int"
-  ];
   uint32 default_process_max_output_bytes = 62 [
     (py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES",
     (py_type) = "int"
@@ -582,10 +547,6 @@ message Constants {
     (py_name) = "SERIAL_HANDSHAKE_BACKOFF_MAX",
     (py_type) = "float"
   ];
-  uint32 bridge_snapshot_expiry_seconds = 80 [
-    (py_name) = "BRIDGE_SNAPSHOT_EXPIRY_SECONDS",
-    (py_type) = "int"
-  ];
   double watchdog_min_interval = 81 [
     (py_name) = "WATCHDOG_MIN_INTERVAL",
     (py_type) = "float"
@@ -637,14 +598,34 @@ message Constants {
     (py_name) = "AEAD_COUNTER_SIZE",
     (py_type) = "int"
   ];
-  uint32 cloud_expiry_console = 91 [
-    (py_name) = "CLOUD_EXPIRY_CONSOLE",
-    (py_type) = "int"
-  ];
   uint32 min_pin_interval_ms = 92 [
     (cpp_name) = "MIN_PIN_INTERVAL_MS",
     (cpp_type) = "uint32_t",
     (py_name) = "MIN_PIN_INTERVAL_MS",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  // ADR-0007: AVR EEPROM pw_transfer resource reachable from the cloud.
+  uint32 eeprom_transfer_resource_id = 93 [
+    (cpp_name) = "RPC_EEPROM_TRANSFER_RESOURCE_ID",
+    (cpp_type) = "uint32_t",
+    (py_name) = "EEPROM_TRANSFER_RESOURCE_ID",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  // ATmega2560 EEPROM (4096 B) minus the ADR-0005 boot-epoch reservation.
+  uint32 eeprom_resource_max_bytes = 94 [
+    (cpp_name) = "RPC_EEPROM_RESOURCE_MAX_BYTES",
+    (cpp_type) = "size_t",
+    (py_name) = "EEPROM_RESOURCE_MAX_BYTES",
+    (py_type) = "int",
+    (client_constant) = true
+  ];
+  // ADR-0007 (E6): read-only MCU resource ("UPLD") for MCU -> Linux uploads.
+  uint32 file_upload_resource_id = 95 [
+    (cpp_name) = "RPC_FILE_UPLOAD_RESOURCE_ID",
+    (cpp_type) = "uint32_t",
+    (py_name) = "FILE_UPLOAD_RESOURCE_ID",
     (py_type) = "int",
     (client_constant) = true
   ];
@@ -685,8 +666,6 @@ message Hardware {
   uint32 flow_control_xon_threshold_avr = 24;
   uint32 hkdf_key_length = 25;
   uint32 key_and_digest_buffer_size = 26;
-  reserved 3, 22, 27 to 31;
-  reserved "rx_history_size", "rx_dedupe_interval_ms", "avr_digital_pins", "avr_analog_pins", "samd_digital_pins", "samd_analog_pins", "fallback_max_pin";
   uint32 fallback_free_memory = 32;
   uint32 capabilities_feat_extended = 33;
   uint32 serial_timeout_ms = 34 [
@@ -827,39 +806,13 @@ message Handshake {
   ];
 }
 
-message CloudSuffixes {
-  string incoming_available = 1;
-  string outgoing_available = 2;
-  string response = 3;
-  string error = 4;
-}
-
 message CloudDefaults {
   string default_topic_prefix = 1;
 }
 
 message StatusReasons {
-  string invalid_path = 1;
-  string read_failed = 2;
-  string remove_failed = 3;
-  string write_failed = 4;
-  string mailbox_incoming_overflow = 5;
-  string mailbox_outgoing_overflow = 6;
-  string process_limit_reached = 7;
-  string command_validation_failed = 8;
-  string process_run_async_failed = 9;
-  string process_run_internal_error = 10;
-  string process_kill_malformed = 11;
-  string process_not_found = 12;
-  string process_kill_failed = 13;
-  string datastore_put_failed = 14;
-  string mailbox_push_failed = 15;
-  string mailbox_processed_failed = 16;
   string sync_auth_mismatch = 17;
   string sync_length_mismatch = 18;
-  reserved 22, 23;
-  reserved "unsupported_digital_read", "unsupported_analog_read";
-  string pending_pin_overflow = 21;
 }
 
 message ArchConfig {
@@ -901,8 +854,6 @@ extend google.protobuf.EnumOptions {
 }
 
 message StatusOptions {
-  reserved 2;
-  reserved "mcu_handler";
   string description = 1;
 }
 
@@ -951,10 +902,8 @@ extend google.protobuf.FileOptions {
   Constants constants = 1001;
   Hardware hardware = 1002;
   Handshake handshake = 1003;
-  CloudSuffixes cloud_suffixes = 1005;
   CloudDefaults cloud_defaults = 1006;
   StatusReasons status_reasons = 1007;
-  // 1009, 1010: reserved for legacy topics and actions
   repeated ArchConfig architectures = 1011;
   repeated CapConfig capabilities = 1012;
   repeated UbusMethodConfig ubus_methods = 1035;
@@ -1080,14 +1029,6 @@ message RuntimeConfig {
     (config_max) = 65535,
     (config_desc) = "Cloud Gateway port",
     (uci_option) = "cloud_port"
-  ];
-  optional string cloud_user = 6 [
-    (config_desc) = "Cloud authentication username",
-    (uci_option) = "cloud_user"
-  ];
-  optional string cloud_pass = 7 [
-    (config_desc) = "Cloud authentication password",
-    (uci_option) = "cloud_pass"
   ];
   bool cloud_tls = 8 [
     (config_default) = "true",
@@ -1253,23 +1194,6 @@ message RuntimeConfig {
   ];
   AllowedCommandPolicy allowed_policy = 46;
   TopicAuthorization topic_authorization = 47;
-  bool cloud_http3_enabled = 48 [
-    (config_default) = "false",
-    (config_desc) = "Enable HTTP/3 QUIC cloud transport",
-    (uci_option) = "cloud_http3_enabled"
-  ];
-  uint32 cloud_http3_port = 49 [
-    (config_default_ref) = "constants.default_cloud_port",
-    (config_min) = 0,
-    (config_max) = 65535,
-    (config_desc) = "HTTP/3 UDP port",
-    (uci_option) = "cloud_http3_port"
-  ];
-  string cloud_http3_congestion_control = 50 [
-    (config_default) = "bbr",
-    (config_desc) = "QUIC congestion control algorithm",
-    (uci_option) = "cloud_http3_congestion_control"
-  ];
   uint32 respawn_threshold = 51 [
     (config_default) = "3600",
     (config_desc) = "Procd service respawn timeout threshold in seconds",

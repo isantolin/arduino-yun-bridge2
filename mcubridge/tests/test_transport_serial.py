@@ -535,8 +535,6 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
         serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
         cloud_host="localhost",
         cloud_port=1883,
-        cloud_user=None,
-        cloud_pass=None,
         cloud_tls=False,
         cloud_cafile=None,
         cloud_certfile=None,
@@ -698,10 +696,9 @@ async def test_serial_transport_process_hdlc_log_frame(
 # Pigweed RPC response mapping and dispatch (regressions for PR #58)
 # ---------------------------------------------------------------------------
 
-_PKT_REQUEST = 0
-_PKT_RESPONSE = 1
-_PKT_SERVER_ERROR = 5
-_PW_STATUS_INTERNAL = 13
+_PKT_REQUEST = int(PacketType.REQUEST)
+_PKT_RESPONSE = int(PacketType.RESPONSE)
+_PKT_SERVER_ERROR = int(PacketType.SERVER_ERROR)
 
 
 def _rpc_frame(
@@ -710,7 +707,7 @@ def _rpc_frame(
     packet_type: int,
     call_id: int,
     payload: bytes | Any = b"",
-    status: int = 0,
+    status: Status = Status.OK,
     cipher: LinkCipher | None = None,
 ) -> bytes:
     spec = protocol.get_operation(command)
@@ -718,12 +715,11 @@ def _rpc_frame(
     assert spec.service_id is not None
     assert spec.method_id is not None
     packet = protocol.encode_rpc_packet(
-        1,
-        spec.service_id,
-        spec.method_id,
-        call_id,
-        payload=payload,
-        packet_type=cast(Any, packet_type),
+        (spec.service_id, spec.method_id),
+        payload,
+        call_id=call_id,
+        channel_id=1,
+        packet_type=packet_type,
         status=status,
     )
     if cipher is not None:
@@ -794,7 +790,7 @@ async def test_error_status_response_maps_to_status_error() -> None:
                 packet_type=_PKT_RESPONSE,
                 call_id=3,
                 payload=pb.VersionResponse(major=1),
-                status=_PW_STATUS_INTERNAL,
+                status=Status.INTERNAL,
                 cipher=mcu_cipher,
             )
         )
@@ -1408,13 +1404,15 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     assert ds_get_spec is not None
     assert ds_get_spec.service_id is not None
     assert ds_get_spec.method_id is not None
-    mcu_req_frame = protocol.encode_hdlc_rpc(
-        1,
-        ds_get_spec.service_id,
-        ds_get_spec.method_id,
-        call_id=77,
-        payload=pb.DatastoreGet(key="k"),
-        packet_type=int(PacketType.REQUEST),
+    mcu_req_frame = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        protocol.encode_rpc_packet(
+            (ds_get_spec.service_id, ds_get_spec.method_id),
+            pb.DatastoreGet(key="k"),
+            call_id=77,
+            channel_id=1,
+            packet_type=int(PacketType.REQUEST),
+        ),
     )
     await transport.feed_data(mcu_req_frame)
     assert await transport.send("rpc.pb.DataStoreService/Get", pb.DatastoreGetResponse(value=b"val"))
@@ -1427,3 +1425,35 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     assert (ds_get_spec.service_id, ds_get_spec.method_id) not in active_calls
 
     await transport.reset()
+
+
+async def test_pw_transfer_packets_from_mcu_reach_the_pigweed_client(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    """Regression: MCU pw_transfer chunks must reach the Manager's rpc client.
+
+    pw.transfer.Transfer is not a project operation, so its server-stream
+    packets were routed to the service dispatcher and dropped; every daemon
+    transfer to the MCU (EEPROM write, ADR-0007) timed out.
+    """
+    from pw_rpc import ids as pw_ids
+
+    runtime_config.serial_shared_secret = b""
+    service = AsyncMock(spec=BridgeService)
+    transport = SerialTransport(runtime_config, runtime_state, service=service)
+    process_packet = MagicMock()
+    transport.rpc_client = cast(Any, MagicMock(process_packet=process_packet))
+    chunk = RpcPacket(
+        type=PacketType.SERVER_STREAM,
+        channel_id=1,
+        service_id=pw_ids.calculate("pw.transfer.Transfer"),
+        method_id=pw_ids.calculate("Write"),
+        call_id=8,
+        payload=b"\x08\x01",
+    ).SerializeToString()
+    frame = MagicMock(data=chunk, address=protocol.HDLC_ADDRESS_RPC, raw_encoded=chunk)
+
+    await transport.process_hdlc_frame(frame)
+
+    process_packet.assert_called_once_with(chunk)
+    service.handle_mcu_frame.assert_not_awaited()

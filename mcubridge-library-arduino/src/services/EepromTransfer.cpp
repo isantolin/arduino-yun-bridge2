@@ -1,6 +1,6 @@
 #include "services/EepromTransfer.h"
 
-#if BRIDGE_ENABLE_PW_TRANSFER
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 
 #include <EEPROM.h>
 #include <pw_stream/stream.h>
@@ -10,6 +10,8 @@
 
 namespace bridge::services {
 namespace {
+
+constexpr size_t kEepromWriteWindowBytes = 1U;
 
 class EepromStream final : public pw::stream::SeekableReaderWriter {
  public:
@@ -25,10 +27,13 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
     const size_t remaining = position_ < capacity ? capacity - position_ : 0U;
     if (type == LimitType::kRead) return remaining;
 
-    // EEPROM.update() may wait for the AVR EEPROM controller. Advertise a
-    // one-byte receive window so pw_transfer applies backpressure while the
-    // MCU completes each physical EEPROM write.
-    return remaining == 0U ? 0U : 1U;
+    // EEPROM.update() waits about 3.3 ms per changed byte on the AVR EEPROM
+    // controller. Keep the advertised write window at one byte so the UART
+    // receive path can be serviced between EEPROM programming operations.
+    // Larger windows can block the cooperative transfer poll long enough to
+    // overrun the serial receive buffer; throughput is measured by Fleet Mesh.
+    return remaining < kEepromWriteWindowBytes ? remaining
+                                               : kEepromWriteWindowBytes;
   }
 
   pw::StatusWithSize DoRead(pw::ByteSpan destination) override {
@@ -89,10 +94,54 @@ class EepromStream final : public pw::stream::SeekableReaderWriter {
   size_t position_{0};
 };
 
+bool g_eeprom_handler_destroyed = false;
+
 class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
  public:
   EepromTransferHandler()
       : pw::transfer::ReadWriteHandler(kEepromTransferResourceId) {}
+
+  ~EepromTransferHandler() override {
+    detach();
+    g_eeprom_handler_destroyed = true;
+  }
+
+  bool attach(pw::transfer::TransferService& service,
+              pw::transfer::TransferThread& thread) {
+    if (service_ == &service) {
+      return true;
+    }
+    detach();
+    drain(thread);
+    if (!service.RegisterHandler(*this)) {
+      return false;
+    }
+    drain(thread);
+    service_ = &service;
+    thread_ = &thread;
+    return true;
+  }
+
+  void detach() {
+    if (service_ == nullptr) {
+      return;
+    }
+    pw::transfer::TransferService* const service = service_;
+    pw::transfer::TransferThread* const thread = thread_;
+    service_ = nullptr;
+    thread_ = nullptr;
+    drain(*thread);
+    (void)service->UnregisterHandler(*this);
+    drain(*thread);
+  }
+
+  bool detachFrom(const pw::transfer::TransferService& service) {
+    if (service_ != &service) {
+      return false;
+    }
+    detach();
+    return true;
+  }
 
   pw::Status PrepareRead() override {
     stream_.Reset();
@@ -129,12 +178,22 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
   size_t ResourceSize() const override { return kEepromTransferResourceSize; }
 
  private:
+  static void drain(pw::transfer::TransferThread& thread) {
+#if defined(PW_TRANSFER_COOPERATIVE)
+    (void)thread.Poll(PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY);
+#else
+    (void)thread;
+#endif
+  }
+
   pw::Status CapacityStatus() const {
     return EEPROM.length() == static_cast<int>(kEepromPhysicalSize)
                ? pw::OkStatus()
                : pw::Status::FailedPrecondition();
   }
 
+  pw::transfer::TransferService* service_ = nullptr;
+  pw::transfer::TransferThread* thread_ = nullptr;
   EepromStream stream_;
 };
 
@@ -142,10 +201,17 @@ EepromTransferHandler g_eeprom_transfer_handler;
 
 }  // namespace
 
-bool registerEepromTransferHandler(pw::transfer::TransferService& service) {
-  return service.RegisterHandler(g_eeprom_transfer_handler);
+bool registerEepromTransferHandler(pw::transfer::TransferService& service,
+                                   pw::transfer::TransferThread& thread) {
+  return g_eeprom_transfer_handler.attach(service, thread);
+}
+
+void unregisterEepromTransferHandler(
+    const pw::transfer::TransferService& service) {
+  if (g_eeprom_handler_destroyed) return;
+  (void)g_eeprom_transfer_handler.detachFrom(service);
 }
 
 }  // namespace bridge::services
 
-#endif  // BRIDGE_ENABLE_PW_TRANSFER
+#endif  // AVR EEPROM hardware resource

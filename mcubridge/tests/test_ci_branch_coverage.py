@@ -60,7 +60,7 @@ async def test_on_serial_connected_rejects_unsynchronized_link(
 async def test_file_write_unsafe_path_returns_error(
     mock_bridge_service: BridgeService,
 ) -> None:
-    response = await mock_bridge_service.file_write(pb.FileWrite(path="../../../etc/passwd", data=b"secret"))
+    response = await mock_bridge_service.file_write("../../../etc/passwd", b"secret")
     assert response.status == "error"
 
 
@@ -261,25 +261,31 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     runtime_state.serial_tx_allowed.set()
 
     # 1. Pre-handshake (link_cipher is None): non-RPC frame is dropped without incrementing decode errors
-    console_frame = next(iter(FrameDecoder().process(protocol.encode_hdlc_console(b"early"))))
+    console_frame = next(iter(FrameDecoder().process(ui_frame(protocol.HDLC_ADDRESS_CONSOLE, b"early"))))
     await transport.process_hdlc_frame(console_frame)
     assert runtime_state.serial_decode_errors == 0
 
     # 2. Pre-handshake: non-LinkSync RPC frame is rejected and increments decode errors
-    ver_raw = protocol.encode_hdlc_rpc("rpc.pb.SystemService/GetVersion", b"", call_id=1)
+    ver_raw = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        protocol.encode_rpc_packet("rpc.pb.SystemService/GetVersion", b"", call_id=1),
+    )
     ver_frame = next(iter(FrameDecoder().process(ver_raw)))
     await transport.process_hdlc_frame(ver_frame)
     assert runtime_state.serial_decode_errors == 1
 
     # 3. Pre-handshake: LinkSync response frame is accepted
-    sync_resp_raw = protocol.encode_hdlc_rpc(
-        "rpc.pb.SystemService/LinkSync",
-        pb.LinkSync(
-            nonce=b"\x01" * protocol.HANDSHAKE_NONCE_LENGTH,
-            tag=b"\x02" * protocol.HANDSHAKE_TAG_LENGTH,
+    sync_resp_raw = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        protocol.encode_rpc_packet(
+            "rpc.pb.SystemService/LinkSync",
+            pb.LinkSync(
+                nonce=b"\x01" * protocol.HANDSHAKE_NONCE_LENGTH,
+                tag=b"\x02" * protocol.HANDSHAKE_TAG_LENGTH,
+            ),
+            call_id=2,
+            packet_type=int(PacketType.RESPONSE),
         ),
-        call_id=2,
-        packet_type=1,
     )
     sync_resp_frame = next(iter(FrameDecoder().process(sync_resp_raw)))
     await transport.process_hdlc_frame(sync_resp_frame)

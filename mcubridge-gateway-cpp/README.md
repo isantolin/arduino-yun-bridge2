@@ -36,32 +36,108 @@ upstream pw_rpc::Server with bounded handlers:
   4,080 bytes, the size of the MCU resource; ADR-0007).
 No arbitrary host paths are exposed.
 
-## Build
+## Build and Install
 
-Pigweed source is the recursively initialized submodule already pinned by
-third_party/avr_pigweed_port; it is not downloaded at an independent revision.
+Pigweed source is the recursively initialized submodule pinned at
+`third_party/pigweed`; it is not downloaded at an independent revision.
 
 On Debian/Ubuntu host:
 
-    sudo apt-get install -y build-essential cmake ninja-build libssl-dev protobuf-compiler python3
-    cmake -S mcubridge-gateway-cpp -B build/mcubridge-gateway -G Ninja
+    sudo apt-get install -y build-essential cmake ninja-build libssl-dev protobuf-compiler python3 python3-venv
+    python3 -m venv .venv-gateway
+    . .venv-gateway/bin/activate
+    pip install "pigweed==0.0.24" "protobuf==5.28.3"
+    cmake -S mcubridge-gateway-cpp -B build/mcubridge-gateway -G Ninja -DCMAKE_BUILD_TYPE=Release
     cmake --build build/mcubridge-gateway
+    sudo cmake --install build/mcubridge-gateway --prefix /usr/local
+
+`cmake --install` installs:
+- `<prefix>/bin/mcubridge-gateway-cpp`
+- `<prefix>/share/mcubridge-gateway/mcubridge-gateway.service`
+- `<prefix>/share/mcubridge-gateway/mcubridge-gateway.env.example`
 
 The project explicitly selects POSIX/STL Pigweed backends. It does not reuse
 the AVR CMake toolchain or the AVR cooperative transfer-thread backend.
 
 ## Run
 
-    ./build/mcubridge-gateway/mcubridge-gateway-cpp \
-      --cert /etc/mcubridge/gateway.crt \
-      --key /etc/mcubridge/gateway.key \
-      --client-ca /etc/mcubridge/clients-ca.crt \
-      --acl /etc/mcubridge/gateway.acl \
+    mcubridge-gateway-cpp --help
+    mcubridge-gateway-cpp \
+      --cert /etc/mcubridge-gateway/gateway.crt \
+      --key /etc/mcubridge-gateway/gateway.key \
+      --client-ca /etc/mcubridge-gateway/clients-ca.crt \
+      --acl /etc/mcubridge-gateway/gateway.acl \
       --staging-dir /var/lib/mcubridge-gateway \
-      --bind 0.0.0.0 --port 8443
+      --bind * --port 8443
 
 The process rejects clients without a trusted certificate and the required URI
 SAN. There is no insecure mode or metadata identity fallback.
+
+## Production Deployment
+
+### Hardened OCI / Docker Container (`Dockerfile`)
+
+Build from the **repository root** (required because CMake compiles pinned
+sources from `third_party/pigweed` and schemas from `tools/protocol`;
+`mcubridge-gateway-cpp/Dockerfile.dockerignore` scopes the BuildKit context
+without affecting `build-apk.yml`'s `Dockerfile.apk-feed`):
+
+    docker build -f mcubridge-gateway-cpp/Dockerfile -t mcubridge-gateway:latest .
+
+The multi-stage `debian:bookworm-slim` image compiles the Release binary in the
+`builder` stage and copies only the stripped executable onto a minimal `libssl3`
+runtime image running as unprivileged user `mcubridge:mcubridge` (UID/GID
+`10001`), exposing `8443/tcp`, handling `SIGTERM`, and verifying the listening
+socket via `/proc/net/tcp{,6}` in `HEALTHCHECK`.
+
+Run with read-only credentials/ACL and a private `0700` staging directory owned
+by UID/GID `10001`:
+
+    docker run -d --name mcubridge-gateway \
+      --read-only \
+      --cap-drop=ALL \
+      --security-opt=no-new-privileges:true \
+      --tmpfs /tmp:noexec,nosuid,size=16m \
+      -p 8443:8443 \
+      -v /etc/mcubridge-gateway:/etc/mcubridge-gateway:ro \
+      -v /var/lib/mcubridge-gateway:/var/lib/mcubridge-gateway:rw \
+      mcubridge-gateway:latest
+
+### Hardened Linux `systemd` Service
+
+Install the service account, configuration, TLS material, and sandboxed unit:
+
+    sudo useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin mcubridge
+    sudo install -d -o root -g mcubridge -m 0750 /etc/mcubridge-gateway
+    sudo install -o root -g mcubridge -m 0640 \
+      /usr/local/share/mcubridge-gateway/mcubridge-gateway.env.example \
+      /etc/mcubridge-gateway/env
+    sudo install -o root -g root -m 0644 \
+      /usr/local/share/mcubridge-gateway/mcubridge-gateway.service \
+      /etc/systemd/system/mcubridge-gateway.service
+    # Place gateway.crt (0644), gateway.key (0640 root:mcubridge or 0600 mcubridge),
+    # clients-ca.crt (0644), and gateway.acl (0640 root:mcubridge) in /etc/mcubridge-gateway/.
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now mcubridge-gateway.service
+
+The unit runs with `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
+`NoNewPrivileges=yes`, empty `CapabilityBoundingSet=`,
+`RestrictAddressFamilies=AF_INET AF_INET6`, `MemoryDenyWriteExecute=yes`,
+`ReadOnlyPaths=/etc/mcubridge-gateway`, and `StateDirectory=mcubridge-gateway`
+(`0700`). To bind a privileged port `< 1024`, add a `systemctl edit` drop-in
+granting `CapabilityBoundingSet=CAP_NET_BIND_SERVICE` and
+`AmbientCapabilities=CAP_NET_BIND_SERVICE`.
+
+### OpenWrt APK Packaging Boundary
+
+`mcubridge-gateway-cpp` is intentionally **not** packaged as an OpenWrt router
+APK (`.github/workflows/build-apk.yml` and `feeds/`). OpenWrt APKs target edge
+routers running the `mcubridge` daemon and `luci-app-mcubridge`, whereas
+`mcubridge-gateway-cpp` is the upstream cloud/fleet collector server that
+terminates up to 256 concurrent TLS 1.3 mTLS sessions and per-session file
+staging on a Linux host or container orchestrator. Its supported production
+distribution formats are `cmake --install`, the multi-stage OCI `Dockerfile`,
+and the hardened `systemd` unit above.
 
 ### Staging directory (`--staging-dir`)
 

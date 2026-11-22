@@ -110,7 +110,7 @@ rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
 [[dependency]]
 name = "annotated-doc"
 openwrt = "python3-annotated-doc"
-pip = "annotated-doc==0.0.6"
+pip = "annotated-doc==0.0.7"
 gateway = true
 rationale = "Doc docstrings extraction runtime required by Typer"
 
@@ -124,7 +124,7 @@ rationale = "Shell environment detection runtime required by Typer"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer==0.29.1"
+pip = "typer==0.29.2"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
@@ -214,7 +214,7 @@ rationale = "LGPL-2.1 SAMD21 NVM row storage for the persisted link boot epoch (
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.3"
+pip = "coverage==7.17.4"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
@@ -224,7 +224,7 @@ rationale = "Strict static type checker enforcing zero-warning type safety acros
 
 [[dev_dependency]]
 name = "ruff"
-pip = "ruff==0.17.5"
+pip = "ruff==0.17.6"
 rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]
@@ -245,7 +245,7 @@ rationale = "Static dead code scanner detecting unused functions, classes, and p
 
 [[dev_dependency]]
 name = "pyrefly"
-pip = "pyrefly==1.4.1"
+pip = "pyrefly==1.5.0"
 rationale = "Fast Python type checker and LSP language server for strict type safety"
 
 [[dev_dependency]]
@@ -257,18 +257,20 @@ rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pi
 [[dev_dependency]]
 name = "types-psutil"
 pip = "types-psutil==7.2.2.20261111"
-rationale = "Type stubs for psutil required by pyrefly"
+check_latest = false
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "types-pexpect"
 pip = "types-pexpect==4.9.0.20260518"
-rationale = "Type stubs for pexpect required by pyrefly"
+check_latest = false
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "types-pyserial"
 pip = "types-pyserial==3.5.0.20261030"
 check_latest = false
-rationale = "Type stubs for pyserial static analysis validation commanded by Google Pigweed"
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 
 [[dev_dependency]]
@@ -278,7 +280,7 @@ rationale = "Style guide enforcement and PEP 8 linter"
 
 [[dev_dependency]]
 name = "semgrep"
-pip = "semgrep==1.185.0"
+pip = "semgrep==1.186.0"
 rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and deterministic coding rules"
 
 [[dev_dependency]]
@@ -308,7 +310,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.15"
+pip = "hypothesis==6.170.17"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -343,13 +345,14 @@ rationale = "ECMAScript AST parser for LuCI JavaScript view validation without N
 
 [[dev_dependency]]
 name = "pyyaml"
-pip = "pyyaml==6.0.3"
+pip = "pyyaml==6.0.4"
 rationale = "Formal YAML parser for workflow frontmatter and configuration audit"
 
 [[dev_dependency]]
 name = "types-pyyaml"
 pip = "types-PyYAML==6.0.12.20261113"
-rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
+check_latest = false
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "setuptools"

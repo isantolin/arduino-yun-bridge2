@@ -62,9 +62,11 @@ ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
 mkdir -p "${ARDUINO_LIBS}"
 "${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-PW_ROOT="${ROOT_DIR}/third_party/pigweed"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"; fi
 if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
@@ -85,31 +87,7 @@ WOLF_SOURCES=(
     "$WOLFCRYPT_SRC/misc.c"
 )
 
-PIGWEED_RPC_SOURCES=(
-    "$PW_ROOT/pw_rpc/call.cc"
-    "$PW_ROOT/pw_rpc/client.cc"
-    "$PW_ROOT/pw_rpc/client_call.cc"
-    "$PW_ROOT/pw_rpc/channel.cc"
-    "$PW_ROOT/pw_rpc/channel_list.cc"
-    "$PW_ROOT/pw_rpc/endpoint.cc"
-    "$PW_ROOT/pw_rpc/packet.cc"
-    "$PW_ROOT/pw_rpc/packet_meta.cc"
-    "$PW_ROOT/pw_rpc/server.cc"
-    "$PW_ROOT/pw_rpc/server_call.cc"
-    "$PW_ROOT/pw_rpc/service.cc"
-    "$PW_ROOT/pw_rpc/nanopb/common.cc"
-    "$PW_ROOT/pw_rpc/nanopb/method.cc"
-    "$PW_ROOT/pw_rpc/nanopb/server_reader_writer.cc"
-    "$PW_ROOT/pw_rpc/raw/method.cc"
-    "$PW_ROOT/pw_containers/intrusive_item.cc"
-    "$PW_ROOT/pw_varint/stream.cc"
-    "$PW_ROOT/pw_stream/interval_reader.cc"
-    "$PW_ROOT/pw_protobuf/decoder.cc"
-    "$PW_ROOT/pw_protobuf/encoder.cc"
-    "$PW_ROOT/pw_protobuf/find.cc"
-    "$PW_ROOT/pw_protobuf/message.cc"
-    "$PW_ROOT/pw_protobuf/stream_decoder.cc"
-)
+stage_cooperative_pw_transfer "${BUILD_DIR}/pw_transfer" "${ARDUINO_LIBS}"
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -137,15 +115,8 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
-    "${PIGWEED_RPC_SOURCES[@]}"
-    "$PW_ROOT/pw_checksum/crc32.cc"
-    "$PW_ROOT/pw_hdlc/decoder.cc"
-    "$PW_ROOT/pw_hdlc/encoder.cc"
-    "$PW_ROOT/pw_varint/varint.cc"
-    "$PW_ROOT/pw_status/status.cc"
-    "$PW_ROOT/pw_tokenizer/encode_args.cc"
-    "$PW_ROOT/pw_tokenizer/tokenize.cc"
-    "$PW_ROOT/pw_stream/memory_stream.cc"
+    "${PW_PIGWEED_SRCS[@]}"
+    "${PW_TRANSFER_STAGED_SRCS[@]}"
 )
 
 INC_FLAGS=(
@@ -159,39 +130,7 @@ INC_FLAGS=(
     -I"$ETL_PATH"
     -I"$ETL_PATH/include"
     -I"$ETL_PATH/arduino"
-    -I"$PW_ROOT/pw_status/public"
-    -I"$PW_ROOT/pw_result/public"
-    -I"$PW_ROOT/pw_span/public"
-    -I"$PW_ROOT/pw_bytes/public"
-    -I"$PW_ROOT/pw_containers/public"
-    -I"$PW_ROOT/pw_stream/public"
-    -I"$PW_ROOT/pw_checksum/public"
-    -I"$PW_ROOT/pw_hdlc/public"
-    -I"$PW_ROOT/pw_rpc/public"
-    -I"$PW_ROOT/pw_rpc/nanopb/public"
-    -I"$PW_ROOT/pw_rpc/raw/public"
-    -I"$PW_ROOT/pw_varint/public"
-    -I"$PW_ROOT/pw_tokenizer/public"
-    -I"$PW_ROOT/pw_function/public"
-    -I"$PW_ROOT/pw_string/public"
-    -I"$PW_ROOT/pw_log/public"
-    -I"$PW_ROOT/pw_log_null/public_overrides"
-    -I"$PW_ROOT/pw_log_null/public"
-    -I"$PW_ROOT/pw_assert/print_and_abort_assert_public_overrides"
-    -I"$PW_ROOT/pw_assert/print_and_abort_check_public_overrides"
-    -I"$PW_ROOT/pw_assert/public"
-    -I"$PW_ROOT/pw_preprocessor/public"
-    -I"$PW_ROOT/pw_polyfill/public"
-    -I"$PW_ROOT/pw_enum/public"
-    -I"$PW_ROOT/pw_numeric/public"
-    -I"$PW_ROOT/pw_memory/public"
-    -I"$PW_ROOT/pw_protobuf/public"
-    -I"$PW_ROOT/pw_sync/public"
-    -I"$PW_ROOT/pw_thread/public"
-    -I"$PW_ROOT/pw_toolchain/public"
-    -I"$PW_ROOT/third_party/fuchsia/repo/sdk/lib/stdcompat/include"
-    -I"$PW_ROOT/third_party/fuchsia/repo/sdk/lib/fit/include"
-    -I"${ROOT_DIR}/build/pigweed_generated/include"
+    "${PW_HOST_INC_FLAGS[@]}"
     -I"$WOLFSSL_INC"
     -I"$WOLFSSL_PATH"
 )
@@ -207,6 +146,7 @@ COMMON_DEFS=(
     -DETL_FORCE_STD_INITIALIZER_LIST
     -DUNITY_INCLUDE_DOUBLE
     -DPW_RPC_USE_GLOBAL_MUTEX=0
+    "${PW_COOPERATIVE_DEFINES[@]}"
 )
 
 if [ "$COVERAGE_MODE" = true ]; then
@@ -241,7 +181,7 @@ fi
 UNITY_DIR="${TEST_DIR}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    g++ -std=c++17 -x c++ -c "${BASE_FLAGS[@]}" "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+    gcc -std=c99 -c "${BASE_FLAGS[@]}" "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
     echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
     UNITY_OBJ=""

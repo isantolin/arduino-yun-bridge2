@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import os
-import socket
 import time
 from enum import StrEnum
 from pathlib import Path
@@ -200,8 +198,7 @@ class CloudLinkState(StrEnum):
 
     DISABLED = "disabled"
     CONNECTING = "connecting"
-    CONNECTED_HTTP3 = "connected_http3"
-    CONNECTED_HTTP2 = "connected_http2"
+    CONNECTED_TLS = "connected_tls"
     SPOOLING_DEGRADED = "spooling_degraded"
     RECONNECTING = "reconnecting"
 
@@ -213,8 +210,7 @@ class CloudLinkMachine(StateMachine):
 
     disabled = State(value="disabled", initial=True)
     connecting = State(value="connecting")
-    connected_http3 = State(value="connected_http3")
-    connected_http2 = State(value="connected_http2")
+    connected_tls = State(value="connected_tls")
     spooling_degraded = State(value="spooling_degraded")
     reconnecting = State(value="reconnecting")
 
@@ -224,21 +220,14 @@ class CloudLinkMachine(StateMachine):
         | spooling_degraded.to(connecting)
         | connecting.to(connecting)
     )
-    connect_http3 = (
-        connecting.to(connected_http3)
-        | reconnecting.to(connected_http3)
-        | spooling_degraded.to(connected_http3)
-        | connected_http3.to(connected_http3)
-    )
-    connect_http2 = (
-        connecting.to(connected_http2)
-        | reconnecting.to(connected_http2)
-        | spooling_degraded.to(connected_http2)
-        | connected_http2.to(connected_http2)
+    connect_tls = (
+        connecting.to(connected_tls)
+        | reconnecting.to(connected_tls)
+        | spooling_degraded.to(connected_tls)
+        | connected_tls.to(connected_tls)
     )
     degrade = (
-        connected_http3.to(spooling_degraded)
-        | connected_http2.to(spooling_degraded)
+        connected_tls.to(spooling_degraded)
         | connecting.to(spooling_degraded)
         | reconnecting.to(spooling_degraded)
         | spooling_degraded.to(spooling_degraded)
@@ -246,8 +235,7 @@ class CloudLinkMachine(StateMachine):
     start_reconnect = spooling_degraded.to(reconnecting) | connecting.to(reconnecting) | reconnecting.to(reconnecting)
     disable = (
         connecting.to(disabled)
-        | connected_http3.to(disabled)
-        | connected_http2.to(disabled)
+        | connected_tls.to(disabled)
         | spooling_degraded.to(disabled)
         | reconnecting.to(disabled)
         | disabled.to(disabled)
@@ -305,9 +293,6 @@ class RuntimeState:
     handshake_fatal_detail: str | None
     handshake_fatal_unix: float
     handshake_last_started: float
-    serial_flow_stats: cloud_gateway_pb2.SerialFlowSnapshot
-    serial_pipeline_inflight: dict[str, Any] | None
-    serial_pipeline_last: dict[str, Any] | None
     process_max_concurrent: int
     unknown_command_last_id: int
     config_source: str
@@ -385,11 +370,6 @@ class RuntimeState:
         self.handshake_fatal_detail: str | None = kwargs.get("handshake_fatal_detail")
         self.handshake_fatal_unix: float = kwargs.get("handshake_fatal_unix", 0.0)
         self.handshake_last_started: float = kwargs.get("handshake_last_started", 0.0)
-        self.serial_flow_stats: cloud_gateway_pb2.SerialFlowSnapshot = (
-            kwargs.get("serial_flow_stats") or cloud_gateway_pb2.SerialFlowSnapshot()
-        )
-        self.serial_pipeline_inflight: dict[str, Any] | None = kwargs.get("serial_pipeline_inflight")
-        self.serial_pipeline_last: dict[str, Any] | None = kwargs.get("serial_pipeline_last")
         self.process_max_concurrent: int = kwargs.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
         self.unknown_command_last_id: int = kwargs.get("unknown_command_last_id", 0)
         self.config_source: str = kwargs.get("config_source", "uci")
@@ -435,12 +415,9 @@ class RuntimeState:
             start_value=self.cloud_link_state,
             listeners=[self],
         )
-        self._connected_via_http3: bool = bool(kwargs.get("connected_via_http3", False))
         self._cloud_spool_degraded: bool = bool(kwargs.get("cloud_spool_degraded", False))
         if kwargs.get("mcu_is_paused", False):
             self.connection_fsm.pause()
-        if self._connected_via_http3:
-            self.cloud_fsm.connect_http3()
         if kwargs.get("cloud_spool_degraded", False):
             self.cloud_fsm.degrade()
 
@@ -473,10 +450,6 @@ class RuntimeState:
     @property
     def mcu_status_counts(self) -> dict[str, int]:
         return dict(self.metrics.mcu_status_counts.items())
-
-    @property
-    def device_id(self) -> str:
-        return os.environ.get("MCUBRIDGE_DEVICE_ID") or socket.gethostname()
 
     @property
     def topic_prefix(self) -> str:
@@ -519,20 +492,7 @@ class RuntimeState:
                 self.cloud_fsm.degrade()
         else:
             if self.cloud_fsm.spooling_degraded.is_active:
-                if self._connected_via_http3:
-                    self.cloud_fsm.connect_http3()
-                else:
-                    self.cloud_fsm.connect_http2()
-
-    @property
-    def connected_via_http3(self) -> bool:
-        return self._connected_via_http3
-
-    @connected_via_http3.setter
-    def connected_via_http3(self, value: bool) -> None:
-        self._connected_via_http3 = value
-        if value and not self.cloud_fsm.connected_http3.is_active and not self.cloud_fsm.disabled.is_active:
-            self.cloud_fsm.connect_http3()
+                self.cloud_fsm.connect_tls()
 
     def _set_event(self, attr: str, active: bool) -> None:
         if (ev := getattr(self, attr, None)) is not None:
@@ -568,23 +528,13 @@ class RuntimeState:
         """[SIL-2] Native hook executed on entering negotiating_baud state."""
         self._set_event("serial_tx_allowed", False)
 
-    def on_enter_connected_http3(self) -> None:
-        """[SIL-2] Native hook executed on entering connected_http3 state."""
-        self._connected_via_http3 = True
-        self._cloud_spool_degraded = False
-
-    def on_enter_connected_http2(self) -> None:
-        """[SIL-2] Native hook executed on entering connected_http2 state."""
-        self._connected_via_http3 = False
+    def on_enter_connected_tls(self) -> None:
+        """[SIL-2] Native hook executed on entering connected_tls state."""
         self._cloud_spool_degraded = False
 
     def on_enter_spooling_degraded(self) -> None:
         """[SIL-2] Native hook executed on entering spooling_degraded state."""
         self._cloud_spool_degraded = True
-
-    def on_enter_disabled(self) -> None:
-        """[SIL-2] Native hook executed on entering disabled state."""
-        self._connected_via_http3 = False
 
     @property
     def handshake_failures(self) -> int:
@@ -683,17 +633,6 @@ class RuntimeState:
             except (OSError, RuntimeError):
                 logger.warning("Datastore falling back to RAM cache")
                 self.datastore_cache = None
-
-    def build_serial_pipeline_snapshot(self) -> cloud_gateway_pb2.SerialPipelineSnapshot:
-        def _to_pipeline_event(ev_dict: dict[str, Any] | None) -> cloud_gateway_pb2.PipelineEvent:
-            return (
-                cloud_gateway_pb2.PipelineEvent(**ev_dict) if ev_dict else cloud_gateway_pb2.PipelineEvent(event="none")
-            )
-
-        return cloud_gateway_pb2.SerialPipelineSnapshot(
-            inflight=_to_pipeline_event(self.serial_pipeline_inflight),
-            last_completion=_to_pipeline_event(self.serial_pipeline_last),
-        )
 
     def build_metrics_snapshot(self) -> mcu_wire_pb2.DaemonMetrics:
         """Build a concrete metrics snapshot for telemetry. [SIL-2]"""
@@ -858,8 +797,6 @@ class RuntimeState:
                 synchronised=self.is_synchronized,
             ),
             handshake=self.build_handshake_snapshot(),
-            serial_pipeline=self.build_serial_pipeline_snapshot(),
-            serial_flow=self.serial_flow_stats,
             mcu_version=versionpb_obj,
             capabilities=self._mcu_capabilities,
         )

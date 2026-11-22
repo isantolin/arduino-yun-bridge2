@@ -43,7 +43,7 @@ python3 tools/emulation/hardware_harness.py rotate --host <mcu-ip>
 What happens:
 
 1. The script connects via SSH (default user `root`) and runs `/usr/bin/mcubridge-rotate-credentials` on the device.
-2. The helper writes the regenerated secrets to UCI (`/etc/config/mcubridge`), updates `mcubridge.general.cloud_pass`, and restarts the daemon.
+2. The helper writes the regenerated serial shared secret to UCI (`/etc/config/mcubridge`) and restarts the daemon.
 3. The script captures the freshly generated serial shared secret (stored in `mcubridge.general.serial_shared_secret`, also printed as `SERIAL_SECRET=...`) and prints a ready-to-paste snippet:
 
    ```c

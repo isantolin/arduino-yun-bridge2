@@ -169,41 +169,17 @@ _SEGMENT_STRATEGY = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", m
 
 
 @settings(max_examples=30, derandomize=True, deadline=None)
-@given(seg1=_SEGMENT_STRATEGY, seg2=_SEGMENT_STRATEGY)
-def test_topic_matches_exact_reflexive_property(seg1: str, seg2: str) -> None:
-    """Validate that exact matching is reflexive for any arbitrary topic path."""
-    from mcubridge_client.protocol import Topic
-
-    topic_str = f"br/{seg1}/{seg2}"
-    assert Topic.matches(topic_str, topic_str)
-
-
-@settings(max_examples=30, derandomize=True, deadline=None)
-@given(seg1=_SEGMENT_STRATEGY, seg2=_SEGMENT_STRATEGY)
-def test_topic_matches_wildcards_property(seg1: str, seg2: str) -> None:
-    """Validate MQTT single (+) and multi-level (#) wildcard matching invariants."""
-    from mcubridge_client.protocol import Topic
-
-    topic_str = f"br/{seg1}/{seg2}"
-    assert Topic.matches("br/#", topic_str)
-    assert Topic.matches(f"br/+/{seg2}", topic_str)
-    assert Topic.matches(f"br/{seg1}/+", topic_str)
-
-
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     prefix=_SEGMENT_STRATEGY,
     seg1=_SEGMENT_STRATEGY,
     seg2=_SEGMENT_STRATEGY,
 )
-def test_topic_build_and_match_invariants(prefix: str, seg1: str, seg2: str) -> None:
-    """Validate Topic.build output structure and matching against generated paths."""
+def test_topic_build_invariants(prefix: str, seg1: str, seg2: str) -> None:
+    """Validate Topic.build output structure."""
     from mcubridge_client.protocol import Topic
 
     built = Topic.build(seg1, seg2, prefix=prefix)
     assert built == f"{prefix}/{seg1}/{seg2}"
-    assert Topic.matches(f"{prefix}/#", built)
-    assert Topic.matches(built, built)
 
 
 async def test_smoke_connection_run_test() -> None:
@@ -277,3 +253,46 @@ def test_gateway_northbound_cli_missing_device() -> None:
         env={"MCUBRIDGE_DEVICE_ID": ""},
     )
     assert res.exit_code != 0
+
+
+def _eeprom_client(response: cloud_gateway_pb2.FileTransferSyncResponse) -> GatewayClient:
+    client = GatewayClient(MagicMock(), "device-01")
+    cast(Any, client).dispatch = AsyncMock(return_value=response.SerializeToString())
+    cast(Any, client).transfer_read = AsyncMock(return_value=b"\x01" * 4080)
+    cast(Any, client).transfer_write = AsyncMock()
+    return client
+
+
+async def test_read_mcu_eeprom_dispatches_then_reads_staging() -> None:
+    """ADR-0007: the client asks the device to stage its EEPROM, then reads the staged image."""
+    client = _eeprom_client(cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=4080))
+    assert await client.read_mcu_eeprom() == b"\x01" * 4080
+    dispatch_call = cast(AsyncMock, client.dispatch).await_args
+    assert dispatch_call is not None
+    assert dispatch_call.args[0] == "rpc.pb.EepromService/Read"
+    cast(AsyncMock, client.transfer_read).assert_awaited_once_with(0x4D454741)
+
+
+async def test_write_mcu_eeprom_stages_then_dispatches() -> None:
+    client = _eeprom_client(cloud_gateway_pb2.FileTransferSyncResponse(success=True, bytes_transferred=16))
+    assert await client.write_mcu_eeprom(b"\x02" * 16) == 16
+    cast(AsyncMock, client.transfer_write).assert_awaited_once_with(0x4D454741, b"\x02" * 16)
+    dispatch_call = cast(AsyncMock, client.dispatch).await_args
+    assert dispatch_call is not None
+    assert dispatch_call.args[0] == "rpc.pb.EepromService/Write"
+
+
+@pytest.mark.parametrize("image", [b"", b"\x00" * 4081])
+async def test_write_mcu_eeprom_rejects_invalid_size_before_staging(image: bytes) -> None:
+    client = _eeprom_client(cloud_gateway_pb2.FileTransferSyncResponse(success=True))
+    with pytest.raises(ValueError, match="1..4080 bytes"):
+        await client.write_mcu_eeprom(image)
+    cast(AsyncMock, client.transfer_write).assert_not_awaited()
+
+
+@pytest.mark.parametrize("method", ["read_mcu_eeprom", "write_mcu_eeprom"])
+async def test_mcu_eeprom_failure_is_raised(method: str) -> None:
+    client = _eeprom_client(cloud_gateway_pb2.FileTransferSyncResponse(success=False, message="denied"))
+    args: tuple[bytes, ...] = (b"\x03",) if method == "write_mcu_eeprom" else ()
+    with pytest.raises(RuntimeError, match="denied"):
+        await getattr(client, method)(*args)

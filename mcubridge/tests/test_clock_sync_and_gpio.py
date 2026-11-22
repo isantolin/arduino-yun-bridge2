@@ -161,7 +161,6 @@ async def test_gpio_service() -> None:
         cloud_msg: cloud_gateway_pb2.CloudQueuedPublish = mock_enqueue.call_args[0][0]
         assert cloud_msg.topic_name == "br/evt/rpc.pb.GpioService/PinUpdateEvent/13"
         assert cloud_msg.payload == b"1"
-        assert cloud_msg.message_expiry_interval == 5
 
         # Add a second pin subscription so disabling one does not cancel the stream yet
         res_second = await gpio.subscribe_pin(14, mode="INPUT", interval_ms=50, hysteresis=1)

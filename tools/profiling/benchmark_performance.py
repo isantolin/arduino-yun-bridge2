@@ -208,11 +208,15 @@ def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
     # 1. Build Frame
     start = time.perf_counter()
     raw_frames = [
-        protocol.encode_hdlc_rpc("rpc.pb.GpioService/DigitalWrite", msg, call_id=i) for i in range(iterations)
+        ui_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            protocol.encode_rpc_packet("rpc.pb.GpioService/DigitalWrite", msg, call_id=i),
+        )
+        for i in range(iterations)
     ]
     dur_build = time.perf_counter() - start
     build_metric = BenchmarkMetric(
-        name="encode_hdlc_rpc() Frame",
+        name="ui_frame(encode_rpc_packet()) Frame",
         operations=iterations,
         duration_sec=dur_build,
         ops_per_sec=iterations / dur_build,

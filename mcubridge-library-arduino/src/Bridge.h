@@ -41,12 +41,14 @@
 #include <pw_hdlc/encoder.h>
 #include <pw_hdlc/rpc_channel.h>
 #include <pw_log/log.h>
+#include <pw_log_avr/log_avr.h>
 #include <pw_result/result.h>
 #include <pw_status/status.h>
 #include <pw_status/try.h>
 #include <pw_stream/memory_stream.h>
 #include <pw_stream/stream.h>
 #include <pw_tokenizer/hash.h>
+#include <pw_tokenizer/tokenize.h>
 #include <pw_varint/varint.h>
 #endif
 #include <wolfssl.h>
@@ -82,6 +84,10 @@
 #include <pw_rpc/packet_meta.h>
 #include <pw_rpc/server.h>
 #include <pw_span/span.h>
+#include <pw_transfer/client.h>
+#include <pw_transfer/handler.h>
+#include <pw_transfer/transfer.h>
+#include <pw_transfer/transfer_thread.h>
 
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
@@ -89,13 +95,6 @@
 #include "protocol/mcu_wire.pb.h"
 #include "protocol/mcu_wire.rpc.pb.h"
 #include "protocol/rpc_protocol.h"
-
-#if BRIDGE_ENABLE_PW_TRANSFER
-#include <pw_transfer/client.h>
-#include <pw_transfer/handler.h>
-#include <pw_transfer/transfer.h>
-#include <pw_transfer/transfer_thread.h>
-#endif
 
 namespace bridge {
 
@@ -176,7 +175,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       uint32_t timeout_ms = bridge::config::SYNC_TIMEOUT_MS,
       uint32_t poll_delay_ms = 2);
   bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
-  bool hasPendingTx() const { return false; }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
   void resetWcetStats() { _wcet_max_micros = 0; }
 
@@ -256,13 +254,11 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     return {_rpc_client, 1};
   }
 
-#if BRIDGE_ENABLE_PW_TRANSFER
   // Upstream pw_transfer endpoints share one Thread<1, 1>.
   // On AVR, the cooperative role arbiter permits client/server transfers
   // sequentially.
   pw::transfer::Client& transferClient() { return _transfer_client; }
   pw::transfer::TransferService& transferService() { return _transfer_service; }
-#endif
 
   void _onBaudrateChange();
   void _onHandshakeTimeout();
@@ -297,6 +293,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
  protected:
   void _initializeRuntime();
+  void _unregisterRpcServices();
   void _initObservers();
   void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
   bool _writeHdlcFrame(uint64_t address, pw::span<const uint8_t> data,
@@ -317,7 +314,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::rpc::Channel _rpc_channel;
   pw::rpc::Client _rpc_client;
   pw::rpc::Server _rpc_server;
-#if BRIDGE_ENABLE_PW_TRANSFER
   static constexpr size_t kTransferChunkBufferSize = 128;
   // The encode buffer holds the outgoing RPC packet and must be larger than
   // the chunk staging buffer. Use the complete configured receive-frame size.
@@ -332,12 +328,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   pw::transfer::Thread<1, 1> _transfer_thread;
   pw::transfer::TransferService _transfer_service;
   pw::transfer::Client _transfer_client;
-#endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
-#if BRIDGE_ENABLE_PW_TRANSFER
-  bool _eeprom_transfer_registered{false};
-#endif
   bool _rpc_plaintext_response{false};
 
   StatusHandler _status_handler;
@@ -347,7 +339,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   etl::vector<uint8_t, 64> _shared_secret;
   // Contiguous RX||TX session keys let HKDF write directly into final storage.
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> _session_aead_keys{};
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_plaintext{};
   uint64_t _tx_aead_counter{0};
   uint64_t _rx_aead_counter{0};
   bool _session_keys_ready{false};
@@ -358,6 +349,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _timerTask();
   void _subscriptionTask();
   void _sendFlowControl(bool xoff);
+  void _emitStackWatermarkLog();
 
   enum StateFlags : uint8_t {
     FLAG_POST_PASSED = 0,
@@ -367,6 +359,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   };
 
   uint32_t _timer_last_tick_ms = 0;
+  uint32_t _last_reported_stack_used = 0;
   etl::bitset<FLAG_COUNT> _state_flags;
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   uint32_t _wcet_max_micros = 0;

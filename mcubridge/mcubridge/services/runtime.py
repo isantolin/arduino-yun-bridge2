@@ -56,7 +56,6 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     get_ssl_context,
-    iter_chunks,
     parse_allowed_command,
 )
 from ..state.context import (
@@ -969,8 +968,10 @@ class BridgeService:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buf = self.state.console_to_mcu_queue.popleft()
 
-            for chunk in iter_chunks(buf, protocol.MAX_PAYLOAD_SIZE):
-                if not await serial.send("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=chunk)):
+            max_chunk = protocol.MAX_PAYLOAD_SIZE
+            for i in range(0, len(buf), max_chunk):
+                end = i + max_chunk
+                if not await serial.send("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=buf[i:end])):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
@@ -1006,13 +1007,13 @@ class BridgeService:
             text = (
                 format_ubus_bytes(payload) if isinstance(payload, bytes) else getattr(payload, "message", str(payload))
             )
-        log_func = logger.error if status != Status.OK else logger.debug
-        log_func("MCU > %s: %s %s", status.name, status.description, text)
+        log_func = logger.error if not status.ok() else logger.debug
+        log_func("MCU > %s %s", status.name, text)
         await self.enqueue_cloud_status_report(
             StatusReport(
                 status=status.value,
                 name=status.name,
-                description=status.description,
+                description=status.name,
                 message=text,
             ),
         )

@@ -120,11 +120,14 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                             tag=tag,
                             mcu_nonce=_MCU_NONCE,
                         )
-                        resp_frame = protocol.encode_hdlc_rpc(
-                            "rpc.pb.SystemService/LinkSync",
-                            resp_pb,
-                            call_id=rx_seq,
-                            packet_type=1,
+                        resp_frame = ui_frame(
+                            protocol.HDLC_ADDRESS_RPC,
+                            protocol.encode_rpc_packet(
+                                "rpc.pb.SystemService/LinkSync",
+                                resp_pb,
+                                call_id=rx_seq,
+                                packet_type=int(PacketType.RESPONSE),
+                            ),
                         )
                         writer.write(resp_frame)
                         await writer.drain()
@@ -238,11 +241,14 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                             runtime_config.serial_shared_secret, sync_req.nonce, _MCU_NONCE
                         )
                         resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag, mcu_nonce=_MCU_NONCE)
-                        resp_frame = protocol.encode_hdlc_rpc(
-                            "rpc.pb.SystemService/LinkSync",
-                            resp_pb,
-                            call_id=rx_seq,
-                            packet_type=1,
+                        resp_frame = ui_frame(
+                            protocol.HDLC_ADDRESS_RPC,
+                            protocol.encode_rpc_packet(
+                                "rpc.pb.SystemService/LinkSync",
+                                resp_pb,
+                                call_id=rx_seq,
+                                packet_type=int(PacketType.RESPONSE),
+                            ),
                         )
                         writer.write(resp_frame)
                         await writer.drain()

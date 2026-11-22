@@ -25,14 +25,6 @@ from . import protocol
 logger = structlog.get_logger(__name__)
 
 
-def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
-    """Chunk bytes into fixed-size pieces using memoryview zero-copy slicing. [SIL-2]"""
-    mv = memoryview(data)
-    for i in range(0, len(mv), chunk_size):
-        end = i + chunk_size
-        yield bytes(mv[i:end])
-
-
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(
     f.name for f in config_schema_pb2.TopicAuthorization.DESCRIPTOR.fields

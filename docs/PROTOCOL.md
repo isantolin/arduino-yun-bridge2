@@ -68,7 +68,7 @@ Todos los servicios y payloads del protocolo se definen en los schemas bajo `too
 
 ### Despacho de Servicios `pw_rpc` (MCU y MPU)
 - **MCU (`pw::rpc::Server` + `pw::rpc::Client` + `pw::rpc::Channel`):** El firmware registra 6 servicios servidor generados por `protoc_gen_mcu_rpc.py` derivados de `rpc::pb::pw_rpc::nanopb::<Service>::Service<Impl>` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`) sobre `pw::rpc::Channel` (`BridgeClass::RpcChannelOutput`). `ProcessService` y `DataStoreService` exponen clientes generados `rpc::pb::pw_rpc::nanopb::<Service>::Client` para solicitudes iniciadas por el MCU hacia Linux. Todos los servicios y métodos se identifican en tiempo de compilación mediante hashes FNV-1a de 32 bits (`pw::tokenizer::Hash("rpc.pb.<Service>")` y `pw::tokenizer::Hash("<Method>")`).
-- **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
+- **Contrato de tópicos público**: prefijo por defecto y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `STATUS_REASON_*`).
 - **Catálogo Centralizado de Servicios y Operaciones (`PW_SERVICES` + `OPERATIONS` SSOT)**: En Python, `protocol.py` expone `PW_SERVICES` (`pw_rpc.descriptors.Services`) y tablas modulares inmutables (`OPERATIONS`, `RPC_SPECS`, `BY_COMMAND_ID`, `BY_RPC`, `BY_NAME`), resolviendo `service_id`, `method_id`, `request_type`, `response_type`, `cardinality` y `default_factory` directamente desde los descriptores de Pigweed/Protobuf en $O(1)$.
 
 ### Determinismo C++17 y Zero-Cost Abstractions
@@ -235,7 +235,7 @@ Rastrea el ciclo de vida de cada sesión gRPC bidireccional en el servidor `Prot
 #### Estados
 | Estado | Descripción |
 |--------|-------------|
-| `connected` | Stream gRPC TCP/HTTP3 aceptado. Certificado pendiente de validación. |
+| `connected` | Stream TCP/TLS aceptado. Certificado pendiente de validación. |
 | `authenticated` | Identidad mTLS (`commonName`) validada exitosamente. |
 | `active` | Primer frame/envelope válido recibido; sesión bidireccional en curso. |
 | `closed` | Estado final (`final=True`). Conexión cerrada y removida de `gateway.sessions`. |
@@ -734,7 +734,7 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 - **`rpc.pb.ConsoleService/Write` (Linux ↔ MCU, definido en `cloud_gateway.proto`):**
   - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `Empty`.
   - Linux → MCU: el daemon encola los bytes (`console_to_mcu_queue`) y los emite en tramas HDLC sobre la dirección `3`; alcanzable desde el Gateway vía `GatewayControl.Dispatch` y autorizado por `cloud_allow_console_input`.
-  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/rpc.pb.ConsoleService/Write` (expiración `CLOUD_EXPIRY_CONSOLE`). Todavía no existe un stream northbound Gateway → cliente para ese tópico.
+  - MCU → Linux: cada trama de consola recibida se publica en `{prefix}/evt/rpc.pb.ConsoleService/Write`. Todavía no existe un stream northbound Gateway → cliente para ese tópico.
 
 ### 5.4 Datastore (`rpc.pb.DataStoreService`)
 
@@ -1069,9 +1069,8 @@ Ejemplos:
 
 ### 11.2 Resolución Declarativa en la Fuente de Verdad (SSOT)
 
-La resolución y parseo de tópicos se delega exclusivamente en la infraestructura generada en `protocol.py`:
-- `get_topic_for_message(prefix, message)`: Resuelve el tópico canónico correspondiente a un tipo de mensaje Protobuf o comando ID.
-- `parse_topic(prefix, topic_name)`: Parsea y valida el tópico entrante, retornando un `TopicRoute` inmutable con campos fuertemente tipados (`raw`, `prefix`, `device_id`, `direction`, `method`) o `None` si la estructura viola el contrato normativo.
+La resolución de tópicos de telemetría se delega exclusivamente en la infraestructura generada en `protocol.py`:
+- `get_topic_for_message(prefix, message)`: Resuelve el tópico canónico correspondiente a un tipo de mensaje Protobuf o nombre de operación.
 
 Cualquier tópico que no cumpla exactamente con los esquemas canónicos es rechazado de inmediato sin fallbacks ni transformaciones heurísticas.
 

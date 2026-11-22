@@ -282,7 +282,7 @@ build_pigweed_archive_samd() {
     local src obj
     for src in "${all_srcs[@]}"; do
         obj="${build_tmp}/${src//\//_}.o"
-        "$arm_gxx" -mcpu=cortex-m0plus -mthumb -std=gnu++17 -fno-exceptions -fno-rtti \
+        "$arm_gxx" -mcpu=cortex-m0plus -mthumb -std=gnu++17 -fno-exceptions -fno-rtti -Wno-psabi \
             -ffunction-sections -fdata-sections \
             -DETL_NO_STL -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 \
             "${PW_COOPERATIVE_DEFINES[@]}" -Os \

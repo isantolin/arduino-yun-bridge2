@@ -296,6 +296,16 @@ def _load_rotate_module() -> Any:
     return module
 
 
+def _extract_hex_prefix(raw: str) -> str:
+    chars: list[str] = []
+    for c in raw.strip():
+        if c in "0123456789abcdefABCDEF":
+            chars.append(c)
+        else:
+            break
+    return "".join(chars)
+
+
 def rotate(
     host: str | None = None,
     user: str = "root",
@@ -308,8 +318,7 @@ def rotate(
     rotate_loader: Callable[[], Any] | None = None,
 ) -> None:
     """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
-    secret: str | None = None
-    output: str = ""
+    serial_hex = ""
 
     if local:
         if not local.is_dir():
@@ -317,8 +326,8 @@ def rotate(
             sys.exit(1)
         os.environ["UCI_CONFIG_DIR"] = str(local)
         mod = (rotate_loader or _load_rotate_module)()
-        secret, _ = mod.generate_and_apply_credentials(length=length, no_restart=no_restart)
-        output = f"SERIAL_SECRET={secret}\n"
+        raw_value = mod.generate_and_apply_credentials(length=length, no_restart=no_restart)
+        serial_hex = _extract_hex_prefix(str(raw_value)) if raw_value else ""
     elif host:
         remote_cmd = f"/usr/bin/mcubridge-rotate-credentials --length {length}"
         if force:
@@ -330,41 +339,35 @@ def rotate(
         if rot_code != 0:
             print(f"Error running remote rotation on {host}: {rot_err}", file=sys.stderr)
             sys.exit(rot_code)
-        output = rot_out
+        for line in rot_out.splitlines():
+            label, sep, val = line.partition("=")
+            if sep and label.strip() == "SERIAL_SECRET":
+                serial_hex = _extract_hex_prefix(val)
+                if serial_hex:
+                    break
     else:
         print("Error: Either --host or --local is required.", file=sys.stderr)
         sys.exit(1)
 
-    for line in output.splitlines():
-        key, sep, val = line.partition("=")
-        if sep and key.strip() == "SERIAL_SECRET":
-            chars: list[str] = []
-            for c in val.strip():
-                if c in "0123456789abcdefABCDEF":
-                    chars.append(c)
-                else:
-                    break
-            if chars:
-                secret = "".join(chars)
-                break
-
-    if not secret:
-        print(f"Warning: Could not extract SERIAL_SECRET from output:\n{output}", file=sys.stderr)
+    if not serial_hex:
+        print("Warning: Could not extract SERIAL_SECRET from rotation output.", file=sys.stderr)
         return
 
-    snippet = (
-        f"#pragma once\n"
-        f"// Include this header before <Bridge.h> in your sketch sources.\n"
-        f'#define BRIDGE_SERIAL_SHARED_SECRET "{secret}"\n'
-        f"#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)\n"
-    )
-
+    key_bytes = len(serial_hex) // 2
     if emit_sketch_snippet:
+        snippet = (
+            "#pragma once\n"
+            "// Include this header before <Bridge.h> in your sketch sources.\n"
+            f'#define BRIDGE_SERIAL_SHARED_SECRET "{serial_hex}"\n'
+            "#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)\n"
+        )
         emit_sketch_snippet.parent.mkdir(parents=True, exist_ok=True)
+        emit_sketch_snippet.touch(mode=0o600, exist_ok=True)
+        emit_sketch_snippet.chmod(0o600)
         emit_sketch_snippet.write_text(snippet, encoding="utf-8")
         print(f"[INFO] Wrote sketch snippet to {emit_sketch_snippet}")
 
-    print("\n" + snippet)
+    print(f"[INFO] Rotated BRIDGE_SERIAL_SHARED_SECRET ({key_bytes} bytes; redacted from stdout).")
 
 
 @app.command("rotate")

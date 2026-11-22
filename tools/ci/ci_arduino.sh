@@ -155,7 +155,7 @@ compile_sketch() {
         LINK_FLAGS=(
             "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_SAMD},--no-whole-archive"
         )
-        COMMON_FLAGS+=" $PW_COOPERATIVE_DEFS"
+        COMMON_FLAGS+=" -Wno-psabi $PW_COOPERATIVE_DEFS"
         ARCH_INC="$PW_SAMD_INC"
     elif [[ "$FQBN" == esp32:esp32:* ]]; then
         local PW_LIB_ARCHIVE_ESP32="${_LOG_DIR}/libpigweed_esp32.a"

@@ -13,13 +13,12 @@ from mcubridge.metrics import (
 )
 from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE
 from mcubridge.state.context import RuntimeState
 from pytest_mock import MockerFixture
 
 
 async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
-    """Verify that publish_metrics enqueues payload with telemetry metadata."""
+    """Verify that publish_metrics enqueues protobuf DaemonMetrics telemetry."""
     event = asyncio.Event()
     captured: dict[str, cloud_gateway_pb2.CloudQueuedPublish] = {}
 
@@ -27,7 +26,6 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
         captured["message"] = message
         event.set()
 
-    # [SIL-2] State updated directly on context for extra_props logic
     runtime_state.cloud_spool_degraded = True
     runtime_state.cloud_spool_failure_reason = "disk-full"
     runtime_state.watchdog_enabled = True
@@ -58,45 +56,8 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
     decoded.ParseFromString(message.payload)
     assert decoded.cloud_spool_degraded
     assert decoded.cloud_spool_failure_reason == "disk-full"
-    assert message.content_type == PROTOBUF_CONTENT_TYPE
-    props = [(p.key, p.value) for p in message.user_properties]
-    assert ("bridge-spool", "disk-full") in props
-    assert ("bridge-files", "quota-blocked") in props
-    assert ("bridge-watchdog-enabled", "1") in props
-    assert ("bridge-watchdog-interval", "7.5") in props
-
-
-async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
-    """Ensure bridge-spool user property defaults to 'unknown'."""
-    event = asyncio.Event()
-    captured: dict[str, cloud_gateway_pb2.CloudQueuedPublish] = {}
-
-    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
-        captured["message"] = message
-        event.set()
-
-    runtime_state.cloud_spool_degraded = True
-    runtime_state.cloud_spool_failure_reason = None
-    runtime_state.watchdog_enabled = False
-
-    task = asyncio.create_task(
-        publish_metrics(
-            runtime_state,
-            fake_enqueue,
-            interval=0.01,
-            min_interval=0.01,
-        )
-    )
-    with anyio.fail_after(0.5):
-        await event.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-    message = captured["message"]
-    props = [(p.key, p.value) for p in message.user_properties]
-    assert ("bridge-spool", "unknown") in props
-    assert any(key == "bridge-watchdog-enabled" for key, _ in props)
+    assert decoded.watchdog_enabled is True
+    assert decoded.watchdog_interval == 7.5
 
 
 async def test_publish_bridge_snapshots_emits_summary_and_handshake(
@@ -125,12 +86,15 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
         await task
 
-    topics = {message.topic_name for message in messages}
-    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/evt/rpc.pb.SystemService/BridgeSnapshot" in topics
-    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/evt/rpc.pb.SystemService/HandshakeSnapshot" in topics
-    props = [(p.key, p.value) for message in messages for p in message.user_properties]
-    assert ("bridge-snapshot", "summary") in props
-    assert ("bridge-snapshot", "handshake") in props
+    by_topic = {message.topic_name: message.payload for message in messages}
+    bridge_topic = f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/evt/rpc.pb.SystemService/BridgeSnapshot"
+    handshake_topic = f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/evt/rpc.pb.SystemService/HandshakeSnapshot"
+    assert bridge_topic in by_topic
+    assert handshake_topic in by_topic
+    bridge_snap = cloud_gateway_pb2.BridgeSnapshot.FromString(by_topic[bridge_topic])
+    handshake_snap = cloud_gateway_pb2.HandshakeSnapshot.FromString(by_topic[handshake_topic])
+    assert bridge_snap.serial_link.synchronised is True
+    assert handshake_snap.synchronised is True
 
 
 async def test_publish_bridge_snapshots_noop_when_disabled(
@@ -236,37 +200,6 @@ async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState,
     emit_snapshot: Callable[..., Awaitable[None]] = metrics_mod.emit_bridge_snapshot
     await emit_snapshot(bad_state, enqueue, flavor="summary")
     assert enqueue.call_count == 0
-
-
-async def test_publish_metrics_file_write_limit_rejection(runtime_state: RuntimeState) -> None:
-    event = asyncio.Event()
-    captured: dict[str, cloud_gateway_pb2.CloudQueuedPublish] = {}
-
-    async def fake_enqueue(message: cloud_gateway_pb2.CloudQueuedPublish) -> None:
-        captured["message"] = message
-        event.set()
-
-    runtime_state.file_storage_limit_rejections = 0
-    runtime_state.file_write_limit_rejections = 3
-    runtime_state.cloud_topic_prefix = "test/prefix"
-
-    task = asyncio.create_task(
-        publish_metrics(
-            runtime_state,
-            fake_enqueue,
-            interval=0.01,
-            min_interval=0.01,
-        )
-    )
-    with anyio.fail_after(0.5):
-        await event.wait()
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-    message = captured["message"]
-    props = [(p.key, p.value) for p in message.user_properties]
-    assert ("bridge-files", "write-limit") in props
 
 
 async def test_publish_bridge_snapshots_missing_intervals(runtime_state: RuntimeState) -> None:

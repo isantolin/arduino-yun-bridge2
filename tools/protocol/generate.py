@@ -299,13 +299,6 @@ def _extract_constants_and_handshake(
         py_consts.append({"name": n, "type": "int", "value": v})
         client_consts.append({"name": n, "type": "int", "value": v})
 
-    cloud_suffixes = _message_to_dict(opts.Extensions[pb_module.cloud_suffixes])
-    for f in pb_module.CloudSuffixes.DESCRIPTOR.fields:
-        cloud_suffixes.setdefault(f.name, f.name)
-    for n, v in cloud_suffixes.items():
-        cpp_consts.append({"name": f"RPC_CLOUD_SUFFIX_{n.upper()}", "type": "const char*", "value": f'"{v}"'})
-        py_consts.append({"name": f"CLOUD_SUFFIX_{n.upper()}", "type": "str", "value": f'"{v}"'})
-
     hs_cpp, hs_py, _ = _extract_pb_obj_consts(hs_opt, pb_module)
     handshake_dict: dict[str, Any] = {}
     for key in (
@@ -327,7 +320,6 @@ def _extract_constants_and_handshake(
         "v_major": v_major,
         "v_minor": v_minor,
         "v_patch": v_patch,
-        "cloud_suffixes": cloud_suffixes,
         "handshake_constants": hs_cpp,
         "python_handshake_constants": hs_py,
         "handshake": handshake_dict,
@@ -582,6 +574,7 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         }
         for f in cfg_fields
         if f.default_value is not None
+        and f.raw_default != ""
         and f.field_type != "list"
         and f.config_default_ref is None
         and f"DEFAULT_{f.name.upper()}" not in cfg_names

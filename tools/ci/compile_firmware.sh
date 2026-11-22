@@ -115,7 +115,7 @@ elif [ "$EMULATOR" = "renode" ]; then
     PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_samd_XXXXXX.a)"
     build_pigweed_archive_samd "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" "$USER_LIB_DIR" || exit 1
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 $PW_COOPERATIVE_DEFS"
+    COMMON_FLAGS="-fno-strict-aliasing -Wno-psabi -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 $PW_COOPERATIVE_DEFS"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"

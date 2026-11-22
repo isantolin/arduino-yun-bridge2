@@ -15,35 +15,6 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 
-class QoS:
-    def __init__(self, value: int) -> None:
-        self.value = value
-
-
-class PublishPacket:
-    def __init__(
-        self,
-        topic: str,
-        payload: bytes,
-        qos: QoS,
-        retain: bool = False,
-        message_expiry_interval: int | None = None,
-        content_type: str | None = None,
-        response_topic: str | None = None,
-        correlation_data: bytes | None = None,
-        user_properties: list[tuple[str, str]] | None = None,
-    ) -> None:
-        self.topic = topic
-        self.payload = payload
-        self.qos = qos
-        self.retain = retain
-        self.message_expiry_interval = message_expiry_interval
-        self.content_type = content_type
-        self.response_topic = response_topic
-        self.correlation_data = correlation_data
-        self.user_properties = user_properties or []
-
-
 @pytest.fixture
 def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, AsyncMock]:
     cfg = RuntimeConfig(
@@ -81,13 +52,12 @@ async def test_cloud_datastore_put_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = service_setup
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.DataStoreService/Put",
-        payload=pb.DatastorePut(key="my_key", value=b"my_value").SerializeToString(),
+    resp_bytes = await service.execute_rpc(
+        "rpc.pb.DataStoreService/Put",
+        pb.DatastorePut(key="my_key", value=b"my_value").SerializeToString(),
     )
 
-    await service.handle_request(msg)
-
+    assert cloud_gateway_pb2.GenericResponse.FromString(resp_bytes).status == "ok"
     assert state.datastore_cache is not None
     assert await state.datastore_cache.get("my_key") == b"my_value"
 
@@ -150,12 +120,10 @@ async def test_cloud_mailbox_write_asserts_serial(
 ) -> None:
     service, state, serial = service_setup
     serial.send.return_value = True
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.MailboxService/Push",
-        payload=pb.MailboxPush(data=b"outbound_box").SerializeToString(),
+    await service.execute_rpc(
+        "rpc.pb.MailboxService/Push",
+        pb.MailboxPush(data=b"outbound_box").SerializeToString(),
     )
-
-    await service.handle_request(msg)
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == "rpc.pb.MailboxService/Push"
@@ -248,14 +216,12 @@ async def test_process_handle_is_the_real_pid(
 async def test_cloud_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, serial = service_setup
+    service, _state, serial = service_setup
     serial.send.return_value = True
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.SpiService/Transfer",
-        payload=pb.SpiTransfer(data=b"\x01\x02\x03").SerializeToString(),
+    await service.execute_rpc(
+        "rpc.pb.SpiService/Transfer",
+        pb.SpiTransfer(data=b"\x01\x02\x03").SerializeToString(),
     )
-
-    await service.handle_request(msg)
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == "rpc.pb.SpiService/Transfer"
@@ -266,55 +232,39 @@ async def test_cloud_spi_transfer_asserts_serial(
 async def test_cloud_retired_file_write_is_rejected_and_remove_works(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    """Retired rpc.pb.FileSystemService/Write is ignored; Remove remains active."""
-    service, state, _serial = service_setup
-    retired_msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.FileSystemService/Write",
-        payload=b"legacy_payload",
-    )
-
-    await service.handle_request(retired_msg)
+    """Retired rpc.pb.FileSystemService/Write is rejected; Remove remains active."""
+    service, _state, _serial = service_setup
+    with pytest.raises(ValueError, match="Unknown RPC method"):
+        await service.execute_rpc("rpc.pb.FileSystemService/Write", b"legacy_payload")
 
     assert not (Path(service.config.file_system_root) / "test.txt").exists()
-    mock_pub = cast(AsyncMock, service.cloud_publisher)
-    mock_pub.assert_not_called()
 
     target = Path(service.config.file_system_root) / "to_remove.txt"
     target.write_bytes(b"host_file_payload")
-    remove_msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.FileSystemService/Remove",
-        payload=pb.FileRemove(path="to_remove.txt").SerializeToString(),
+    resp_bytes = await service.execute_rpc(
+        "rpc.pb.FileSystemService/Remove",
+        pb.FileRemove(path="to_remove.txt").SerializeToString(),
     )
-    await service.handle_request(remove_msg)
 
     assert not target.exists()
-    mock_pub.assert_called_once()
-    queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.FileSystemService/Remove"
-    resp = cloud_gateway_pb2.GenericResponse.FromString(queued_pub.payload)
+    resp = cloud_gateway_pb2.GenericResponse.FromString(resp_bytes)
     assert resp.status == "ok"
 
 
 async def test_cloud_shell_poll_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, _serial = service_setup
+    service, _state, _serial = service_setup
     res_run = await service.process_run_async("echo out")
     pid = res_run.pid
     assert pid > 0
     await asyncio.sleep(0.05)
 
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.ProcessService/Poll",
-        payload=pb.ProcessPoll(pid=pid).SerializeToString(),
+    resp_bytes = await service.execute_rpc(
+        "rpc.pb.ProcessService/Poll",
+        pb.ProcessPoll(pid=pid).SerializeToString(),
     )
-    await service.handle_request(msg)
-
-    mock_pub = cast(AsyncMock, service.cloud_publisher)
-    mock_pub.assert_called_once()
-    queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.ProcessService/Poll"
-    resp = pb.ProcessPollResponse.FromString(queued_pub.payload)
+    resp = pb.ProcessPollResponse.FromString(resp_bytes)
     assert resp.exit_code == 0
     assert resp.stdout_data == b"out\n"
 
@@ -328,29 +278,22 @@ async def test_cloud_shell_kill_asserts_cloud(
     assert pid > 0
     assert pid in state.running_processes
 
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.ProcessService/Kill",
-        payload=pb.ProcessKill(pid=pid).SerializeToString(),
+    resp_bytes = await service.execute_rpc(
+        "rpc.pb.ProcessService/Kill",
+        pb.ProcessKill(pid=pid).SerializeToString(),
     )
-    await service.handle_request(msg)
-
+    assert cloud_gateway_pb2.GenericResponse.FromString(resp_bytes).status == "ok"
     assert pid not in state.running_processes
 
 
 async def test_cloud_shell_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, _serial = service_setup
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.ProcessService/RunAsync",
-        payload=pb.ProcessRunAsync(command="echo hello").SerializeToString(),
+    service, _state, _serial = service_setup
+    resp_bytes = await service.execute_rpc(
+        "rpc.pb.ProcessService/RunAsync",
+        pb.ProcessRunAsync(command="echo hello").SerializeToString(),
     )
-    await service.handle_request(msg)
-
-    mock_pub = cast(AsyncMock, service.cloud_publisher)
-    mock_pub.assert_called_once()
-    queued_pub = cast(cloud_gateway_pb2.CloudQueuedPublish, mock_pub.call_args[0][0])
-    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/res/rpc.pb.ProcessService/RunAsync"
-    resp = pb.ProcessRunAsyncResponse.FromString(queued_pub.payload)
+    resp = pb.ProcessRunAsyncResponse.FromString(resp_bytes)
     assert resp.pid > 0
     await service.process_kill(resp.pid)

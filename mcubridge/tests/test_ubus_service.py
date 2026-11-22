@@ -23,7 +23,6 @@ class MockRuntimeFacade:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
         self.state = state
-        self.handle_request = AsyncMock()
         self.process_run_async = AsyncMock(return_value=pb.ProcessRunAsyncResponse(pid=123))
         self.process_kill = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok"))
         self.reset_link = AsyncMock(return_value=True)

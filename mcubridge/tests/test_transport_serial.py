@@ -535,8 +535,6 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
         serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
         cloud_host="localhost",
         cloud_port=1883,
-        cloud_user=None,
-        cloud_pass=None,
         cloud_tls=False,
         cloud_cafile=None,
         cloud_certfile=None,

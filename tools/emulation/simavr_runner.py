@@ -59,17 +59,17 @@ def pw_emu_config_path() -> Path:
     return repo_root / "tools" / "emulation" / "pw_emu_config.json"
 
 
-def build_simavr_harness() -> Path | None:
+def build_simavr_runner() -> Path | None:
     """Build the host-side pw_emu_avr simavr_pty_runner binary if stale or missing."""
-    harness_src = repo_root / "third_party" / "avr_pigweed_port" / "tools" / "pw_emu_avr" / "simavr_pty_runner.c"
-    harness_bin = repo_root / "build" / "simavr" / "simavr_pty_runner"
-    if not harness_src.exists():
+    runner_src = repo_root / "third_party" / "avr_pigweed_port" / "tools" / "pw_emu_avr" / "simavr_pty_runner.c"
+    runner_bin = repo_root / "build" / "simavr" / "simavr_pty_runner"
+    if not runner_src.exists():
         return None
 
-    if harness_bin.exists() and harness_bin.stat().st_mtime >= harness_src.stat().st_mtime:
-        return harness_bin
+    if runner_bin.exists() and runner_bin.stat().st_mtime >= runner_src.stat().st_mtime:
+        return runner_bin
 
-    harness_bin.parent.mkdir(parents=True, exist_ok=True)
+    runner_bin.parent.mkdir(parents=True, exist_ok=True)
 
     compile_cmd = [
         "gcc",
@@ -79,17 +79,17 @@ def build_simavr_harness() -> Path | None:
         "-Wextra",
         "-I/usr/include/simavr",
         "-I/usr/local/include/simavr",
-        str(harness_src),
+        str(runner_src),
         "-lsimavr",
         "-lutil",
         "-o",
-        str(harness_bin),
+        str(runner_bin),
     ]
     try:
         res = subprocess.run(compile_cmd, capture_output=True, text=True, check=False)
-        if res.returncode == 0 and harness_bin.exists():
-            logger.info("Compiled pw_emu_avr simavr_pty_runner binary", binary=str(harness_bin))
-            return harness_bin
+        if res.returncode == 0 and runner_bin.exists():
+            logger.info("Compiled pw_emu_avr simavr_pty_runner binary", binary=str(runner_bin))
+            return runner_bin
         logger.warning("Failed to compile simavr_pty_runner via gcc", stderr=res.stderr)
     except (subprocess.SubprocessError, OSError) as exc:
         logger.warning("gcc not available to build simavr_pty_runner", error=str(exc))
@@ -256,8 +256,8 @@ def run_simavr_emulation(
         logger.error("Firmware ELF not found", path=str(firmware_path))
         return False
 
-    harness_bin = build_simavr_harness()
-    if harness_bin is None:
+    runner_bin = build_simavr_runner()
+    if runner_bin is None:
         logger.error("simavr_pty_runner could not be built; install libsimavr-dev and gcc")
         return False
 

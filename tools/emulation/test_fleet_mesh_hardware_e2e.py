@@ -66,7 +66,7 @@ from tools.emulation.process_utils import (
 )
 from tools.emulation.qemu_runner import find_qemu_binary
 from tools.emulation.simavr_runner import (
-    build_simavr_harness,
+    build_simavr_runner,
     report_simavr_diagnostics,
     start_simavr_emulator,
     stop_simavr_emulator,
@@ -539,8 +539,8 @@ def compile_fleet_firmwares() -> (
 
 def verify_host_binaries() -> tuple[Path, str, str, str] | None:
     """Locate and verify all host emulation binaries (simavr_pty_runner, renode, qemu, socat)."""
-    harness_bin = build_simavr_harness()
-    if not harness_bin:
+    runner_bin = build_simavr_runner()
+    if not runner_bin:
         logger.error("pw_emu_avr simavr_pty_runner could not be built on host system")
         return None
 
@@ -564,7 +564,7 @@ def verify_host_binaries() -> tuple[Path, str, str, str] | None:
         logger.error("socat binary not found on host system")
         return None
 
-    return harness_bin, renode_bin, qemu_bin, socat_bin
+    return runner_bin, renode_bin, qemu_bin, socat_bin
 
 
 def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
@@ -578,7 +578,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
     binaries = verify_host_binaries()
     if binaries is None:
         return False
-    _harness_bin, renode_bin, qemu_bin, socat_bin = binaries
+    _runner_bin, renode_bin, qemu_bin, socat_bin = binaries
 
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
     log_collector = EmulationState()

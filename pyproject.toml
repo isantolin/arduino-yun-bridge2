@@ -43,7 +43,7 @@ asyncio_default_fixture_loop_scope = "function"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests"]
-pythonpath = [".", "mcubridge", "mcubridge-client-examples"]
+pythonpath = [".", "mcubridge", "mcubridge-client-examples", "third_party/avr_pigweed_port/tools/pw_emu_avr/python"]
 norecursedirs = [
     "openwrt-sdk",
     "feeds",
@@ -69,6 +69,7 @@ extraPaths = [
     "mcubridge",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
+    "third_party/avr_pigweed_port/tools/pw_emu_avr/python",
 ]
 include = [
     "mcubridge/mcubridge",
@@ -259,6 +260,7 @@ search-path = [
     "mcubridge",
     "mcubridge-client-examples",
     "mcubridge-client-examples/tests",
+    "third_party/avr_pigweed_port/tools/pw_emu_avr/python",
 ]
 python-version = "3.14.0"
 site-package-path = ["typings"]

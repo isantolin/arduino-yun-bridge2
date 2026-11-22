@@ -16,6 +16,7 @@ import serial.tools.list_ports
 from serial.urlhandler import protocol_socket
 import typer
 from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_rpc import packets as pw_packets
 
 from mcubridge.transport.serial import resolve_serial_url
@@ -101,7 +102,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDebugSnapshot:
     target = _OP_BY_METHOD_ID.get(command_id, command_id)
-    encoded_packet = protocol.encode_hdlc_rpc(target, payload, call_id=0)
+    encoded_packet = ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(target, payload, call_id=0))
 
     if isinstance(payload, (bytes, bytearray, memoryview)):
         payload_length = len(payload)

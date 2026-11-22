@@ -219,12 +219,16 @@ def test_get_ssl_context_insecure() -> None:
 
 def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
     from pw_hdlc.decode import FrameDecoder
+    from pw_hdlc.encode import ui_frame
     from pw_rpc.internal.packet_pb2 import RpcPacket
     from mcubridge.protocol import protocol
 
     # 1. RPC HDLC encoding & decoding
     pin_msg = mcu_wire_pb2.PinRead(pin=13)
-    encoded_rpc = protocol.encode_hdlc_rpc("rpc.pb.GpioService/DigitalRead", pin_msg, call_id=42)
+    encoded_rpc = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        protocol.encode_rpc_packet("rpc.pb.GpioService/DigitalRead", pin_msg, call_id=42),
+    )
     assert encoded_rpc.startswith(b"\x7e")
     assert encoded_rpc.endswith(b"\x7e")
 
@@ -243,7 +247,7 @@ def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
     assert decoded_pin.pin == 13
 
     # 2. Console HDLC encoding & decoding
-    encoded_console = protocol.encode_hdlc_console(b"hello world\n")
+    encoded_console = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, b"hello world\n")
     decoder_console = FrameDecoder()
     console_frames = list(decoder_console.process(encoded_console))
     assert len(console_frames) == 1

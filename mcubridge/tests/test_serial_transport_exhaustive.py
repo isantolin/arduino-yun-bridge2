@@ -7,6 +7,7 @@ import threading
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
+from pw_hdlc.encode import ui_frame
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher
@@ -182,7 +183,7 @@ async def test_read_loop_valid_frame_dispatch(
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
 
-    hdlc_frame = protocol.encode_hdlc_console(b"test_payload")
+    hdlc_frame = ui_frame(protocol.HDLC_ADDRESS_CONSOLE, b"test_payload")
 
     mock_serial.read_until.side_effect = [
         hdlc_frame,

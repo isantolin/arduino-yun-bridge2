@@ -7,6 +7,7 @@ from google.protobuf.message import DecodeError as ProtobufDecodeError
 from hypothesis import event, given, note, settings, target
 from hypothesis import strategies as st
 from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_rpc.internal.packet_pb2 import RpcPacket
 
 from mcubridge.protocol import protocol
@@ -63,7 +64,10 @@ def test_hdlc_streaming_chunking_fragmentation_invariant(
     expected_frames: list[tuple[int, int, int, bytes]] = []
     wire_parts: list[bytes] = []
     for service_id, method_id, call_id, payload in rpc_packets:
-        frame_bytes = protocol.encode_hdlc_rpc(1, service_id, method_id, call_id, payload)
+        frame_bytes = ui_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            protocol.encode_rpc_packet((service_id, method_id), payload, call_id=call_id, channel_id=1),
+        )
         wire_parts.append(frame_bytes)
         expected_frames.append((service_id, method_id, call_id, payload))
     wire_stream = b"".join(wire_parts)

@@ -32,6 +32,7 @@ import tenacity
 import typer
 from google.protobuf.message import DecodeError
 from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
@@ -172,10 +173,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
             # overlapping probes leave stale nonce responses for the daemon.
             if pending_sync is None and now >= next_probe:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
-                reset_request = protocol.encode_hdlc_rpc(
-                    "rpc.pb.SystemService/LinkReset",
-                    b"",
-                    call_id=call_id,
+                reset_request = ui_frame(
+                    protocol.HDLC_ADDRESS_RPC,
+                    protocol.encode_rpc_packet(
+                        "rpc.pb.SystemService/LinkReset",
+                        b"",
+                        call_id=call_id,
+                    ),
                 )
                 if ser.write(reset_request) != len(reset_request):
                     raise OSError("Partial write while resetting MCU link readiness probe")
@@ -183,10 +187,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
                 nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
                 request_tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
-                sync_request = protocol.encode_hdlc_rpc(
-                    "rpc.pb.SystemService/LinkSync",
-                    mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
-                    call_id=call_id,
+                sync_request = ui_frame(
+                    protocol.HDLC_ADDRESS_RPC,
+                    protocol.encode_rpc_packet(
+                        "rpc.pb.SystemService/LinkSync",
+                        mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
+                        call_id=call_id,
+                    ),
                 )
                 if ser.write(sync_request) != len(sync_request):
                     raise OSError("Partial write while probing MCU UART readiness")

@@ -139,7 +139,10 @@ async def test_logging_not_debug_branches(
 
     # 2. feed_data when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
-    cleartext = protocol.encode_hdlc_rpc("rpc.pb.SystemService/GetVersion", payload, call_id=1)
+    cleartext = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        protocol.encode_rpc_packet("rpc.pb.SystemService/GetVersion", payload, call_id=1),
+    )
     frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
@@ -165,7 +168,10 @@ async def test_feed_data_uninitialized_protobuf(
 
     mocker.patch.dict(protocol.BY_RPC, {(0x1000, 0x2000): fake_spec})
 
-    encoded = protocol.encode_hdlc_rpc(1, 0x1000, 0x2000, 1, b"dummy_payload")
+    encoded = ui_frame(
+        protocol.HDLC_ADDRESS_RPC,
+        protocol.encode_rpc_packet((0x1000, 0x2000), b"dummy_payload", call_id=1, channel_id=1),
+    )
     initial_errors = mock_state.serial_decode_errors
     await transport.feed_data(encoded)
     assert mock_state.serial_decode_errors == initial_errors + 1

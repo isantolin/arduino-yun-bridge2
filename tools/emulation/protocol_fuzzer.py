@@ -14,6 +14,7 @@ from typing import Annotated, Any, ClassVar, cast
 import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
+from pw_hdlc.encode import ui_frame
 import serial
 import structlog
 import typer
@@ -73,7 +74,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         return self.seq_id
 
     def _build_raw_frame(self, cmd: int | str, seq: int, payload: bytes) -> bytes:
-        return protocol.encode_hdlc_rpc(cmd, payload, call_id=seq)
+        return ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(cmd, payload, call_id=seq))
 
     @rule(payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE))
     def fuzz_valid_ping(self, payload: bytes) -> None:

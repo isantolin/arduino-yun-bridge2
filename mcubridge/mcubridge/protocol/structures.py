@@ -12,17 +12,14 @@ import shlex
 import ssl
 from collections.abc import Iterable
 from pathlib import Path
-from typing import (
-    Any,
-    Final,
-)
+from typing import Final
 
 import structlog
 from google.protobuf.descriptor import FieldDescriptor
 
 from ssl import TLSVersion
 
-from . import cloud_gateway_pb2, config_schema_pb2
+from . import config_schema_pb2
 from . import protocol
 
 logger = structlog.get_logger(__name__)
@@ -35,8 +32,6 @@ def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
         end = i + chunk_size
         yield bytes(mv[i:end])
 
-
-PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 _TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(
@@ -217,71 +212,3 @@ def get_ssl_context(cfg: config_schema_pb2.RuntimeConfig) -> ssl.SSLContext | No
         return context
     except (OSError, ValueError) as exc:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
-
-
-# =============================================================================
-# 3. Operational Structures
-# =============================================================================
-
-
-# --- CLOUD Spool Helpers ---
-
-
-def resolve_cloud_context(
-    message: cloud_gateway_pb2.CloudQueuedPublish, context: Any | None
-) -> cloud_gateway_pb2.CloudQueuedPublish:
-    """Resolve CLOUD request-reply context into the publish message."""
-    if context is None:
-        return message
-
-    newpb_obj = cloud_gateway_pb2.CloudQueuedPublish()
-    newpb_obj.CopyFrom(message)
-
-    props = getattr(context, "properties", None)
-    has_rt = (
-        context.HasField("response_topic")
-        if hasattr(context, "HasField")
-        else bool(getattr(context, "response_topic", None))
-    )
-    rt = getattr(context, "response_topic", None) if has_rt else None
-    if not rt and props:
-        rt = getattr(props, "ResponseTopic", None)
-    if rt:
-        newpb_obj.topic_name = str(rt)
-
-    has_cd = (
-        context.HasField("correlation_data")
-        if hasattr(context, "HasField")
-        else bool(getattr(context, "correlation_data", None))
-    )
-    cd = getattr(context, "correlation_data", None) if has_cd else None
-    if not cd and props:
-        cd = getattr(props, "CorrelationData", None)
-    if cd:
-        newpb_obj.correlation_data = bytes(cd)
-
-    if req_topic := getattr(context, "topic", None):
-        newpb_obj.user_properties.add(key="bridge-request-topic", value=str(req_topic))
-
-    return newpb_obj
-
-
-def create_queued_publish(
-    topic_name: str,
-    payload: bytes,
-    content_type: str | None = None,
-    message_expiry_interval: int | None = None,
-    user_properties: Iterable[tuple[str, str]] = (),
-    qos: int = 1,
-) -> cloud_gateway_pb2.CloudQueuedPublish:
-    """Factory to create a CloudQueuedPublish message. [SIL-2]"""
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=topic_name,
-        payload=payload,
-        content_type=content_type or "",
-        qos=qos,
-        user_properties=[cloud_gateway_pb2.UserProperty(key=k, value=v) for k, v in user_properties],
-    )
-    if message_expiry_interval is not None:
-        msg.message_expiry_interval = message_expiry_interval
-    return msg

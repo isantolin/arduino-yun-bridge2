@@ -94,13 +94,6 @@ return view.extend({
 		o.rmempty = false;
 		applySchemaDefault(o, 'cloud_port', false);
 
-		o = s.option(form.Value, 'cloud_user', _('Cloud Username'));
-		o.rmempty = true;
-
-		o = s.option(form.Value, 'cloud_pass', _('Cloud Password'));
-		o.password = true;
-		o.rmempty = true;
-
 		o = s.option(form.Flag, 'cloud_tls', _('Enable TLS/SSL'),
 			_('Strongly recommended. Disabling TLS sends credentials and payloads in plaintext.'));
 		o.rmempty = false;

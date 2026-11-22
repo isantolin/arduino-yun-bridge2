@@ -117,8 +117,6 @@ class PatchedRuntimeConfig:
             "cloud_enabled": "cloud_enabled",
             "cloud_host": "cloud_host",
             "cloud_port": "cloud_port",
-            "cloud_user": "cloud_user",
-            "cloud_pass": "cloud_pass",
             "cloud_tls": "cloud_tls",
             "cloud_cafile": "cloud_cafile",
             "cloud_certfile": "cloud_certfile",
@@ -304,8 +302,6 @@ def runtime_config() -> config_schema_pb2.RuntimeConfig:
         serial_safe_baud=DEFAULT_SAFE_BAUDRATE,
         cloud_host="localhost",
         cloud_port=DEFAULT_CLOUD_PORT,
-        cloud_user=None,
-        cloud_pass=None,
         cloud_tls=True,
         cloud_cafile=str(Path(TMP_TESTS_DIR) / "test-ca.pem"),
         cloud_certfile=None,
@@ -422,17 +418,9 @@ def st_cloud_queued_publish(
     """Canonical Hypothesis strategy for generating valid Protobuf CloudQueuedPublish instances."""
     topic = draw(st.text(min_size=1, max_size=64))
     payload = draw(st.binary(min_size=min_payload_size, max_size=max_payload_size))
-    qos = draw(st.integers(min_value=0, max_value=2))
-    retain = draw(st.booleans())
-    corr = draw(st.binary(max_size=32))
-    reply = draw(st.text(max_size=64))
     return cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=topic,
         payload=payload,
-        qos=qos,
-        retain=retain,
-        correlation_data=corr,
-        response_topic=reply,
     )
 
 

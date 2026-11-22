@@ -9,9 +9,8 @@ from typing import Any
 
 import structlog
 
-from .protocol import cloud_gateway_pb2, mcu_wire_pb2
-from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
-from .protocol.protocol import BRIDGE_SNAPSHOT_EXPIRY_SECONDS, get_topic_for_message
+from .protocol import cloud_gateway_pb2
+from .protocol.protocol import get_topic_for_message
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
@@ -19,58 +18,23 @@ logger = structlog.get_logger("mcubridge.metrics")
 PublishEnqueue = Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[None]]
 
 
-def _build_metrics_message(
+def _build_telemetry_message(
     state: RuntimeState,
-    snapshot: mcu_wire_pb2.DaemonMetrics,
-    *,
-    expiry_seconds: float,
+    snapshot: Any,
 ) -> cloud_gateway_pb2.CloudQueuedPublish:
     topic = get_topic_for_message(state.cloud_topic_prefix, snapshot) or ""
-    # [SIL-2] Direct Protobuf serialization without StructuredPayload overhead
-    message = create_queued_publish(
+    return cloud_gateway_pb2.CloudQueuedPublish(
         topic_name=topic,
         payload=snapshot.SerializeToString(),
-        content_type=PROTOBUF_CONTENT_TYPE,
-        message_expiry_interval=int(expiry_seconds),
-        user_properties=(),
     )
-
-    if snapshot.cloud_spool_degraded:
-        message.user_properties.add(
-            key="bridge-spool",
-            value=snapshot.cloud_spool_failure_reason or "unknown",
-        )
-
-    # Extra props for files
-    if state.file_storage_limit_rejections > 0:
-        message.user_properties.add(key="bridge-files", value="quota-blocked")
-    elif state.file_write_limit_rejections > 0:
-        message.user_properties.add(key="bridge-files", value="write-limit")
-
-    message.user_properties.add(
-        key="bridge-watchdog-enabled",
-        value="1" if snapshot.watchdog_enabled else "0",
-    )
-    if snapshot.watchdog_enabled:
-        message.user_properties.add(key="bridge-watchdog-interval", value=str(snapshot.watchdog_interval))
-
-    return message
 
 
 async def _emit_metrics_snapshot(
     state: RuntimeState,
     enqueue: PublishEnqueue,
-    *,
-    expiry_seconds: float,
 ) -> None:
     snapshot = state.build_metrics_snapshot()
-    await enqueue(
-        _build_metrics_message(
-            state,
-            snapshot,
-            expiry_seconds=expiry_seconds,
-        )
-    )
+    await enqueue(_build_telemetry_message(state, snapshot))
 
 
 async def emit_bridge_snapshot(
@@ -80,13 +44,7 @@ async def emit_bridge_snapshot(
 ) -> None:
     try:
         snapshot = state.build_handshake_snapshot() if flavor == "handshake" else state.build_bridge_snapshot()
-        await enqueue(
-            _build_bridge_snapshot_message(
-                state,
-                flavor,
-                snapshot,
-            )
-        )
+        await enqueue(_build_telemetry_message(state, snapshot))
     except asyncio.CancelledError:
         raise
     except (TypeError, ValueError, OSError) as e:
@@ -118,11 +76,10 @@ async def publish_metrics(
     """
 
     tick_seconds = max(1, math.ceil(max(min_interval, interval)))
-    expiry = float(tick_seconds * 2)
 
     async def _metrics_tick() -> None:
         try:
-            await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
+            await _emit_metrics_snapshot(state, enqueue)
         except asyncio.CancelledError:
             raise
         except (OSError, RuntimeError) as e:
@@ -171,18 +128,3 @@ async def publish_bridge_snapshots(
             tg.create_task(_snapshot_loop("summary", summary_seconds))
         if handshake_seconds is not None:
             tg.create_task(_snapshot_loop("handshake", handshake_seconds))
-
-
-def _build_bridge_snapshot_message(
-    state: RuntimeState,
-    flavor: str,
-    snapshot: Any,
-) -> cloud_gateway_pb2.CloudQueuedPublish:
-    topic = get_topic_for_message(state.cloud_topic_prefix, snapshot) or ""
-    return create_queued_publish(
-        topic_name=topic,
-        payload=snapshot.SerializeToString(),
-        content_type=PROTOBUF_CONTENT_TYPE,
-        message_expiry_interval=BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
-        user_properties=(("bridge-snapshot", flavor),),
-    )

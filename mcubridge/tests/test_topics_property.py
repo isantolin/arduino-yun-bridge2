@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from hypothesis import assume, given
+from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol.protocol import (
     OPERATIONS,
     get_operation,
     get_topic_for_message,
-    parse_topic,
     topic_path,
 )
 
@@ -21,60 +20,7 @@ _SAFE_TEXT = st.text(
     max_size=16,
 )
 
-
-@given(
-    prefix=_SAFE_TEXT,
-    direction=st.sampled_from(["req", "res", "evt"]),
-    method=_SAFE_TEXT,
-)
-def test_topic_path_parse_topic_isomorphism(prefix: str, direction: str, method: str) -> None:
-    """Property: Any valid (prefix, direction, method) tuple roundtrips through parse_topic idempotently."""
-    raw = topic_path(prefix, direction, method)
-    route = parse_topic(prefix, raw)
-    assert route is not None
-    assert route.raw == raw
-    assert route.prefix == prefix
-    assert route.direction == direction
-    assert route.method == method
-
-
-@given(
-    prefix_a=_SAFE_TEXT,
-    prefix_b=_SAFE_TEXT,
-    direction=st.sampled_from(["req", "res", "evt"]),
-    method=_SAFE_TEXT,
-)
-def test_parse_topic_mismatched_prefix_rejected(prefix_a: str, prefix_b: str, direction: str, method: str) -> None:
-    """Property: A topic constructed with prefix_b is deterministically rejected when parsed with distinct prefix_a."""
-    assume(prefix_a != prefix_b)
-    raw = topic_path(prefix_b, direction, method)
-    assert parse_topic(prefix_a, raw) is None
-
-
 _KNOWN_OP_NAMES = [spec.name for spec in OPERATIONS if spec.cloud_topic is not None]
-
-
-@given(
-    prefix=_SAFE_TEXT,
-    invalid_direction=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=4, max_size=16).filter(
-        lambda s: s not in ("req", "res", "evt")
-    ),
-    method=_SAFE_TEXT,
-)
-def test_parse_topic_unrecognized_direction_rejected(prefix: str, invalid_direction: str, method: str) -> None:
-    """Property: Any direction segment not in ('req', 'res', 'evt') returns None."""
-    raw = topic_path(prefix, invalid_direction, method)
-    assert parse_topic(prefix, raw) is None
-
-
-@given(s=_SAFE_TEXT)
-def test_parse_topic_empty_inputs_rejected(s: str) -> None:
-    """Property: Empty prefix or empty topic string always returns None."""
-    assert parse_topic("", s) is None
-    assert parse_topic(s, "") is None
-    assert parse_topic("", "") is None
-    assert parse_topic("prefix", "///") is None
-    assert parse_topic("///", "prefix/req/rpc.pb.GpioService/DigitalWrite") is None
 
 
 @given(
@@ -116,14 +62,10 @@ def test_topics_canonical_service_paths() -> None:
 
 
 def test_topics_edge_cases() -> None:
-    """Validate topic parsing and formatting edge cases."""
-    assert parse_topic("br", "br/invalid_topic/foo") is None
-    assert parse_topic("br", "br/only_one_segment") is None
-    assert parse_topic("br", "devices/arduino-01/invalid_dir/rpc.pb.GpioService/DigitalWrite") is None
-    assert parse_topic("", "foo") is None
-    assert parse_topic("br", "") is None
+    """Validate topic path formatting edge cases."""
     assert topic_path("", "SystemService") == "SystemService"
     assert topic_path("", "SystemService", "") == "SystemService"
+    assert topic_path("", "") == ""
 
 
 def test_get_topic_for_message_all_types() -> None:
@@ -164,24 +106,3 @@ def test_registry_pigweed_descriptors_proto_ssot() -> None:
     assert get_operation("Put") is None
     if spec_ds.service_id and spec_ds.method_id:
         assert get_operation((spec_ds.service_id, spec_ds.method_id)) is spec_ds
-
-
-def test_registry_fleet_and_direction_topic_parsing() -> None:
-    """[SIL-2] Verify parsing of fleet and direction-based canonical topics."""
-    # 1. Fleet topic: devices/{device_id}/{direction}/{method}
-    route_fleet = parse_topic("any_prefix", "devices/arduino-01/req/rpc.pb.GpioService/DigitalWrite")
-    assert route_fleet is not None
-    assert route_fleet.device_id == "arduino-01"
-    assert route_fleet.direction == "req"
-    assert route_fleet.method == "rpc.pb.GpioService/DigitalWrite"
-    assert route_fleet.prefix == "devices/arduino-01"
-    assert route_fleet.action == "DigitalWrite"
-
-    # 2. Canonical Direction topic: {prefix}/{direction}/{method}
-    route_dir = parse_topic("yun/bridge", "yun/bridge/req/rpc.pb.GpioService/DigitalWrite")
-    assert route_dir is not None
-    assert route_dir.device_id == ""
-    assert route_dir.direction == "req"
-    assert route_dir.method == "rpc.pb.GpioService/DigitalWrite"
-    assert route_dir.prefix == "yun/bridge"
-    assert route_dir.action == "DigitalWrite"

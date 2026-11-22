@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import os
-import socket
 import time
 from enum import StrEnum
 from pathlib import Path
@@ -452,10 +450,6 @@ class RuntimeState:
     @property
     def mcu_status_counts(self) -> dict[str, int]:
         return dict(self.metrics.mcu_status_counts.items())
-
-    @property
-    def device_id(self) -> str:
-        return os.environ.get("MCUBRIDGE_DEVICE_ID") or socket.gethostname()
 
     @property
     def topic_prefix(self) -> str:

@@ -109,24 +109,23 @@ async def test_handle_mcu_frame_rpc_handlers(
     mock_pub.assert_awaited()
 
 
-async def test_handle_request_routing(runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+async def test_execute_rpc_routing(runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, serial = runtime_setup
     state.connection_fsm.connect()
     state.connection_fsm.synchronize()
     serial.send.return_value = True
 
-    # Console input topic
+    # Console input queue
     state.console_to_mcu_queue.append(b"help\n")
     await service.flush_console_queue()
     assert len(state.console_to_mcu_queue) == 0  # Should be flushed immediately to serial
     serial.send.assert_awaited()
 
-    # Mailbox write topic
-    req_mb = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{state.cloud_topic_prefix}/req/rpc.pb.MailboxService/Push",
-        payload=pb.MailboxPush(data=b"ping").SerializeToString(),
+    # Mailbox write RPC
+    await service.execute_rpc(
+        "rpc.pb.MailboxService/Push",
+        pb.MailboxPush(data=b"ping").SerializeToString(),
     )
-    await service.handle_request(req_mb)
     serial.send.assert_awaited()
 
 

@@ -199,11 +199,22 @@ def test_protobuf_descriptor_purged_elements() -> None:
     """SIL-2: Verify compiled descriptor does not contain any abandoned messages or fields."""
     all_descriptors = (cloud_gateway_pb2.DESCRIPTOR, mcu_wire_pb2.DESCRIPTOR, config_schema_pb2.DESCRIPTOR)
 
-    # 1. No DataFormats or retired FileWrite messages (ADR-0008)
+    # 1. No DataFormats, UserProperty, CloudSuffixes, or retired FileWrite messages (ADR-0008)
     for fd in all_descriptors:
         assert "DataFormats" not in fd.message_types_by_name
         assert "FileWrite" not in fd.message_types_by_name
+        assert "UserProperty" not in fd.message_types_by_name
+        assert "CloudSuffixes" not in fd.message_types_by_name
     assert "Write" not in mcu_wire_pb2.DESCRIPTOR.services_by_name["FileSystemService"].methods_by_name
+    assert set(cloud_gateway_pb2.CloudQueuedPublish.DESCRIPTOR.fields_by_name) == {"topic_name", "payload"}
+    assert set(config_schema_pb2.StatusReasons.DESCRIPTOR.fields_by_name) == {
+        "sync_auth_mismatch",
+        "sync_length_mismatch",
+    }
+    runtime_cfg_fields = set(config_schema_pb2.RuntimeConfig.DESCRIPTOR.fields_by_name)
+    assert runtime_cfg_fields.isdisjoint(
+        {"cloud_user", "cloud_pass", "cloud_http3_enabled", "cloud_http3_port", "cloud_http3_congestion_control"}
+    )
 
     # 2. No data_formats file extension
     for fd in all_descriptors:
@@ -251,6 +262,10 @@ def test_protobuf_descriptor_purged_elements() -> None:
         "default_reconnect_delay",
         "clock_command_min",
         "clock_command_max",
+        "cloud_expiry_pin",
+        "cloud_expiry_datastore",
+        "cloud_expiry_console",
+        "bridge_snapshot_expiry_seconds",
     }
     assert retired_constants.isdisjoint(constant_fields)
 
@@ -401,7 +416,6 @@ def test_runtime_config_defaults_reference_canonical_metadata() -> None:
         "console_queue_limit_bytes": "constants.default_console_queue_limit_bytes",
         "serial_handshake_fatal_failures": "constants.default_serial_handshake_fatal_failures",
         "process_max_output_bytes": "constants.default_process_max_output_bytes",
-        "cloud_http3_port": "constants.default_cloud_port",
     }
     for field_name, reference in expected_references.items():
         options = fields[field_name].GetOptions()
@@ -412,7 +426,6 @@ def test_runtime_config_defaults_reference_canonical_metadata() -> None:
     assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_baud"] == protocol.DEFAULT_BAUDRATE
     assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_safe_baud"] == protocol.DEFAULT_SAFE_BAUDRATE
     assert protocol.RUNTIME_CONFIG_DEFAULTS["cloud_port"] == protocol.DEFAULT_CLOUD_PORT
-    assert protocol.RUNTIME_CONFIG_DEFAULTS["cloud_http3_port"] == protocol.DEFAULT_CLOUD_PORT
     assert protocol.RUNTIME_CONFIG_DEFAULTS["topic_prefix"] == protocol.CLOUD_DEFAULT_TOPIC_PREFIX
     assert protocol.RUNTIME_CONFIG_DEFAULTS["reconnect_delay"] == protocol.DEFAULT_RECONNECT_DELAY
     assert protocol.RUNTIME_CONFIG_DEFAULTS["console_queue_limit_bytes"] == protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES

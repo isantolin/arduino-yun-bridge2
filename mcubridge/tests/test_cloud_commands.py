@@ -11,7 +11,6 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -41,47 +40,34 @@ def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
 @given(
     pin=st.integers(0, 64),
     val=st.integers(0, 2),
-    corr_id=st.integers(1, 2**63 - 1),
     is_mode=st.booleans(),
 )
 async def test_cloud_command_pin_dispatch_property(
     pin: int,
     val: int,
-    corr_id: int,
     is_mode: bool,
 ) -> None:
-    """Validate that cloud pin commands (digital write and mode) dispatch correlated RPC and responses."""
-    svc, state, serial_mock, mock_publish = _make_service()
+    """Validate that cloud pin commands (digital write and mode) dispatch RPC and responses."""
+    svc, state, serial_mock, _ = _make_service()
     try:
         method = "rpc.pb.GpioService/SetPinMode" if is_mode else "rpc.pb.GpioService/DigitalWrite"
-        t_path = topic_path(state.cloud_topic_prefix, "req", method)
         payload = (
             mcu_wire_pb2.PinMode(pin=pin, mode=cast(Any, val)).SerializeToString()
             if is_mode
             else mcu_wire_pb2.DigitalWrite(pin=pin, value=val).SerializeToString()
         )
-        inbound = cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=t_path,
-            payload=payload,
-            correlation_data=corr_id.to_bytes(8, "big"),
-        )
 
         serial_mock.send.return_value = cloud_gateway_pb2.GenericResponse(status="ok")
-        await svc.handle_request(inbound)
+        resp_bytes = await svc.execute_rpc(method, payload)
 
         # Validate serial command was dispatched
         serial_mock.send.assert_awaited_once()
         assert serial_mock.send.await_args is not None
         args, _ = serial_mock.send.await_args
-        mock_publish.assert_awaited_once()
-        assert mock_publish.await_args is not None
-        pub_msg = mock_publish.await_args.args[0]
-        assert isinstance(pub_msg, cloud_gateway_pb2.CloudQueuedPublish)
         if is_mode:
             assert args[0] in ("rpc.pb.GpioService/SetPinMode", protocol.get_operation("rpc.pb.GpioService/SetPinMode"))
             assert isinstance(args[1], mcu_wire_pb2.PinMode)
             assert args[1].pin == pin
-            assert f"res/{method}" in pub_msg.topic_name
         else:
             assert args[0] in (
                 "rpc.pb.GpioService/DigitalWrite",
@@ -90,21 +76,17 @@ async def test_cloud_command_pin_dispatch_property(
             assert isinstance(args[1], mcu_wire_pb2.DigitalWrite)
             assert args[1].pin == pin
             assert args[1].value == val
-            assert f"res/{method}" in pub_msg.topic_name
 
-        # Validate cloud response was enqueued with correlation context
-        assert pub_msg.correlation_data == inbound.correlation_data
+        assert cloud_gateway_pb2.GenericResponse.FromString(resp_bytes).status == "ok"
     finally:
         state.cleanup()
         svc.cleanup()
 
 
 @given(
-    seq_id=st.integers(1, 2**63 - 1),
     payload=st.binary(min_size=1, max_size=64),
 )
 async def test_publish_cloud_message_wraps_command_response(
-    seq_id: int,
     payload: bytes,
 ) -> None:
     """Validate that publish_cloud_message routes payload through send_cloud_telemetry."""
@@ -119,15 +101,13 @@ async def test_publish_cloud_message_wraps_command_response(
         msg = cloud_gateway_pb2.CloudQueuedPublish(
             topic_name="br/res/rpc.pb.GpioService/DigitalRead",
             payload=payload,
-            correlation_data=seq_id.to_bytes(8, "big"),
-            response_topic="cloud",
         )
 
         publish_cloud_msg: Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
         published = await publish_cloud_msg(msg)
         assert published is True
 
-        svc.send_cloud_telemetry.assert_awaited_once()
+        svc.send_cloud_telemetry.assert_awaited_once_with(system_status_blob=payload)
     finally:
         state.cleanup()
         svc.cleanup()

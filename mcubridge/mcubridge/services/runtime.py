@@ -9,7 +9,7 @@ import logging
 import operator
 import stat
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Coroutine
 from pathlib import Path
 from typing import Any, ClassVar, Final, cast
 
@@ -46,7 +46,7 @@ from ..metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from ..protocol import protocol, structures
+from ..protocol import protocol
 from ..protocol.protocol import (
     PROCESS_TERM_GRACE_PERIOD_SECONDS,
     STREAM_POLL_TIMEOUT_SECONDS,
@@ -55,8 +55,6 @@ from ..protocol.protocol import (
     Status,
 )
 from ..protocol.structures import (
-    PROTOBUF_CONTENT_TYPE,
-    create_queued_publish,
     get_ssl_context,
     iter_chunks,
     parse_allowed_command,
@@ -107,7 +105,6 @@ class BridgeService:
     state: RuntimeState
     serial: SerialTransport | None
     cloud_writer: asyncio.StreamWriter | None
-    _cloud_reader: asyncio.StreamReader | None
     cloud_rpc_client: Any | None
     cloud_transfer_manager: Any | None
 
@@ -163,7 +160,7 @@ class BridgeService:
         self.config, self.state, self.serial = config, state, serial
         self.lifecycle_fsm = DaemonLifecycleMachine()
         self.cloud_publisher = cloud_publisher
-        self.cloud_writer, self._cloud_reader, self.cloud_rpc_client = None, None, None
+        self.cloud_writer, self.cloud_rpc_client = None, None
         self.cloud_transfer_manager: Any | None = None
         self._cloud_transfer_lock = asyncio.Lock()
         self.watchdog = (
@@ -218,24 +215,23 @@ class BridgeService:
 
     # --- External Interface ---
 
-    async def enqueue_cloud(self, message: CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
-        resolved_message = structures.resolve_cloud_context(message, reply_context)
+    async def enqueue_cloud(self, message: CloudQueuedPublish) -> None:
         if self.cloud_publisher is not None:
-            await self.cloud_publisher(resolved_message)
+            await self.cloud_publisher(message)
             return
 
         if not self.config.cloud_enabled or self.lifecycle_fsm.draining.is_active:
             return
 
-        self.state.cloud_publish_queue.put_nowait(resolved_message)
+        self.state.cloud_publish_queue.put_nowait(message)
         try:
             async with self._cloud_publish_lock:
                 await self.flush_cloud_spool_locked()
-                if await self.publish_cloud_message(resolved_message):
+                if await self.publish_cloud_message(message):
                     return
-                if await self.spool_cloud_message_locked(resolved_message):
+                if await self.spool_cloud_message_locked(message):
                     return
-                self.record_cloud_drop(resolved_message.topic_name)
+                self.record_cloud_drop(message.topic_name)
         finally:
             try:
                 self.state.cloud_publish_queue.get_nowait()
@@ -246,42 +242,14 @@ class BridgeService:
         self,
         topic_name: str,
         payload: bytes,
-        content_type: str | None = None,
-        message_expiry_interval: int | None = None,
-        user_properties: Iterable[tuple[str, str]] = (),
-        qos: int = 1,
-        *,
-        reply_context: Any | None = None,
     ) -> None:
         """Create and enqueue a CloudQueuedPublish message in a single operation. [SIL-2]"""
-        await self.enqueue_cloud(
-            create_queued_publish(
-                topic_name=topic_name,
-                payload=payload,
-                content_type=content_type,
-                message_expiry_interval=message_expiry_interval,
-                user_properties=user_properties,
-                qos=qos,
-            ),
-            reply_context=reply_context,
-        )
+        await self.enqueue_cloud(CloudQueuedPublish(topic_name=topic_name, payload=payload))
 
-    async def enqueue_cloud_status_report(
-        self,
-        report: StatusReport,
-        *,
-        user_properties: Iterable[tuple[str, str]] = (),
-        reply_context: Any | None = None,
-    ) -> None:
+    async def enqueue_cloud_status_report(self, report: StatusReport) -> None:
         """Enqueue a Protobuf StatusReport message to the cloud. [SIL-2]"""
         topic = protocol.get_topic_for_message(self.state.cloud_topic_prefix, StatusReport) or ""
-        await self.enqueue_cloud_publish(
-            topic,
-            report.SerializeToString(),
-            content_type=PROTOBUF_CONTENT_TYPE,
-            user_properties=user_properties,
-            reply_context=reply_context,
-        )
+        await self.enqueue_cloud_publish(topic, report.SerializeToString())
 
     async def flush_cloud_spool(self) -> None:
         async with self._cloud_publish_lock:
@@ -475,79 +443,12 @@ class BridgeService:
                 if isinstance(operation_key, tuple):
                     await serial.send_status(Status.UNIMPLEMENTED, sequence_id, operation_key[0], operation_key[1])
 
-    @staticmethod
-    def _coerce_inbound_request(inbound: Any) -> CloudQueuedPublish:
-        if isinstance(inbound, CloudQueuedPublish):
-            return inbound
-        props = getattr(inbound, "properties", None)
-        rt = getattr(inbound, "response_topic", None) or (getattr(props, "ResponseTopic", None) if props else None)
-        cd = getattr(inbound, "correlation_data", None) or (getattr(props, "CorrelationData", None) if props else None)
-        return CloudQueuedPublish(
-            topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
-            payload=bytes(getattr(inbound, "payload", b"")),
-            correlation_data=bytes(cd) if cd else b"",
-            response_topic=str(rt) if rt else "",
-        )
-
-    async def handle_request(self, inbound: Any) -> None:
-        request = self._coerce_inbound_request(inbound)
-
-        topic_val = request.topic_name or getattr(request, "topic", "")
-        with structlog.contextvars.bound_contextvars(topic=topic_val):
-            route = protocol.parse_topic(self.state.cloud_topic_prefix, topic_val)
-            if not route or route.direction != "req":
-                logger.warning("Unroutable cloud topic received", topic=topic_val)
-                return
-
-            spec = protocol.get_operation(route.method)
-            if not spec:
-                logger.warning("Unrecognized RPC method requested", method=route.method, topic=topic_val)
-                return
-
-            if not protocol.allows_method(self.state.topic_authorization, spec):
-                action = route.action or route.method
-                await self.reject_cloud(request, route.method, action)
-                return
-
-            if not spec.pre_sync_allowed and route.method.startswith(("rpc.pb.GpioService/", "rpc.pb.SpiService/")):
-                try:
-                    async with asyncio.timeout(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
-                        await self.state.link_sync_event.wait()
-                except TimeoutError:
-                    logger.error("Timed out waiting for MCU link synchronization")
-                    return
-
-            try:
-                resp_bytes = await self.execute_rpc(spec.name, request.payload)
-                resp_topic = request.response_topic or protocol.topic_path(
-                    route.prefix or self.state.cloud_topic_prefix, "res", route.method
-                )
-                await self.enqueue_cloud_publish(
-                    resp_topic,
-                    resp_bytes,
-                    reply_context=request,
-                )
-            except (RuntimeError, ValueError, OSError, ProtobufDecodeError) as exc:
-                logger.error("RPC execution failed", method=route.method, error=str(exc))
-                err_topic = request.response_topic or protocol.topic_path(
-                    route.prefix or self.state.cloud_topic_prefix, "res", route.method
-                )
-                await self.enqueue_cloud_publish(
-                    err_topic,
-                    f"error:{exc}".encode(),
-                    reply_context=request,
-                )
-
     # --- Business Logic & MCU Protocol Handlers ---
 
     async def publish_mcu_message(
         self,
         msg_or_seq: ProtobufMessage | type[ProtobufMessage] | int,
         payload_or_msg: bytes | ProtobufMessage = b"",
-        *,
-        content_type: str | None = None,
-        message_expiry_interval: int | None = None,
-        reply_context: Any | None = None,
     ) -> None:
         if isinstance(payload_or_msg, ProtobufMessage):
             msg: ProtobufMessage | type[ProtobufMessage] = payload_or_msg
@@ -555,16 +456,12 @@ class BridgeService:
                 payload = payload_or_msg.data
             else:
                 payload = payload_or_msg.SerializeToString()
-                content_type = content_type or PROTOBUF_CONTENT_TYPE
         else:
             msg = cast(ProtobufMessage | type[ProtobufMessage], msg_or_seq)
             payload = payload_or_msg
         await self.enqueue_cloud_publish(
             protocol.get_topic_for_message(self.state.cloud_topic_prefix, msg) or "",
             payload,
-            content_type=content_type,
-            message_expiry_interval=message_expiry_interval,
-            reply_context=reply_context,
         )
 
     # --- DataStore Subsystem ---
@@ -573,8 +470,6 @@ class BridgeService:
         self,
         req_or_key: str | mcu_wire_pb2.DatastorePut | int,
         value: bytes | mcu_wire_pb2.DatastorePut = b"",
-        *,
-        reply_context: Any | None = None,
     ) -> cloud_gateway_pb2.GenericResponse:
         src = value if isinstance(value, mcu_wire_pb2.DatastorePut) else req_or_key
         k, v = (
@@ -590,16 +485,8 @@ class BridgeService:
             return cloud_gateway_pb2.GenericResponse(status="error")
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(k, v)
-        tp = getattr(reply_context, "response_topic", None) or protocol.topic_path(
-            self.state.cloud_topic_prefix, "res", "rpc.pb.DataStoreService/Get"
-        )
-        await self.enqueue_cloud_publish(
-            tp,
-            v,
-            message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE,
-            user_properties=(("bridge-datastore-key", k),),
-            reply_context=reply_context,
-        )
+        tp = protocol.topic_path(self.state.cloud_topic_prefix, "res", "rpc.pb.DataStoreService/Get")
+        await self.enqueue_cloud_publish(tp, v)
         return cloud_gateway_pb2.GenericResponse(status="ok")
 
     async def datastore_get(
@@ -1093,7 +980,7 @@ class BridgeService:
         """Bridge console bytes: MCU frames are published to the cloud, Linux requests are queued to the MCU."""
         if p is not None:
             if p.data:
-                await self.publish_mcu_message(p, p.data, message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE)
+                await self.publish_mcu_message(p, p.data)
             return mcu_wire_pb2.Empty()
         req = cast(mcu_wire_pb2.ConsoleWrite, req_or_seq)
         if req.data:
@@ -1128,7 +1015,6 @@ class BridgeService:
                 description=status.description,
                 message=text,
             ),
-            user_properties=(("bridge-status", status.name),),
         )
 
     async def _fetch_mcu_version(self) -> mcu_wire_pb2.VersionResponse | None:
@@ -1139,23 +1025,14 @@ class BridgeService:
         self.state.mcu_version = (res.major, res.minor, res.patch)
         return res
 
-    async def request_mcu_version(self, inbound: CloudQueuedPublish | None = None) -> bool:
+    async def request_mcu_version(self) -> bool:
         if await self._fetch_mcu_version() is None:
             return False
         await self.publish_mcu_message(
             mcu_wire_pb2.VersionResponse,
             self.state.mcu_version_str.encode(),
-            message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE,
-            reply_context=inbound,
         )
         return True
-
-    async def reject_cloud(self, ctx: Any, topic: str, act: str) -> None:
-        await self.enqueue_cloud_status_report(
-            StatusReport(status=403, topic=topic, action=act, reason="forbidden"),
-            user_properties=(("bridge-error", "topic-action-forbidden"),),
-            reply_context=ctx,
-        )
 
     # --- De-layered Orchestration [SIL-2] ---
 
@@ -1265,7 +1142,6 @@ class BridgeService:
             raise ConnectionError(f"Cloud Gateway connection failed: {exc}") from exc
 
         self.cloud_writer = writer
-        self._cloud_reader = reader
 
         def _send_channel_packet(packet: bytes) -> None:
             if self.cloud_writer and not self.cloud_writer.is_closing():
@@ -1340,7 +1216,6 @@ class BridgeService:
                 task.cancel()
             self.state.cloud_fsm.degrade()
             self.cloud_writer = None
-            self._cloud_reader = None
             self.cloud_rpc_client = None
             self.cloud_transfer_manager = None
             try:

@@ -70,9 +70,6 @@ ALLOWLIST_PY_HELPERS = {
     "fetch_file_from_device",
     "read_mcu_eeprom",
     "write_mcu_eeprom",
-    # Temporary: legacy dead method on origin/main, scheduled for deletion in Bloque 2.
-    # Remove this entry once Bloque 2 merges.
-    "handle_request",
 }
 
 

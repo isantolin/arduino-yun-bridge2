@@ -10,25 +10,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
 from mcubridge.protocol import structures
-from mcubridge.protocol.protocol import TopicRoute, allows_method, get_operation
-
-
-def test_topic_route_properties() -> None:
-    route = TopicRoute(
-        raw="devices/dev1/req/rpc.pb.GpioService/DigitalWrite",
-        prefix="devices/dev1",
-        device_id="dev1",
-        direction="req",
-        method="rpc.pb.GpioService/DigitalWrite",
-    )
-    assert route.device_id == "dev1"
-    assert route.direction == "req"
-    assert route.method == "rpc.pb.GpioService/DigitalWrite"
-    assert route.action == "DigitalWrite"
-
-    route_empty = TopicRoute()
-    assert route_empty.method == ""
-    assert route_empty.action is None
+from mcubridge.protocol.protocol import allows_method, get_operation
 
 
 @given(
@@ -73,7 +55,6 @@ def _valid_runtime_config() -> config_schema_pb2.RuntimeConfig:
     cfg.watchdog_enabled = True
     cfg.watchdog_interval = 1.0
     cfg.serial_shared_secret = b"secret"
-    cfg.cloud_http3_port = 443
     cfg.allow_non_tmp_paths = False
     cfg.cloud_spool_dir = "/tmp/spool"
     cfg.file_system_root = "/tmp"
@@ -143,14 +124,6 @@ def test_validate_config_invalid_cloud_port_property(invalid_port: int) -> None:
         structures.validate_config(cfg)
 
 
-@given(invalid_http3_port=st.integers(65536, 100000))
-def test_validate_config_invalid_http3_port_property(invalid_http3_port: int) -> None:
-    cfg = _valid_runtime_config()
-    cfg.cloud_http3_port = invalid_http3_port
-    with pytest.raises(ValueError, match="cloud_http3_port"):
-        structures.validate_config(cfg)
-
-
 @given(interval=st.floats(min_value=0.01, max_value=0.49))
 def test_validate_config_invalid_watchdog_interval_property(interval: float) -> None:
     cfg = _valid_runtime_config()
@@ -178,33 +151,6 @@ def test_get_ssl_context() -> None:
     )
     with pytest.raises(RuntimeError, match="Both cloud_certfile and cloud_keyfile|TLS setup failed"):
         structures.get_ssl_context(cfg_mtls_invalid)
-
-
-def test_resolve_cloud_context() -> None:
-    msg = cloud_gateway_pb2.CloudQueuedPublish(topic_name="initial", payload=b"p")
-
-    # context is None
-    assert structures.resolve_cloud_context(msg, None) == msg
-
-    # context with properties
-    class FakeProps:
-        ResponseTopic = "reply/topic"
-        CorrelationData = b"\x01\x02"
-
-    class FakeContext:
-        properties = FakeProps()
-        topic = "req/topic"
-
-    resolved = structures.resolve_cloud_context(msg, FakeContext())
-    assert resolved.topic_name == "reply/topic"
-    assert resolved.correlation_data == b"\x01\x02"
-    assert any(p.key == "bridge-request-topic" and p.value == "req/topic" for p in resolved.user_properties)
-
-    # context without properties
-    class ContextNoProps:
-        pass
-
-    assert structures.resolve_cloud_context(msg, ContextNoProps()).topic_name == "initial"
 
 
 def test_get_ssl_context_insecure() -> None:
@@ -261,44 +207,17 @@ def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
 
 
 def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
-
-    # 3. structures.get_ssl_context with valid cafile
+    # structures.get_ssl_context with malformed cafile
     ca_file = tmp_path / "test_ca.crt"
     ca_file.write_text("dummy ca content")
     with pytest.raises(RuntimeError, match="TLS setup failed"):
         structures.get_ssl_context(config_schema_pb2.RuntimeConfig(cloud_tls=True, cloud_cafile=str(ca_file)))
 
-    # 6. structures.validate_config with cloud_http3_port=0 and >0 (line 159->162)
-    cfg_http3_zero = config_schema_pb2.RuntimeConfig(
-        serial_port="/dev/ttyATH0",
-        cloud_port=8443,
-        process_timeout=10,
-        topic_prefix="mcu",
-        status_interval=1,
-        serial_shared_secret=b"dummy_secret_123",
-        cloud_http3_port=0,
-    )
-    structures.validate_config(cfg_http3_zero)
-    assert cfg_http3_zero.cloud_http3_port == 0
-
-    cfg_http3_active = config_schema_pb2.RuntimeConfig(
-        serial_port="/dev/ttyATH0",
-        cloud_port=8443,
-        process_timeout=10,
-        topic_prefix="mcu",
-        status_interval=1,
-        serial_shared_secret=b"dummy_secret_123",
-        cloud_http3_port=8443,
-    )
-    structures.validate_config(cfg_http3_active)
-    assert cfg_http3_active.cloud_http3_port == 8443
-
 
 def test_structures_coverage_boost() -> None:
-    qp = structures.create_queued_publish(topic_name="topic", payload=b"payload")
+    qp = cloud_gateway_pb2.CloudQueuedPublish(topic_name="topic", payload=b"payload")
     assert qp.topic_name == "topic"
     assert qp.payload == b"payload"
-    assert qp.qos == 1
 
     ta = config_schema_pb2.TopicAuthorization()
     ta.file_read = True

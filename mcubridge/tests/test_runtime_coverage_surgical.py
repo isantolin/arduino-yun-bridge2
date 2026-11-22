@@ -120,22 +120,20 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     mock_publish = AsyncMock()
     svc.cloud_publisher = mock_publish
 
-    prefix = mock_bridge_state.cloud_topic_prefix
-    put_topic = f"{prefix}/req/rpc.pb.DataStoreService/Put"
-    get_topic = f"{prefix}/req/rpc.pb.DataStoreService/Get"
-
     # PUT Action
-    msg_put = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=put_topic, payload=mcu_wire_pb2.DatastorePut(key="temp", value=b"25.4").SerializeToString()
+    put_resp = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Put",
+        mcu_wire_pb2.DatastorePut(key="temp", value=b"25.4").SerializeToString(),
     )
-    await svc.handle_request(msg_put)
+    assert cloud_gateway_pb2.GenericResponse.FromString(put_resp).status == "ok"
     cache.set.assert_awaited_with("temp", b"25.4")
 
     # GET Action (Cache Hit)
-    msg_get = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=get_topic, payload=mcu_wire_pb2.DatastoreGet(key="temp").SerializeToString()
+    get_resp = await svc.execute_rpc(
+        "rpc.pb.DataStoreService/Get",
+        mcu_wire_pb2.DatastoreGet(key="temp").SerializeToString(),
     )
-    await svc.handle_request(msg_get)
+    assert mcu_wire_pb2.DatastoreGetResponse.FromString(get_resp).value == b"cached-value"
     assert mock_publish.await_count >= 1
 
 
@@ -146,14 +144,11 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     mock_enqueue = AsyncMock()
     svc.cloud_publisher = mock_enqueue
 
-    prefix = mock_bridge_state.cloud_topic_prefix
-    write_topic = f"{prefix}/req/rpc.pb.MailboxService/Push"
-
     # WRITE Action
-    msg_write = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=write_topic, payload=mcu_wire_pb2.MailboxPush(data=b"hello-mcu").SerializeToString()
+    await svc.execute_rpc(
+        "rpc.pb.MailboxService/Push",
+        mcu_wire_pb2.MailboxPush(data=b"hello-mcu").SerializeToString(),
     )
-    await svc.handle_request(msg_write)
     mock_serial.send.assert_awaited_once()
 
 
@@ -184,34 +179,28 @@ async def test_cloud_events_and_direct_rpc_dispatch(
 
 
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
-
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send.return_value = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=5)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    mock_publisher = AsyncMock()
-    svc.cloud_publisher = mock_publisher
 
     # Bootloader action
-    t_bootloader = f"{mock_bridge_state.cloud_topic_prefix}/req/rpc.pb.SystemService/EnterBootloader"
-    await svc.handle_request(
-        cloud_gateway_pb2.CloudQueuedPublish(
-            topic_name=t_bootloader,
-            payload=mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
-        )
+    await svc.execute_rpc(
+        "rpc.pb.SystemService/EnterBootloader",
+        mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
     )
     mock_serial.send.assert_awaited_with(
         "rpc.pb.SystemService/EnterBootloader", mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC)
     )
 
     # Version action
-    t_version = f"{mock_bridge_state.cloud_topic_prefix}/req/rpc.pb.SystemService/GetVersion"
-    await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_version, payload=b""))
+    ver_bytes = await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
+    ver = mcu_wire_pb2.VersionResponse.FromString(ver_bytes)
+    assert (ver.major, ver.minor, ver.patch) == (2, 8, 5)
     assert mock_bridge_state.mcu_version == (2, 8, 5)
 
-    # System status action
-    t_status = f"{mock_bridge_state.cloud_topic_prefix}/req/GetStatus"
-    await svc.handle_request(cloud_gateway_pb2.CloudQueuedPublish(topic_name=t_status, payload=b""))
-    mock_publisher.assert_awaited()
+    # Unrecognized RPC target raises ValueError
+    with pytest.raises(ValueError, match="Unknown RPC method"):
+        await svc.execute_rpc("GetStatus", b"")
 
 
 async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
@@ -416,14 +405,15 @@ async def test_enqueue_cloud_queue_empty_in_finally(
     assert mock_bridge_state.cloud_publish_queue.empty()
 
 
-async def test_handle_request_without_serial(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+async def test_execute_rpc_without_serial(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     svc.serial = None
-    msg = cloud_gateway_pb2.CloudQueuedPublish(
-        topic_name=f"{mock_bridge_state.cloud_topic_prefix}/req/rpc.pb.GpioService/DigitalWrite", payload=b"1"
-    )
-    await svc.handle_request(msg)
+    with pytest.raises(ConnectionError, match="Serial link disconnected"):
+        await svc.execute_rpc(
+            "rpc.pb.GpioService/DigitalWrite",
+            mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
+        )
     assert svc.serial is None
     assert len(mock_bridge_state.running_processes) == 0
 

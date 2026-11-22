@@ -377,7 +377,3 @@ def test_cloud_queued_publish_roundtrip_property(pub: cloud_gateway_pb2.CloudQue
     decoded = cloud_gateway_pb2.CloudQueuedPublish.FromString(encoded)
     assert decoded.topic_name == pub.topic_name
     assert decoded.payload == pub.payload
-    assert decoded.qos == pub.qos
-    assert decoded.retain == pub.retain
-    assert decoded.correlation_data == pub.correlation_data
-    assert decoded.response_topic == pub.response_topic

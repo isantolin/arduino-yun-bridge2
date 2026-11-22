@@ -9,7 +9,6 @@ rpc.pb.architectures           type:FT_IGNORE
 rpc.pb.capabilities            type:FT_IGNORE
 rpc.pb.status_opts             type:FT_IGNORE
 rpc.pb.cloud_defaults          type:FT_IGNORE
-rpc.pb.cloud_suffixes          type:FT_IGNORE
 rpc.pb.msg_cloud_topic         type:FT_IGNORE
 rpc.pb.enum_cloud_topic        type:FT_IGNORE
 rpc.pb.msg_error_init          type:FT_IGNORE

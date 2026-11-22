@@ -80,8 +80,8 @@ def test_runtime_config_bounds_are_driven_by_protobuf_metadata() -> None:
         validate_config(cfg)
 
     cfg = _valid_base_config()
-    cfg.cloud_http3_port = 65536
-    with pytest.raises(ValueError, match=r"cloud_http3_port: must be <= 65535"):
+    cfg.cloud_port = 65536
+    with pytest.raises(ValueError, match=r"cloud_port: must be <= 65535"):
         validate_config(cfg)
 
 

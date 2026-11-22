@@ -14,7 +14,6 @@ import posixpath
 from typing import Any, Final, cast
 
 from google.protobuf.message import Message as ProtobufMessage
-import parse
 from pw_hdlc.encode import ui_frame
 from pw_rpc.descriptors import (
     Method as PwRpcMethod,
@@ -37,9 +36,6 @@ PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
 type McuDispatchTable = dict[int | str | tuple[int, int], Callable[..., Any]]
 
 logger = structlog.get_logger(__name__)
-
-_FLEET_TOPIC_PARSER: Final = parse.compile("devices/{device_id}/{direction}/{method}")
-_DIRECTION_TOPIC_PARSER: Final = parse.compile("{direction}/{method}")
 
 {% for const in constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
@@ -101,22 +97,6 @@ def path_within_roots(path: str, roots: frozenset[str]) -> bool:
         return False
     normalized = posixpath.normpath(path)
     return any(posixpath.commonpath((normalized, root)) == root for root in roots)
-
-
-@dataclass(slots=True, frozen=True)
-class TopicRoute:
-    """Canonical representation of an enrouted topic targeting the daemon. [SIL-2]"""
-
-    raw: str = ""
-    prefix: str = ""
-    device_id: str = ""
-    direction: str = ""
-    method: str = ""
-
-    @property
-    def action(self) -> str | None:
-        """Infer canonical action from method."""
-        return self.method.rsplit("/", 1)[1] if "/" in self.method else self.method or None
 
 
 class MetricKind(StrEnum):
@@ -377,45 +357,6 @@ def get_topic_for_message(
     spec = get_operation(message)
     if spec and spec.cloud_topic:
         return topic_path(prefix, spec.cloud_topic)
-    return None
-
-
-def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
-    """Parse incoming CLOUD topic into TopicRoute via compiled parse templates. [SIL-2]"""
-    topic_norm = "/".join(p for p in topic_name.split("/") if p)
-    if not topic_norm:
-        return None
-
-    # 1. Canonical Fleet Topic: devices/{device_id}/{direction}/{method}
-    if (fleet := _FLEET_TOPIC_PARSER.parse(topic_norm)) is not None:
-        dev_id = str(fleet["device_id"])
-        direction = str(fleet["direction"]).lower()
-        if "/" not in dev_id and direction in ("req", "res", "evt"):
-            return TopicRoute(
-                raw=topic_name,
-                prefix=f"devices/{dev_id}",
-                device_id=dev_id,
-                direction=direction,
-                method=str(fleet["method"]),
-            )
-        return None
-
-    prefix_norm = "/".join(p for p in prefix.split("/") if p)
-    if not prefix_norm or not topic_norm.startswith(f"{prefix_norm}/"):
-        return None
-
-    # 2. Canonical Direction Topic: {prefix}/{req|res|evt}/{method...}
-    rel_topic = topic_norm.removeprefix(f"{prefix_norm}/")
-    if (routed := _DIRECTION_TOPIC_PARSER.parse(rel_topic)) is not None:
-        direction = str(routed["direction"]).lower()
-        if direction in ("req", "res", "evt"):
-            return TopicRoute(
-                raw=topic_name,
-                prefix=prefix_norm,
-                device_id="",
-                direction=direction,
-                method=str(routed["method"]),
-            )
     return None
 
 

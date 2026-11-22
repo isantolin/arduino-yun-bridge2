@@ -35,12 +35,6 @@ option (rpc.pb.architectures) = {
   display_name: "Raspberry Pi RP2040"
 };
 option (rpc.pb.cloud_defaults) = {default_topic_prefix: "br"};
-option (rpc.pb.cloud_suffixes) = {
-  incoming_available: "incoming_available"
-  outgoing_available: "outgoing_available"
-  response: "response"
-  error: "error"
-};
 option (rpc.pb.constants) = {
   aead_nonce_size: 12
   aead_tag_size: 16
@@ -65,9 +59,6 @@ option (rpc.pb.constants) = {
   hdlc_address_console: 3
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
-  cloud_expiry_pin: 5
-  cloud_expiry_console: 5
-  cloud_expiry_datastore: 60
   default_process_max_output_bytes: 65536
   default_console_queue_limit_bytes: 16384
   sync_timeout_ms: 30000
@@ -86,7 +77,6 @@ option (rpc.pb.constants) = {
   serial_baudrate_negotiation_timeout: 2
   serial_handshake_backoff_base: 1
   serial_handshake_backoff_max: 60
-  bridge_snapshot_expiry_seconds: 30
   watchdog_min_interval: 0.5
   supervisor_default_min_backoff: 1
   supervisor_default_max_backoff: 30
@@ -201,25 +191,8 @@ option (rpc.pb.hardware) = {
   max_mailbox_queue_size_avr: 4
 };
 option (rpc.pb.status_reasons) = {
-  invalid_path: "invalid_path"
-  read_failed: "read_failed"
-  remove_failed: "remove_failed"
-  write_failed: "write_failed"
-  mailbox_incoming_overflow: "mailbox_incoming_overflow"
-  mailbox_outgoing_overflow: "mailbox_outgoing_overflow"
-  process_limit_reached: "process_limit_reached"
-  command_validation_failed: "command_validation_failed"
-  process_run_async_failed: "process_run_async_failed"
-  process_run_internal_error: "process_run_internal_error"
-  process_kill_malformed: "process_kill_malformed"
-  process_not_found: "process_not_found"
-  process_kill_failed: "process_kill_failed"
-  datastore_put_failed: "datastore_put_failed"
-  mailbox_push_failed: "mailbox_push_failed"
-  mailbox_processed_failed: "mailbox_processed_failed"
   sync_auth_mismatch: "sync_auth_mismatch"
   sync_length_mismatch: "sync_length_mismatch"
-  pending_pin_overflow: "pending-pin-overflow"
 };
 option (rpc.pb.ubus_methods) = {
   name: "status"
@@ -499,14 +472,6 @@ message Constants {
     (py_name) = "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES",
     (py_type) = "int"
   ];
-  uint32 cloud_expiry_pin = 57 [
-    (py_name) = "CLOUD_EXPIRY_PIN",
-    (py_type) = "int"
-  ];
-  uint32 cloud_expiry_datastore = 59 [
-    (py_name) = "CLOUD_EXPIRY_DATASTORE",
-    (py_type) = "int"
-  ];
   uint32 default_process_max_output_bytes = 62 [
     (py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES",
     (py_type) = "int"
@@ -582,10 +547,6 @@ message Constants {
     (py_name) = "SERIAL_HANDSHAKE_BACKOFF_MAX",
     (py_type) = "float"
   ];
-  uint32 bridge_snapshot_expiry_seconds = 80 [
-    (py_name) = "BRIDGE_SNAPSHOT_EXPIRY_SECONDS",
-    (py_type) = "int"
-  ];
   double watchdog_min_interval = 81 [
     (py_name) = "WATCHDOG_MIN_INTERVAL",
     (py_type) = "float"
@@ -635,10 +596,6 @@ message Constants {
     (cpp_name) = "RPC_AEAD_COUNTER_SIZE",
     (cpp_type) = "size_t",
     (py_name) = "AEAD_COUNTER_SIZE",
-    (py_type) = "int"
-  ];
-  uint32 cloud_expiry_console = 91 [
-    (py_name) = "CLOUD_EXPIRY_CONSOLE",
     (py_type) = "int"
   ];
   uint32 min_pin_interval_ms = 92 [
@@ -849,37 +806,13 @@ message Handshake {
   ];
 }
 
-message CloudSuffixes {
-  string incoming_available = 1;
-  string outgoing_available = 2;
-  string response = 3;
-  string error = 4;
-}
-
 message CloudDefaults {
   string default_topic_prefix = 1;
 }
 
 message StatusReasons {
-  string invalid_path = 1;
-  string read_failed = 2;
-  string remove_failed = 3;
-  string write_failed = 4;
-  string mailbox_incoming_overflow = 5;
-  string mailbox_outgoing_overflow = 6;
-  string process_limit_reached = 7;
-  string command_validation_failed = 8;
-  string process_run_async_failed = 9;
-  string process_run_internal_error = 10;
-  string process_kill_malformed = 11;
-  string process_not_found = 12;
-  string process_kill_failed = 13;
-  string datastore_put_failed = 14;
-  string mailbox_push_failed = 15;
-  string mailbox_processed_failed = 16;
   string sync_auth_mismatch = 17;
   string sync_length_mismatch = 18;
-  string pending_pin_overflow = 21;
 }
 
 message ArchConfig {
@@ -969,7 +902,6 @@ extend google.protobuf.FileOptions {
   Constants constants = 1001;
   Hardware hardware = 1002;
   Handshake handshake = 1003;
-  CloudSuffixes cloud_suffixes = 1005;
   CloudDefaults cloud_defaults = 1006;
   StatusReasons status_reasons = 1007;
   repeated ArchConfig architectures = 1011;
@@ -1097,14 +1029,6 @@ message RuntimeConfig {
     (config_max) = 65535,
     (config_desc) = "Cloud Gateway port",
     (uci_option) = "cloud_port"
-  ];
-  optional string cloud_user = 6 [
-    (config_desc) = "Cloud authentication username",
-    (uci_option) = "cloud_user"
-  ];
-  optional string cloud_pass = 7 [
-    (config_desc) = "Cloud authentication password",
-    (uci_option) = "cloud_pass"
   ];
   bool cloud_tls = 8 [
     (config_default) = "true",
@@ -1270,23 +1194,6 @@ message RuntimeConfig {
   ];
   AllowedCommandPolicy allowed_policy = 46;
   TopicAuthorization topic_authorization = 47;
-  bool cloud_http3_enabled = 48 [
-    (config_default) = "false",
-    (config_desc) = "Enable HTTP/3 QUIC cloud transport",
-    (uci_option) = "cloud_http3_enabled"
-  ];
-  uint32 cloud_http3_port = 49 [
-    (config_default_ref) = "constants.default_cloud_port",
-    (config_min) = 0,
-    (config_max) = 65535,
-    (config_desc) = "HTTP/3 UDP port",
-    (uci_option) = "cloud_http3_port"
-  ];
-  string cloud_http3_congestion_control = 50 [
-    (config_default) = "bbr",
-    (config_desc) = "QUIC congestion control algorithm",
-    (uci_option) = "cloud_http3_congestion_control"
-  ];
   uint32 respawn_threshold = 51 [
     (config_default) = "3600",
     (config_desc) = "Procd service respawn timeout threshold in seconds",

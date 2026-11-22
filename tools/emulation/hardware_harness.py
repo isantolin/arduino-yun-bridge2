@@ -317,7 +317,7 @@ def rotate(
             sys.exit(1)
         os.environ["UCI_CONFIG_DIR"] = str(local)
         mod = (rotate_loader or _load_rotate_module)()
-        secret, _ = mod.generate_and_apply_credentials(length=length, no_restart=no_restart)
+        secret = mod.generate_and_apply_credentials(length=length, no_restart=no_restart)
         output = f"SERIAL_SECRET={secret}\n"
     elif host:
         remote_cmd = f"/usr/bin/mcubridge-rotate-credentials --length {length}"

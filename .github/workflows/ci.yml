@@ -51,7 +51,7 @@ jobs:
         run: |
           bash tools/ci/apt_update_with_fallback.sh cppcheck unzip clang-tidy
           sudo npm install -g --allow-scripts=@bufbuild/buf @bufbuild/buf
-          python -m pip install semgrep vulture pytest pyrefly types-psutil types-pexpect flake8 ruff pyelftools
+          python -m pip install semgrep vulture pytest pyrefly types-psutil==7.2.2.20261111 types-pexpect==4.9.0.20260518 types-pyserial==3.5.0.20261030 flake8 ruff pyelftools
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: bash tools/ci/apt_update_with_fallback.sh --no-install-recommends g++ make gcc-avr avr-libc

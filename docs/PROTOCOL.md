@@ -730,7 +730,7 @@ El Gateway central puede orquestar actuadores y pines en dispositivos de borde m
 ### 5.3 Consola (Canal HDLC `HDLC_ADDRESS_CONSOLE = 3` y RPC)
 
 - **Stream HDLC Nativo (`HDLC_ADDRESS_CONSOLE = 3`, bidireccional):**
-  - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`encode_hdlc_console`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
+  - Los bytes de consola se transmiten directamente en tramas UI de `pw_hdlc` sobre la dirección `3` (`pw_hdlc.encode.ui_frame(HDLC_ADDRESS_CONSOLE, data)`), aislando el flujo de consola del canal de control `pw_rpc` (`HDLC_ADDRESS_RPC = 1`).
 - **`rpc.pb.ConsoleService/Write` (Linux ↔ MCU, definido en `cloud_gateway.proto`):**
   - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`. Retorna `Empty`.
   - Linux → MCU: el daemon encola los bytes (`console_to_mcu_queue`) y los emite en tramas HDLC sobre la dirección `3`; alcanzable desde el Gateway vía `GatewayControl.Dispatch` y autorizado por `cloud_allow_console_input`.

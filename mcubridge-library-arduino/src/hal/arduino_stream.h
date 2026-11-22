@@ -18,6 +18,9 @@
 
 namespace bridge::stream {
 
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
+using ArduinoStream = ::avr_port::ArduinoStream;
+#else
 /// Stream adapter that bridges any Arduino Stream / HardwareSerial (Serial,
 /// Serial1, etc.) into Pigweed's pw::stream::NonSeekableReaderWriter interface.
 class ArduinoStream final : public pw::stream::NonSeekableReaderWriter {
@@ -62,6 +65,7 @@ class ArduinoStream final : public pw::stream::NonSeekableReaderWriter {
 
   ::Stream* stream_ = nullptr;
 };
+#endif
 
 }  // namespace bridge::stream
 #endif

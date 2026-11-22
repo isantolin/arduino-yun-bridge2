@@ -28,14 +28,6 @@ from . import protocol
 logger = structlog.get_logger(__name__)
 
 
-def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
-    """Chunk bytes into fixed-size pieces using memoryview zero-copy slicing. [SIL-2]"""
-    mv = memoryview(data)
-    for i in range(0, len(mv), chunk_size):
-        end = i + chunk_size
-        yield bytes(mv[i:end])
-
-
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")

@@ -214,7 +214,7 @@ rationale = "LGPL-2.1 SAMD21 NVM row storage for the persisted link boot epoch (
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.3"
+pip = "coverage==7.17.4"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
@@ -257,18 +257,20 @@ rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pi
 [[dev_dependency]]
 name = "types-psutil"
 pip = "types-psutil==7.2.2.20261111"
-rationale = "Type stubs for psutil required by pyrefly"
+check_latest = false
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "types-pexpect"
 pip = "types-pexpect==4.9.0.20260518"
-rationale = "Type stubs for pexpect required by pyrefly"
+check_latest = false
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "types-pyserial"
 pip = "types-pyserial==3.5.0.20261030"
 check_latest = false
-rationale = "Type stubs for pyserial static analysis validation commanded by Google Pigweed"
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 
 [[dev_dependency]]
@@ -308,7 +310,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.16"
+pip = "hypothesis==6.170.17"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -343,13 +345,14 @@ rationale = "ECMAScript AST parser for LuCI JavaScript view validation without N
 
 [[dev_dependency]]
 name = "pyyaml"
-pip = "pyyaml==6.0.3"
+pip = "pyyaml==6.0.4"
 rationale = "Formal YAML parser for workflow frontmatter and configuration audit"
 
 [[dev_dependency]]
 name = "types-pyyaml"
 pip = "types-PyYAML==6.0.12.20261113"
-rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
+check_latest = false
+rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "setuptools"

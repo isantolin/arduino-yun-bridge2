@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import IntEnum, StrEnum
+from enum import StrEnum
 import functools
 import operator
 import posixpath
@@ -15,13 +15,13 @@ from typing import Any, Final, cast
 
 from google.protobuf.message import Message as ProtobufMessage
 import parse
-from pw_hdlc.encode import ui_frame
 from pw_rpc.descriptors import (
     Method as PwRpcMethod,
     Service as PwRpcService,
     Services as PwRpcServices,
 )
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+from pw_status import Status as Status
 from pw_transfer import transfer_pb2
 import structlog
 
@@ -69,24 +69,8 @@ ARCHITECTURE_DISPLAY_NAMES: Final[dict[int, str]] = {
 STATUS_REASON_{{ key|upper }}: Final[str] = {{ val|tojson }}
 {%- endfor %}
 
-class Status(IntEnum):
-    {%- for status in statuses %}
-    {{ status.name }} = {{ status.value }}  # {{ status.description }}
-    {%- endfor %}
-
-    @property
-    def description(self) -> str:
-        """Return a human-readable description for this status code."""
-        return _STATUS_DESCRIPTIONS.get(self, "Unknown status code")
-
-_STATUS_DESCRIPTIONS: Final[dict[Status, str]] = {
-    {%- for status in statuses %}
-    Status.{{ status.name }}: {{ status.description|tojson }},
-    {%- endfor %}
-}
-
 SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(
-    s.value for s in Status if s != Status.OK
+    s.value for s in Status if not s.ok()
 )
 SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({Status.OK.value})
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
@@ -538,114 +522,47 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- endfor %}
 
 # ==============================================================================
-# Pigweed HDLC Serialization Helpers
+# Pigweed RPC Serialization Helper
 # ==============================================================================
 
+
 def encode_rpc_packet(
-    channel_id_or_command: int | str | OperationSpec | tuple[int, int],
-    payload_or_service: Any = b"",
-    method_id: int | None = None,
+    target: int | str | OperationSpec | tuple[int, int],
+    payload: bytes | ProtobufMessage = b"",
+    *,
     call_id: int = 1,
-    payload: Any = b"",
-    packet_type: int = 0,
-    status: int = 0,
+    channel_id: int = HDLC_ADDRESS_RPC,
+    packet_type: int = int(PacketType.REQUEST),
+    status: Status = Status.OK,
 ) -> bytes:
-    """Serialize a Pigweed RpcPacket without applying HDLC framing.
+    """Serialize a Pigweed RpcPacket for an operation, (service_id, method_id), or raw ID."""
+    spec = get_operation(target)
+    actual_type = packet_type
+    if (
+        actual_type == int(PacketType.REQUEST)
+        and spec is not None
+        and spec.response_type is not None
+        and spec.response_type is not spec.request_type
+    ):
+        if isinstance(payload, ProtobufMessage) and isinstance(payload, spec.response_type):
+            actual_type = int(PacketType.SERVER_STREAM) if spec.is_server_streaming else int(PacketType.RESPONSE)
+        elif payload == b"" and spec.is_server_streaming:
+            actual_type = int(PacketType.RESPONSE)
 
-    Supports two calling conventions:
-    1. Direct RPC: encode_rpc_packet(channel_id, service_id, method_id, call_id, payload=b"", packet_type=0, status=0)
-    2. Operation: encode_rpc_packet(op_or_name, payload=b"", call_id=1)
-    """
-    if method_id is None:
-        target = channel_id_or_command
-        spec = get_operation(target)
-        actual_type = packet_type
-        if (
-            actual_type == int(PacketType.REQUEST)
-            and spec is not None
-            and spec.response_type is not None
-            and spec.response_type is not spec.request_type
-        ):
-            if isinstance(payload_or_service, spec.response_type):
-                actual_type = (
-                    int(PacketType.SERVER_STREAM)
-                    if spec.is_server_streaming
-                    else int(PacketType.RESPONSE)
-                )
-            elif (
-                payload_or_service == b""
-                and spec.is_server_streaming
-            ):
-                actual_type = int(PacketType.RESPONSE)
-        if spec is not None and spec.service_id is not None and spec.method_id is not None:
-            srv_id = spec.service_id
-            meth_id = spec.method_id
-        elif isinstance(target, tuple):
-            srv_id, meth_id = target
-        else:
-            val = target if isinstance(target, int) else 0
-            srv_id = val
-            meth_id = val
-        raw_payload = payload_or_service
-        actual_call_id = call_id
-        actual_payload = (
-            raw_payload.SerializeToString()
-            if isinstance(raw_payload, ProtobufMessage)
-            else (raw_payload if isinstance(raw_payload, bytes) else b"")
-        )
-        pkt = RpcPacket(
-            type=cast(Any, actual_type),
-            channel_id=1,
-            service_id=srv_id,
-            method_id=meth_id,
-            call_id=actual_call_id,
-            status=status,
-            payload=actual_payload,
-        )
+    if spec is not None and spec.service_id is not None and spec.method_id is not None:
+        srv_id, meth_id = spec.service_id, spec.method_id
+    elif isinstance(target, tuple):
+        srv_id, meth_id = target
     else:
-        channel_id = int(channel_id_or_command) if isinstance(channel_id_or_command, int) else 1
-        srv_id = int(payload_or_service)
-        meth_id = method_id
-        actual_payload = (
-            payload.SerializeToString()
-            if isinstance(payload, ProtobufMessage)
-            else (payload if isinstance(payload, bytes) else b"")
-        )
-        pkt = RpcPacket(
-            type=cast(Any, packet_type),
-            channel_id=channel_id,
-            service_id=srv_id,
-            method_id=meth_id,
-            call_id=call_id,
-            status=status,
-            payload=actual_payload,
-        )
+        srv_id = meth_id = target if isinstance(target, int) else 0
 
-    return pkt.SerializeToString()
-
-
-def encode_hdlc_rpc(
-    channel_id_or_command: int | str | OperationSpec | tuple[int, int],
-    payload_or_service: Any = b"",
-    method_id: int | None = None,
-    call_id: int = 1,
-    payload: Any = b"",
-    packet_type: int = 0,
-    status: int = 0,
-) -> bytes:
-    """Build and encode a Pigweed HDLC UI frame carrying an RpcPacket."""
-    packet = encode_rpc_packet(
-        channel_id_or_command,
-        payload_or_service,
-        method_id,
-        call_id,
-        payload,
-        packet_type,
-        status,
-    )
-    return ui_frame(HDLC_ADDRESS_RPC, packet)
-
-
-def encode_hdlc_console(data: bytes) -> bytes:
-    """Encode raw console stream bytes into a Pigweed HDLC UI frame on HDLC_ADDRESS_CONSOLE."""
-    return ui_frame(HDLC_ADDRESS_CONSOLE, data)
+    raw_payload = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
+    return RpcPacket(
+        type=cast(Any, actual_type),
+        channel_id=channel_id,
+        service_id=srv_id,
+        method_id=meth_id,
+        call_id=call_id,
+        status=status.value,
+        payload=raw_payload,
+    ).SerializeToString()

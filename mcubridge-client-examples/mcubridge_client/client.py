@@ -16,9 +16,11 @@ import pw_hdlc.decode
 import pw_hdlc.encode
 import structlog
 from google.protobuf.message import Message as ProtobufMessage
+from pw_rpc.callback_client.call import UnaryCall
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
+from pw_status import Status as PwStatus
 from pw_transfer import transfer_pb2
 from pw_transfer.client import Manager as PwTransferManager
 
@@ -213,6 +215,53 @@ class GatewayClient:
             manager = self._get_transfer_manager()
             await asyncio.to_thread(manager.write, resource_id, data)
 
+    async def _invoke_unary(
+        self,
+        method: Any,
+        request: ProtobufMessage | None,
+        *,
+        timeout_s: float,
+        error_prefix: str,
+        operation: str,
+    ) -> Any:
+        """Invoke a unary pw_rpc method from asyncio and await its response."""
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[tuple[PwStatus, Any]] = loop.create_future()
+
+        def _set_result(val: tuple[PwStatus, Any]) -> None:
+            if not fut.done():
+                fut.set_result(val)
+
+        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
+        # final Status (the unary response is call.response); on_error the error Status.
+        # Callbacks run in reader_thread, so threadsafe dispatch into the event loop is required.
+        def _on_completed(call: UnaryCall, status: PwStatus) -> None:
+            logger.debug("Gateway RPC callback completed", operation=operation, status=str(status))
+            loop.call_soon_threadsafe(_set_result, (status, call.response))
+
+        def _on_error(_call: UnaryCall, error: PwStatus) -> None:
+            logger.error("Gateway RPC callback failed", operation=operation, error=str(error))
+            loop.call_soon_threadsafe(_set_result, (error, None))
+
+        if request is not None:
+            method.invoke(request, on_completed=_on_completed, on_error=_on_error)
+        else:
+            method.invoke(on_completed=_on_completed, on_error=_on_error)
+
+        try:
+            status, resp = await asyncio.wait_for(fut, timeout=timeout_s)
+        except TimeoutError:
+            logger.error(
+                "Gateway RPC response timed out",
+                operation=operation,
+                timeout_s=timeout_s,
+                target_device_id=self.target_device_id,
+            )
+            raise
+        if not status.ok():
+            raise RuntimeError(f"{error_prefix}: {status}")
+        return resp
+
     async def dispatch(
         self,
         operation: str,
@@ -231,70 +280,24 @@ class GatewayClient:
             request_payload=payload,
             timeout_ms=effective_timeout_ms,
         )
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[Any] = loop.create_future()
-
-        def _set_result(val: Any) -> None:
-            if not fut.done():
-                fut.set_result(val)
-
-        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
-        # final Status (the unary response is call.response); on_error the error Status.
-        # Callbacks run in reader_thread, so threadsafe dispatch into the event loop is required.
-        def _on_completed(call: Any, status: Any) -> None:
-            logger.debug(
-                "Gateway RPC dispatch callback completed",
-                operation=operation,
-                status=str(status),
-            )
-            loop.call_soon_threadsafe(_set_result, (status, call.response))
-
-        def _on_error(_call: Any, error: Any) -> None:
-            logger.error(
-                "Gateway RPC dispatch callback failed",
-                operation=operation,
-                error=str(error),
-            )
-            loop.call_soon_threadsafe(_set_result, (error, None))
-
-        dispatch_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
-        try:
-            status, resp = await asyncio.wait_for(fut, timeout=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0)
-        except TimeoutError:
-            logger.error(
-                "Gateway RPC dispatch response timed out",
-                operation=operation,
-                timeout_ms=effective_timeout_ms,
-                target_device_id=self.target_device_id,
-            )
-            raise
-        if not status.ok():
-            raise RuntimeError(f"Pigweed RPC dispatch failed: {status}")
+        resp: gateway_control_pb2.DispatchResponse = await self._invoke_unary(
+            dispatch_method,
+            req,
+            timeout_s=max(float(effective_timeout_ms) / 1000.0, 1.0) + 5.0,
+            error_prefix="Pigweed RPC dispatch failed",
+            operation=operation,
+        )
         return resp.response_payload
 
     async def Health(self) -> gateway_control_pb2.HealthResponse:
         health_method = self.connection.rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Health
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[Any] = loop.create_future()
-
-        def _set_result(val: Any) -> None:
-            if not fut.done():
-                fut.set_result(val)
-
-        # pw_rpc invokes callbacks as callback(call, arg): on_completed receives the
-        # final Status (the unary response is call.response); on_error the error Status.
-        # Callbacks run in reader_thread, so threadsafe dispatch into the event loop is required.
-        def _on_completed(call: Any, status: Any) -> None:
-            loop.call_soon_threadsafe(_set_result, (status, call.response))
-
-        def _on_error(_call: Any, error: Any) -> None:
-            loop.call_soon_threadsafe(_set_result, (error, None))
-
-        health_method.invoke(on_completed=_on_completed, on_error=_on_error)
-        status, resp = await asyncio.wait_for(fut, timeout=5.0)
-        if not status.ok():
-            raise RuntimeError(f"Health check failed: {status}")
-        return resp
+        return await self._invoke_unary(
+            health_method,
+            None,
+            timeout_s=5.0,
+            error_prefix="Health check failed",
+            operation="mcubridge.gateway.GatewayControl/Health",
+        )
 
     async def _call[T: ProtobufMessage](
         self,

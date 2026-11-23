@@ -123,6 +123,36 @@ async def test_pw_transfer_cancellation_keeps_role_lock_until_worker_finishes(
     assert writes == [(0x4D454741, b"next")]
 
 
+async def test_pw_transfer_cancellation_absorbs_worker_error_and_reraises_cancel(
+    mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
+    worker_started = threading.Event()
+    release_worker = threading.Event()
+
+    class FailingTransferManager:
+        def __init__(self, _service: object, **_manager_options: object) -> None:
+            return None
+
+        def read(self, _resource_id: int, *, initial_offset: int = 0) -> bytes:
+            assert initial_offset == 0
+            worker_started.set()
+            release_worker.wait(timeout=2.0)
+            raise RuntimeError("transfer aborted after cancel")
+
+    monkeypatch.setattr("mcubridge.transport.serial.PwTransferManager", FailingTransferManager)
+
+    task = asyncio.create_task(transport.transfer_read(0x4D454741))
+    assert await asyncio.to_thread(worker_started.wait, 1.0)
+    task.cancel()
+    await asyncio.sleep(0.01)
+    release_worker.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 async def test_pw_transfer_rejects_disconnected_link(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:

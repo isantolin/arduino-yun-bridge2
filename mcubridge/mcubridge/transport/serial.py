@@ -30,13 +30,14 @@ from serial.urlhandler import protocol_socket
 import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
-from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.decode import Frame, FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_rpc import ids as pw_ids, packets as pw_packets
+from pw_rpc.callback_client.call import UnaryCall
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod, RpcIds
-from pw_rpc.internal.packet_pb2 import PacketType
+from pw_rpc.descriptors import Channel as PwRpcChannel, RpcIds
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_tokenizer import detokenize
 from pw_tokenizer.tokens import DatabaseFormatError
 
@@ -72,6 +73,7 @@ _HANDSHAKE_RAW_NAMES: Final[frozenset[str]] = frozenset(
         "rpc.pb.SystemService/LinkReset",
     }
 )
+_SERIAL_STATUS_CODES: Final[frozenset[int]] = SERIAL_FAILURE_STATUS_CODES | SERIAL_SUCCESS_STATUS_CODES
 _STREAM_EVENT_QUEUE_MAX: Final[int] = 64
 _TRANSFER_CHUNK_SIZE_BYTES: Final[int] = 128
 
@@ -97,16 +99,9 @@ def resolve_serial_url(port_str: str) -> str:
     if not port_str:
         return ""
     clean = port_str.strip()
-    if clean.startswith(("tcp://", "wifi://")):
+    if clean.startswith(("tcp://", "wifi://", "socket://")):
         _, _, host_port = clean.partition("://")
-        if ":" not in host_port:
-            return f"socket://{host_port}:9000"
-        return f"socket://{host_port}"
-    if clean.startswith("socket://"):
-        _, _, host_port = clean.partition("://")
-        if ":" not in host_port:
-            return f"socket://{host_port}:9000"
-        return clean
+        return f"socket://{host_port}" if ":" in host_port else f"socket://{host_port}:9000"
     if ":" in clean and not clean.startswith(("/", ".")):
         return f"socket://{clean}"
     return clean
@@ -174,13 +169,13 @@ class SerialTransport:
         except RuntimeError:
             self._event_loop = None
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
-        self._active_rpc_calls: list[Any] = []
+        self._active_rpc_calls: set[Any] = set()
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
         self._active_server_call_ids: dict[tuple[int, int], int] = {}
         self._stream_call: Any | None = None
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
-        self._transfer_manager: Any | None = None
+        self._transfer_manager: PwTransferManager | None = None
         self._transfer_lock = asyncio.Lock()
         self.rpc_client = PwRpcClient(
             PwCallbackClientImpl(),
@@ -237,12 +232,19 @@ class SerialTransport:
         except (AttributeError, OSError, ValueError) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
+    @staticmethod
+    def _cancel_rpc_call(call: Any, reason: str, **log_context: Any) -> bool:
+        """Cancel a Pigweed RPC call, logging benign completion races."""
+        try:
+            call.cancel()
+            return True
+        except (AttributeError, KeyError, RuntimeError, ValueError) as exc:
+            logger.debug(reason, error=str(exc), **log_context)
+            return False
+
     async def reset(self) -> None:
         for call in tuple(self._active_rpc_calls):
-            try:
-                call.cancel()
-            except (AttributeError, RuntimeError, ValueError) as exc:
-                logger.debug("Unable to cancel pending Pigweed RPC during reset", error=str(exc))
+            self._cancel_rpc_call(call, "Unable to cancel pending Pigweed RPC during reset")
         self.cancel_pin_stream()
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
@@ -255,12 +257,7 @@ class SerialTransport:
         self._stream_call = None
         if call is None:
             return False
-        try:
-            call.cancel()
-            return True
-        except (AttributeError, KeyError, RuntimeError, ValueError) as exc:
-            logger.debug("Unable to cancel Pigweed server-streaming RPC", error=str(exc))
-            return False
+        return self._cancel_rpc_call(call, "Unable to cancel Pigweed server-streaming RPC")
 
     def _enqueue_stream_event(self, message: ProtobufMessage) -> None:
         """Buffer an incoming Pigweed server-streaming message with bounded backpressure."""
@@ -366,16 +363,20 @@ class SerialTransport:
         finally:
             self.state.serial_writer = None
             if self.serial:
-                try:
-                    self.serial.cancel_read()
-                    self.serial.cancel_write()
-                except (AttributeError, OSError) as exc:
-                    logger.debug("Failed to cancel pending serial I/O during cleanup", error=str(exc))
-                try:
-                    await asyncio.to_thread(close_serial_port, self.serial)
-                except (AttributeError, OSError) as exc:
-                    logger.error("Failed to close serial port during cleanup", error=str(exc))
+                await self._close_serial_handle(self.serial, "cleanup")
                 self.serial = None
+
+    async def _close_serial_handle(self, serial_port: serial.Serial, context: str) -> None:
+        """Cancel pending pyserial I/O and close the port on a worker thread."""
+        try:
+            serial_port.cancel_read()
+            serial_port.cancel_write()
+        except (AttributeError, OSError) as exc:
+            logger.debug("Failed to cancel pending serial I/O", context=context, error=str(exc))
+        try:
+            await asyncio.to_thread(close_serial_port, serial_port)
+        except (AttributeError, OSError) as exc:
+            logger.error("Failed to close serial port", context=context, error=str(exc))
 
     async def toggle_dtr(self) -> None:
         try:
@@ -395,15 +396,7 @@ class SerialTransport:
     async def stop(self) -> None:
         self.stop_event.set()
         if self.serial:
-            try:
-                self.serial.cancel_read()
-                self.serial.cancel_write()
-            except (AttributeError, OSError) as exc:
-                logger.debug("Failed to cancel pending serial I/O on stop", error=str(exc))
-            try:
-                await asyncio.to_thread(close_serial_port, self.serial)
-            except (AttributeError, OSError) as exc:
-                logger.error("Failed to close serial port on stop", error=str(exc))
+            await self._close_serial_handle(self.serial, "stop")
 
     async def feed_data(self, data: bytes | memoryview) -> None:
         """Feed incoming serial bytes into the HDLC frame decoder and dispatch valid frames."""
@@ -437,7 +430,13 @@ class SerialTransport:
                     logger.error("Error in serial read loop", error=str(exc))
                 break
 
-    async def _route_to_pigweed_client(self, pkt: Any, spec: Any, frame_data: bytes) -> bool:
+    @staticmethod
+    def _rpc_packet_key(pkt: RpcPacket) -> tuple[int, int, int, int]:
+        return (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
+
+    async def _route_to_pigweed_client(
+        self, pkt: RpcPacket, spec: protocol.OperationSpec | None, frame_data: bytes
+    ) -> bool:
         """Hand client-side packets of Linux-initiated calls to the Pigweed client.
 
         Pigweed's native client owns responses and server streams for those
@@ -455,7 +454,7 @@ class SerialTransport:
                 status=str(status),
             )
             return True
-        rpc_packet_key = (pkt.channel_id, pkt.service_id, pkt.method_id, pkt.call_id)
+        rpc_packet_key = self._rpc_packet_key(pkt)
         is_client_rpc = (
             spec is not None
             and spec.name not in _HANDSHAKE_RAW_NAMES
@@ -470,12 +469,88 @@ class SerialTransport:
         await self._drain_stream_events()
         return True
 
-    async def process_hdlc_frame(self, frame: Any) -> None:
+    async def _process_rpc_packet(self, frame_data: bytes) -> None:
+        """Decode, authorize, and dispatch an incoming HDLC_ADDRESS_RPC payload."""
+        try:
+            pkt = pw_packets.decode(frame_data)
+        except (ProtobufDecodeError, ValueError) as exc:
+            self.state.serial_decode_errors += 1
+            logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame_data.hex())
+            return
+        spec = protocol.get_operation(pkt)
+        seq_id = pkt.call_id
+
+        if self.config.serial_shared_secret and self.state.link_cipher is None:
+            is_link_sync_response = spec is _LINK_SYNC_SPEC and pkt.type in (
+                PacketType.RESPONSE,
+                PacketType.SERVER_ERROR,
+            )
+            if not is_link_sync_response:
+                self.state.serial_decode_errors += 1
+                logger.error("Dropping unprotected pre-handshake RPC frame")
+                return
+
+        if await self._route_to_pigweed_client(pkt, spec, frame_data):
+            return
+
+        # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
+        # successful responses map onto the operation's canonical service/method tuple.
+        is_error_pkt = pkt.type == PacketType.SERVER_ERROR or (
+            pkt.type == PacketType.RESPONSE and pkt.status != Status.OK.value
+        )
+        dispatch_key: int | str | tuple[int, int]
+        if is_error_pkt:
+            dispatch_key = pkt.status if pkt.status != Status.OK.value else Status.INTERNAL.value
+        elif spec is None and pkt.method_id in _SERIAL_STATUS_CODES:
+            dispatch_key = pkt.method_id
+        else:
+            dispatch_key = (pkt.service_id, pkt.method_id)
+
+        payload: ProtobufMessage | bytes = pkt.payload
+        if spec and spec.response_type and (not pw_packets.for_server(pkt) or spec.pb_class is None) and pkt.payload:
+            try:
+                payload = cast(ProtobufMessage, cast(Any, pw_packets).decode_payload(pkt, spec.response_type))
+            except (ProtobufDecodeError, ValueError) as exc:
+                logger.warning(
+                    "Unable to parse RPC response payload",
+                    service_id=pkt.service_id,
+                    method_id=pkt.method_id,
+                    error=str(exc),
+                )
+
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "[MCU -> SERIAL] [SVC:0x%08X METH:0x%08X SEQ:%d]",
+                pkt.service_id,
+                pkt.method_id,
+                seq_id,
+            )
+
+        # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
+        if isinstance(payload, ProtobufMessage) and not payload.IsInitialized():
+            logger.error("Transport gate rejected uninitialized payload from MCU")
+            self.state.serial_decode_errors += 1
+            return
+
+        # In pw_rpc, PacketType.RESPONSE is only dispatched to service handlers when the
+        # resolved operation is an explicit raw handshake or status handler, never
+        # re-triggering bidirectional request handlers like MailboxPush.
+        is_response_handler = (
+            spec is not None and spec.name in _HANDSHAKE_RAW_NAMES
+        ) or dispatch_key in _SERIAL_STATUS_CODES
+        if pkt.type == PacketType.REQUEST:
+            self._active_server_call_ids[(pkt.service_id, pkt.method_id)] = pkt.call_id
+        if self.service and (
+            pkt.type != PacketType.RESPONSE
+            or (is_response_handler and dispatch_key in getattr(self.service, "mcu_registry", {}))
+        ):
+            await self.service.handle_mcu_frame(dispatch_key, seq_id, payload)
+
+    async def process_hdlc_frame(self, frame: Frame) -> None:
         """Processes a validated HDLC frame received from the serial link. [SIL-2]"""
-        raw_len = len(frame.raw_encoded) if hasattr(frame, "raw_encoded") else len(frame.data)
-        self.state.metrics.serial_bytes_received.inc(raw_len)
+        self.state.metrics.serial_bytes_received.inc(len(frame.raw_encoded))
         self.state.metrics.serial_frames_received.inc()
-        frame_data = bytes(frame.data)
+        frame_data = frame.data
 
         if self.config.serial_shared_secret:
             cipher = self.state.link_cipher
@@ -501,87 +576,7 @@ class SerialTransport:
             return
 
         if frame.address == protocol.HDLC_ADDRESS_RPC:
-            try:
-                pkt = pw_packets.decode(frame_data)
-            except (ProtobufDecodeError, ValueError) as exc:
-                self.state.serial_decode_errors += 1
-                logger.error("Malformed RpcPacket received from MCU", error=str(exc), raw_hex=frame_data.hex())
-                return
-            spec = protocol.get_operation(pkt)
-            seq_id = pkt.call_id
-
-            if self.config.serial_shared_secret and self.state.link_cipher is None:
-                is_link_sync_response = (
-                    pkt.service_id == _LINK_SYNC_SPEC.service_id
-                    and pkt.method_id == _LINK_SYNC_SPEC.method_id
-                    and pkt.type in (PacketType.RESPONSE, PacketType.SERVER_ERROR)
-                )
-                if not is_link_sync_response:
-                    self.state.serial_decode_errors += 1
-                    logger.error("Dropping unprotected pre-handshake RPC frame")
-                    return
-
-            if await self._route_to_pigweed_client(pkt, spec, frame_data):
-                return
-
-            # pw_rpc: a non-OK status (or SERVER_ERROR) is a failure regardless of payload;
-            # successful responses map onto the operation's canonical service/method tuple.
-            is_error_pkt = pkt.type == PacketType.SERVER_ERROR or (pkt.type == PacketType.RESPONSE and pkt.status != 0)
-            is_status_pkt = pkt.method_id in SERIAL_FAILURE_STATUS_CODES or pkt.method_id in SERIAL_SUCCESS_STATUS_CODES
-            dispatch_key: int | str | tuple[int, int]
-            if is_error_pkt:
-                dispatch_key = pkt.status if pkt.status != 0 else Status.INTERNAL.value
-            elif spec is None and is_status_pkt:
-                dispatch_key = pkt.method_id
-            else:
-                dispatch_key = (pkt.service_id, pkt.method_id)
-
-            payload: ProtobufMessage | bytes = pkt.payload
-            if (
-                spec
-                and spec.response_type
-                and (not pw_packets.for_server(pkt) or spec.pb_class is None)
-                and pkt.payload
-            ):
-                try:
-                    payload = cast(ProtobufMessage, cast(Any, pw_packets).decode_payload(pkt, spec.response_type))
-                except (ProtobufDecodeError, ValueError) as exc:
-                    logger.warning(
-                        "Unable to parse RPC response payload",
-                        service_id=pkt.service_id,
-                        method_id=pkt.method_id,
-                        error=str(exc),
-                    )
-
-            if logger.is_enabled_for(logging.DEBUG):
-                logger.debug(
-                    "[MCU -> SERIAL] [SVC:0x%08X METH:0x%08X SEQ:%d]",
-                    pkt.service_id,
-                    pkt.method_id,
-                    seq_id,
-                )
-
-            # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
-            if isinstance(payload, ProtobufMessage) and not payload.IsInitialized():
-                logger.error("Transport gate rejected uninitialized payload from MCU")
-                self.state.serial_decode_errors += 1
-                return
-
-            # In pw_rpc, PacketType.RESPONSE is only dispatched to service handlers when the
-            # resolved operation is an explicit raw handshake or status handler, never
-            # re-triggering bidirectional request handlers like MailboxPush.
-            is_response_handler = (
-                (spec is not None and spec.name in _HANDSHAKE_RAW_NAMES)
-                or dispatch_key in SERIAL_FAILURE_STATUS_CODES
-                or dispatch_key in SERIAL_SUCCESS_STATUS_CODES
-            )
-            if pkt.type == PacketType.REQUEST:
-                self._active_server_call_ids[(pkt.service_id, pkt.method_id)] = pkt.call_id
-            if self.service and (
-                pkt.type != PacketType.RESPONSE
-                or (is_response_handler and dispatch_key in getattr(self.service, "mcu_registry", {}))
-            ):
-                await self.service.handle_mcu_frame(dispatch_key, seq_id, payload)
+            await self._process_rpc_packet(frame_data)
 
     async def check_baudrate_fallback(self) -> None:
         self.consecutive_crc_errors += 1
@@ -605,15 +600,10 @@ class SerialTransport:
         spec = get_operation(command_id)
         if spec is _CONSOLE_WRITE_SPEC:
             return await self.send_raw(_CONSOLE_WRITE_SPEC, payload, seq_id)
-        pw_method = (
-            protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
-            if spec is not None and spec.service_name and spec.method_name
-            else None
+        is_streaming_response = (
+            spec is not None and spec.is_server_streaming and isinstance(payload, bytes) and payload == b""
         )
-        is_streaming_response: bool = False
-        if pw_method is not None and getattr(pw_method, "type", None) is PwRpcMethod.Type.SERVER_STREAMING:
-            is_streaming_response = isinstance(payload, bytes) and payload == b""
-        is_server_response: bool = (
+        is_server_response = (
             spec is not None
             and spec.response_type is not None
             and spec.response_type is not spec.request_type
@@ -638,36 +628,30 @@ class SerialTransport:
             logger.error("Unable to decode outgoing Pigweed RPC packet", error=str(exc))
             return
 
+        try:
+            current_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
         loop = self._event_loop
         if loop is None or loop.is_closed():
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError as exc:
+            if current_loop is None:
                 # Preserve the historical correlation-state update before
                 # reporting that a caller without an owning loop cannot write.
                 self._update_rpc_packet_ids(rpc_packet)
                 raise RuntimeError(
                     "Pigweed RPC output called outside the asyncio event loop; no active loop is registered"
-                ) from exc
+                )
+            loop = current_loop
             self._event_loop = loop
-
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
 
         if current_loop is loop:
             self._queue_rpc_packet_on_loop(packet, rpc_packet)
         else:
             loop.call_soon_threadsafe(self._queue_rpc_packet_on_loop, packet, rpc_packet)
 
-    def _update_rpc_packet_ids(self, rpc_packet: Any) -> None:
-        packet_id = (
-            rpc_packet.channel_id,
-            rpc_packet.service_id,
-            rpc_packet.method_id,
-            rpc_packet.call_id,
-        )
+    def _update_rpc_packet_ids(self, rpc_packet: RpcPacket) -> None:
+        packet_id = self._rpc_packet_key(rpc_packet)
         if rpc_packet.type == PacketType.REQUEST:
             self._active_rpc_packet_ids.add(packet_id)
         elif rpc_packet.type == PacketType.CLIENT_ERROR:
@@ -771,7 +755,7 @@ class SerialTransport:
         logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
         return None
 
-    def _get_transfer_manager(self) -> Any:
+    def _get_transfer_manager(self) -> PwTransferManager:
         """Return the single upstream pw_transfer manager for the MCU RPC channel."""
         if self._transfer_manager is None:
             transfer_service = self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs.pw.transfer.Transfer
@@ -785,47 +769,34 @@ class SerialTransport:
             )
         return self._transfer_manager
 
-    async def _run_transfer_in_worker(self, operation: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    async def _run_transfer_in_worker[T](self, operation: Callable[[PwTransferManager], T]) -> T:
         """Keep the transfer lock until a blocking Pigweed operation really exits."""
-        worker = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
-        try:
-            return await asyncio.shield(worker)
-        except asyncio.CancelledError:
-            # asyncio cannot stop a running thread. Wait for the Manager operation
-            # to finish before releasing the lock, otherwise a second transfer
-            # could overlap the first on the AVR's single-role transfer thread.
+        async with self._transfer_lock:
+            if self.serial is None or not self.serial.is_open:
+                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
+            manager = self._get_transfer_manager()
+            worker = asyncio.create_task(asyncio.to_thread(operation, manager))
             try:
-                await asyncio.shield(worker)
-            except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
-                logger.debug("pw_transfer worker ended after caller cancellation", error=str(exc))
-            raise
+                return await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # asyncio cannot stop a running thread. Wait for the Manager operation
+                # to finish before releasing the lock, otherwise a second transfer
+                # could overlap the first on the AVR's single-role transfer thread.
+                try:
+                    await asyncio.shield(worker)
+                except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+                    logger.debug("pw_transfer worker ended after caller cancellation", error=str(exc))
+                raise
 
     async def transfer_read(self, resource_id: int, *, offset: int = 0) -> bytes:
         """Read an MCU transfer resource without blocking the asyncio serial loop."""
-        async with self._transfer_lock:
-            if self.serial is None or not self.serial.is_open:
-                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
-            manager = self._get_transfer_manager()
-            return await self._run_transfer_in_worker(
-                manager.read,
-                resource_id,
-                initial_offset=offset,
-            )
+        return await self._run_transfer_in_worker(lambda mgr: mgr.read(resource_id, initial_offset=offset))
 
     async def transfer_write(self, resource_id: int, data: bytes, *, offset: int = 0) -> None:
         """Write an MCU transfer resource without blocking the asyncio serial loop."""
-        async with self._transfer_lock:
-            if self.serial is None or not self.serial.is_open:
-                raise ConnectionError("MCU transfer requested while the serial link is disconnected")
-            manager = self._get_transfer_manager()
-            await self._run_transfer_in_worker(
-                manager.write,
-                resource_id,
-                data,
-                initial_offset=offset,
-            )
+        await self._run_transfer_in_worker(lambda mgr: mgr.write(resource_id, data, initial_offset=offset))
 
-    def _get_rpc_method(self, spec: Any) -> Any | None:
+    def _get_rpc_method(self, spec: protocol.OperationSpec) -> Any | None:
         method_name = spec.name
         try:
             return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(method_name)
@@ -837,6 +808,48 @@ class SerialTransport:
             )
             return None
 
+    async def _invoke_unary_once(
+        self,
+        rpc_method: Any,
+        request: ProtobufMessage,
+        method_name: str,
+        timeout: float,
+    ) -> bool | ProtobufMessage:
+        """Invoke a single unary pw_rpc call on the event loop; raises TimeoutError on timeout."""
+        completion: asyncio.Future[bool | ProtobufMessage] = asyncio.get_running_loop().create_future()
+
+        def _on_completed(call: UnaryCall, status: Status) -> None:
+            if not completion.done():
+                if status.ok():
+                    response = call.response
+                    completion.set_result(response if response is not None else True)
+                else:
+                    completion.set_result(False)
+
+        def _on_error(_call: UnaryCall, error: Any) -> None:
+            if not completion.done():
+                logger.warning("Pigweed unary RPC failed", method=method_name, error=str(error))
+                completion.set_result(False)
+
+        try:
+            call = rpc_method.invoke(request, on_completed=_on_completed, on_error=_on_error)
+        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
+            return False
+
+        self._active_rpc_calls.add(call)
+        try:
+            async with asyncio.timeout(timeout):
+                return await completion
+        except TimeoutError:
+            self._cancel_rpc_call(call, "Pigweed RPC cancellation raced with completion", method=method_name)
+            raise
+        except asyncio.CancelledError:
+            self._cancel_rpc_call(call, "Pigweed RPC cancellation raced with task cancellation", method=method_name)
+            raise
+        finally:
+            self._active_rpc_calls.discard(call)
+
     async def _invoke_rpc_with_retries(
         self,
         rpc_method: Any,
@@ -845,81 +858,13 @@ class SerialTransport:
         timeout: float,
     ) -> bool | ProtobufMessage:
         for attempt in range(1, self.max_attempts + 1):
-            loop = asyncio.get_running_loop()
-            completion: asyncio.Future[bool | ProtobufMessage] = loop.create_future()
-            callback_state: dict[str, ProtobufMessage | None] = {"response": None}
-
-            def _on_next(
-                _call: Any,
-                message: ProtobufMessage,
-                state: dict[str, ProtobufMessage | None] = callback_state,
-            ) -> None:
-                state["response"] = message
-
-            def _on_completed(
-                _call: Any,
-                status: Any,
-                future: asyncio.Future[bool | ProtobufMessage] = completion,
-                state: dict[str, ProtobufMessage | None] = callback_state,
-            ) -> None:
-                if future.done():
-                    return
-                if status.ok():
-                    response_message = state["response"]
-                    future.set_result(response_message if response_message is not None else True)
-                else:
-                    future.set_result(False)
-
-            def _on_error(
-                _call: Any,
-                error: Any,
-                future: asyncio.Future[bool | ProtobufMessage] = completion,
-            ) -> None:
-                if not future.done():
-                    logger.warning("Pigweed unary RPC failed", method=method_name, error=str(error))
-                    future.set_result(False)
-
             try:
-                call = rpc_method.invoke(
-                    request,
-                    on_next=_on_next,
-                    on_completed=_on_completed,
-                    on_error=_on_error,
-                )
-            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-                logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
-                return False
-
-            self._active_rpc_calls.append(call)
-            try:
-                async with asyncio.timeout(timeout):
-                    return await completion
+                return await self._invoke_unary_once(rpc_method, request, method_name, timeout)
             except TimeoutError:
-                try:
-                    call.cancel()
-                except (KeyError, RuntimeError, ValueError) as exc:
-                    logger.debug(
-                        "Pigweed RPC cancellation raced with completion",
-                        method=method_name,
-                        error=str(exc),
-                    )
                 if attempt < self.max_attempts:
                     await asyncio.sleep(
                         min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (attempt - 1)), SERIAL_HANDSHAKE_BACKOFF_MAX)
                     )
-            except asyncio.CancelledError:
-                try:
-                    call.cancel()
-                except (KeyError, RuntimeError, ValueError) as exc:
-                    logger.debug(
-                        "Pigweed RPC cancellation raced with task cancellation",
-                        method=method_name,
-                        error=str(exc),
-                    )
-                raise
-            finally:
-                if call in self._active_rpc_calls:
-                    self._active_rpc_calls.remove(call)
         logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
         return False
 
@@ -932,15 +877,11 @@ class SerialTransport:
         """Invoke or update a server-streaming RPC via pw_rpc.Client."""
         rejection_future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
-        def _finish_stream_call(
-            ok: bool,
-            detail: Any,
-            future: asyncio.Future[bool] = rejection_future,
-        ) -> None:
+        def _finish_stream_call(ok: bool, detail: Any) -> None:
             self._stream_call = None
-            if not ok and not future.done():
+            if not ok and not rejection_future.done():
                 logger.warning("Pigweed server-streaming RPC failed", method=method_name, detail=str(detail))
-                future.set_result(False)
+                rejection_future.set_result(False)
 
         def _on_next(_call: Any, message: ProtobufMessage) -> None:
             self._enqueue_stream_event(message)
@@ -973,7 +914,7 @@ class SerialTransport:
 
     async def _send_rpc(
         self,
-        spec: Any,
+        spec: protocol.OperationSpec,
         payload: bytes | ProtobufMessage,
         timeout: float | None,
     ) -> bool | ProtobufMessage:
@@ -984,12 +925,10 @@ class SerialTransport:
         rpc_method = self._get_rpc_method(spec)
         if rpc_method is None:
             return False
-        method_name = spec.name
-        pw_method = protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
+        if spec.is_server_streaming:
+            return await self._invoke_server_stream_rpc(rpc_method, request, spec.name)
         effective_timeout = timeout if timeout is not None else self._response_timeout
-        if pw_method.type is PwRpcMethod.Type.SERVER_STREAMING:
-            return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
-        return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
+        return await self._invoke_rpc_with_retries(rpc_method, request, spec.name, effective_timeout)
 
     async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
         """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""
@@ -1023,16 +962,7 @@ class SerialTransport:
                 and (spec.service_id, spec.method_id) in self._active_server_call_ids
             ):
                 key = (spec.service_id, spec.method_id)
-                pw_method = (
-                    protocol.PW_SERVICES[spec.service_name].methods[spec.method_name]
-                    if spec.service_name and spec.method_name
-                    else None
-                )
-                if (
-                    pw_method is not None
-                    and pw_method.type is PwRpcMethod.Type.SERVER_STREAMING
-                    and isinstance(payload, spec.response_type)
-                ):
+                if spec.is_server_streaming and isinstance(payload, spec.response_type):
                     seq_id = self._active_server_call_ids[key]
                 else:
                     seq_id = self._active_server_call_ids.pop(key)

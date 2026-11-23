@@ -130,11 +130,9 @@
   "python-envs.defaultEnvManager": "ms-python.python:system",
   "python.analysis.diagnosticsSource": "Pylance + Pyrefly",
   "cmake.sourceDirectory": "${workspaceFolder}/mcubridge-gateway-cpp",
-  "pigweed.projectRoot": "${workspaceFolder}",
-  "pigweed.projectType": "bootstrap",
   "pigweed.supportBazelTargets": true,
   "pigweed.supportCmakeTargets": false,
-  "pigweed.supportGnTargets": false
+  "pigweed.supportGnTargets": false,
   "pigweed.clangdAlternatePath": "/usr/bin/clangd",
   "pigweed.disableInactiveFileCodeIntelligence": false,
   "pigweed.disableInactiveFileNotice": true,

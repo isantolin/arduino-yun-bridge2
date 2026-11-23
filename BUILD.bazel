@@ -5,8 +5,11 @@ load(
 
 pw_compile_commands_generator(
     name = "compile_commands",
+    display_name = "Host (C++)",
+    platform = "@bazel_tools//tools:host_platform",
     target_patterns = [
         "//mcubridge-gateway-cpp/...",
         "//mcubridge-library-arduino/...",
+        "//tools/arduino_stub/...",
     ],
 )

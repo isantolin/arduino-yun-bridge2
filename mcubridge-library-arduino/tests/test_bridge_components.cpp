@@ -253,8 +253,7 @@ void test_spi_data_modes_map_to_native_settings() {
 }
 
 static void dummy_process_run(int32_t) {}
-static void dummy_process_poll(rpc::StatusCode, uint16_t,
-                               pw::span<const uint8_t>,
+static void dummy_process_poll(pw::Status, uint16_t, pw::span<const uint8_t>,
                                pw::span<const uint8_t>) {}
 
 void test_component_extended_operations() {
@@ -282,7 +281,7 @@ void test_component_extended_operations() {
                    etl::delegate<void(int32_t)>::create<dummy_process_run>());
   Process.kill(1);
   Process.poll(1, etl::delegate<void(
-                      rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
+                      pw::Status, uint16_t, pw::span<const uint8_t>,
                       pw::span<const uint8_t>)>::create<dummy_process_poll>());
 
   rpc_pb_ProcessRunAsyncResponse prar =
@@ -305,8 +304,7 @@ void test_component_extended_operations() {
 
 static int32_t s_captured_pid = 0;
 static void capture_async_handler(int32_t pid) { s_captured_pid = pid; }
-static void capture_poll_handler(rpc::StatusCode, uint16_t,
-                                 pw::span<const uint8_t>,
+static void capture_poll_handler(pw::Status, uint16_t, pw::span<const uint8_t>,
                                  pw::span<const uint8_t>) {}
 
 void test_process_edges() {

@@ -147,7 +147,7 @@ bool FileSystemClass::upload(etl::string_view path,
                        data.size() > UINT32_MAX;
   if (invalid) return false;
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(pw::Status::Unavailable());
     return false;
   }
   rpc_pb_FileUpload request = rpc_pb_FileUpload_init_default;
@@ -165,7 +165,7 @@ bool FileSystemClass::upload(etl::string_view path,
 
 void FileSystemClass::remove(etl::string_view path) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(pw::Status::Unavailable());
     return;
   }
   rpc_pb_FileRemove p = rpc_pb_FileRemove_init_default;

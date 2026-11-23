@@ -34,12 +34,12 @@ void setup() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
   Bridge.onStatus(BridgeClass::StatusHandler::create(
-      [](rpc::StatusCode status_code, pw::span<const uint8_t> payload) {
+      [](pw::Status status, pw::span<const uint8_t> payload) {
         (void)payload;
         // Solo imprimir errores graves para evitar saturación
-        if (status_code != rpc::StatusCode::STATUS_OK) {
+        if (!status.ok()) {
           Console.print(F("Error de Estado: 0x"));
-          Console.println(static_cast<uint8_t>(status_code), HEX);
+          Console.println(static_cast<uint8_t>(status.code()), HEX);
         }
       }));
 

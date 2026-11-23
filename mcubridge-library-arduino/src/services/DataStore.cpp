@@ -12,7 +12,7 @@
 
 void DataStoreClass::set(etl::string_view key, pw::span<const uint8_t> value) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(pw::Status::Unavailable());
     return;
   }
   rpc_pb_DatastorePut p = rpc_pb_DatastorePut_init_default;
@@ -25,9 +25,8 @@ void DataStoreClass::set(etl::string_view key, pw::span<const uint8_t> value) {
 void DataStoreClass::get(etl::string_view key,
                          typename DataStoreClass::GetHandler handler) {
   if (_pending_gets.full() || !Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(_pending_gets.full()
-                          ? rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED
-                          : rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(_pending_gets.full() ? pw::Status::ResourceExhausted()
+                                           : pw::Status::Unavailable());
     return;
   }
 

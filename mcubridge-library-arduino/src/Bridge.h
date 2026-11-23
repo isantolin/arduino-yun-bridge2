@@ -193,26 +193,18 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint32_t getWatchdogTimeout() const { return _watchdog_timeout_ms; }
 
   using StatusHandler =
-      etl::delegate<void(rpc::StatusCode, pw::span<const uint8_t>)>;
+      etl::delegate<void(pw::Status, pw::span<const uint8_t>)>;
   void onStatus(StatusHandler h) { _status_handler = h; }
 
-  void emitStatus(rpc::StatusCode s, pw::span<const uint8_t> p = {}) {
+  void emitStatus(pw::Status s, pw::span<const uint8_t> p = {}) {
     if (_status_handler.is_valid()) {
       _status_handler(s, p);
     }
   }
 
-  void emitStatus(rpc::StatusCode s, etl::string_view p) {
+  void emitStatus(pw::Status s, etl::string_view p) {
     emitStatus(s, pw::span<const uint8_t>(
                       reinterpret_cast<const uint8_t*>(p.data()), p.size()));
-  }
-
-  void emitStatus(pw::Status s, pw::span<const uint8_t> p = {}) {
-    emitStatus(static_cast<rpc::StatusCode>(s.code()), p);
-  }
-
-  void emitStatus(pw::Status s, etl::string_view p) {
-    emitStatus(static_cast<rpc::StatusCode>(s.code()), p);
   }
 
   [[nodiscard]] bool sendPinEvent(uint8_t pin, uint16_t value);

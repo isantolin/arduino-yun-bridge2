@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 #include "hal/hal.h"
-#include "protocol/rpc_protocol.h"
+#include "protocol/mcu_wire.pb.h"
 
 bool g_host_has_sd = true;
 bool g_host_fs_enabled = true;
@@ -17,7 +17,7 @@ namespace hal {
 constexpr char kHostFilesystemRoot[] = "/tmp/mcubridge-host-fs";
 constexpr size_t kHostFilesystemRootLength = sizeof(kHostFilesystemRoot) - 1U;
 constexpr size_t kHostFilesystemPathCapacity =
-    kHostFilesystemRootLength + rpc::RPC_MAX_FILEPATH_LENGTH + 2U;
+    kHostFilesystemRootLength + sizeof(rpc_pb_FileRemove{}.path) + 2U;
 using PathString = etl::string<kHostFilesystemPathCapacity>;
 
 static bool resolve_to_full_path(etl::string_view path, PathString& full_path) {

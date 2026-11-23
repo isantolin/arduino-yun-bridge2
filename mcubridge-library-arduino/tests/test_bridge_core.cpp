@@ -241,10 +241,10 @@ void test_bridge_handshake_timeout_not_sync() {
 }
 
 namespace {
-rpc::StatusCode g_last_status = rpc::StatusCode::STATUS_OK;
+pw::Status g_last_status = pw::OkStatus();
 size_t g_last_status_len = 0U;
 size_t g_status_calls = 0U;
-void capture_status_handler(rpc::StatusCode s, pw::span<const uint8_t> p) {
+void capture_status_handler(pw::Status s, pw::span<const uint8_t> p) {
   g_last_status = s;
   g_last_status_len = p.size();
   ++g_status_calls;
@@ -267,21 +267,20 @@ void test_bridge_emit_status_variants() {
   g_status_calls = 0U;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_status_handler>());
 
-  Bridge.emitStatus(rpc::StatusCode::STATUS_OK);
+  Bridge.emitStatus(pw::OkStatus());
   TEST_ASSERT_EQUAL_UINT32(1U, g_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_OK),
-                        static_cast<int>(g_last_status));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::OkStatus().code()),
+                        static_cast<int>(g_last_status.code()));
   TEST_ASSERT_EQUAL_UINT32(0U, g_last_status_len);
 
-  Bridge.emitStatus(rpc::StatusCode::STATUS_INTERNAL,
-                    etl::string_view("Error"));
+  Bridge.emitStatus(pw::Status::Internal(), etl::string_view("Error"));
   TEST_ASSERT_EQUAL_UINT32(2U, g_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_INTERNAL),
-                        static_cast<int>(g_last_status));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Internal().code()),
+                        static_cast<int>(g_last_status.code()));
   TEST_ASSERT_EQUAL_UINT32(5U, g_last_status_len);
 
   const etl::array<uint8_t, 3> raw = {1U, 2U, 3U};
-  Bridge.emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT,
+  Bridge.emitStatus(pw::Status::InvalidArgument(),
                     pw::span<const uint8_t>(raw.data(), raw.size()));
   TEST_ASSERT_EQUAL_UINT32(3U, g_status_calls);
   TEST_ASSERT_EQUAL_UINT32(3U, g_last_status_len);
@@ -289,11 +288,11 @@ void test_bridge_emit_status_variants() {
   Bridge.emitStatus(pw::Status::ResourceExhausted());
   TEST_ASSERT_EQUAL_UINT32(4U, g_status_calls);
   TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED),
-      static_cast<int>(g_last_status));
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(g_last_status.code()));
 
   Bridge.onStatus(BridgeClass::StatusHandler());
-  Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
+  Bridge.emitStatus(pw::OkStatus(), etl::string_view(""));
   TEST_ASSERT_EQUAL_UINT32(4U, g_status_calls);
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
 }
@@ -675,7 +674,7 @@ void test_bridge_receive_security_gate_variants() {
 }
 
 static bool s_status_called = false;
-static void dummy_status_cb(rpc::StatusCode, pw::span<const uint8_t>) {
+static void dummy_status_cb(pw::Status, pw::span<const uint8_t>) {
   s_status_called = true;
 }
 
@@ -697,7 +696,7 @@ void test_bridge_edge_paths_and_post() {
   // 3. Status invalid argument with status handler
   s_status_called = false;
   Bridge.onStatus(BridgeClass::StatusHandler::create<&dummy_status_cb>());
-  Bridge.emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
+  Bridge.emitStatus(pw::Status::InvalidArgument());
   TEST_ASSERT_TRUE(s_status_called);
   Bridge.onStatus(BridgeClass::StatusHandler());
 

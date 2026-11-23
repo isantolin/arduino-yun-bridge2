@@ -56,18 +56,9 @@ inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_mcu_nonce_len }}U> R
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_session_len }}U> RPC_HANDSHAKE_HKDF_INFO_SESSION RPC_PROGMEM = { {{ handshake.hkdf_info_session_bytes }} };
 {%- endif %}
 
-{% for cap, val in capabilities.items() -%}
-inline constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }}U;
-{% endfor %}
 {% for arch, val in architectures.items() -%}
 inline constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }}U;
 {% endfor %}
-
-enum class StatusCode : uint8_t {
-{%- for status in statuses %}
-    STATUS_{{ status.name }} = {{ status.value }},
-{%- endfor %}
-};
 
 } // namespace rpc
 

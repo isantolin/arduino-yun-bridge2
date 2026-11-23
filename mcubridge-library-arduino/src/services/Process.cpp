@@ -22,7 +22,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
                             pw::span<const etl::string_view> args,
                             typename ProcessClass::ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED);
+    Bridge.emitStatus(pw::Status::ResourceExhausted());
     handler(kProcessInvalidPid);
     return;
   }
@@ -42,7 +42,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   if (!ok) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_INVALID_ARGUMENT);
+    Bridge.emitStatus(pw::Status::InvalidArgument());
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
@@ -53,7 +53,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
       etl::string_view(command_buffer.data(), command_buffer.size()));
 
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(pw::Status::Unavailable());
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
@@ -69,12 +69,12 @@ void ProcessClass::runAsync(etl::string_view cmd,
 void ProcessClass::poll(int32_t pid,
                         typename ProcessClass::ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED);
+    Bridge.emitStatus(pw::Status::ResourceExhausted());
     return;
   }
 
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(pw::Status::Unavailable());
     return;
   }
 
@@ -94,7 +94,7 @@ void ProcessClass::poll(int32_t pid,
 
 void ProcessClass::kill(int32_t pid) {
   if (!Bridge.isRpcTxReady()) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_UNAVAILABLE);
+    Bridge.emitStatus(pw::Status::Unavailable());
     return;
   }
   rpc_pb_ProcessKill p = rpc_pb_ProcessKill_init_default;
@@ -117,7 +117,7 @@ void ProcessClass::_onPollResponse(const rpc_pb_ProcessPollResponse& msg) {
     auto pending = _pending_polls.front();
     _pending_polls.pop();
     pending.second(
-        static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+        pw::Status(static_cast<pw::Status::Code>(msg.status)), msg.exit_code,
         pw::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
         pw::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }

@@ -95,10 +95,10 @@ void test_filesystem_api_empty_and_error_paths() {
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
-rpc::StatusCode g_fs_last_status = rpc::StatusCode::STATUS_OK;
+pw::Status g_fs_last_status = pw::OkStatus();
 size_t g_fs_status_count = 0;
 
-void capture_fs_status(rpc::StatusCode code, pw::span<const uint8_t>) {
+void capture_fs_status(pw::Status code, pw::span<const uint8_t>) {
   g_fs_last_status = code;
   ++g_fs_status_count;
 }
@@ -200,16 +200,16 @@ void test_filesystem_upload_validation_and_unavailable() {
     TEST_ASSERT_FALSE(FileSystem.upload("huge.bin", huge_span));
   }
 
-  // Unavailable RPC TX emits STATUS_UNAVAILABLE and returns false.
-  g_fs_last_status = rpc::StatusCode::STATUS_OK;
+  // Unavailable RPC TX emits UNAVAILABLE and returns false.
+  g_fs_last_status = pw::OkStatus();
   g_fs_status_count = 0;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_fs_status>());
   ba.setTxEnabled(false);
   TEST_ASSERT_FALSE(FileSystem.upload(
       "offline.bin", pw::span<const uint8_t>(payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT(1U, g_fs_status_count);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_UNAVAILABLE),
-                        static_cast<int>(g_fs_last_status));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unavailable().code()),
+                        static_cast<int>(g_fs_last_status.code()));
   TEST_ASSERT_FALSE(FileSystem.uploadPending());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
@@ -393,7 +393,7 @@ void test_transfer_handler_and_bridge_lifecycle_regression() {
   ba.setSynchronized();
   send_transfer_read_open(ba, 20U);
 
-  g_fs_last_status = rpc::StatusCode::STATUS_OK;
+  g_fs_last_status = pw::OkStatus();
   g_fs_status_count = 0;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_fs_status>());
   // Enqueue 3 non-initial chunks without polling -> overflows the 2-slot
@@ -410,8 +410,8 @@ void test_transfer_handler_and_bridge_lifecycle_regression() {
   Bridge.process();
   TEST_ASSERT_TRUE(g_fs_status_count >= 1U);
   TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(rpc::StatusCode::STATUS_RESOURCE_EXHAUSTED),
-      static_cast<int>(g_fs_last_status));
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(g_fs_last_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 
   // Destroying Bridge while events are queued must still detach cleanly.

@@ -326,21 +326,6 @@ def _extract_constants_and_handshake(
     }
 
 
-def _extract_statuses(pb_module: Any, status_enum: Any) -> list[dict[str, Any]]:
-    statuses: list[dict[str, Any]] = []
-    for value in status_enum.values:
-        if value.name == "STATUS_UNSPECIFIED":
-            continue
-        status_options = value.GetOptions().Extensions[pb_module.status_opts]
-        status: dict[str, Any] = {
-            "name": value.name,
-            "value": value.number,
-            "description": status_options.description,
-        }
-        statuses.append(status)
-    return statuses
-
-
 def _extract_payloads_and_actions(pb_module: Any, all_descs: list[Any], opts: Any) -> dict[str, Any]:
     ubus_methods = [
         {
@@ -424,14 +409,13 @@ def _build_operations_catalog(
     seen_names = {op["name"] for op in operations}
 
     for msg_name, topic in msg_topics.items():
-        act_name = msg_name.removesuffix("_ENUM")
-        if act_name in seen_names:
+        if msg_name in seen_names:
             continue
         blob_field = next((bf for tm, bf in telem_map.items() if tm in topic), None) or (
             "system_status_blob" if "status" in topic else None
         )
-        operations.append(_build_topic_or_payload_op(act_name, pb_module, cloud_topic=topic, blob_field=blob_field))
-        seen_names.add(act_name)
+        operations.append(_build_topic_or_payload_op(msg_name, pb_module, cloud_topic=topic, blob_field=blob_field))
+        seen_names.add(msg_name)
 
     return operations
 
@@ -518,14 +502,6 @@ def _extract_operations_context(
         for m_name, m_desc in d.message_types_by_name.items()
         if m_desc.GetOptions().HasExtension(pb_module.msg_cloud_topic)
     }
-    msg_topics.update(
-        {
-            f"{e_name}_ENUM": e_desc.GetOptions().Extensions[pb_module.enum_cloud_topic]
-            for d in all_descs
-            for e_name, e_desc in d.enum_types_by_name.items()
-            if e_desc.GetOptions().HasExtension(pb_module.enum_cloud_topic)
-        }
-    )
 
     excluded_services = ("GatewayControl", "EdgeControl", "DeviceTelemetry")
     mcu_services = [s for d in all_descs for s in d.services_by_name.values() if s.name not in excluded_services]
@@ -593,7 +569,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         "runtime_config_constants": rt_consts,
         "client_runtime_config_constants": cl_rt_consts,
         "runtime_config_fields": cfg_fields,
-        "capabilities": {c.name: c.value for c in opts.Extensions[pb_module.capabilities]},
         "architectures": {a.name: a.value for a in opts.Extensions[pb_module.architectures]},
         "architecture_display_names": {
             a.name: a.display_name for a in opts.Extensions[pb_module.architectures] if a.display_name
@@ -613,20 +588,11 @@ def build_protocol_context(spec_or_pb: Any, version: str) -> dict[str, Any]:
 
     all_descs: list[Any] = [pb_module.DESCRIPTOR, *pb_module.DESCRIPTOR.dependencies]
     opts: Any = next(d.GetOptions() for d in all_descs if d.GetOptions().HasExtension(pb_module.constants))
-    status_enum: Any = next(d.enum_types_by_name["Status"] for d in all_descs if "Status" in d.enum_types_by_name)
     consts_ctx = _extract_constants_and_handshake(pb_module, opts, parsed.major, parsed.minor, parsed.micro)
-    statuses = _extract_statuses(pb_module, status_enum)
     ops_ctx = _extract_operations_context(pb_module, all_descs, opts)
     cfg_ctx = _extract_runtime_config_context(pb_module, opts, consts_ctx["python_constants"])
 
-    return (
-        consts_ctx
-        | ops_ctx
-        | cfg_ctx
-        | {
-            "statuses": statuses,
-        }
-    )
+    return consts_ctx | ops_ctx | cfg_ctx
 
 
 def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> dict[str, Any]:

@@ -17,7 +17,6 @@ import asyncio
 import hmac
 import json
 import secrets
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -61,10 +60,17 @@ from tools.emulation.process_utils import (
     start_daemon_thread,
     stream_pump,
     terminate_process_tree,
-    wait_for_path_ready,
-    wait_for_tcp_ready,
 )
-from tools.emulation.qemu_runner import find_qemu_binary
+from tools.emulation.qemu_runner import (
+    find_qemu_binary,
+    start_qemu_emulator,
+    stop_qemu_emulator,
+)
+from tools.emulation.renode_runner import (
+    find_renode_binary,
+    start_renode_emulator,
+    stop_renode_emulator,
+)
 from tools.emulation.simavr_runner import (
     build_simavr_runner,
     report_simavr_diagnostics,
@@ -77,8 +83,6 @@ repo_root = Path(__file__).resolve().parents[2]
 configure_logging(console=True)
 logger = structlog.get_logger("fleet_mesh_hardware")
 
-PORT_RENODE = 12345
-PORT_QEMU = 12346
 UART_READY_PROBE_INTERVAL_SECONDS = 0.5
 
 
@@ -288,12 +292,8 @@ def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
 EMULATOR_LIVENESS_POLL_SECONDS = 0.5
 
 
-def emulator_exit_reason(name: str, handle: subprocess.Popen[str] | Emulator) -> str | None:
-    """Return a failure reason if an emulator subprocess or pw_emu Emulator has exited."""
-    if isinstance(handle, subprocess.Popen):
-        if handle.poll() is not None:
-            return f"emulator {name} exited with code {handle.returncode} during verification"
-        return None
+def emulator_exit_reason(name: str, handle: Emulator) -> str | None:
+    """Return a failure reason if a pw_emu Emulator has exited."""
     if not handle.running():
         return f"emulator {name} exited during verification"
     return None
@@ -301,7 +301,7 @@ def emulator_exit_reason(name: str, handle: subprocess.Popen[str] | Emulator) ->
 
 async def verify_with_emulator_watchdog(
     nodes: tuple[NodeRuntime, ...],
-    emulators: dict[str, subprocess.Popen[str] | Emulator],
+    emulators: dict[str, Emulator],
 ) -> str | None:
     """Run mesh verification, aborting as soon as any emulator process exits.
 
@@ -537,19 +537,14 @@ def compile_fleet_firmwares() -> (
     return (fw_mega, meta_mega), (fw_mkr, meta_mkr), (fw_esp32, meta_esp32)
 
 
-def verify_host_binaries() -> tuple[Path, str, str, str] | None:
-    """Locate and verify all host emulation binaries (simavr_pty_runner, renode, qemu, socat)."""
+def verify_host_binaries() -> tuple[Path, str, str] | None:
+    """Locate and verify all host emulation binaries (simavr_pty_runner, renode, qemu)."""
     runner_bin = build_simavr_runner()
     if not runner_bin:
         logger.error("pw_emu_avr simavr_pty_runner could not be built on host system")
         return None
 
-    renode_bin = shutil.which("renode")
-    if not renode_bin:
-        for candidate in ["/usr/local/bin/renode", "/opt/renode/renode"]:
-            if Path(candidate).exists():
-                renode_bin = candidate
-                break
+    renode_bin = find_renode_binary()
     if not renode_bin:
         logger.error("Renode binary not available on host system")
         return None
@@ -559,31 +554,26 @@ def verify_host_binaries() -> tuple[Path, str, str, str] | None:
         logger.error("Espressif QEMU binary (esp32s3) not available on host system")
         return None
 
-    socat_bin = shutil.which("socat")
-    if not socat_bin:
-        logger.error("socat binary not found on host system")
-        return None
-
-    return runner_bin, renode_bin, qemu_bin, socat_bin
+    return runner_bin, renode_bin, qemu_bin
 
 
 def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
-    """Execute all 3 hardware emulators concurrently and verify cross-node mesh operations."""
+    """Execute all 3 hardware emulators concurrently via Pigweed pw_emu and verify mesh operations."""
     logger.info("================================================================================")
-    logger.info("Starting Master Fleet Mesh Hardware Emulation (simavr + Renode + QEMU)")
+    logger.info("Starting Master Fleet Mesh Hardware Emulation (pw_emu: simavr + Renode + QEMU)")
     logger.info("================================================================================")
 
     (fw_mega, meta_mega), (fw_mkr, meta_mkr), (fw_esp32, meta_esp32) = compile_fleet_firmwares()
 
-    binaries = verify_host_binaries()
-    if binaries is None:
+    if verify_host_binaries() is None:
         return False
-    _runner_bin, renode_bin, qemu_bin, socat_bin = binaries
 
     base_temp_dir = Path(tempfile.mkdtemp(prefix="fleet_mesh_hw_"))
     log_collector = EmulationState()
     all_procs: list[subprocess.Popen[str]] = []
     simavr_emu: Emulator | None = None
+    renode_emu: Emulator | None = None
+    qemu_emu: Emulator | None = None
     simavr_wdir: Path | None = None
     node_mega: NodeRuntime | None = None
     node_mkr: NodeRuntime | None = None
@@ -614,7 +604,7 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
         )
         node_mega.pty_path = pty_mega
 
-        # Node 2: Arduino MKR WiFi 1010 (Renode)
+        # Node 2: Arduino MKR WiFi 1010 (Renode via Pigweed pw_emu)
         node_mkr = NodeRuntime(
             name="mkr-02",
             board=BOARD_MKRWIFI1010,
@@ -624,55 +614,12 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
             status_file=base_temp_dir / f"status_{BOARD_MKRWIFI1010.slug}.json",
         )
         node_mkr.temp_dir.mkdir(parents=True, exist_ok=True)
-        resc_template = repo_root / "tools" / "emulation" / "renode" / "mkrwifi1010.resc"
-        repl_template = repo_root / "tools" / "emulation" / "renode" / "mkrwifi1010.repl"
-        rendered_resc = (
-            resc_template.read_text(encoding="utf-8")
-            .replace("$ELF_PATH", f"@{node_mkr.firmware_path.resolve()}")
-            .replace("$UART_PORT", str(PORT_RENODE))
-            .replace("$ORIGIN/mkrwifi1010.repl", f"@{repl_template.resolve()}")
-        )
-        temp_resc = node_mkr.temp_dir / "run.resc"
-        temp_resc.write_text(
-            f"logFile @{(node_mkr.temp_dir / 'renode.log').resolve()} true\n{rendered_resc}\n",
-            encoding="utf-8",
-        )
-        renode_cmd = [
-            renode_bin,
-            "--disable-gui",
-            "--hide-monitor",
-            "--hide-analyzers",
-            "-P",
-            "-1",
-            "--plain",
-            "-e",
-            f"include @{temp_resc.resolve()}",
-        ]
-        logger.info("Spawning Renode for Node 2 (MKR WiFi 1010)", port=PORT_RENODE)
-        renode_proc = subprocess.Popen(renode_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        all_procs.append(renode_proc)
-        start_daemon_thread(stream_pump, "renode", renode_proc.stdout, log_collector.on_line, "renode")
+        renode_wdir = node_mkr.temp_dir / "pw_emu"
+        logger.info("Starting Renode via pw_emu for Node 2 (MKR WiFi 1010)")
+        renode_emu, pty_mkr = start_renode_emulator(renode_wdir, node_mkr.firmware_path)
+        node_mkr.pty_path = pty_mkr
 
-        if not wait_for_tcp_ready(CLOUD_HOST, PORT_RENODE, timeout=30.0):
-            raise RuntimeError(f"Renode UART socket terminal failed to become ready on port {PORT_RENODE}")
-
-        pty_mkr = node_mkr.temp_dir / "ttyRENODE"
-        socat_mkr_cmd = [
-            socat_bin,
-            "-d",
-            "-d",
-            f"pty,link={pty_mkr},raw,echo=0",
-            f"tcp:{CLOUD_HOST}:{PORT_RENODE},retry=30,interval=0.2",
-        ]
-        socat_mkr_proc = subprocess.Popen(socat_mkr_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        all_procs.append(socat_mkr_proc)
-        start_daemon_thread(stream_pump, "socat-mkr", socat_mkr_proc.stdout, log_collector.on_line, "socat-mkr")
-
-        if not wait_for_path_ready(pty_mkr, timeout=15.0):
-            raise RuntimeError("Timed out waiting for Renode PTY bridge")
-        node_mkr.pty_path = str(pty_mkr)
-
-        # Node 3: Arduino Nano ESP32 (QEMU)
+        # Node 3: Arduino Nano ESP32 (QEMU via Pigweed pw_emu)
         node_esp32 = NodeRuntime(
             name="esp32-03",
             board=BOARD_NANO_ESP32,
@@ -682,55 +629,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
             status_file=base_temp_dir / f"status_{BOARD_NANO_ESP32.slug}.json",
         )
         node_esp32.temp_dir.mkdir(parents=True, exist_ok=True)
-        qemu_cmd = [
-            qemu_bin,
-            "-nographic",
-            "-monitor",
-            "none",
-            "-machine",
-            node_esp32.metadata.mcu,
-            "-drive",
-            f"file={node_esp32.firmware_path},if=mtd,format=raw",
-            "-serial",
-            f"tcp:{CLOUD_HOST}:{PORT_QEMU},server,wait",
-        ]
-        logger.info("Spawning QEMU for Node 3 (Nano ESP32)", port=PORT_QEMU)
-        qemu_proc = subprocess.Popen(qemu_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        all_procs.append(qemu_proc)
-        start_daemon_thread(stream_pump, "qemu", qemu_proc.stdout, log_collector.on_line, "qemu")
-
-        if not log_collector.listening_event.wait(timeout=15.0):
-            raise RuntimeError("QEMU UART TCP server failed to become ready")
-
-        # Match the standalone QEMU runner: expose the TCP UART through a
-        # PTY so McuBridge uses its normal serial-device transport. This also
-        # keeps QEMU's TCP client lifecycle outside the daemon's serial backend.
-        pty_qemu = node_esp32.temp_dir / "ttyQEMU"
-        socat_qemu_cmd = [
-            socat_bin,
-            "-d",
-            "-d",
-            f"pty,link={pty_qemu},raw,echo=0",
-            f"tcp:{CLOUD_HOST}:{PORT_QEMU},retry=30,interval=0.2",
-        ]
-        logger.info("Bridging QEMU UART socket to PTY", pty=str(pty_qemu), port=PORT_QEMU)
-        socat_qemu_proc = subprocess.Popen(
-            socat_qemu_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        all_procs.append(socat_qemu_proc)
-        start_daemon_thread(
-            stream_pump,
-            "socat-qemu",
-            socat_qemu_proc.stdout,
-            log_collector.on_line,
-            "socat-qemu",
-        )
-        if not wait_for_path_ready(pty_qemu, timeout=15.0):
-            raise RuntimeError("Timed out waiting for QEMU PTY bridge")
-        node_esp32.pty_path = str(pty_qemu)
+        qemu_wdir = node_esp32.temp_dir / "pw_emu"
+        logger.info("Starting QEMU via pw_emu for Node 3 (Nano ESP32)")
+        qemu_emu, pty_qemu = start_qemu_emulator(qemu_wdir, node_esp32.firmware_path, target=node_esp32.metadata.mcu)
+        node_esp32.pty_path = pty_qemu
 
         nodes = (node_mega, node_mkr, node_esp32)
         ready_deadline = time.monotonic() + timeout_seconds
@@ -769,10 +671,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
                 return False
             logger.info("Node synchronized successfully", node=node.name, board=node.board.label)
 
-        emulators: dict[str, subprocess.Popen[str] | Emulator] = {
+        emulators: dict[str, Emulator] = {
             "simavr": simavr_emu,
-            "renode": renode_proc,
-            "qemu": qemu_proc,
+            "renode": renode_emu,
+            "qemu": qemu_emu,
         }
         failure = asyncio.run(verify_with_emulator_watchdog(nodes, emulators))
         if failure is not None:
@@ -799,6 +701,8 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
                 daemon_procs.extend(node_ref.procs)
         terminate_process_tree(daemon_procs, timeout=3.0)
         stop_simavr_emulator(simavr_emu)
+        stop_renode_emulator(renode_emu)
+        stop_qemu_emulator(qemu_emu)
         emulation_procs = [p for p in all_procs if p not in daemon_procs]
         terminate_process_tree(emulation_procs, timeout=3.0)
         if node_mega is not None and simavr_wdir is not None:

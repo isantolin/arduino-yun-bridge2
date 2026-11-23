@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
-"""[MIL-SPEC/SIL-2] QEMU Xtensa Hardware Emulation Runner.
+"""[MIL-SPEC/SIL-2] QEMU Xtensa Hardware Emulation Runner using Pigweed pw_emu.
 
 Executes instruction-accurate Xtensa LX7 emulation of the Arduino Nano ESP32
-(ESP32-S3) using the Espressif QEMU fork (``qemu-system-xtensa -machine esp32s3``).
-The virtual UART0 is exposed as a TCP server, bridged to a PTY via socat and
-consumed by the mcubridge daemon for 100% E2E client verification.
-
-Runs strictly headless: ``-nographic -monitor none``.
+(ESP32-S3) through ``pw_emu.frontend.Emulator`` and ``pw_emu.qemu`` using the
+Espressif QEMU fork (``qemu-system-xtensa -machine esp32s3``). Virtual UART0
+is exposed directly as a native PTY chardev via QMP and consumed by the
+mcubridge daemon for 100% E2E client verification.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import structlog
 import typer
+from pw_emu.core import Error as PwEmuError
+from pw_emu.frontend import Emulator
+
 from tools.arduino_core_metadata import read_metadata_json
 from tools.boards import QEMU_BOARDS as MATRIX_BOARDS
 from tools.emulation.emulation_runner import (
@@ -41,7 +45,6 @@ from tools.emulation.process_utils import (
     start_daemon_thread,
     stream_pump,
     terminate_process_tree,
-    wait_for_path_ready,
     wait_for_tcp_ready,
 )
 from tools.emulation.stack_metrics import (
@@ -51,11 +54,16 @@ from tools.emulation.stack_metrics import (
 
 repo_root = Path(__file__).resolve().parents[2]
 
-DEFAULT_QEMU_PORT = 12346
-QEMU_MACHINE = "esp32s3"
+QEMU_TARGET = "esp32s3"
+QEMU_UART_CHANNEL = "uart0"
 QEMU_SEARCH_DIRS: tuple[Path, ...] = (Path("/tmp/qemu-esp32/bin"), Path("/opt/qemu-esp32/bin"))
 
 logger = structlog.get_logger("qemu_runner")
+
+
+def pw_emu_config_path() -> Path:
+    """Return the canonical Pigweed pw_emu configuration for this repository."""
+    return repo_root / "tools" / "emulation" / "pw_emu_config.json"
 
 
 def supports_esp32s3(binary_path: str) -> bool:
@@ -87,47 +95,125 @@ def find_qemu_binary() -> str | None:
     return None
 
 
-def build_qemu_command(qemu_bin: str, flash_image: Path, port: int) -> list[str]:
-    """Build the strictly headless QEMU command line."""
-    return [
-        qemu_bin,
-        "-nographic",
-        "-monitor",
-        "none",
-        "-machine",
-        QEMU_MACHINE,
-        "-drive",
-        f"file={flash_image.resolve()},if=mtd,format=raw",
-        "-serial",
-        f"tcp:127.0.0.1:{port},server,wait",
-    ]
+@contextlib.contextmanager
+def _prepend_to_path(directory: Path) -> Generator[None]:
+    """Temporarily prepend ``directory`` to PATH so ``pw_emu`` resolves the Espressif fork."""
+    old_path = os.environ.get("PATH")
+    dir_str = str(directory)
+    path_entries = old_path.split(os.pathsep) if old_path else []
+    if path_entries and path_entries[0] == dir_str:
+        yield
+        return
+    os.environ["PATH"] = f"{dir_str}{os.pathsep}{old_path}" if old_path else dir_str
+    try:
+        yield
+    finally:
+        if old_path is None:
+            os.environ.pop("PATH", None)
+        else:
+            os.environ["PATH"] = old_path
+
+
+def build_esp32s3_drive_arg(flash_image: Path, wdir: Path | None = None) -> str:
+    """Build the QEMU ``-drive`` argument for an ESP32-S3 raw SPI flash image.
+
+    ``pw_emu.qemu.QemuLauncher`` splits ``args`` on spaces, so flash image paths
+    containing spaces are symlinked inside ``wdir`` first.
+    """
+    resolved = flash_image.resolve()
+    drive_path = resolved
+    if " " in str(resolved) and wdir is not None:
+        wdir.mkdir(parents=True, exist_ok=True)
+        link_path = wdir / "firmware_flash.bin"
+        if link_path.is_symlink() or link_path.exists():
+            link_path.unlink()
+        link_path.symlink_to(resolved)
+        drive_path = link_path
+    return f"-drive file={drive_path},if=mtd,format=raw"
+
+
+def start_qemu_emulator(
+    wdir: Path,
+    flash_image: Path,
+    target: str = QEMU_TARGET,
+    *,
+    pause: bool = False,
+) -> tuple[Emulator, str]:
+    """Start an ESP32-S3 target via Pigweed ``pw_emu.frontend.Emulator`` and return ``(emu, pty_path)``."""
+    qemu_bin = find_qemu_binary()
+    if qemu_bin is None:
+        raise PwEmuError("Espressif qemu-system-xtensa executable with esp32s3 support not found")
+
+    drive_arg = build_esp32s3_drive_arg(flash_image, wdir=wdir)
+    config_path = pw_emu_config_path()
+    emu = Emulator(wdir, config_path=config_path)
+    logger.info(
+        "Starting QEMU via pw_emu",
+        target=target,
+        flash_image=str(flash_image),
+        uart_channel=QEMU_UART_CHANNEL,
+        wdir=str(wdir),
+    )
+    # Pass file=None so QemuLauncher does not emit -kernel; ESP32-S3 boots from MTD flash.
+    # Start paused (-S) so QMP resolves the PTY chardev before ROM boot bytes are emitted.
+    with _prepend_to_path(Path(qemu_bin).parent):
+        emu.start(target=target, file=None, pause=True, args=drive_arg)
+
+    try:
+        pty_path = emu.get_channel_path(QEMU_UART_CHANNEL)
+        if not pause:
+            emu.cont()
+    except (PwEmuError, OSError):
+        stop_qemu_emulator(emu)
+        raise
+
+    logger.info("pw_emu QEMU UART PTY ready", channel=QEMU_UART_CHANNEL, pty=pty_path)
+    return emu, pty_path
+
+
+def stop_qemu_emulator(emu: Emulator | None) -> None:
+    """Stop a running ``pw_emu`` QEMU Emulator cleanly without masking prior errors."""
+    if emu is None:
+        return
+    try:
+        emu.stop()
+    except (PwEmuError, OSError) as exc:
+        logger.debug("Ignoring expected error while stopping pw_emu qemu", error=str(exc))
+
+
+def _teardown_qemu(
+    daemon_proc: subprocess.Popen[Any] | None,
+    emu: Emulator | None,
+    gateway_proc: subprocess.Popen[Any] | None,
+    fake_uci_dir: Path | str | None = None,
+    storage_path: Path | str | None = None,
+) -> None:
+    procs = [p for p in (daemon_proc, gateway_proc) if p is not None]
+    terminate_process_tree(procs, timeout=5.0)
+    stop_qemu_emulator(emu)
+    cleanup_paths(fake_uci_dir, storage_path)
 
 
 def run_qemu_emulation(
     flash_image: Path,
     test_scripts: list[Path],
     timeout_seconds: float = 90.0,
-    port: int = DEFAULT_QEMU_PORT,
     led_builtin_pin: int = 13,
     log_dir: Path | None = None,
 ) -> bool:
-    """Run full QEMU ESP32-S3 emulation with socat PTY bridge and client tests."""
-    qemu_bin = find_qemu_binary()
-    if qemu_bin is None:
+    """Run full QEMU ESP32-S3 emulation through Pigweed pw_emu and verify client tests."""
+    if not flash_image.exists():
+        logger.error("Flash image not found", path=str(flash_image))
+        return False
+
+    if find_qemu_binary() is None:
         logger.warning("qemu-system-xtensa executable not found")
         return False
 
-    socat_bin = shutil.which("socat")
-    if socat_bin is None:
-        logger.error("socat executable not found in PATH")
-        return False
-
     state = EmulationState()
-    temp_dir = Path(tempfile.mkdtemp(prefix="qemu_run_"))
-    pty_link = temp_dir / "ttyQEMU"
-
-    qemu_proc: subprocess.Popen[str] | None = None
-    socat_proc: subprocess.Popen[str] | None = None
+    wdir = Path(tempfile.mkdtemp(prefix="pw_emu_qemu_"))
+    qemu_log = wdir / "qemu.log"
+    emu: Emulator | None = None
     daemon_proc: subprocess.Popen[str] | None = None
     gateway_proc: subprocess.Popen[str] | None = None
     fake_uci_dir: Path | None = None
@@ -139,43 +225,13 @@ def run_qemu_emulation(
             logger.error("Gateway did not start in time")
             return False
 
-        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(
-            str(pty_link),
-            device_id="esp32-01",
-            label="qemu runner",
-        )
-
-        qemu_cmd = build_qemu_command(qemu_bin, flash_image, port)
-        logger.info("Spawning QEMU (headless)", cmd=qemu_cmd)
-        qemu_proc = subprocess.Popen(
-            qemu_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        start_daemon_thread(stream_pump, "qemu", qemu_proc.stdout, state.on_line, "qemu")
-
-        if not state.listening_event.wait(timeout=15.0):
-            logger.error("QEMU UART TCP server failed to become ready", port=port)
+        try:
+            emu, pty_path = start_qemu_emulator(wdir, flash_image)
+        except (PwEmuError, OSError) as exc:
+            logger.error("Failed to start QEMU via pw_emu", error=str(exc))
             return False
 
-        logger.info("Bridging QEMU UART socket to PTY...", pty=str(pty_link))
-        socat_proc = subprocess.Popen(
-            [socat_bin, "-d", "-d", f"PTY,link={pty_link},raw,echo=0", f"TCP:127.0.0.1:{port}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        start_daemon_thread(stream_pump, "socat", socat_proc.stdout, state.on_line, "socat")
-
-        if not wait_for_path_ready(pty_link, timeout=5.0):
-            logger.error("PTY bridge device never appeared", path=str(pty_link))
-            return False
-
-        time.sleep(1.0)
-        boot_output = drain_pty_nonblocking(pty_link)[-4096:]
+        boot_output = drain_pty_nonblocking(pty_path, timeout=1.0)[-4096:]
         try:
             boot_text: str | None = boot_output.decode("utf-8")
         except UnicodeDecodeError:
@@ -185,6 +241,12 @@ def run_qemu_emulation(
             length=len(boot_output),
             text=boot_text,
             raw=boot_output if boot_text is None else b"",
+        )
+
+        fake_uci_dir, storage_path, daemon_env = setup_fake_uci(
+            pty_path,
+            device_id="esp32-01",
+            label="qemu runner",
         )
 
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]
@@ -221,8 +283,7 @@ def run_qemu_emulation(
         )
 
     finally:
-        procs = [p for p in (daemon_proc, gateway_proc, socat_proc, qemu_proc) if p is not None]
-        terminate_process_tree(procs, timeout=5.0)
+        _teardown_qemu(daemon_proc, emu, gateway_proc, fake_uci_dir, storage_path)
         with state.lock:
             log_lines = [line for _src, line in state.output_lines]
         watermark = extract_latest_mcu_stack_watermark(log_lines)
@@ -256,9 +317,12 @@ def run_qemu_emulation(
                 with log_file.open("w", encoding="utf-8") as f:
                     for src, line in state.output_lines:
                         f.write(f"[{src}] {line}\n")
-            except OSError as exc:
+                    if qemu_log.exists():
+                        f.write("\n=== QEMU INTERNAL LOG ===\n")
+                        f.write(qemu_log.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError) as exc:
                 logger.warning("Could not write QEMU execution log", error=str(exc))
-        cleanup_paths(temp_dir, fake_uci_dir, storage_path)
+        cleanup_paths(wdir)
 
 
 def run_matrix(
@@ -341,7 +405,7 @@ def run_matrix(
 
 
 app = typer.Typer(
-    help="Instruction-accurate Xtensa LX7 (ESP32-S3) hardware emulation using QEMU.",
+    help="Instruction-accurate Xtensa LX7 (ESP32-S3) hardware emulation using Pigweed pw_emu + QEMU.",
     add_completion=False,
 )
 
@@ -368,10 +432,6 @@ def main(
         float,
         typer.Option("--timeout", "-t", help="Timeout per client script in seconds"),
     ] = 90.0,
-    port: Annotated[
-        int,
-        typer.Option("--port", "-p", help="QEMU UART TCP server port"),
-    ] = DEFAULT_QEMU_PORT,
 ) -> None:
     """Entrypoint for the QEMU Xtensa hardware emulation runner."""
     if sketch is not None:
@@ -393,7 +453,6 @@ def main(
         flash_image=effective_firmware,
         test_scripts=test_paths,
         timeout_seconds=timeout,
-        port=port,
     )
     if not success:
         logger.error("QEMU Xtensa emulation suite failed!")

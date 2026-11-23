@@ -453,13 +453,22 @@ async def test_gateway_client_health() -> None:
     assert health.active_device_sessions == 1
     assert health.active_client_sessions == 1
 
-    # 2. Health error
+    # 2. Health error (on_error callback)
     def _invoke_health_err(on_completed: Any = None, on_error: Any = None) -> None:
         if on_error:
             on_error(FakeCall(), PwStatus.UNAVAILABLE)
 
     mock_health.invoke = _invoke_health_err
     with pytest.raises(RuntimeError, match="Health check failed"):
+        await client.Health()
+
+    # 3. Health error (non-OK on_completed status)
+    def _invoke_health_non_ok(on_completed: Any = None, on_error: Any = None) -> None:
+        if on_completed:
+            on_completed(FakeCall(None), PwStatus.PERMISSION_DENIED)
+
+    mock_health.invoke = _invoke_health_non_ok
+    with pytest.raises(RuntimeError, match="Health check failed: Status.PERMISSION_DENIED"):
         await client.Health()
 
 
@@ -765,15 +774,18 @@ async def test_gateway_client_dispatch_timeout_and_lazy_transfer_manager(monkeyp
     assert await client.transfer_read(7) == b"lazy-transfer"
     created_mgr.read.assert_called_once_with(7)
 
-    # Exercise dispatch() timeout error handling.
+    # Exercise dispatch() and Health() timeout error handling.
     async def _raise_timeout(awaitable: Any, timeout: float) -> Any:
         del timeout
         awaitable.cancel()
         raise TimeoutError("rpc timed out")
 
+    mock_conn.rpc_client.channel.return_value.rpcs.mcubridge.gateway.GatewayControl.Health.invoke = MagicMock()
     monkeypatch.setattr("mcubridge_client.client.asyncio.wait_for", _raise_timeout)
     with pytest.raises(TimeoutError, match="rpc timed out"):
         await client.dispatch("rpc.pb.SystemService/GetVersion")
+    with pytest.raises(TimeoutError, match="rpc timed out"):
+        await client.Health()
 
 
 async def test_gateway_client_duplicate_callbacks() -> None:

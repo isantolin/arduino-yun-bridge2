@@ -424,7 +424,7 @@ async def test_serial_transport_methods_with_none_serial(
 
     ok_call = MagicMock()
     failing_call = MagicMock(cancel=MagicMock(side_effect=RuntimeError("cancel failed")))
-    cast(list[Any], transport.__dict__["_active_rpc_calls"]).extend([ok_call, failing_call])
+    cast(set[Any], transport.__dict__["_active_rpc_calls"]).update([ok_call, failing_call])
     await transport.reset()
     ok_call.cancel.assert_called_once()
     failing_call.cancel.assert_called_once()
@@ -1067,6 +1067,25 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
 
     assert key in transport.__dict__["_active_rpc_packet_ids"]
 
+    # Construct outside any running loop, then invoke queue_rpc_packet once an event loop is active.
+    adopted_written: list[bytes] = []
+
+    async def _capture_adopted(raw: bytes) -> bool:
+        adopted_written.append(raw)
+        return True
+
+    sync_constructed = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=_capture_adopted)
+
+    async def _drive_adopted() -> None:
+        sync_constructed.queue_rpc_packet(packet)
+        for _ in range(100):
+            if adopted_written and not sync_constructed.__dict__["_rpc_write_tasks"]:
+                break
+            await asyncio.sleep(0.01)
+
+    asyncio.run(_drive_adopted())
+    assert adopted_written == [packet]
+
 
 async def test_rpc_write_refuses_unauthenticated_link_after_flow_control_timeout(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: Any
@@ -1158,9 +1177,10 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     transport = SerialTransport(runtime_config, runtime_state, None)
     rpc_method = MagicMock()
     call = MagicMock()
+    call.response = None
 
-    def complete_without_payload(_request: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
-        _ = on_next, on_error
+    def complete_without_payload(_request: Any, *, on_completed: Any, on_error: Any) -> Any:
+        _ = on_error
         on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
         on_completed(call, MagicMock(ok=MagicMock(return_value=True)))
         return call
@@ -1172,11 +1192,19 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     )
     active_rpc_calls = _private_attribute(transport, "_active_rpc_calls")
     result = await invoke_rpc_with_retries(rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0)
-    assert result
+    assert result is True
     assert call not in active_rpc_calls
 
-    def fail_callback(_request: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
-        _ = on_next, on_completed
+    expected_resp = pb.ClockSyncResponse(host_time_us=1, mcu_time_us=2)
+    call.response = expected_resp
+    response_result = await invoke_rpc_with_retries(
+        rpc_method, pb.ClockSyncRequest(host_time_us=1), "ClockSync/Sync", 1.0
+    )
+    assert response_result == expected_resp
+    call.response = None
+
+    def fail_callback(_request: Any, *, on_completed: Any, on_error: Any) -> Any:
+        _ = on_completed
         active_rpc_calls.clear()
         on_error(call, RuntimeError("remote failure"))
         on_error(call, RuntimeError("duplicate failure"))
@@ -1187,8 +1215,8 @@ async def test_invoke_rpc_completion_without_response_and_error_callback(
     assert not result
     assert call not in active_rpc_calls
 
-    def complete_with_non_ok_status(_request: Any, *, on_next: Any, on_completed: Any, on_error: Any) -> Any:
-        _ = on_next, on_error
+    def complete_with_non_ok_status(_request: Any, *, on_completed: Any, on_error: Any) -> Any:
+        _ = on_error
         on_completed(call, MagicMock(ok=MagicMock(return_value=False)))
         return call
 

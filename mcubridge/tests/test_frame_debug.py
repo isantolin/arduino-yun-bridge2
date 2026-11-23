@@ -8,7 +8,7 @@ import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import UINT8_MASK, Status
+from mcubridge.protocol.protocol import Status
 from pytest_mock import MockerFixture
 
 from tools.emulation import frame_debug
@@ -89,7 +89,7 @@ def test_name_for_command() -> None:
     assert frame_debug.name_for_command(get_version_op.method_id) == get_version_op.name
     # Keep testing Status resolution
     assert frame_debug.name_for_command(Status.OK.value) == "OK"
-    assert frame_debug.name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
+    assert frame_debug.name_for_command(0xFF) == "UNKNOWN(0xFF)"
 
 
 def test_snapshot_render() -> None:

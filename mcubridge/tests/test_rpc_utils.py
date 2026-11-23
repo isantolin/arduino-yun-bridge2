@@ -12,7 +12,7 @@ def test_get_default_config_matches_constants() -> None:
     assert config["cloud_port"] == protocol.DEFAULT_CLOUD_PORT
     assert config["serial_port"] == protocol.DEFAULT_SERIAL_PORT
     assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE
-    assert config["serial_retry_attempts"] == protocol.DEFAULT_RETRY_LIMIT
+    assert config["serial_retry_attempts"] == protocol.DEFAULT_SERIAL_RETRY_ATTEMPTS
     assert config["serial_retry_timeout"] == protocol.DEFAULT_SERIAL_RETRY_TIMEOUT
     assert config["serial_response_timeout"] == protocol.DEFAULT_SERIAL_RESPONSE_TIMEOUT
 

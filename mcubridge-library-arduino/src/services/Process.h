@@ -18,9 +18,8 @@
 class ProcessClass : public bridge::BridgeObserver {
  public:
   using ProcessRunHandler = etl::delegate<void(int32_t)>;
-  using ProcessPollHandler =
-      etl::delegate<void(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
-                         pw::span<const uint8_t>)>;
+  using ProcessPollHandler = etl::delegate<void(
+      pw::Status, uint16_t, pw::span<const uint8_t>, pw::span<const uint8_t>)>;
   using PendingPoll = etl::pair<int32_t, ProcessPollHandler>;
 
   ProcessClass() = default;

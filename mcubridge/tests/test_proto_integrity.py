@@ -199,12 +199,15 @@ def test_protobuf_descriptor_purged_elements() -> None:
     """SIL-2: Verify compiled descriptor does not contain any abandoned messages or fields."""
     all_descriptors = (cloud_gateway_pb2.DESCRIPTOR, mcu_wire_pb2.DESCRIPTOR, config_schema_pb2.DESCRIPTOR)
 
-    # 1. No DataFormats, UserProperty, CloudSuffixes, or retired FileWrite messages (ADR-0008)
+    # 1. No retired messages or enums (DataFormats, StatusOptions, CapConfig, Status, FileWrite, etc.)
     for fd in all_descriptors:
         assert "DataFormats" not in fd.message_types_by_name
         assert "FileWrite" not in fd.message_types_by_name
         assert "UserProperty" not in fd.message_types_by_name
         assert "CloudSuffixes" not in fd.message_types_by_name
+        assert "StatusOptions" not in fd.message_types_by_name
+        assert "CapConfig" not in fd.message_types_by_name
+        assert "Status" not in fd.enum_types_by_name
     assert "Write" not in mcu_wire_pb2.DESCRIPTOR.services_by_name["FileSystemService"].methods_by_name
     assert set(cloud_gateway_pb2.CloudQueuedPublish.DESCRIPTOR.fields_by_name) == {"topic_name", "payload"}
     assert set(config_schema_pb2.StatusReasons.DESCRIPTOR.fields_by_name) == {
@@ -266,6 +269,10 @@ def test_protobuf_descriptor_purged_elements() -> None:
         "cloud_expiry_datastore",
         "cloud_expiry_console",
         "bridge_snapshot_expiry_seconds",
+        "max_filepath_length",
+        "default_retry_limit",
+        "max_pending_tx_frames",
+        "uint8_mask",
     }
     assert retired_constants.isdisjoint(constant_fields)
 

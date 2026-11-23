@@ -38,9 +38,9 @@ void setup() {
 
   // Registrar observador de estado para registrar anomalías
   Bridge.onStatus(BridgeClass::StatusHandler::create(
-      [](rpc::StatusCode status_code, pw::span<const uint8_t> payload) {
+      [](pw::Status status, pw::span<const uint8_t> payload) {
         (void)payload;
-        if (status_code != rpc::StatusCode::STATUS_OK) {
+        if (!status.ok()) {
           // Si ocurre un error, parpadear rápido para diagnóstico físico
           digitalWrite(LED_BUILTIN, HIGH);
         }

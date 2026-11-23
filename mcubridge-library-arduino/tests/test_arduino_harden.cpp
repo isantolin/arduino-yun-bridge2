@@ -21,8 +21,8 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 using bridge::test::TestAccessor;
 
-static rpc::StatusCode s_captured_harden_status = rpc::StatusCode::STATUS_OK;
-static void capture_harden_status(rpc::StatusCode s, pw::span<const uint8_t>) {
+static pw::Status s_captured_harden_status = pw::OkStatus();
+static void capture_harden_status(pw::Status s, pw::span<const uint8_t>) {
   s_captured_harden_status = s;
 }
 
@@ -35,7 +35,7 @@ void test_bridge_malformed_rpc_packet() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  s_captured_harden_status = rpc::StatusCode::STATUS_OK;
+  s_captured_harden_status = pw::OkStatus();
   Bridge.onStatus(BridgeClass::StatusHandler::create<&capture_harden_status>());
 
   // Send invalid varint/protobuf byte sequence on address 1 (RPC)
@@ -48,8 +48,8 @@ void test_bridge_malformed_rpc_packet() {
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), frame_len));
 
-  TEST_ASSERT_EQUAL(static_cast<int>(rpc::StatusCode::STATUS_INVALID_ARGUMENT),
-                    static_cast<int>(s_captured_harden_status));
+  TEST_ASSERT_EQUAL(static_cast<int>(pw::Status::InvalidArgument().code()),
+                    static_cast<int>(s_captured_harden_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 

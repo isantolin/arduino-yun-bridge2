@@ -24,7 +24,7 @@ from pw_status import Status as Status
 from pw_transfer import transfer_pb2
 import structlog
 
-from . import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from . import cloud_gateway_pb2, mcu_wire_pb2
 from .gateway import gateway_control_pb2
 
 PW_SERVICES: Final[PwRpcServices] = PwRpcServices(
@@ -45,11 +45,6 @@ logger = structlog.get_logger(__name__)
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
 ZERO_NONCE: Final[bytes] = b"\x00" * AEAD_NONCE_SIZE
-
-
-{% for cap, val in capabilities.items() %}
-CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}
-{%- endfor %}
 
 {% for arch, val in architectures.items() %}
 ARCH_{{ arch|upper }}: Final[int] = {{ val }}

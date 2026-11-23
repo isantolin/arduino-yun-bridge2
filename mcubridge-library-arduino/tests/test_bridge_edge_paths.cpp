@@ -40,7 +40,7 @@ namespace {
 
 void on_datastore_get(etl::string_view, pw::span<const uint8_t>) {}
 void on_process_run(int32_t) {}
-void on_process_poll(rpc::StatusCode, uint16_t, pw::span<const uint8_t>,
+void on_process_poll(pw::Status, uint16_t, pw::span<const uint8_t>,
                      pw::span<const uint8_t>) {}
 
 inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
@@ -1149,9 +1149,9 @@ void test_encrypted_frame_streaming_fails_on_short_write() {
 }  // namespace
 
 namespace {
-rpc::StatusCode g_edge_last_status = rpc::StatusCode::STATUS_OK;
+pw::Status g_edge_last_status = pw::OkStatus();
 size_t g_edge_status_calls = 0U;
-void capture_edge_status(rpc::StatusCode s, pw::span<const uint8_t>) {
+void capture_edge_status(pw::Status s, pw::span<const uint8_t>) {
   g_edge_last_status = s;
   ++g_edge_status_calls;
 }
@@ -1205,9 +1205,8 @@ void test_plaintext_malformed_rpc_frame_is_rejected() {
       reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
 
   TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(rpc::StatusCode::STATUS_INVALID_ARGUMENT),
-      static_cast<int>(g_edge_last_status));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::InvalidArgument().code()),
+                        static_cast<int>(g_edge_last_status.code()));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
@@ -1279,7 +1278,7 @@ void test_unknown_channel_rpc_frame_emits_server_error_status() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  g_edge_last_status = rpc::StatusCode::STATUS_OK;
+  g_edge_last_status = pw::OkStatus();
   g_edge_status_calls = 0U;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
 
@@ -1288,8 +1287,8 @@ void test_unknown_channel_rpc_frame_emits_server_error_status() {
                     pw::tokenizer::Hash("GetVersion"), {},
                     pw::rpc::internal::pwpb::PacketType::REQUEST, 1U, 99U) > 0);
   TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(rpc::StatusCode::STATUS_UNAVAILABLE),
-                        static_cast<int>(g_edge_last_status));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unavailable().code()),
+                        static_cast<int>(g_edge_last_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
@@ -1300,7 +1299,7 @@ void test_pre_handshake_malformed_rpc_frame_enters_safe_state() {
   reset_bridge_core(Bridge, stream, 0, "top-secret-key");
   auto& ba = TestAccessor::create(Bridge);
 
-  g_edge_last_status = rpc::StatusCode::STATUS_OK;
+  g_edge_last_status = pw::OkStatus();
   g_edge_status_calls = 0U;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
 
@@ -1314,9 +1313,8 @@ void test_pre_handshake_malformed_rpc_frame_enters_safe_state() {
       reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
 
   TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(rpc::StatusCode::STATUS_UNAUTHENTICATED),
-      static_cast<int>(g_edge_last_status));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unauthenticated().code()),
+                        static_cast<int>(g_edge_last_status.code()));
   TEST_ASSERT_FALSE(ba.isTxEnabled());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }

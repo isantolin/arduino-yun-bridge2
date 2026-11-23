@@ -2,7 +2,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/byte_stream.h>
+#include <pw_bytes/endian.h>
 #if defined(ARDUINO_ARCH_AVR)
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
@@ -340,11 +340,11 @@ bool fillLinkNonce(pw::span<const uint8_t> secret, pw::span<uint8_t> out) {
     epoch = linkBootEpoch();
     epoch_loaded = true;
   }
+  static_assert(rpc::RPC_HANDSHAKE_NONCE_LENGTH == sizeof(uint64_t) * 2U);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> counter_block = {};
-  etl::byte_stream_writer writer(counter_block.data(), counter_block.size(),
-                                 etl::endian::big);
-  writer.write_unchecked<uint64_t>(epoch);
-  writer.write_unchecked<uint64_t>(handshakes);
+  pw::bytes::CopyInOrder(pw::endian::big, epoch, counter_block.data());
+  pw::bytes::CopyInOrder(pw::endian::big, handshakes,
+                         counter_block.data() + sizeof(uint64_t));
   ++handshakes;
   return rpc::security::derive_mcu_nonce(secret, counter_block, out);
 #endif

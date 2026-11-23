@@ -15,6 +15,17 @@
           "launcher": "pw_emu_avr.simavr.SimavrLauncher"
         }
       },
+      "qemu": {
+        "executable": "qemu-system-xtensa"
+      },
+      "renode": {
+        "executable": "renode",
+        "channels": {
+          "terminals": {
+            "type": "pty"
+          }
+        }
+      },
       "simavr": {
         "executable": "../../build/simavr/simavr_pty_runner",
         "channels": {
@@ -26,7 +37,38 @@
       },
       "target_files": [
         "../../third_party/avr_pigweed_port/tools/pw_emu_avr/targets.json"
-      ]
+      ],
+      "targets": {
+        "mkrwifi1010": {
+          "gdb": [
+            "arm-none-eabi-gdb"
+          ],
+          "renode": {
+            "machine": "tools/emulation/renode/mkrwifi1010.repl",
+            "channels": {
+              "terminals": {
+                "uart0": {
+                  "device-path": "sysbus.uart0",
+                  "type": "pty"
+                }
+              }
+            }
+          }
+        },
+        "esp32s3": {
+          "qemu": {
+            "machine": "esp32s3",
+            "channels": {
+              "chardevs": {
+                "uart0": {
+                  "id": "serial0",
+                  "type": "pty"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

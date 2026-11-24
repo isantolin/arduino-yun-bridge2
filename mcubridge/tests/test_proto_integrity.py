@@ -203,6 +203,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     for fd in all_descriptors:
         assert "DataFormats" not in fd.message_types_by_name
         assert "FileWrite" not in fd.message_types_by_name
+        assert "HandshakeConfig" not in fd.message_types_by_name
         assert "UserProperty" not in fd.message_types_by_name
         assert "CloudSuffixes" not in fd.message_types_by_name
         assert "StatusOptions" not in fd.message_types_by_name

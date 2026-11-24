@@ -8,6 +8,7 @@ import os
 import secrets
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, cast
 
@@ -128,13 +129,18 @@ EnqueueMessageCallable = Callable[[cloud_gateway_pb2.CloudQueuedPublish], Awaita
 logger = structlog.get_logger("mcubridge.service.handshake")
 
 
-def derive_serial_timing(config: RuntimeConfig) -> pb.HandshakeConfig:
-    """Derive timing windows from config with strict declarative validation."""
+@dataclass(slots=True)
+class SerialTiming:
+    """Daemon-side serial handshake timing window derived from RuntimeConfig."""
+
+    response_timeout_ms: int = 0
+
+
+def derive_serial_timing(config: RuntimeConfig) -> SerialTiming:
+    """Derive daemon-side handshake timing window from config."""
     ack_ms = round(config.serial_retry_timeout * 1000.0)
-    return pb.HandshakeConfig(
-        ack_timeout_ms=ack_ms,
+    return SerialTiming(
         response_timeout_ms=max(round(config.serial_response_timeout * 1000.0), ack_ms),
-        ack_retry_limit=config.serial_retry_attempts,
     )
 
 
@@ -158,7 +164,7 @@ class SerialHandshakeManager:
         *,
         config: RuntimeConfig,
         state: RuntimeState,
-        serial_timing: pb.HandshakeConfig,
+        serial_timing: SerialTiming,
         send_frame: SendFrameCallable,
         enqueue_cloud: EnqueueMessageCallable,
         sync_waiter: Callable[[bytes], Awaitable[bool]] | None = None,
@@ -178,8 +184,6 @@ class SerialHandshakeManager:
         )
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
-        # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = self.timing
         self.capabilities_delay: float = float(protocol.CAPABILITIES_DISCOVERY_DELAY_SECONDS)
         self.retry_backoff_base: float = SERIAL_HANDSHAKE_BACKOFF_BASE
         self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
@@ -278,7 +282,7 @@ class SerialHandshakeManager:
 
         reset_ok = await self.send_frame(
             "rpc.pb.SystemService/LinkReset",
-            self._reset_payload,
+            pb.SubscribeRequest(),
         )
         if not reset_ok:
             self.clear_handshake_expectations()

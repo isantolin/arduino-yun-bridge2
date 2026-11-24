@@ -43,17 +43,10 @@ logger = structlog.get_logger(__name__)
 {% for const in handshake_constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
-ZERO_NONCE: Final[bytes] = b"\x00" * AEAD_NONCE_SIZE
 
 {% for arch, val in architectures.items() %}
 ARCH_{{ arch|upper }}: Final[int] = {{ val }}
 {%- endfor %}
-
-ARCHITECTURE_DISPLAY_NAMES: Final[dict[int, str]] = {
-{%- for arch, val in architectures.items() %}
-    {{ val }}: {{ architecture_display_names.get(arch, arch)|tojson }},
-{%- endfor %}
-}
 
 {% for key, val in status_reasons.items() %}
 STATUS_REASON_{{ key|upper }}: Final[str] = {{ val|tojson }}

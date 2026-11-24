@@ -528,9 +528,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         "client_runtime_config_constants": cl_rt_consts,
         "runtime_config_fields": cfg_fields,
         "architectures": {a.name: a.value for a in opts.Extensions[pb_module.architectures]},
-        "architecture_display_names": {
-            a.name: a.display_name for a in opts.Extensions[pb_module.architectures] if a.display_name
-        },
         "cloud_defaults": _message_to_dict(opts.Extensions[pb_module.cloud_defaults]),
         "status_reasons": status_reasons,
         "spi_bit_orders": [{"name": v.name, "value": v.number} for v in pb_module.SpiBitOrder.DESCRIPTOR.values],

@@ -6,6 +6,10 @@ import collections
 from dataclasses import dataclass, field
 
 
+def _str_counter() -> collections.Counter[str]:
+    return collections.Counter()
+
+
 @dataclass(slots=True)
 class DaemonMetrics:
     """Lightweight native metrics container backed by plain scalars and Counter maps."""
@@ -20,8 +24,8 @@ class DaemonMetrics:
     serial_crc_errors: int = 0
     serial_latency_ms: float = 0.0
     rpc_latency_ms: float = 0.0
-    mcu_status_counts: collections.Counter[str] = field(default_factory=collections.Counter)
+    mcu_status_counts: collections.Counter[str] = field(default_factory=_str_counter)
     uptime_seconds: float = 0.0
     link_state: str = "disconnected"
     handshake_state: str = "unsynchronized"
-    retries: collections.Counter[str] = field(default_factory=collections.Counter)
+    retries: collections.Counter[str] = field(default_factory=_str_counter)

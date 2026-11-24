@@ -31,6 +31,14 @@ from tools.console import pw_bridge_console
 _PW_METRIC_TOKEN_MASK = 0x0FFFFFFF
 
 
+
+def _fixed32_id(value: int | None) -> int:
+    """Return a fixed32 RPC identifier as an unsigned Python integer."""
+    if value is None:
+        raise AssertionError("RPC packet or descriptor omitted a fixed32 identifier")
+    return value & 0xFFFFFFFF
+
+
 class _QueueReader(CancellableReader):
     """In-memory CancellableReader feeding raw bytes into HdlcRpcClient."""
 
@@ -435,11 +443,9 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
                 continue
             packet = pw_packets.decode(frame.data)
             link_sync_spec = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
-            link_sync_ids = pw_bridge_console._require_rpc_ids(
-                link_sync_spec.service_id, link_sync_spec.method_id
-            )
+            link_sync_ids = (_fixed32_id(link_sync_spec.service_id), _fixed32_id(link_sync_spec.method_id))
             if (
-                pw_bridge_console._require_rpc_ids(packet.service_id, packet.method_id) != link_sync_ids
+                (_fixed32_id(packet.service_id), _fixed32_id(packet.method_id)) != link_sync_ids
                 or packet.type != PacketType.REQUEST
             ):
                 continue

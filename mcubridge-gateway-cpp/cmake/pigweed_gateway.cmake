@@ -7,6 +7,13 @@ pw_add_library(pw_sync.lock_annotations INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_sync/public/pw_sync/lock_annotations.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public"
   PUBLIC_DEPS pw_preprocessor)
+pw_add_library(pw_sync.lock_traits INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_sync/public/pw_sync/lock_traits.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public")
+pw_add_library(pw_sync.scoped_locker INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_sync/public/pw_sync/scoped_locker.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public"
+  PUBLIC_DEPS pw_sync.lock_annotations pw_sync.lock_traits)
 pw_add_library(pw_sync.virtual_basic_lockable INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_sync/public/pw_sync/virtual_basic_lockable.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public"

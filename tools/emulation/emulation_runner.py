@@ -52,6 +52,7 @@ CLOUD_PORT = protocol.DEFAULT_CLOUD_PORT
 DEFAULT_SHARED_SECRET = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 QEMU_LISTEN_MARKER = "QEMU waiting for connection"
 CORE_METADATA_PATH = repo_root / "build" / "emulation" / "arduino_core_metadata.json"
+PW_EMU_CONFIG_PATH = repo_root / "pigweed.json"
 
 configure_logging(console=True)
 logger = structlog.get_logger("emulation-runner")

@@ -38,10 +38,11 @@ def _open_lmdb_env(
     def _cleanup_corrupt_env(retry_state: tenacity.RetryCallState) -> None:
         exc = retry_state.outcome.exception() if retry_state.outcome else None
         logger.warning("LMDB database corrupt or invalid, recreating", path=env_path, error=str(exc))
-        try:
-            Path(env_path).unlink(missing_ok=True)
-        except OSError as e:
-            logger.warning("Failed to unlink target path", path=str(Path(env_path)), error=str(e))
+        for target_path in (Path(env_path), Path(f"{env_path}-lock")):
+            try:
+                target_path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning("Failed to unlink target path", path=str(target_path), error=str(e))
 
     retryer = tenacity.Retrying(
         stop=tenacity.stop_after_attempt(2),
@@ -75,17 +76,24 @@ def vacuum_lmdb_env(path: str, default_file: str, env: lmdb.Environment | None, 
     p = Path(path)
     env_path = p / default_file if p.is_dir() else p
     compact_path = Path(str(env_path) + ".compact")
+    closed = False
     try:
         env.copy(str(compact_path), compact=True)
         env.close()
+        closed = True
         compact_path.replace(env_path)
-        reopen_cb()
     except (lmdb.Error, OSError) as exc:
         logger.warning("LMDB vacuum failed, compaction skipped", error=str(exc))
         try:
             compact_path.unlink(missing_ok=True)
         except OSError as unlink_err:
             logger.warning("Failed to clean up compact database file", path=str(compact_path), error=str(unlink_err))
+    finally:
+        if closed:
+            try:
+                reopen_cb()
+            except (lmdb.Error, OSError) as reopen_err:
+                logger.warning("Failed to reopen LMDB environment after vacuum", error=str(reopen_err))
 
 
 class LmdbDeque:

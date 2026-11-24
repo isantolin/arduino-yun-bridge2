@@ -16,6 +16,7 @@
 #include <pw_transfer/handler.h>
 
 #include "protocol/rpc_protocol.h"
+#include "services/CooperativeTransferHandler.h"
 
 namespace {
 
@@ -27,55 +28,33 @@ bool g_upload_handler_destroyed = false;
 class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
  public:
   UploadTransferHandler()
-      : pw::transfer::ReadOnlyHandler(rpc::RPC_FILE_UPLOAD_RESOURCE_ID) {}
+      : pw::transfer::ReadOnlyHandler(rpc::RPC_FILE_UPLOAD_RESOURCE_ID) {
+    reader_.emplace(pw::ConstByteSpan());
+    set_reader(*reader_);
+  }
 
   ~UploadTransferHandler() override {
-    detach();
+    registration_.detach(*this);
     g_upload_handler_destroyed = true;
   }
 
   bool attach(pw::transfer::TransferService& service,
               pw::transfer::TransferThread& thread) {
-    if (service_ == &service) {
-      return true;
-    }
-    detach();
-    drain(thread);
-    if (!service.RegisterHandler(*this)) {
-      return false;
-    }
-    drain(thread);
-    service_ = &service;
-    thread_ = &thread;
-    return true;
-  }
-
-  void detach() {
-    if (service_ == nullptr) {
-      return;
-    }
-    pw::transfer::TransferService* const service = service_;
-    pw::transfer::TransferThread* const thread = thread_;
-    service_ = nullptr;
-    thread_ = nullptr;
-    drain(*thread);
-    (void)service->UnregisterHandler(*this);
-    drain(*thread);
+    return registration_.attach(*this, service, thread);
   }
 
   bool detachFrom(const pw::transfer::TransferService& service) {
-    if (service_ != &service) {
-      return false;
-    }
-    detach();
-    return true;
+    return registration_.detachFrom(*this, service);
   }
 
   void arm(pw::ConstByteSpan data) { data_ = data; }
 
   void disarm() {
     data_ = pw::ConstByteSpan();
-    reader_.reset();
+    // Keep a live empty MemoryReader in-place so an in-flight pw::transfer
+    // ServerContext cannot invoke pure-virtual Stream::DoSeek/DoRead if a
+    // retry timeout fires before the session closes.
+    reader_.emplace(pw::ConstByteSpan());
   }
 
   pw::Status PrepareRead() override {
@@ -86,16 +65,7 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
  private:
-  static void drain(pw::transfer::TransferThread& thread) {
-#if defined(PW_TRANSFER_COOPERATIVE)
-    (void)thread.Poll(PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY);
-#else
-    (void)thread;
-#endif
-  }
-
-  pw::transfer::TransferService* service_ = nullptr;
-  pw::transfer::TransferThread* thread_ = nullptr;
+  bridge::services::CooperativeTransferRegistration registration_;
   pw::ConstByteSpan data_;
   etl::optional<pw::stream::MemoryReader> reader_;
 };

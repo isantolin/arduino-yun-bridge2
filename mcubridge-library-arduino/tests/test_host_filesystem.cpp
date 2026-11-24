@@ -296,6 +296,25 @@ void test_filesystem_upload_transfer_read_armed_and_disarmed() {
       pw::rpc::internal::Packet::Response(upload_req, pw::OkStatus()));
   TEST_ASSERT_FALSE(FileSystem.uploadPending());
   TEST_ASSERT_TRUE(FileSystem.lastUploadStatus().ok());
+
+  // A late retransmit chunk on the still-open pw_transfer session after
+  // disarm() must never invoke pure-virtual Stream::DoSeek/DoRead on a
+  // destroyed MemoryReader; the empty live reader rejects the seek cleanly.
+  stream.tx_buf.clear();
+  send_transfer_read_chunk(
+      ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID,
+      pw::transfer::internal::Chunk::Type::kParametersRetransmit, 10U);
+  Bridge.process();
+  pw::rpc::internal::Packet late_pkt;
+  etl::array<uint8_t, 512> late_payload{};
+  TEST_ASSERT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+                     pw::tokenizer::Hash("pw.transfer.Transfer"),
+                     pw::tokenizer::Hash("Read"), late_pkt, late_payload));
+  auto parsed_late = pw::transfer::internal::Chunk::Parse(late_pkt.payload());
+  TEST_ASSERT_TRUE(parsed_late.ok());
+  TEST_ASSERT_TRUE(parsed_late.value().status().has_value());
+  TEST_ASSERT_FALSE(parsed_late.value().status().value().ok());
 }
 
 void test_filesystem_upload_error_reset_and_unimplemented_server_rpc() {

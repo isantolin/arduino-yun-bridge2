@@ -188,6 +188,10 @@ def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
         "mcubridge/Makefile": "PKG_VERSION:=1.0.0\nOTHER:=keep\n",
         "luci-app-mcubridge/Makefile": "PKG_VERSION:=1.0.0\n",
         "mcubridge-library-arduino/library.properties": "version=1.0.0\nname=Bridge\n",
+        "MODULE.bazel": (
+            'module(\n    name = "arduino_yun_bridge2",\n    version = "1.0.0",\n)\n'
+            'bazel_dep(name = "pigweed", version = "0.0.24")\n'
+        ),
     }
     for relative_path, content in files.items():
         path = tmp_path / relative_path
@@ -205,6 +209,10 @@ def test_sync_metadata_updates_only_version_tokens(tmp_path: Path) -> None:
     )
     assert (tmp_path / "mcubridge/mcubridge/__init__.py").read_text(encoding="utf-8") == (
         '__version__ = "2.3.4"\nOTHER = "1.0.0"\n'
+    )
+    assert (tmp_path / "MODULE.bazel").read_text(encoding="utf-8") == (
+        'module(\n    name = "arduino_yun_bridge2",\n    version = "2.3.4",\n)\n'
+        'bazel_dep(name = "pigweed", version = "0.0.24")\n'
     )
 
     with pytest.raises(ValueError, match="Invalid ecosystem version"):

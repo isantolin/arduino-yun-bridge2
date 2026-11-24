@@ -15,54 +15,48 @@ from pw_emu.frontend import Emulator
 from pw_emu.qemu import QemuLauncher
 from pw_emu.renode import RenodeLauncher
 
-from tools.emulation import qemu_runner, renode_runner, test_fleet_mesh_hardware_e2e
+from tools.emulation import emulation_runner, qemu_runner, renode_runner, test_fleet_mesh_hardware_e2e
 
 
-def test_pw_emu_config_and_pigweed_json_register_renode_and_qemu_targets() -> None:
-    cfg_path = renode_runner.pw_emu_config_path()
-    root_cfg_path = renode_runner.repo_root / "pigweed.json"
-    assert cfg_path == qemu_runner.pw_emu_config_path()
+def test_pigweed_json_is_single_pw_emu_ssot_for_all_targets() -> None:
+    cfg_path = emulation_runner.PW_EMU_CONFIG_PATH
+    assert cfg_path == emulation_runner.repo_root / "pigweed.json"
     assert cfg_path.is_file()
-    assert root_cfg_path.is_file()
+    assert not (emulation_runner.repo_root / "tools" / "emulation" / "pw_emu_config.json").exists()
+    assert not hasattr(renode_runner, "pw_emu_config_path")
+    assert not hasattr(qemu_runner, "pw_emu_config_path")
 
-    for config_file in (cfg_path, root_cfg_path):
-        renode_cfg = PwEmuConfig(config_file, target="mkrwifi1010", emu="renode")
-        qemu_cfg = PwEmuConfig(config_file, target="esp32s3", emu="qemu")
-        renode_cfg.set_target("mkrwifi1010")
-        qemu_cfg.set_target("esp32s3")
+    renode_cfg = PwEmuConfig(cfg_path, target="mkrwifi1010", emu="renode")
+    qemu_cfg = PwEmuConfig(cfg_path, target="esp32s3", emu="qemu")
+    renode_cfg.set_target("mkrwifi1010")
+    qemu_cfg.set_target("esp32s3")
 
-        targets = renode_cfg.get_targets()
-        assert "mkrwifi1010" in targets
-        assert "esp32s3" in targets
-        assert "atmega2560" in targets
+    targets = renode_cfg.get_targets()
+    assert "mkrwifi1010" in targets
+    assert "esp32s3" in targets
+    assert "atmega2560" in targets
 
-        assert isinstance(Launcher.get("renode", config_file), RenodeLauncher)
-        assert isinstance(Launcher.get("qemu", config_file), QemuLauncher)
+    assert isinstance(Launcher.get("renode", cfg_path), RenodeLauncher)
+    assert isinstance(Launcher.get("qemu", cfg_path), QemuLauncher)
 
-        pw_emu_data = json.loads(config_file.read_text(encoding="utf-8"))["pw"]["pw_emu"]
-        assert pw_emu_data["renode"]["executable"] == "renode"
-        mkr_renode = pw_emu_data["targets"]["mkrwifi1010"]["renode"]
-        machine_rel = mkr_renode["machine"]
-        assert machine_rel == "tools/emulation/renode/mkrwifi1010.repl"
-        assert (renode_runner.repo_root / machine_rel).is_file()
-        assert mkr_renode["channels"]["terminals"]["uart0"] == {
-            "device-path": "sysbus.uart0",
-            "type": "pty",
-        }
+    pw_emu_data = json.loads(cfg_path.read_text(encoding="utf-8"))["pw"]["pw_emu"]
+    assert pw_emu_data["renode"]["executable"] == "renode"
+    mkr_renode = pw_emu_data["targets"]["mkrwifi1010"]["renode"]
+    machine_rel = mkr_renode["machine"]
+    assert machine_rel == "tools/emulation/renode/mkrwifi1010.repl"
+    assert (emulation_runner.repo_root / machine_rel).is_file()
+    assert mkr_renode["channels"]["terminals"]["uart0"] == {
+        "device-path": "sysbus.uart0",
+        "type": "pty",
+    }
 
-        assert pw_emu_data["qemu"]["executable"] == "qemu-system-xtensa"
-        esp_qemu = pw_emu_data["targets"]["esp32s3"]["qemu"]
-        assert esp_qemu["machine"] == "esp32s3"
-        assert esp_qemu["channels"]["chardevs"]["uart0"] == {
-            "id": "serial0",
-            "type": "pty",
-        }
-
-    emulation_raw = json.loads(cfg_path.read_text(encoding="utf-8"))["pw"]["pw_emu"]
-    root_raw = json.loads(root_cfg_path.read_text(encoding="utf-8"))["pw"]["pw_emu"]
-    assert emulation_raw["targets"] == root_raw["targets"]
-    assert emulation_raw["renode"] == root_raw["renode"]
-    assert emulation_raw["qemu"] == root_raw["qemu"]
+    assert pw_emu_data["qemu"]["executable"] == "qemu-system-xtensa"
+    esp_qemu = pw_emu_data["targets"]["esp32s3"]["qemu"]
+    assert esp_qemu["machine"] == "esp32s3"
+    assert esp_qemu["channels"]["chardevs"]["uart0"] == {
+        "id": "serial0",
+        "type": "pty",
+    }
 
 
 def test_legacy_fixed_ports_and_resc_are_removed() -> None:
@@ -132,7 +126,7 @@ def test_start_renode_emulator_configures_samd21_and_wires_pty(
     emu, pty_path = renode_runner.start_renode_emulator(wdir, fw)
     assert pty_path == str(wdir / "uart0")
     assert recorded["wdir"] == wdir
-    assert recorded["config_path"] == renode_runner.pw_emu_config_path()
+    assert recorded["config_path"] == emulation_runner.PW_EMU_CONFIG_PATH
     assert recorded["start"] == ("mkrwifi1010", None, True, None)
     assert recorded["channel"] == "uart0"
     assert recorded["path_during_start"] == str(fake_renode_dir)
@@ -331,7 +325,7 @@ def test_start_qemu_emulator_uses_mtd_drive_pty_and_resumes(
     emu, pty_path = qemu_runner.start_qemu_emulator(wdir, flash_img)
     assert pty_path == "/dev/pts/88"
     assert recorded["wdir"] == wdir
-    assert recorded["config_path"] == qemu_runner.pw_emu_config_path()
+    assert recorded["config_path"] == emulation_runner.PW_EMU_CONFIG_PATH
     assert recorded["start"] == (
         "esp32s3",
         None,
@@ -422,7 +416,7 @@ def test_fleet_mesh_verify_host_binaries_and_watchdog_without_socat(
     monkeypatch.setattr(test_fleet_mesh_hardware_e2e, "find_qemu_binary", lambda: None)
     assert test_fleet_mesh_hardware_e2e.verify_host_binaries() is None
 
-    cfg_path = renode_runner.pw_emu_config_path()
+    cfg_path = emulation_runner.PW_EMU_CONFIG_PATH
     for name in ("simavr", "renode", "qemu"):
         emu = Emulator(tmp_path / f"dead_{name}", config_path=cfg_path)
         assert test_fleet_mesh_hardware_e2e.emulator_exit_reason(name, emu) == (

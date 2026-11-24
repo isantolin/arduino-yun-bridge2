@@ -1608,6 +1608,88 @@ async def test_send_cloud_telemetry_resolves_pw_rpc_callbacks(
         assert await svc.send_cloud_telemetry(system_status_blob=b"x") is expected
 
 
+async def test_send_cloud_telemetry_timeout_cancels_pending_pw_rpc_call(
+    mock_bridge_service: BridgeService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timeout in send_cloud_telemetry must cancel the real pw_rpc call without leaking pending entries."""
+    import pw_rpc.packets
+    import pw_status
+    from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
+    from pw_rpc.client import Client as PwRpcClient
+    from pw_rpc.descriptors import Channel as PwRpcChannel
+    from pw_rpc.descriptors import PendingRpc
+    from pw_rpc.internal import packet_pb2
+
+    svc = mock_bridge_service
+    sent_packets: list[bytes] = []
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    svc.cloud_writer = writer
+
+    channel = PwRpcChannel(1, sent_packets.append)
+    impl = PwCallbackClientImpl()
+    svc.cloud_rpc_client = PwRpcClient(
+        impl,
+        [channel],
+        protocol.PW_SERVICES,
+    )
+    monkeypatch.setattr("mcubridge.services.runtime.CLOUD_TELEMETRY_TIMEOUT_SECONDS", 0.02)
+
+    ok = await svc.send_cloud_telemetry(system_status_blob=b"timeout-probe")
+
+    assert ok is False
+    decoded = [pw_rpc.packets.decode(pkt) for pkt in sent_packets]
+    assert [pkt.type for pkt in decoded] == [
+        packet_pb2.PacketType.REQUEST,
+        packet_pb2.PacketType.CLIENT_ERROR,
+    ]
+    assert decoded[1].call_id == decoded[0].call_id
+    assert decoded[1].status == pw_status.Status.CANCELLED.value
+    assert impl.rpcs is not None
+    report_method = svc.cloud_rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry.method
+    pending_rpc = PendingRpc(channel, report_method.service, report_method, decoded[0].call_id)
+    assert impl.rpcs.get_pending(pending_rpc, completed=False) is None
+
+
+async def test_send_cloud_telemetry_cancellation_and_error_races(
+    mock_bridge_service: BridgeService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Task cancellation, benign cancel races, and pre-invoke errors must be handled cleanly."""
+    svc = mock_bridge_service
+    writer = MagicMock()
+    writer.drain = AsyncMock()
+    svc.cloud_writer = writer
+
+    # 1. Task cancellation cancels the pending RPC call and propagates CancelledError.
+    cancelled_call = MagicMock()
+    method = MagicMock()
+    method.invoke.return_value = cancelled_call
+    client = MagicMock()
+    client.channel.return_value.rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry = method
+    svc.cloud_rpc_client = client
+
+    task = asyncio.create_task(svc.send_cloud_telemetry(system_status_blob=b"cancel-me"))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    cancelled_call.cancel.assert_called_once_with()
+
+    # 2. Benign completion race when call.cancel() raises RuntimeError during timeout.
+    racy_call = MagicMock()
+    racy_call.cancel.side_effect = RuntimeError("already completed")
+    method.invoke.return_value = racy_call
+    monkeypatch.setattr("mcubridge.services.runtime.CLOUD_TELEMETRY_TIMEOUT_SECONDS", 0.01)
+    assert await svc.send_cloud_telemetry(system_status_blob=b"race") is False
+    racy_call.cancel.assert_called_once_with()
+
+    # 3. Pre-invoke RuntimeError leaves call=None and returns False without raising.
+    method.invoke.side_effect = RuntimeError("channel closed")
+    assert await svc.send_cloud_telemetry(system_status_blob=b"invoke-err") is False
+
+
 _EEPROM_IMAGE = bytes(range(256)) * 15 + bytes(240)
 
 

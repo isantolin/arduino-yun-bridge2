@@ -31,6 +31,7 @@ from tools.boards import QEMU_BOARDS as MATRIX_BOARDS
 from tools.emulation.emulation_runner import (
     CLOUD_HOST,
     CLOUD_PORT,
+    PW_EMU_CONFIG_PATH,
     EmulationState,
     audit_post_execution_status,
     default_client_test_paths,
@@ -60,11 +61,6 @@ QEMU_UART_CHANNEL = "uart0"
 QEMU_SEARCH_DIRS: tuple[Path, ...] = (Path("/tmp/qemu-esp32/bin"), Path("/opt/qemu-esp32/bin"))
 
 logger = structlog.get_logger("qemu_runner")
-
-
-def pw_emu_config_path() -> Path:
-    """Return the canonical Pigweed pw_emu configuration for this repository."""
-    return repo_root / "tools" / "emulation" / "pw_emu_config.json"
 
 
 def supports_esp32s3(binary_path: str) -> bool:
@@ -146,8 +142,7 @@ def start_qemu_emulator(
         raise PwEmuError("Espressif qemu-system-xtensa executable with esp32s3 support not found")
 
     drive_arg = build_esp32s3_drive_arg(flash_image, wdir=wdir)
-    config_path = pw_emu_config_path()
-    emu = Emulator(wdir, config_path=config_path)
+    emu = Emulator(wdir, config_path=PW_EMU_CONFIG_PATH)
     logger.info(
         "Starting QEMU via pw_emu",
         target=target,

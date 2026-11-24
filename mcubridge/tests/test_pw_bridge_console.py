@@ -533,6 +533,38 @@ def test_console_requires_explicit_authentication_or_insecure_opt_in(monkeypatch
     assert pw_bridge_console.resolve_link_secret(insecure=True) == b""
 
 
+
+def test_console_closes_transport_when_handshake_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Close the serial/socket even when LinkSync times out before RPC client creation."""
+    reader = _QueueReader()
+    closed = False
+
+    def close_transport() -> None:
+        nonlocal closed
+        closed = True
+
+    transport = pw_bridge_console.BridgeTransport(
+        endpoint="test",
+        resolved_url="test://link",
+        reader=reader,
+        writer=lambda _data: None,
+        closer=close_transport,
+        read_chunk=lambda _size: b"",
+        flush=lambda: None,
+    )
+    monkeypatch.setattr(pw_bridge_console, "resolve_link_secret", lambda **_kwargs: b"test-secret")
+    monkeypatch.setattr(pw_bridge_console, "open_bridge_transport", lambda *_args, **_kwargs: transport)
+
+    def fail_handshake(*_args: Any, **_kwargs: Any) -> Any:
+        raise TimeoutError("simulated LinkSync timeout")
+
+    monkeypatch.setattr(pw_bridge_console, "create_secure_rpc_io", fail_handshake)
+
+    with pytest.raises(TimeoutError, match="simulated LinkSync timeout"):
+        pw_bridge_console.run_console(device="test", insecure=False)
+
+    assert closed
+
 def test_binary_token_database_and_elf_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify binary Pigweed token DB loading and firmware ELF auto-discovery fallback."""
     monkeypatch.delenv("MCUBRIDGE_TOKEN_DATABASE", raising=False)

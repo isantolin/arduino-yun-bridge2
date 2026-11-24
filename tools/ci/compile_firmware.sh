@@ -54,6 +54,8 @@ TMP_LOG="$(mktemp /tmp/compile_firmware_XXXXXX.log)"
 STUBS_OBJ=""
 PW_LIB_ARCHIVE=""
 PW_STAGE_DIR=""
+PW_TOKENIZER_DEFAULT_LD="${ROOT_DIR}/third_party/pigweed/pw_tokenizer/pw_add_tokenizer_sections_to_default_script.ld"
+PW_TOKENIZER_CUSTOM_LD="${ROOT_DIR}/third_party/pigweed/pw_tokenizer/pw_tokenizer_linker_sections.ld"
 
 cleanup() {
     rm -f "$TMP_LOG"
@@ -99,9 +101,9 @@ if [ "$EMULATOR" = "simavr" ]; then
         "${AVR_PROPS[@]}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -fstack-usage $COMMON_FLAGS -DETL_NO_STL $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 -fstack-usage $COMMON_FLAGS $AVR_STDCPP_INC -I$USER_LIB_DIR/Embedded_Template_Library/include"
-        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
-        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
-        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD} -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD} -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
+        "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD} -Wl,-Map=${OUTPUT_DIR}/firmware.map,--cref,--trace-symbol=Serial1 -save-temps=obj"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
@@ -125,7 +127,7 @@ elif [ "$EMULATOR" = "renode" ]; then
         "--build-property" "build.extra_flags=-DUSE_ARDUINO_MKR_PIN_LAYOUT -D__SAMD21G18A__ {build.usb_flags}"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -DMCUBRIDGE_RENODE_UART_SHIM=1 $PW_SAMD_INC"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS $PW_SAMD_INC"
-        "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive"
+        "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive -Wl,-T,${PW_TOKENIZER_CUSTOM_LD}"
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "qemu" ]; then
@@ -155,7 +157,7 @@ elif [ "$EMULATOR" = "qemu" ]; then
         "--build-property" "build.cdc_on_boot=0"
         "--build-property" "build.dfu_on_boot=0"
         "--build-property" "build.defines=-DBOARD_HAS_PIN_REMAP -DBOARD_USES_HW_GPIO_NUMBERS '-DUSB_MANUFACTURER=\"Arduino\"' '-DUSB_PRODUCT=\"Nano ESP32\"'"
-        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite -Wl,--wrap=analogRead -Wl,--wrap=adc_hal_self_calibration -Wl,--wrap=psramInit"
+        "--build-property" "compiler.c.elf.extra_flags=${STUBS_OBJ} -Wl,--whole-archive,${PW_LIB_ARCHIVE},--no-whole-archive -Wl,-T,${PW_TOKENIZER_CUSTOM_LD} -Wl,--wrap=double_tap_init -Wl,--wrap=double_tap_mark -Wl,--wrap=double_tap_invalidate -Wl,--wrap=double_tap_check_match -Wl,--wrap=analogWrite -Wl,--wrap=analogRead -Wl,--wrap=adc_hal_self_calibration -Wl,--wrap=psramInit"
         "--build-path" "$OUTPUT_DIR"
     )
 fi
@@ -181,6 +183,12 @@ if LC_ALL=C LANG=C arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH
         fi
     fi
     cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
+
+    # Extract Pigweed pw_tokenizer database from ELF .pw_tokenizer.entries sections.
+    if python3 -m pw_tokenizer.database create --type csv --force \
+        -d "${OUTPUT_DIR}/tokens.csv" "${OUTPUT_DIR}/firmware.elf"; then
+        echo "[compile_firmware] Extracted Pigweed token database: ${OUTPUT_DIR}/tokens.csv ($(wc -l < "${OUTPUT_DIR}/tokens.csv") entries)"
+    fi
 
     # Emit a machine-readable report from the compiler's measured summary.
     # AVR additionally gets section accounting from its linked ELF.

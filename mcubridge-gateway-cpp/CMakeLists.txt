@@ -21,7 +21,8 @@ add_library(pw_unit_test INTERFACE)
 target_include_directories(pw_unit_test INTERFACE "${PIGWEED_ROOT}/pw_unit_test/public")
 set(pw_assert.assert_BACKEND pw_assert.print_and_abort_assert_backend CACHE STRING "" FORCE)
 set(pw_assert.check_BACKEND pw_assert.print_and_abort_check_backend CACHE STRING "" FORCE)
-set(pw_log_BACKEND pw_log_null CACHE STRING "" FORCE)
+set(pw_sys_io_BACKEND pw_sys_io_stdio CACHE STRING "" FORCE)
+set(pw_log_BACKEND pw_log_basic CACHE STRING "" FORCE)
 set(pw_chrono.system_clock_BACKEND pw_chrono_stl.system_clock CACHE STRING "" FORCE)
 set(pw_chrono.system_timer_BACKEND pw_chrono_stl.system_timer CACHE STRING "" FORCE)
 set(pw_sync.mutex_BACKEND pw_sync_stl.mutex_backend CACHE STRING "" FORCE)
@@ -84,7 +85,7 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   gateway_control_proto.pwpb_rpc pw_rpc.pwpb.server_api pw_rpc.pwpb.client_api pw_protobuf
   mcu_wire_proto.raw_rpc pw_rpc.raw.client_api pw_rpc.client
   OpenSSL::SSL OpenSSL::Crypto Threads::Threads
-  pw_hdlc pw_rpc.server pw_transfer
+  pw_assert pw_log pw_log_basic pw_hdlc pw_rpc.server pw_transfer
   pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.binary_semaphore
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )

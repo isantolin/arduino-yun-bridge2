@@ -145,6 +145,8 @@ compile_sketch() {
     local AVR_PROPS=()
     local AVR_STDCPP_INC=""
     local ARCH_INC=""
+    local PW_TOKENIZER_DEFAULT_LD="${PWD}/third_party/pigweed/pw_tokenizer/pw_add_tokenizer_sections_to_default_script.ld"
+    local PW_TOKENIZER_CUSTOM_LD="${PWD}/third_party/pigweed/pw_tokenizer/pw_tokenizer_linker_sections.ld"
     if [[ "$FQBN" == arduino:samd:* ]]; then
         samd_toolchain_props || return 1
         AVR_PROPS+=("${SAMD_TOOLCHAIN_PROPS[@]}")
@@ -153,7 +155,7 @@ compile_sketch() {
             build_pigweed_archive_samd "$PW_LIB_ARCHIVE_SAMD" "${LIB_PATH}/src" "$USER_LIB_DIR" || return 1
         fi
         LINK_FLAGS=(
-            "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_SAMD},--no-whole-archive"
+            "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_SAMD},--no-whole-archive -Wl,-T,${PW_TOKENIZER_CUSTOM_LD}"
         )
         COMMON_FLAGS+=" -Wno-psabi $PW_COOPERATIVE_DEFS"
         ARCH_INC="$PW_SAMD_INC"
@@ -163,7 +165,7 @@ compile_sketch() {
             build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE_ESP32" "${LIB_PATH}/src" "$USER_LIB_DIR" || return 1
         fi
         LINK_FLAGS=(
-            "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_ESP32},--no-whole-archive"
+            "--build-property" "compiler.c.elf.extra_flags=-Wl,--whole-archive,${PW_LIB_ARCHIVE_ESP32},--no-whole-archive -Wl,-T,${PW_TOKENIZER_CUSTOM_LD}"
         )
         COMMON_FLAGS+=" $PW_COOPERATIVE_DEFS"
         ARCH_INC="$PW_ESP32_INC"
@@ -188,9 +190,9 @@ compile_sketch() {
             fi
         fi
         LINK_FLAGS=(
-            "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-            "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-            "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+            "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD}"
+            "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD}"
+            "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD}"
         )
         ARCH_INC="$AVR_STDCPP_INC"
     fi

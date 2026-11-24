@@ -53,6 +53,7 @@ from tools.emulation.emulation_runner import (
     EmulationState,
     audit_post_execution_status,
     ensure_cloud_gateway,
+    resolve_firmware_token_database,
     setup_fake_uci,
 )
 from tools.emulation.process_utils import (
@@ -127,6 +128,7 @@ def spawn_daemon_for_node(node: NodeRuntime, slave_name: str, log_collector: Emu
         shared_secret=DEFAULT_SHARED_SECRET,
         base_dir=node.temp_dir,
         status_file=node.status_file,
+        token_database=resolve_firmware_token_database(node.firmware_path),
         label=node.name,
     )
     daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon"]

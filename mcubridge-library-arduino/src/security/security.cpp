@@ -19,6 +19,7 @@
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
+#include <pw_assert/assert.h>
 #include <pw_span/span.h>
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/hmac.h>
@@ -66,6 +67,8 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
   // All callers provide a non-empty secret and fixed, statically bounded
   // output buffers (32-byte handshake key or 64-byte RX||TX key pair).
   // Embedded size_t is at most word32; the static assertion above enforces it.
+  PW_ASSERT(!secret.empty());
+  PW_ASSERT(!output.empty());
   const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
   const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
   const int status =
@@ -85,6 +88,8 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
                          pw::span<uint8_t> digest_scratch) {
   // Private call sites pass the 32-byte derived authentication key as both
   // key storage and digest scratch, and a fixed-size handshake nonce as input.
+  PW_ASSERT(!key.empty());
+  PW_ASSERT(digest_scratch.size() == RPC_SHA256_DIGEST_SIZE);
   const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
   Hmac hmac{};
   if (wc_HmacInit(&hmac, nullptr, 0) != 0) {

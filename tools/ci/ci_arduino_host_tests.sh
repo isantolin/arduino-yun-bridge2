@@ -274,7 +274,9 @@ if [ "$COVERAGE_MODE" = true ]; then
     gcovr_status=0
     ${PYTHON_CMD} -m gcovr --root "${SRC_DIR}" "${BUILD_DIR}" --filter "${SRC_DIR}" \
         -e ".*\\.h$" -e ".*etl.*" -e ".*rpc_protocol\.h" -e ".*wolfssl.*" -e ".*wolfcrypt.*" \
-        --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max \
+        --exclude-unreachable-branches --exclude-throw-branches \
+        --exclude-branches-by-pattern '.*\bPW_(D?ASSERT|D?CHECK[A-Z_]*)\s*\(.*' \
+        --merge-mode-functions=merge-use-line-max \
         --sort uncovered-percent \
         --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" \
         --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" \

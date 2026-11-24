@@ -172,6 +172,24 @@ def prepare_emulator_fs(fs_root: Path) -> None:
     fs_root.mkdir(parents=True, exist_ok=True)
 
 
+def resolve_firmware_token_database(firmware_path: Path) -> Path | None:
+    """Resolve the Pigweed pw_tokenizer database accompanying a firmware artifact.
+
+    Prefers the extracted ``tokens.csv`` sibling emitted by ``compile_firmware.sh``
+    and falls back to an ELF binary (which ``pw_tokenizer.detokenize.Detokenizer``
+    parses directly).
+    """
+    tokens_csv = firmware_path.with_name("tokens.csv")
+    if tokens_csv.is_file() and tokens_csv.stat().st_size > 0:
+        return tokens_csv
+    if firmware_path.suffix == ".elf" and firmware_path.is_file():
+        return firmware_path
+    sibling_elf = firmware_path.with_name("firmware.elf")
+    if sibling_elf.is_file():
+        return sibling_elf
+    return None
+
+
 def setup_fake_uci(
     slave_name: str,
     *,
@@ -180,6 +198,7 @@ def setup_fake_uci(
     base_dir: Path | None = None,
     status_file: Path | None = None,
     emulator_fs_root: Path | None = None,
+    token_database: Path | str | None = None,
     p_root: Path = repo_root,
     label: str = "emulation runner",
 ) -> tuple[Path, Path, dict[str, str]]:
@@ -266,6 +285,10 @@ def setup_fake_uci(
         daemon_env["MCUBRIDGE_CLOUD_SPOOL_DIR"] = str(spool_path)
     if emulator_fs_root is not None:
         daemon_env["MCUBRIDGE_FILE_SYSTEM_ROOT"] = str(emulator_fs_root)
+    if token_database is not None:
+        token_db_path = Path(token_database)
+        if token_db_path.is_file():
+            daemon_env["MCUBRIDGE_TOKEN_DATABASE"] = str(token_db_path)
 
     return fake_uci_dir, storage_path, daemon_env
 

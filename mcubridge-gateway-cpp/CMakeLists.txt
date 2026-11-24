@@ -89,10 +89,17 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   pw_assert pw_log pw_log_basic pw_hdlc pw_hdlc.rpc_channel_output
   pw_metric pw_metric.metric_service_pwpb pw_result
   pw_rpc.server pw_transfer
-  pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.binary_semaphore
+  pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.lock_annotations
+  pw_sync.scoped_locker pw_sync.binary_semaphore
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )
 target_compile_options(mcubridge-gateway-cpp PRIVATE -Wall -Wextra -Wpedantic)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(mcubridge-gateway-cpp PRIVATE
+    -Wthread-safety
+    -Wthread-safety-beta
+  )
+endif()
 
 option(ENABLE_COVERAGE "Enable code coverage instrumentation" OFF)
 if(ENABLE_COVERAGE)

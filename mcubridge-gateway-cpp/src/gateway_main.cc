@@ -22,7 +22,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -54,6 +53,9 @@
 #include "pw_status/try.h"
 #include "pw_stream/memory_stream.h"
 #include "pw_stream/stream.h"
+#include "pw_sync/lock_annotations.h"
+#include "pw_sync/mutex.h"
+#include "pw_sync/scoped_locker.h"
 #include "pw_sync/timed_thread_notification.h"
 #include "pw_thread/thread.h"
 #include "pw_thread_stl/options.h"
@@ -87,10 +89,11 @@ constexpr std::string_view kFileStagingName = "staging.bin";
 constexpr std::string_view kEepromStagingName = "eeprom.bin";
 
 std::filesystem::path g_staging_root;  // Set once in main() before sessions.
-std::mutex g_log_output_mutex;
+pw::sync::Mutex g_log_output_mutex;
 
-void WriteGatewayLog(std::string_view entry) {
-  std::lock_guard lock(g_log_output_mutex);
+void WriteGatewayLog(std::string_view entry)
+    PW_LOCKS_EXCLUDED(g_log_output_mutex) {
+  pw::ScopedLocker<pw::sync::Mutex> lock(g_log_output_mutex);
   std::fwrite(entry.data(), 1U, entry.size(), stderr);
   std::fputc('\n', stderr);
   std::fflush(stderr);
@@ -259,7 +262,7 @@ pw::Result<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
 class TlsSocket {
  public:
   TlsSocket(SSL* ssl, int fd) : ssl_(ssl), fd_(fd) {
-    PW_CHECK_NOTNULL(ssl_);
+    PW_CHECK_NOTNULL(ssl);
     PW_CHECK_INT_GE(fd_, 0);
   }
   TlsSocket(const TlsSocket&) = delete;
@@ -269,13 +272,13 @@ class TlsSocket {
     return flags >= 0 && fcntl(fd_, F_SETFL, flags | O_NONBLOCK) == 0;
   }
   bool Read(std::byte* destination, size_t capacity, size_t& bytes_read,
-            const std::atomic<bool>& stopping) {
+            const std::atomic<bool>& stopping) PW_LOCKS_EXCLUDED(ssl_mutex_) {
     bytes_read = 0;
     while (!stopping.load()) {
       int result;
       int ssl_error = SSL_ERROR_NONE;
       {
-        std::lock_guard lock(ssl_mutex_);
+        pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
         result = SSL_read_ex(ssl_, destination, capacity, &bytes_read);
         if (result != 1) ssl_error = SSL_get_error(ssl_, result);
       }
@@ -291,14 +294,14 @@ class TlsSocket {
     return false;
   }
   bool Write(const std::byte* source, size_t size,
-             const std::atomic<bool>& stopping) {
+             const std::atomic<bool>& stopping) PW_LOCKS_EXCLUDED(ssl_mutex_) {
     size_t offset = 0;
     while (offset < size && !stopping.load()) {
       size_t written = 0;
       int result;
       int ssl_error = SSL_ERROR_NONE;
       {
-        std::lock_guard lock(ssl_mutex_);
+        pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
         result = SSL_write_ex(ssl_, source + offset, size - offset, &written);
         if (result != 1) ssl_error = SSL_get_error(ssl_, result);
       }
@@ -316,20 +319,25 @@ class TlsSocket {
     return offset == size;
   }
   void Stop() const { shutdown(fd_, SHUT_RDWR); }
-  ~TlsSocket() {
-    if (ssl_ != nullptr) {
-      SSL_shutdown(ssl_);
-      SSL_free(ssl_);
+  ~TlsSocket() PW_LOCKS_EXCLUDED(ssl_mutex_) {
+    {
+      pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
+      if (ssl_ != nullptr) {
+        SSL_shutdown(ssl_);
+        SSL_free(ssl_);
+        ssl_ = nullptr;
+      }
     }
     if (fd_ >= 0) close(fd_);
   }
 
  private:
-  bool HasPending() {
-    std::lock_guard lock(ssl_mutex_);
+  bool HasPending() PW_LOCKS_EXCLUDED(ssl_mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
     return SSL_pending(ssl_) > 0;
   }
-  bool Wait(short events, const std::atomic<bool>& stopping) {
+  bool Wait(short events, const std::atomic<bool>& stopping)
+      PW_LOCKS_EXCLUDED(ssl_mutex_) {
     pollfd descriptor{fd_, events, 0};
     while (!stopping.load()) {
       if ((events & POLLIN) != 0 && HasPending()) return true;
@@ -344,9 +352,9 @@ class TlsSocket {
     }
     return false;
   }
-  SSL* ssl_;
-  int fd_;
-  std::mutex ssl_mutex_;
+  pw::sync::Mutex ssl_mutex_;
+  SSL* ssl_ PW_GUARDED_BY(ssl_mutex_);
+  const int fd_;
 };
 
 class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
@@ -354,14 +362,15 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
   explicit TlsQueueWriter(size_t capacity) : capacity_(capacity) {
     PW_CHECK_UINT_GT(capacity_, 0U);
   }
-  size_t AvailableWriteBytes() const {
-    std::lock_guard lock(mutex_);
-    return capacity_ - queued_bytes_;
+  size_t AvailableWriteBytes() const PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
+    return AvailableWriteBytesLocked();
   }
-  bool Pop(std::vector<std::byte>& output, const std::atomic<bool>& stopping) {
+  bool Pop(std::vector<std::byte>& output, const std::atomic<bool>& stopping)
+      PW_LOCKS_EXCLUDED(mutex_) {
     while (true) {
       {
-        std::lock_guard lock(mutex_);
+        pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
         if (!queue_.empty()) {
           output = std::move(queue_.front());
           queue_.pop_front();
@@ -378,25 +387,30 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
       }
     }
   }
-  void Stop() {
+  void Stop() PW_LOCKS_EXCLUDED(mutex_) {
     {
-      std::lock_guard lock(mutex_);
+      pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
       stopped_ = true;
     }
     ready_.release();
   }
 
  protected:
-  size_t ConservativeLimit(LimitType type) const override {
+  size_t ConservativeLimit(LimitType type) const override
+      PW_LOCKS_EXCLUDED(mutex_) {
     return type == LimitType::kWrite ? AvailableWriteBytes() : 0U;
   }
 
  private:
-  pw::Status DoWrite(pw::ConstByteSpan data) override {
+  size_t AvailableWriteBytesLocked() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    return capacity_ - queued_bytes_;
+  }
+  pw::Status DoWrite(pw::ConstByteSpan data) override
+      PW_LOCKS_EXCLUDED(mutex_) {
     {
-      std::lock_guard lock(mutex_);
+      pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
       if (stopped_) return pw::Status::FailedPrecondition();
-      if (data.size_bytes() > capacity_ - queued_bytes_)
+      if (data.size_bytes() > AvailableWriteBytesLocked())
         return pw::Status::ResourceExhausted();
       queue_.emplace_back(data.begin(), data.end());
       queued_bytes_ += data.size_bytes();
@@ -405,25 +419,30 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
     return pw::OkStatus();
   }
   const size_t capacity_;
-  mutable std::mutex mutex_;
+  mutable pw::sync::Mutex mutex_;
   pw::sync::TimedThreadNotification ready_;
-  std::deque<std::vector<std::byte>> queue_;
-  size_t queued_bytes_{0};
-  bool stopped_{false};
+  std::deque<std::vector<std::byte>> queue_ PW_GUARDED_BY(mutex_);
+  size_t queued_bytes_ PW_GUARDED_BY(mutex_) = 0;
+  bool stopped_ PW_GUARDED_BY(mutex_) = false;
 };
 
 // Thread-safe wrapper over upstream pw::hdlc::RpcChannelOutput (which is
 // explicitly single-threaded). Serializes whole HDLC frames into TlsQueueWriter
 // and emits structured gateway backpressure/queue logs.
-class HdlcChannelOutput final : public pw::hdlc::RpcChannelOutput {
+class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
  public:
   HdlcChannelOutput(TlsQueueWriter& writer, uint64_t address)
-      : pw::hdlc::RpcChannelOutput(writer, address, "mcubridge-tls-hdlc"),
-        address_(address) {}
+      : pw::rpc::ChannelOutput("mcubridge-tls-hdlc"),
+        address_(address),
+        output_(writer, address, "mcubridge-tls-hdlc") {}
 
-  pw::Status Send(pw::span<const std::byte> packet) override {
-    std::lock_guard lock(mutex_);
-    const pw::Status status = pw::hdlc::RpcChannelOutput::Send(packet);
+  pw::Status Send(pw::span<const std::byte> packet) override
+      PW_LOCKS_EXCLUDED(mutex_) {
+    pw::Status status;
+    {
+      pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
+      status = output_.Send(packet);
+    }
     if (status == pw::Status::ResourceExhausted()) {
       PW_LOG_WARN(
           "event=rpc_frame_queue_rejected frame_bytes=%zu frame_size=%zu",
@@ -439,7 +458,8 @@ class HdlcChannelOutput final : public pw::hdlc::RpcChannelOutput {
 
  private:
   const uint64_t address_;
-  std::mutex mutex_;
+  pw::sync::Mutex mutex_;
+  pw::hdlc::RpcChannelOutput output_ PW_GUARDED_BY(mutex_);
 };
 
 class GatewaySession;
@@ -447,30 +467,34 @@ class GatewaySession;
 class DeviceSessionRegistry {
  public:
   bool Register(const std::string& device_id,
-                std::shared_ptr<GatewaySession> session) {
-    std::lock_guard lock(mutex_);
+                std::shared_ptr<GatewaySession> session)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     return sessions_.emplace(device_id, std::move(session)).second;
   }
-  void Unregister(const std::string& device_id, const GatewaySession* session) {
-    std::lock_guard lock(mutex_);
+  void Unregister(const std::string& device_id, const GatewaySession* session)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     const auto it = sessions_.find(device_id);
     if (it != sessions_.end() && it->second.get() == session) {
       sessions_.erase(it);
     }
   }
-  std::shared_ptr<GatewaySession> Lookup(const std::string& device_id) {
-    std::lock_guard lock(mutex_);
+  std::shared_ptr<GatewaySession> Lookup(const std::string& device_id)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     const auto it = sessions_.find(device_id);
     return it != sessions_.end() ? it->second : nullptr;
   }
-  size_t size() const {
-    std::lock_guard lock(mutex_);
+  size_t size() const PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     return sessions_.size();
   }
 
  private:
-  mutable std::mutex mutex_;
-  std::unordered_map<std::string, std::shared_ptr<GatewaySession>> sessions_;
+  mutable pw::sync::Mutex mutex_;
+  std::unordered_map<std::string, std::shared_ptr<GatewaySession>> sessions_
+      PW_GUARDED_BY(mutex_);
 };
 
 // Client -> device authorization (ADR-0007). Deny by default: a dispatch is
@@ -536,23 +560,25 @@ class GatewayAcl {
 
 class ClientSessionRegistry {
  public:
-  bool Register(const std::string& principal_id, const void* session) {
-    std::lock_guard lock(mutex_);
+  bool Register(const std::string& principal_id, const void* session)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     return sessions_.emplace(principal_id, session).second;
   }
-  void Unregister(const std::string& principal_id, const void* session) {
-    std::lock_guard lock(mutex_);
+  void Unregister(const std::string& principal_id, const void* session)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     const auto it = sessions_.find(principal_id);
     if (it != sessions_.end() && it->second == session) sessions_.erase(it);
   }
-  size_t size() const {
-    std::lock_guard lock(mutex_);
+  size_t size() const PW_LOCKS_EXCLUDED(mutex_) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     return sessions_.size();
   }
 
  private:
-  mutable std::mutex mutex_;
-  std::unordered_map<std::string, const void*> sessions_;
+  mutable pw::sync::Mutex mutex_;
+  std::unordered_map<std::string, const void*> sessions_ PW_GUARDED_BY(mutex_);
 };
 
 class SessionControl {
@@ -889,12 +915,13 @@ class GatewaySession final
 
   pw::Status Dispatch(
       const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
-      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
+      mcubridge::gateway::pwpb::DispatchResponse::Message& response)
+      PW_LOCKS_EXCLUDED(dispatch_mutex_) {
     if (stopping_.load()) {
       return pw::Status::Unavailable();
     }
 
-    std::lock_guard session_lock(dispatch_mutex_);
+    pw::ScopedLocker<pw::sync::Mutex> session_lock(dispatch_mutex_);
     // Drain any stale wakeup before re-checking stopping_ so a concurrent
     // Stop() or disconnect cannot race past our wait loop.
     static_cast<void>(dispatch_done_.try_acquire());
@@ -980,7 +1007,10 @@ class GatewaySession final
     return pw::OkStatus();
   }
 
-  std::mutex& staging_mutex() { return staging_mutex_; }
+  const std::string& device_id() const { return device_id_; }
+  pw::sync::Mutex& staging_mutex() const PW_LOCK_RETURNED(staging_mutex_) {
+    return staging_mutex_;
+  }
 
  private:
   void UnregisterTransferHandlers() {
@@ -1096,7 +1126,10 @@ class GatewaySession final
       kEepromTransferResource, DeviceStagingDir(device_id_),
       std::string(kEepromStagingName), kEepromResourceBytes};
   DeviceTelemetryService telemetry_service_;
-  mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_;
+  mutable pw::sync::Mutex staging_mutex_;
+  pw::sync::Mutex dispatch_mutex_ PW_ACQUIRED_AFTER(staging_mutex_);
+  mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_
+      PW_GUARDED_BY(dispatch_mutex_);
   std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
   pw::hdlc::Decoder decoder_;
   std::atomic<bool> stopping_{false};
@@ -1108,8 +1141,6 @@ class GatewaySession final
   std::atomic<bool> services_unregistered_{false};
   pw::sync::TimedThreadNotification dispatch_done_;
   pw::thread::Thread tx_worker_;
-  std::mutex dispatch_mutex_;
-  std::mutex staging_mutex_;
 };
 
 class GatewayControlService final
@@ -1148,9 +1179,11 @@ class GatewayControlService final
   }
 
  private:
-  pw::Status StageClientFileToDevice(const std::filesystem::path& client_file,
-                                     const std::filesystem::path& device_file,
-                                     const std::string& target_id) const {
+  pw::Status StageClientFileToDevice(
+      const GatewaySession& target, const std::filesystem::path& client_file,
+      const std::filesystem::path& device_file) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(target.staging_mutex()) {
+    const std::string& target_id = target.device_id();
     std::error_code ec;
     if (!std::filesystem::is_regular_file(client_file, ec)) {
       PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
@@ -1172,9 +1205,11 @@ class GatewayControlService final
     return pw::OkStatus();
   }
 
-  pw::Status StageDeviceFileToClient(const std::filesystem::path& device_file,
-                                     const std::filesystem::path& client_file,
-                                     const std::string& target_id) const {
+  pw::Status StageDeviceFileToClient(
+      const GatewaySession& target, const std::filesystem::path& device_file,
+      const std::filesystem::path& client_file) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(target.staging_mutex()) {
+    const std::string& target_id = target.device_id();
     std::error_code ec;
     if (!std::filesystem::is_regular_file(device_file, ec)) {
       PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
@@ -1233,36 +1268,38 @@ class GatewayControlService final
     for (const auto& candidate : kStagedOperations) {
       if (candidate.operation == op) staged = &candidate;
     }
-    const auto client_file =
-        staged ? ClientStagingDir(client_id_) / staged->filename
-               : std::filesystem::path();
-    const auto device_file =
-        staged ? DeviceStagingDir(target_id) / staged->filename
-               : std::filesystem::path();
-    std::error_code ec;
+
+    GatewaySession& target = *session;
+    const auto dispatch_and_log = [&]() -> pw::Status {
+      const pw::Status status = target.Dispatch(request, response);
+      PW_LOG_INFO(
+          "client=%s event=dispatch_completed target=%s operation=%.*s "
+          "status=%s device_status=%u",
+          client_id_.c_str(), target_id.c_str(), static_cast<int>(op.size()),
+          op.data(), status.str(), static_cast<unsigned>(response.status_code));
+      return status;
+    };
+
+    if (staged == nullptr) {
+      return dispatch_and_log();
+    }
 
     // Serialize staged file moves and the device dispatch per target device so
     // concurrent clients cannot overwrite or consume each other's staging file.
-    std::unique_lock<std::mutex> staging_lock;
-    if (staged != nullptr) {
-      staging_lock = std::unique_lock<std::mutex>(session->staging_mutex());
+    pw::ScopedLocker<pw::sync::Mutex> staging_lock(target.staging_mutex());
+    const auto client_file = ClientStagingDir(client_id_) / staged->filename;
+    const auto device_file = DeviceStagingDir(target_id) / staged->filename;
+    if (staged->to_device) {
+      PW_TRY(StageClientFileToDevice(target, client_file, device_file));
     }
 
-    if (staged && staged->to_device) {
-      PW_TRY(StageClientFileToDevice(client_file, device_file, target_id));
-    }
+    const pw::Status status = dispatch_and_log();
 
-    const pw::Status status = session->Dispatch(request, response);
-    PW_LOG_INFO(
-        "client=%s event=dispatch_completed target=%s operation=%.*s status=%s "
-        "device_status=%u",
-        client_id_.c_str(), target_id.c_str(), static_cast<int>(op.size()),
-        op.data(), status.str(), static_cast<unsigned>(response.status_code));
-
-    if (staged && staged->to_device) {
+    if (staged->to_device) {
+      std::error_code ec;
       std::filesystem::remove(device_file, ec);
-    } else if (staged && status.ok()) {
-      PW_TRY(StageDeviceFileToClient(device_file, client_file, target_id));
+    } else if (status.ok()) {
+      PW_TRY(StageDeviceFileToClient(target, device_file, client_file));
     }
 
     return status;
@@ -1485,30 +1522,46 @@ struct SessionTask {
               DeviceSessionRegistry& device_registry,
               ClientSessionRegistry& client_registry, const GatewayAcl& acl,
               GatewayMetrics& metrics)
-      : fd(client_fd),
-        context(tls_context),
+      : context(tls_context),
         devices(device_registry),
         clients(client_registry),
         acl_ref(acl),
-        metrics_ref(metrics) {}
+        metrics_ref(metrics),
+        fd(client_fd) {}
 
-  void Run() {
-    const auto close_task_fd = [this] {
-      std::lock_guard lock(mutex);
-      if (fd >= 0) {
-        close(fd);
-        fd = -1;
+  void Stop() PW_LOCKS_EXCLUDED(mutex) {
+    std::shared_ptr<SessionControl> active_session;
+    {
+      pw::ScopedLocker<pw::sync::Mutex> lock(mutex);
+      if (session != nullptr) {
+        active_session = session;
+      } else if (fd >= 0) {
+        shutdown(fd, SHUT_RDWR);
       }
-    };
+    }
+    if (active_session != nullptr) {
+      active_session->Stop();
+    }
+  }
+
+  void CloseFd() PW_LOCKS_EXCLUDED(mutex) {
+    pw::ScopedLocker<pw::sync::Mutex> lock(mutex);
+    if (fd >= 0) {
+      close(fd);
+      fd = -1;
+    }
+  }
+
+  void Run() PW_LOCKS_EXCLUDED(mutex) {
     int client_fd = -1;
     {
-      std::lock_guard lock(mutex);
+      pw::ScopedLocker<pw::sync::Mutex> lock(mutex);
       client_fd = fd;
     }
     SSL* ssl = SSL_new(context);
     if (ssl == nullptr) {
       metrics_ref.client_rejections_total.Increment();
-      close_task_fd();
+      CloseFd();
       done.store(true);
       return;
     }
@@ -1524,7 +1577,7 @@ struct SessionTask {
       metrics_ref.client_rejections_total.Increment();
       PW_LOG_WARN("event=client_rejected reason=tls_handshake_failed");
       SSL_free(ssl);
-      close_task_fd();
+      CloseFd();
       done.store(true);
       return;
     }
@@ -1534,7 +1587,7 @@ struct SessionTask {
       PW_LOG_WARN("event=client_rejected reason=missing_or_invalid_uri_san");
       SSL_shutdown(ssl);
       SSL_free(ssl);
-      close_task_fd();
+      CloseFd();
       done.store(true);
       return;
     }
@@ -1548,7 +1601,7 @@ struct SessionTask {
           metrics_ref);
     }
     {
-      std::lock_guard lock(mutex);
+      pw::ScopedLocker<pw::sync::Mutex> lock(mutex);
       session = active_session;
       fd = -1;
     }
@@ -1556,15 +1609,15 @@ struct SessionTask {
     done.store(true);
   }
 
-  int fd{-1};
   SSL_CTX* context{nullptr};
   DeviceSessionRegistry& devices;
   ClientSessionRegistry& clients;
   const GatewayAcl& acl_ref;
   GatewayMetrics& metrics_ref;
   std::atomic<bool> done{false};
-  std::mutex mutex;
-  std::shared_ptr<SessionControl> session;
+  pw::sync::Mutex mutex;
+  int fd PW_GUARDED_BY(mutex) = -1;
+  std::shared_ptr<SessionControl> session PW_GUARDED_BY(mutex);
   pw::thread::Thread worker;
 };
 
@@ -1765,11 +1818,7 @@ int main(int argc, char** argv) {
   }
   close(listener);
   for (auto& task : tasks) {
-    std::lock_guard lock(task->mutex);
-    if (task->session != nullptr)
-      task->session->Stop();
-    else if (task->fd >= 0)
-      shutdown(task->fd, SHUT_RDWR);
+    task->Stop();
   }
   for (auto& task : tasks)
     if (task->worker.joinable()) task->worker.join();

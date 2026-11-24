@@ -293,7 +293,6 @@ def open_bridge_transport(
     )
 
 
-
 def resolve_link_secret(*, insecure: bool = False) -> bytes:
     """Resolve the authenticated-link secret from the environment or OpenWrt UCI.
 

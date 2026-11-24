@@ -137,6 +137,7 @@
   "pigweed.disableInactiveFileCodeIntelligence": false,
   "pigweed.disableInactiveFileNotice": true,
   "pigweed.hideInactiveFileIndicators": true,
+  "pigweed.refreshCompileCommandsTarget": "//:compile_commands",
   "pigweed.enforceExtensionRecommendations": false,
   "pigweed.compDbSearchPaths": [
     {
@@ -147,5 +148,15 @@
       "pathGlob": "mcubridge-gateway-cpp/build*",
       "targetInferencePattern": "?"
     }
+  ],
+  "pigweed.codeAnalysisTarget": "@@bazel_tools____tools__host_platform",
+  "pigweed.codeAnalysisTargetDir": "/home/ignaciosantolin/arduino-yun-bridge2/.compile_commands/@@bazel_tools____tools__host_platform",
+  "clangd.path": "/home/ignaciosantolin/.cache/bazel/_bazel_ignaciosantolin/b1901e6fb4e6a3ffd801aac1ec9c1400/execroot/_main/bazel-out/k8-fastbuild/bin/external/pigweed+/pw_toolchain/host_clang/clangd",
+  "clangd.arguments": [
+    "--compile-commands-dir=/home/ignaciosantolin/arduino-yun-bridge2/.compile_commands/@@bazel_tools____tools__host_platform",
+    "--query-driver=/*",
+    "--header-insertion=never",
+    "--background-index",
+    "-j=1"
   ]
 }

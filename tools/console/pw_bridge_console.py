@@ -707,23 +707,24 @@ def run_console(
     host_logger = logging.getLogger(HOST_LOG_LOGGER_NAME)
 
     transport = open_bridge_transport(device, baudrate=baudrate)
-    secure_reader, secure_writer, authenticated = create_secure_rpc_io(
-        transport,
-        shared_secret=shared_secret,
-    )
-    if authenticated:
-        _HOST_LOGGER.info("MCU link authenticated; ChaCha20-Poly1305 protection enabled")
-    else:
-        _HOST_LOGGER.warning("MCU link is unauthenticated by explicit user request")
-    rpc_client = create_rpc_client(
-        secure_reader,
-        secure_writer,
-        detokenizer=detokenizer,
-        mcu_logger=mcu_logger,
-        console_logger=console_logger,
-        channel_id=channel_id,
-    )
+    rpc_client: pw_hdlc.rpc.HdlcRpcClient | None = None
     try:
+        secure_reader, secure_writer, authenticated = create_secure_rpc_io(
+            transport,
+            shared_secret=shared_secret,
+        )
+        if authenticated:
+            _HOST_LOGGER.info("MCU link authenticated; ChaCha20-Poly1305 protection enabled")
+        else:
+            _HOST_LOGGER.warning("MCU link is unauthenticated by explicit user request")
+        rpc_client = create_rpc_client(
+            secure_reader,
+            secure_writer,
+            detokenizer=detokenizer,
+            mcu_logger=mcu_logger,
+            console_logger=console_logger,
+            channel_id=channel_id,
+        )
         embed = build_console_embed(
             rpc_client,
             detokenizer,
@@ -739,7 +740,8 @@ def run_console(
         embed.setup_python_logging(loggers_with_no_propagation=[mcu_logger, console_logger])
         cast(Any, embed).embed()
     finally:
-        rpc_client.close()
+        if rpc_client is not None:
+            rpc_client.close()
         transport.close()
 
 

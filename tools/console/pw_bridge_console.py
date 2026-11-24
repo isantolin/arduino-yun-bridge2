@@ -36,7 +36,11 @@ import serial
 import typer
 
 from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2, protocol
-from mcubridge.transport.serial import resolve_serial_url
+from mcubridge.transport.serial import (
+    DEFAULT_TOKEN_DATABASE_CANDIDATES,
+    decode_tokenized_log_payload,
+    resolve_serial_url,
+)
 from tools.emulation.emulation_runner import resolve_firmware_token_database
 
 APP_TITLE: Final[str] = "Arduino MCU Bridge 2 Console"
@@ -49,11 +53,6 @@ MCU_LOG_LOGGER_NAME: Final[str] = "mcubridge.console.mcu"
 MCU_CONSOLE_LOGGER_NAME: Final[str] = "mcubridge.console.stream"
 HOST_LOG_LOGGER_NAME: Final[str] = "mcubridge.console.host"
 
-_DEFAULT_TOKEN_DATABASE_CANDIDATES: Final[tuple[Path, ...]] = (
-    Path("/etc/mcubridge/tokens.csv"),
-    Path("/etc/mcubridge/tokens.bin"),
-    Path("/usr/share/mcubridge/tokens.csv"),
-)
 _PYSERIAL_URL_SCHEMES: Final[tuple[str, ...]] = ("loop://", "rfc2217://", "hwgrep://", "spy://", "alt://")
 
 _HOST_LOGGER = logging.getLogger(HOST_LOG_LOGGER_NAME)
@@ -137,7 +136,7 @@ def resolve_token_database_path(
     env_path = os.environ.get("MCUBRIDGE_TOKEN_DATABASE")
     if env_path:
         return Path(env_path)
-    for candidate in _DEFAULT_TOKEN_DATABASE_CANDIDATES:
+    for candidate in DEFAULT_TOKEN_DATABASE_CANDIDATES:
         if candidate.is_file():
             return candidate
     return None
@@ -170,16 +169,7 @@ def build_detokenizer(
 
 def decode_hdlc_log_frame(payload: bytes, detokenizer: detokenize.Detokenizer) -> str:
     """Detokenize a Pigweed HDLC log frame payload or preserve printable UTF-8 text."""
-    detokenized = detokenizer.detokenize(payload)
-    if detokenized.ok():
-        return str(detokenized)
-    try:
-        candidate = payload.decode("utf-8")
-    except UnicodeDecodeError:
-        return str(detokenized)
-    if candidate and all(ch.isprintable() or ch in "\r\n\t" for ch in candidate):
-        return candidate.rstrip("\r\n")
-    return str(detokenized)
+    return decode_tokenized_log_payload(payload, detokenizer)
 
 
 def make_log_frame_handler(

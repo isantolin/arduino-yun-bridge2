@@ -13,8 +13,11 @@ standalone Linux C++ process, not a sidecar to the Python Gateway.
 - Common Name and client-supplied device identifiers are never identity sources.
 - Device and client principals use separate session registries; duplicate
   sessions for the same principal are rejected.
-- Only client-role sessions register the northbound GatewayControl service.
-  Its current Health RPC reports readiness and active session counts.
+- Only client-role sessions register the northbound `GatewayControl` and upstream
+  `pw.metric.proto.MetricService` (`pw_metric`) services. `GatewayControl.Health`
+  reports readiness and active session counts, while `MetricService.Get` / `Walk`
+  export tokenized runtime counters (`gateway` group) decodable from the binary's
+  `.pw_tokenizer.entries` ELF section.
 - Pigweed RPC packets use upstream pw_hdlc framing on HDLC address 1.
 - The upstream pw_transfer::TransferService is registered on the per-peer
   upstream pw_rpc::Server.

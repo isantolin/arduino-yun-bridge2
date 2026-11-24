@@ -290,26 +290,44 @@ FileSystemRpcService g_file_system_service;
 MailboxRpcService g_mailbox_service;
 #endif
 BridgeClass* g_rpc_services_owner = nullptr;
+BridgeClass* g_observers_owner = nullptr;
 
 }  // namespace
 
+void BridgeClass::_clearObservers() {
+  _observers.clear();
+  if (g_observers_owner == this) {
+    g_observers_owner = nullptr;
+  }
+}
+
+void BridgeClass::_notifyObservers(bridge::SystemEvent event) {
+  for (bridge::BridgeObserver& observer : _observers) {
+    observer.notification(event);
+  }
+}
+
 void BridgeClass::_initObservers() {
-  clear_observers();
-#if BRIDGE_ENABLE_CONSOLE
-  add_observer(Console);
-#endif
-#if BRIDGE_ENABLE_DATASTORE
-  add_observer(DataStore);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  add_observer(Mailbox);
+  if (g_observers_owner != nullptr) {
+    g_observers_owner->_clearObservers();
+  }
+  _observers.clear();
+#if BRIDGE_ENABLE_SPI
+  _observers.push_front(SPIService);
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  add_observer(Process);
+  _observers.push_front(Process);
 #endif
-#if BRIDGE_ENABLE_SPI
-  add_observer(SPIService);
+#if BRIDGE_ENABLE_MAILBOX
+  _observers.push_front(Mailbox);
 #endif
+#if BRIDGE_ENABLE_DATASTORE
+  _observers.push_front(DataStore);
+#endif
+#if BRIDGE_ENABLE_CONSOLE
+  _observers.push_front(Console);
+#endif
+  g_observers_owner = this;
 }
 
 BridgeClass::BridgeClass(Stream& stream)
@@ -328,7 +346,6 @@ BridgeClass::BridgeClass(Stream& stream)
 #if defined(ARDUINO_ARCH_AVR)
   pw_assert_avr_SetPanicHook(BridgePanicHook);
 #endif
-  _initObservers();
 }
 
 BridgeClass::BridgeClass(HardwareSerial& serial)
@@ -373,6 +390,7 @@ BridgeClass::~BridgeClass() {
   FileSystemClass::unregisterUploadHandler(_transfer_service);
 #endif
   _pin_stream_writer = {};
+  _clearObservers();
   _unregisterRpcServices();
 }
 
@@ -400,7 +418,7 @@ void BridgeClass::setStream(HardwareSerial& serial) {
 void BridgeClass::_initializeRuntime() {
   _initObservers();
   _timer_last_tick_ms = 0;
-  _state_flags.reset();
+  _state_flags = 0U;
   _clearLinkSession();
 
   pw_log_avr_SetLogSink(
@@ -480,14 +498,14 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   }
 #endif
 
-  _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
-  if (!_state_flags.test(FLAG_POST_PASSED)) {
+  _setFlag(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
+  if (!_hasFlag(FLAG_POST_PASSED)) {
     enterSafeState();
     return;
   }
 
   if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
-  _state_flags.set(FLAG_TX_ENABLED, true);
+  _setFlag(FLAG_TX_ENABLED, true);
   _timers.clear();
   _timers.register_timer([]() { Bridge._onBaudrateChange(); },
                          bridge::config::BAUDRATE_CHANGE_DELAY_MS,
@@ -565,13 +583,13 @@ void BridgeClass::_serialTask() {
   });
 
   const int avail = _stream->available();
-  if (!_state_flags.test(FLAG_SERIAL_XOFF) &&
+  if (!_hasFlag(FLAG_SERIAL_XOFF) &&
       avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
-    _state_flags.set(FLAG_SERIAL_XOFF, true);
+    _setFlag(FLAG_SERIAL_XOFF, true);
     _sendFlowControl(true);
-  } else if (_state_flags.test(FLAG_SERIAL_XOFF) &&
+  } else if (_hasFlag(FLAG_SERIAL_XOFF) &&
              avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
-    _state_flags.set(FLAG_SERIAL_XOFF, false);
+    _setFlag(FLAG_SERIAL_XOFF, false);
     _sendFlowControl(false);
   }
 }
@@ -867,10 +885,10 @@ void BridgeClass::enterSafeState() {
                 [](const SafetyPinEntry& entry) {
                   bridge::hal::applySafetyPin(entry.pin, entry.state);
                 });
-  _state_flags.set(FLAG_TX_ENABLED, false);
-  _state_flags.set(FLAG_SERIAL_XOFF, false);
+  _setFlag(FLAG_TX_ENABLED, false);
+  _setFlag(FLAG_SERIAL_XOFF, false);
   _fsm.receive(bridge::fsm::EvReset());
-  notify_observers(bridge::SystemEvent::SAFE_STATE_ENTERED);
+  _notifyObservers(bridge::SystemEvent::SAFE_STATE_ENTERED);
 }
 
 void BridgeClass::registerSafetyPin(uint8_t pin, SafetyPinState state) {
@@ -887,12 +905,12 @@ void BridgeClass::registerSafetyPin(uint8_t pin, SafetyPinState state) {
 void BridgeClass::clearSafetyPins() { _safety_pins.clear(); }
 
 bool BridgeClass::sendConsoleStream(pw::span<const uint8_t> data) {
-  if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+  if (!_stream || !_hasFlag(FLAG_TX_ENABLED)) return false;
   return _writeHdlcFrame(rpc::RPC_HDLC_ADDRESS_CONSOLE, data);
 }
 
 bool BridgeClass::sendLogStream(pw::span<const uint8_t> data) {
-  if (!_stream || !_state_flags.test(FLAG_TX_ENABLED)) return false;
+  if (!_stream || !_hasFlag(FLAG_TX_ENABLED)) return false;
   return _writeHdlcFrame(rpc::RPC_HDLC_ADDRESS_LOG, data);
 }
 
@@ -914,7 +932,7 @@ void BridgeClass::_sendFlowControl(bool xoff) {
 void BridgeClass::_onHandshakeTimeout() {
   if (_fsm.isSynchronized()) return;
   _fsm.receive(bridge::fsm::EvTimeout());
-  _state_flags.set(FLAG_TX_ENABLED, false);
+  _setFlag(FLAG_TX_ENABLED, false);
 }
 
 void BridgeClass::_onBaudrateChange() {
@@ -1074,15 +1092,15 @@ void BridgeClass::_handleLinkSync(const rpc_pb_LinkSync& request,
   }
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
-  _state_flags.set(FLAG_TX_ENABLED, true);
+  _setFlag(FLAG_TX_ENABLED, true);
   _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
 }
 
 void BridgeClass::_handleLinkReset() {
   _clearLinkSession();
-  _state_flags.set(FLAG_TX_ENABLED, true);
+  _setFlag(FLAG_TX_ENABLED, true);
   _fsm.receive(bridge::fsm::EvReset());
-  notify_observers(bridge::SystemEvent::UNSYNCHRONIZED);
+  _notifyObservers(bridge::SystemEvent::UNSYNCHRONIZED);
   _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
   _timers.set_period(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT,
                      _response_timeout_ms);
@@ -1115,7 +1133,7 @@ void BridgeClass::_subscriptionTask() {
 }
 
 bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
-  if (!_stream || !_state_flags.test(FLAG_TX_ENABLED) || !isSynchronized() ||
+  if (!_stream || !_hasFlag(FLAG_TX_ENABLED) || !isSynchronized() ||
       !_pin_stream_writer.active()) {
     return false;
   }

@@ -18,9 +18,6 @@
 #define ETL_CHECK_PUSH_POP
 #define ETL_CALLBACK_ON_ERROR
 
-// ETL 20.44+ controls CRC table size via type selection (crc32_t4/16/256),
-// not ETL_CRC32_USE_TABLE. We intentionally keep etl::crc32 as project policy.
-
 // Detected compiler-specific optimizations
 #if defined(__clang__)
 #define ETL_COMPILER_CLANG

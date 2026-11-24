@@ -13,10 +13,10 @@
 
 #include <etl/optional.h>
 #include <pw_stream/memory_stream.h>
+#include <pw_transfer/cooperative_handler_registration.h>
 #include <pw_transfer/handler.h>
 
 #include "protocol/rpc_protocol.h"
-#include "services/CooperativeTransferHandler.h"
 
 namespace {
 
@@ -34,17 +34,17 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
   ~UploadTransferHandler() override {
-    registration_.detach(*this);
+    registration_.Detach(*this);
     g_upload_handler_destroyed = true;
   }
 
   bool attach(pw::transfer::TransferService& service,
               pw::transfer::TransferThread& thread) {
-    return registration_.attach(*this, service, thread);
+    return registration_.Attach(*this, service, thread);
   }
 
   bool detachFrom(const pw::transfer::TransferService& service) {
-    return registration_.detachFrom(*this, service);
+    return registration_.DetachFrom(*this, service);
   }
 
   void arm(pw::ConstByteSpan data) { data_ = data; }
@@ -65,7 +65,7 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
  private:
-  bridge::services::CooperativeTransferRegistration registration_;
+  pw::transfer::CooperativeHandlerRegistration registration_;
   pw::ConstByteSpan data_;
   etl::optional<pw::stream::MemoryReader> reader_;
 };

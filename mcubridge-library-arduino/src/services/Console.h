@@ -6,8 +6,8 @@
 #endif
 
 #include <Stream.h>
-#include <etl/circular_buffer.h>
-#include <etl/vector.h>
+#include <pw_containers/inline_queue.h>
+#include <pw_containers/vector.h>
 
 #include "Bridge.h"
 
@@ -32,9 +32,8 @@ class ConsoleClass : public Stream, public bridge::BridgeObserver {
   void flush() override {}
 
  private:
-  etl::circular_buffer<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE>
-      _rx_buffer;
-  etl::vector<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
+  pw::InlineQueue<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
+  pw::Vector<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 };
 
 extern ConsoleClass Console;

@@ -15,8 +15,11 @@ void ConsoleClass::begin() {
 
 void ConsoleClass::pushBytes(const uint8_t* data, size_t size) {
   if (data == nullptr || size == 0) return;
-  const size_t to_write = etl::min(size, _rx_buffer.available());
-  _rx_buffer.push(data, data + to_write);
+  const size_t avail = _rx_buffer.max_size() - _rx_buffer.size();
+  const size_t to_write = etl::min(size, avail);
+  for (size_t i = 0; i < to_write; ++i) {
+    _rx_buffer.push(data[i]);
+  }
 }
 
 void ConsoleClass::process() {
@@ -40,12 +43,13 @@ size_t ConsoleClass::write(uint8_t c) {
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr || size == 0) return 0;
   if (_tx_buffer.full()) process();
-  const size_t to_write = etl::min(size, _tx_buffer.available());
+  const size_t avail = _tx_buffer.max_size() - _tx_buffer.size();
+  const size_t to_write = etl::min(size, avail);
   _tx_buffer.insert(_tx_buffer.end(), buffer, buffer + to_write);
   if (to_write < size) {
     process();
-    const size_t extra_write =
-        etl::min(size - to_write, _tx_buffer.available());
+    const size_t extra_avail = _tx_buffer.max_size() - _tx_buffer.size();
+    const size_t extra_write = etl::min(size - to_write, extra_avail);
     _tx_buffer.insert(_tx_buffer.end(), buffer + to_write,
                       buffer + to_write + extra_write);
     return to_write + extra_write;

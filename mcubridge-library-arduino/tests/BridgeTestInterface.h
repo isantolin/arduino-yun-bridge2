@@ -24,7 +24,7 @@ class TestAccessor : public BridgeClass {
   void setSynchronized() {
     _fsm.receive(bridge::fsm::EvHandshakeStart());
     _fsm.receive(bridge::fsm::EvHandshakeComplete());
-    _state_flags.set(FLAG_TX_ENABLED, true);
+    _setFlag(FLAG_TX_ENABLED, true);
   }
 
   bool isFault() const {
@@ -47,10 +47,8 @@ class TestAccessor : public BridgeClass {
   }
 
   bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
-  bool isTxEnabled() const { return _state_flags.test(FLAG_TX_ENABLED); }
-  void setTxEnabled(bool enabled) {
-    _state_flags.set(FLAG_TX_ENABLED, enabled);
-  }
+  bool isTxEnabled() const { return _hasFlag(FLAG_TX_ENABLED); }
+  void setTxEnabled(bool enabled) { _setFlag(FLAG_TX_ENABLED, enabled); }
   void setSharedSecret(pw::span<const uint8_t> secret) {
     _shared_secret.assign(secret.begin(), secret.end());
   }
@@ -104,7 +102,7 @@ class TestAccessor : public BridgeClass {
   void invokeWatchdog() { _watchdogTask(); }
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
-  bool isSerialXoffSent() const { return _state_flags.test(FLAG_SERIAL_XOFF); }
+  bool isSerialXoffSent() const { return _hasFlag(FLAG_SERIAL_XOFF); }
   void invokeSendFlowControl(bool xoff) { _sendFlowControl(xoff); }
 
   void startTimersForCoverage() {
@@ -114,9 +112,7 @@ class TestAccessor : public BridgeClass {
   void startBootloaderTimerForCoverage() {
     _timers.start(bridge::scheduler::TIMER_BOOTLOADER_DELAY);
   }
-  void setSerialTaskXoffSent(bool value) {
-    _state_flags.set(FLAG_SERIAL_XOFF, value);
-  }
+  void setSerialTaskXoffSent(bool value) { _setFlag(FLAG_SERIAL_XOFF, value); }
   void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
   HardwareSerial* hardwareSerial() const { return _hardware_serial; }

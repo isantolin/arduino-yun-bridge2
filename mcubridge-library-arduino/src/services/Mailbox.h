@@ -5,9 +5,9 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 
-#include <etl/circular_buffer.h>
 #include <etl/delegate.h>
-#include <etl/vector.h>
+#include <pw_containers/inline_queue.h>
+#include <pw_containers/vector.h>
 #include <pw_span/span.h>
 
 #include "Bridge.h"
@@ -22,7 +22,7 @@ class MailboxClass : public bridge::BridgeObserver {
  public:
   using MessageCallback = etl::delegate<void(pw::span<const uint8_t>)>;
   using AvailableCallback = etl::delegate<void(uint32_t)>;
-  using MailboxBuffer = etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE>;
+  using MailboxBuffer = pw::Vector<uint8_t, rpc::MAX_PAYLOAD_SIZE>;
 
   MailboxClass();
   static void push(pw::span<const uint8_t> data);
@@ -54,7 +54,7 @@ class MailboxClass : public bridge::BridgeObserver {
       _avail_call;
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
-  static etl::circular_buffer<MailboxBuffer, MAILBOX_QUEUE_CAPACITY> _queue;
+  static pw::InlineQueue<MailboxBuffer, MAILBOX_QUEUE_CAPACITY> _queue;
 };
 
 using MailboxType = MailboxClass;

@@ -162,6 +162,7 @@ stage_cooperative_pw_transfer() {
     local req_hdr
     for req_hdr in \
         pw_transfer/client.h \
+        pw_transfer/cooperative_handler_registration.h \
         pw_transfer/handler.h \
         pw_transfer/transfer.h \
         pw_transfer/transfer_thread.h \

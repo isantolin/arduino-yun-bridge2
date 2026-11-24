@@ -1,10 +1,11 @@
+#define PW_LOG_MODULE_NAME "BRG"
+
 #include "Bridge.h"
 
 #include <etl/algorithm.h>
 #include <etl/fixed_iterator.h>
-#include <etl/string.h>
-#include <etl/to_string.h>
 #include <etl/utility.h>
+#include <pw_assert/assert.h>
 #include <pw_bytes/endian.h>
 
 #include "hal/hal.h"
@@ -307,6 +308,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
 
 void BridgeClass::_unregisterRpcServices() {
   if (!_rpc_services_registered) return;
+  PW_ASSERT(g_rpc_services_owner == this);
   _rpc_server.UnregisterService(g_gpio_service, g_system_service,
                                 g_clock_sync_service
 #if BRIDGE_ENABLE_SPI
@@ -759,15 +761,14 @@ void BridgeClass::_emitStackWatermarkLog() {
   }
   _last_reported_stack_used = wm.used_bytes;
 #if defined(ARDUINO_ARCH_SAMD)
-  etl::string<72> msg("MCU_STACK_WATERMARK arch=SAMD21 used=");
+  PW_LOG_INFO("MCU_STACK_WATERMARK arch=SAMD21 used=%u budget=%u",
+              static_cast<unsigned>(wm.used_bytes),
+              static_cast<unsigned>(wm.budget_bytes));
 #else
-  etl::string<72> msg("MCU_STACK_WATERMARK arch=ESP32 used=");
+  PW_LOG_INFO("MCU_STACK_WATERMARK arch=ESP32 used=%u budget=%u",
+              static_cast<unsigned>(wm.used_bytes),
+              static_cast<unsigned>(wm.budget_bytes));
 #endif
-  (void)etl::to_string(wm.used_bytes, msg, true);
-  msg.append(" budget=");
-  (void)etl::to_string(wm.budget_bytes, msg, true);
-  (void)sendLogStream(pw::span<const uint8_t>(
-      reinterpret_cast<const uint8_t*>(msg.data()), msg.size()));
 #endif
 }
 
@@ -806,6 +807,9 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
 }
 
 void BridgeClass::enterSafeState() {
+  if (isSynchronized()) {
+    PW_LOG_WARN("BRIDGE_SAFE_STATE");
+  }
   _clearLinkSession();
   bridge::hal::forceSafeState();
   etl::for_each(_safety_pins.begin(), _safety_pins.end(),
@@ -843,6 +847,11 @@ bool BridgeClass::sendLogStream(pw::span<const uint8_t> data) {
 
 void BridgeClass::_sendFlowControl(bool xoff) {
   if (!isRpcTxReady()) return;
+  if (xoff) {
+    PW_LOG_WARN("BRIDGE_FLOW_XOFF");
+  } else {
+    PW_LOG_INFO("BRIDGE_FLOW_XON");
+  }
   rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
   if (xoff) {
     (void)systemClient().Xoff(req);

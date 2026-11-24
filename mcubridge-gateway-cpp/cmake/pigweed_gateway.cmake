@@ -121,7 +121,21 @@ target_include_directories(pw_rpc2.cpp INTERFACE "${PIGWEED_ROOT}/pw_rpc2/cpp/pu
 add_library(pw_rpc2.cpp._pwpb_serialize INTERFACE)
 target_include_directories(pw_rpc2.cpp._pwpb_serialize INTERFACE "${PIGWEED_ROOT}/pw_rpc2/cpp/public")
 
-# pw_log facade with the upstream null backend.
+# pw_sys_io facade + stdio backend (required by pw_log_basic default sink).
+pw_add_facade(pw_sys_io INTERFACE
+  BACKEND pw_sys_io_BACKEND
+  HEADERS "${PIGWEED_ROOT}/pw_sys_io/public/pw_sys_io/sys_io.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sys_io/public"
+  PUBLIC_DEPS pw_bytes pw_status)
+pw_add_library(pw_sys_io.default_putget_bytes STATIC
+  SOURCES "${PIGWEED_ROOT}/pw_sys_io/sys_io.cc"
+  PUBLIC_DEPS pw_sys_io.facade
+  PRIVATE_DEPS pw_sys_io)
+pw_add_library(pw_sys_io_stdio STATIC
+  SOURCES "${PIGWEED_ROOT}/pw_sys_io_stdio/sys_io.cc"
+  PRIVATE_DEPS pw_sys_io.default_putget_bytes pw_sys_io.facade)
+
+# pw_log facade with the upstream pw_log_basic backend.
 pw_add_module_config(pw_log_CONFIG)
 pw_add_library(pw_log.config INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_log/public/pw_log/config.h"
@@ -137,14 +151,21 @@ pw_add_facade(pw_log INTERFACE
     "${PIGWEED_ROOT}/pw_log/public/pw_log/shorter.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_log/public"
   PUBLIC_DEPS pw_log.config)
-pw_add_library(pw_log_null INTERFACE
+pw_add_module_config(pw_log_basic_CONFIG)
+pw_add_library(pw_log_basic STATIC
   HEADERS
-    "${PIGWEED_ROOT}/pw_log_null/public/pw_log_null/log_null.h"
-    "${PIGWEED_ROOT}/pw_log_null/public_overrides/pw_log_backend/log_backend.h"
+    "${PIGWEED_ROOT}/pw_log_basic/public/pw_log_basic/log_basic.h"
+    "${PIGWEED_ROOT}/pw_log_basic/public_overrides/pw_log_backend/log_backend.h"
+    "${PIGWEED_ROOT}/pw_log_basic/pw_log_basic_private/config.h"
   PUBLIC_INCLUDES
-    "${PIGWEED_ROOT}/pw_log_null/public"
-    "${PIGWEED_ROOT}/pw_log_null/public_overrides"
-  PUBLIC_DEPS pw_preprocessor pw_log.facade)
+    "${PIGWEED_ROOT}/pw_log_basic/public"
+    "${PIGWEED_ROOT}/pw_log_basic/public_overrides"
+  PRIVATE_INCLUDES
+    "${PIGWEED_ROOT}/pw_log_basic"
+  PUBLIC_DEPS pw_preprocessor
+  PUBLIC_DEFINES PW_LOG_SHOW_MODULE=1 PW_LOG_BASIC_ENTRY_SIZE=256
+  SOURCES "${PIGWEED_ROOT}/pw_log_basic/log_basic.cc"
+  PRIVATE_DEPS pw_string pw_sys_io pw_log.facade ${pw_log_basic_CONFIG})
 pw_add_library(pw_log.rate_limited STATIC
   HEADERS "${PIGWEED_ROOT}/pw_log/public/pw_log/rate_limited.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_log/public"

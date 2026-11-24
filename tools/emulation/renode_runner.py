@@ -36,6 +36,7 @@ from tools.emulation.emulation_runner import (
     audit_post_execution_status,
     default_client_test_paths,
     ensure_cloud_gateway,
+    resolve_firmware_token_database,
     run_client_scripts,
     setup_fake_uci,
     write_matrix_summary,
@@ -275,6 +276,7 @@ def run_renode_emulation(
         fake_uci_dir, storage_path, daemon_env = setup_fake_uci(
             pty_path,
             device_id="mkr-01",
+            token_database=resolve_firmware_token_database(firmware_path),
             label="renode runner",
         )
 

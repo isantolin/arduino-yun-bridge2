@@ -147,13 +147,13 @@ jobs:
         run: .tox/arduino-examples/bin/pytest -n 0 tools/ci/tests/test_firmware_resource_report.py -q
       - name: Compile BridgeControl for Arduino Mega 2560
         run: |
-          bash tools/ci/compile_firmware.sh \
+          PATH="$PWD/.tox/arduino-examples/bin:$PATH" bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino \
             arduino:avr:mega \
             arduino-logs/arduino-avr-mega/BridgeControl
       - name: Compile cooperative pw_transfer API for Arduino Mega 2560
         run: |
-          bash tools/ci/compile_firmware.sh \
+          PATH="$PWD/.tox/arduino-examples/bin:$PATH" bash tools/ci/compile_firmware.sh \
             mcubridge-library-arduino/tests/pw_transfer_compile/pw_transfer_compile.ino \
             arduino:avr:mega \
             arduino-logs/arduino-avr-mega/pw_transfer_compile
@@ -168,6 +168,19 @@ jobs:
             fi
             python -m json.tool "$report" >/dev/null
           done
+          if [ ! -s arduino-logs/arduino-avr-mega/BridgeControl/tokens.csv ]; then
+            echo "::error::Missing or empty Pigweed pw_tokenizer database: arduino-logs/arduino-avr-mega/BridgeControl/tokens.csv"
+            exit 1
+          fi
+      - name: Cache Bloaty (Pigweed pw_bloat)
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/bin/bloaty
+          key: bloaty-${{ runner.os }}-${{ hashFiles('tools/ci/install_bloaty.sh') }}
+      - name: Install Bloaty (Pigweed pw_bloat)
+        run: |
+          BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_bloaty.sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Profile Memory Usage
         if: always()
         run: |
@@ -175,6 +188,10 @@ jobs:
           tox -e arduino-profile -- arduino-build --output arduino-logs/symbol_profile.md
           tox -e arduino-profile -- arduino-logs/arduino-avr-mega/BridgeControl --output arduino-logs/mega2560_bridge_profile.md
           tox -e arduino-profile -- arduino-logs/arduino-avr-mega/pw_transfer_compile --output arduino-logs/mega2560_pw_transfer_profile.md
+          if ! grep -q "Pigweed Size Report (pw_bloat)" arduino-logs/mega2560_bridge_profile.md; then
+            echo "::error::Expected pw_bloat size report in arduino-logs/mega2560_bridge_profile.md"
+            exit 1
+          fi
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7

@@ -762,6 +762,36 @@ void test_bridge_pw_log_tokenized_hdlc_frame() {
   TEST_ASSERT_EQUAL_HEX8(0x54U, static_cast<uint8_t>(frame.data()[4]));
 }
 
+void test_bridge_safe_state_emits_tokenized_pw_log() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  stream.tx_buf.clear();
+
+  Bridge.enterSafeState();
+  TEST_ASSERT_GREATER_THAN(0U, stream.tx_buf.len);
+
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto res = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+    if (res.ok() && res.value().address() == rpc::RPC_HDLC_ADDRESS_LOG) {
+      decoded = res;
+      break;
+    }
+  }
+  TEST_ASSERT_TRUE(decoded.ok());
+  TEST_ASSERT_EQUAL_UINT32(sizeof(uint32_t), decoded.value().data().size());
+
+  const uint32_t expected_token =
+      PW_TOKENIZER_STRING_TOKEN("BRIDGE_SAFE_STATE");
+  uint32_t actual_token = 0;
+  memcpy(&actual_token, decoded.value().data().data(), sizeof(uint32_t));
+  TEST_ASSERT_EQUAL_HEX32(expected_token, actual_token);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -790,5 +820,6 @@ int main() {
   RUN_TEST(test_bridge_receive_security_gate_variants);
   RUN_TEST(test_bridge_edge_paths_and_post);
   RUN_TEST(test_bridge_pw_log_tokenized_hdlc_frame);
+  RUN_TEST(test_bridge_safe_state_emits_tokenized_pw_log);
   return UNITY_END();
 }

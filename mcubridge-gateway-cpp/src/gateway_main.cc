@@ -17,14 +17,15 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -32,12 +33,17 @@
 #include <utility>
 #include <vector>
 
+#define PW_LOG_MODULE_NAME "GW"
+
 #include "gateway/gateway_control.rpc.pwpb.h"
 #include "mcu_wire.raw_rpc.pb.h"
+#include "pw_assert/check.h"
 #include "pw_bytes/span.h"
 #include "pw_hdlc/decoder.h"
 #include "pw_hdlc/encoded_size.h"
 #include "pw_hdlc/encoder.h"
+#include "pw_log/log.h"
+#include "pw_log_basic/log_basic.h"
 #include "pw_rpc/channel.h"
 #include "pw_rpc/client.h"
 #include "pw_rpc/packet_meta.h"
@@ -77,12 +83,22 @@ constexpr std::string_view kFileStagingName = "staging.bin";
 constexpr std::string_view kEepromStagingName = "eeprom.bin";
 
 std::filesystem::path g_staging_root;  // Set once in main() before sessions.
+std::mutex g_log_output_mutex;
+
+void WriteGatewayLog(std::string_view entry) {
+  std::lock_guard lock(g_log_output_mutex);
+  std::fwrite(entry.data(), 1U, entry.size(), stderr);
+  std::fputc('\n', stderr);
+  std::fflush(stderr);
+}
 
 std::filesystem::path ClientStagingDir(const std::string& client_id) {
+  PW_CHECK(!g_staging_root.empty());
   return g_staging_root / "clients" / client_id;
 }
 
 std::filesystem::path DeviceStagingDir(const std::string& device_id) {
+  PW_CHECK(!g_staging_root.empty());
   return g_staging_root / "devices" / device_id;
 }
 
@@ -197,7 +213,10 @@ std::optional<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
 
 class TlsSocket {
  public:
-  TlsSocket(SSL* ssl, int fd) : ssl_(ssl), fd_(fd) {}
+  TlsSocket(SSL* ssl, int fd) : ssl_(ssl), fd_(fd) {
+    PW_CHECK_NOTNULL(ssl_);
+    PW_CHECK_INT_GE(fd_, 0);
+  }
   TlsSocket(const TlsSocket&) = delete;
   TlsSocket& operator=(const TlsSocket&) = delete;
   bool SetNonBlocking() const {
@@ -284,7 +303,9 @@ class TlsSocket {
 
 class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
  public:
-  explicit TlsQueueWriter(size_t capacity) : capacity_(capacity) {}
+  explicit TlsQueueWriter(size_t capacity) : capacity_(capacity) {
+    PW_CHECK_UINT_GT(capacity_, 0U);
+  }
   size_t AvailableWriteBytes() const {
     std::lock_guard lock(mutex_);
     return capacity_ - queued_bytes_;
@@ -342,17 +363,16 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
     std::lock_guard lock(mutex_);
     const size_t frame_size = pw::hdlc::MaxEncodedFrameSize(address_, packet);
     if (frame_size > writer_.ConservativeWriteLimit()) {
-      std::cerr << "event=rpc_frame_queue_rejected frame_bytes="
-                << packet.size() << " frame_size=" << frame_size << '\n';
+      PW_LOG_WARN("event=rpc_frame_queue_rejected frame_bytes=%zu frame_size=%zu",
+                  packet.size(), frame_size);
       return pw::Status::ResourceExhausted();
     }
     const pw::Status status = pw::hdlc::WriteUIFrame(address_, packet, writer_);
     if (!status.ok()) {
-      std::cerr << "event=rpc_frame_queue_failed frame_bytes="
-                << packet.size() << " status=" << status.str() << '\n';
+      PW_LOG_WARN("event=rpc_frame_queue_failed frame_bytes=%zu status=%s",
+                  packet.size(), status.str());
     } else {
-      std::cerr << "event=rpc_frame_queued frame_bytes=" << packet.size()
-                << '\n';
+      PW_LOG_INFO("event=rpc_frame_queued frame_bytes=%zu", packet.size());
     }
     return status;
   }
@@ -493,10 +513,9 @@ class DeviceTelemetryService final
   pw::Status ReportTelemetry(
       const mcubridge::gateway::pwpb::TelemetryReport::Message& request,
       mcubridge::gateway::pwpb::TelemetryResponse::Message& response) {
-    std::cerr << "device=" << device_id_
-              << " event=telemetry_reported metrics_bytes="
-              << request.daemon_metrics_blob.size()
-              << " status_bytes=" << request.system_status_blob.size() << '\n';
+    PW_LOG_INFO("device=%s event=telemetry_reported metrics_bytes=%zu status_bytes=%zu",
+                device_id_.c_str(), request.daemon_metrics_blob.size(),
+                request.system_status_blob.size());
     response.acknowledged = true;
     return pw::OkStatus();
   }
@@ -508,9 +527,9 @@ class DeviceTelemetryService final
 void LogHandlerRegistrationFailure(std::string_view role,
                                    const std::string& principal_id,
                                    const pw::transfer::Handler& handler) {
-  std::cerr << role << '=' << principal_id
-            << " event=transfer_handler_registration_failed resource="
-            << handler.id() << '\n';
+  PW_LOG_ERROR("%.*s=%s event=transfer_handler_registration_failed resource=%u",
+               static_cast<int>(role.size()), role.data(),
+               principal_id.c_str(), static_cast<unsigned>(handler.id()));
 }
 
 class BufferTransferHandler final : public pw::transfer::Handler {
@@ -711,8 +730,8 @@ class GatewaySession final
   void Run() override {
     if (!socket_.SetNonBlocking()) return;
     if (!registry_.Register(device_id_, shared_from_this())) {
-      std::cerr << "device=" << device_id_
-                << " event=session_rejected reason=duplicate_session\n";
+      PW_LOG_WARN("device=%s event=session_rejected reason=duplicate_session",
+                  device_id_.c_str());
       return;
     }
     struct RegistrationGuard {
@@ -721,7 +740,7 @@ class GatewaySession final
       const GatewaySession* session;
       ~RegistrationGuard() {
         registry.Unregister(device_id, session);
-        std::cerr << "device=" << device_id << " event=session_unregistered\n";
+        PW_LOG_INFO("device=%s event=session_unregistered", device_id.c_str());
       }
     } registration{registry_, device_id_, this};
 
@@ -756,7 +775,7 @@ class GatewaySession final
     }
 
     tx_worker_ = std::thread([this] { TransmitLoop(); });
-    std::cerr << "device=" << device_id_ << " event=session_open\n";
+    PW_LOG_INFO("device=%s event=session_open", device_id_.c_str());
     ReceiveLoop();
     stopping_.store(true);
     socket_.Stop();
@@ -765,7 +784,7 @@ class GatewaySession final
     TerminateTransfer();
     UnregisterServices();
     RemoveStagingDirectory(DeviceStagingDir(device_id_));
-    std::cerr << "device=" << device_id_ << " event=session_closed\n";
+    PW_LOG_INFO("device=%s event=session_closed", device_id_.c_str());
   }
 
   void Stop() override {
@@ -817,30 +836,27 @@ class GatewaySession final
           ctx.response_payload.assign(edge_resp.response_payload.begin(),
                                       edge_resp.response_payload.end());
           ctx.completed = true;
-          std::cerr << "event=edge_dispatch_response_received status="
-                    << status.str() << " device_status=" << edge_resp.status_code
-                    << " payload_bytes=" << edge_resp.response_payload.size()
-                    << '\n';
+          PW_LOG_INFO(
+              "event=edge_dispatch_response_received status=%s device_status=%u payload_bytes=%zu",
+              status.str(), static_cast<unsigned>(edge_resp.status_code),
+              edge_resp.response_payload.size());
           ctx.cv.notify_one();
         },
         [&ctx](pw::Status status) {
           std::lock_guard lock(ctx.cv_mutex);
           ctx.call_status = status;
           ctx.completed = true;
-          std::cerr << "event=edge_dispatch_rpc_error status=" << status.str()
-                    << '\n';
+          PW_LOG_WARN("event=edge_dispatch_rpc_error status=%s", status.str());
           ctx.cv.notify_one();
         });
 
     if (!call.active()) {
-      std::cerr << "event=edge_dispatch_call_inactive\n";
+      PW_LOG_WARN("event=edge_dispatch_call_inactive");
       return pw::Status::Unavailable();
     }
-    std::cerr << "event=edge_dispatch_call_started timeout_ms="
-              << (request.timeout_ms > 0 ? request.timeout_ms : 30000)
-              << '\n';
-
     const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
+    PW_LOG_INFO("event=edge_dispatch_call_started timeout_ms=%u",
+                static_cast<unsigned>(timeout));
     std::unique_lock lock(ctx.cv_mutex);
     if (!ctx.cv.wait_for(lock, std::chrono::milliseconds(timeout),
                          [&] { return ctx.completed || stopping_.load(); })) {
@@ -927,16 +943,15 @@ class GatewaySession final
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
         auto meta = pw::rpc::PacketMeta::FromBuffer(frame->data());
         if (!meta.ok()) {
-          std::cerr << "device=" << device_id_ << " event=rpc_packet_corrupt\n";
+          PW_LOG_WARN("device=%s event=rpc_packet_corrupt", device_id_.c_str());
           continue;
         }
         pw::Status status;
         if (meta->destination_is_client()) {
           status = rpc_client_.ProcessPacket(frame->data());
           if (!status.ok() && status != pw::Status::Unavailable()) {
-            std::cerr << "device=" << device_id_
-                      << " event=rpc_client_packet_rejected status="
-                      << status.str() << '\n';
+            PW_LOG_WARN("device=%s event=rpc_client_packet_rejected status=%s",
+                        device_id_.c_str(), status.str());
           }
         } else if (meta->destination_is_server()) {
           status = rpc_server_.ProcessPacket(frame->data());
@@ -944,9 +959,8 @@ class GatewaySession final
           status = pw::Status::InvalidArgument();
         }
         if (!status.ok() && status != pw::Status::Unavailable()) {
-          std::cerr << "device=" << device_id_
-                    << " event=rpc_packet_rejected status=" << status.code()
-                    << "\n";
+          PW_LOG_WARN("device=%s event=rpc_packet_rejected status=%u",
+                      device_id_.c_str(), static_cast<unsigned>(status.code()));
         }
       }
     }
@@ -1020,8 +1034,9 @@ class GatewayControlService final
     // Checked before the device lookup so a denied client cannot probe which
     // devices are connected.
     if (!acl_.Allows(client_id_, target_id, op)) {
-      std::cerr << "client=" << client_id_ << " event=dispatch_denied target="
-                << target_id << " operation=" << op << '\n';
+      PW_LOG_WARN("client=%s event=dispatch_denied target=%s operation=%.*s",
+                  client_id_.c_str(), target_id.c_str(),
+                  static_cast<int>(op.size()), op.data());
       return pw::Status::PermissionDenied();
     }
     auto session = devices_.Lookup(target_id);
@@ -1067,40 +1082,36 @@ class GatewayControlService final
     if (staged && staged->to_device) {
       std::string error;
       if (!std::filesystem::is_regular_file(client_file, ec)) {
-        std::cerr << "client=" << client_id_
-                  << " event=dispatch_missing_staging target=" << target_id
-                  << '\n';
+        PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
+                    client_id_.c_str(), target_id.c_str());
         return pw::Status::FailedPrecondition();
       }
       if (!EnsurePrivateDirectory(DeviceStagingDir(target_id), error)) {
-        std::cerr << "client=" << client_id_
-                  << " event=dispatch_staging_error target=" << target_id
-                  << " detail=" << error << '\n';
+        PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s detail=%s",
+                     client_id_.c_str(), target_id.c_str(), error.c_str());
         return pw::Status::Internal();
       }
       std::filesystem::rename(client_file, device_file, ec);
       if (ec) {
-        std::cerr << "client=" << client_id_
-                  << " event=dispatch_staging_error target=" << target_id
-                  << '\n';
+        PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s",
+                     client_id_.c_str(), target_id.c_str());
         return pw::Status::Internal();
       }
     }
 
     const pw::Status status = session->Dispatch(request, response);
-    std::cerr << "client=" << client_id_ << " event=dispatch_completed target="
-              << target_id << " operation=" << op
-              << " status=" << status.str()
-              << " device_status=" << response.status_code << '\n';
+    PW_LOG_INFO(
+        "client=%s event=dispatch_completed target=%s operation=%.*s status=%s device_status=%u",
+        client_id_.c_str(), target_id.c_str(), static_cast<int>(op.size()),
+        op.data(), status.str(), static_cast<unsigned>(response.status_code));
 
     if (staged && staged->to_device) {
       std::filesystem::remove(device_file, ec);
     } else if (staged && status.ok()) {
       std::string error;
       if (!std::filesystem::is_regular_file(device_file, ec)) {
-        std::cerr << "client=" << client_id_
-                  << " event=dispatch_missing_staging target=" << target_id
-                  << '\n';
+        PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
+                    client_id_.c_str(), target_id.c_str());
         return pw::Status::NotFound();
       }
       if (!EnsurePrivateDirectory(ClientStagingDir(client_id_), error)) {
@@ -1146,8 +1157,8 @@ class GatewayClientSession final : public SessionControl {
   void Run() override {
     if (!socket_.SetNonBlocking()) return;
     if (!clients_.Register(client_id_, this)) {
-      std::cerr << "client=" << client_id_
-                << " event=session_rejected reason=duplicate_session\n";
+      PW_LOG_WARN("client=%s event=session_rejected reason=duplicate_session",
+                  client_id_.c_str());
       return;
     }
     struct RegistrationGuard {
@@ -1156,7 +1167,7 @@ class GatewayClientSession final : public SessionControl {
       const void* session;
       ~RegistrationGuard() {
         registry.Unregister(client_id, session);
-        std::cerr << "client=" << client_id << " event=session_unregistered\n";
+        PW_LOG_INFO("client=%s event=session_unregistered", client_id.c_str());
       }
     } registration{clients_, client_id_, this};
 
@@ -1186,7 +1197,7 @@ class GatewayClientSession final : public SessionControl {
                                     file_transfer_handler_);
     }
     tx_worker_ = std::thread([this] { TransmitLoop(); });
-    std::cerr << "client=" << client_id_ << " event=session_open\n";
+    PW_LOG_INFO("client=%s event=session_open", client_id_.c_str());
     ReceiveLoop();
     stopping_.store(true);
     socket_.Stop();
@@ -1195,7 +1206,7 @@ class GatewayClientSession final : public SessionControl {
     TerminateTransfer();
     UnregisterServices();
     RemoveStagingDirectory(ClientStagingDir(client_id_));
-    std::cerr << "client=" << client_id_ << " event=session_closed\n";
+    PW_LOG_INFO("client=%s event=session_closed", client_id_.c_str());
   }
 
   void Stop() override {
@@ -1256,16 +1267,14 @@ class GatewayClientSession final : public SessionControl {
     while (!stopping_.load()) {
       if (!tx_writer_.Pop(frame, stopping_)) continue;
       if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
-        std::cerr << "client=" << client_id_
-                  << " event=tx_frame_failed frame_bytes=" << frame.size()
-                  << '\n';
+        PW_LOG_WARN("client=%s event=tx_frame_failed frame_bytes=%zu",
+                    client_id_.c_str(), frame.size());
         stopping_.store(true);
         socket_.Stop();
         break;
       }
-      std::cerr << "client=" << client_id_
-                << " event=tx_frame_sent frame_bytes=" << frame.size()
-                << '\n';
+      PW_LOG_INFO("client=%s event=tx_frame_sent frame_bytes=%zu",
+                  client_id_.c_str(), frame.size());
     }
   }
 
@@ -1280,9 +1289,8 @@ class GatewayClientSession final : public SessionControl {
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
         const pw::Status status = rpc_server_.ProcessPacket(frame->data());
         if (!status.ok() && status != pw::Status::Unavailable()) {
-          std::cerr << "client=" << client_id_
-                    << " event=rpc_packet_rejected status=" << status.code()
-                    << "\n";
+          PW_LOG_WARN("client=%s event=rpc_packet_rejected status=%u",
+                      client_id_.c_str(), static_cast<unsigned>(status.code()));
         }
       }
     }
@@ -1416,6 +1424,7 @@ void ReapTasks(std::vector<std::unique_ptr<SessionTask>>& tasks) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  pw::log_basic::SetOutput(WriteGatewayLog);
   constexpr std::string_view kUsage =
       "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
       "--client-ca FILE [--acl FILE] [--staging-dir DIR] [--bind ADDRESS] "
@@ -1442,27 +1451,27 @@ int main(int argc, char** argv) {
   std::string error;
   const auto acl = GatewayAcl::Load(acl_path, error);
   if (!acl.has_value()) {
-    std::cerr << "fatal=" << error << '\n';
+    PW_LOG_CRITICAL("fatal=%s", error.c_str());
     return 1;
   }
   g_staging_root = staging_dir;
   if (!PrepareStagingRoot(g_staging_root, error)) {
-    std::cerr << "fatal=" << error << '\n';
+    PW_LOG_CRITICAL("fatal=%s", error.c_str());
     return 1;
   }
   if (acl->size() == 0) {
-    std::cerr << "event=acl_empty detail=every client dispatch is denied; "
-                 "pass --acl FILE\n";
+    PW_LOG_WARN(
+        "event=acl_empty detail=every client dispatch is denied; pass --acl FILE");
   }
   auto tls_context =
       CreateTlsContext(certificate, private_key, client_ca, error);
   if (!tls_context) {
-    std::cerr << "fatal=" << error << '\n';
+    PW_LOG_CRITICAL("fatal=%s", error.c_str());
     return 1;
   }
   const int listener = CreateListener(bind_address, port, error);
   if (listener < 0) {
-    std::cerr << "fatal=" << error << '\n';
+    PW_LOG_CRITICAL("fatal=%s", error.c_str());
     return 1;
   }
   signal(SIGINT, HandleSignal);
@@ -1471,15 +1480,15 @@ int main(int argc, char** argv) {
   DeviceSessionRegistry device_registry;
   ClientSessionRegistry client_registry;
   std::vector<std::unique_ptr<SessionTask>> tasks;
-  std::cerr << "event=gateway_listening bind=" << bind_address
-            << " port=" << port << " tls=1.3 identity=uri_san\n";
+  PW_LOG_INFO("event=gateway_listening bind=%s port=%s tls=1.3 identity=uri_san",
+              bind_address.c_str(), port.c_str());
   while (!g_stopping.load()) {
     ReapTasks(tasks);
     pollfd descriptor{listener, POLLIN, 0};
     const int ready = poll(&descriptor, 1, 500);
     if (ready < 0) {
       if (errno == EINTR) continue;
-      std::cerr << "fatal=listener poll failed\n";
+      PW_LOG_CRITICAL("fatal=listener poll failed");
       break;
     }
     if (ready == 0 || (descriptor.revents & POLLIN) == 0) continue;
@@ -1489,7 +1498,7 @@ int main(int argc, char** argv) {
         accept(listener, reinterpret_cast<sockaddr*>(&peer), &peer_size);
     if (client_fd < 0) {
       if (errno == EINTR || errno == EAGAIN) continue;
-      std::cerr << "event=accept_failed errno=" << errno << '\n';
+      PW_LOG_WARN("event=accept_failed errno=%d", errno);
       continue;
     }
     if (tasks.size() >= kMaxSessions) {
@@ -1528,7 +1537,7 @@ int main(int argc, char** argv) {
       SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
                             SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
       if (SSL_accept(ssl) != 1) {
-        std::cerr << "event=client_rejected reason=tls_handshake_failed\n";
+        PW_LOG_WARN("event=client_rejected reason=tls_handshake_failed");
         SSL_free(ssl);
         close_task_fd();
         task_ptr->done.store(true);
@@ -1536,8 +1545,7 @@ int main(int argc, char** argv) {
       }
       auto identity = PeerIdentityFromCertificate(ssl);
       if (!identity.has_value()) {
-        std::cerr
-            << "event=client_rejected reason=missing_or_invalid_uri_san\n";
+        PW_LOG_WARN("event=client_rejected reason=missing_or_invalid_uri_san");
         SSL_shutdown(ssl);
         SSL_free(ssl);
         close_task_fd();
@@ -1573,6 +1581,6 @@ int main(int argc, char** argv) {
   }
   for (auto& task : tasks)
     if (task->worker.joinable()) task->worker.join();
-  std::cerr << "event=gateway_stopped\n";
+  PW_LOG_INFO("event=gateway_stopped");
   return 0;
 }

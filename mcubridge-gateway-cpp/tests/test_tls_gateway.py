@@ -409,6 +409,9 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         self.gateway.wait_for("device=device-01 event=session_open")
         client.close()
         self.gateway.wait_for("device=device-01 event=session_closed")
+        logs = self.gateway.logs()
+        assert "GW" in logs
+        assert "INF" in logs
 
     def assert_tls_handshake_rejected(self, cert: Path | None, key: Path | None) -> None:
         client: ssl.SSLSocket | None = None

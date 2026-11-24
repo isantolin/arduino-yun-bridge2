@@ -413,7 +413,6 @@ def test_open_bridge_transport_supports_tcp_socket_and_loopback_serial() -> None
         loop_transport.close()
 
 
-
 def test_authenticated_console_handshake_and_bidirectional_frame_protection() -> None:
     """Verify the console performs LinkSync v2 and applies the daemon's AEAD cipher."""
     secret = b"console-test-shared-secret"
@@ -532,6 +531,7 @@ def test_console_requires_explicit_authentication_or_insecure_opt_in(monkeypatch
     with pytest.raises(ValueError, match="No serial shared secret is available"):
         pw_bridge_console.resolve_link_secret()
     assert pw_bridge_console.resolve_link_secret(insecure=True) == b""
+
 
 def test_binary_token_database_and_elf_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify binary Pigweed token DB loading and firmware ELF auto-discovery fallback."""

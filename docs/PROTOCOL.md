@@ -887,8 +887,8 @@ Además de los comandos anteriores, el daemon transmite periódicamente telemetr
 # Real-time frame analysis (daemon debug mode)
 UCI_CONFIG_DIR=/etc/config mcubridge --debug-frames
 
-# Parse raw hex frame (offline tool)
-python3 tools/emulation/frame_debug.py 02001000044A1B2C3D4...
+# Interactive Pigweed RPC / HDLC console
+python3 tools/console/pw_bridge_console.py --device /dev/ttyATH0
 
 # Monitor serial link health
 watch -n1 'cat /tmp/mcubridge_status.json | jq .bridge.serial_link'

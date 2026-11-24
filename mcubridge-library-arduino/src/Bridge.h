@@ -33,8 +33,13 @@
 
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
+#include <pw_containers/intrusive_forward_list.h>
+#include <pw_containers/vector.h>
+#include <pw_string/util.h>
 #else
 #include <pw_bytes/span.h>
+#include <pw_containers/intrusive_forward_list.h>
+#include <pw_containers/vector.h>
 #include <pw_hdlc/decoder.h>
 #include <pw_hdlc/encoder.h>
 #include <pw_log/log.h>
@@ -46,6 +51,7 @@
 #include <pw_status/status.h>
 #include <pw_stream/memory_stream.h>
 #include <pw_stream/stream.h>
+#include <pw_string/util.h>
 #include <pw_tokenizer/hash.h>
 #include <pw_tokenizer/tokenize.h>
 #endif
@@ -65,14 +71,11 @@
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
-#include <etl/bitset.h>
 #include <etl/callback_timer.h>
 #include <etl/debounce.h>
 #include <etl/delegate.h>
 #include <etl/fsm.h>
-#include <etl/observer.h>
 #include <etl/string_view.h>
-#include <etl/vector.h>
 // clang-format on
 
 #include <pw_rpc/channel.h>
@@ -102,9 +105,9 @@ enum class SystemEvent : uint8_t {
   UNSYNCHRONIZED = 2
 };
 
-class BridgeObserver {
+class BridgeObserver : public pw::IntrusiveForwardList<BridgeObserver>::Item {
  public:
-  virtual ~BridgeObserver() = default;
+  virtual ~BridgeObserver() { unlist(); }
   virtual void notification(SystemEvent event) {
     if (event == SystemEvent::SAFE_STATE_ENTERED ||
         event == SystemEvent::UNSYNCHRONIZED) {
@@ -117,9 +120,12 @@ class BridgeObserver {
 namespace pb {
 inline void copy_string(char* dst, size_t dst_cap, etl::string_view src) {
   if (dst_cap == 0) return;
-  const size_t len = etl::min(src.size(), dst_cap - 1);
-  etl::copy_n(src.data(), len, dst);
-  dst[len] = '\0';
+  if (src.data() == nullptr || src.empty()) {
+    dst[0] = '\0';
+    return;
+  }
+  (void)pw::string::Copy(pw::string::ClampedCString(src.data(), src.size()),
+                         pw::span<char>(dst, dst_cap));
 }
 
 template <typename PbBytesField>
@@ -139,8 +145,7 @@ inline void copy_bytes(PbBytesField& dst, const uint8_t* src, size_t size) {
 
 }  // namespace bridge
 
-class BridgeClass : public etl::observable<bridge::BridgeObserver,
-                                           bridge::config::MAX_OBSERVERS> {
+class BridgeClass {
  public:
   class RpcChannelOutput final : public pw::rpc::ChannelOutput {
    public:
@@ -172,7 +177,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   bool awaitSynchronization(
       uint32_t timeout_ms = bridge::config::SYNC_TIMEOUT_MS,
       uint32_t poll_delay_ms = 2);
-  bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
+  bool isPostPassed() const { return _hasFlag(FLAG_POST_PASSED); }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
   void resetWcetStats();
 
@@ -220,7 +225,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   [[nodiscard]] bool sendLogStream(pw::span<const uint8_t> data);
 
   [[nodiscard]] bool isRpcTxReady() const {
-    return _state_flags.test(FLAG_TX_ENABLED) &&
+    return _hasFlag(FLAG_TX_ENABLED) &&
            (_shared_secret.empty() || _session_keys_ready);
   }
 
@@ -285,6 +290,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _initializeRuntime();
   void _unregisterRpcServices();
   void _initObservers();
+  void _clearObservers();
+  void _notifyObservers(bridge::SystemEvent event);
   void _handleReceivedHdlcFrame(const pw::hdlc::Frame& frame);
   bool _writeHdlcFrame(uint64_t address, pw::span<const uint8_t> data,
                        bool plaintext = false);
@@ -326,13 +333,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint32_t _pending_baudrate = 0;
   uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
 
-  etl::vector<uint8_t, 64> _shared_secret;
+  pw::Vector<uint8_t, 64> _shared_secret;
   // Contiguous RX||TX session keys let HKDF write directly into final storage.
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> _session_aead_keys{};
   uint64_t _tx_aead_counter{0};
   uint64_t _rx_aead_counter{0};
   bool _session_keys_ready{false};
   bridge::fsm::BridgeFsm _fsm;
+  pw::IntrusiveForwardList<bridge::BridgeObserver> _observers;
 
   void _watchdogTask();
   void _serialTask();
@@ -348,9 +356,21 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     FLAG_COUNT = 3
   };
 
+  bool _hasFlag(StateFlags flag) const {
+    return (_state_flags & static_cast<uint8_t>(1U << flag)) != 0U;
+  }
+  void _setFlag(StateFlags flag, bool enabled) {
+    const uint8_t mask = static_cast<uint8_t>(1U << flag);
+    if (enabled) {
+      _state_flags |= mask;
+    } else {
+      _state_flags &= static_cast<uint8_t>(~mask);
+    }
+  }
+
   uint32_t _timer_last_tick_ms = 0;
   uint32_t _last_reported_stack_used = 0;
-  etl::bitset<FLAG_COUNT> _state_flags;
+  uint8_t _state_flags{0};
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   uint32_t _wcet_max_micros = 0;
 
@@ -363,8 +383,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     uint32_t last_report_ms{0};
     bool active{false};
   };
-  etl::vector<SafetyPinEntry, bridge::config::MAX_SAFETY_PINS> _safety_pins;
-  etl::vector<PinSubscription, bridge::config::MAX_PIN_SUBSCRIPTIONS>
+  pw::Vector<SafetyPinEntry, bridge::config::MAX_SAFETY_PINS> _safety_pins;
+  pw::Vector<PinSubscription, bridge::config::MAX_PIN_SUBSCRIPTIONS>
       _pin_subscriptions;
   uint32_t _watchdog_timeout_ms{0};
   uint32_t _last_rx_ms{0};

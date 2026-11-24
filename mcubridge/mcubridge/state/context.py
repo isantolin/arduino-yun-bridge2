@@ -63,13 +63,6 @@ def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[cloud_gateway_p
     return asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish](maxsize=normalized)
 
 
-def _metric_prop(attr: str) -> Any:
-    return property(
-        lambda self: getattr(self.metrics, attr).value,
-        lambda self, val: setattr(getattr(self.metrics, attr), "value", val),
-    )
-
-
 class ProcessState(StrEnum):
     """[SIL-2] Deterministic lifecycle states for spawned subprocesses."""
 
@@ -167,9 +160,6 @@ class SerialLinkMachine(StateMachine):
     )
 
 
-LinkConnectionMachine = SerialLinkMachine
-
-
 class DaemonLifecycleMachine(StateMachine):
     """[SIL-2] Deterministic lifecycle FSM for BridgeService daemon."""
 
@@ -245,74 +235,6 @@ class CloudLinkMachine(StateMachine):
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers. [SIL-2]"""
 
-    metrics: DaemonMetrics
-    serial_writer: Any | None
-    state: str
-    connection_fsm: LinkConnectionMachine
-    cloud_link_state: str
-    cloud_fsm: CloudLinkMachine
-    cloud_queue_limit: int
-    cloud_publish_queue: asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish]
-    cloud_drop_counts: dict[str, int]
-    allow_non_tmp_paths: bool
-    datastore_cache: LmdbCache | None
-    mailbox_queue: LmdbDeque
-    mailbox_incoming_queue: LmdbDeque
-    serial_tx_allowed: asyncio.Event
-    console_to_mcu_queue: collections.deque[bytes]
-    running_processes: dict[int, ProcessContext]
-    process_lock: asyncio.Lock
-    allowed_policy: config_schema_pb2.AllowedCommandPolicy
-    topic_authorization: config_schema_pb2.TopicAuthorization | None
-    process_timeout: int
-    file_system_root: str
-    file_write_max_bytes: int
-    file_storage_quota_bytes: int
-    file_storage_bytes_used: int
-    file_write_limit_rejections: int
-    file_storage_limit_rejections: int
-    cloud_topic_prefix: str
-    watchdog_enabled: bool
-    watchdog_interval: float
-    last_watchdog_beat: float
-    mailbox_queue_limit: int
-    mcu_version: tuple[int, int, int] | None
-    _mcu_capabilities: mcu_wire_pb2.Capabilities | None
-    link_handshake_nonce: bytes | None
-    link_sync_event: asyncio.Event
-    link_cipher: LinkCipher | None
-    link_nonce_length: int
-    handshake_failure_streak: int
-    handshake_backoff_until: float
-    handshake_rate_until: float
-    last_handshake_error: str | None
-    last_handshake_unix: float
-    handshake_last_duration: float
-    handshake_fatal_count: int
-    handshake_fatal_reason: str | None
-    handshake_fatal_detail: str | None
-    handshake_fatal_unix: float
-    handshake_last_started: float
-    process_max_concurrent: int
-    unknown_command_last_id: int
-    config_source: str
-    serial_response_timeout_ms: int
-    supervisor_stats: dict[str, mcu_wire_pb2.SupervisorSnapshot]
-    cloud_dropped_messages: int
-    cloud_spool_corrupt_dropped: int
-    cloud_spool_dropped_limit: int
-    cloud_spool_trim_events: int
-    cloud_spool_last_trim_unix: float
-    cloud_spool_failure_reason: str | None
-    cloud_spool_pending_messages: int
-    clock_offset_us: int
-    clock_rtt_us: int
-    clock_sync_count: int
-    clock_last_sync_timestamp: float
-    clock_last_host_time_us: int
-    pin_subscriptions: dict[int, dict[str, Any]]
-    pin_events_count: int
-
     def __init__(self, **kwargs: Any) -> None:
         self.metrics: DaemonMetrics = kwargs.get("metrics") or DaemonMetrics()
         self.serial_writer: Any | None = kwargs.get("serial_writer")
@@ -379,15 +301,11 @@ class RuntimeState:
         self.supervisor_stats: dict[str, mcu_wire_pb2.SupervisorSnapshot] = kwargs.get("supervisor_stats") or {}
 
         self.cloud_dropped_messages: int = kwargs.get("cloud_dropped_messages", 0)
-        for _counter_field in (
-            "unknown_command_count",
-            "serial_decode_errors",
-            "handshake_attempts",
-            "handshake_successes",
-            "watchdog_beats",
-        ):
-            if _counter_field in kwargs:
-                setattr(self, _counter_field, int(kwargs[_counter_field]))
+        self.unknown_command_count: int = int(kwargs.get("unknown_command_count", 0))
+        self.serial_decode_errors: int = int(kwargs.get("serial_decode_errors", 0))
+        self.handshake_attempts: int = int(kwargs.get("handshake_attempts", 0))
+        self.handshake_successes: int = int(kwargs.get("handshake_successes", 0))
+        self.watchdog_beats: int = int(kwargs.get("watchdog_beats", 0))
 
         self.cloud_spool_corrupt_dropped: int = kwargs.get("cloud_spool_corrupt_dropped", 0)
         self.cloud_spool_dropped_limit: int = kwargs.get("cloud_spool_dropped_limit", 0)
@@ -402,7 +320,7 @@ class RuntimeState:
         self.clock_last_host_time_us: int = kwargs.get("clock_last_host_time_us", 0)
         self.pin_subscriptions: dict[int, dict[str, Any]] = kwargs.get("pin_subscriptions") or {}
         self.pin_events_count: int = kwargs.get("pin_events_count", 0)
-        self.connection_fsm: LinkConnectionMachine = LinkConnectionMachine(
+        self.connection_fsm: SerialLinkMachine = SerialLinkMachine(
             model=self,
             state_field="state",
             start_value=self.state,
@@ -500,17 +418,17 @@ class RuntimeState:
 
     def on_enter_connected(self) -> None:
         """[SIL-2] Native hook executed on entering connected state."""
-        self.metrics.link_state.state("connected")
+        self.metrics.link_state = "connected"
         self._set_event("serial_tx_allowed", True)
 
     def on_enter_disconnected(self) -> None:
         """[SIL-2] Native hook executed on entering disconnected state."""
-        self.metrics.link_state.state("disconnected")
+        self.metrics.link_state = "disconnected"
         self._set_event("link_sync_event", False)
 
     def on_enter_synchronized(self) -> None:
         """[SIL-2] Native hook executed on entering synchronized state."""
-        self.metrics.link_state.state("synchronized")
+        self.metrics.link_state = "synchronized"
         self._set_event("link_sync_event", True)
         self._set_event("serial_tx_allowed", True)
 
@@ -520,7 +438,7 @@ class RuntimeState:
 
     def on_enter_fault(self) -> None:
         """[SIL-2] Native hook executed on entering fault state."""
-        self.metrics.link_state.state("disconnected")
+        self.metrics.link_state = "disconnected"
         self._set_event("link_sync_event", False)
         self._set_event("serial_tx_allowed", False)
 
@@ -549,12 +467,6 @@ class RuntimeState:
     @fatal_count.setter
     def fatal_count(self, value: int) -> None:
         self.handshake_fatal_count = value
-
-    unknown_command_count: int = _metric_prop("unknown_command_count")
-    serial_decode_errors: int = _metric_prop("serial_decode_errors")
-    handshake_attempts: int = _metric_prop("handshake_attempts")
-    handshake_successes: int = _metric_prop("handshake_successes")
-    watchdog_beats: int = _metric_prop("watchdog_beats")
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
@@ -654,9 +566,9 @@ class RuntimeState:
             uptime = max(0.0, time.time() - psutil.boot_time())
         except (AttributeError, OSError) as exc:
             logger.debug("Failed to read system boot time for uptime metric", error=str(exc))
-            uptime = self.metrics.uptime_seconds.value
+            uptime = self.metrics.uptime_seconds
 
-        snapshot = mcu_wire_pb2.DaemonMetrics(
+        return mcu_wire_pb2.DaemonMetrics(
             cloud_queue_depth=self.cloud_publish_queue.qsize(),
             cloud_dropped_messages=self.cloud_dropped_messages,
             cloud_drop_counts=cloud_drop_counts,
@@ -681,16 +593,26 @@ class RuntimeState:
             heartbeat_unix=time.time(),
             watchdog_enabled=self.watchdog_enabled,
             watchdog_interval=self.watchdog_interval,
+            serial_bytes_sent=self.metrics.serial_bytes_sent,
+            serial_bytes_received=self.metrics.serial_bytes_received,
+            serial_frames_sent=self.metrics.serial_frames_sent,
+            serial_frames_received=self.metrics.serial_frames_received,
+            serial_retries=self.metrics.serial_retries,
+            serial_failures=self.metrics.serial_failures,
+            serial_crc_errors=self.metrics.serial_crc_errors,
+            serial_decode_errors=self.serial_decode_errors,
+            serial_latency_ms=self.metrics.serial_latency_ms,
+            rpc_latency_ms=self.metrics.rpc_latency_ms,
+            handshake_attempts=self.handshake_attempts,
+            handshake_successes=self.handshake_successes,
+            handshake_state=self.metrics.handshake_state,
+            link_state=self.metrics.link_state,
+            watchdog_beats=self.watchdog_beats,
             uptime_seconds=uptime,
+            cloud_messages_published=self.metrics.cloud_messages_published,
             retries=retries,
             mcu_status_counts=mcu_status_counts,
         )
-        for field in mcu_wire_pb2.DaemonMetrics.DESCRIPTOR.fields:
-            if field.name != "uptime_seconds" and hasattr(self.metrics, field.name):
-                metric = getattr(self.metrics, field.name)
-                if hasattr(metric, "value"):
-                    setattr(snapshot, field.name, metric.value)
-        return snapshot
 
     def build_status_snapshot(self) -> cloud_gateway_pb2.BridgeStatus:
         """Build a holistic snapshot of the bridge status. [SIL-2]"""

@@ -20,7 +20,7 @@ pw::rpc::NanopbUnaryReceiver<rpc_pb_MailboxAvailableResponse>
     MailboxClass::_avail_call;
 typename MailboxClass::MessageCallback MailboxClass::_message_callback;
 typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
-etl::circular_buffer<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
+pw::InlineQueue<MailboxClass::MailboxBuffer, MAILBOX_QUEUE_CAPACITY>
     MailboxClass::_queue;
 
 void MailboxClass::push(pw::span<const uint8_t> data) {
@@ -85,10 +85,10 @@ void MailboxClass::signalProcessed(uint32_t message_id) {
 void MailboxClass::_enqueue(pw::span<const uint8_t> data) {
   if (data.empty()) return;
   if (!_queue.full()) {
-    MailboxBuffer m;
-    const size_t sz = etl::min(data.size(), m.capacity());
+    _queue.emplace();
+    MailboxBuffer& m = _queue.back();
+    const size_t sz = etl::min(data.size(), m.max_size());
     m.assign(data.data(), data.data() + sz);
-    _queue.push(m);
   }
 }
 

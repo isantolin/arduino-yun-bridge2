@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import StrEnum
 import functools
 import operator
 import posixpath
@@ -44,17 +43,10 @@ logger = structlog.get_logger(__name__)
 {% for const in handshake_constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
-ZERO_NONCE: Final[bytes] = b"\x00" * AEAD_NONCE_SIZE
 
 {% for arch, val in architectures.items() %}
 ARCH_{{ arch|upper }}: Final[int] = {{ val }}
 {%- endfor %}
-
-ARCHITECTURE_DISPLAY_NAMES: Final[dict[int, str]] = {
-{%- for arch, val in architectures.items() %}
-    {{ val }}: {{ architecture_display_names.get(arch, arch)|tojson }},
-{%- endfor %}
-}
 
 {% for key, val in status_reasons.items() %}
 STATUS_REASON_{{ key|upper }}: Final[str] = {{ val|tojson }}
@@ -76,51 +68,6 @@ def path_within_roots(path: str, roots: frozenset[str]) -> bool:
         return False
     normalized = posixpath.normpath(path)
     return any(posixpath.commonpath((normalized, root)) == root for root in roots)
-
-
-class MetricKind(StrEnum):
-    """Prometheus collector kind declared by the Protobuf telemetry schema."""
-
-    GAUGE = "gauge"
-    COUNTER = "counter"
-
-
-class LineProtocolFieldKind(StrEnum):
-    """Value encoding declared for a telemetry field written using Line Protocol."""
-
-    INTEGER = "integer"
-    FLOAT = "float"
-    BOOLEAN = "boolean"
-
-
-@dataclass(frozen=True, slots=True)
-class MetricLabelSpec:
-    """Metric label sourced from a repeated Protobuf entry or a static schema value."""
-
-    name: str
-    field: str = ""
-    static_value: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class MetricSpec:
-    """Prometheus projection for one DaemonMetrics field."""
-
-    source_field: str
-    metric_name: str
-    help: str
-    kind: MetricKind
-    value_field: str | None = None
-    labels: tuple[MetricLabelSpec, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class LineProtocolFieldSpec:
-    """Line Protocol output field mapped to one scalar DaemonMetrics field."""
-
-    source_field: str
-    field_name: str
-    kind: LineProtocolFieldKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,43 +158,6 @@ OPERATIONS: Final[tuple[OperationSpec, ...]] = (
         {%- endif %}
     ),
 {%- endfor %}
-)
-
-METRICS: Final[tuple[MetricSpec, ...]] = (
-    {%- for metric in metrics %}
-    MetricSpec(
-        source_field={{ metric.source_field|tojson }},
-        metric_name={{ metric.metric_name|tojson }},
-        help={{ metric.help|tojson }},
-        kind={{ metric.kind }},
-        {%- if metric.value_field %}
-        value_field={{ metric.value_field|tojson }},
-        {%- endif %}
-        labels=(
-            {%- for label in metric.labels %}
-            MetricLabelSpec(
-                name={{ label.name|tojson }},
-                {%- if label.field %}
-                field={{ label.field|tojson }},
-                {%- endif %}
-                {%- if label.static_value is not none %}
-                static_value={{ label.static_value|tojson }},
-                {%- endif %}
-            ),
-            {%- endfor %}
-        ),
-    ),
-    {%- endfor %}
-)
-
-LINE_PROTOCOL_FIELDS: Final[tuple[LineProtocolFieldSpec, ...]] = (
-    {%- for field in line_protocol_fields %}
-    LineProtocolFieldSpec(
-        source_field={{ field.source_field|tojson }},
-        field_name={{ field.field_name|tojson }},
-        kind={{ field.kind }},
-    ),
-    {%- endfor %}
 )
 
 UBUS_SIGNATURES: Final[tuple[tuple[str, tuple[tuple[str, str], ...]], ...]] = (

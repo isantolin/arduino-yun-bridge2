@@ -4,11 +4,10 @@
 
 #include <EEPROM.h>
 #include <pw_stream/stream.h>
+#include <pw_transfer/cooperative_handler_registration.h>
 #include <pw_transfer/handler.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include "services/CooperativeTransferHandler.h"
 
 namespace bridge::services {
 namespace {
@@ -104,17 +103,17 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
       : pw::transfer::ReadWriteHandler(kEepromTransferResourceId) {}
 
   ~EepromTransferHandler() override {
-    registration_.detach(*this);
+    registration_.Detach(*this);
     g_eeprom_handler_destroyed = true;
   }
 
   bool attach(pw::transfer::TransferService& service,
               pw::transfer::TransferThread& thread) {
-    return registration_.attach(*this, service, thread);
+    return registration_.Attach(*this, service, thread);
   }
 
   bool detachFrom(const pw::transfer::TransferService& service) {
-    return registration_.detachFrom(*this, service);
+    return registration_.DetachFrom(*this, service);
   }
 
   pw::Status PrepareRead() override {
@@ -158,7 +157,7 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
                : pw::Status::FailedPrecondition();
   }
 
-  CooperativeTransferRegistration registration_;
+  pw::transfer::CooperativeHandlerRegistration registration_;
   EepromStream stream_;
 };
 

@@ -131,6 +131,18 @@ def decode_tokenized_log_payload(
     return str(detokenized_msg)
 
 
+def cancel_rpc_call(call: Any, reason: str, **log_context: Any) -> bool:
+    """Cancel a Pigweed RPC call, absorbing benign completion races."""
+    if call is None:
+        return False
+    try:
+        call.cancel()
+        return True
+    except (AttributeError, KeyError, OSError, RuntimeError, ValueError) as exc:
+        logger.debug(reason, error=str(exc), **log_context)
+        return False
+
+
 def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
     """Thread target to write raw bytes to serial device and flush immediately. [SIL-2]"""
     ser.write(data)
@@ -243,19 +255,9 @@ class SerialTransport:
         except (AttributeError, OSError, ValueError) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
-    @staticmethod
-    def _cancel_rpc_call(call: Any, reason: str, **log_context: Any) -> bool:
-        """Cancel a Pigweed RPC call, logging benign completion races."""
-        try:
-            call.cancel()
-            return True
-        except (AttributeError, KeyError, RuntimeError, ValueError) as exc:
-            logger.debug(reason, error=str(exc), **log_context)
-            return False
-
     async def reset(self) -> None:
         for call in tuple(self._active_rpc_calls):
-            self._cancel_rpc_call(call, "Unable to cancel pending Pigweed RPC during reset")
+            cancel_rpc_call(call, "Unable to cancel pending Pigweed RPC during reset")
         self.cancel_pin_stream()
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
@@ -266,9 +268,7 @@ class SerialTransport:
         """Explicitly cancel any active server-streaming RPC call."""
         call = self._stream_call
         self._stream_call = None
-        if call is None:
-            return False
-        return self._cancel_rpc_call(call, "Unable to cancel Pigweed server-streaming RPC")
+        return cancel_rpc_call(call, "Unable to cancel Pigweed server-streaming RPC")
 
     def _enqueue_stream_event(self, message: ProtobufMessage) -> None:
         """Buffer an incoming Pigweed server-streaming message with bounded backpressure."""
@@ -559,8 +559,8 @@ class SerialTransport:
 
     async def process_hdlc_frame(self, frame: Frame) -> None:
         """Processes a validated HDLC frame received from the serial link. [SIL-2]"""
-        self.state.metrics.serial_bytes_received.inc(len(frame.raw_encoded))
-        self.state.metrics.serial_frames_received.inc()
+        self.state.metrics.serial_bytes_received += len(frame.raw_encoded)
+        self.state.metrics.serial_frames_received += 1
         frame_data = frame.data
 
         if self.config.serial_shared_secret:
@@ -736,8 +736,8 @@ class SerialTransport:
                 logger.error("Serial write failed", label=label, error=str(exc))
                 return False
 
-        self.state.metrics.serial_bytes_sent.inc(len(encoded))
-        self.state.metrics.serial_frames_sent.inc()
+        self.state.metrics.serial_bytes_sent += len(encoded)
+        self.state.metrics.serial_frames_sent += 1
         return True
 
     async def _write_rpc_packet(self, packet: bytes) -> bool:
@@ -853,10 +853,10 @@ class SerialTransport:
             async with asyncio.timeout(timeout):
                 return await completion
         except TimeoutError:
-            self._cancel_rpc_call(call, "Pigweed RPC cancellation raced with completion", method=method_name)
+            cancel_rpc_call(call, "Pigweed RPC cancellation raced with completion", method=method_name)
             raise
         except asyncio.CancelledError:
-            self._cancel_rpc_call(call, "Pigweed RPC cancellation raced with task cancellation", method=method_name)
+            cancel_rpc_call(call, "Pigweed RPC cancellation raced with task cancellation", method=method_name)
             raise
         finally:
             self._active_rpc_calls.discard(call)

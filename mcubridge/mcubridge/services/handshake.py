@@ -201,7 +201,7 @@ class SerialHandshakeManager:
             return
 
         self.fsm.current_state_value = new_state.value
-        self._state.metrics.handshake_state.state(new_state)
+        self._state.metrics.handshake_state = new_state.value
         if new_state == HandshakeState.SYNCHRONIZED:
             self.on_enter_synchronized()
         elif old_state == HandshakeState.SYNCHRONIZED:
@@ -218,7 +218,7 @@ class SerialHandshakeManager:
 
     def after_transition(self, event: str, source: State, target: State) -> None:
         """[SIL-2] Native observer recording deterministic state metrics."""
-        self._state.metrics.handshake_state.state(HandshakeState(target.value))
+        self._state.metrics.handshake_state = HandshakeState(target.value).value
 
     def transition(self, event: HandshakeEvent) -> HandshakeState:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""

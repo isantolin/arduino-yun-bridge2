@@ -9,6 +9,8 @@ using Hypothesis RuleBasedStateMachine for mathematical reproducibility and mini
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
+import subprocess
 from typing import Annotated, Any, ClassVar, cast
 
 import hypothesis.stateful as h_stateful
@@ -21,6 +23,9 @@ import typer
 
 from mcubridge.protocol import protocol
 from mcubridge.transport.serial import resolve_serial_url
+from tools.emulation.process_utils import terminate_process_tree, wait_for_path_ready
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Any, h_stateful
@@ -151,14 +156,44 @@ def main(
     port: Annotated[str, typer.Option("--port", help="Serial port URL or device node")] = "/dev/ttyUSB0",
     baud: Annotated[int, typer.Option("--baud", help="Serial baudrate")] = protocol.DEFAULT_BAUDRATE,
     count: Annotated[int, typer.Option("--count", help="Number of stateful steps to execute")] = 1000,
+    emulator: Annotated[
+        bool,
+        typer.Option("--emulator", help="Launch local bridge_control_emulator over a temporary socat PTY"),
+    ] = False,
 ) -> None:
     """Run Hypothesis-driven stateful protocol fuzzing against a target serial endpoint."""
     if count <= 0:
         raise ValueError("count must be greater than 0")
 
-    logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count)
+    socat_proc: subprocess.Popen[bytes] | None = None
+    fuzz_pty: Path | None = None
+    target_port = port
+    if emulator:
+        compile_script = REPO_ROOT / "tools" / "ci" / "compile_emulator.sh"
+        emulator_bin = REPO_ROOT / "mcubridge-library-arduino" / "tests" / "bridge_control_emulator"
+        if not emulator_bin.exists() and compile_script.exists():
+            subprocess.run(["bash", str(compile_script)], cwd=str(REPO_ROOT), check=True)
+        fuzz_pty = Path("/tmp/ttyBRIDGE_FUZZ")
+        fuzz_pty.unlink(missing_ok=True)
+        socat_proc = subprocess.Popen(
+            [
+                "socat",
+                "-d",
+                "-d",
+                f"PTY,link={fuzz_pty},raw,echo=0",
+                f'EXEC:"{emulator_bin}",pty,raw,echo=0',
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(REPO_ROOT),
+        )
+        if not wait_for_path_ready(fuzz_pty, timeout=4.0, interval=0.2):
+            terminate_process_tree([socat_proc], timeout=2.0)
+            raise RuntimeError("PTY device never appeared")
+        target_port = str(fuzz_pty)
 
-    ProtocolFuzzerStateMachine.port = port
+    logger.info("starting_fuzzer_state_machine", port=target_port, baudrate=baud, steps=count)
+    ProtocolFuzzerStateMachine.port = target_port
     ProtocolFuzzerStateMachine.baudrate = baud
 
     try:
@@ -166,6 +201,11 @@ def main(
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")
+    finally:
+        if socat_proc is not None:
+            terminate_process_tree([socat_proc], timeout=2.0)
+        if fuzz_pty is not None:
+            fuzz_pty.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

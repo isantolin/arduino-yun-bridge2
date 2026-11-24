@@ -440,66 +440,6 @@ def _build_operations_catalog(
     return operations
 
 
-def _find_daemon_metrics_desc(all_descs: list[Any]) -> Any:
-    return next(msg for desc in all_descs for msg in desc.message_types_by_name.values() if msg.name == "DaemonMetrics")
-
-
-def _extract_metric_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
-    """Build the gateway metric catalog from DaemonMetrics field options."""
-    metric_kinds = {
-        pb_module.PROMETHEUS_METRIC_KIND_GAUGE: "MetricKind.GAUGE",
-        pb_module.PROMETHEUS_METRIC_KIND_COUNTER: "MetricKind.COUNTER",
-    }
-    metric_specs: list[dict[str, Any]] = []
-    for field in _find_daemon_metrics_desc(all_descs).fields:
-        field_options = field.GetOptions()
-        if not field_options.HasExtension(pb_module.telemetry_metric):
-            continue
-        option = field_options.Extensions[pb_module.telemetry_metric]
-        if not option.prometheus_name:
-            continue
-        labels = [
-            {
-                "name": lbl.name,
-                "field": lbl.field if lbl.WhichOneof("value_source") == "field" else None,
-                "static_value": lbl.static_value if lbl.WhichOneof("value_source") == "static_value" else None,
-            }
-            for lbl in option.labels
-        ]
-        metric_specs.append(
-            {
-                "source_field": field.name,
-                "metric_name": option.prometheus_name,
-                "help": option.prometheus_help,
-                "kind": metric_kinds[option.prometheus_kind],
-                "value_field": option.value_field or None,
-                "labels": labels,
-            }
-        )
-    return metric_specs
-
-
-def _extract_line_protocol_specs(pb_module: Any, all_descs: list[Any]) -> list[dict[str, Any]]:
-    """Build ordered Line Protocol field projections from DaemonMetrics options."""
-    field_kinds = {
-        pb_module.LINE_PROTOCOL_FIELD_KIND_INTEGER: "LineProtocolFieldKind.INTEGER",
-        pb_module.LINE_PROTOCOL_FIELD_KIND_FLOAT: "LineProtocolFieldKind.FLOAT",
-        pb_module.LINE_PROTOCOL_FIELD_KIND_BOOLEAN: "LineProtocolFieldKind.BOOLEAN",
-    }
-    line_fields = [
-        {
-            "source_field": field.name,
-            "field_name": opt.line_protocol_name,
-            "kind": field_kinds[opt.line_protocol_kind],
-            "order": opt.line_protocol_order,
-        }
-        for field in _find_daemon_metrics_desc(all_descs).fields
-        if field.GetOptions().HasExtension(pb_module.telemetry_metric)
-        and (opt := field.GetOptions().Extensions[pb_module.telemetry_metric]).line_protocol_name
-    ]
-    return sorted(line_fields, key=lambda item: item["order"])
-
-
 def _extract_operations_context(
     pb_module: Any,
     all_descs: list[Any],
@@ -547,8 +487,6 @@ def _extract_operations_context(
     operations = _build_operations_catalog(mcu_methods, msg_topics, telem_map, pb_module)
     return {
         "operations": operations,
-        "metrics": _extract_metric_specs(pb_module, all_descs),
-        "line_protocol_fields": _extract_line_protocol_specs(pb_module, all_descs),
         "message_topics": msg_topics,
         "telemetry_topic_field_map": telem_map,
         "telemetry_default_field": default_telem,
@@ -590,9 +528,6 @@ def _extract_runtime_config_context(pb_module: Any, opts: Any, py_consts: list[d
         "client_runtime_config_constants": cl_rt_consts,
         "runtime_config_fields": cfg_fields,
         "architectures": {a.name: a.value for a in opts.Extensions[pb_module.architectures]},
-        "architecture_display_names": {
-            a.name: a.display_name for a in opts.Extensions[pb_module.architectures] if a.display_name
-        },
         "cloud_defaults": _message_to_dict(opts.Extensions[pb_module.cloud_defaults]),
         "status_reasons": status_reasons,
         "spi_bit_orders": [{"name": v.name, "value": v.number} for v in pb_module.SpiBitOrder.DESCRIPTOR.values],

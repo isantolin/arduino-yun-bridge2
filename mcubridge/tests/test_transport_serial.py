@@ -689,7 +689,7 @@ async def test_serial_transport_process_hdlc_log_frame(
     mock_frame.data = b"\x01\x02\x03\x04"
     mock_frame.raw_encoded = b"~test~"
     await transport.process_hdlc_frame(mock_frame)
-    assert runtime_state.metrics.serial_frames_received.value >= 1
+    assert runtime_state.metrics.serial_frames_received >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -907,7 +907,7 @@ async def test_frames_without_service_or_unknown_address_are_consumed(
 
     transport = SerialTransport(runtime_config, runtime_state, None)
     mcu_cipher = _install_link_cipher(runtime_config, runtime_state)
-    before = runtime_state.metrics.serial_frames_received.value
+    before = runtime_state.metrics.serial_frames_received
 
     await transport.feed_data(
         ui_frame(
@@ -920,7 +920,7 @@ async def test_frames_without_service_or_unknown_address_are_consumed(
     )
     await transport.feed_data(ui_frame(0x55, mcu_cipher.encrypt(0x55, b"ignored")))
 
-    assert runtime_state.metrics.serial_frames_received.value == before + 3
+    assert runtime_state.metrics.serial_frames_received == before + 3
     assert runtime_state.serial_decode_errors == 0
 
 

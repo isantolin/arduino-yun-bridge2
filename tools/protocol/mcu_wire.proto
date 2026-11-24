@@ -169,12 +169,6 @@ message ProcessKill {
   uint32 pid = 1;
 }
 
-message HandshakeConfig {
-  uint32 ack_timeout_ms = 1;
-  uint32 ack_retry_limit = 2;
-  uint32 response_timeout_ms = 3;
-}
-
 message SetBaudratePacket {
   uint32 baudrate = 1;
 }
@@ -471,7 +465,7 @@ service SystemService {
     option (pre_sync_allowed) = true;
   }
   rpc LinkReset(rpc.pb.SubscribeRequest) returns (rpc.pb.Empty) {
-    option (method_description) = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters.";
+    option (method_description) = "Reset link state and clear any active session keys prior to LinkSync.";
   }
   rpc GetCapabilities(rpc.pb.SubscribeRequest) returns (rpc.pb.Capabilities);
   rpc SetBaudrate(rpc.pb.SetBaudratePacket) returns (rpc.pb.SetBaudratePacket);

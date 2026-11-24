@@ -18,6 +18,7 @@ from mcubridge.services.handshake import (
     HandshakeEvent,
     HandshakeState,
     SerialHandshakeManager,
+    SerialTiming,
 )
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
@@ -183,7 +184,7 @@ async def test_handshake_rejects_response_without_valid_mcu_nonce(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(response_timeout_ms=0),
+        serial_timing=SerialTiming(response_timeout_ms=0),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )
@@ -210,7 +211,7 @@ async def test_handshake_session_key_and_transition_failure_branches(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(response_timeout_ms=0),
+        serial_timing=SerialTiming(response_timeout_ms=0),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )

@@ -33,6 +33,7 @@ from mcubridge.services.handshake import (
     HandshakeState,
     RateLimiter,
     SerialHandshakeManager,
+    SerialTiming,
     derive_serial_timing,
 )
 from mcubridge.state.context import (
@@ -302,7 +303,7 @@ def test_handshake_state_machine() -> None:
 @pytest.fixture
 def handshake_setup(
     tmp_path: Path,
-) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock]]:
+) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock]]:
     config = RuntimeConfig(
         topic_prefix="br",
         serial_port="/dev/test",
@@ -331,9 +332,7 @@ def handshake_setup(
 
 @pytest.mark.timeout(10)
 async def test_handshake_auth_mismatch(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify rejection of invalid HMAC tags during sync."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -361,9 +360,7 @@ async def test_handshake_auth_mismatch(
 
 
 async def test_handshake_rate_limiting(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify handshake rate limiting protects MCU from thrashing."""
     manager, state, _, config, _timing, _ack = handshake_setup
@@ -380,9 +377,7 @@ async def test_handshake_rate_limiting(
 
 
 async def test_handshake_fatal_threshold(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify transition to permanent failure after threshold is reached."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -396,9 +391,7 @@ async def test_handshake_fatal_threshold(
 
 
 async def test_handshake_streak_fatal_threshold(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify transition to permanent failure after streak threshold is reached for non-immediate errors."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -416,9 +409,7 @@ async def test_handshake_streak_fatal_threshold(
 
 @pytest.mark.timeout(10)
 async def test_handshake_capabilities_retry(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify capabilities discovery retries on timeout then succeeds with valid payload."""
     manager, _state, send_frame, _config, timing, _ack = handshake_setup
@@ -446,9 +437,7 @@ async def test_handshake_capabilities_retry(
 
 @pytest.mark.timeout(10)
 async def test_handshake_capabilities_corrupt_payload(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify capabilities discovery returns False immediately on corrupt payload. [SIL-2]"""
     manager, _state, send_frame, _config, timing, _ack = handshake_setup
@@ -467,9 +456,7 @@ async def test_handshake_capabilities_corrupt_payload(
 
 @pytest.mark.timeout(10)
 async def test_handshake_malformed_sync_resp(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     """Verify handling of corrupt protobuf in sync response."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -481,9 +468,7 @@ async def test_handshake_malformed_sync_resp(
 
 
 async def test_wait_for_link_sync_confirmation_timeout(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     manager, state, _, _config, _timing, _ack = handshake_setup
     _timing.response_timeout_ms = 1
@@ -495,9 +480,7 @@ async def test_wait_for_link_sync_confirmation_timeout(
 
 @pytest.mark.timeout(1)
 async def test_wait_for_link_sync_confirmation_uses_retry_timeout(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     manager, state, _, config, timing, _ack = handshake_setup
     timing.response_timeout_ms = 60_000
@@ -508,9 +491,7 @@ async def test_wait_for_link_sync_confirmation_uses_retry_timeout(
 
 
 async def test_handshake_attempt_link_sync_timeout(
-    handshake_setup: tuple[
-        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
-    ],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, SerialTiming, AsyncMock],
 ) -> None:
     manager, _state, _, _config, _timing, _ack = handshake_setup
     manager.sync_waiter = AsyncMock(return_value=False)
@@ -563,7 +544,7 @@ async def test_handshake_wait_confirmation_already_synchronized(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )
@@ -580,7 +561,7 @@ async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, 
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=mock_send,
         enqueue_cloud=AsyncMock(),
     )
@@ -625,7 +606,7 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )
@@ -639,7 +620,7 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )
@@ -666,7 +647,7 @@ async def test_handshake_capabilities_protobuf_message(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=AsyncMock(return_value=caps),
         enqueue_cloud=AsyncMock(),
     )
@@ -681,7 +662,7 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=mock_cloud,
     )
@@ -714,7 +695,7 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(),
+        serial_timing=SerialTiming(),
         send_frame=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
     )
@@ -755,7 +736,7 @@ async def test_handshake_send_failures_and_capabilities_branches(
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
-        serial_timing=pb.HandshakeConfig(response_timeout_ms=10),
+        serial_timing=SerialTiming(response_timeout_ms=10),
         send_frame=send_mock,
         enqueue_cloud=AsyncMock(),
     )
@@ -789,3 +770,38 @@ async def test_handshake_send_failures_and_capabilities_branches(
 
     # 4. Let background capabilities discovery task (scheduled by handle_link_sync_resp) run
     await asyncio.sleep(0.02)
+
+
+async def test_handshake_link_reset_sends_subscribe_request_matching_schema(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """R26 regression: LinkReset sends SubscribeRequest matching mcu_wire.proto."""
+    sent_frames: list[tuple[Any, Any]] = []
+
+    async def _capture_send(
+        command_id: int | str | protocol.OperationSpec | tuple[int, int],
+        payload: bytes | ProtobufMessage,
+        seq_id: int | None = None,
+    ) -> bool:
+        _ = seq_id
+        sent_frames.append((command_id, payload))
+        return True
+
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=derive_serial_timing(runtime_config),
+        send_frame=_capture_send,
+        enqueue_cloud=AsyncMock(),
+        sync_waiter=AsyncMock(return_value=True),
+    )
+
+    assert await hs.synchronize_attempt() is True
+    assert len(sent_frames) >= 2
+    reset_cmd, reset_payload = sent_frames[0]
+    assert reset_cmd == "rpc.pb.SystemService/LinkReset"
+    reset_spec = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
+    assert reset_spec.request_type is pb.SubscribeRequest
+    assert isinstance(reset_payload, pb.SubscribeRequest)
+    assert reset_payload.SerializeToString() == b""

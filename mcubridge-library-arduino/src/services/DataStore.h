@@ -5,7 +5,6 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 
-#include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/string_view.h>
 #include <pw_span/span.h>
@@ -22,17 +21,19 @@ class DataStoreClass : public bridge::BridgeObserver {
   static void set(etl::string_view key, pw::span<const uint8_t> value);
   void get(etl::string_view key, GetHandler handler);
 
-  void _onResponse(const rpc_pb_DatastoreGetResponse& msg);
+  void _onResponse(const rpc_pb_DatastoreGetResponse& msg,
+                   pw::Status status = pw::OkStatus());
+  void _onError(pw::Status status);
 
   void onLost() override {
     _get_call = {};
-    _pending_gets.clear();
+    _pending_get_handler = {};
   }
 
  private:
+  static_assert(bridge::config::MAX_PENDING_DATASTORE >= 1U);
   pw::rpc::NanopbUnaryReceiver<rpc_pb_DatastoreGetResponse> _get_call{};
-  etl::circular_buffer<GetHandler, bridge::config::MAX_PENDING_DATASTORE>
-      _pending_gets;
+  GetHandler _pending_get_handler{};
 };
 
 using DataStoreType = DataStoreClass;

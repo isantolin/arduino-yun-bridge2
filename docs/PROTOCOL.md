@@ -624,8 +624,8 @@ HDLC Wire Frame:
 ```
 
 - **`rpc.pb.SystemService/LinkReset` (Linux → MCU)**
-  - Petición: opcionalmente `LinkReset { ack_timeout_ms, retry_limit, response_timeout_ms }`.
-  - Respuesta: `AckPacket`.
+  - Petición: `SubscribeRequest` (vacía).
+  - Respuesta: `Empty`.
 
 - **`rpc.pb.SystemService/SetBaudrate` (Linux → MCU)**
   - Petición: `SetBaudratePacket { baudrate: uint32 }`.

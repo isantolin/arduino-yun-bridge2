@@ -527,7 +527,7 @@ def test_console_requires_explicit_authentication_or_insecure_opt_in(monkeypatch
     """Never silently start a plaintext console session when no secret is configured."""
     monkeypatch.delenv("MCUBRIDGE_SERIAL_SHARED_SECRET", raising=False)
     monkeypatch.setattr(pw_bridge_console, "get_config_source", lambda: "defaults")
-    monkeypatch.setattr(pw_bridge_console, "load_runtime_config", lambda: pb.RuntimeConfig())
+    monkeypatch.setattr(pw_bridge_console, "load_runtime_config", pb.RuntimeConfig)
     with pytest.raises(ValueError, match="No serial shared secret is available"):
         pw_bridge_console.resolve_link_secret()
     assert pw_bridge_console.resolve_link_secret(insecure=True) == b""

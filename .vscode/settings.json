@@ -147,5 +147,19 @@
       "pathGlob": "mcubridge-gateway-cpp/build*",
       "targetInferencePattern": "?"
     }
+  ],
+  "bazel.executable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/bazelisk/bazelisk-linux_amd64",
+  "bazel.buildifier.executable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/buildifier/buildifier-linux_amd64",
+  "clangd.path": "/home/ignaciosantolin/.cache/bazel/_bazel_ignaciosantolin/b1901e6fb4e6a3ffd801aac1ec9c1400/execroot/_main/bazel-out/k8-fastbuild/bin/external/pigweed+/pw_toolchain/host_clang/clangd",
+  "bazel.codeLens.enable": true,
+  "pigweed.disableBazelSettingsRecommendations": true,
+  "pigweed.codeAnalysisTarget": "@@bazel_tools____tools__host_platform",
+  "pigweed.codeAnalysisTargetDir": "/home/ignaciosantolin/arduino-yun-bridge2/.compile_commands/@@bazel_tools____tools__host_platform",
+  "clangd.arguments": [
+    "--compile-commands-dir=/home/ignaciosantolin/arduino-yun-bridge2/.compile_commands/@@bazel_tools____tools__host_platform",
+    "--query-driver=/*",
+    "--header-insertion=never",
+    "--background-index",
+    "-j=1"
   ]
 }

@@ -398,6 +398,7 @@ class SecureHdlcReader(CancellableReader):
         *,
         initial_bytes: bytes = b"",
     ) -> None:
+        super().__init__(reader)
         self._reader = reader
         self._cipher = cipher
         self._decoder = FrameDecoder()

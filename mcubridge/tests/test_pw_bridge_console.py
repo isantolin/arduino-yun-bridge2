@@ -436,8 +436,10 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
                 continue
             packet = pw_packets.decode(frame.data)
             if (
-                packet.service_id != protocol.BY_NAME["rpc.pb.SystemService/LinkSync"].service_id
-                or packet.method_id != protocol.BY_NAME["rpc.pb.SystemService/LinkSync"].method_id
+                (packet.service_id & 0xFFFFFFFF)
+                != (protocol.BY_NAME["rpc.pb.SystemService/LinkSync"].service_id & 0xFFFFFFFF)
+                or (packet.method_id & 0xFFFFFFFF)
+                != (protocol.BY_NAME["rpc.pb.SystemService/LinkSync"].method_id & 0xFFFFFFFF)
                 or packet.type != PacketType.REQUEST
             ):
                 continue

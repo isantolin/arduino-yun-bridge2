@@ -368,9 +368,7 @@ def establish_link_security(
                 if _require_rpc_ids(packet.service_id, packet.method_id) != _LINK_SYNC_IDS or packet.call_id != 2:
                     continue
                 if packet.type != PacketType.RESPONSE or packet.status != 0:
-                    raise ConnectionError(
-                        f"MCU rejected LinkSync (packet_type={packet.type}, status={packet.status})"
-                    )
+                    raise ConnectionError(f"MCU rejected LinkSync (packet_type={packet.type}, status={packet.status})")
 
                 response = mcu_wire_pb2.LinkSync.FromString(packet.payload)
                 if not hmac.compare_digest(response.nonce, host_nonce):
@@ -384,11 +382,7 @@ def establish_link_security(
                 if not hmac.compare_digest(response.tag, expected_tag):
                     raise ConnectionError("MCU LinkSync response authentication failed")
 
-                cipher = (
-                    LinkCipher.for_host(shared_secret, host_nonce, response.mcu_nonce)
-                    if shared_secret
-                    else None
-                )
+                cipher = LinkCipher.for_host(shared_secret, host_nonce, response.mcu_nonce) if shared_secret else None
                 return cipher, chunk[byte_index + 1 :]  # noqa: E203
 
     raise TimeoutError(f"Timed out waiting {response_timeout_s:.1f}s for authenticated MCU LinkSync v2 response")
@@ -460,7 +454,9 @@ class SecureHdlcWriter:
                 raise ValueError("Pigweed console produced a malformed RPC packet") from exc
             method_key = _require_rpc_ids(packet.service_id, packet.method_id)
             if packet.type == PacketType.REQUEST and method_key in self._protected_control_ids:
-                raise ValueError("LinkReset/LinkSync cannot be issued from the REPL; restart the console to re-handshake")
+                raise ValueError(
+                    "LinkReset/LinkSync cannot be issued from the REPL; restart the console to re-handshake"
+                )
 
         payload = self._cipher.encrypt(frame.address, frame.data) if self._cipher is not None else frame.data
         self._transport.writer(ui_frame(frame.address, payload))
@@ -486,6 +482,7 @@ def create_secure_rpc_io(
         SecureHdlcWriter(transport, cipher),
         cipher is not None,
     )
+
 
 def create_rpc_client(
     reader: CancellableReader,
@@ -607,8 +604,9 @@ def build_check_summary(
     detokenizer, loaded_db = build_detokenizer(token_database, firmware=firmware)
     shared_secret = resolve_link_secret(insecure=insecure)
     protos = load_rpc_protos()
+    link_security = "unauthenticated (explicit opt-in)" if not shared_secret else "authenticated ChaCha20-Poly1305"
     return {
-        "link_security": "unauthenticated (explicit opt-in)" if not shared_secret else "authenticated ChaCha20-Poly1305",
+        "link_security": link_security,
         "app_title": APP_TITLE,
         "device": device,
         "resolved_url": resolve_console_endpoint(device),

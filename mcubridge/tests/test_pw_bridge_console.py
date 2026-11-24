@@ -31,7 +31,6 @@ from tools.console import pw_bridge_console
 _PW_METRIC_TOKEN_MASK = 0x0FFFFFFF
 
 
-
 def _fixed32_id(value: int | None) -> int:
     """Return a fixed32 RPC identifier as an unsigned Python integer."""
     if value is None:
@@ -449,18 +448,16 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
             link_sync_spec = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
             link_sync_ids = (_fixed32_id(link_sync_spec.service_id), _fixed32_id(link_sync_spec.method_id))
             if (
-                (_fixed32_id(packet.service_id), _fixed32_id(packet.method_id)) != link_sync_ids
-                or packet.type != PacketType.REQUEST
-            ):
+                _fixed32_id(packet.service_id),
+                _fixed32_id(packet.method_id),
+            ) != link_sync_ids or packet.type != PacketType.REQUEST:
                 continue
 
             request = pb.LinkSync.FromString(packet.payload)
             response = pb.LinkSync(
                 nonce=request.nonce,
                 mcu_nonce=mcu_nonce,
-                tag=SerialHandshakeManager.calculate_handshake_response_tag(
-                    secret, request.nonce, mcu_nonce
-                ),
+                tag=SerialHandshakeManager.calculate_handshake_response_tag(secret, request.nonce, mcu_nonce),
             )
             response_packet = protocol.encode_rpc_packet(
                 "rpc.pb.SystemService/LinkSync",
@@ -504,9 +501,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
         call_id=17,
     )
     secure_writer(ui_frame(protocol.HDLC_ADDRESS_RPC, request_packet))
-    encrypted_request = next(
-        frame.data for frame in FrameDecoder().process(wire_writes[-1]) if frame.ok()
-    )
+    encrypted_request = next(frame.data for frame in FrameDecoder().process(wire_writes[-1]) if frame.ok())
     assert mcu_cipher.decrypt(protocol.HDLC_ADDRESS_RPC, encrypted_request) == request_packet
 
     response_packet = protocol.encode_rpc_packet(
@@ -545,7 +540,6 @@ def test_console_requires_explicit_authentication_or_insecure_opt_in(monkeypatch
     assert pw_bridge_console.resolve_link_secret(insecure=True) == b""
 
 
-
 def test_console_closes_transport_when_handshake_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """Close the serial/socket even when LinkSync times out before RPC client creation."""
     reader = _QueueReader()
@@ -564,6 +558,7 @@ def test_console_closes_transport_when_handshake_fails(monkeypatch: pytest.Monke
         read_chunk=lambda _size: b"",
         flush=lambda: None,
     )
+
     def fake_resolve_link_secret(*, insecure: bool = False) -> bytes:
         del insecure
         return b"test-secret"
@@ -589,6 +584,7 @@ def test_console_closes_transport_when_handshake_fails(monkeypatch: pytest.Monke
         pw_bridge_console.run_console(device="test", insecure=False)
 
     assert closed
+
 
 def test_binary_token_database_and_elf_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify binary Pigweed token DB loading and firmware ELF auto-discovery fallback."""

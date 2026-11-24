@@ -618,12 +618,11 @@ def audit_proto_usage(root: Path | None = None) -> list[str]:
             )
 
     for enum_desc in pb.DESCRIPTOR.enum_types_by_name.values():
-        if enum_desc.name != "Status":
-            findings.extend(
-                f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}"
-                for value_desc in enum_desc.values
-                if not value_desc.name.endswith("_UNSPECIFIED") and value_desc.name not in identifier_suffixes
-            )
+        findings.extend(
+            f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}"
+            for value_desc in enum_desc.values
+            if not value_desc.name.endswith("_UNSPECIFIED") and value_desc.name not in identifier_suffixes
+        )
 
     descriptors: tuple[FileDescriptor, ...] = (
         pb.DESCRIPTOR,

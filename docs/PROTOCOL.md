@@ -515,25 +515,25 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 
 El protocolo utiliza los códigos de estado canónicos de Pigweed (`pw::Status` / `pw_status.Status`):
 
-| Código | Nombre | Constante C++ | Descripción |
+| Código | Nombre | Constructor C++ (`pw::Status`) | Descripción |
 | --- | --- | --- | --- |
-| `0` | `OK` | `StatusCode::STATUS_OK` | Operación completada con éxito. |
-| `1` | `CANCELLED` | `StatusCode::STATUS_CANCELLED` | La operación fue cancelada. |
-| `2` | `UNKNOWN` | `StatusCode::STATUS_UNKNOWN` | Error genérico o desconocido. |
-| `3` | `INVALID_ARGUMENT` | `StatusCode::STATUS_INVALID_ARGUMENT` | Argumento o estructura de payload inválido. |
-| `4` | `DEADLINE_EXCEEDED` | `StatusCode::STATUS_DEADLINE_EXCEEDED` | Tiempo límite de operación excedido (timeout). |
-| `5` | `NOT_FOUND` | `StatusCode::STATUS_NOT_FOUND` | Entidad o recurso no encontrado. |
-| `6` | `ALREADY_EXISTS` | `StatusCode::STATUS_ALREADY_EXISTS` | La entidad ya existe. |
-| `7` | `PERMISSION_DENIED` | `StatusCode::STATUS_PERMISSION_DENIED` | Acceso no autorizado para el llamador. |
-| `8` | `RESOURCE_EXHAUSTED` | `StatusCode::STATUS_RESOURCE_EXHAUSTED` | Recurso agotado o desbordamiento de buffer. |
-| `9` | `FAILED_PRECONDITION` | `StatusCode::STATUS_FAILED_PRECONDITION` | El sistema no se encuentra en el estado requerido. |
-| `10` | `ABORTED` | `StatusCode::STATUS_ABORTED` | Operación abortada. |
-| `11` | `OUT_OF_RANGE` | `StatusCode::STATUS_OUT_OF_RANGE` | Índice o valor fuera de rango. |
-| `12` | `UNIMPLEMENTED` | `StatusCode::STATUS_UNIMPLEMENTED` | Operación definida pero no implementada. |
-| `13` | `INTERNAL` | `StatusCode::STATUS_INTERNAL` | Fallo interno del sistema. |
-| `14` | `UNAVAILABLE` | `StatusCode::STATUS_UNAVAILABLE` | Servicio o transporte no disponible. |
-| `15` | `DATA_LOSS` | `StatusCode::STATUS_DATA_LOSS` | Pérdida irrecuperable de datos o fallo CRC. |
-| `16` | `UNAUTHENTICATED` | `StatusCode::STATUS_UNAUTHENTICATED` | Fallo de autenticación en handshake o trama. |
+| `0` | `OK` | `pw::OkStatus()` | Operación completada con éxito. |
+| `1` | `CANCELLED` | `pw::Status::Cancelled()` | La operación fue cancelada. |
+| `2` | `UNKNOWN` | `pw::Status::Unknown()` | Error genérico o desconocido. |
+| `3` | `INVALID_ARGUMENT` | `pw::Status::InvalidArgument()` | Argumento o estructura de payload inválido. |
+| `4` | `DEADLINE_EXCEEDED` | `pw::Status::DeadlineExceeded()` | Tiempo límite de operación excedido (timeout). |
+| `5` | `NOT_FOUND` | `pw::Status::NotFound()` | Entidad o recurso no encontrado. |
+| `6` | `ALREADY_EXISTS` | `pw::Status::AlreadyExists()` | La entidad ya existe. |
+| `7` | `PERMISSION_DENIED` | `pw::Status::PermissionDenied()` | Acceso no autorizado para el llamador. |
+| `8` | `RESOURCE_EXHAUSTED` | `pw::Status::ResourceExhausted()` | Recurso agotado o desbordamiento de buffer. |
+| `9` | `FAILED_PRECONDITION` | `pw::Status::FailedPrecondition()` | El sistema no se encuentra en el estado requerido. |
+| `10` | `ABORTED` | `pw::Status::Aborted()` | Operación abortada. |
+| `11` | `OUT_OF_RANGE` | `pw::Status::OutOfRange()` | Índice o valor fuera de rango. |
+| `12` | `UNIMPLEMENTED` | `pw::Status::Unimplemented()` | Operación definida pero no implementada. |
+| `13` | `INTERNAL` | `pw::Status::Internal()` | Fallo interno del sistema. |
+| `14` | `UNAVAILABLE` | `pw::Status::Unavailable()` | Servicio o transporte no disponible. |
+| `15` | `DATA_LOSS` | `pw::Status::DataLoss()` | Pérdida irrecuperable de datos o fallo CRC. |
+| `16` | `UNAUTHENTICATED` | `pw::Status::Unauthenticated()` | Fallo de autenticación en handshake o trama. |
 
 ## 5. Servicios y Métodos RPC (`rpc.pb.*`)
 

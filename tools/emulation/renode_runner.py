@@ -32,6 +32,7 @@ from tools.boards import RENODE_BOARDS as MATRIX_BOARDS
 from tools.emulation.emulation_runner import (
     CLOUD_HOST,
     CLOUD_PORT,
+    PW_EMU_CONFIG_PATH,
     EmulationState,
     audit_post_execution_status,
     default_client_test_paths,
@@ -77,11 +78,6 @@ configure_logging(console=True)
 logger = structlog.get_logger("renode_runner")
 
 
-def pw_emu_config_path() -> Path:
-    """Return the canonical Pigweed pw_emu configuration for this repository."""
-    return repo_root / "tools" / "emulation" / "pw_emu_config.json"
-
-
 def find_renode_binary() -> str | None:
     """Locate the Renode executable via PATH or standard installation directories."""
     found = shutil.which("renode")
@@ -117,7 +113,7 @@ def _prepend_to_path(directory: Path) -> Generator[None]:
 
 def _effective_renode_config(wdir: Path, target: str) -> Path:
     """Return canonical pw_emu config, resolving relative platform paths if CWD != repo_root."""
-    cfg_path = pw_emu_config_path()
+    cfg_path = PW_EMU_CONFIG_PATH
     repl_rel = Path("tools") / "emulation" / "renode" / "mkrwifi1010.repl"
     if (Path.cwd() / repl_rel).is_file():
         return cfg_path

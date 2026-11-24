@@ -36,6 +36,7 @@ VERSION_TARGETS: tuple[tuple[str, str, str, int], ...] = (
     ("mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
     ("luci-app-mcubridge/Makefile", r"PKG_VERSION:=[^\n]+", "PKG_VERSION:={version}", 0),
     ("mcubridge-library-arduino/library.properties", r"version=[^\n]+", "version={version}", 0),
+    ("MODULE.bazel", r'(module\([^)]*?\bversion\s*=\s*)"[^"]+"', r'\g<1>"{version}"', 1),
 )
 
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"

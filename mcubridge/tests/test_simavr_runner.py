@@ -17,7 +17,7 @@ from pw_emu.renode import RenodeLauncher
 from pw_emu_avr.simavr import SimavrLauncher
 
 from tools.arduino_core_metadata import ArduinoCoreMetadata, write_metadata_json
-from tools.emulation import simavr_runner, test_fleet_mesh_hardware_e2e
+from tools.emulation import emulation_runner, simavr_runner, test_fleet_mesh_hardware_e2e
 
 
 def _write_board_metadata(output_dir: Path, fqbn: str) -> None:
@@ -68,9 +68,18 @@ def _mock_simavr_failure(
     return False
 
 
-def test_pw_emu_config_registers_all_backends_and_avr_targets() -> None:
-    cfg_path = simavr_runner.pw_emu_config_path()
+def test_pw_emu_config_registers_all_backends_and_avr_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg_path = emulation_runner.PW_EMU_CONFIG_PATH
+    assert cfg_path == emulation_runner.repo_root / "pigweed.json"
     assert cfg_path.is_file()
+    assert not (emulation_runner.repo_root / "tools" / "emulation" / "pw_emu_config.json").exists()
+    assert not hasattr(simavr_runner, "pw_emu_config_path")
+
+    # Resolving AVR targets and simavr executable must work even when CWD != repo_root.
+    monkeypatch.chdir(tmp_path)
     cfg = PwEmuConfig(cfg_path, target="atmega2560", emu="simavr")
     assert "atmega2560" in cfg.get_targets()
     assert "atmega328p" in cfg.get_targets()
@@ -79,6 +88,10 @@ def test_pw_emu_config_registers_all_backends_and_avr_targets() -> None:
     assert isinstance(Launcher.get("renode", cfg_path), RenodeLauncher)
     raw = json.loads(cfg_path.read_text(encoding="utf-8"))
     assert raw["pw"]["pw_emu"]["simavr"]["channels"]["gdb"]["enabled"] is False
+    expected_runner = (emulation_runner.repo_root / "build" / "simavr" / "simavr_pty_runner").resolve()
+    configured_exec = str(raw["pw"]["pw_emu"]["simavr"]["executable"])
+    assert configured_exec == "build/simavr/simavr_pty_runner"
+    assert (cfg_path.parent / configured_exec).resolve() == expected_runner
 
 
 def test_start_and_stop_simavr_emulator_delegates_to_pw_emu(
@@ -118,7 +131,7 @@ def test_start_and_stop_simavr_emulator_delegates_to_pw_emu(
     emu, pty_path = simavr_runner.start_simavr_emulator(wdir, fw, "atmega2560", 16_000_000, "1", pause=True)
     assert pty_path == "/dev/pts/42"
     assert recorded["wdir"] == wdir
-    assert recorded["config_path"] == simavr_runner.pw_emu_config_path()
+    assert recorded["config_path"] == emulation_runner.PW_EMU_CONFIG_PATH
     assert recorded["start"] == ("atmega2560", fw, True, "--frequency 16000000")
     assert recorded["channel"] == "uart1"
 
@@ -200,7 +213,7 @@ def test_report_simavr_diagnostics_writes_watermark_and_handles_crash(
 
 
 def test_fleet_watchdog_detects_exited_pw_emu_emulator(tmp_path: Path) -> None:
-    emu = Emulator(tmp_path / "dead_emu", config_path=simavr_runner.pw_emu_config_path())
+    emu = Emulator(tmp_path / "dead_emu", config_path=emulation_runner.PW_EMU_CONFIG_PATH)
     reason = test_fleet_mesh_hardware_e2e.emulator_exit_reason("simavr", emu)
     assert reason == "emulator simavr exited during verification"
 

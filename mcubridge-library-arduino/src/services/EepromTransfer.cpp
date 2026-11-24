@@ -8,6 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "services/CooperativeTransferHandler.h"
+
 namespace bridge::services {
 namespace {
 
@@ -102,45 +104,17 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
       : pw::transfer::ReadWriteHandler(kEepromTransferResourceId) {}
 
   ~EepromTransferHandler() override {
-    detach();
+    registration_.detach(*this);
     g_eeprom_handler_destroyed = true;
   }
 
   bool attach(pw::transfer::TransferService& service,
               pw::transfer::TransferThread& thread) {
-    if (service_ == &service) {
-      return true;
-    }
-    detach();
-    drain(thread);
-    if (!service.RegisterHandler(*this)) {
-      return false;
-    }
-    drain(thread);
-    service_ = &service;
-    thread_ = &thread;
-    return true;
-  }
-
-  void detach() {
-    if (service_ == nullptr) {
-      return;
-    }
-    pw::transfer::TransferService* const service = service_;
-    pw::transfer::TransferThread* const thread = thread_;
-    service_ = nullptr;
-    thread_ = nullptr;
-    drain(*thread);
-    (void)service->UnregisterHandler(*this);
-    drain(*thread);
+    return registration_.attach(*this, service, thread);
   }
 
   bool detachFrom(const pw::transfer::TransferService& service) {
-    if (service_ != &service) {
-      return false;
-    }
-    detach();
-    return true;
+    return registration_.detachFrom(*this, service);
   }
 
   pw::Status PrepareRead() override {
@@ -178,22 +152,13 @@ class EepromTransferHandler final : public pw::transfer::ReadWriteHandler {
   size_t ResourceSize() const override { return kEepromTransferResourceSize; }
 
  private:
-  static void drain(pw::transfer::TransferThread& thread) {
-#if defined(PW_TRANSFER_COOPERATIVE)
-    (void)thread.Poll(PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY);
-#else
-    (void)thread;
-#endif
-  }
-
   pw::Status CapacityStatus() const {
     return EEPROM.length() == static_cast<int>(kEepromPhysicalSize)
                ? pw::OkStatus()
                : pw::Status::FailedPrecondition();
   }
 
-  pw::transfer::TransferService* service_ = nullptr;
-  pw::transfer::TransferThread* thread_ = nullptr;
+  CooperativeTransferRegistration registration_;
   EepromStream stream_;
 };
 

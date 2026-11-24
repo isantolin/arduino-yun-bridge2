@@ -81,6 +81,7 @@ from ..transport.serial import SerialTransport
 logger = structlog.get_logger("mcubridge.service")
 
 _STATUS_VALUES: Final = {s.value for s in Status}
+CLOUD_TELEMETRY_TIMEOUT_SECONDS = 5.0
 
 
 def _directory_usage_bytes(root: str) -> int:
@@ -1271,6 +1272,16 @@ class BridgeService:
             frame_bytes=len(frame),
         )
 
+    @staticmethod
+    def _cancel_cloud_rpc_call(call: Any, reason: str) -> None:
+        """Cancel an in-flight cloud Pigweed RPC call, absorbing benign completion races."""
+        if call is None:
+            return
+        try:
+            call.cancel()
+        except (AttributeError, KeyError, OSError, RuntimeError, ValueError) as exc:
+            logger.debug(reason, error=str(exc))
+
     async def send_cloud_telemetry(
         self,
         daemon_metrics_blob: bytes = b"",
@@ -1280,6 +1291,7 @@ class BridgeService:
     ) -> bool:
         if not self.cloud_rpc_client or not self.cloud_writer:
             return False
+        call: Any = None
         try:
             req = gateway_control_pb2.TelemetryReport(
                 daemon_metrics_blob=daemon_metrics_blob,
@@ -1300,12 +1312,16 @@ class BridgeService:
                 if not fut.done():
                     fut.set_result(error)
 
-            report_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
+            call = report_method.invoke(req, on_completed=_on_completed, on_error=_on_error)
             await self.cloud_writer.drain()
-            async with asyncio.timeout(5.0):
+            async with asyncio.timeout(CLOUD_TELEMETRY_TIMEOUT_SECONDS):
                 status = await fut
                 return bool(status.ok())
+        except asyncio.CancelledError:
+            self._cancel_cloud_rpc_call(call, "Cloud telemetry RPC cancellation raced with task cancellation")
+            raise
         except (TimeoutError, OSError, RuntimeError) as exc:
+            self._cancel_cloud_rpc_call(call, "Cloud telemetry RPC cancellation raced with completion")
             logger.error("Failed to report telemetry to cloud", error=str(exc))
             return False
 

@@ -29,6 +29,7 @@ from tools.boards import SIMAVR_BOARDS as MATRIX_BOARDS
 from tools.emulation.emulation_runner import (
     CLOUD_HOST,
     CLOUD_PORT,
+    PW_EMU_CONFIG_PATH,
     EmulationState,
     audit_post_execution_status,
     default_client_test_paths,
@@ -53,11 +54,6 @@ configure_logging(console=True)
 logger = structlog.get_logger("simavr_runner")
 
 SIMAVR_STARTUP_SETTLE_SECONDS = 5.0
-
-
-def pw_emu_config_path() -> Path:
-    """Return the canonical Pigweed pw_emu configuration for this repository."""
-    return repo_root / "tools" / "emulation" / "pw_emu_config.json"
 
 
 def build_simavr_runner() -> Path | None:
@@ -107,8 +103,7 @@ def start_simavr_emulator(
     pause: bool = False,
 ) -> tuple[Emulator, str]:
     """Start an AVR target via Pigweed ``pw_emu.frontend.Emulator`` and return ``(emu, pty_path)``."""
-    config_path = pw_emu_config_path()
-    emu = Emulator(wdir, config_path=config_path)
+    emu = Emulator(wdir, config_path=PW_EMU_CONFIG_PATH)
     extra_args = f"--frequency {frequency}" if frequency > 0 else None
     uart_channel = f"uart{uart_id or '0'}"
     logger.info(

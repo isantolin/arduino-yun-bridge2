@@ -23,7 +23,7 @@ from pw_tokenizer.encode import encode_token_and_args
 from pw_tokenizer.tokens import Database as TokenDatabase, TokenizedStringEntry, pw_tokenizer_65599_hash, write_binary
 import pytest
 
-from mcubridge.protocol import mcu_wire_pb2 as pb, protocol
+from mcubridge.protocol import config_schema_pb2 as config_pb, mcu_wire_pb2 as pb, protocol
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.services.handshake import SerialHandshakeManager
 from tools.console import pw_bridge_console
@@ -434,11 +434,14 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
             if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
                 continue
             packet = pw_packets.decode(frame.data)
+            if packet.service_id is None or packet.method_id is None:
+                continue
+            link_sync_spec = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
+            if link_sync_spec.service_id is None or link_sync_spec.method_id is None:
+                raise AssertionError("LinkSync descriptor omitted RPC identifiers")
             if (
-                (packet.service_id & 0xFFFFFFFF)
-                != (protocol.BY_NAME["rpc.pb.SystemService/LinkSync"].service_id & 0xFFFFFFFF)
-                or (packet.method_id & 0xFFFFFFFF)
-                != (protocol.BY_NAME["rpc.pb.SystemService/LinkSync"].method_id & 0xFFFFFFFF)
+                (packet.service_id & 0xFFFFFFFF) != (link_sync_spec.service_id & 0xFFFFFFFF)
+                or (packet.method_id & 0xFFFFFFFF) != (link_sync_spec.method_id & 0xFFFFFFFF)
                 or packet.type != PacketType.REQUEST
             ):
                 continue
@@ -527,7 +530,7 @@ def test_console_requires_explicit_authentication_or_insecure_opt_in(monkeypatch
     """Never silently start a plaintext console session when no secret is configured."""
     monkeypatch.delenv("MCUBRIDGE_SERIAL_SHARED_SECRET", raising=False)
     monkeypatch.setattr(pw_bridge_console, "get_config_source", lambda: "defaults")
-    monkeypatch.setattr(pw_bridge_console, "load_runtime_config", pb.RuntimeConfig)
+    monkeypatch.setattr(pw_bridge_console, "load_runtime_config", config_pb.RuntimeConfig)
     with pytest.raises(ValueError, match="No serial shared secret is available"):
         pw_bridge_console.resolve_link_secret()
     assert pw_bridge_console.resolve_link_secret(insecure=True) == b""
@@ -552,8 +555,21 @@ def test_console_closes_transport_when_handshake_fails(monkeypatch: pytest.Monke
         read_chunk=lambda _size: b"",
         flush=lambda: None,
     )
-    monkeypatch.setattr(pw_bridge_console, "resolve_link_secret", lambda **_kwargs: b"test-secret")
-    monkeypatch.setattr(pw_bridge_console, "open_bridge_transport", lambda *_args, **_kwargs: transport)
+    def fake_resolve_link_secret(*, insecure: bool = False) -> bytes:
+        del insecure
+        return b"test-secret"
+
+    def fake_open_bridge_transport(
+        device: str,
+        *,
+        baudrate: int = protocol.DEFAULT_BAUDRATE,
+        socket_timeout_s: float = pw_bridge_console.DEFAULT_SOCKET_TIMEOUT_S,
+    ) -> pw_bridge_console.BridgeTransport:
+        del device, baudrate, socket_timeout_s
+        return transport
+
+    monkeypatch.setattr(pw_bridge_console, "resolve_link_secret", fake_resolve_link_secret)
+    monkeypatch.setattr(pw_bridge_console, "open_bridge_transport", fake_open_bridge_transport)
 
     def fail_handshake(*_args: Any, **_kwargs: Any) -> Any:
         raise TimeoutError("simulated LinkSync timeout")

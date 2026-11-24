@@ -125,7 +125,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 2. **Sockets de Red Inalámbrica (WiFi TCP / Ethernet)**:
    - URIs de conexión configurables: `tcp://192.168.1.150:9000`, `wifi://mcu.local:8888`, `127.0.0.1:9000`.
    - Gestión de streams de red mediante soporte nativo de sockets URL en `pyserial`.
-   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing HDLC y CRC32. El enlace no cifra los frames RPC.
+   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo el mismo framing HDLC y CRC32. Con `serial_shared_secret` no vacío, el handshake v2 autentica el enlace y ChaCha20-Poly1305 protege los payloads RPC, de consola y de logs, también sobre Wi-Fi. El modo sin secreto no cifra ni autentica y solo es admisible en enlaces aislados.
 3. **Bluetooth SPP / BLE UART**:
    - Puertos virtuales RFCOMM (`/dev/rfcomm0`) o transceptores transparentes UART sobre BLE Nordic UART Service (NUS).
    - En el lado MCU, se utiliza `BluetoothSerial` o `Serial1` (`BridgeBluetooth.ino`).
@@ -135,11 +135,16 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 - **BridgeService (Python 3.13.9+)**: orquesta de forma unificada la comunicación MCU↔Linux, la ejecución de subprocesos asíncronos y comandos de shell/consola, el sandbox de archivos, el datastore y los servicios especializados (`GpioService`, `ClockSyncService`, `SerialHandshakeManager`).
 - **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte transparente para `pyserial` (UART POSIX y sockets TCP/WiFi).
-- **gRPC Bidirectional Stream (HTTP/2 + TLS 1.3)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway delegando la negociación y reanudación de sesión TLS 1.3 a OpenSSL y el stack estándar de Python.
+- **Pigweed RPC sobre TLS mutuo**: el daemon y los clientes se conectan al Gateway C++ standalone mediante `pw_rpc` y `pw_hdlc` sobre el transporte TLS autenticado por certificados. El Gateway termina TLS, vincula el principal a la identidad del certificado y mantiene contexto RPC aislado por conexión (ADR-0003); no se conserva el antiguo Gateway Python/grpclib.
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.2 (`pb_decode_noinit`); no se afirma certificación SIL-2.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante streaming gRPC.
 
 ## Seguridad
+
+El enlace serial usa handshake v2 (ADR-0005): el host aporta `nonce_h`, el MCU responde con `nonce_mcu`, y ambos valores participan en la prueba HMAC de respuesta y en la derivación HKDF de las claves de sesión. Los frames RPC, consola y logs quedan protegidos con ChaCha20-Poly1305 cuando `serial_shared_secret` no está vacío. El nonce MCU usa RNG hardware en ESP32 y un boot epoch persistente en AVR/SAMD21; después de borrar EEPROM o reprogramar flash que contenga ese epoch, debe rotarse el secreto.
+
+`LinkReset` continúa siendo un control plaintext sin autenticación y permite provocar una resincronización no solicitada (denegación de servicio). No es un mecanismo de fallback para los datos protegidos.
+
 
 1. **TLS recomendado**: `cloud_tls=1` por defecto y se exige `cloud_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
 2. **Derivación de Claves (HKDF)**: Se utiliza **HKDF-SHA256 (RFC 5869)** para derivar la clave de autenticación del handshake a partir del `serial_shared_secret`. Esto evita el uso directo del secreto en el bus y proporciona aislamiento criptográfico.

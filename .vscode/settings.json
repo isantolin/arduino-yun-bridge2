@@ -37,7 +37,7 @@
     "BRIDGE_ENABLE_SPI=1",
     "BRIDGE_ENABLE_TEST_INTERFACE=1"
   ],
-  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.intelliSenseEngine": "disabled",
   "C_Cpp.default.cppStandard": "c++17",
   "C_Cpp.default.compilerPath": "/usr/bin/g++",
   "makefile.configurations": [
@@ -147,15 +147,5 @@
       "pathGlob": "mcubridge-gateway-cpp/build*",
       "targetInferencePattern": "?"
     }
-  ],
-  "pigweed.codeAnalysisTarget": "@@bazel_tools____tools__host_platform",
-  "pigweed.codeAnalysisTargetDir": "/home/ignaciosantolin/.gemini/antigravity-cli/worktrees/fafa6735-f624-4c4f-aef1-21151c094bcb/subagent-Item2-pw-emu-Renode-QEMU-Migrator-openwrt-architect-arduino-d3ac8464/.compile_commands/@@bazel_tools____tools__host_platform",
-  "clangd.path": "/home/ignaciosantolin/.cache/bazel/_bazel_ignaciosantolin/973c94722100b823a621e7b56d2d4d5d/execroot/_main/bazel-out/k8-fastbuild/bin/external/pigweed+/pw_toolchain/host_clang/clangd",
-  "clangd.arguments": [
-    "--compile-commands-dir=/home/ignaciosantolin/.gemini/antigravity-cli/worktrees/fafa6735-f624-4c4f-aef1-21151c094bcb/subagent-Item2-pw-emu-Renode-QEMU-Migrator-openwrt-architect-arduino-d3ac8464/.compile_commands/@@bazel_tools____tools__host_platform",
-    "--query-driver=/*",
-    "--header-insertion=never",
-    "--background-index",
-    "-j=1"
   ]
 }

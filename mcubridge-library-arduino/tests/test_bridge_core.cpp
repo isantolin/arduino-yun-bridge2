@@ -953,7 +953,8 @@ void test_bridge_pw_metric_service_get_and_walk() {
   TEST_ASSERT_EQUAL_UINT32(Bridge.getWcetMaxMicros(), get_metrics.wcet_max_us);
   TEST_ASSERT_GREATER_OR_EQUAL_UINT32(bridge::hal::MIN_STACK_MARGIN_BYTES,
                                       get_metrics.free_memory_bytes);
-  TEST_ASSERT_EQUAL_UINT32(0U, get_metrics.stack_used_bytes);
+  // Host HAL has no runtime stack watermark; UINT32_MAX is the explicit unavailable sentinel.
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(-1), get_metrics.stack_used_bytes);
 
   // 2. Invoke pw.metric.proto.MetricService/Walk (paginated unary).
   stream.tx_buf.clear();

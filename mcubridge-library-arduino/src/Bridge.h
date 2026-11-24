@@ -42,6 +42,9 @@
 #include <pw_hdlc/rpc_channel.h>
 #include <pw_log/log.h>
 #include <pw_log_avr/log_avr.h>
+#include <pw_metric/global.h>
+#include <pw_metric/metric.h>
+#include <pw_metric/metric_service_pwpb.h>
 #include <pw_result/result.h>
 #include <pw_status/status.h>
 #include <pw_status/try.h>
@@ -176,7 +179,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       uint32_t poll_delay_ms = 2);
   bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
-  void resetWcetStats() { _wcet_max_micros = 0; }
+  void resetWcetStats();
 
   void enterSafeState();
 

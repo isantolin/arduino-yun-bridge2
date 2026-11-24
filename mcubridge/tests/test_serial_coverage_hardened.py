@@ -277,7 +277,8 @@ async def test_serial_transport_feed_hdlc_log_frame(tmp_path: Path, monkeypatch:
     ascii_frame = ui_frame(protocol.HDLC_ADDRESS_LOG, ascii_payload)
     await transport.feed_data(ascii_frame)
     assert transport.decode_log_payload(ascii_payload) == ascii_payload.decode("utf-8")
-    # And non-UTF8 unknown binary payload fallback
+    # And non-printable UTF-8 / non-UTF8 unknown binary payload fallbacks
+    assert transport.decode_log_payload(b"\x01\x02\x03").startswith("$")
     binary_frame = ui_frame(protocol.HDLC_ADDRESS_LOG, b"\xff\xfe\xfd\xfc")
     await transport.feed_data(binary_frame)
     state.cleanup()

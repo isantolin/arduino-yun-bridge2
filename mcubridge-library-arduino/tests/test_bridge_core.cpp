@@ -10,6 +10,9 @@
 #include <etl/array.h>
 #include <etl/numeric.h>
 #include <etl/string_view.h>
+#include <pw_bytes/endian.h>
+#include <pw_metric_proto/metric_service.pwpb.h>
+#include <pw_protobuf/decoder.h>
 #include <pw_span/span.h>
 #include <unity.h>
 
@@ -792,6 +795,203 @@ void test_bridge_safe_state_emits_tokenized_pw_log() {
   TEST_ASSERT_EQUAL_HEX32(expected_token, actual_token);
 }
 
+namespace {
+
+struct DecodedBridgeMetrics {
+  uint32_t seen_mask = 0U;
+  uint32_t tx_frames = 0U;
+  uint32_t rx_frames = 0U;
+  uint32_t safe_state_entries = 0U;
+  uint32_t wcet_max_us = 0U;
+  uint32_t free_memory_bytes = 0U;
+  uint32_t stack_used_bytes = 0U;
+};
+
+void decode_single_metric(pw::ConstByteSpan metric_bytes,
+                          DecodedBridgeMetrics& out) {
+  static constexpr uint32_t kGroupBridge =
+      PW_TOKENIZE_STRING_DOMAIN("metrics", "bridge");
+  static constexpr uint32_t kTokTxFrames = PW_METRIC_TOKEN("tx_frames");
+  static constexpr uint32_t kTokRxFrames = PW_METRIC_TOKEN("rx_frames");
+  static constexpr uint32_t kTokSafeState =
+      PW_METRIC_TOKEN("safe_state_entries");
+  static constexpr uint32_t kTokWcet = PW_METRIC_TOKEN("wcet_max_us");
+  static constexpr uint32_t kTokFreeMem = PW_METRIC_TOKEN("free_memory_bytes");
+  static constexpr uint32_t kTokStackUsed = PW_METRIC_TOKEN("stack_used_bytes");
+
+  pw::protobuf::Decoder decoder(metric_bytes);
+  etl::array<uint32_t, 4> token_path{};
+  size_t path_len = 0U;
+  uint32_t value = 0U;
+  bool has_value = false;
+
+  while (decoder.Next().ok()) {
+    const uint32_t field = decoder.FieldNumber();
+    if (field == static_cast<uint32_t>(
+                     pw::metric::proto::pwpb::Metric::Fields::kTokenPath)) {
+      pw::ConstByteSpan packed;
+      if (decoder.ReadBytes(&packed).ok()) {
+        const size_t count =
+            etl::min(packed.size() / sizeof(uint32_t), token_path.size());
+        for (size_t i = 0; i < count; ++i) {
+          token_path[i] = pw::bytes::ReadInOrder<uint32_t>(
+              pw::endian::little, packed.data() + (i * sizeof(uint32_t)));
+        }
+        path_len = count;
+      }
+    } else if (field == static_cast<uint32_t>(
+                            pw::metric::proto::pwpb::Metric::Fields::kAsInt)) {
+      if (decoder.ReadUint32(&value).ok()) {
+        has_value = true;
+      }
+    }
+  }
+
+  if (!has_value || path_len != 2U || token_path[0] != kGroupBridge) {
+    return;
+  }
+  const uint32_t metric_tok = token_path[1];
+  if (metric_tok == kTokTxFrames) {
+    out.seen_mask |= (1U << 0U);
+    out.tx_frames = value;
+  } else if (metric_tok == kTokRxFrames) {
+    out.seen_mask |= (1U << 1U);
+    out.rx_frames = value;
+  } else if (metric_tok == kTokSafeState) {
+    out.seen_mask |= (1U << 2U);
+    out.safe_state_entries = value;
+  } else if (metric_tok == kTokWcet) {
+    out.seen_mask |= (1U << 3U);
+    out.wcet_max_us = value;
+  } else if (metric_tok == kTokFreeMem) {
+    out.seen_mask |= (1U << 4U);
+    out.free_memory_bytes = value;
+  } else if (metric_tok == kTokStackUsed) {
+    out.seen_mask |= (1U << 5U);
+    out.stack_used_bytes = value;
+  }
+}
+
+void decode_metrics_container(pw::ConstByteSpan payload, uint32_t metrics_field,
+                              DecodedBridgeMetrics& out,
+                              bool* done_flag = nullptr) {
+  pw::protobuf::Decoder decoder(payload);
+  while (decoder.Next().ok()) {
+    if (decoder.FieldNumber() == metrics_field) {
+      pw::ConstByteSpan metric_bytes;
+      if (decoder.ReadBytes(&metric_bytes).ok()) {
+        decode_single_metric(metric_bytes, out);
+      }
+    } else if (done_flag != nullptr &&
+               decoder.FieldNumber() ==
+                   static_cast<uint32_t>(
+                       pw::metric::proto::pwpb::WalkResponse::Fields::kDone)) {
+      bool done = false;
+      if (decoder.ReadBool(&done).ok()) {
+        *done_flag = done;
+      }
+    }
+  }
+}
+
+}  // namespace
+
+void test_bridge_pw_metric_service_get_and_walk() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // Drive observable metric updates: WCET, TX frames, and safe-state entry.
+  Bridge.process();
+  const etl::array<uint8_t, 4> console_bytes = {'P', 'I', 'N', 'G'};
+  TEST_ASSERT_TRUE(Bridge.sendConsoleStream(
+      pw::span<const uint8_t>(console_bytes.data(), console_bytes.size())));
+  Bridge.enterSafeState();
+  ba.setTxEnabled(true);
+  ba.setSynchronized();
+  stream.tx_buf.clear();
+
+  // 1. Invoke pw.metric.proto.MetricService/Get (server streaming).
+  TEST_ASSERT_GREATER_THAN(
+      0U,
+      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
+                    pw::tokenizer::Hash("Get")));
+
+  DecodedBridgeMetrics get_metrics{};
+  size_t stream_packets = 0U;
+  bool got_finish_ok = false;
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto frame_res = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+    if (!frame_res.ok()) continue;
+    const auto& frame = frame_res.value();
+    if (frame.address() != rpc::RPC_HDLC_ADDRESS_RPC) continue;
+    auto pkt_res = pw::rpc::internal::Packet::FromBuffer(frame.data());
+    TEST_ASSERT_TRUE(pkt_res.ok());
+    const auto& pkt = pkt_res.value();
+    if (pkt.type() == pw::rpc::internal::pwpb::PacketType::SERVER_STREAM) {
+      ++stream_packets;
+      decode_metrics_container(
+          pkt.payload(),
+          static_cast<uint32_t>(
+              pw::metric::proto::pwpb::MetricResponse::Fields::kMetrics),
+          get_metrics);
+    } else if (pkt.type() == pw::rpc::internal::pwpb::PacketType::RESPONSE) {
+      TEST_ASSERT_TRUE(pkt.status().ok());
+      got_finish_ok = true;
+    }
+  }
+
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2U, stream_packets);
+  TEST_ASSERT_TRUE(got_finish_ok);
+  TEST_ASSERT_EQUAL_HEX32(0x3FU, get_metrics.seen_mask);
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2U, get_metrics.tx_frames);
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1U, get_metrics.rx_frames);
+  TEST_ASSERT_EQUAL_UINT32(1U, get_metrics.safe_state_entries);
+  TEST_ASSERT_EQUAL_UINT32(Bridge.getWcetMaxMicros(), get_metrics.wcet_max_us);
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(bridge::hal::MIN_STACK_MARGIN_BYTES,
+                                      get_metrics.free_memory_bytes);
+  TEST_ASSERT_EQUAL_UINT32(0U, get_metrics.stack_used_bytes);
+
+  // 2. Invoke pw.metric.proto.MetricService/Walk (paginated unary).
+  stream.tx_buf.clear();
+  TEST_ASSERT_GREATER_THAN(
+      0U,
+      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
+                    pw::tokenizer::Hash("Walk")));
+
+  DecodedBridgeMetrics walk_metrics{};
+  bool walk_done = false;
+  bool walk_response_ok = false;
+  pw::hdlc::DecoderBuffer<1024> walk_decoder;
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto frame_res = walk_decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+    if (!frame_res.ok()) continue;
+    const auto& frame = frame_res.value();
+    if (frame.address() != rpc::RPC_HDLC_ADDRESS_RPC) continue;
+    auto pkt_res = pw::rpc::internal::Packet::FromBuffer(frame.data());
+    TEST_ASSERT_TRUE(pkt_res.ok());
+    const auto& pkt = pkt_res.value();
+    if (pkt.type() == pw::rpc::internal::pwpb::PacketType::RESPONSE) {
+      TEST_ASSERT_TRUE(pkt.status().ok());
+      walk_response_ok = true;
+      decode_metrics_container(
+          pkt.payload(),
+          static_cast<uint32_t>(
+              pw::metric::proto::pwpb::WalkResponse::Fields::kMetrics),
+          walk_metrics, &walk_done);
+    }
+  }
+  TEST_ASSERT_TRUE(walk_response_ok);
+  TEST_ASSERT_TRUE(walk_done);
+  TEST_ASSERT_EQUAL_HEX32(0x3FU, walk_metrics.seen_mask);
+  TEST_ASSERT_GREATER_THAN_UINT32(get_metrics.rx_frames,
+                                  walk_metrics.rx_frames);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -821,5 +1021,6 @@ int main() {
   RUN_TEST(test_bridge_edge_paths_and_post);
   RUN_TEST(test_bridge_pw_log_tokenized_hdlc_frame);
   RUN_TEST(test_bridge_safe_state_emits_tokenized_pw_log);
+  RUN_TEST(test_bridge_pw_metric_service_get_and_walk);
   return UNITY_END();
 }

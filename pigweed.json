@@ -2,6 +2,10 @@
   "pw": {
     "pw_cli": {
       "plugins": {
+        "bridge-console": {
+          "module": "tools.console.pw_bridge_console",
+          "function": "main"
+        },
         "emu": {
           "module": "pw_emu.__main__",
           "function": "main"

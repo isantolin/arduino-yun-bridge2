@@ -38,7 +38,7 @@ from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel, RpcIds
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
-from pw_tokenizer import detokenize
+from pw_tokenizer import detokenize, elf_reader
 from pw_tokenizer.tokens import DatabaseFormatError
 
 from mcubridge.config.settings import RuntimeConfig
@@ -77,6 +77,12 @@ _SERIAL_STATUS_CODES: Final[frozenset[int]] = SERIAL_FAILURE_STATUS_CODES | SERI
 _STREAM_EVENT_QUEUE_MAX: Final[int] = 64
 _TRANSFER_CHUNK_SIZE_BYTES: Final[int] = 128
 
+DEFAULT_TOKEN_DATABASE_CANDIDATES: Final[tuple[Path, ...]] = (
+    Path("/etc/mcubridge/tokens.csv"),
+    Path("/etc/mcubridge/tokens.bin"),
+    Path("/usr/share/mcubridge/tokens.csv"),
+)
+
 # Register wifi:// and tcp:// scheme aliases in pyserial
 sys.modules["serial.urlhandler.protocol_wifi"] = protocol_socket
 sys.modules["serial.urlhandler.protocol_tcp"] = protocol_socket
@@ -105,6 +111,24 @@ def resolve_serial_url(port_str: str) -> str:
     if ":" in clean and not clean.startswith(("/", ".")):
         return f"socket://{clean}"
     return clean
+
+
+def decode_tokenized_log_payload(
+    frame_data: bytes,
+    detokenizer: detokenize.Detokenizer,
+) -> str:
+    """Detokenize a Pigweed log payload or preserve printable UTF-8 diagnostic text."""
+    detokenized_msg = detokenizer.detokenize(frame_data)
+    if detokenized_msg.ok():
+        return str(detokenized_msg)
+    try:
+        candidate = frame_data.decode("utf-8")
+    except UnicodeDecodeError:
+        return str(detokenized_msg)
+    stripped = candidate.rstrip("\r\n")
+    if stripped and all(ch.isprintable() or ch in "\r\n\t" for ch in stripped):
+        return stripped
+    return str(detokenized_msg)
 
 
 def _write_and_flush(ser: serial.Serial, data: bytes) -> None:
@@ -196,33 +220,20 @@ class SerialTransport:
         env_path = os.environ.get("MCUBRIDGE_TOKEN_DATABASE")
         if env_path:
             candidate_paths.append(Path(env_path))
-        candidate_paths.extend(
-            [
-                Path("/etc/mcubridge/tokens.csv"),
-                Path("/etc/mcubridge/tokens.bin"),
-                Path("/usr/share/mcubridge/tokens.csv"),
-            ]
-        )
+        candidate_paths.extend(DEFAULT_TOKEN_DATABASE_CANDIDATES)
         for path in candidate_paths:
             if path.is_file():
                 try:
                     dt = detokenize.Detokenizer(path)
                     logger.info("Loaded Pigweed tokenizer database", path=str(path))
                     return dt
-                except (OSError, ValueError, TypeError, DatabaseFormatError) as exc:
+                except (OSError, ValueError, TypeError, DatabaseFormatError, elf_reader.FileDecodeError) as exc:
                     logger.warning("Failed to load Pigweed tokenizer database", path=str(path), error=str(exc))
         return detokenize.Detokenizer()
 
     def decode_log_payload(self, frame_data: bytes) -> str:
         """Detokenize a Pigweed log payload or preserve printable UTF-8 diagnostic text."""
-        detokenized_msg = self.detokenizer.detokenize(frame_data)
-        if detokenized_msg.ok():
-            return str(detokenized_msg)
-        try:
-            candidate = frame_data.decode("utf-8")
-            return candidate if candidate.isprintable() else str(detokenized_msg)
-        except UnicodeDecodeError:
-            return str(detokenized_msg)
+        return decode_tokenized_log_payload(frame_data, self.detokenizer)
 
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:

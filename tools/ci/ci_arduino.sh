@@ -50,7 +50,8 @@ fi
 
 # Install dependencies if not already generated/installed by CI workflow
 if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ] || \
-   [ ! -f "./build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h" ]; then
+   [ ! -f "./build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h" ] || \
+   [ ! -f "./build/pigweed_generated/include/pw_metric_proto/metric_service.pwpb.h" ]; then
     echo "Generating protocol bindings..."
     python3 ./tools/protocol/generate.py \
         --spec ./tools/protocol/cloud_gateway.proto \

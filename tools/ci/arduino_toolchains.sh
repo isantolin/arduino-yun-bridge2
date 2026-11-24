@@ -71,6 +71,7 @@ PW_COMMON_INC_FLAGS=(
     -I"${PW_ROOT}/pw_function/public"
     -I"${PW_ROOT}/pw_string/public"
     -I"${PW_ROOT}/pw_log/public"
+    -I"${PW_ROOT}/pw_metric/public"
     -I"${PW_ROOT}/pw_assert/print_and_abort_assert_public_overrides"
     -I"${PW_ROOT}/pw_assert/print_and_abort_check_public_overrides"
     -I"${PW_ROOT}/pw_assert/public"
@@ -137,6 +138,11 @@ PW_PIGWEED_SRCS=(
     "$PW_ROOT/pw_tokenizer/encode_args.cc"
     "$PW_ROOT/pw_tokenizer/tokenize.cc"
     "$PW_ROOT/pw_log/rate_limited.cc"
+    "$PW_ROOT/pw_metric/metric.cc"
+    "$PW_ROOT/pw_metric/metric_64bit.cc"
+    "$PW_ROOT/pw_metric/global.cc"
+    "$PW_ROOT/pw_metric/metric_walker.cc"
+    "$PW_ROOT/pw_metric/metric_service_pwpb.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
 )
 
@@ -277,19 +283,29 @@ build_pigweed_archive_samd() {
         "${PW_PIGWEED_SRCS[@]}"
         "${PW_TRANSFER_STAGED_SRCS[@]}"
         "${PW_CHRONO_ARDUINO_SRCS[@]}"
+        "${PW_ROOT}/pw_atomic/atomic_cortex_m.c"
     )
 
     local src obj
     for src in "${all_srcs[@]}"; do
         obj="${build_tmp}/${src//\//_}.o"
-        "$arm_gxx" -mcpu=cortex-m0plus -mthumb -std=gnu++17 -fno-exceptions -fno-rtti -Wno-psabi \
-            -ffunction-sections -fdata-sections \
-            -DETL_NO_STL -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 \
-            "${PW_COOPERATIVE_DEFINES[@]}" -Os \
-            "${inc_args[@]}" -c "$src" -o "$obj" || {
-            rm -rf "$build_tmp"
-            return 1
-        }
+        if [[ "$src" == *.c ]]; then
+            "$arm_gcc" -mcpu=cortex-m0plus -mthumb -std=gnu11 -Wno-psabi \
+                -ffunction-sections -fdata-sections -Os \
+                "${inc_args[@]}" -c "$src" -o "$obj" || {
+                rm -rf "$build_tmp"
+                return 1
+            }
+        else
+            "$arm_gxx" -mcpu=cortex-m0plus -mthumb -std=gnu++17 -fno-exceptions -fno-rtti -Wno-psabi \
+                -ffunction-sections -fdata-sections \
+                -DETL_NO_STL -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 \
+                "${PW_COOPERATIVE_DEFINES[@]}" -Os \
+                "${inc_args[@]}" -c "$src" -o "$obj" || {
+                rm -rf "$build_tmp"
+                return 1
+            }
+        fi
         objs+=("$obj")
     done
     "$arm_ar" rcs "$output_archive" "${objs[@]}"

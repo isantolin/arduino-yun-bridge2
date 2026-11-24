@@ -32,7 +32,6 @@ Arduino MCU Bridge 2 implements a Safety-Hardened Embedded Architecture designed
 - MCU nonce freshness is platform-specific: ESP32 uses its hardware RNG; AVR persists a boot epoch in EEPROM; SAMD21 persists it in flash. Reprogramming SAMD21 flash or erasing AVR EEPROM can reset that epoch. Rotate `serial_shared_secret` after either operation.
 - `LinkReset` remains an unauthenticated plaintext control operation. A party with transport access can force the link to resynchronize (denial of service), but this does not authorize protected RPC commands or provide a plaintext fallback for data frames.
 - An empty `serial_shared_secret` explicitly disables link authentication and HDLC payload encryption. It must be used only on isolated development/testing links, never on an untrusted physical or network path.
-- An empty shared secret explicitly disables link authentication. It is not a fallback for a failed tag, and unauthenticated mode must not be used over an untrusted transport.
 - Pigweed remains responsible for MCU HDLC/RPC framing. Mbed TLS provides the MCU's ChaCha20-Poly1305, HKDF, HMAC, SHA-256, constant-time comparison, and secure-zeroization APIs; Python uses `cryptography`.
 - No project-specific TLS 1.3 0-RTT or session-ticket anti-replay behavior is claimed.
 

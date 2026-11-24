@@ -356,8 +356,8 @@ def establish_link_security(
                     continue
 
                 if (
-                    packet.service_id != _LINK_SYNC_SPEC.service_id
-                    or packet.method_id != _LINK_SYNC_SPEC.method_id
+                    (packet.service_id & 0xFFFFFFFF) != (_LINK_SYNC_SPEC.service_id & 0xFFFFFFFF)
+                    or (packet.method_id & 0xFFFFFFFF) != (_LINK_SYNC_SPEC.method_id & 0xFFFFFFFF)
                     or packet.call_id != 2
                 ):
                     continue
@@ -453,8 +453,12 @@ class SecureHdlcWriter:
                 packet = pw_packets.decode(frame.data)
             except (ProtobufDecodeError, ValueError, TypeError) as exc:
                 raise ValueError("Pigweed console produced a malformed RPC packet") from exc
-            method_key = (packet.service_id, packet.method_id)
-            if packet.type == PacketType.REQUEST and method_key in (self._link_reset_ids, self._link_sync_ids):
+            method_key = (packet.service_id & 0xFFFFFFFF, packet.method_id & 0xFFFFFFFF)
+            protected_control_ids = tuple(
+                (service_id & 0xFFFFFFFF, method_id & 0xFFFFFFFF)
+                for service_id, method_id in (self._link_reset_ids, self._link_sync_ids)
+            )
+            if packet.type == PacketType.REQUEST and method_key in protected_control_ids:
                 raise ValueError("LinkReset/LinkSync cannot be issued from the REPL; restart the console to re-handshake")
 
         payload = self._cipher.encrypt(frame.address, frame.data) if self._cipher is not None else frame.data

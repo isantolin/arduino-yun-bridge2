@@ -214,7 +214,7 @@ rationale = "LGPL-2.1 SAMD21 NVM row storage for the persisted link boot epoch (
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.17.4"
+pip = "coverage==7.17.5"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
@@ -361,7 +361,7 @@ rationale = "Core packaging and distribution utilities for Python environments"
 
 [[dev_dependency]]
 name = "packaging"
-pip = "packaging==26.3"
+pip = "packaging==26.4"
 rationale = "Standardized core utilities for Python package version parsing and requirement specifiers"
 
 [[dev_dependency]]

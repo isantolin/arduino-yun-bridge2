@@ -434,14 +434,12 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
             if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
                 continue
             packet = pw_packets.decode(frame.data)
-            if packet.service_id is None or packet.method_id is None:
-                continue
             link_sync_spec = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
-            if link_sync_spec.service_id is None or link_sync_spec.method_id is None:
-                raise AssertionError("LinkSync descriptor omitted RPC identifiers")
+            link_sync_ids = pw_bridge_console._require_rpc_ids(
+                link_sync_spec.service_id, link_sync_spec.method_id
+            )
             if (
-                (packet.service_id & 0xFFFFFFFF) != (link_sync_spec.service_id & 0xFFFFFFFF)
-                or (packet.method_id & 0xFFFFFFFF) != (link_sync_spec.method_id & 0xFFFFFFFF)
+                pw_bridge_console._require_rpc_ids(packet.service_id, packet.method_id) != link_sync_ids
                 or packet.type != PacketType.REQUEST
             ):
                 continue

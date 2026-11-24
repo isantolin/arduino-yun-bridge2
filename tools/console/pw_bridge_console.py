@@ -389,7 +389,7 @@ def establish_link_security(
                     if shared_secret
                     else None
                 )
-                return cipher, chunk[byte_index + 1 :]
+                return cipher, chunk[byte_index + 1 :]  # noqa: E203
 
     raise TimeoutError(f"Timed out waiting {response_timeout_s:.1f}s for authenticated MCU LinkSync v2 response")
 

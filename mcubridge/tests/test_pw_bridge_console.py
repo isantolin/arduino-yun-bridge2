@@ -428,6 +428,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
     response_frames: queue.SimpleQueue[bytes] = queue.SimpleQueue()
     raw_reader = _QueueReader()
     wire_writes: list[bytes] = []
+    link_sync_response_sent = False
 
     def _read_handshake_chunk(_size: int) -> bytes:
         try:
@@ -436,7 +437,10 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
             return b""
 
     def _write_raw(encoded: bytes) -> None:
+        nonlocal link_sync_response_sent
         wire_writes.append(encoded)
+        if link_sync_response_sent:
+            return
         decoder = FrameDecoder()
         for frame in decoder.process(encoded):
             if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
@@ -465,6 +469,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
                 packet_type=int(PacketType.RESPONSE),
             )
             response_frames.put(ui_frame(protocol.HDLC_ADDRESS_RPC, response_packet))
+            link_sync_response_sent = True
 
     transport = pw_bridge_console.BridgeTransport(
         endpoint="test",

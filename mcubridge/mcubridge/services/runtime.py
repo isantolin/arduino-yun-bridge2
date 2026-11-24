@@ -76,7 +76,7 @@ __all__ = [
     "BridgeService",
 ]
 
-from ..transport.serial import SerialTransport
+from ..transport.serial import SerialTransport, cancel_rpc_call
 
 logger = structlog.get_logger("mcubridge.service")
 
@@ -246,11 +246,6 @@ class BridgeService:
         """Create and enqueue a CloudQueuedPublish message in a single operation. [SIL-2]"""
         await self.enqueue_cloud(CloudQueuedPublish(topic_name=topic_name, payload=payload))
 
-    async def enqueue_cloud_status_report(self, report: StatusReport) -> None:
-        """Enqueue a Protobuf StatusReport message to the cloud. [SIL-2]"""
-        topic = protocol.get_topic_for_message(self.state.cloud_topic_prefix, StatusReport) or ""
-        await self.enqueue_cloud_publish(topic, report.SerializeToString())
-
     async def flush_cloud_spool(self) -> None:
         async with self._cloud_publish_lock:
             await self.flush_cloud_spool_locked()
@@ -258,7 +253,6 @@ class BridgeService:
     def record_cloud_drop(self, topic_name: str) -> None:
         self.state.cloud_drop_counts[topic_name] = self.state.cloud_drop_counts.get(topic_name, 0) + 1
         self.state.cloud_dropped_messages += 1
-        self.state.metrics.cloud_messages_dropped.inc()
 
     async def spool_cloud_message_locked(self, message: CloudQueuedPublish) -> bool:
         spool = self.cloud_spool
@@ -352,7 +346,7 @@ class BridgeService:
         )
         ok = await self.send_cloud_telemetry(**{telemetry_attr: message.payload})
         if ok:
-            self.state.metrics.cloud_messages_published.inc()
+            self.state.metrics.cloud_messages_published += 1
         return ok
 
     # --- Lifecycle ---
@@ -582,27 +576,24 @@ class BridgeService:
 
     async def _complete_file_upload(self, seq_id: int, p: mcu_wire_pb2.FileUpload, safe_path: Path) -> None:
         async with self._upload_lock:
-            await self._complete_file_upload_locked(seq_id, p, safe_path)
-
-    async def _complete_file_upload_locked(self, seq_id: int, p: mcu_wire_pb2.FileUpload, safe_path: Path) -> None:
-        status = Status.OK
-        if self.serial is None:
-            status = Status.UNAVAILABLE
-        else:
-            try:
-                data = await self.serial.transfer_read(protocol.FILE_UPLOAD_RESOURCE_ID)
-            except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
-                logger.error("MCU upload read failed", path=p.path, error=str(exc))
+            status = Status.OK
+            if self.serial is None:
                 status = Status.UNAVAILABLE
             else:
-                if len(data) != p.size:
-                    logger.error("MCU upload size mismatch", path=p.path, announced=p.size, received=len(data))
-                    status = Status.DATA_LOSS
-                elif not await self.write_with_quota(safe_path, data):
-                    status = Status.RESOURCE_EXHAUSTED
+                try:
+                    data = await self.serial.transfer_read(protocol.FILE_UPLOAD_RESOURCE_ID)
+                except (PwTransferError, ConnectionError, OSError, RuntimeError, ValueError) as exc:
+                    logger.error("MCU upload read failed", path=p.path, error=str(exc))
+                    status = Status.UNAVAILABLE
                 else:
-                    logger.info("MCU upload stored", path=p.path, size=len(data))
-        await self.send_mcu_status(status, seq_id, p)
+                    if len(data) != p.size:
+                        logger.error("MCU upload size mismatch", path=p.path, announced=p.size, received=len(data))
+                        status = Status.DATA_LOSS
+                    elif not await self.write_with_quota(safe_path, data):
+                        status = Status.RESOURCE_EXHAUSTED
+                    else:
+                        logger.info("MCU upload stored", path=p.path, size=len(data))
+            await self.send_mcu_status(status, seq_id, p)
 
     async def file_remove(
         self, path_or_req: str | mcu_wire_pb2.FileRemove | int, p: mcu_wire_pb2.FileRemove | None = None
@@ -1002,7 +993,7 @@ class BridgeService:
     mcu_xon = functools.partialmethod(set_mcu_paused, False)
 
     async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
-        self.state.metrics.mcu_status_counts.labels(status=status.name).inc()
+        self.state.metrics.mcu_status_counts[status.name] += 1
         text = ""
         if payload:
             text = (
@@ -1010,14 +1001,14 @@ class BridgeService:
             )
         log_func = logger.error if not status.ok() else logger.debug
         log_func("MCU > %s %s", status.name, text)
-        await self.enqueue_cloud_status_report(
-            StatusReport(
-                status=status.value,
-                name=status.name,
-                description=status.name,
-                message=text,
-            ),
+        report = StatusReport(
+            status=status.value,
+            name=status.name,
+            description=status.name,
+            message=text,
         )
+        topic = protocol.get_topic_for_message(self.state.cloud_topic_prefix, StatusReport) or ""
+        await self.enqueue_cloud_publish(topic, report.SerializeToString())
 
     async def _fetch_mcu_version(self) -> mcu_wire_pb2.VersionResponse | None:
         serial = self.serial
@@ -1109,7 +1100,7 @@ class BridgeService:
                 )
             ),
             before_sleep=_before_sleep,
-            after=lambda rs: self.state.metrics.retries.labels(component="cloud_connect").inc(),
+            after=lambda rs: self.state.metrics.retries.update(("cloud_connect",)),
             reraise=True,
         )
 
@@ -1272,16 +1263,6 @@ class BridgeService:
             frame_bytes=len(frame),
         )
 
-    @staticmethod
-    def _cancel_cloud_rpc_call(call: Any, reason: str) -> None:
-        """Cancel an in-flight cloud Pigweed RPC call, absorbing benign completion races."""
-        if call is None:
-            return
-        try:
-            call.cancel()
-        except (AttributeError, KeyError, OSError, RuntimeError, ValueError) as exc:
-            logger.debug(reason, error=str(exc))
-
     async def send_cloud_telemetry(
         self,
         daemon_metrics_blob: bytes = b"",
@@ -1318,10 +1299,10 @@ class BridgeService:
                 status = await fut
                 return bool(status.ok())
         except asyncio.CancelledError:
-            self._cancel_cloud_rpc_call(call, "Cloud telemetry RPC cancellation raced with task cancellation")
+            cancel_rpc_call(call, "Cloud telemetry RPC cancellation raced with task cancellation")
             raise
         except (TimeoutError, OSError, RuntimeError) as exc:
-            self._cancel_cloud_rpc_call(call, "Cloud telemetry RPC cancellation raced with completion")
+            cancel_rpc_call(call, "Cloud telemetry RPC cancellation raced with completion")
             logger.error("Failed to report telemetry to cloud", error=str(exc))
             return False
 
@@ -1364,7 +1345,7 @@ class BridgeService:
                 attempt=rs.attempt_number,
                 error=str(rs.outcome.exception()) if rs.outcome else None,
             ),
-            after=lambda rs: self.state.metrics.retries.labels(component=name).inc(),
+            after=lambda rs: self.state.metrics.retries.update((name,)),
             reraise=True,
         )
 

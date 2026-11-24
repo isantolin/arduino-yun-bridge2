@@ -149,7 +149,7 @@ async def test_logging_not_debug_branches(
         mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, frame.data),
     )
     await transport.feed_data(encoded)
-    assert mock_state.metrics.serial_bytes_received.value > 0
+    assert mock_state.metrics.serial_bytes_received > 0
 
 
 async def test_feed_data_uninitialized_protobuf(

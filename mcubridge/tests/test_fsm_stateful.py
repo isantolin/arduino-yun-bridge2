@@ -90,7 +90,7 @@ class LinkConnectionStateMachine(RuleBasedStateMachine):
         # SIL-2 Critical Invariant: is_synchronized MUST strictly track synchronized state
         assert (current == "synchronized") == self.state.is_synchronized
         # Metric state must match FSM state synchronously
-        assert self.state.metrics.link_state.value == current
+        assert self.state.metrics.link_state == current
 
 
 class ProcessLifecycleStateMachine(RuleBasedStateMachine):

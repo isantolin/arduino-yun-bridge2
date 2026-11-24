@@ -319,7 +319,7 @@ def resolve_link_secret(*, insecure: bool = False) -> bytes:
 
     config = load_runtime_config()
     if get_config_source() == "uci" and config.serial_shared_secret:
-        return bytes(config.serial_shared_secret)
+        return config.serial_shared_secret
 
     raise ValueError(
         "No serial shared secret is available. Configure OpenWrt UCI, set "

@@ -190,6 +190,9 @@ pw_add_library(pw_containers.storage INTERFACE
 pw_add_library(pw_toolchain.constexpr_tag INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_toolchain/public/pw_toolchain/constexpr_tag.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_toolchain/public")
+pw_add_library(pw_containers.to_array INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/to_array.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public")
 pw_add_library(pw_containers.vector INTERFACE
   HEADERS "${PIGWEED_ROOT}/pw_containers/public/pw_containers/vector.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_containers/public"
@@ -281,6 +284,46 @@ pw_add_library(pw_hdlc.rpc_channel_output INTERFACE
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_hdlc/public"
   PUBLIC_DEPS pw_hdlc pw_rpc.server pw_span)
 
+pw_add_module_config(pw_tokenizer_CONFIG)
+pw_add_library(pw_tokenizer.config INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/config.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_tokenizer/public"
+  PUBLIC_DEPS ${pw_tokenizer_CONFIG})
+pw_add_library(pw_tokenizer STATIC
+  HEADERS
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/encode_args.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/enum.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/hash.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/nested_tokenization.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/tokenize.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_tokenizer/public"
+  PUBLIC_DEPS pw_base64 pw_bytes pw_containers.to_array pw_result pw_span
+    pw_preprocessor pw_tokenizer.config pw_varint
+  SOURCES
+    "${PIGWEED_ROOT}/pw_tokenizer/encode_args.cc"
+    "${PIGWEED_ROOT}/pw_tokenizer/hash.cc"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/argument_types.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/argument_types_macro_4_byte.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/argument_types_macro_8_byte.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/enum.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/hash.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/pw_tokenizer_65599_fixed_length_128_hash_macro.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/pw_tokenizer_65599_fixed_length_256_hash_macro.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/pw_tokenizer_65599_fixed_length_80_hash_macro.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/pw_tokenizer_65599_fixed_length_96_hash_macro.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/internal/tokenize_string.h"
+    "${PIGWEED_ROOT}/pw_tokenizer/tokenize.cc")
+if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
+  target_link_options(pw_tokenizer
+    PUBLIC
+      "-T${PIGWEED_ROOT}/pw_tokenizer/pw_add_tokenizer_sections_to_default_script.ld"
+      "-L${PIGWEED_ROOT}/pw_tokenizer")
+endif()
+pw_add_library(pw_tokenizer.base64 STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_tokenizer/public/pw_tokenizer/base64.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_tokenizer/public"
+  PUBLIC_DEPS pw_base64 pw_span pw_string.string pw_tokenizer pw_tokenizer.config
+  SOURCES "${PIGWEED_ROOT}/pw_tokenizer/base64.cc")
 pw_proto_library(pw_tokenizer.proto
   STRIP_PREFIX "${PIGWEED_ROOT}/pw_tokenizer"
   SOURCES "${PIGWEED_ROOT}/pw_tokenizer/pw_tokenizer_proto/options.proto")
@@ -449,3 +492,48 @@ pw_add_library(pw_transfer STATIC
   PUBLIC_DEPS pw_assert pw_bytes pw_result pw_status pw_stream pw_sync.mutex
     pw_transfer.core pw_transfer.proto.raw_rpc
   PRIVATE_DEPS pw_log pw_log.rate_limited pw_transfer.proto.pwpb)
+
+# Upstream pw_metric and its pwpb RPC service (pw.metric.proto.MetricService).
+pw_add_module_config(pw_metric_CONFIG)
+pw_add_library(pw_metric.config INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_metric/public/pw_metric/config.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_metric/public"
+  PUBLIC_DEPS ${pw_metric_CONFIG})
+pw_add_library(pw_metric STATIC
+  HEADERS
+    "${PIGWEED_ROOT}/pw_metric/public/pw_metric/metric.h"
+    "${PIGWEED_ROOT}/pw_metric/public/pw_metric/list.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_metric/public"
+  PUBLIC_DEPS pw_metric.config pw_tokenizer.base64 pw_assert
+    pw_containers.intrusive_forward_list pw_log pw_memory.no_destructor
+    pw_numeric.checked_arithmetic pw_tokenizer
+  SOURCES
+    "${PIGWEED_ROOT}/pw_metric/metric.cc"
+    "${PIGWEED_ROOT}/pw_metric/metric_64bit.cc"
+  PRIVATE_DEPS pw_span)
+pw_proto_library(pw_metric.metric_service_proto
+  STRIP_PREFIX "${PIGWEED_ROOT}/pw_metric"
+  SOURCES "${PIGWEED_ROOT}/pw_metric/pw_metric_proto/metric_service.proto"
+  INPUTS
+    "${PIGWEED_ROOT}/pw_metric/pw_metric_proto/metric_service.options"
+    "${PIGWEED_ROOT}/pw_metric/pw_metric_proto/metric_service.pwpb_options"
+  DEPS pw_tokenizer.proto)
+pw_add_library(pw_metric.metric_walker STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_metric/public/pw_metric/metric_walker.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_metric/public"
+  SOURCES "${PIGWEED_ROOT}/pw_metric/metric_walker.cc"
+  PUBLIC_DEPS pw_metric pw_assert pw_containers.vector pw_function pw_result
+    pw_status pw_tokenizer)
+pw_add_library(pw_metric.pwpb_metric_writer INTERFACE
+  HEADERS "${PIGWEED_ROOT}/pw_metric/public/pw_metric/pwpb_metric_writer.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_metric/public"
+  PUBLIC_DEPS pw_metric pw_metric.metric_service_proto.pwpb
+    pw_metric.metric_walker pw_protobuf pw_status)
+pw_add_library(pw_metric.metric_service_pwpb STATIC
+  HEADERS "${PIGWEED_ROOT}/pw_metric/public/pw_metric/metric_service_pwpb.h"
+  PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_metric/public"
+  PUBLIC_DEPS pw_metric.metric_service_proto.pwpb_rpc
+    pw_metric.metric_service_proto.raw_rpc pw_metric.metric_walker
+    pw_metric.pwpb_metric_writer pw_metric pw_bytes pw_containers.vector
+    pw_preprocessor pw_protobuf pw_rpc.raw.server_api pw_span pw_status
+  SOURCES "${PIGWEED_ROOT}/pw_metric/metric_service_pwpb.cc")

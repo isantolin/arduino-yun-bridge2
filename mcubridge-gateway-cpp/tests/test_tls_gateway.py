@@ -10,18 +10,24 @@ import subprocess
 import tempfile
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 import unittest
 
 from mcubridge.protocol import protocol
 from mcubridge.protocol.gateway import gateway_control_pb2
 import pw_hdlc.decode
 import pw_hdlc.encode
+from pw_metric import metric_parser
+from pw_metric_proto import metric_service_pb2
 import pw_rpc.packets
 import pw_status
-from pw_rpc import callback_client
+from pw_rpc.callback_client.errors import RpcError as PwRpcError
+from pw_rpc.callback_client.impl import Impl as PwRpcCallbackImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.descriptors import Service as PwRpcService
+from pw_rpc.descriptors import Services as PwRpcServices
+from pw_tokenizer import detokenize
 from pw_transfer.client import Error as PwTransferError
 from pw_transfer.client import Manager as PwTransferManager
 import pytest
@@ -32,7 +38,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(
     os.environ.get(
         "MCUBRIDGE_GATEWAY_BINARY",
-        REPO_ROOT / "build/mcubridge-gateway/mcubridge-gateway-cpp",
+        os.environ.get(
+            "GATEWAY_BIN",
+            REPO_ROOT / "build/mcubridge-gateway/mcubridge-gateway-cpp",
+        ),
+    )
+)
+
+GATEWAY_SERVICES = PwRpcServices(
+    (
+        *protocol.PW_SERVICES,
+        *(
+            PwRpcService.from_descriptor(desc)
+            for desc in cast(Any, metric_service_pb2).DESCRIPTOR.services_by_name.values()
+        ),
     )
 )
 
@@ -65,9 +84,9 @@ class _TlsRpcPeer:
         self._closed = False
         self.errors: list[BaseException] = []
         self.rpc_client = PwRpcClient(
-            callback_client.Impl(default_unary_timeout_s=default_unary_timeout_s),
+            PwRpcCallbackImpl(default_unary_timeout_s=default_unary_timeout_s),
             [PwRpcChannel(1, self.send_packet)],
-            protocol.PW_SERVICES,
+            GATEWAY_SERVICES,
         )
         self._on_server_packet = on_server_packet
         self._thread = threading.Thread(target=self._reader, daemon=True)
@@ -121,7 +140,7 @@ class _TlsRpcPeer:
                     data = self._sock.recv(4096)
                 except (ssl.SSLWantReadError, ssl.SSLWantWriteError, BlockingIOError):
                     continue
-                except (OSError, ssl.SSLError) as exc:
+                except OSError as exc:
                     if self._running:
                         self.errors.append(exc)
                     break
@@ -393,6 +412,7 @@ class GatewayTlsIdentityTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="mcubridge-gateway-test-")
         cls.root = Path(cls.temp.name)
         cls.certs = Certificates(cls.root)
+        cls.detokenizer = detokenize.Detokenizer(BINARY)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -781,6 +801,215 @@ class GatewayTlsIdentityTests(unittest.TestCase):
             dev_peer.close()
             self.gateway.wait_for("device=device-01 event=session_closed")
         assert not (self.gateway.staging_dir / "devices" / "device-01").exists()
+
+    def _fetch_metrics(self, client_peer: _TlsRpcPeer) -> dict[str, Any]:
+        parse_metrics_fn: Any = metric_parser.parse_metrics
+        metrics: object = parse_metrics_fn(
+            client_peer.rpc_client.channel(1).rpcs,
+            self.detokenizer,
+            timeout_s=5.0,
+        )
+        assert not client_peer.errors
+        assert isinstance(metrics, dict)
+        return cast(dict[str, Any], metrics)
+
+    def test_pw_metric_service_tracks_live_gateway_counters(self) -> None:
+        """End-to-end verification of upstream pw.metric.proto.MetricService.Get."""
+        client_peer = _TlsRpcPeer(self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key))
+        dev_peer: _TlsRpcPeer | None = None
+        dev_peer_ref: list[_TlsRpcPeer] = []
+
+        def handle_edge_dispatch(pkt: Any) -> None:
+            edge_req = gateway_control_pb2.EdgeDispatchRequest()
+            edge_req.ParseFromString(pkt.payload)
+            edge_resp = gateway_control_pb2.EdgeDispatchResponse(
+                status_code=0,
+                response_payload=edge_req.operation.encode("utf-8"),
+            )
+            resp_pkt = pw_rpc.packets.encode_response(pkt, response=edge_resp, status=pw_status.Status.OK)
+            dev_peer_ref[0].send_packet(resp_pkt)
+
+        try:
+            self.gateway.wait_for("client=operator-01 event=session_open")
+            initial = self._fetch_metrics(client_peer)
+            assert initial["gateway"] == {
+                "device_sessions_opened": 0,
+                "client_sessions_opened": 1,
+                "active_device_sessions": 0,
+                "active_client_sessions": 1,
+                "dispatches_total": 0,
+                "dispatches_succeeded": 0,
+                "dispatches_failed": 0,
+                "telemetry_reports_total": 0,
+                "client_rejections_total": 0,
+                "acl_denials_total": 0,
+            }
+
+            # Trigger a rejected peer connection (missing URI SAN).
+            rejected = self.gateway.connect(self.certs.no_san_cert, self.certs.no_san_key)
+            try:
+                rejected.recv(1)
+            except (ssl.SSLError, OSError):
+                rejected_closed = True
+            else:
+                rejected_closed = True
+            finally:
+                rejected.close()
+            assert rejected_closed
+            self.gateway.wait_for("event=client_rejected reason=missing_or_invalid_uri_san")
+
+            # Open device session and report telemetry.
+            dev_peer = _TlsRpcPeer(
+                self.gateway.connect(self.certs.valid_cert, self.certs.valid_key),
+                on_server_packet=handle_edge_dispatch,
+            )
+            dev_peer_ref.append(dev_peer)
+            self.gateway.wait_for("device=device-01 event=session_open")
+
+            report_method = dev_peer.rpc_client.channel(1).rpcs.mcubridge.gateway.DeviceTelemetry.ReportTelemetry
+            telemetry_res = report_method(
+                gateway_control_pb2.TelemetryReport(
+                    daemon_metrics_blob=b"metric-sample",
+                    system_status_blob=b"ok",
+                )
+            )
+            assert telemetry_res.status == pw_status.Status.OK
+            assert telemetry_res.response.acknowledged
+
+            # Execute 1 ACL-denied dispatch, 1 not-found dispatch, and 1 successful dispatch.
+            dispatch_method = client_peer.rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
+            denied_res = dispatch_method(
+                gateway_control_pb2.DispatchRequest(
+                    target_device_id="device-01",
+                    operation="rpc.pb.SystemService/EnterBootloader",
+                    timeout_ms=1000,
+                )
+            )
+            assert denied_res.status == pw_status.Status.PERMISSION_DENIED
+
+            not_found_res = dispatch_method(
+                gateway_control_pb2.DispatchRequest(
+                    target_device_id="missing-device",
+                    operation="rpc.pb.SystemService/Ping",
+                    timeout_ms=1000,
+                )
+            )
+            assert not_found_res.status == pw_status.Status.NOT_FOUND
+
+            ok_res = dispatch_method(
+                gateway_control_pb2.DispatchRequest(
+                    target_device_id="device-01",
+                    operation="rpc.pb.SystemService/Ping",
+                    request_payload=b"ping",
+                    timeout_ms=3000,
+                )
+            )
+            assert ok_res.status == pw_status.Status.OK
+            assert ok_res.response.response_payload == b"rpc.pb.SystemService/Ping"
+
+            active_metrics = self._fetch_metrics(client_peer)
+            assert active_metrics["gateway"] == {
+                "device_sessions_opened": 1,
+                "client_sessions_opened": 1,
+                "active_device_sessions": 1,
+                "active_client_sessions": 1,
+                "dispatches_total": 3,
+                "dispatches_succeeded": 1,
+                "dispatches_failed": 2,
+                "telemetry_reports_total": 1,
+                "client_rejections_total": 1,
+                "acl_denials_total": 1,
+            }
+
+            # Close device session and verify active gauge drops while monotonic counter remains.
+            dev_peer.close()
+            dev_peer = None
+            self.gateway.wait_for("device=device-01 event=session_unregistered")
+
+            after_close = self._fetch_metrics(client_peer)
+            assert after_close["gateway"]["device_sessions_opened"] == 1
+            assert after_close["gateway"]["active_device_sessions"] == 0
+            assert after_close["gateway"]["active_client_sessions"] == 1
+        finally:
+            if dev_peer is not None:
+                dev_peer.close()
+                self.gateway.wait_for("device=device-01 event=session_closed")
+            client_peer.close()
+            self.gateway.wait_for("client=operator-01 event=session_closed")
+
+    def test_pw_metric_service_not_exposed_to_device_sessions(self) -> None:
+        """Device sessions must not expose northbound gateway-wide MetricService."""
+        dev_peer = _TlsRpcPeer(self.gateway.connect(self.certs.valid_cert, self.certs.valid_key))
+        try:
+            self.gateway.wait_for("device=device-01 event=session_open")
+            with pytest.raises(PwRpcError) as exc_info:
+                dev_peer.rpc_client.channel(1).rpcs.pw.metric.proto.MetricService.Get(pw_rpc_timeout_s=5.0)
+            assert not dev_peer.errors
+            assert exc_info.value.status == pw_status.Status.NOT_FOUND
+        finally:
+            dev_peer.close()
+            self.gateway.wait_for("device=device-01 event=session_closed")
+
+    def test_gateway_control_dispatch_timeout_and_device_disconnect(self) -> None:
+        """TimedThreadNotification dispatch wait enforces deadline and wakes immediately on disconnect."""
+        client_peer = _TlsRpcPeer(
+            self.gateway.connect(self.certs.client_role_cert, self.certs.client_role_key),
+            default_unary_timeout_s=10.0,
+        )
+        dev_peer: _TlsRpcPeer | None = None
+        try:
+            self.gateway.wait_for("client=operator-01 event=session_open")
+            dispatch_method = client_peer.rpc_client.channel(1).rpcs.mcubridge.gateway.GatewayControl.Dispatch
+
+            # 1. Silent device triggers DEADLINE_EXCEEDED after timeout_ms.
+            dev_peer = _TlsRpcPeer(self.gateway.connect(self.certs.valid_cert, self.certs.valid_key))
+            self.gateway.wait_for("device=device-01 event=session_open")
+            timeout_res = dispatch_method(
+                gateway_control_pb2.DispatchRequest(
+                    target_device_id="device-01",
+                    operation="rpc.pb.SystemService/Ping",
+                    timeout_ms=250,
+                )
+            )
+            assert timeout_res.status == pw_status.Status.DEADLINE_EXCEEDED
+            dev_peer.close()
+            dev_peer = None
+            self.gateway.wait_for("device=device-01 event=session_unregistered")
+
+            # 2. Device disconnecting mid-dispatch wakes waiter immediately with UNAVAILABLE.
+            dev_disconnect_ref: list[_TlsRpcPeer] = []
+
+            def drop_connection(_pkt: Any) -> None:
+                threading.Thread(target=dev_disconnect_ref[0].close, daemon=True).start()
+
+            dev_peer = _TlsRpcPeer(
+                self.gateway.connect(self.certs.valid_cert, self.certs.valid_key),
+                on_server_packet=drop_connection,
+            )
+            dev_disconnect_ref.append(dev_peer)
+            self.gateway.wait_for("device=device-01 event=session_open", count=2)
+
+            started = time.monotonic()
+            disconnect_res = dispatch_method(
+                gateway_control_pb2.DispatchRequest(
+                    target_device_id="device-01",
+                    operation="rpc.pb.SystemService/Ping",
+                    timeout_ms=10000,
+                )
+            )
+            elapsed = time.monotonic() - started
+            assert disconnect_res.status == pw_status.Status.UNAVAILABLE
+            assert elapsed < 3.0
+
+            metrics = self._fetch_metrics(client_peer)
+            assert metrics["gateway"]["dispatches_total"] == 2
+            assert metrics["gateway"]["dispatches_failed"] == 2
+            assert metrics["gateway"]["dispatches_succeeded"] == 0
+        finally:
+            if dev_peer is not None:
+                dev_peer.close()
+            client_peer.close()
+            self.gateway.wait_for("client=operator-01 event=session_closed")
 
 
 if __name__ == "__main__":

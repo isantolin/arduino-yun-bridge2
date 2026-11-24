@@ -72,6 +72,7 @@ add_subdirectory("${PIGWEED_ROOT}/pw_span" pw_span)
 add_subdirectory("${PIGWEED_ROOT}/pw_bytes" pw_bytes)
 add_subdirectory("${PIGWEED_ROOT}/pw_varint" pw_varint)
 add_subdirectory("${PIGWEED_ROOT}/pw_string" pw_string)
+add_subdirectory("${PIGWEED_ROOT}/pw_base64" pw_base64)
 add_subdirectory("${PIGWEED_ROOT}/pw_chrono" pw_chrono)
 add_subdirectory("${PIGWEED_ROOT}/pw_thread" pw_thread)
 add_subdirectory("${PIGWEED_ROOT}/pw_thread_stl" pw_thread_stl)
@@ -85,7 +86,9 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   gateway_control_proto.pwpb_rpc pw_rpc.pwpb.server_api pw_rpc.pwpb.client_api pw_protobuf
   mcu_wire_proto.raw_rpc pw_rpc.raw.client_api pw_rpc.client
   OpenSSL::SSL OpenSSL::Crypto Threads::Threads
-  pw_assert pw_log pw_log_basic pw_hdlc pw_rpc.server pw_transfer
+  pw_assert pw_log pw_log_basic pw_hdlc pw_hdlc.rpc_channel_output
+  pw_metric pw_metric.metric_service_pwpb pw_result
+  pw_rpc.server pw_transfer
   pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.binary_semaphore
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )

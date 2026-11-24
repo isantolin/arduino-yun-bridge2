@@ -14,7 +14,6 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -28,7 +27,6 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -39,18 +37,24 @@
 #include "mcu_wire.raw_rpc.pb.h"
 #include "pw_assert/check.h"
 #include "pw_bytes/span.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_hdlc/decoder.h"
 #include "pw_hdlc/encoded_size.h"
-#include "pw_hdlc/encoder.h"
+#include "pw_hdlc/rpc_channel.h"
 #include "pw_log/log.h"
 #include "pw_log_basic/log_basic.h"
+#include "pw_metric/metric.h"
+#include "pw_metric/metric_service_pwpb.h"
+#include "pw_result/result.h"
 #include "pw_rpc/channel.h"
 #include "pw_rpc/client.h"
 #include "pw_rpc/packet_meta.h"
 #include "pw_rpc/server.h"
 #include "pw_status/status.h"
+#include "pw_status/try.h"
 #include "pw_stream/memory_stream.h"
 #include "pw_stream/stream.h"
+#include "pw_sync/timed_thread_notification.h"
 #include "pw_thread/thread.h"
 #include "pw_thread_stl/options.h"
 #include "pw_transfer/client.h"
@@ -92,6 +96,37 @@ void WriteGatewayLog(std::string_view entry) {
   std::fflush(stderr);
 }
 
+// Runtime metrics exported over upstream pw.metric.proto.MetricService on
+// authenticated northbound client sessions. All PW_METRIC counters use
+// pw::metric::TypedMetric<uint32_t> backed by lock-free std::atomic<uint32_t>
+// saturating arithmetic, and the intrusive list topology is immutable after
+// construction before accepting connections.
+struct GatewayMetrics {
+  GatewayMetrics() { root_groups.push_front(gateway_group); }
+  GatewayMetrics(const GatewayMetrics&) = delete;
+  GatewayMetrics& operator=(const GatewayMetrics&) = delete;
+
+  pw::metric::MetricList root_metrics;
+  pw::metric::GroupList root_groups;
+  PW_METRIC_GROUP(gateway_group, "gateway");
+  PW_METRIC(gateway_group, device_sessions_opened, "device_sessions_opened",
+            0u);
+  PW_METRIC(gateway_group, client_sessions_opened, "client_sessions_opened",
+            0u);
+  PW_METRIC(gateway_group, active_device_sessions, "active_device_sessions",
+            0u);
+  PW_METRIC(gateway_group, active_client_sessions, "active_client_sessions",
+            0u);
+  PW_METRIC(gateway_group, dispatches_total, "dispatches_total", 0u);
+  PW_METRIC(gateway_group, dispatches_succeeded, "dispatches_succeeded", 0u);
+  PW_METRIC(gateway_group, dispatches_failed, "dispatches_failed", 0u);
+  PW_METRIC(gateway_group, telemetry_reports_total, "telemetry_reports_total",
+            0u);
+  PW_METRIC(gateway_group, client_rejections_total, "client_rejections_total",
+            0u);
+  PW_METRIC(gateway_group, acl_denials_total, "acl_denials_total", 0u);
+};
+
 std::filesystem::path ClientStagingDir(const std::string& client_id) {
   PW_CHECK(!g_staging_root.empty());
   return g_staging_root / "clients" / client_id;
@@ -104,36 +139,40 @@ std::filesystem::path DeviceStagingDir(const std::string& device_id) {
 
 // Creates `dir` if needed and verifies it is a real directory owned by this
 // process with mode 0700; refuses symlinks and foreign owners.
-bool EnsurePrivateDirectory(const std::filesystem::path& dir,
-                            std::string& error) {
+pw::Status EnsurePrivateDirectory(const std::filesystem::path& dir,
+                                  std::string& error) {
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
-  struct stat info {};
+  struct stat info{};
   if (lstat(dir.c_str(), &info) != 0 || !S_ISDIR(info.st_mode)) {
-    error = "staging path is not a directory (or is a symlink): " + dir.string();
-    return false;
+    error =
+        "staging path is not a directory (or is a symlink): " + dir.string();
+    return pw::Status::FailedPrecondition();
   }
   if (info.st_uid != geteuid()) {
     error = "staging directory is owned by another user: " + dir.string();
-    return false;
+    return pw::Status::PermissionDenied();
   }
   if (chmod(dir.c_str(), S_IRWXU) != 0) {
     error = "cannot set mode 0700 on staging directory: " + dir.string();
-    return false;
+    return pw::Status::Internal();
   }
-  return true;
+  return pw::OkStatus();
 }
 
-bool PrepareStagingRoot(const std::filesystem::path& root, std::string& error) {
-  return EnsurePrivateDirectory(root, error) &&
-         EnsurePrivateDirectory(root / "clients", error) &&
-         EnsurePrivateDirectory(root / "devices", error);
+pw::Status PrepareStagingRoot(const std::filesystem::path& root,
+                              std::string& error) {
+  PW_TRY(EnsurePrivateDirectory(root, error));
+  PW_TRY(EnsurePrivateDirectory(root / "clients", error));
+  PW_TRY(EnsurePrivateDirectory(root / "devices", error));
+  return pw::OkStatus();
 }
 
 void RemoveStagingDirectory(const std::filesystem::path& dir) {
   std::error_code ec;
   std::filesystem::remove_all(dir, ec);
 }
+
 std::atomic<bool> g_stopping{false};
 
 void HandleSignal(int) { g_stopping.store(true); }
@@ -158,10 +197,14 @@ bool IsValidPrincipalId(std::string_view id) {
   return true;
 }
 
-std::optional<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
-  if (SSL_get_verify_result(ssl) != X509_V_OK) return std::nullopt;
+pw::Result<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
+  if (SSL_get_verify_result(ssl) != X509_V_OK) {
+    return pw::Status::Unauthenticated();
+  }
   X509* certificate = SSL_get1_peer_certificate(ssl);
-  if (certificate == nullptr) return std::nullopt;
+  if (certificate == nullptr) {
+    return pw::Status::Unauthenticated();
+  }
   auto* names = static_cast<GENERAL_NAMES*>(
       X509_get_ext_d2i(certificate, NID_subject_alt_name, nullptr, nullptr));
   std::optional<PeerIdentity> identity;
@@ -207,8 +250,10 @@ std::optional<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
   }
   GENERAL_NAMES_free(names);
   X509_free(certificate);
-  if (uri_san_count != 1U) return std::nullopt;
-  return identity;
+  if (uri_san_count != 1U || !identity.has_value()) {
+    return pw::Status::InvalidArgument();
+  }
+  return std::move(*identity);
 }
 
 class TlsSocket {
@@ -239,8 +284,9 @@ class TlsSocket {
         if (!Wait(POLLIN, stopping)) return false;
       } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
         if (!Wait(POLLOUT, stopping)) return false;
-      } else
+      } else {
         return false;
+      }
     }
     return false;
   }
@@ -263,8 +309,9 @@ class TlsSocket {
         if (!Wait(POLLIN, stopping)) return false;
       } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
         if (!Wait(POLLOUT, stopping)) return false;
-      } else
+      } else {
         return false;
+      }
     }
     return offset == size;
   }
@@ -291,8 +338,9 @@ class TlsSocket {
         if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
           return false;
         if ((descriptor.revents & events) != 0) return true;
-      } else if (result < 0 && errno != EINTR)
+      } else if (result < 0 && errno != EINTR) {
         return false;
+      }
     }
     return false;
   }
@@ -311,22 +359,31 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
     return capacity_ - queued_bytes_;
   }
   bool Pop(std::vector<std::byte>& output, const std::atomic<bool>& stopping) {
-    std::unique_lock lock(mutex_);
-    ready_.wait_for(lock, std::chrono::milliseconds(250), [&] {
-      return stopped_ || !queue_.empty() || stopping.load();
-    });
-    if (queue_.empty()) return false;
-    output = std::move(queue_.front());
-    queue_.pop_front();
-    queued_bytes_ -= output.size();
-    return true;
+    while (true) {
+      {
+        std::lock_guard lock(mutex_);
+        if (!queue_.empty()) {
+          output = std::move(queue_.front());
+          queue_.pop_front();
+          queued_bytes_ -= output.size();
+          return true;
+        }
+        if (stopped_ || stopping.load()) {
+          return false;
+        }
+      }
+      if (!ready_.try_acquire_for(pw::chrono::SystemClock::for_at_least(
+              std::chrono::milliseconds(250)))) {
+        return false;
+      }
+    }
   }
   void Stop() {
     {
       std::lock_guard lock(mutex_);
       stopped_ = true;
     }
-    ready_.notify_all();
+    ready_.release();
   }
 
  protected:
@@ -336,39 +393,42 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
 
  private:
   pw::Status DoWrite(pw::ConstByteSpan data) override {
-    std::lock_guard lock(mutex_);
-    if (stopped_) return pw::Status::FailedPrecondition();
-    if (data.size_bytes() > capacity_ - queued_bytes_)
-      return pw::Status::ResourceExhausted();
-    queue_.emplace_back(data.begin(), data.end());
-    queued_bytes_ += data.size_bytes();
-    ready_.notify_one();
+    {
+      std::lock_guard lock(mutex_);
+      if (stopped_) return pw::Status::FailedPrecondition();
+      if (data.size_bytes() > capacity_ - queued_bytes_)
+        return pw::Status::ResourceExhausted();
+      queue_.emplace_back(data.begin(), data.end());
+      queued_bytes_ += data.size_bytes();
+    }
+    ready_.release();
     return pw::OkStatus();
   }
   const size_t capacity_;
   mutable std::mutex mutex_;
-  std::condition_variable ready_;
+  pw::sync::TimedThreadNotification ready_;
   std::deque<std::vector<std::byte>> queue_;
   size_t queued_bytes_{0};
   bool stopped_{false};
 };
 
-class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
+// Thread-safe wrapper over upstream pw::hdlc::RpcChannelOutput (which is
+// explicitly single-threaded). Serializes whole HDLC frames into TlsQueueWriter
+// and emits structured gateway backpressure/queue logs.
+class HdlcChannelOutput final : public pw::hdlc::RpcChannelOutput {
  public:
   HdlcChannelOutput(TlsQueueWriter& writer, uint64_t address)
-      : ChannelOutput("mcubridge-tls-hdlc"),
-        writer_(writer),
+      : pw::hdlc::RpcChannelOutput(writer, address, "mcubridge-tls-hdlc"),
         address_(address) {}
+
   pw::Status Send(pw::span<const std::byte> packet) override {
     std::lock_guard lock(mutex_);
-    const size_t frame_size = pw::hdlc::MaxEncodedFrameSize(address_, packet);
-    if (frame_size > writer_.ConservativeWriteLimit()) {
-      PW_LOG_WARN("event=rpc_frame_queue_rejected frame_bytes=%zu frame_size=%zu",
-                  packet.size(), frame_size);
-      return pw::Status::ResourceExhausted();
-    }
-    const pw::Status status = pw::hdlc::WriteUIFrame(address_, packet, writer_);
-    if (!status.ok()) {
+    const pw::Status status = pw::hdlc::RpcChannelOutput::Send(packet);
+    if (status == pw::Status::ResourceExhausted()) {
+      PW_LOG_WARN(
+          "event=rpc_frame_queue_rejected frame_bytes=%zu frame_size=%zu",
+          packet.size(), pw::hdlc::MaxEncodedFrameSize(address_, packet));
+    } else if (!status.ok()) {
       PW_LOG_WARN("event=rpc_frame_queue_failed frame_bytes=%zu status=%s",
                   packet.size(), status.str());
     } else {
@@ -378,7 +438,6 @@ class HdlcChannelOutput final : public pw::rpc::ChannelOutput {
   }
 
  private:
-  TlsQueueWriter& writer_;
   const uint64_t address_;
   std::mutex mutex_;
 };
@@ -426,14 +485,14 @@ class GatewayAcl {
     std::string operation;
   };
 
-  static std::optional<GatewayAcl> Load(const std::string& path,
-                                        std::string& error) {
+  static pw::Result<GatewayAcl> Load(const std::string& path,
+                                     std::string& error) {
     GatewayAcl acl;
     if (path.empty()) return acl;
     std::ifstream input(path);
     if (!input) {
       error = "cannot read ACL file " + path;
-      return std::nullopt;
+      return pw::Status::NotFound();
     }
     std::string line;
     size_t line_number = 0;
@@ -450,7 +509,7 @@ class GatewayAcl {
         error = "invalid ACL rule at " + path + ":" +
                 std::to_string(line_number) +
                 " (expected: <client> <device|*> <operation|*>)";
-        return std::nullopt;
+        return pw::Status::InvalidArgument();
       }
       acl.rules_.push_back(std::move(rule));
     }
@@ -507,29 +566,32 @@ class DeviceTelemetryService final
     : public mcubridge::gateway::pw_rpc::pwpb::DeviceTelemetry::Service<
           DeviceTelemetryService> {
  public:
-  explicit DeviceTelemetryService(const std::string& device_id)
-      : device_id_(device_id) {}
+  DeviceTelemetryService(const std::string& device_id, GatewayMetrics& metrics)
+      : device_id_(device_id), metrics_(metrics) {}
 
   pw::Status ReportTelemetry(
       const mcubridge::gateway::pwpb::TelemetryReport::Message& request,
       mcubridge::gateway::pwpb::TelemetryResponse::Message& response) {
-    PW_LOG_INFO("device=%s event=telemetry_reported metrics_bytes=%zu status_bytes=%zu",
-                device_id_.c_str(), request.daemon_metrics_blob.size(),
-                request.system_status_blob.size());
+    metrics_.telemetry_reports_total.Increment();
+    PW_LOG_INFO(
+        "device=%s event=telemetry_reported metrics_bytes=%zu status_bytes=%zu",
+        device_id_.c_str(), request.daemon_metrics_blob.size(),
+        request.system_status_blob.size());
     response.acknowledged = true;
     return pw::OkStatus();
   }
 
  private:
   const std::string& device_id_;
+  GatewayMetrics& metrics_;
 };
 
 void LogHandlerRegistrationFailure(std::string_view role,
                                    const std::string& principal_id,
                                    const pw::transfer::Handler& handler) {
   PW_LOG_ERROR("%.*s=%s event=transfer_handler_registration_failed resource=%u",
-               static_cast<int>(role.size()), role.data(),
-               principal_id.c_str(), static_cast<unsigned>(handler.id()));
+               static_cast<int>(role.size()), role.data(), principal_id.c_str(),
+               static_cast<unsigned>(handler.id()));
 }
 
 class BufferTransferHandler final : public pw::transfer::Handler {
@@ -566,6 +628,63 @@ class BufferTransferHandler final : public pw::transfer::Handler {
   std::optional<pw::stream::MemoryWriter> writer_;
 };
 
+pw::Result<std::vector<std::byte>> ReadBoundedFile(
+    const std::filesystem::path& target_path, size_t max_bytes) {
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(target_path, ec)) {
+    return pw::Status::NotFound();
+  }
+  const auto file_size = std::filesystem::file_size(target_path, ec);
+  if (ec || file_size > max_bytes) {
+    return pw::Status::ResourceExhausted();
+  }
+  std::vector<std::byte> bytes(file_size);
+  const int fd = open(target_path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return pw::Status::Internal();
+  size_t total_read = 0;
+  while (total_read < file_size) {
+    const ssize_t rc =
+        read(fd, bytes.data() + total_read, file_size - total_read);
+    if (rc <= 0) {
+      close(fd);
+      return pw::Status::Internal();
+    }
+    total_read += static_cast<size_t>(rc);
+  }
+  close(fd);
+  return bytes;
+}
+
+pw::Status WriteAtomicFile(const std::filesystem::path& root_dir,
+                           const std::string& filename,
+                           pw::ConstByteSpan data) {
+  const auto tmp_path = root_dir / ("." + filename + ".tmp");
+  const auto target_path = root_dir / filename;
+  const int fd =
+      open(tmp_path.c_str(),
+           O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
+  if (fd < 0) {
+    return pw::Status::Internal();
+  }
+  size_t total_written = 0;
+  while (total_written < data.size()) {
+    const ssize_t rc =
+        write(fd, data.data() + total_written, data.size() - total_written);
+    if (rc <= 0) {
+      close(fd);
+      unlink(tmp_path.c_str());
+      return pw::Status::Internal();
+    }
+    total_written += static_cast<size_t>(rc);
+  }
+  close(fd);
+  if (rename(tmp_path.c_str(), target_path.c_str()) != 0) {
+    unlink(tmp_path.c_str());
+    return pw::Status::Internal();
+  }
+  return pw::OkStatus();
+}
+
 class BoundedFileTransferHandler final : public pw::transfer::Handler {
  public:
   BoundedFileTransferHandler(uint32_t resource_id,
@@ -581,34 +700,9 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
 
   pw::Status PrepareRead() override {
     CloseFiles();
-    if (filename_.empty() || filename_.find("..") != std::string::npos ||
-        filename_.find('/') != std::string::npos ||
-        filename_.find('\\') != std::string::npos) {
-      return pw::Status::PermissionDenied();
-    }
-    const auto target_path = root_dir_ / filename_;
-    std::error_code ec;
-    if (!std::filesystem::is_regular_file(target_path, ec)) {
-      return pw::Status::NotFound();
-    }
-    const auto file_size = std::filesystem::file_size(target_path, ec);
-    if (ec || file_size > max_bytes_) {
-      return pw::Status::ResourceExhausted();
-    }
-    file_bytes_.resize(file_size);
-    int fd = open(target_path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-    if (fd < 0) return pw::Status::Internal();
-    size_t total_read = 0;
-    while (total_read < file_size) {
-      ssize_t rc =
-          read(fd, file_bytes_.data() + total_read, file_size - total_read);
-      if (rc <= 0) {
-        close(fd);
-        return pw::Status::Internal();
-      }
-      total_read += static_cast<size_t>(rc);
-    }
-    close(fd);
+    PW_TRY(ValidateFilename());
+    PW_TRY_ASSIGN(file_bytes_,
+                  ReadBoundedFile(root_dir_ / filename_, max_bytes_));
     reader_.emplace(pw::ConstByteSpan(file_bytes_));
     set_reader(*reader_);
     return pw::OkStatus();
@@ -618,18 +712,14 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
 
   pw::Status PrepareWrite() override {
     CloseFiles();
-    if (filename_.empty() || filename_.find("..") != std::string::npos ||
-        filename_.find('/') != std::string::npos ||
-        filename_.find('\\') != std::string::npos) {
-      return pw::Status::PermissionDenied();
-    }
+    PW_TRY(ValidateFilename());
     std::error_code ec;
     std::filesystem::create_directories(root_dir_, ec);
-    std::filesystem::permissions(
-        root_dir_,
-        std::filesystem::perms::owner_read | std::filesystem::perms::owner_write |
-            std::filesystem::perms::owner_exec,
-        std::filesystem::perm_options::replace, ec);
+    std::filesystem::permissions(root_dir_,
+                                 std::filesystem::perms::owner_read |
+                                     std::filesystem::perms::owner_write |
+                                     std::filesystem::perms::owner_exec,
+                                 std::filesystem::perm_options::replace, ec);
     write_buffer_.resize(max_bytes_);
     writer_.emplace(pw::ByteSpan(write_buffer_));
     set_writer(*writer_);
@@ -637,43 +727,21 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
   }
 
   pw::Status FinalizeWrite(pw::Status status) override {
-    if (!status.ok() || !writer_.has_value()) {
-      CloseFiles();
-      return status;
+    struct ScopeClose {
+      BoundedFileTransferHandler& self;
+      ~ScopeClose() { self.CloseFiles(); }
+    } close_guard{*this};
+
+    PW_TRY(status);
+    if (!writer_.has_value()) {
+      return pw::Status::FailedPrecondition();
     }
     const size_t written = writer_->bytes_written();
     if (written > max_bytes_) {
-      CloseFiles();
       return pw::Status::ResourceExhausted();
     }
-    const auto tmp_path = root_dir_ / ("." + filename_ + ".tmp");
-    const auto target_path = root_dir_ / filename_;
-    int fd = open(tmp_path.c_str(),
-                  O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd < 0) {
-      CloseFiles();
-      return pw::Status::Internal();
-    }
-    size_t total_written = 0;
-    while (total_written < written) {
-      ssize_t rc = write(fd, write_buffer_.data() + total_written,
-                         written - total_written);
-      if (rc <= 0) {
-        close(fd);
-        unlink(tmp_path.c_str());
-        CloseFiles();
-        return pw::Status::Internal();
-      }
-      total_written += static_cast<size_t>(rc);
-    }
-    close(fd);
-    if (rename(tmp_path.c_str(), target_path.c_str()) != 0) {
-      unlink(tmp_path.c_str());
-      CloseFiles();
-      return pw::Status::Internal();
-    }
-    CloseFiles();
-    return pw::OkStatus();
+    return WriteAtomicFile(root_dir_, filename_,
+                           pw::ConstByteSpan(write_buffer_.data(), written));
   }
 
   size_t ResourceSize() const override {
@@ -686,6 +754,15 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
   }
 
  private:
+  pw::Status ValidateFilename() const {
+    if (filename_.empty() || filename_.find("..") != std::string::npos ||
+        filename_.find('/') != std::string::npos ||
+        filename_.find('\\') != std::string::npos) {
+      return pw::Status::PermissionDenied();
+    }
+    return pw::OkStatus();
+  }
+
   void CloseFiles() {
     reader_.reset();
     writer_.reset();
@@ -709,9 +786,10 @@ class GatewaySession final
       public std::enable_shared_from_this<GatewaySession> {
  public:
   GatewaySession(SSL* ssl, int fd, std::string device_id,
-                 DeviceSessionRegistry& registry)
+                 DeviceSessionRegistry& registry, GatewayMetrics& metrics)
       : socket_(ssl, fd),
         registry_(registry),
+        metrics_(metrics),
         channel_output_(tx_writer_, kRpcHdlcAddress),
         client_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         server_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
@@ -721,7 +799,7 @@ class GatewaySession final
                          pw::ByteSpan(transfer_encode_)),
         transfer_service_(transfer_thread_, kTransferWindowBytes),
         device_id_(std::move(device_id)),
-        telemetry_service_(device_id_),
+        telemetry_service_(device_id_, metrics_),
         edge_control_client_(rpc_client_, 1),
         decoder_(pw::ByteSpan(decoder_storage_)) {}
   GatewaySession(const GatewaySession&) = delete;
@@ -730,30 +808,36 @@ class GatewaySession final
   void Run() override {
     if (!socket_.SetNonBlocking()) return;
     if (!registry_.Register(device_id_, shared_from_this())) {
+      metrics_.client_rejections_total.Increment();
       PW_LOG_WARN("device=%s event=session_rejected reason=duplicate_session",
                   device_id_.c_str());
       return;
     }
+    metrics_.device_sessions_opened.Increment();
+    metrics_.active_device_sessions.Increment();
     struct RegistrationGuard {
       DeviceSessionRegistry& registry;
+      GatewayMetrics& metrics;
       const std::string& device_id;
       const GatewaySession* session;
       ~RegistrationGuard() {
         registry.Unregister(device_id, session);
+        metrics.active_device_sessions.Decrement();
         PW_LOG_INFO("device=%s event=session_unregistered", device_id.c_str());
       }
-    } registration{registry_, device_id_, this};
+    } registration{registry_, metrics_, device_id_, this};
+
+    if (stopping_.load()) return;
 
     // The transfer thread must run before handlers are registered:
     // TransferService::RegisterHandler() posts an event that only the running
     // thread can process, and returns false after the event-processing timeout
     // when the thread has not started, leaving the resource unregistered.
-    pw::thread::stl::Options transfer_options;
-    transfer_worker_ = std::make_unique<pw::thread::Thread>(
-        transfer_options, transfer_thread_.AsFunction());
+    pw::thread::stl::Options thread_options;
+    transfer_worker_ =
+        pw::thread::Thread(thread_options, transfer_thread_.AsFunction());
 
-    rpc_server_.RegisterService(telemetry_service_);
-    rpc_server_.RegisterService(transfer_service_);
+    rpc_server_.RegisterService(telemetry_service_, transfer_service_);
     services_registered_.store(true);
     if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
       default_handler_registered_.store(true);
@@ -774,10 +858,11 @@ class GatewaySession final
                                     eeprom_transfer_handler_);
     }
 
-    tx_worker_ = std::thread([this] { TransmitLoop(); });
+    tx_worker_ = pw::thread::Thread(thread_options, [this] { TransmitLoop(); });
     PW_LOG_INFO("device=%s event=session_open", device_id_.c_str());
     ReceiveLoop();
     stopping_.store(true);
+    dispatch_done_.release();
     socket_.Stop();
     tx_writer_.Stop();
     if (tx_worker_.joinable()) tx_worker_.join();
@@ -789,14 +874,14 @@ class GatewaySession final
 
   void Stop() override {
     stopping_.store(true);
+    dispatch_done_.release();
     socket_.Stop();
     tx_writer_.Stop();
-    TerminateTransfer();
-    UnregisterServices();
   }
 
   ~GatewaySession() override {
     stopping_.store(true);
+    dispatch_done_.release();
     TerminateTransfer();
     UnregisterServices();
     if (tx_worker_.joinable()) tx_worker_.join();
@@ -810,6 +895,12 @@ class GatewaySession final
     }
 
     std::lock_guard session_lock(dispatch_mutex_);
+    // Drain any stale wakeup before re-checking stopping_ so a concurrent
+    // Stop() or disconnect cannot race past our wait loop.
+    static_cast<void>(dispatch_done_.try_acquire());
+    if (stopping_.load()) {
+      return pw::Status::Unavailable();
+    }
 
     mcubridge::gateway::pwpb::EdgeDispatchRequest::Message edge_req{};
     edge_req.operation = request.operation;
@@ -817,62 +908,72 @@ class GatewaySession final
     edge_req.timeout_ms = request.timeout_ms;
 
     struct DispatchContext {
-      std::mutex cv_mutex;
-      std::condition_variable cv;
-      bool completed = false;
+      explicit DispatchContext(pw::sync::TimedThreadNotification& notification)
+          : done(notification) {}
+      pw::sync::TimedThreadNotification& done;
+      std::atomic<bool> completed{false};
       pw::Status call_status = pw::OkStatus();
       uint32_t status_code = 0;
       std::vector<std::byte> response_payload;
-    } ctx;
+    } ctx(dispatch_done_);
 
-    auto call = edge_control_client_.Dispatch(
-        edge_req,
-        [&ctx](const mcubridge::gateway::pwpb::EdgeDispatchResponse::Message&
-                   edge_resp,
-               pw::Status status) {
-          std::lock_guard lock(ctx.cv_mutex);
-          ctx.call_status = status;
-          ctx.status_code = edge_resp.status_code;
-          ctx.response_payload.assign(edge_resp.response_payload.begin(),
-                                      edge_resp.response_payload.end());
-          ctx.completed = true;
-          PW_LOG_INFO(
-              "event=edge_dispatch_response_received status=%s device_status=%u payload_bytes=%zu",
-              status.str(), static_cast<unsigned>(edge_resp.status_code),
-              edge_resp.response_payload.size());
-          ctx.cv.notify_one();
-        },
-        [&ctx](pw::Status status) {
-          std::lock_guard lock(ctx.cv_mutex);
-          ctx.call_status = status;
-          ctx.completed = true;
-          PW_LOG_WARN("event=edge_dispatch_rpc_error status=%s", status.str());
-          ctx.cv.notify_one();
-        });
+    const uint32_t timeout =
+        request.timeout_ms > 0 ? request.timeout_ms : 30000U;
+    const auto deadline = pw::chrono::SystemClock::TimePointAfterAtLeast(
+        pw::chrono::SystemClock::for_at_least(
+            std::chrono::milliseconds(timeout)));
 
-    if (!call.active()) {
-      PW_LOG_WARN("event=edge_dispatch_call_inactive");
-      return pw::Status::Unavailable();
+    {
+      auto call = edge_control_client_.Dispatch(
+          edge_req,
+          [&ctx](const mcubridge::gateway::pwpb::EdgeDispatchResponse::Message&
+                     edge_resp,
+                 pw::Status status) {
+            ctx.call_status = status;
+            ctx.status_code = edge_resp.status_code;
+            ctx.response_payload.assign(edge_resp.response_payload.begin(),
+                                        edge_resp.response_payload.end());
+            ctx.completed.store(true, std::memory_order_release);
+            PW_LOG_INFO(
+                "event=edge_dispatch_response_received status=%s "
+                "device_status=%u payload_bytes=%zu",
+                status.str(), static_cast<unsigned>(edge_resp.status_code),
+                edge_resp.response_payload.size());
+            ctx.done.release();
+          },
+          [&ctx](pw::Status status) {
+            ctx.call_status = status;
+            ctx.completed.store(true, std::memory_order_release);
+            PW_LOG_WARN("event=edge_dispatch_rpc_error status=%s",
+                        status.str());
+            ctx.done.release();
+          });
+
+      if (!call.active()) {
+        PW_LOG_WARN("event=edge_dispatch_call_inactive");
+        return pw::Status::Unavailable();
+      }
+      PW_LOG_INFO("event=edge_dispatch_call_started timeout_ms=%u",
+                  static_cast<unsigned>(timeout));
+
+      while (!ctx.completed.load(std::memory_order_acquire) &&
+             !stopping_.load()) {
+        if (!dispatch_done_.try_acquire_until(deadline)) {
+          break;
+        }
+      }
+
+      if (!ctx.completed.load(std::memory_order_acquire)) {
+        call.Cancel().IgnoreError();
+      }
+    }  // Destroys `call` and waits for any in-flight RPC callback to finish.
+
+    if (!ctx.completed.load(std::memory_order_acquire)) {
+      return stopping_.load() ? pw::Status::Unavailable()
+                              : pw::Status::DeadlineExceeded();
     }
-    const uint32_t timeout = request.timeout_ms > 0 ? request.timeout_ms : 30000;
-    PW_LOG_INFO("event=edge_dispatch_call_started timeout_ms=%u",
-                static_cast<unsigned>(timeout));
-    std::unique_lock lock(ctx.cv_mutex);
-    if (!ctx.cv.wait_for(lock, std::chrono::milliseconds(timeout),
-                         [&] { return ctx.completed || stopping_.load(); })) {
-      call.Cancel().IgnoreError();
-      return pw::Status::DeadlineExceeded();
-    }
 
-    if (stopping_.load() && !ctx.completed) {
-      call.Cancel().IgnoreError();
-      return pw::Status::Unavailable();
-    }
-
-    if (!ctx.call_status.ok()) {
-      return ctx.call_status;
-    }
-
+    PW_TRY(ctx.call_status);
     response.status_code = ctx.status_code;
     response.response_payload.assign(ctx.response_payload.begin(),
                                      ctx.response_payload.end());
@@ -900,12 +1001,10 @@ class GatewaySession final
   void TerminateTransfer() {
     bool expected = false;
     if (transfer_terminated_.compare_exchange_strong(expected, true)) {
-      if (transfer_worker_ != nullptr) {
+      if (transfer_worker_.joinable()) {
         UnregisterTransferHandlers();
         transfer_thread_.Terminate();
-        if (transfer_worker_->joinable()) {
-          transfer_worker_->join();
-        }
+        transfer_worker_.join();
       }
     }
   }
@@ -926,10 +1025,32 @@ class GatewaySession final
       if (!tx_writer_.Pop(frame, stopping_)) continue;
       if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
         stopping_.store(true);
+        dispatch_done_.release();
         socket_.Stop();
         break;
       }
     }
+  }
+
+  pw::Status ProcessDevicePacket(pw::ConstByteSpan data) {
+    const pw::Result<pw::rpc::PacketMeta> meta =
+        pw::rpc::PacketMeta::FromBuffer(data);
+    if (!meta.ok()) {
+      PW_LOG_WARN("device=%s event=rpc_packet_corrupt", device_id_.c_str());
+      return pw::OkStatus();
+    }
+    if (meta->destination_is_client()) {
+      const pw::Status status = rpc_client_.ProcessPacket(data);
+      if (!status.ok() && status != pw::Status::Unavailable()) {
+        PW_LOG_WARN("device=%s event=rpc_client_packet_rejected status=%s",
+                    device_id_.c_str(), status.str());
+      }
+      return status;
+    }
+    if (meta->destination_is_server()) {
+      return rpc_server_.ProcessPacket(data);
+    }
+    return pw::Status::InvalidArgument();
   }
 
   void ReceiveLoop() {
@@ -941,23 +1062,7 @@ class GatewaySession final
         auto frame = decoder_.Process(input[i]);
         if (frame.status() == pw::Status::Unavailable()) continue;
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        auto meta = pw::rpc::PacketMeta::FromBuffer(frame->data());
-        if (!meta.ok()) {
-          PW_LOG_WARN("device=%s event=rpc_packet_corrupt", device_id_.c_str());
-          continue;
-        }
-        pw::Status status;
-        if (meta->destination_is_client()) {
-          status = rpc_client_.ProcessPacket(frame->data());
-          if (!status.ok() && status != pw::Status::Unavailable()) {
-            PW_LOG_WARN("device=%s event=rpc_client_packet_rejected status=%s",
-                        device_id_.c_str(), status.str());
-          }
-        } else if (meta->destination_is_server()) {
-          status = rpc_server_.ProcessPacket(frame->data());
-        } else {
-          status = pw::Status::InvalidArgument();
-        }
+        const pw::Status status = ProcessDevicePacket(frame->data());
         if (!status.ok() && status != pw::Status::Unavailable()) {
           PW_LOG_WARN("device=%s event=rpc_packet_rejected status=%u",
                       device_id_.c_str(), static_cast<unsigned>(status.code()));
@@ -968,6 +1073,7 @@ class GatewaySession final
 
   TlsSocket socket_;
   DeviceSessionRegistry& registry_;
+  GatewayMetrics& metrics_;
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> client_channels_;
@@ -978,7 +1084,7 @@ class GatewaySession final
   std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
   pw::transfer::Thread<1, 1> transfer_thread_;
   pw::transfer::TransferService transfer_service_;
-  std::unique_ptr<pw::thread::Thread> transfer_worker_;
+  pw::thread::Thread transfer_worker_;
   std::string device_id_;
   std::array<std::byte, 64 * 1024> device_transfer_buffer_{};
   BufferTransferHandler default_transfer_handler_{
@@ -1000,7 +1106,8 @@ class GatewaySession final
   std::atomic<bool> transfer_terminated_{false};
   std::atomic<bool> services_registered_{false};
   std::atomic<bool> services_unregistered_{false};
-  std::thread tx_worker_;
+  pw::sync::TimedThreadNotification dispatch_done_;
+  pw::thread::Thread tx_worker_;
   std::mutex dispatch_mutex_;
   std::mutex staging_mutex_;
 };
@@ -1011,10 +1118,11 @@ class GatewayControlService final
  public:
   GatewayControlService(DeviceSessionRegistry& devices,
                         ClientSessionRegistry& clients, const GatewayAcl& acl,
-                        std::string client_id)
+                        GatewayMetrics& metrics, std::string client_id)
       : devices_(devices),
         clients_(clients),
         acl_(acl),
+        metrics_(metrics),
         client_id_(std::move(client_id)) {}
 
   pw::Status Health(
@@ -1029,11 +1137,72 @@ class GatewayControlService final
   pw::Status Dispatch(
       const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
       mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
+    metrics_.dispatches_total.Increment();
+    const pw::Status status = ExecuteDispatch(request, response);
+    if (status.ok()) {
+      metrics_.dispatches_succeeded.Increment();
+    } else {
+      metrics_.dispatches_failed.Increment();
+    }
+    return status;
+  }
+
+ private:
+  pw::Status StageClientFileToDevice(const std::filesystem::path& client_file,
+                                     const std::filesystem::path& device_file,
+                                     const std::string& target_id) const {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(client_file, ec)) {
+      PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
+                  client_id_.c_str(), target_id.c_str());
+      return pw::Status::FailedPrecondition();
+    }
+    std::string error;
+    if (!EnsurePrivateDirectory(DeviceStagingDir(target_id), error).ok()) {
+      PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s detail=%s",
+                   client_id_.c_str(), target_id.c_str(), error.c_str());
+      return pw::Status::Internal();
+    }
+    std::filesystem::rename(client_file, device_file, ec);
+    if (ec) {
+      PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s",
+                   client_id_.c_str(), target_id.c_str());
+      return pw::Status::Internal();
+    }
+    return pw::OkStatus();
+  }
+
+  pw::Status StageDeviceFileToClient(const std::filesystem::path& device_file,
+                                     const std::filesystem::path& client_file,
+                                     const std::string& target_id) const {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(device_file, ec)) {
+      PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
+                  client_id_.c_str(), target_id.c_str());
+      return pw::Status::NotFound();
+    }
+    std::string error;
+    if (!EnsurePrivateDirectory(ClientStagingDir(client_id_), error).ok()) {
+      std::filesystem::remove(device_file, ec);
+      return pw::Status::Internal();
+    }
+    std::filesystem::rename(device_file, client_file, ec);
+    if (ec) {
+      std::filesystem::remove(device_file, ec);
+      return pw::Status::Internal();
+    }
+    return pw::OkStatus();
+  }
+
+  pw::Status ExecuteDispatch(
+      const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
+      mcubridge::gateway::pwpb::DispatchResponse::Message& response) {
     const std::string target_id(request.target_device_id);
     const std::string_view op(request.operation);
     // Checked before the device lookup so a denied client cannot probe which
     // devices are connected.
     if (!acl_.Allows(client_id_, target_id, op)) {
+      metrics_.acl_denials_total.Increment();
       PW_LOG_WARN("client=%s event=dispatch_denied target=%s operation=%.*s",
                   client_id_.c_str(), target_id.c_str(),
                   static_cast<int>(op.size()), op.data());
@@ -1080,58 +1249,29 @@ class GatewayControlService final
     }
 
     if (staged && staged->to_device) {
-      std::string error;
-      if (!std::filesystem::is_regular_file(client_file, ec)) {
-        PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
-                    client_id_.c_str(), target_id.c_str());
-        return pw::Status::FailedPrecondition();
-      }
-      if (!EnsurePrivateDirectory(DeviceStagingDir(target_id), error)) {
-        PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s detail=%s",
-                     client_id_.c_str(), target_id.c_str(), error.c_str());
-        return pw::Status::Internal();
-      }
-      std::filesystem::rename(client_file, device_file, ec);
-      if (ec) {
-        PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s",
-                     client_id_.c_str(), target_id.c_str());
-        return pw::Status::Internal();
-      }
+      PW_TRY(StageClientFileToDevice(client_file, device_file, target_id));
     }
 
     const pw::Status status = session->Dispatch(request, response);
     PW_LOG_INFO(
-        "client=%s event=dispatch_completed target=%s operation=%.*s status=%s device_status=%u",
+        "client=%s event=dispatch_completed target=%s operation=%.*s status=%s "
+        "device_status=%u",
         client_id_.c_str(), target_id.c_str(), static_cast<int>(op.size()),
         op.data(), status.str(), static_cast<unsigned>(response.status_code));
 
     if (staged && staged->to_device) {
       std::filesystem::remove(device_file, ec);
     } else if (staged && status.ok()) {
-      std::string error;
-      if (!std::filesystem::is_regular_file(device_file, ec)) {
-        PW_LOG_WARN("client=%s event=dispatch_missing_staging target=%s",
-                    client_id_.c_str(), target_id.c_str());
-        return pw::Status::NotFound();
-      }
-      if (!EnsurePrivateDirectory(ClientStagingDir(client_id_), error)) {
-        std::filesystem::remove(device_file, ec);
-        return pw::Status::Internal();
-      }
-      std::filesystem::rename(device_file, client_file, ec);
-      if (ec) {
-        std::filesystem::remove(device_file, ec);
-        return pw::Status::Internal();
-      }
+      PW_TRY(StageDeviceFileToClient(device_file, client_file, target_id));
     }
 
     return status;
   }
 
- private:
   DeviceSessionRegistry& devices_;
   ClientSessionRegistry& clients_;
   const GatewayAcl& acl_;
+  GatewayMetrics& metrics_;
   std::string client_id_;
 };
 
@@ -1139,11 +1279,14 @@ class GatewayClientSession final : public SessionControl {
  public:
   GatewayClientSession(SSL* ssl, int fd, std::string client_id,
                        DeviceSessionRegistry& devices,
-                       ClientSessionRegistry& clients, const GatewayAcl& acl)
+                       ClientSessionRegistry& clients, const GatewayAcl& acl,
+                       GatewayMetrics& metrics)
       : socket_(ssl, fd),
         clients_(clients),
+        metrics_(metrics),
         client_id_(std::move(client_id)),
-        control_service_(devices, clients, acl, client_id_),
+        control_service_(devices, clients, acl, metrics, client_id_),
+        metric_service_(metrics.root_metrics, metrics.root_groups),
         channel_output_(tx_writer_, kRpcHdlcAddress),
         channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         rpc_server_(channels_),
@@ -1157,26 +1300,33 @@ class GatewayClientSession final : public SessionControl {
   void Run() override {
     if (!socket_.SetNonBlocking()) return;
     if (!clients_.Register(client_id_, this)) {
+      metrics_.client_rejections_total.Increment();
       PW_LOG_WARN("client=%s event=session_rejected reason=duplicate_session",
                   client_id_.c_str());
       return;
     }
+    metrics_.client_sessions_opened.Increment();
+    metrics_.active_client_sessions.Increment();
     struct RegistrationGuard {
       ClientSessionRegistry& registry;
+      GatewayMetrics& metrics;
       const std::string& client_id;
       const void* session;
       ~RegistrationGuard() {
         registry.Unregister(client_id, session);
+        metrics.active_client_sessions.Decrement();
         PW_LOG_INFO("client=%s event=session_unregistered", client_id.c_str());
       }
-    } registration{clients_, client_id_, this};
+    } registration{clients_, metrics_, client_id_, this};
 
-    pw::thread::stl::Options transfer_options;
-    transfer_worker_ = std::make_unique<pw::thread::Thread>(
-        transfer_options, transfer_thread_.AsFunction());
+    if (stopping_.load()) return;
 
-    rpc_server_.RegisterService(control_service_);
-    rpc_server_.RegisterService(transfer_service_);
+    pw::thread::stl::Options thread_options;
+    transfer_worker_ =
+        pw::thread::Thread(thread_options, transfer_thread_.AsFunction());
+
+    rpc_server_.RegisterService(control_service_, transfer_service_,
+                                metric_service_);
     services_registered_.store(true);
     if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
       default_handler_registered_.store(true);
@@ -1196,7 +1346,7 @@ class GatewayClientSession final : public SessionControl {
       LogHandlerRegistrationFailure("client", client_id_,
                                     file_transfer_handler_);
     }
-    tx_worker_ = std::thread([this] { TransmitLoop(); });
+    tx_worker_ = pw::thread::Thread(thread_options, [this] { TransmitLoop(); });
     PW_LOG_INFO("client=%s event=session_open", client_id_.c_str());
     ReceiveLoop();
     stopping_.store(true);
@@ -1213,8 +1363,6 @@ class GatewayClientSession final : public SessionControl {
     stopping_.store(true);
     socket_.Stop();
     tx_writer_.Stop();
-    TerminateTransfer();
-    UnregisterServices();
   }
 
   ~GatewayClientSession() override {
@@ -1243,12 +1391,10 @@ class GatewayClientSession final : public SessionControl {
   void TerminateTransfer() {
     bool expected = false;
     if (transfer_terminated_.compare_exchange_strong(expected, true)) {
-      if (transfer_worker_ != nullptr) {
+      if (transfer_worker_.joinable()) {
         UnregisterTransferHandlers();
         transfer_thread_.Terminate();
-        if (transfer_worker_->joinable()) {
-          transfer_worker_->join();
-        }
+        transfer_worker_.join();
       }
     }
   }
@@ -1257,11 +1403,13 @@ class GatewayClientSession final : public SessionControl {
     bool expected = false;
     if (services_unregistered_.compare_exchange_strong(expected, true)) {
       if (services_registered_.load()) {
-        rpc_server_.UnregisterService(control_service_, transfer_service_);
+        rpc_server_.UnregisterService(control_service_, transfer_service_,
+                                      metric_service_);
         services_registered_.store(false);
       }
     }
   }
+
   void TransmitLoop() {
     std::vector<std::byte> frame;
     while (!stopping_.load()) {
@@ -1298,8 +1446,10 @@ class GatewayClientSession final : public SessionControl {
 
   TlsSocket socket_;
   ClientSessionRegistry& clients_;
+  GatewayMetrics& metrics_;
   std::string client_id_;
   GatewayControlService control_service_;
+  pw::metric::MetricService metric_service_;
   TlsQueueWriter tx_writer_{kTxQueueBytes};
   HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> channels_;
@@ -1308,7 +1458,7 @@ class GatewayClientSession final : public SessionControl {
   std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
   pw::transfer::Thread<1, 1> transfer_thread_;
   pw::transfer::TransferService transfer_service_;
-  std::unique_ptr<pw::thread::Thread> transfer_worker_;
+  pw::thread::Thread transfer_worker_;
   std::array<std::byte, 64 * 1024> client_transfer_buffer_{};
   BufferTransferHandler default_transfer_handler_{
       kDefaultTransferResource, pw::ByteSpan(client_transfer_buffer_)};
@@ -1327,28 +1477,110 @@ class GatewayClientSession final : public SessionControl {
   std::atomic<bool> default_handler_registered_{false};
   std::atomic<bool> eeprom_handler_registered_{false};
   std::atomic<bool> file_handler_registered_{false};
-  std::thread tx_worker_;
+  pw::thread::Thread tx_worker_;
 };
 
 struct SessionTask {
+  SessionTask(int client_fd, SSL_CTX* tls_context,
+              DeviceSessionRegistry& device_registry,
+              ClientSessionRegistry& client_registry, const GatewayAcl& acl,
+              GatewayMetrics& metrics)
+      : fd(client_fd),
+        context(tls_context),
+        devices(device_registry),
+        clients(client_registry),
+        acl_ref(acl),
+        metrics_ref(metrics) {}
+
+  void Run() {
+    const auto close_task_fd = [this] {
+      std::lock_guard lock(mutex);
+      if (fd >= 0) {
+        close(fd);
+        fd = -1;
+      }
+    };
+    int client_fd = -1;
+    {
+      std::lock_guard lock(mutex);
+      client_fd = fd;
+    }
+    SSL* ssl = SSL_new(context);
+    if (ssl == nullptr) {
+      metrics_ref.client_rejections_total.Increment();
+      close_task_fd();
+      done.store(true);
+      return;
+    }
+    SSL_set_fd(ssl, client_fd);
+    timeval handshake_timeout{5, 0};
+    setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &handshake_timeout,
+               sizeof(handshake_timeout));
+    setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &handshake_timeout,
+               sizeof(handshake_timeout));
+    SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
+                          SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+    if (SSL_accept(ssl) != 1) {
+      metrics_ref.client_rejections_total.Increment();
+      PW_LOG_WARN("event=client_rejected reason=tls_handshake_failed");
+      SSL_free(ssl);
+      close_task_fd();
+      done.store(true);
+      return;
+    }
+    auto identity = PeerIdentityFromCertificate(ssl);
+    if (!identity.ok()) {
+      metrics_ref.client_rejections_total.Increment();
+      PW_LOG_WARN("event=client_rejected reason=missing_or_invalid_uri_san");
+      SSL_shutdown(ssl);
+      SSL_free(ssl);
+      close_task_fd();
+      done.store(true);
+      return;
+    }
+    std::shared_ptr<SessionControl> active_session;
+    if (identity->role == PeerRole::kDevice) {
+      active_session = std::make_shared<GatewaySession>(
+          ssl, client_fd, std::move(identity->id), devices, metrics_ref);
+    } else {
+      active_session = std::make_shared<GatewayClientSession>(
+          ssl, client_fd, std::move(identity->id), devices, clients, acl_ref,
+          metrics_ref);
+    }
+    {
+      std::lock_guard lock(mutex);
+      session = active_session;
+      fd = -1;
+    }
+    active_session->Run();
+    done.store(true);
+  }
+
   int fd{-1};
+  SSL_CTX* context{nullptr};
+  DeviceSessionRegistry& devices;
+  ClientSessionRegistry& clients;
+  const GatewayAcl& acl_ref;
+  GatewayMetrics& metrics_ref;
   std::atomic<bool> done{false};
   std::mutex mutex;
   std::shared_ptr<SessionControl> session;
-  std::thread worker;
+  pw::thread::Thread worker;
 };
+
 struct TlsContextDeleter {
   void operator()(SSL_CTX* context) const { SSL_CTX_free(context); }
 };
 using TlsContext = std::unique_ptr<SSL_CTX, TlsContextDeleter>;
 
-TlsContext CreateTlsContext(const std::string& certificate,
-                            const std::string& private_key,
-                            const std::string& client_ca, std::string& error) {
+pw::Result<TlsContext> CreateTlsContext(const std::string& certificate,
+                                        const std::string& private_key,
+                                        const std::string& client_ca,
+                                        std::string& error) {
   TlsContext context(SSL_CTX_new(TLS_server_method()));
   if (!context) {
     error = "SSL_CTX_new failed";
-    return {};
+    return pw::Status::Internal();
   }
   if (SSL_CTX_set_min_proto_version(context.get(), TLS1_3_VERSION) != 1 ||
       SSL_CTX_use_certificate_chain_file(context.get(), certificate.c_str()) !=
@@ -1360,7 +1592,7 @@ TlsContext CreateTlsContext(const std::string& certificate,
                                     nullptr) != 1 ||
       SSL_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_CLIENT) != 1) {
     error = "TLS certificate configuration failed";
-    return {};
+    return pw::Status::InvalidArgument();
   }
   SSL_CTX_set_verify_depth(context.get(), 4);
   SSL_CTX_set_session_cache_mode(context.get(), SSL_SESS_CACHE_OFF);
@@ -1373,8 +1605,9 @@ TlsContext CreateTlsContext(const std::string& certificate,
                      nullptr);
   return context;
 }
-int CreateListener(const std::string& bind_address, const std::string& port,
-                   std::string& error) {
+
+pw::Result<int> CreateListener(const std::string& bind_address,
+                               const std::string& port, std::string& error) {
   addrinfo hints{};
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -1384,7 +1617,7 @@ int CreateListener(const std::string& bind_address, const std::string& port,
   const int lookup = getaddrinfo(host, port.c_str(), &hints, &addresses);
   if (lookup != 0) {
     error = gai_strerror(lookup);
-    return -1;
+    return pw::Status::InvalidArgument();
   }
   int listener = -1;
   for (addrinfo* address = addresses; address != nullptr;
@@ -1401,9 +1634,38 @@ int CreateListener(const std::string& bind_address, const std::string& port,
     listener = -1;
   }
   freeaddrinfo(addresses);
-  if (listener < 0) error = "unable to bind TCP listener";
+  if (listener < 0) {
+    error = "unable to bind TCP listener";
+    return pw::Status::Unavailable();
+  }
   return listener;
 }
+
+struct GatewayStartup {
+  GatewayAcl acl;
+  TlsContext tls_context;
+  int listener{-1};
+};
+
+pw::Result<GatewayStartup> InitializeGateway(
+    const std::string& certificate, const std::string& private_key,
+    const std::string& client_ca, const std::string& acl_path,
+    const std::string& staging_dir, const std::string& bind_address,
+    const std::string& port, std::string& error) {
+  PW_TRY_ASSIGN(GatewayAcl acl, GatewayAcl::Load(acl_path, error));
+  g_staging_root = staging_dir;
+  PW_TRY(PrepareStagingRoot(g_staging_root, error));
+  if (acl.size() == 0) {
+    PW_LOG_WARN(
+        "event=acl_empty detail=every client dispatch is denied; pass --acl "
+        "FILE");
+  }
+  PW_TRY_ASSIGN(TlsContext tls_context,
+                CreateTlsContext(certificate, private_key, client_ca, error));
+  PW_TRY_ASSIGN(const int listener, CreateListener(bind_address, port, error));
+  return GatewayStartup{std::move(acl), std::move(tls_context), listener};
+}
+
 std::string Argument(int argc, char** argv, std::string_view name,
                      std::string fallback = {}) {
   for (int i = 1; i + 1 < argc; ++i) {
@@ -1411,14 +1673,16 @@ std::string Argument(int argc, char** argv, std::string_view name,
   }
   return fallback;
 }
+
 void ReapTasks(std::vector<std::unique_ptr<SessionTask>>& tasks) {
   auto it = tasks.begin();
   while (it != tasks.end()) {
     if ((*it)->done.load()) {
       if ((*it)->worker.joinable()) (*it)->worker.join();
       it = tasks.erase(it);
-    } else
+    } else {
       ++it;
+    }
   }
 }
 }  // namespace
@@ -1449,28 +1713,10 @@ int main(int argc, char** argv) {
     return 2;
   }
   std::string error;
-  const auto acl = GatewayAcl::Load(acl_path, error);
-  if (!acl.has_value()) {
-    PW_LOG_CRITICAL("fatal=%s", error.c_str());
-    return 1;
-  }
-  g_staging_root = staging_dir;
-  if (!PrepareStagingRoot(g_staging_root, error)) {
-    PW_LOG_CRITICAL("fatal=%s", error.c_str());
-    return 1;
-  }
-  if (acl->size() == 0) {
-    PW_LOG_WARN(
-        "event=acl_empty detail=every client dispatch is denied; pass --acl FILE");
-  }
-  auto tls_context =
-      CreateTlsContext(certificate, private_key, client_ca, error);
-  if (!tls_context) {
-    PW_LOG_CRITICAL("fatal=%s", error.c_str());
-    return 1;
-  }
-  const int listener = CreateListener(bind_address, port, error);
-  if (listener < 0) {
+  auto startup =
+      InitializeGateway(certificate, private_key, client_ca, acl_path,
+                        staging_dir, bind_address, port, error);
+  if (!startup.ok()) {
     PW_LOG_CRITICAL("fatal=%s", error.c_str());
     return 1;
   }
@@ -1479,9 +1725,12 @@ int main(int argc, char** argv) {
   signal(SIGPIPE, SIG_IGN);
   DeviceSessionRegistry device_registry;
   ClientSessionRegistry client_registry;
+  GatewayMetrics gateway_metrics;
   std::vector<std::unique_ptr<SessionTask>> tasks;
-  PW_LOG_INFO("event=gateway_listening bind=%s port=%s tls=1.3 identity=uri_san",
-              bind_address.c_str(), port.c_str());
+  const int listener = startup->listener;
+  PW_LOG_INFO(
+      "event=gateway_listening bind=%s port=%s tls=1.3 identity=uri_san",
+      bind_address.c_str(), port.c_str());
   while (!g_stopping.load()) {
     ReapTasks(tasks);
     pollfd descriptor{listener, POLLIN, 0};
@@ -1502,73 +1751,16 @@ int main(int argc, char** argv) {
       continue;
     }
     if (tasks.size() >= kMaxSessions) {
+      gateway_metrics.client_rejections_total.Increment();
       close(client_fd);
       continue;
     }
-    auto task = std::make_unique<SessionTask>();
-    task->fd = client_fd;
+    auto task = std::make_unique<SessionTask>(
+        client_fd, startup->tls_context.get(), device_registry, client_registry,
+        startup->acl, gateway_metrics);
     SessionTask* task_ptr = task.get();
-    task->worker = std::thread([task_ptr, context = tls_context.get(),
-                                &device_registry, &client_registry, &acl] {
-      const auto close_task_fd = [task_ptr] {
-        std::lock_guard lock(task_ptr->mutex);
-        if (task_ptr->fd >= 0) {
-          close(task_ptr->fd);
-          task_ptr->fd = -1;
-        }
-      };
-      int client_fd = -1;
-      {
-        std::lock_guard lock(task_ptr->mutex);
-        client_fd = task_ptr->fd;
-      }
-      SSL* ssl = SSL_new(context);
-      if (ssl == nullptr) {
-        close_task_fd();
-        task_ptr->done.store(true);
-        return;
-      }
-      SSL_set_fd(ssl, client_fd);
-      timeval handshake_timeout{5, 0};
-      setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &handshake_timeout,
-                 sizeof(handshake_timeout));
-      setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &handshake_timeout,
-                 sizeof(handshake_timeout));
-      SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
-                            SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-      if (SSL_accept(ssl) != 1) {
-        PW_LOG_WARN("event=client_rejected reason=tls_handshake_failed");
-        SSL_free(ssl);
-        close_task_fd();
-        task_ptr->done.store(true);
-        return;
-      }
-      auto identity = PeerIdentityFromCertificate(ssl);
-      if (!identity.has_value()) {
-        PW_LOG_WARN("event=client_rejected reason=missing_or_invalid_uri_san");
-        SSL_shutdown(ssl);
-        SSL_free(ssl);
-        close_task_fd();
-        task_ptr->done.store(true);
-        return;
-      }
-      std::shared_ptr<SessionControl> session;
-      if (identity->role == PeerRole::kDevice) {
-        session = std::make_shared<GatewaySession>(
-            ssl, client_fd, std::move(identity->id), device_registry);
-      } else {
-        session = std::make_shared<GatewayClientSession>(
-            ssl, client_fd, std::move(identity->id), device_registry,
-            client_registry, *acl);
-      }
-      {
-        std::lock_guard lock(task_ptr->mutex);
-        task_ptr->session = session;
-        task_ptr->fd = -1;
-      }
-      session->Run();
-      task_ptr->done.store(true);
-    });
+    task->worker = pw::thread::Thread(pw::thread::stl::Options(),
+                                      [task_ptr] { task_ptr->Run(); });
     tasks.push_back(std::move(task));
   }
   close(listener);

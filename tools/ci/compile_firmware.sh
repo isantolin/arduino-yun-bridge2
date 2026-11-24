@@ -25,23 +25,16 @@ fi
 
 OUTPUT_DIR="${3:-${ROOT_DIR}/build/${EMULATOR}/${FQBN//:/-}}"
 
-# Ensure arduino-cli is installed
-if ! command -v arduino-cli >/dev/null 2>&1; then
-    echo "[compile_firmware] arduino-cli not found. Installing into ~/.local/bin..."
-    mkdir -p "${HOME}/.local/bin"
-    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="${HOME}/.local/bin" sh
-    export PATH="${HOME}/.local/bin:${PATH}"
-fi
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
+
+ensure_arduino_cli
 
 USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"
 mkdir -p "$USER_LIB_DIR"
 
 echo "[compile_firmware] Generating protocol bindings..."
-python3 "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/cloud_gateway.proto" \
-    --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
-    --cpp "${LIB_DIR}/src/protocol/rpc_protocol.h" \
-    --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
+generate_protocol_bindings
 
 echo "[compile_firmware] Installing required library dependencies for ${EMULATOR}..."
 "${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
@@ -54,45 +47,18 @@ TMP_LOG="$(mktemp /tmp/compile_firmware_XXXXXX.log)"
 STUBS_OBJ=""
 PW_LIB_ARCHIVE=""
 PW_STAGE_DIR=""
-PW_TOKENIZER_DEFAULT_LD="${ROOT_DIR}/third_party/pigweed/pw_tokenizer/pw_add_tokenizer_sections_to_default_script.ld"
-PW_TOKENIZER_CUSTOM_LD="${ROOT_DIR}/third_party/pigweed/pw_tokenizer/pw_tokenizer_linker_sections.ld"
 
 cleanup() {
-    rm -f "$TMP_LOG"
-    if [ -n "$STUBS_OBJ" ] && [ -f "$STUBS_OBJ" ]; then
-        rm -f "$STUBS_OBJ"
-    fi
-    if [ -n "$PW_LIB_ARCHIVE" ] && [ -f "$PW_LIB_ARCHIVE" ]; then
-        rm -f "$PW_LIB_ARCHIVE"
-    fi
-    if [ -n "$PW_STAGE_DIR" ] && [ -d "$PW_STAGE_DIR" ]; then
+    rm -f "$TMP_LOG" ${STUBS_OBJ:+"$STUBS_OBJ"} ${PW_LIB_ARCHIVE:+"$PW_LIB_ARCHIVE"}
+    if [ -n "$PW_STAGE_DIR" ]; then
         rm -rf "$PW_STAGE_DIR"
     fi
 }
 trap cleanup EXIT
 
 if [ "$EMULATOR" = "simavr" ]; then
-    COMMON_FLAGS="-flto -fstack-usage -fno-strict-aliasing -Wno-lto-type-mismatch -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
-    AVR_PROPS=()
-    AVR_STDCPP_INC=""
-    if command -v avr-gcc >/dev/null 2>&1; then
-        SYS_AVR_GCC_VER="$(avr-gcc -dumpversion | cut -d. -f1)"
-        if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then
-            SYS_AVR_GCC_PATH="$(dirname "$(dirname "$(command -v avr-gcc)")")"
-            AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${SYS_AVR_GCC_PATH}")
-            if [ "$SYS_AVR_GCC_VER" -ge 16 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc16/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc16/include"
-            elif [ "$SYS_AVR_GCC_VER" -ge 14 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc15/include"
-            elif [ "$SYS_AVR_GCC_VER" -ge 13 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc13/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc13/include"
-            elif [ "$SYS_AVR_GCC_VER" -ge 11 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc12/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc12/include"
-            elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc10/include" ]; then
-                AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc10/include"
-            fi
-        fi
-    fi
+    COMMON_FLAGS="-flto -fstack-usage -Wno-lto-type-mismatch ${PW_COMMON_MCU_FLAGS} -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
+    avr_toolchain_props "$USER_LIB_DIR"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
@@ -107,8 +73,6 @@ if [ "$EMULATOR" = "simavr" ]; then
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "renode" ]; then
-    # shellcheck source=tools/ci/arduino_toolchains.sh
-    source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
     samd_toolchain_props || exit 1
 
     PW_STAGE_DIR="$(mktemp -d /tmp/pw_stage_samd_XXXXXX)"
@@ -117,7 +81,7 @@ elif [ "$EMULATOR" = "renode" ]; then
     PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_samd_XXXXXX.a)"
     build_pigweed_archive_samd "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" "$USER_LIB_DIR" || exit 1
 
-    COMMON_FLAGS="-fno-strict-aliasing -Wno-psabi -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 $PW_COOPERATIVE_DEFS"
+    COMMON_FLAGS="${PW_COMMON_MCU_FLAGS} -Wno-psabi $PW_COOPERATIVE_DEFS"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"
@@ -131,8 +95,6 @@ elif [ "$EMULATOR" = "renode" ]; then
         "--build-path" "$OUTPUT_DIR"
     )
 elif [ "$EMULATOR" = "qemu" ]; then
-    # shellcheck source=tools/ci/arduino_toolchains.sh
-    source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
     find_esp32_toolchain || exit 1
 
     PW_STAGE_DIR="$(mktemp -d /tmp/pw_stage_esp32_XXXXXX)"
@@ -145,7 +107,7 @@ elif [ "$EMULATOR" = "qemu" ]; then
     PW_LIB_ARCHIVE="$(mktemp /tmp/libpigweed_esp32_XXXXXX.a)"
     build_pigweed_archive_esp32 "$PW_LIB_ARCHIVE" "${LIB_DIR}/src" "$USER_LIB_DIR" || exit 1
 
-    COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT -DPW_RPC_USE_GLOBAL_MUTEX=0 $PW_COOPERATIVE_DEFS"
+    COMMON_FLAGS="${PW_COMMON_MCU_FLAGS} -DUSE_ARDUINO_NANO_ESP32_PIN_LAYOUT $PW_COOPERATIVE_DEFS"
     BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_DIR"

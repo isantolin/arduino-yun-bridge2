@@ -376,7 +376,7 @@ jobs:
           cache-suffix: simavr
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh simavr libsimavr-dev socat gcc-avr avr-libc
+          bash tools/ci/apt_update_with_fallback.sh simavr libsimavr-dev gcc-avr avr-libc
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino AVR Core & Libraries
@@ -433,7 +433,7 @@ jobs:
           cache-suffix: renode
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh socat gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          bash tools/ci/apt_update_with_fallback.sh gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino SAMD Core & Libraries
@@ -488,7 +488,7 @@ jobs:
           cache-suffix: qemu-esp32
       - name: Setup Arduino CLI & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
+          bash tools/ci/apt_update_with_fallback.sh libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino ESP32 Core & Tools
@@ -563,7 +563,7 @@ jobs:
           cache-suffix: fleet-mesh
       - name: Setup System Packages & Tools
         run: |
-          bash tools/ci/apt_update_with_fallback.sh simavr libsimavr-dev socat libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+          bash tools/ci/apt_update_with_fallback.sh simavr libsimavr-dev libgcrypt20 libpixman-1-0 libsdl2-2.0-0 libslirp0 gcc-avr avr-libc gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
           BINDIR="$GITHUB_WORKSPACE/bin" bash tools/ci/install_arduino_cli.sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
       - name: Install Arduino Cores & Libraries

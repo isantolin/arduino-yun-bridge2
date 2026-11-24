@@ -35,11 +35,8 @@
 #include <PigweedAVR.h>
 #else
 #include <pw_bytes/span.h>
-#include <pw_checksum/crc32.h>
-#include <pw_function/function.h>
 #include <pw_hdlc/decoder.h>
 #include <pw_hdlc/encoder.h>
-#include <pw_hdlc/rpc_channel.h>
 #include <pw_log/log.h>
 #include <pw_log_avr/log_avr.h>
 #include <pw_metric/global.h>
@@ -47,12 +44,10 @@
 #include <pw_metric/metric_service_pwpb.h>
 #include <pw_result/result.h>
 #include <pw_status/status.h>
-#include <pw_status/try.h>
 #include <pw_stream/memory_stream.h>
 #include <pw_stream/stream.h>
 #include <pw_tokenizer/hash.h>
 #include <pw_tokenizer/tokenize.h>
-#include <pw_varint/varint.h>
 #endif
 #include <wolfssl.h>
 

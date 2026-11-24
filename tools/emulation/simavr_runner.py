@@ -334,7 +334,7 @@ def run_matrix(
     build_base_dir.mkdir(parents=True, exist_ok=True)
 
     test_paths = default_client_test_paths() if test_scripts is None else test_scripts
-    compile_script = repo_root / "tools" / "ci" / "compile_simavr_firmware.sh"
+    compile_script = repo_root / "tools" / "ci" / "compile_firmware.sh"
 
     compilation_status: list[str] = []
     emulation_status: list[str] = []

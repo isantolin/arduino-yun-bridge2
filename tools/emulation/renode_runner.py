@@ -365,7 +365,7 @@ def run_matrix(
     build_base_dir.mkdir(parents=True, exist_ok=True)
 
     test_paths = default_client_test_paths() if test_scripts is None else test_scripts
-    compile_script = repo_root / "tools" / "ci" / "compile_renode_firmware.sh"
+    compile_script = repo_root / "tools" / "ci" / "compile_firmware.sh"
     renode_installed = find_renode_binary() is not None
 
     compilation_status: list[str] = []

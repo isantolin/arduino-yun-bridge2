@@ -14,7 +14,7 @@ runs:
       run: |
         PROTOC_VERSION="${{ inputs.version }}"
         PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-        curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+        curl -fSLO --retry 5 --retry-delay 5 https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
         sudo unzip -o ${PROTOC_ZIP} -d /usr/local
         rm -f ${PROTOC_ZIP}
         protoc --version

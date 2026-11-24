@@ -11,7 +11,7 @@ import typer
 from pw_emu.core import Error as PwEmuError
 
 from tools.arduino_core_metadata import ArduinoCoreMetadata, write_metadata_json
-from tools.emulation import renode_runner
+from tools.emulation import pw_emu_runner, renode_runner
 
 
 def _write_board_metadata(output_dir: Path, fqbn: str) -> None:
@@ -266,9 +266,9 @@ def test_run_renode_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest
         def poll(self) -> int | None:
             return None
 
-    original_state_cls = renode_runner.EmulationState
+    original_state_cls = pw_emu_runner.EmulationState
 
-    def mock_state() -> renode_runner.EmulationState:
+    def mock_state() -> pw_emu_runner.EmulationState:
         s = original_state_cls()
         s.sync_event.set()
         s.capabilities_event.set()
@@ -276,15 +276,15 @@ def test_run_renode_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest
 
     monkeypatch.setattr(renode_runner, "find_renode_binary", _mock_find_renode)
     monkeypatch.setattr(renode_runner, "start_renode_emulator", mock_start_renode)
-    monkeypatch.setattr(renode_runner, "ensure_cloud_gateway", mock_ensure_gateway)
-    monkeypatch.setattr(renode_runner, "wait_for_tcp_ready", mock_tcp_ready)
-    monkeypatch.setattr(renode_runner, "setup_fake_uci", mock_setup_uci)
-    monkeypatch.setattr(renode_runner, "run_client_scripts", mock_run_scripts)
-    monkeypatch.setattr(renode_runner, "audit_post_execution_status", mock_audit)
+    monkeypatch.setattr(pw_emu_runner, "ensure_cloud_gateway", mock_ensure_gateway)
+    monkeypatch.setattr(pw_emu_runner, "wait_for_tcp_ready", mock_tcp_ready)
+    monkeypatch.setattr(pw_emu_runner, "setup_fake_uci", mock_setup_uci)
+    monkeypatch.setattr(pw_emu_runner, "run_client_scripts", mock_run_scripts)
+    monkeypatch.setattr(pw_emu_runner, "audit_post_execution_status", mock_audit)
     monkeypatch.setattr(subprocess, "Popen", _MockPopen)
-    monkeypatch.setattr(renode_runner, "start_daemon_thread", mock_start_thread)
-    monkeypatch.setattr(renode_runner, "terminate_process_tree", mock_terminate)
-    monkeypatch.setattr(renode_runner, "EmulationState", mock_state)
+    monkeypatch.setattr(pw_emu_runner, "start_daemon_thread", mock_start_thread)
+    monkeypatch.setattr(pw_emu_runner, "terminate_process_tree", mock_terminate)
+    monkeypatch.setattr(pw_emu_runner, "EmulationState", mock_state)
 
     passed = renode_runner.run_renode_emulation(
         firmware_path=fake_elf,

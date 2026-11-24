@@ -6,15 +6,11 @@ set -o pipefail
 # Ensure we are in the repo root
 cd "$(dirname "$0")/../.."
 
-echo "Initializing Arduino CI environment..."
+# shellcheck source=tools/ci/arduino_toolchains.sh
+source "$PWD/tools/ci/arduino_toolchains.sh"
 
-# Check for arduino-cli (auto-install locally if missing)
-if ! command -v arduino-cli &> /dev/null; then
-    echo "[ci_arduino] arduino-cli not found. Installing into ~/.local/bin..."
-    mkdir -p "${HOME}/.local/bin"
-    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="${HOME}/.local/bin" sh
-    export PATH="${HOME}/.local/bin:${PATH}"
-fi
+echo "Initializing Arduino CI environment..."
+ensure_arduino_cli
 
 # Get standard library path
 USER_LIB_DIR="$HOME/Arduino/libraries"
@@ -53,11 +49,7 @@ if [ ! -f "./mcubridge-library-arduino/src/protocol/rpc_protocol.h" ] || \
    [ ! -f "./build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h" ] || \
    [ ! -f "./build/pigweed_generated/include/pw_metric_proto/metric_service.pwpb.h" ]; then
     echo "Generating protocol bindings..."
-    python3 ./tools/protocol/generate.py \
-        --spec ./tools/protocol/cloud_gateway.proto \
-        --py ./mcubridge/mcubridge/protocol/protocol.py \
-        --cpp ./mcubridge-library-arduino/src/protocol/rpc_protocol.h \
-        --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+    generate_protocol_bindings
 fi
 
 # Always refresh the generated Arduino exports from the pinned source tree.
@@ -82,9 +74,6 @@ done
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
-
-# shellcheck source=tools/ci/arduino_toolchains.sh
-source "$PWD/tools/ci/arduino_toolchains.sh"
 
 # Define memory-capable, library-supported target boards (SSOT: tools.boards).
 if command -v python3 >/dev/null 2>&1 && python3 -c "import tools.boards" >/dev/null 2>&1; then
@@ -141,13 +130,11 @@ compile_sketch() {
     BOARD_WORK_DIR="${_LOG_DIR}/build/${BOARD_NAME}"
     mkdir -p "$BOARD_WORK_DIR"
 
-    local COMMON_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0"
+    local COMMON_FLAGS="$PW_COMMON_MCU_FLAGS"
     local LINK_FLAGS=()
     local AVR_PROPS=()
     local AVR_STDCPP_INC=""
     local ARCH_INC=""
-    local PW_TOKENIZER_DEFAULT_LD="${PWD}/third_party/pigweed/pw_tokenizer/pw_add_tokenizer_sections_to_default_script.ld"
-    local PW_TOKENIZER_CUSTOM_LD="${PWD}/third_party/pigweed/pw_tokenizer/pw_tokenizer_linker_sections.ld"
     if [[ "$FQBN" == arduino:samd:* ]]; then
         samd_toolchain_props || return 1
         AVR_PROPS+=("${SAMD_TOOLCHAIN_PROPS[@]}")
@@ -172,24 +159,7 @@ compile_sketch() {
         ARCH_INC="$PW_ESP32_INC"
     elif [[ "$FQBN" == arduino:avr:* ]]; then
         COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch -D__cpp_lib_endian=201907L -DETL_FORCE_STD_INITIALIZER_LIST"
-        if command -v avr-gcc >/dev/null 2>&1; then
-            local SYS_AVR_GCC_VER="$(avr-gcc -dumpversion | cut -d. -f1)"
-            if [ "$SYS_AVR_GCC_VER" -ge 8 ]; then
-                local SYS_AVR_GCC_PATH="$(dirname "$(dirname "$(command -v avr-gcc)")")"
-                AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${SYS_AVR_GCC_PATH}")
-                if [ "$SYS_AVR_GCC_VER" -ge 16 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc16/include" ]; then
-                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc16/include"
-                elif [ "$SYS_AVR_GCC_VER" -ge 14 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc15/include" ]; then
-                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc15/include"
-                elif [ "$SYS_AVR_GCC_VER" -ge 13 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc13/include" ]; then
-                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc13/include"
-                elif [ "$SYS_AVR_GCC_VER" -ge 11 ] && [ -d "$USER_LIB_DIR/PigweedAVR/gcc12/include" ]; then
-                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc12/include"
-                elif [ -d "$USER_LIB_DIR/PigweedAVR/gcc10/include" ]; then
-                    AVR_STDCPP_INC="-I$USER_LIB_DIR/PigweedAVR/gcc10/include"
-                fi
-            fi
-        fi
+        avr_toolchain_props "$USER_LIB_DIR"
         LINK_FLAGS=(
             "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD}"
             "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch -Wl,-T,${PW_TOKENIZER_DEFAULT_LD}"

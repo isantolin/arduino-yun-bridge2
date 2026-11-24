@@ -242,80 +242,27 @@ samd_toolchain_props() {
     SAMD_TOOLCHAIN_PROPS=("--build-property" "compiler.path=$(dirname "$gcc_bin")/")
 }
 
+PW_ARCHIVE_COMMON_CXX_FLAGS="-fno-exceptions -fno-rtti -ffunction-sections -fdata-sections -DETL_NO_STL -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 ${PW_COOPERATIVE_DEFS} -Os"
+
 build_pigweed_archive_samd() {
     local output_archive="$1"
     local extra_inc="${2:-}"
     local arduino_libs="${3:-${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}}"
     samd_toolchain_props || return 1
-    local arm_gcc
+    local arm_gcc arm_bin_dir arm_gxx arm_ar
     arm_gcc="$(command -v arm-none-eabi-gcc)"
-    local arm_bin_dir
     arm_bin_dir="$(dirname "$arm_gcc")"
-    local arm_gxx="${arm_bin_dir}/arm-none-eabi-g++"
-    local arm_ar="${arm_bin_dir}/arm-none-eabi-ar"
-    if [ ! -f "$arm_gxx" ]; then
-        echo "ERROR: arm-none-eabi-g++ not found in ${arm_bin_dir}" >&2
+    arm_gxx="${arm_bin_dir}/arm-none-eabi-g++"
+    arm_ar="${arm_bin_dir}/arm-none-eabi-ar"
+    if [ ! -f "$arm_gxx" ] || [ ! -f "$arm_ar" ]; then
+        echo "ERROR: arm-none-eabi-g++ or arm-none-eabi-ar not found in ${arm_bin_dir}" >&2
         return 1
     fi
-    if [ ! -f "$arm_ar" ]; then
-        echo "ERROR: arm-none-eabi-ar not found in ${arm_bin_dir}" >&2
-        return 1
-    fi
-
-    rm -f "$output_archive"
-    local build_tmp
-    build_tmp="$(mktemp -d /tmp/pw_samd_build_XXXXXX)"
-    local staged_locally=0
-    if [ -z "${PW_TRANSFER_STAGED_INC_DIR}" ] || [ ! -d "${PW_TRANSFER_STAGED_INC_DIR}/pw_transfer" ]; then
-        stage_cooperative_pw_transfer "${build_tmp}/transfer" "${arduino_libs}" || {
-            rm -rf "$build_tmp"
-            return 1
-        }
-        staged_locally=1
-    fi
-
-    local objs=()
-    local inc_args=("${PW_SAMD_INC_FLAGS[@]}")
-    if [ -n "$extra_inc" ]; then
-        inc_args+=("-I${extra_inc}")
-    fi
-    local all_srcs=(
-        "${PW_PIGWEED_SRCS[@]}"
-        "${PW_TRANSFER_STAGED_SRCS[@]}"
-        "${PW_CHRONO_ARDUINO_SRCS[@]}"
-        "${PW_ROOT}/pw_atomic/atomic_cortex_m.c"
-    )
-
-    local src obj
-    for src in "${all_srcs[@]}"; do
-        obj="${build_tmp}/${src//\//_}.o"
-        if [[ "$src" == *.c ]]; then
-            "$arm_gcc" -mcpu=cortex-m0plus -mthumb -std=gnu11 -Wno-psabi \
-                -ffunction-sections -fdata-sections -Os \
-                "${inc_args[@]}" -c "$src" -o "$obj" || {
-                rm -rf "$build_tmp"
-                return 1
-            }
-        else
-            "$arm_gxx" -mcpu=cortex-m0plus -mthumb -std=gnu++17 -fno-exceptions -fno-rtti -Wno-psabi \
-                -ffunction-sections -fdata-sections \
-                -DETL_NO_STL -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 \
-                "${PW_COOPERATIVE_DEFINES[@]}" -Os \
-                "${inc_args[@]}" -c "$src" -o "$obj" || {
-                rm -rf "$build_tmp"
-                return 1
-            }
-        fi
-        objs+=("$obj")
-    done
-    "$arm_ar" rcs "$output_archive" "${objs[@]}"
-    if [ "$staged_locally" -eq 1 ]; then
-        PW_TRANSFER_STAGED_INC_DIR=""
-        PW_TRANSFER_STAGED_SRC_DIR=""
-        PW_TRANSFER_STAGED_SRCS=()
-    fi
-    rm -rf "$build_tmp"
-    echo "[toolchain] Built Pigweed + cooperative pw_transfer + millis pw_chrono archive for SAMD: $output_archive" >&2
+    _build_pigweed_archive "$output_archive" "$extra_inc" "$arduino_libs" "samd" \
+        "$arm_gcc" "$arm_gxx" "$arm_ar" \
+        "-mcpu=cortex-m0plus -mthumb -std=gnu11 -Wno-psabi -ffunction-sections -fdata-sections -Os" \
+        "-mcpu=cortex-m0plus -mthumb -std=gnu++17 -Wno-psabi ${PW_ARCHIVE_COMMON_CXX_FLAGS}" \
+        "${PW_CHRONO_ARDUINO_SRCS[@]}" "${PW_ROOT}/pw_atomic/atomic_cortex_m.c"
 }
 
 find_esp32_toolchain() {
@@ -327,13 +274,9 @@ find_esp32_toolchain() {
     local xtensa_bin_dir
     xtensa_bin_dir="$(dirname "$XTENSA_GCC")"
     XTENSA_GXX="${xtensa_bin_dir}/xtensa-esp32s3-elf-g++"
-    if [ ! -f "$XTENSA_GXX" ]; then
-        XTENSA_GXX="${xtensa_bin_dir}/xtensa-esp-elf-g++"
-    fi
+    [ -f "$XTENSA_GXX" ] || XTENSA_GXX="${xtensa_bin_dir}/xtensa-esp-elf-g++"
     XTENSA_AR="${xtensa_bin_dir}/xtensa-esp32s3-elf-ar"
-    if [ ! -f "$XTENSA_AR" ]; then
-        XTENSA_AR="${xtensa_bin_dir}/xtensa-esp-elf-ar"
-    fi
+    [ -f "$XTENSA_AR" ] || XTENSA_AR="${xtensa_bin_dir}/xtensa-esp-elf-ar"
 }
 
 build_pigweed_archive_esp32() {
@@ -341,10 +284,27 @@ build_pigweed_archive_esp32() {
     local extra_inc="${2:-}"
     local arduino_libs="${3:-${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}}"
     find_esp32_toolchain || return 1
+    local esp_flags="-mdynconfig=xtensa_esp32s3.so -mlongcalls -std=gnu++20 ${PW_ARCHIVE_COMMON_CXX_FLAGS}"
+    _build_pigweed_archive "$output_archive" "$extra_inc" "$arduino_libs" "esp32" \
+        "$XTENSA_GXX" "$XTENSA_GXX" "$XTENSA_AR" "$esp_flags" "$esp_flags"
+}
+
+_build_pigweed_archive() {
+    local output_archive="$1"
+    local extra_inc="$2"
+    local arduino_libs="$3"
+    local arch_tag="$4"
+    local cc_bin="$5"
+    local cxx_bin="$6"
+    local ar_bin="$7"
+    local c_flags_str="$8"
+    local cxx_flags_str="$9"
+    shift 9
+    local extra_srcs=("$@")
 
     rm -f "$output_archive"
     local build_tmp
-    build_tmp="$(mktemp -d /tmp/pw_esp32_build_XXXXXX)"
+    build_tmp="$(mktemp -d "/tmp/pw_${arch_tag}_build_XXXXXX")"
     local staged_locally=0
     if [ -z "${PW_TRANSFER_STAGED_INC_DIR}" ] || [ ! -d "${PW_TRANSFER_STAGED_INC_DIR}/pw_transfer" ]; then
         stage_cooperative_pw_transfer "${build_tmp}/transfer" "${arduino_libs}" || {
@@ -354,35 +314,91 @@ build_pigweed_archive_esp32() {
         staged_locally=1
     fi
 
-    local objs=()
-    local inc_args=("${PW_ESP32_INC_FLAGS[@]}")
+    local inc_args=()
+    if [ "$arch_tag" = "samd" ]; then
+        inc_args=("${PW_SAMD_INC_FLAGS[@]}")
+    else
+        inc_args=("${PW_ESP32_INC_FLAGS[@]}")
+    fi
     if [ -n "$extra_inc" ]; then
         inc_args+=("-I${extra_inc}")
     fi
-    local all_srcs=(
-        "${PW_PIGWEED_SRCS[@]}"
-        "${PW_TRANSFER_STAGED_SRCS[@]}"
-    )
 
-    local src obj
+    local c_flags=() cxx_flags=()
+    read -r -a c_flags <<< "$c_flags_str"
+    read -r -a cxx_flags <<< "$cxx_flags_str"
+
+    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${extra_srcs[@]}")
+    local objs=() src obj
     for src in "${all_srcs[@]}"; do
         obj="${build_tmp}/${src//\//_}.o"
-        "$XTENSA_GXX" -mdynconfig=xtensa_esp32s3.so -mlongcalls -std=gnu++20 -fno-exceptions -fno-rtti \
-            -ffunction-sections -fdata-sections \
-            -DETL_NO_STL -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0 \
-            "${PW_COOPERATIVE_DEFINES[@]}" -Os \
-            "${inc_args[@]}" -c "$src" -o "$obj" || {
-            rm -rf "$build_tmp"
-            return 1
-        }
+        if [[ "$src" == *.c ]]; then
+            "$cc_bin" "${c_flags[@]}" "${inc_args[@]}" -c "$src" -o "$obj" || {
+                rm -rf "$build_tmp"
+                return 1
+            }
+        else
+            "$cxx_bin" "${cxx_flags[@]}" "${inc_args[@]}" -c "$src" -o "$obj" || {
+                rm -rf "$build_tmp"
+                return 1
+            }
+        fi
         objs+=("$obj")
     done
-    "$XTENSA_AR" rcs "$output_archive" "${objs[@]}"
+    "$ar_bin" rcs "$output_archive" "${objs[@]}"
     if [ "$staged_locally" -eq 1 ]; then
         PW_TRANSFER_STAGED_INC_DIR=""
         PW_TRANSFER_STAGED_SRC_DIR=""
         PW_TRANSFER_STAGED_SRCS=()
     fi
     rm -rf "$build_tmp"
-    echo "[toolchain] Built Pigweed + cooperative pw_transfer archive for ESP32: $output_archive" >&2
+    echo "[toolchain] Built Pigweed + cooperative pw_transfer archive for ${arch_tag}: $output_archive" >&2
+}
+
+PW_TOKENIZER_DEFAULT_LD="${PW_ROOT}/pw_tokenizer/pw_add_tokenizer_sections_to_default_script.ld"
+PW_TOKENIZER_CUSTOM_LD="${PW_ROOT}/pw_tokenizer/pw_tokenizer_linker_sections.ld"
+PW_COMMON_MCU_FLAGS="-fno-strict-aliasing -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DPW_RPC_USE_GLOBAL_MUTEX=0"
+
+ensure_arduino_cli() {
+    if ! command -v arduino-cli >/dev/null 2>&1; then
+        echo "[toolchain] arduino-cli not found. Installing into ~/.local/bin..."
+        mkdir -p "${HOME}/.local/bin"
+        curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="${HOME}/.local/bin" sh
+        export PATH="${HOME}/.local/bin:${PATH}"
+    fi
+}
+
+generate_protocol_bindings() {
+    python3 "${TOOLCHAIN_REPO_ROOT}/tools/protocol/generate.py" \
+        --spec "${TOOLCHAIN_REPO_ROOT}/tools/protocol/cloud_gateway.proto" \
+        --py "${TOOLCHAIN_REPO_ROOT}/mcubridge/mcubridge/protocol/protocol.py" \
+        --cpp "${TOOLCHAIN_REPO_ROOT}/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
+        --py-client "${TOOLCHAIN_REPO_ROOT}/mcubridge-client-examples/mcubridge_client/protocol.py"
+}
+
+# Populates global AVR_PROPS array and AVR_STDCPP_INC string for modern avr-gcc.
+avr_toolchain_props() {
+    local user_lib_dir="$1"
+    AVR_PROPS=()
+    AVR_STDCPP_INC=""
+    if command -v avr-gcc >/dev/null 2>&1; then
+        local sys_avr_gcc_ver
+        sys_avr_gcc_ver="$(avr-gcc -dumpversion | cut -d. -f1)"
+        if [ "$sys_avr_gcc_ver" -ge 8 ]; then
+            local sys_avr_gcc_path
+            sys_avr_gcc_path="$(dirname "$(dirname "$(command -v avr-gcc)")")"
+            AVR_PROPS+=("--build-property" "runtime.tools.avr-gcc.path=${sys_avr_gcc_path}")
+            if [ "$sys_avr_gcc_ver" -ge 16 ] && [ -d "${user_lib_dir}/PigweedAVR/gcc16/include" ]; then
+                AVR_STDCPP_INC="-I${user_lib_dir}/PigweedAVR/gcc16/include"
+            elif [ "$sys_avr_gcc_ver" -ge 14 ] && [ -d "${user_lib_dir}/PigweedAVR/gcc15/include" ]; then
+                AVR_STDCPP_INC="-I${user_lib_dir}/PigweedAVR/gcc15/include"
+            elif [ "$sys_avr_gcc_ver" -ge 13 ] && [ -d "${user_lib_dir}/PigweedAVR/gcc13/include" ]; then
+                AVR_STDCPP_INC="-I${user_lib_dir}/PigweedAVR/gcc13/include"
+            elif [ "$sys_avr_gcc_ver" -ge 11 ] && [ -d "${user_lib_dir}/PigweedAVR/gcc12/include" ]; then
+                AVR_STDCPP_INC="-I${user_lib_dir}/PigweedAVR/gcc12/include"
+            elif [ -d "${user_lib_dir}/PigweedAVR/gcc10/include" ]; then
+                AVR_STDCPP_INC="-I${user_lib_dir}/PigweedAVR/gcc10/include"
+            fi
+        fi
+    fi
 }

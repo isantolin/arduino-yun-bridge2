@@ -12,7 +12,7 @@ import typer
 from pw_emu.core import Error as PwEmuError
 
 from tools.arduino_core_metadata import ArduinoCoreMetadata, write_metadata_json
-from tools.emulation import qemu_runner
+from tools.emulation import pw_emu_runner, qemu_runner
 
 
 def _write_board_metadata(output_dir: Path, fqbn: str, led_pin: int = 13) -> None:
@@ -327,9 +327,9 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
         def poll(self) -> int | None:
             return None
 
-    original_state_cls = qemu_runner.EmulationState
+    original_state_cls = pw_emu_runner.EmulationState
 
-    def mock_state() -> qemu_runner.EmulationState:
+    def mock_state() -> pw_emu_runner.EmulationState:
         s = original_state_cls()
         s.sync_event.set()
         s.capabilities_event.set()
@@ -338,15 +338,15 @@ def test_run_qemu_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(qemu_runner, "find_qemu_binary", _mock_find_qemu)
     monkeypatch.setattr(qemu_runner, "start_qemu_emulator", mock_start_qemu)
     monkeypatch.setattr(qemu_runner, "drain_pty_nonblocking", mock_drain_pty)
-    monkeypatch.setattr(qemu_runner, "ensure_cloud_gateway", mock_ensure_gateway)
-    monkeypatch.setattr(qemu_runner, "wait_for_tcp_ready", mock_tcp_ready)
-    monkeypatch.setattr(qemu_runner, "setup_fake_uci", mock_setup_uci)
-    monkeypatch.setattr(qemu_runner, "run_client_scripts", mock_run_scripts)
-    monkeypatch.setattr(qemu_runner, "audit_post_execution_status", mock_audit)
+    monkeypatch.setattr(pw_emu_runner, "ensure_cloud_gateway", mock_ensure_gateway)
+    monkeypatch.setattr(pw_emu_runner, "wait_for_tcp_ready", mock_tcp_ready)
+    monkeypatch.setattr(pw_emu_runner, "setup_fake_uci", mock_setup_uci)
+    monkeypatch.setattr(pw_emu_runner, "run_client_scripts", mock_run_scripts)
+    monkeypatch.setattr(pw_emu_runner, "audit_post_execution_status", mock_audit)
     monkeypatch.setattr(subprocess, "Popen", _MockPopen)
-    monkeypatch.setattr(qemu_runner, "start_daemon_thread", mock_start_thread)
-    monkeypatch.setattr(qemu_runner, "terminate_process_tree", mock_terminate)
-    monkeypatch.setattr(qemu_runner, "EmulationState", mock_state)
+    monkeypatch.setattr(pw_emu_runner, "start_daemon_thread", mock_start_thread)
+    monkeypatch.setattr(pw_emu_runner, "terminate_process_tree", mock_terminate)
+    monkeypatch.setattr(pw_emu_runner, "EmulationState", mock_state)
 
     passed = qemu_runner.run_qemu_emulation(
         flash_image=fake_img,

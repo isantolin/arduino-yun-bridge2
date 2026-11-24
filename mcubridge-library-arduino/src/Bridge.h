@@ -120,10 +120,12 @@ class BridgeObserver : public pw::IntrusiveForwardList<BridgeObserver>::Item {
 namespace pb {
 inline void copy_string(char* dst, size_t dst_cap, etl::string_view src) {
   if (dst_cap == 0) return;
-  const std::string_view view = src.data() != nullptr
-                                    ? std::string_view(src.data(), src.size())
-                                    : std::string_view();
-  (void)pw::string::Copy(view, pw::span<char>(dst, dst_cap));
+  if (src.data() == nullptr || src.empty()) {
+    dst[0] = '\0';
+    return;
+  }
+  (void)pw::string::Copy(pw::string::ClampedCString(src.data(), src.size()),
+                         pw::span<char>(dst, dst_cap));
 }
 
 template <typename PbBytesField>

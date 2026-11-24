@@ -140,6 +140,26 @@ def run_pw_rpc_packet_generate(repo_root: Path) -> None:
         sys.stderr.write(f"Error: pw_transfer proto generation failed:\n{e.stderr}\n")
         sys.exit(1)
 
+    metric_proto_dir = pw_root / "pw_metric"
+    tokenizer_proto_dir = pw_root / "pw_tokenizer"
+    metric_command = [
+        "protoc",
+        "--experimental_allow_proto3_optional",
+        f"-I{metric_proto_dir}",
+        f"-I{tokenizer_proto_dir}",
+        f"--plugin=protoc-gen-pwpb={plugin_path}",
+        f"--pwpb_opt=-I{metric_proto_dir}",
+        f"--pwpb_out={output_dir}",
+        f"--plugin=protoc-gen-raw_rpc={raw_rpc_plugin_path}",
+        f"--raw_rpc_out={output_dir}",
+        "pw_metric_proto/metric_service.proto",
+    ]
+    try:
+        subprocess.run(metric_command, check=True, capture_output=True, text=True, cwd=metric_proto_dir, env=env)
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: pw_metric proto generation failed:\n{e.stderr}\n")
+        sys.exit(1)
+
 
 @dataclass(frozen=True, slots=True)
 class ConfigFieldDef:
@@ -698,6 +718,8 @@ def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> li
         outputs.append(repo_root / "build/pigweed_generated/include/pw_rpc/internal/packet.pwpb.h")
         outputs.append(repo_root / "build/pigweed_generated/include/pw_transfer/transfer.pwpb.h")
         outputs.append(repo_root / "build/pigweed_generated/include/pw_transfer/transfer.raw_rpc.pb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_metric_proto/metric_service.pwpb.h")
+        outputs.append(repo_root / "build/pigweed_generated/include/pw_metric_proto/metric_service.raw_rpc.pb.h")
 
     for output_dir in {path.parent for path in (args.py, args.py_client) if path}:
         for stem in ("config_schema", "mcu_wire", "cloud_gateway"):
@@ -746,6 +768,14 @@ def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> lis
     transfer_proto = pw_root / "pw_transfer" / "transfer.proto"
     if transfer_proto.is_file():
         input_paths.append(transfer_proto)
+    input_paths.extend(
+        metric_file
+        for metric_file in (
+            pw_root / "pw_metric" / "pw_metric_proto" / "metric_service.proto",
+            pw_root / "pw_metric" / "pw_metric_proto" / "metric_service.pwpb_options",
+        )
+        if metric_file.is_file()
+    )
     version_path = repo_root / "VERSION"
     if version_path.is_file():
         input_paths.append(version_path)

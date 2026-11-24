@@ -58,6 +58,30 @@ bool isLinkResetRequest(const pw::rpc::PacketMeta& meta) {
              pw::tokenizer::Hash("LinkReset");
 }
 
+bool isMetricServiceRequest(const pw::rpc::PacketMeta& meta) {
+  return pw::rpc::internal::UnwrapServiceId(meta.service_id()) ==
+         pw::tokenizer::Hash("pw.metric.proto.MetricService");
+}
+
+PW_METRIC_GROUP_GLOBAL(g_bridge_metrics, "bridge");
+PW_METRIC_STATIC(g_bridge_metrics, g_metric_tx_frames, "tx_frames", 0U);
+PW_METRIC_STATIC(g_bridge_metrics, g_metric_rx_frames, "rx_frames", 0U);
+PW_METRIC_STATIC(g_bridge_metrics, g_metric_safe_state_entries,
+                 "safe_state_entries", 0U);
+PW_METRIC_STATIC(g_bridge_metrics, g_metric_wcet_max_us, "wcet_max_us", 0U);
+PW_METRIC_STATIC(g_bridge_metrics, g_metric_free_memory_bytes,
+                 "free_memory_bytes", 0U);
+PW_METRIC_STATIC(g_bridge_metrics, g_metric_stack_used_bytes,
+                 "stack_used_bytes", 0U);
+
+pw::metric::MetricService g_metric_service(pw::metric::global_metrics,
+                                           pw::metric::global_groups);
+
+void refreshMemoryMetrics() {
+  g_metric_free_memory_bytes.Set(bridge::hal::getFreeMemory());
+  g_metric_stack_used_bytes.Set(bridge::hal::getStackWatermark().used_bytes);
+}
+
 class GpioRpcService final
     : public rpc::pb::pw_rpc::nanopb::GpioService::Service<GpioRpcService> {
  public:
@@ -324,7 +348,7 @@ void BridgeClass::_unregisterRpcServices() {
                                 g_mailbox_service
 #endif
                                 ,
-                                _transfer_service);
+                                _transfer_service, g_metric_service);
   _rpc_services_registered = false;
   g_rpc_services_owner = nullptr;
 }
@@ -397,13 +421,18 @@ void BridgeClass::_initializeRuntime() {
                               g_mailbox_service
 #endif
                               ,
-                              _transfer_service);
+                              _transfer_service, g_metric_service);
   _rpc_services_registered = true;
   g_rpc_services_owner = this;
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _initializeRuntime();
+  g_metric_tx_frames.Set(0U);
+  g_metric_rx_frames.Set(0U);
+  g_metric_safe_state_entries.Set(0U);
+  g_metric_wcet_max_us.Set(0U);
+  refreshMemoryMetrics();
 
   rpc::security::secure_zero(
       pw::span<uint8_t>(_shared_secret.data(), _shared_secret.size()));
@@ -483,6 +512,12 @@ void BridgeClass::process() {
 #endif
   const uint32_t elapsed_us = ::micros() - start_us;
   _wcet_max_micros = etl::max(_wcet_max_micros, elapsed_us);
+  g_metric_wcet_max_us.Set(_wcet_max_micros);
+}
+
+void BridgeClass::resetWcetStats() {
+  _wcet_max_micros = 0;
+  g_metric_wcet_max_us.Set(0U);
 }
 
 void BridgeClass::_watchdogTask() {
@@ -546,6 +581,7 @@ void zeroReceivedPlaintext(pw::span<const uint8_t> plaintext) {
 
 void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
   _last_rx_ms = NowMillis();
+  g_metric_rx_frames.Increment();
   const uint64_t addr = frame.address();
   const auto raw_data = pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(frame.data().data()),
@@ -615,6 +651,9 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
         }
         return;
       }
+      if (isMetricServiceRequest(meta)) {
+        refreshMemoryMetrics();
+      }
       _rpc_plaintext_response = isLinkSyncRequest(meta);
       const auto status = _rpc_server.ProcessPacket(pw::as_bytes(data));
       _rpc_plaintext_response = false;
@@ -639,11 +678,15 @@ bool BridgeClass::_writeHdlcFrame(uint64_t address,
                                   pw::span<const uint8_t> data,
                                   bool plaintext) {
   if (!_stream) return false;
-  if (plaintext || _shared_secret.empty()) {
-    return pw::hdlc::WriteUIFrame(address, pw::as_bytes(data), _arduino_stream)
-        .ok();
+  const bool ok =
+      (plaintext || _shared_secret.empty())
+          ? pw::hdlc::WriteUIFrame(address, pw::as_bytes(data), _arduino_stream)
+                .ok()
+          : _writeEncryptedHdlcFrame(address, data);
+  if (ok) {
+    g_metric_tx_frames.Increment();
   }
-  return _writeEncryptedHdlcFrame(address, data);
+  return ok;
 }
 
 bool BridgeClass::_writeEncryptedHdlcFrame(uint64_t address,
@@ -760,6 +803,7 @@ void BridgeClass::_emitStackWatermarkLog() {
     return;
   }
   _last_reported_stack_used = wm.used_bytes;
+  g_metric_stack_used_bytes.Set(wm.used_bytes);
 #if defined(ARDUINO_ARCH_SAMD)
   PW_LOG_INFO("MCU_STACK_WATERMARK arch=SAMD21 used=%u budget=%u",
               static_cast<unsigned>(wm.used_bytes),
@@ -807,6 +851,7 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
 }
 
 void BridgeClass::enterSafeState() {
+  g_metric_safe_state_entries.Increment();
   if (isSynchronized()) {
     PW_LOG_WARN("BRIDGE_SAFE_STATE");
   }

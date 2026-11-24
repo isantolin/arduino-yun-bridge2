@@ -81,9 +81,11 @@ constexpr uint32_t kMetricValueUnavailable = static_cast<uint32_t>(-1);
 
 void refreshMemoryMetrics() {
   g_metric_free_memory_bytes.Set(bridge::hal::getFreeMemory());
-  const bridge::hal::StackWatermark watermark = bridge::hal::getStackWatermark();
-  g_metric_stack_used_bytes.Set(
-      watermark.budget_bytes == 0U ? kMetricValueUnavailable : watermark.used_bytes);
+  const bridge::hal::StackWatermark watermark =
+      bridge::hal::getStackWatermark();
+  g_metric_stack_used_bytes.Set(watermark.budget_bytes == 0U
+                                    ? kMetricValueUnavailable
+                                    : watermark.used_bytes);
 }
 
 class GpioRpcService final
@@ -969,7 +971,7 @@ void BridgeClass::_handlePinSubscribe(
       [pin = m.pin](const PinSubscription& s) { return s.pin == pin; });
   if (!m.enabled) {
     if (it != _pin_subscriptions.end()) {
-      it->active = false;
+      _pin_subscriptions.erase(it);
     }
     ok = true;
   } else {
@@ -984,12 +986,12 @@ void BridgeClass::_handlePinSubscribe(
       it->hysteresis = static_cast<uint16_t>(m.hysteresis);
       it->active = true;
       it->last_report_ms = 0;
+      if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
+        ::pinMode(static_cast<uint8_t>(m.pin), INPUT_PULLUP);
+      } else if (m.mode == rpc_pb_PinModeType_PIN_INPUT) {
+        ::pinMode(static_cast<uint8_t>(m.pin), INPUT);
+      }
       ok = true;
-    }
-    if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
-      ::pinMode(static_cast<uint8_t>(m.pin), INPUT_PULLUP);
-    } else if (m.mode == rpc_pb_PinModeType_PIN_INPUT) {
-      ::pinMode(static_cast<uint8_t>(m.pin), INPUT);
     }
   }
 
@@ -1080,6 +1082,7 @@ void BridgeClass::_handleLinkReset() {
   _clearLinkSession();
   _state_flags.set(FLAG_TX_ENABLED, true);
   _fsm.receive(bridge::fsm::EvReset());
+  notify_observers(bridge::SystemEvent::UNSYNCHRONIZED);
   _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
   _timers.set_period(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT,
                      _response_timeout_ms);

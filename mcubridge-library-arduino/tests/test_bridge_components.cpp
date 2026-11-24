@@ -337,9 +337,11 @@ void test_process_edges() {
   Process._onRunAsyncResponse(p_resp);
   TEST_ASSERT_EQUAL(42, s_captured_pid);
 
-  // 4. Invalid callback should not enqueue
+  // 4. Invalid callback should not enqueue, then reset before arg-validation
+  // tests
   Process.reset();
   Process.runAsync("ls", {}, ProcessType::ProcessRunHandler{});
+  Process.reset();
 
   // 5. Oversized arg failure
   etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
@@ -737,6 +739,413 @@ void test_mailbox_edges() {
   Console.pushBytes(payload_bytes, 0);
 }
 
+namespace {
+
+pw::Status s_rpc_last_status = pw::OkStatus();
+size_t s_rpc_status_calls = 0U;
+void capture_rpc_status(pw::Status s, pw::span<const uint8_t>) {
+  s_rpc_last_status = s;
+  ++s_rpc_status_calls;
+}
+
+int32_t s_r22_run_pid_1 = 0;
+size_t s_r22_run_calls_1 = 0U;
+void r22_run_handler_1(int32_t pid) {
+  s_r22_run_pid_1 = pid;
+  ++s_r22_run_calls_1;
+}
+
+int32_t s_r22_run_pid_2 = 0;
+size_t s_r22_run_calls_2 = 0U;
+void r22_run_handler_2(int32_t pid) {
+  s_r22_run_pid_2 = pid;
+  ++s_r22_run_calls_2;
+}
+
+pw::Status s_r22_poll_status_1 = pw::OkStatus();
+uint16_t s_r22_poll_exit_1 = 0U;
+size_t s_r22_poll_calls_1 = 0U;
+void r22_poll_handler_1(pw::Status status, uint16_t exit_code,
+                        pw::span<const uint8_t>, pw::span<const uint8_t>) {
+  s_r22_poll_status_1 = status;
+  s_r22_poll_exit_1 = exit_code;
+  ++s_r22_poll_calls_1;
+}
+
+pw::Status s_r22_poll_status_2 = pw::OkStatus();
+size_t s_r22_poll_calls_2 = 0U;
+void r22_poll_handler_2(pw::Status status, uint16_t, pw::span<const uint8_t>,
+                        pw::span<const uint8_t>) {
+  s_r22_poll_status_2 = status;
+  ++s_r22_poll_calls_2;
+}
+
+size_t s_r22_ds_calls_1 = 0U;
+uint8_t s_r22_ds_first_byte_1 = 0U;
+void r22_ds_handler_1(etl::string_view, pw::span<const uint8_t> val) {
+  ++s_r22_ds_calls_1;
+  s_r22_ds_first_byte_1 = val.empty() ? 0U : val[0];
+}
+
+size_t s_r22_ds_calls_2 = 0U;
+void r22_ds_handler_2(etl::string_view, pw::span<const uint8_t>) {
+  ++s_r22_ds_calls_2;
+}
+
+template <typename NanopbType>
+void invoke_rpc_response_with_status(TestAccessor& ba, uint32_t service_id,
+                                     uint32_t method_id,
+                                     const pb_msgdesc_t* fields,
+                                     const NanopbType& msg, pw::Status status) {
+  uint8_t payload_buf[128];
+  pb_ostream_t pbos = pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
+  TEST_ASSERT_TRUE(pb_encode(&pbos, fields, &msg));
+  pw::rpc::internal::Packet pkt(
+      pw::rpc::internal::pwpb::PacketType::RESPONSE, 1U, service_id, method_id,
+      0U, pw::as_bytes(pw::span(payload_buf, pbos.bytes_written)), status);
+  ba.invokeRpcResponse(pkt);
+}
+
+void invoke_rpc_server_error(TestAccessor& ba, uint32_t service_id,
+                             uint32_t method_id, pw::Status status) {
+  pw::rpc::internal::Packet pkt(
+      pw::rpc::internal::pwpb::PacketType::SERVER_ERROR, 1U, service_id,
+      method_id, 0U, pw::ConstByteSpan(), status);
+  ba.invokeRpcResponse(pkt);
+}
+
+}  // namespace
+
+// Regression (R22): Process RPC client must enforce single in-flight call
+// correlation without clobbering active receivers, and propagate non-OK
+// RESPONSE status and SERVER_ERROR cleanly.
+void test_process_rpc_correlation_and_status_propagation() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kProcSvc = pw::tokenizer::Hash("rpc.pb.ProcessService");
+  constexpr uint32_t kRunMeth = pw::tokenizer::Hash("RunAsync");
+  constexpr uint32_t kPollMeth = pw::tokenizer::Hash("Poll");
+
+  s_rpc_status_calls = 0U;
+  s_rpc_last_status = pw::OkStatus();
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_rpc_status>());
+  Process.reset();
+
+  // 1. Overlapping runAsync (valid handler and invalid handler) must NOT
+  // clobber the active call; original handler still gets its response.
+  s_r22_run_calls_1 = 0U;
+  s_r22_run_pid_1 = 0;
+  s_r22_run_calls_2 = 0U;
+  s_r22_run_pid_2 = 0;
+  Process.runAsync("first", {},
+                   ProcessType::ProcessRunHandler::create<r22_run_handler_1>());
+  Process.runAsync("second", {},
+                   ProcessType::ProcessRunHandler::create<r22_run_handler_2>());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_run_calls_2);
+  TEST_ASSERT_EQUAL_INT32(-1, s_r22_run_pid_2);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(s_rpc_last_status.code()));
+
+  // Overlapping with invalid handler also rejects cleanly without clobbering.
+  Process.runAsync("third", {}, ProcessType::ProcessRunHandler{});
+  TEST_ASSERT_EQUAL_UINT32(0U, s_r22_run_calls_1);
+
+  rpc_pb_ProcessRunAsyncResponse run_resp =
+      rpc_pb_ProcessRunAsyncResponse_init_default;
+  run_resp.pid = 77U;
+  invoke_rpc_response_with_status(ba, kProcSvc, kRunMeth,
+                                  rpc_pb_ProcessRunAsyncResponse_fields,
+                                  run_resp, pw::OkStatus());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_run_calls_1);
+  TEST_ASSERT_EQUAL_INT32(77, s_r22_run_pid_1);
+
+  // 2. Non-OK RESPONSE status emits status, returns -1, and frees the slot.
+  s_rpc_status_calls = 0U;
+  s_r22_run_calls_1 = 0U;
+  s_r22_run_pid_1 = 0;
+  Process.runAsync("denied", {},
+                   ProcessType::ProcessRunHandler::create<r22_run_handler_1>());
+  rpc_pb_ProcessRunAsyncResponse err_resp =
+      rpc_pb_ProcessRunAsyncResponse_init_default;
+  err_resp.pid = 0U;
+  invoke_rpc_response_with_status(ba, kProcSvc, kRunMeth,
+                                  rpc_pb_ProcessRunAsyncResponse_fields,
+                                  err_resp, pw::Status::PermissionDenied());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::PermissionDenied().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_run_calls_1);
+  TEST_ASSERT_EQUAL_INT32(-1, s_r22_run_pid_1);
+
+  // 3. SERVER_ERROR invokes on_error, emits status, passes -1, frees slot.
+  s_rpc_status_calls = 0U;
+  s_r22_run_calls_1 = 0U;
+  Process.runAsync("server_err", {},
+                   ProcessType::ProcessRunHandler::create<r22_run_handler_1>());
+  invoke_rpc_server_error(ba, kProcSvc, kRunMeth, pw::Status::Unavailable());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unavailable().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_run_calls_1);
+  TEST_ASSERT_EQUAL_INT32(-1, s_r22_run_pid_1);
+
+  // Also cover on_error with an invalid handler.
+  Process.runAsync("no_cb", {}, ProcessType::ProcessRunHandler{});
+  invoke_rpc_server_error(ba, kProcSvc, kRunMeth, pw::Status::Internal());
+
+  // 4. Overlapping poll must NOT clobber active poll; original still completes.
+  s_r22_poll_calls_1 = 0U;
+  s_r22_poll_calls_2 = 0U;
+  Process.poll(77,
+               ProcessType::ProcessPollHandler::create<r22_poll_handler_1>());
+  Process.poll(78,
+               ProcessType::ProcessPollHandler::create<r22_poll_handler_2>());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_poll_calls_2);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(s_r22_poll_status_2.code()));
+  // Overlapping poll with invalid handler.
+  Process.poll(79, ProcessType::ProcessPollHandler{});
+  TEST_ASSERT_EQUAL_UINT32(0U, s_r22_poll_calls_1);
+
+  rpc_pb_ProcessPollResponse poll_resp =
+      rpc_pb_ProcessPollResponse_init_default;
+  poll_resp.status = static_cast<uint32_t>(pw::OkStatus().code());
+  poll_resp.exit_code = 42U;
+  invoke_rpc_response_with_status(ba, kProcSvc, kPollMeth,
+                                  rpc_pb_ProcessPollResponse_fields, poll_resp,
+                                  pw::OkStatus());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_poll_calls_1);
+  TEST_ASSERT_TRUE(s_r22_poll_status_1.ok());
+  TEST_ASSERT_EQUAL_UINT16(42U, s_r22_poll_exit_1);
+
+  // 5. Non-OK RESPONSE status and SERVER_ERROR on poll propagate status.
+  s_rpc_status_calls = 0U;
+  s_r22_poll_calls_1 = 0U;
+  Process.poll(77,
+               ProcessType::ProcessPollHandler::create<r22_poll_handler_1>());
+  rpc_pb_ProcessPollResponse poll_err_resp =
+      rpc_pb_ProcessPollResponse_init_default;
+  invoke_rpc_response_with_status(ba, kProcSvc, kPollMeth,
+                                  rpc_pb_ProcessPollResponse_fields,
+                                  poll_err_resp, pw::Status::NotFound());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::NotFound().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_poll_calls_1);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::NotFound().code()),
+                        static_cast<int>(s_r22_poll_status_1.code()));
+
+  s_rpc_status_calls = 0U;
+  s_r22_poll_calls_1 = 0U;
+  Process.poll(77,
+               ProcessType::ProcessPollHandler::create<r22_poll_handler_1>());
+  invoke_rpc_server_error(ba, kProcSvc, kPollMeth, pw::Status::Internal());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Internal().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_poll_calls_1);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Internal().code()),
+                        static_cast<int>(s_r22_poll_status_1.code()));
+
+  // Cover poll on_error and !isRpcTxReady with invalid handler.
+  Process.poll(77, ProcessType::ProcessPollHandler{});
+  invoke_rpc_server_error(ba, kProcSvc, kPollMeth, pw::Status::Unavailable());
+  ba.setTxEnabled(false);
+  Process.poll(77, ProcessType::ProcessPollHandler{});
+  ba.setTxEnabled(true);
+
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
+// Regression (R22): DataStore RPC client must preserve 1-in-flight correlation
+// and never pass default-initialized payloads on non-OK status / SERVER_ERROR.
+void test_datastore_rpc_correlation_and_status_propagation() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kDsSvc = pw::tokenizer::Hash("rpc.pb.DataStoreService");
+  constexpr uint32_t kGetMeth = pw::tokenizer::Hash("Get");
+
+  s_rpc_status_calls = 0U;
+  s_rpc_last_status = pw::OkStatus();
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_rpc_status>());
+  DataStore.onLost();
+
+  // 1. Overlapping DataStore.get rejects 2nd with ResourceExhausted without
+  // clobbering 1st call.
+  s_r22_ds_calls_1 = 0U;
+  s_r22_ds_first_byte_1 = 0U;
+  s_r22_ds_calls_2 = 0U;
+  DataStore.get("k1", DataStoreClass::GetHandler::create<r22_ds_handler_1>());
+  DataStore.get("k2", DataStoreClass::GetHandler::create<r22_ds_handler_2>());
+  TEST_ASSERT_EQUAL_UINT32(0U, s_r22_ds_calls_2);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(s_rpc_last_status.code()));
+
+  rpc_pb_DatastoreGetResponse ok_resp =
+      rpc_pb_DatastoreGetResponse_init_default;
+  ok_resp.value.size = 1U;
+  ok_resp.value.bytes[0] = 0xABU;
+  invoke_rpc_response_with_status(ba, kDsSvc, kGetMeth,
+                                  rpc_pb_DatastoreGetResponse_fields, ok_resp,
+                                  pw::OkStatus());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_ds_calls_1);
+  TEST_ASSERT_EQUAL_HEX8(0xABU, s_r22_ds_first_byte_1);
+
+  // 2. Non-OK RESPONSE status emits status, does NOT invoke handler, frees
+  // slot.
+  s_rpc_status_calls = 0U;
+  s_r22_ds_calls_1 = 0U;
+  DataStore.get("missing",
+                DataStoreClass::GetHandler::create<r22_ds_handler_1>());
+  rpc_pb_DatastoreGetResponse empty_resp =
+      rpc_pb_DatastoreGetResponse_init_default;
+  invoke_rpc_response_with_status(ba, kDsSvc, kGetMeth,
+                                  rpc_pb_DatastoreGetResponse_fields,
+                                  empty_resp, pw::Status::NotFound());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::NotFound().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+  TEST_ASSERT_EQUAL_UINT32(0U, s_r22_ds_calls_1);
+
+  // 3. SERVER_ERROR invokes on_error, emits status, frees slot for next call.
+  s_rpc_status_calls = 0U;
+  DataStore.get("denied",
+                DataStoreClass::GetHandler::create<r22_ds_handler_1>());
+  invoke_rpc_server_error(ba, kDsSvc, kGetMeth, pw::Status::PermissionDenied());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::PermissionDenied().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+  TEST_ASSERT_EQUAL_UINT32(0U, s_r22_ds_calls_1);
+
+  // Subsequent get succeeds after error cleanup.
+  DataStore.get("after_err",
+                DataStoreClass::GetHandler::create<r22_ds_handler_1>());
+  ok_resp.value.bytes[0] = 0xCDU;
+  invoke_rpc_response_with_status(ba, kDsSvc, kGetMeth,
+                                  rpc_pb_DatastoreGetResponse_fields, ok_resp,
+                                  pw::OkStatus());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_r22_ds_calls_1);
+  TEST_ASSERT_EQUAL_HEX8(0xCDU, s_r22_ds_first_byte_1);
+
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
+// Regression (R22): Mailbox RPC client must propagate non-OK status and
+// SERVER_ERROR without enqueuing bogus payloads or reporting fake counts, and
+// reject overlapping requestRead / requestAvailable cleanly.
+void test_mailbox_rpc_correlation_and_status_propagation() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kMbSvc = pw::tokenizer::Hash("rpc.pb.MailboxService");
+  constexpr uint32_t kPushMeth = pw::tokenizer::Hash("Push");
+  constexpr uint32_t kReadMeth = pw::tokenizer::Hash("Read");
+  constexpr uint32_t kAvailMeth = pw::tokenizer::Hash("Available");
+
+  s_rpc_status_calls = 0U;
+  s_rpc_last_status = pw::OkStatus();
+  Bridge.onStatus(BridgeClass::StatusHandler::create<capture_rpc_status>());
+  Mailbox.onLost();
+
+  message_callback_called = false;
+  available_callback_called = false;
+  last_available_count = 99U;
+  Mailbox.registerMessageCallback(
+      MailboxType::MessageCallback::create<my_message_callback>());
+  Mailbox.registerAvailableCallback(
+      MailboxType::AvailableCallback::create<my_available_callback>());
+
+  // 1. Overlapping requestRead returns false and emits ResourceExhausted.
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  TEST_ASSERT_FALSE(Mailbox.requestRead());
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(s_rpc_last_status.code()));
+
+  // Non-OK RESPONSE on Read emits status and does NOT enqueue bogus payload.
+  s_rpc_status_calls = 0U;
+  rpc_pb_MailboxReadResponse bad_read = rpc_pb_MailboxReadResponse_init_default;
+  bad_read.content.size = 2U;
+  bad_read.content.bytes[0] = 0xDE;
+  bad_read.content.bytes[1] = 0xAD;
+  invoke_rpc_response_with_status(ba, kMbSvc, kReadMeth,
+                                  rpc_pb_MailboxReadResponse_fields, bad_read,
+                                  pw::Status::Unavailable());
+  Mailbox.process();
+  TEST_ASSERT_FALSE(message_callback_called);
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unavailable().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+
+  // SERVER_ERROR on Read emits status and frees slot.
+  s_rpc_status_calls = 0U;
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  invoke_rpc_server_error(ba, kMbSvc, kReadMeth, pw::Status::Internal());
+  Mailbox.process();
+  TEST_ASSERT_FALSE(message_callback_called);
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Internal().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+
+  // 2. Overlapping requestAvailable returns false and emits ResourceExhausted.
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
+  TEST_ASSERT_FALSE(Mailbox.requestAvailable());
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(s_rpc_last_status.code()));
+
+  // Non-OK RESPONSE on Available emits status and does NOT call callback.
+  s_rpc_status_calls = 0U;
+  rpc_pb_MailboxAvailableResponse bad_avail =
+      rpc_pb_MailboxAvailableResponse_init_default;
+  bad_avail.count = 0U;
+  invoke_rpc_response_with_status(ba, kMbSvc, kAvailMeth,
+                                  rpc_pb_MailboxAvailableResponse_fields,
+                                  bad_avail, pw::Status::PermissionDenied());
+  TEST_ASSERT_FALSE(available_callback_called);
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::PermissionDenied().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+
+  // SERVER_ERROR on Available emits status and frees slot.
+  s_rpc_status_calls = 0U;
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
+  invoke_rpc_server_error(ba, kMbSvc, kAvailMeth, pw::Status::Unavailable());
+  TEST_ASSERT_FALSE(available_callback_called);
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+
+  // 3. Push OK response, non-OK response, and SERVER_ERROR paths.
+  const etl::array<uint8_t, 2> push_bytes = {0x01U, 0x02U};
+  rpc_pb_Empty empty_msg = rpc_pb_Empty_init_default;
+  s_rpc_status_calls = 0U;
+  Mailbox.push(push_bytes);
+  invoke_rpc_response_with_status(ba, kMbSvc, kPushMeth, rpc_pb_Empty_fields,
+                                  empty_msg, pw::OkStatus());
+  TEST_ASSERT_EQUAL_UINT32(0U, s_rpc_status_calls);
+
+  Mailbox.push(push_bytes);
+  invoke_rpc_response_with_status(ba, kMbSvc, kPushMeth, rpc_pb_Empty_fields,
+                                  empty_msg, pw::Status::ResourceExhausted());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(s_rpc_last_status.code()));
+
+  s_rpc_status_calls = 0U;
+  Mailbox.push(push_bytes);
+  invoke_rpc_server_error(ba, kMbSvc, kPushMeth, pw::Status::Internal());
+  TEST_ASSERT_EQUAL_UINT32(1U, s_rpc_status_calls);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Internal().code()),
+                        static_cast<int>(s_rpc_last_status.code()));
+
+  Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_all_handlers_coverage);
@@ -753,5 +1162,8 @@ int main() {
   RUN_TEST(test_filesystem_edges);
   RUN_TEST(test_spi_edges);
   RUN_TEST(test_mailbox_edges);
+  RUN_TEST(test_process_rpc_correlation_and_status_propagation);
+  RUN_TEST(test_datastore_rpc_correlation_and_status_propagation);
+  RUN_TEST(test_mailbox_rpc_correlation_and_status_propagation);
   return UNITY_END();
 }

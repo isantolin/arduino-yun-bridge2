@@ -37,7 +37,10 @@ class MailboxClass : public bridge::BridgeObserver {
     _available_callback = cb;
   }
 
-  static void _onAvailableResponse(const rpc_pb_MailboxAvailableResponse& msg);
+  static void _onReadResponse(const rpc_pb_MailboxReadResponse& msg,
+                              pw::Status status = pw::OkStatus());
+  static void _onAvailableResponse(const rpc_pb_MailboxAvailableResponse& msg,
+                                   pw::Status status = pw::OkStatus());
 
   static void _enqueue(pw::span<const uint8_t> data);
 

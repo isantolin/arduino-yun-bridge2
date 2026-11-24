@@ -30,30 +30,46 @@ void MailboxClass::push(pw::span<const uint8_t> data) {
   }
   rpc_pb_MailboxPush p = rpc_pb_MailboxPush_init_default;
   bridge::pb::copy_bytes(p.data, data);
-  _push_call = Bridge.mailboxClient().Push(p);
+  _push_call = Bridge.mailboxClient().Push(
+      p,
+      [](const rpc_pb_Empty&, pw::Status status) {
+        if (!status.ok()) {
+          Bridge.emitStatus(status);
+        }
+      },
+      [](pw::Status status) { Bridge.emitStatus(status); });
 }
 
 bool MailboxClass::requestRead() {
+  if (_read_call.active()) {
+    Bridge.emitStatus(pw::Status::ResourceExhausted());
+    return false;
+  }
   if (!Bridge.isRpcTxReady()) return false;
   rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
   _read_call = Bridge.mailboxClient().Read(
-      req, [](const rpc_pb_MailboxReadResponse& resp, pw::Status status) {
-        static_cast<void>(status);
-        Mailbox._enqueue(
-            pw::span<const uint8_t>(resp.content.bytes, resp.content.size));
-      });
-  return true;
+      req,
+      [](const rpc_pb_MailboxReadResponse& resp, pw::Status status) {
+        Mailbox._onReadResponse(resp, status);
+      },
+      [](pw::Status status) { Bridge.emitStatus(status); });
+  return _read_call.active();
 }
 
 bool MailboxClass::requestAvailable() {
+  if (_avail_call.active()) {
+    Bridge.emitStatus(pw::Status::ResourceExhausted());
+    return false;
+  }
   if (!Bridge.isRpcTxReady()) return false;
   rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
   _avail_call = Bridge.mailboxClient().Available(
-      req, [](const rpc_pb_MailboxAvailableResponse& resp, pw::Status status) {
-        static_cast<void>(status);
-        Mailbox._onAvailableResponse(resp);
-      });
-  return true;
+      req,
+      [](const rpc_pb_MailboxAvailableResponse& resp, pw::Status status) {
+        Mailbox._onAvailableResponse(resp, status);
+      },
+      [](pw::Status status) { Bridge.emitStatus(status); });
+  return _avail_call.active();
 }
 
 void MailboxClass::signalProcessed(uint32_t message_id) {
@@ -76,8 +92,21 @@ void MailboxClass::_enqueue(pw::span<const uint8_t> data) {
   }
 }
 
+void MailboxClass::_onReadResponse(const rpc_pb_MailboxReadResponse& msg,
+                                   pw::Status status) {
+  if (!status.ok()) {
+    Bridge.emitStatus(status);
+    return;
+  }
+  _enqueue(pw::span<const uint8_t>(msg.content.bytes, msg.content.size));
+}
+
 void MailboxClass::_onAvailableResponse(
-    const rpc_pb_MailboxAvailableResponse& msg) {
+    const rpc_pb_MailboxAvailableResponse& msg, pw::Status status) {
+  if (!status.ok()) {
+    Bridge.emitStatus(status);
+    return;
+  }
   if (_available_callback) {
     _available_callback(msg.count);
   }

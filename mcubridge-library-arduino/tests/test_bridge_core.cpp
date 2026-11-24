@@ -953,8 +953,10 @@ void test_bridge_pw_metric_service_get_and_walk() {
   TEST_ASSERT_EQUAL_UINT32(Bridge.getWcetMaxMicros(), get_metrics.wcet_max_us);
   TEST_ASSERT_GREATER_OR_EQUAL_UINT32(bridge::hal::MIN_STACK_MARGIN_BYTES,
                                       get_metrics.free_memory_bytes);
-  // Host HAL has no runtime stack watermark; UINT32_MAX is the explicit unavailable sentinel.
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(-1), get_metrics.stack_used_bytes);
+  // Host HAL has no runtime stack watermark; UINT32_MAX is the explicit
+  // unavailable sentinel.
+  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(-1),
+                           get_metrics.stack_used_bytes);
 
   // 2. Invoke pw.metric.proto.MetricService/Walk (paginated unary).
   stream.tx_buf.clear();
@@ -993,6 +995,164 @@ void test_bridge_pw_metric_service_get_and_walk() {
                                   walk_metrics.rx_frames);
 }
 
+namespace {
+
+bool extract_last_rpc_response_status(const BiStream& stream,
+                                      uint32_t service_id, uint32_t method_id,
+                                      pw::Status& out_status) {
+  pw::hdlc::DecoderBuffer<1024> decoder;
+  bool found = false;
+  for (size_t i = 0; i < stream.tx_buf.len; ++i) {
+    auto frame_res = decoder.Process(
+        static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
+    if (!frame_res.ok() ||
+        frame_res.value().address() != rpc::RPC_HDLC_ADDRESS_RPC) {
+      continue;
+    }
+    auto pkt_res =
+        pw::rpc::internal::Packet::FromBuffer(frame_res.value().data());
+    if (pkt_res.ok() &&
+        pkt_res.value().type() ==
+            pw::rpc::internal::pwpb::PacketType::RESPONSE &&
+        pkt_res.value().service_id() == service_id &&
+        pkt_res.value().method_id() == method_id) {
+      found = true;
+      out_status = pkt_res.value().status();
+    }
+  }
+  return found;
+}
+
+}  // namespace
+
+// Regression (R25): unsubscribing a pin must reclaim its slot in
+// _pin_subscriptions so subscribing a new pin after reaching
+// MAX_PIN_SUBSCRIPTIONS succeeds.
+void test_pin_subscribe_unsubscribe_reclaims_slot() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  resetArduinoStubPinStates();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  constexpr uint32_t kSubMeth = pw::tokenizer::Hash("SubscribePins");
+
+  for (uint8_t i = 0; i < bridge::config::MAX_PIN_SUBSCRIPTIONS; ++i) {
+    rpc_pb_PinSubscribeRequest req = rpc_pb_PinSubscribeRequest_init_default;
+    req.pin = static_cast<uint32_t>(2U + i);
+    req.mode = rpc_pb_PinModeType_PIN_INPUT;
+    req.interval_ms = 50U;
+    req.hysteresis = 1U;
+    req.enabled = true;
+    send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
+                     req);
+    TEST_ASSERT_GREATER_OR_EQUAL_INT32(
+        0, ba.subscriptionLastValueForPin(static_cast<uint8_t>(2U + i)));
+  }
+
+  // Unsubscribe one pin in the middle and verify its slot is erased.
+  stream.tx_buf.clear();
+  rpc_pb_PinSubscribeRequest unsub = rpc_pb_PinSubscribeRequest_init_default;
+  unsub.pin = 5U;
+  unsub.enabled = false;
+  send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
+                   unsub);
+  TEST_ASSERT_EQUAL_INT32(-1, ba.subscriptionLastValueForPin(5U));
+
+  // Subscribing a brand-new pin must now reuse the reclaimed capacity.
+  stream.tx_buf.clear();
+  constexpr uint8_t kNewPin =
+      static_cast<uint8_t>(2U + bridge::config::MAX_PIN_SUBSCRIPTIONS);
+  rpc_pb_PinSubscribeRequest sub_new = rpc_pb_PinSubscribeRequest_init_default;
+  sub_new.pin = kNewPin;
+  sub_new.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  sub_new.interval_ms = 50U;
+  sub_new.hysteresis = 1U;
+  sub_new.enabled = true;
+  send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
+                   sub_new);
+  pw::Status resp_status = pw::OkStatus();
+  TEST_ASSERT_FALSE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
+                                                     resp_status));
+  TEST_ASSERT_GREATER_OR_EQUAL_INT32(0,
+                                     ba.subscriptionLastValueForPin(kNewPin));
+  TEST_ASSERT_EQUAL_UINT8(INPUT_PULLUP,
+                          g_arduino_stub_pin_states[kNewPin].mode);
+}
+
+// Regression (R25): when _pin_subscriptions is full, rejecting a new pin
+// subscribe request must return ResourceExhausted AND must not call ::pinMode()
+// on the rejected pin.
+void test_pin_subscribe_full_does_not_mutate_pin_mode() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  resetArduinoStubPinStates();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  constexpr uint32_t kSubMeth = pw::tokenizer::Hash("SubscribePins");
+
+  for (uint8_t i = 0; i < bridge::config::MAX_PIN_SUBSCRIPTIONS; ++i) {
+    rpc_pb_PinSubscribeRequest req = rpc_pb_PinSubscribeRequest_init_default;
+    req.pin = static_cast<uint32_t>(2U + i);
+    req.mode = rpc_pb_PinModeType_PIN_INPUT;
+    req.interval_ms = 50U;
+    req.hysteresis = 1U;
+    req.enabled = true;
+    send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
+                     req);
+  }
+
+  constexpr uint8_t kRejectedPullupPin =
+      static_cast<uint8_t>(2U + bridge::config::MAX_PIN_SUBSCRIPTIONS);
+  constexpr uint8_t kRejectedInputPin =
+      static_cast<uint8_t>(3U + bridge::config::MAX_PIN_SUBSCRIPTIONS);
+  TEST_ASSERT_EQUAL_UINT8(0xFFU,
+                          g_arduino_stub_pin_states[kRejectedPullupPin].mode);
+  TEST_ASSERT_EQUAL_UINT8(0xFFU,
+                          g_arduino_stub_pin_states[kRejectedInputPin].mode);
+
+  stream.tx_buf.clear();
+  rpc_pb_PinSubscribeRequest rej_pullup =
+      rpc_pb_PinSubscribeRequest_init_default;
+  rej_pullup.pin = kRejectedPullupPin;
+  rej_pullup.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  rej_pullup.enabled = true;
+  send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
+                   rej_pullup);
+  pw::Status status_pullup = pw::OkStatus();
+  TEST_ASSERT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
+                                                    status_pullup));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(status_pullup.code()));
+  TEST_ASSERT_EQUAL_UINT8(0xFFU,
+                          g_arduino_stub_pin_states[kRejectedPullupPin].mode);
+  TEST_ASSERT_EQUAL_INT32(-1,
+                          ba.subscriptionLastValueForPin(kRejectedPullupPin));
+
+  stream.tx_buf.clear();
+  rpc_pb_PinSubscribeRequest rej_input =
+      rpc_pb_PinSubscribeRequest_init_default;
+  rej_input.pin = kRejectedInputPin;
+  rej_input.mode = rpc_pb_PinModeType_PIN_INPUT;
+  rej_input.enabled = true;
+  send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
+                   rej_input);
+  pw::Status status_input = pw::OkStatus();
+  TEST_ASSERT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
+                                                    status_input));
+  TEST_ASSERT_EQUAL_INT(
+      static_cast<int>(pw::Status::ResourceExhausted().code()),
+      static_cast<int>(status_input.code()));
+  TEST_ASSERT_EQUAL_UINT8(0xFFU,
+                          g_arduino_stub_pin_states[kRejectedInputPin].mode);
+  TEST_ASSERT_EQUAL_INT32(-1,
+                          ba.subscriptionLastValueForPin(kRejectedInputPin));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -1023,5 +1183,7 @@ int main() {
   RUN_TEST(test_bridge_pw_log_tokenized_hdlc_frame);
   RUN_TEST(test_bridge_safe_state_emits_tokenized_pw_log);
   RUN_TEST(test_bridge_pw_metric_service_get_and_walk);
+  RUN_TEST(test_pin_subscribe_unsubscribe_reclaims_slot);
+  RUN_TEST(test_pin_subscribe_full_does_not_mutate_pin_mode);
   return UNITY_END();
 }

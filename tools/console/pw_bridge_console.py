@@ -8,26 +8,35 @@ socket endpoint using upstream Pigweed ``pw_hdlc``, ``pw_rpc``,
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+import hmac
 import json
 import logging
 import os
 from pathlib import Path
+import select
+import secrets
 import socket
 import sys
+import time
 from types import ModuleType
 from typing import Annotated, Any, Final, cast
 from urllib.parse import urlparse
 
 from pw_console.embed import PwConsoleEmbed
 import pw_hdlc.rpc
-from pw_hdlc.decode import Frame
+from google.protobuf.message import DecodeError as ProtobufDecodeError
+from pw_hdlc.decode import Frame, FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_metric import metric_parser
 from pw_metric_proto import metric_service_pb2
+from pw_rpc import packets as pw_packets
 from pw_rpc.callback_client.errors import RpcError, RpcTimeout
 from pw_rpc.console_tools.console import ClientInfo, flattened_rpc_completions
 from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.internal.packet_pb2 import PacketType
 from pw_stream.stream_readers import CancellableReader
 from pw_tokenizer import detokenize, elf_reader
 from pw_tokenizer.tokens import DatabaseFormatError
@@ -35,7 +44,10 @@ from pw_transfer import transfer_pb2
 import serial
 import typer
 
+from mcubridge.config.settings import get_config_source, load_runtime_config
 from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2, protocol
+from mcubridge.security.security import LinkCipher
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.transport.serial import (
     DEFAULT_TOKEN_DATABASE_CANDIDATES,
     decode_tokenized_log_payload,
@@ -52,6 +64,20 @@ DEFAULT_SOCKET_TIMEOUT_S: Final[float] = 5.0
 MCU_LOG_LOGGER_NAME: Final[str] = "mcubridge.console.mcu"
 MCU_CONSOLE_LOGGER_NAME: Final[str] = "mcubridge.console.stream"
 HOST_LOG_LOGGER_NAME: Final[str] = "mcubridge.console.host"
+
+_LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
+_LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
+
+
+def _require_rpc_ids(service_id: int | None, method_id: int | None) -> tuple[int, int]:
+    """Validate the generated operation descriptor and normalize fixed32 IDs."""
+    if service_id is None or method_id is None:
+        raise RuntimeError("Pigweed operation descriptor is missing its RPC identifiers")
+    return service_id & 0xFFFFFFFF, method_id & 0xFFFFFFFF
+
+
+_LINK_RESET_IDS: Final = _require_rpc_ids(_LINK_RESET_SPEC.service_id, _LINK_RESET_SPEC.method_id)
+_LINK_SYNC_IDS: Final = _require_rpc_ids(_LINK_SYNC_SPEC.service_id, _LINK_SYNC_SPEC.method_id)
 
 _PYSERIAL_URL_SCHEMES: Final[tuple[str, ...]] = ("loop://", "rfc2217://", "hwgrep://", "spy://", "alt://")
 
@@ -77,6 +103,8 @@ class BridgeTransport:
     reader: CancellableReader
     writer: Callable[[bytes], Any]
     closer: Callable[[], None]
+    read_chunk: Callable[[int], bytes]
+    flush: Callable[[], None]
 
     def close(self) -> None:
         """Deterministically cancel pending reads and close the underlying link."""
@@ -240,12 +268,19 @@ def open_bridge_transport(
         sock = socket.create_connection((host, port), timeout=socket_timeout_s)
         sock.settimeout(None)
         reader: CancellableReader = pw_hdlc.rpc.SocketReader(sock, DEFAULT_READ_SIZE)
+
+        def read_socket_chunk(size: int) -> bytes:
+            ready, _, _ = select.select([sock], [], [], 0.1)
+            return sock.recv(size) if ready else b""
+
         return BridgeTransport(
             endpoint=device,
             resolved_url=resolved_url,
             reader=reader,
             writer=sock.sendall,
             closer=sock.close,
+            read_chunk=read_socket_chunk,
+            flush=lambda: None,
         )
 
     ser = serial.serial_for_url(
@@ -264,8 +299,193 @@ def open_bridge_transport(
         reader=serial_reader,
         writer=ser.write,
         closer=ser.close,
+        read_chunk=ser.read,
+        flush=ser.flush,
     )
 
+
+def resolve_link_secret(*, insecure: bool = False) -> bytes:
+    """Resolve the authenticated-link secret from the environment or OpenWrt UCI.
+
+    An unauthenticated link is available only when the caller explicitly opts in
+    with the insecure flag. Secrets are never printed or included in check output.
+    """
+    if insecure:
+        return b""
+
+    environment_secret = os.environ.get("MCUBRIDGE_SERIAL_SHARED_SECRET")
+    if environment_secret:
+        return environment_secret.encode("utf-8")
+
+    config = load_runtime_config()
+    if get_config_source() == "uci" and config.serial_shared_secret:
+        return config.serial_shared_secret
+
+    raise ValueError(
+        "No serial shared secret is available. Configure OpenWrt UCI, set "
+        "MCUBRIDGE_SERIAL_SHARED_SECRET, or explicitly use --insecure for an isolated test link."
+    )
+
+
+def establish_link_security(
+    transport: BridgeTransport,
+    shared_secret: bytes,
+    *,
+    response_timeout_s: float = 5.0,
+    reset_settle_s: float = 0.15,
+) -> tuple[LinkCipher | None, bytes]:
+    """Run LinkReset/LinkSync v2 before exposing RPC; reuse daemon HMAC and AEAD implementations."""
+    host_nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
+
+    def write_plain_rpc(packet: bytes) -> None:
+        transport.writer(ui_frame(protocol.HDLC_ADDRESS_RPC, packet))
+        transport.flush()
+
+    write_plain_rpc(protocol.encode_rpc_packet(_LINK_RESET_SPEC, b"", call_id=1))
+    if reset_settle_s > 0:
+        time.sleep(reset_settle_s)
+
+    host_tag = SerialHandshakeManager.calculate_handshake_tag(shared_secret, host_nonce)
+    request = mcu_wire_pb2.LinkSync(nonce=host_nonce, tag=host_tag)
+    write_plain_rpc(protocol.encode_rpc_packet(_LINK_SYNC_SPEC, request, call_id=2))
+
+    decoder = FrameDecoder()
+    deadline = time.monotonic() + response_timeout_s
+    while time.monotonic() < deadline:
+        chunk = transport.read_chunk(DEFAULT_READ_SIZE)
+        if not chunk:
+            continue
+
+        for byte_index, value in enumerate(chunk):
+            for frame in decoder.process(bytes((value,))):
+                if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
+                    continue
+                try:
+                    packet = pw_packets.decode(frame.data)
+                except (ProtobufDecodeError, ValueError, TypeError):
+                    continue
+
+                if _require_rpc_ids(packet.service_id, packet.method_id) != _LINK_SYNC_IDS or packet.call_id != 2:
+                    continue
+                if packet.type != PacketType.RESPONSE or packet.status != 0:
+                    raise ConnectionError(
+                        f"MCU rejected LinkSync (packet_type={packet.type}, status={packet.status})"
+                    )
+
+                response = mcu_wire_pb2.LinkSync.FromString(packet.payload)
+                if not hmac.compare_digest(response.nonce, host_nonce):
+                    raise ConnectionError("MCU LinkSync response nonce does not match the outstanding request")
+                if shared_secret and len(response.mcu_nonce) != protocol.HANDSHAKE_NONCE_LENGTH:
+                    raise ConnectionError("MCU LinkSync response omitted its required v2 nonce")
+
+                expected_tag = SerialHandshakeManager.calculate_handshake_response_tag(
+                    shared_secret, host_nonce, response.mcu_nonce
+                )
+                if not hmac.compare_digest(response.tag, expected_tag):
+                    raise ConnectionError("MCU LinkSync response authentication failed")
+
+                cipher = (
+                    LinkCipher.for_host(shared_secret, host_nonce, response.mcu_nonce)
+                    if shared_secret
+                    else None
+                )
+                return cipher, chunk[byte_index + 1 :]  # noqa: E203
+
+    raise TimeoutError(f"Timed out waiting {response_timeout_s:.1f}s for authenticated MCU LinkSync v2 response")
+
+
+class SecureHdlcReader(CancellableReader):
+    """Decrypt complete MCU HDLC frames before passing them to upstream HdlcRpcClient."""
+
+    def __init__(
+        self,
+        reader: CancellableReader,
+        cipher: LinkCipher | None,
+        *,
+        initial_bytes: bytes = b"",
+    ) -> None:
+        cast(Any, super()).__init__(reader)
+        self._reader = reader
+        self._cipher = cipher
+        self._decoder = FrameDecoder()
+        self._ready: deque[bytes] = deque()
+        self._initial_bytes = initial_bytes
+
+    def read(self) -> bytes:
+        while not self._ready:
+            raw = self._initial_bytes or self._reader.read()
+            self._initial_bytes = b""
+            if not raw:
+                return b""
+            for frame in self._decoder.process(raw):
+                if not frame.ok():
+                    _HOST_LOGGER.warning("Dropping invalid HDLC frame in secure console reader")
+                    continue
+                payload = frame.data
+                if self._cipher is not None:
+                    try:
+                        payload = self._cipher.decrypt(frame.address, payload)
+                    except ValueError as exc:
+                        _HOST_LOGGER.error(
+                            "Rejected unauthenticated or replayed MCU frame",
+                            extra={"address": frame.address, "error": str(exc)},
+                        )
+                        continue
+                self._ready.append(ui_frame(frame.address, payload))
+        return self._ready.popleft()
+
+    def cancel_read(self) -> None:
+        self._reader.cancel_read()
+
+
+class SecureHdlcWriter:
+    """Encrypt host HDLC frames with the active session cipher before physical TX."""
+
+    def __init__(self, transport: BridgeTransport, cipher: LinkCipher | None) -> None:
+        self._transport = transport
+        self._cipher = cipher
+        self._protected_control_ids = (_LINK_RESET_IDS, _LINK_SYNC_IDS)
+
+    def __call__(self, encoded_frame: bytes) -> None:
+        frames = FrameDecoder().process(encoded_frame)
+        valid_frames = [frame for frame in frames if frame.ok()]
+        if len(valid_frames) != 1:
+            raise ValueError("Pigweed console writer expected exactly one complete HDLC frame")
+
+        frame = valid_frames[0]
+        if frame.address == protocol.HDLC_ADDRESS_RPC:
+            try:
+                packet = pw_packets.decode(frame.data)
+            except (ProtobufDecodeError, ValueError, TypeError) as exc:
+                raise ValueError("Pigweed console produced a malformed RPC packet") from exc
+            method_key = _require_rpc_ids(packet.service_id, packet.method_id)
+            if packet.type == PacketType.REQUEST and method_key in self._protected_control_ids:
+                raise ValueError("LinkReset/LinkSync cannot be issued from the REPL; restart the console to re-handshake")
+
+        payload = self._cipher.encrypt(frame.address, frame.data) if self._cipher is not None else frame.data
+        self._transport.writer(ui_frame(frame.address, payload))
+        self._transport.flush()
+
+
+def create_secure_rpc_io(
+    transport: BridgeTransport,
+    *,
+    shared_secret: bytes,
+    reset_settle_s: float = 0.15,
+    response_timeout_s: float = 5.0,
+) -> tuple[SecureHdlcReader, SecureHdlcWriter, bool]:
+    """Authenticate the physical link and create the encrypted Pigweed stream adapters."""
+    cipher, pending_bytes = establish_link_security(
+        transport,
+        shared_secret,
+        reset_settle_s=reset_settle_s,
+        response_timeout_s=response_timeout_s,
+    )
+    return (
+        SecureHdlcReader(transport.reader, cipher, initial_bytes=pending_bytes),
+        SecureHdlcWriter(transport, cipher),
+        cipher is not None,
+    )
 
 def create_rpc_client(
     reader: CancellableReader,
@@ -381,11 +601,14 @@ def build_check_summary(
     token_database: Path | None,
     firmware: Path | None,
     channel_id: int,
+    insecure: bool = False,
 ) -> dict[str, Any]:
-    """Resolve configuration, protos, and token database without opening hardware."""
+    """Resolve configuration, tokenizer, protos, and link-security mode without opening hardware."""
     detokenizer, loaded_db = build_detokenizer(token_database, firmware=firmware)
+    shared_secret = resolve_link_secret(insecure=insecure)
     protos = load_rpc_protos()
     return {
+        "link_security": "unauthenticated (explicit opt-in)" if not shared_secret else "authenticated ChaCha20-Poly1305",
         "app_title": APP_TITLE,
         "device": device,
         "resolved_url": resolve_console_endpoint(device),
@@ -455,7 +678,14 @@ def run_console(
         bool,
         typer.Option(
             "--check",
-            help="Validate protos, endpoint URL, and token database and print JSON summary without opening a TTY.",
+            help="Validate protos, endpoint URL, tokenizer, and link-security configuration without opening a TTY.",
+        ),
+    ] = False,
+    insecure: Annotated[
+        bool,
+        typer.Option(
+            "--insecure",
+            help="Explicitly use an unauthenticated link. Only for isolated development/testing links.",
         ),
     ] = False,
 ) -> None:
@@ -467,25 +697,36 @@ def run_console(
             token_database=token_database,
             firmware=firmware,
             channel_id=channel_id,
+            insecure=insecure,
         )
         typer.echo(json.dumps(summary, indent=2, sort_keys=True))
         return
 
     detokenizer, loaded_db = build_detokenizer(token_database, firmware=firmware)
+    shared_secret = resolve_link_secret(insecure=insecure)
     mcu_logger = logging.getLogger(MCU_LOG_LOGGER_NAME)
     console_logger = logging.getLogger(MCU_CONSOLE_LOGGER_NAME)
     host_logger = logging.getLogger(HOST_LOG_LOGGER_NAME)
 
     transport = open_bridge_transport(device, baudrate=baudrate)
-    rpc_client = create_rpc_client(
-        transport.reader,
-        transport.writer,
-        detokenizer=detokenizer,
-        mcu_logger=mcu_logger,
-        console_logger=console_logger,
-        channel_id=channel_id,
-    )
+    rpc_client: pw_hdlc.rpc.HdlcRpcClient | None = None
     try:
+        secure_reader, secure_writer, authenticated = create_secure_rpc_io(
+            transport,
+            shared_secret=shared_secret,
+        )
+        if authenticated:
+            _HOST_LOGGER.info("MCU link authenticated; ChaCha20-Poly1305 protection enabled")
+        else:
+            _HOST_LOGGER.warning("MCU link is unauthenticated by explicit user request")
+        rpc_client = create_rpc_client(
+            secure_reader,
+            secure_writer,
+            detokenizer=detokenizer,
+            mcu_logger=mcu_logger,
+            console_logger=console_logger,
+            channel_id=channel_id,
+        )
         embed = build_console_embed(
             rpc_client,
             detokenizer,
@@ -501,7 +742,8 @@ def run_console(
         embed.setup_python_logging(loggers_with_no_propagation=[mcu_logger, console_logger])
         cast(Any, embed).embed()
     finally:
-        rpc_client.close()
+        if rpc_client is not None:
+            rpc_client.close()
         transport.close()
 
 

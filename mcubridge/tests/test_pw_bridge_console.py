@@ -12,9 +12,10 @@ from typing import Any, cast
 
 import pw_cli.plugins
 from pw_console.embed import PwConsoleEmbed
+from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_metric_proto import metric_service_pb2
-from pw_rpc import ids as pw_ids
+from pw_rpc import ids as pw_ids, packets as pw_packets
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_status import Status
 from pw_stream.stream_readers import CancellableReader
@@ -22,10 +23,20 @@ from pw_tokenizer.encode import encode_token_and_args
 from pw_tokenizer.tokens import Database as TokenDatabase, TokenizedStringEntry, pw_tokenizer_65599_hash, write_binary
 import pytest
 
-from mcubridge.protocol import protocol
+from mcubridge.protocol import config_schema_pb2 as config_pb, mcu_wire_pb2 as pb, protocol
+from mcubridge.security.security import LinkCipher, derive_link_keys
+from mcubridge.services.handshake import SerialHandshakeManager
 from tools.console import pw_bridge_console
 
 _PW_METRIC_TOKEN_MASK = 0x0FFFFFFF
+
+
+
+def _fixed32_id(value: int | None) -> int:
+    """Return a fixed32 RPC identifier as an unsigned Python integer."""
+    if value is None:
+        raise AssertionError("RPC packet or descriptor omitted a fixed32 identifier")
+    return value & 0xFFFFFFFF
 
 
 class _QueueReader(CancellableReader):
@@ -343,11 +354,12 @@ def test_pigweed_json_registers_bridge_console_plugin(
 
     exit_code = registry.run_with_argv(
         "bridge-console",
-        ["--check", "--device", "tcp://127.0.0.1:9000", "--token-database", str(tokens_csv)],
+        ["--check", "--insecure", "--device", "tcp://127.0.0.1:9000", "--token-database", str(tokens_csv)],
     )
     assert exit_code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["resolved_url"] == "socket://127.0.0.1:9000"
+    assert payload["link_security"] == "unauthenticated (explicit opt-in)"
     assert payload["token_database"] == str(tokens_csv)
     assert payload["token_entries"] == 1
     assert payload["hdlc_addresses"] == {
@@ -408,6 +420,175 @@ def test_open_bridge_transport_supports_tcp_socket_and_loopback_serial() -> None
     finally:
         loop_transport.close()
 
+
+def test_authenticated_console_handshake_and_bidirectional_frame_protection() -> None:
+    """Verify the console performs LinkSync v2 and applies the daemon's AEAD cipher."""
+    secret = b"console-test-shared-secret"
+    mcu_nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
+    response_frames: queue.SimpleQueue[bytes] = queue.SimpleQueue()
+    raw_reader = _QueueReader()
+    wire_writes: list[bytes] = []
+    link_sync_response_sent = False
+
+    def _read_handshake_chunk(_size: int) -> bytes:
+        try:
+            return response_frames.get(timeout=1.0)
+        except queue.Empty:
+            return b""
+
+    def _write_raw(encoded: bytes) -> None:
+        nonlocal link_sync_response_sent
+        wire_writes.append(encoded)
+        if link_sync_response_sent:
+            return
+        decoder = FrameDecoder()
+        for frame in decoder.process(encoded):
+            if not frame.ok() or frame.address != protocol.HDLC_ADDRESS_RPC:
+                continue
+            packet = pw_packets.decode(frame.data)
+            link_sync_spec = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
+            link_sync_ids = (_fixed32_id(link_sync_spec.service_id), _fixed32_id(link_sync_spec.method_id))
+            if (
+                (_fixed32_id(packet.service_id), _fixed32_id(packet.method_id)) != link_sync_ids
+                or packet.type != PacketType.REQUEST
+            ):
+                continue
+
+            request = pb.LinkSync.FromString(packet.payload)
+            response = pb.LinkSync(
+                nonce=request.nonce,
+                mcu_nonce=mcu_nonce,
+                tag=SerialHandshakeManager.calculate_handshake_response_tag(
+                    secret, request.nonce, mcu_nonce
+                ),
+            )
+            response_packet = protocol.encode_rpc_packet(
+                "rpc.pb.SystemService/LinkSync",
+                response,
+                call_id=packet.call_id,
+                packet_type=int(PacketType.RESPONSE),
+            )
+            response_frames.put(ui_frame(protocol.HDLC_ADDRESS_RPC, response_packet))
+            link_sync_response_sent = True
+
+    transport = pw_bridge_console.BridgeTransport(
+        endpoint="test",
+        resolved_url="test://link",
+        reader=raw_reader,
+        writer=_write_raw,
+        closer=lambda: None,
+        read_chunk=_read_handshake_chunk,
+        flush=lambda: None,
+    )
+
+    cipher, leftover = pw_bridge_console.establish_link_security(
+        transport,
+        secret,
+        response_timeout_s=1.0,
+        reset_settle_s=0.0,
+    )
+    assert cipher is not None
+    assert leftover == b""
+    assert len(wire_writes) == 2
+
+    sync_request_frame = next(frame for frame in FrameDecoder().process(wire_writes[1]) if frame.ok())
+    sync_packet = pw_packets.decode(sync_request_frame.data)
+    sync_request = pb.LinkSync.FromString(sync_packet.payload)
+    host_to_mcu, mcu_to_host = derive_link_keys(secret, sync_request.nonce, mcu_nonce)
+    mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
+
+    secure_writer = pw_bridge_console.SecureHdlcWriter(transport, cipher)
+    request_packet = protocol.encode_rpc_packet(
+        "rpc.pb.SystemService/GetVersion",
+        b"",
+        call_id=17,
+    )
+    secure_writer(ui_frame(protocol.HDLC_ADDRESS_RPC, request_packet))
+    encrypted_request = next(
+        frame.data for frame in FrameDecoder().process(wire_writes[-1]) if frame.ok()
+    )
+    assert mcu_cipher.decrypt(protocol.HDLC_ADDRESS_RPC, encrypted_request) == request_packet
+
+    response_packet = protocol.encode_rpc_packet(
+        "rpc.pb.SystemService/GetVersion",
+        b"",
+        call_id=17,
+        packet_type=int(PacketType.RESPONSE),
+    )
+    raw_reader.feed(
+        ui_frame(
+            protocol.HDLC_ADDRESS_RPC,
+            mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, response_packet),
+        )
+    )
+    secure_reader = pw_bridge_console.SecureHdlcReader(raw_reader, cipher)
+    assert secure_reader.read() == ui_frame(protocol.HDLC_ADDRESS_RPC, response_packet)
+
+    reset_request = protocol.encode_rpc_packet(
+        "rpc.pb.SystemService/LinkReset",
+        b"",
+        call_id=18,
+    )
+    writes_before_reset = len(wire_writes)
+    with pytest.raises(ValueError, match="cannot be issued from the REPL"):
+        secure_writer(ui_frame(protocol.HDLC_ADDRESS_RPC, reset_request))
+    assert len(wire_writes) == writes_before_reset
+
+
+def test_console_requires_explicit_authentication_or_insecure_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never silently start a plaintext console session when no secret is configured."""
+    monkeypatch.delenv("MCUBRIDGE_SERIAL_SHARED_SECRET", raising=False)
+    monkeypatch.setattr(pw_bridge_console, "get_config_source", lambda: "defaults")
+    monkeypatch.setattr(pw_bridge_console, "load_runtime_config", config_pb.RuntimeConfig)
+    with pytest.raises(ValueError, match="No serial shared secret is available"):
+        pw_bridge_console.resolve_link_secret()
+    assert pw_bridge_console.resolve_link_secret(insecure=True) == b""
+
+
+
+def test_console_closes_transport_when_handshake_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Close the serial/socket even when LinkSync times out before RPC client creation."""
+    reader = _QueueReader()
+    closed = False
+
+    def close_transport() -> None:
+        nonlocal closed
+        closed = True
+
+    transport = pw_bridge_console.BridgeTransport(
+        endpoint="test",
+        resolved_url="test://link",
+        reader=reader,
+        writer=lambda _data: None,
+        closer=close_transport,
+        read_chunk=lambda _size: b"",
+        flush=lambda: None,
+    )
+    def fake_resolve_link_secret(*, insecure: bool = False) -> bytes:
+        del insecure
+        return b"test-secret"
+
+    def fake_open_bridge_transport(
+        device: str,
+        *,
+        baudrate: int = protocol.DEFAULT_BAUDRATE,
+        socket_timeout_s: float = pw_bridge_console.DEFAULT_SOCKET_TIMEOUT_S,
+    ) -> pw_bridge_console.BridgeTransport:
+        del device, baudrate, socket_timeout_s
+        return transport
+
+    monkeypatch.setattr(pw_bridge_console, "resolve_link_secret", fake_resolve_link_secret)
+    monkeypatch.setattr(pw_bridge_console, "open_bridge_transport", fake_open_bridge_transport)
+
+    def fail_handshake(*_args: Any, **_kwargs: Any) -> Any:
+        raise TimeoutError("simulated LinkSync timeout")
+
+    monkeypatch.setattr(pw_bridge_console, "create_secure_rpc_io", fail_handshake)
+
+    with pytest.raises(TimeoutError, match="simulated LinkSync timeout"):
+        pw_bridge_console.run_console(device="test", insecure=False)
+
+    assert closed
 
 def test_binary_token_database_and_elf_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify binary Pigweed token DB loading and firmware ELF auto-discovery fallback."""

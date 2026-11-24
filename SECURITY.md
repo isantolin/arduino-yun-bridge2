@@ -26,12 +26,12 @@ If you discover a potential security vulnerability in this project, please repor
 Arduino MCU Bridge 2 implements a Safety-Hardened Embedded Architecture designed for high-reliability embedded environments using deterministic FSMs, Zero-Heap memory management, and boot-time Known-Answer Tests.
 
 ### 1. Link Authentication and Encryption
-- With a non-empty `serial_shared_secret`, `LinkSync` authenticates the host with HMAC-SHA256 and the MCU returns a domain-separated HMAC proof. Both tags cover the 16-byte host nonce.
-- An empty `serial_shared_secret` explicitly selects the compatibility mode without link authentication or HDLC payload encryption. This mode must be limited to isolated development/testing links; it must not be used on an untrusted physical or network path.
-- The handshake derives separate 256-bit host-to-MCU and MCU-to-host keys with HKDF-SHA256. After synchronization, RPC, console, and log HDLC payloads use ChaCha20-Poly1305. The envelope is an 8-byte big-endian counter followed by ciphertext and a 16-byte tag; the HDLC address and counter are authenticated as AAD.
-- Each direction uses one strictly increasing counter across the protected HDLC channels. Receivers reject zero, repeated, and older counters. This replay defense is scoped to the current session; because the MCU has no demonstrated cross-platform cryptographic random source or persistent boot epoch, previously captured handshakes and frames are not guaranteed to be rejected after an MCU restart.
-- `LinkReset` is an explicit plaintext control operation used to recover synchronization. This is not a plaintext fallback for data frames; a reset can force a new handshake.
-- An empty shared secret explicitly disables link authentication. It is not a fallback for a failed tag, and unauthenticated mode must not be used over an untrusted transport.
+- With a non-empty `serial_shared_secret`, the host authenticates `LinkSync` with HMAC-SHA256 over its 16-byte nonce. The MCU returns a second HMAC-SHA256 proof over the host nonce concatenated with a 16-byte MCU nonce (handshake v2, ADR-0005).
+- Session keys are derived with HKDF-SHA256 using both nonces as the salt. After synchronization, RPC, console, and log HDLC payloads use ChaCha20-Poly1305. The envelope is an 8-byte big-endian counter followed by ciphertext and a 16-byte tag; the HDLC address and counter are authenticated as AAD.
+- Each direction uses one strictly increasing counter across the protected HDLC channels. Receivers reject zero, repeated, and older counters. The MCU nonce prevents a captured host `LinkSync` from recreating a prior session after `LinkReset` or an ordinary MCU reboot while its nonce state remains intact.
+- MCU nonce freshness is platform-specific: ESP32 uses its hardware RNG; AVR persists a boot epoch in EEPROM; SAMD21 persists it in flash. Reprogramming SAMD21 flash or erasing AVR EEPROM can reset that epoch. Rotate `serial_shared_secret` after either operation.
+- `LinkReset` remains an unauthenticated plaintext control operation. A party with transport access can force the link to resynchronize (denial of service), but this does not authorize protected RPC commands or provide a plaintext fallback for data frames.
+- An empty `serial_shared_secret` explicitly disables link authentication and HDLC payload encryption. It must be used only on isolated development/testing links, never on an untrusted physical or network path.
 - Pigweed remains responsible for MCU HDLC/RPC framing. Mbed TLS provides the MCU's ChaCha20-Poly1305, HKDF, HMAC, SHA-256, constant-time comparison, and secure-zeroization APIs; Python uses `cryptography`.
 - No project-specific TLS 1.3 0-RTT or session-ticket anti-replay behavior is claimed.
 
@@ -48,7 +48,7 @@ Arduino MCU Bridge 2 implements a Safety-Hardened Embedded Architecture designed
 - **MCU POST:** Project KATs cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
 - **Python self-test:** The daemon checks a ChaCha20-Poly1305 library vector. Link-frame encryption is also exercised by transport tests.
 
-- These tests are functional checks, not independent validation or certification. They do not establish protection against replay across MCU restarts.
+- These tests are functional checks, not independent validation or certification. Replay protection depends on preserving the MCU boot-epoch storage; erase/reprogram operations require shared-secret rotation.
 
 
 

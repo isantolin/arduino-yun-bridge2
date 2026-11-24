@@ -72,6 +72,10 @@ all three architectures:
   `HDLC_ADDRESS_LOG`, and `qemu_runner.py` writes
   `qemu-logs/esp32-esp32-nano_nora_stack_watermark.json`.
 
+## Runtime stack metric semantics
+
+The Pigweed `bridge.stack_used_bytes` metric is always present for a stable cross-board schema. When the HAL reports no stack watermark (`budget_bytes == 0`, including AVR firmware and host builds), the metric value is `UINT32_MAX` (4294967295), meaning **unavailable**, not zero bytes used. AVR's actual stack peak remains sourced from the cycle-accurate simavr SP watermark artifact; SAMD21 and ESP32-S3 publish their HAL-derived values.
+
 ## Interpreting the numbers
 
 - The Arduino CLI summary is the cross-core build metric. It is preserved

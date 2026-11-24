@@ -58,7 +58,7 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo vive modularizada en `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto` para servicios `pw_rpc` y gRPC, mensajes, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**.
+La **fuente de verdad machine-readable** del protocolo vive modularizada en `tools/protocol/` (`config_schema.proto`, `mcu_wire.proto`, `cloud_gateway.proto`: servicios Pigweed RPC, mensajes Protobuf, constantes de aplicación, namespaces, contrato binario, opciones de RPC e IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**.
 
 ### Serialización de Payloads y Sobres RPC (`pw_rpc` + Protobuf)
 Todos los servicios y payloads del protocolo se definen en los schemas bajo `tools/protocol/` y se transportan dentro de sobres **`pw.rpc.internal.RpcPacket`** sobre tramas **`pw_hdlc`**.
@@ -67,7 +67,7 @@ Todos los servicios y payloads del protocolo se definen en los schemas bajo `too
 - **C++ (MCU):** usa Nanopb (`mcu_wire.pb.h` / `config_schema.pb.h`) junto con los stubs generados por `tools/protocol/protoc_gen_mcu_rpc.py` (`mcu_wire.rpc.pb.h`, `pw_rpc.codegen_nanopb`) para codificar/decodificar payloads sin heap dinámico en runtime (`pb_encode` / `pb_decode_noinit`), manteniendo las restricciones estáticas de tamaño definidas en `mcu_wire.options` y `config_schema.options`.
 
 ### Despacho de Servicios `pw_rpc` (MCU y MPU)
-- **MCU (`pw::rpc::Server` + `pw::rpc::Client` + `pw::rpc::Channel`):** El firmware registra 6 servicios servidor generados por `protoc_gen_mcu_rpc.py` derivados de `rpc::pb::pw_rpc::nanopb::<Service>::Service<Impl>` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`) sobre `pw::rpc::Channel` (`BridgeClass::RpcChannelOutput`). `ProcessService` y `DataStoreService` exponen clientes generados `rpc::pb::pw_rpc::nanopb::<Service>::Client` para solicitudes iniciadas por el MCU hacia Linux. Todos los servicios y métodos se identifican en tiempo de compilación mediante hashes FNV-1a de 32 bits (`pw::tokenizer::Hash("rpc.pb.<Service>")` y `pw::tokenizer::Hash("<Method>")`).
+- **MCU (`pw::rpc::Server` + `pw::rpc::Client` + `pw::rpc::Channel`):** El firmware registra 6 servicios servidor generados por `protoc_gen_mcu_rpc.py` derivados de `rpc::pb::pw_rpc::nanopb::<Service>::Service<Impl>` (`GpioRpcService`, `SystemRpcService`, `ClockSyncRpcService`, `SpiRpcService`, `FileSystemRpcService`, `MailboxRpcService`) sobre `pw::rpc::Channel` (`BridgeClass::RpcChannelOutput`). `ProcessService` y `DataStoreService` exponen clientes generados `rpc::pb::pw_rpc::nanopb::<Service>::Client` para solicitudes iniciadas por el MCU hacia Linux. Todos los servicios y métodos se identifican en tiempo de compilación mediante hashes FNV-1a de 32 bits (`pw::tokenizer::Hash("rpc.pb.<Service>")` y `pw::tokenizer::Hash("<Method>")`). Además, registra el servicio upstream `pw.metric.proto.MetricService` (`pw_metric`, PWPB) sobre el mismo servidor RPC para exponer métricas estáticas del firmware; no sustituye ni duplica los seis servicios de aplicación.
 - **Contrato de tópicos público**: prefijo por defecto y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `STATUS_REASON_*`).
 - **Catálogo Centralizado de Servicios y Operaciones (`PW_SERVICES` + `OPERATIONS` SSOT)**: En Python, `protocol.py` expone `PW_SERVICES` (`pw_rpc.descriptors.Services`) y tablas modulares inmutables (`OPERATIONS`, `RPC_SPECS`, `BY_COMMAND_ID`, `BY_RPC`, `BY_NAME`), resolviendo `service_id`, `method_id`, `request_type`, `response_type`, `cardinality` y `default_factory` directamente desde los descriptores de Pigweed/Protobuf en $O(1)$.
 
@@ -102,7 +102,7 @@ python3 tools/protocol/generate.py \
 
 …se regeneran los bindings de enums/constantes y el catálogo `PW_SERVICES` / `OPERATIONS`. Además, el generador produce artefactos protobuf para ambos lados:
 
-- **Python:** módulos de mensajes `mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, stubs `.pyi`, servicios `mcubridge_grpc.py` y el módulo `protocol.py`.
+- **Python:** módulos de mensajes `mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, stubs `.pyi`, descriptores Pigweed RPC y el módulo `protocol.py`.
 - **C++ (nanopb/protobuf):** cabeceras de protocolo `rpc_protocol.h` y `rpc_hw_config.h`, junto con las cabeceras Nanopb `mcu_wire.pb.h`/`.c` y `config_schema.pb.h`/`.c` (estáticas, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
@@ -125,7 +125,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 2. **Sockets de Red Inalámbrica (WiFi TCP / Ethernet)**:
    - URIs de conexión configurables: `tcp://192.168.1.150:9000`, `wifi://mcu.local:8888`, `127.0.0.1:9000`.
    - Gestión de streams de red mediante soporte nativo de sockets URL en `pyserial`.
-   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing HDLC y CRC32. El enlace no cifra los frames RPC.
+   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo el mismo framing HDLC y CRC32. Con `serial_shared_secret` no vacío, el handshake v2 autentica el enlace y ChaCha20-Poly1305 protege los payloads RPC, de consola y de logs, también sobre Wi-Fi. El modo sin secreto no cifra ni autentica y solo es admisible en enlaces aislados.
 3. **Bluetooth SPP / BLE UART**:
    - Puertos virtuales RFCOMM (`/dev/rfcomm0`) o transceptores transparentes UART sobre BLE Nordic UART Service (NUS).
    - En el lado MCU, se utiliza `BluetoothSerial` o `Serial1` (`BridgeBluetooth.ino`).
@@ -133,13 +133,18 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 ## Componentes
 
 - **BridgeService (Python 3.13.9+)**: orquesta de forma unificada la comunicación MCU↔Linux, la ejecución de subprocesos asíncronos y comandos de shell/consola, el sandbox de archivos, el datastore y los servicios especializados (`GpioService`, `ClockSyncService`, `SerialHandshakeManager`).
-- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
+- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría cloud mediante Pigweed RPC.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte transparente para `pyserial` (UART POSIX y sockets TCP/WiFi).
-- **gRPC Bidirectional Stream (HTTP/2 + TLS 1.3)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway delegando la negociación y reanudación de sesión TLS 1.3 a OpenSSL y el stack estándar de Python.
+- **Pigweed RPC sobre TLS mutuo**: el daemon y los clientes se conectan al Gateway C++ standalone mediante `pw_rpc` y `pw_hdlc` sobre el transporte TLS autenticado por certificados. El Gateway termina TLS, vincula el principal a la identidad del certificado y mantiene contexto RPC aislado por conexión (ADR-0003); no se conserva el antiguo Gateway Python/grpclib.
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.2 (`pb_decode_noinit`); no se afirma certificación SIL-2.
-- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante streaming gRPC.
+- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante Pigweed RPC sobre HDLC/TLS.
 
 ## Seguridad
+
+El enlace serial usa handshake v2 (ADR-0005): el host aporta `nonce_h`, el MCU responde con `nonce_mcu`, y ambos valores participan en la prueba HMAC de respuesta y en la derivación HKDF de las claves de sesión. Los frames RPC, consola y logs quedan protegidos con ChaCha20-Poly1305 cuando `serial_shared_secret` no está vacío. El nonce MCU usa RNG hardware en ESP32 y un boot epoch persistente en AVR/SAMD21; después de borrar EEPROM o reprogramar flash que contenga ese epoch, debe rotarse el secreto.
+
+`LinkReset` continúa siendo un control plaintext sin autenticación y permite provocar una resincronización no solicitada (denegación de servicio). No es un mecanismo de fallback para los datos protegidos.
+
 
 1. **TLS recomendado**: `cloud_tls=1` por defecto y se exige `cloud_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
 2. **Derivación de Claves (HKDF)**: Se utiliza **HKDF-SHA256 (RFC 5869)** para derivar la clave de autenticación del handshake a partir del `serial_shared_secret`. Esto evita el uso directo del secreto en el bus y proporciona aislamiento criptográfico.
@@ -154,7 +159,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 - **Logging estructurado**: logs JSON (`ts`, `level`, `logger`, `message`, `extra`) enviados a syslog.
 - **Destino de logs**: Por defecto OpenWrt usa `logread` (ring buffer en RAM), NO escribe a `/var/log/` en flash.
 - **Métricas locales**: snapshots periódicos escritos en `/tmp/mcubridge_status.json` para LuCI y UBUS.
-- **Pure Telemetry Push**: el daemon de borde opera sin servidor HTTP local (eliminando puertos de escucha y superficie de ataque en el MPU). Toda la telemetría y métricas se envían vía streaming gRPC al `mcubridge-gateway`.
+- **Pure Telemetry Push**: el daemon de borde opera sin servidor HTTP local (eliminando puertos de escucha y superficie de ataque en el MPU). Toda la telemetría y las métricas se envían al `mcubridge-gateway` mediante Pigweed RPC sobre HDLC/TLS.
 - **Fleet-Wide Prometheus & TSDB**: el servidor central `mcubridge-gateway` consolida las métricas de todos los dispositivos en `/metrics` (puerto 9100) y las ingiere hacia bases de datos industriales (InfluxDB/VictoriaMetrics).
 - **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (JSON para compatibilidad LuCI).
 
@@ -230,7 +235,7 @@ Rastrea formalmente el ciclo de vida de cada subproceso asíncrono ejecutado en 
 
 ### 4. Cloud Gateway Session FSM (`GatewaySessionMachine` — Cloud Gateway)
 
-Rastrea el ciclo de vida de cada sesión gRPC bidireccional en el servidor `ProtobufGateway`, garantizando aislamiento de dispositivos y auditoría estricta de mTLS.
+Rastrea el ciclo de vida de cada sesión Pigweed RPC autenticada por mTLS en el Gateway C++ standalone, garantizando aislamiento de dispositivos y auditoría de identidad.
 
 #### Estados
 | Estado | Descripción |
@@ -368,7 +373,7 @@ Cloud spool retry: base=5s, max=60s
 
 El estado de salud del enlace se expone en:
 - `/tmp/mcubridge_status.json` → campo `is_synchronized`
-- Métricas gRPC transmitidas al Gateway → Prometheus gauge `mcubridge_device_link_synchronized` en el Gateway central.
+- Métricas transmitidas mediante Pigweed RPC al Gateway → Prometheus gauge `mcubridge_device_link_synchronized` en el Gateway central.
 
 ## Configuración relevante
 
@@ -383,7 +388,7 @@ El estado de salud del enlace se expone en:
 ## Flujo de inicio (resumen)
 
 1. `main()` carga config, inicializa logging, crea `RuntimeState`.
-2. Se arranca un `TaskGroup` con lector serie, streaming gRPC hacia `mcubridge-gateway` (con despachador de RPCs delegados), status writer, watchdog opcional y publicador de telemetría/snapshots.
+2. Se arranca un `TaskGroup` con lector serie, sesión Pigweed RPC sobre TLS hacia `mcubridge-gateway` (con despachador de RPCs delegados), status writer, watchdog opcional y publicador de telemetría/snapshots.
 3. Fallas críticas se elevan como `CRITICAL` para reinicios supervisados (`procd`).
 
 ---
@@ -508,7 +513,7 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 
 ## 4. Códigos de estado (`Status` / `pw_status`)
 
-El protocolo utiliza los códigos de estado canónicos de Pigweed (`pw::Status`) y gRPC:
+El protocolo utiliza los códigos de estado canónicos de Pigweed (`pw::Status` / `pw_status.Status`):
 
 | Código | Nombre | Constante C++ | Descripción |
 | --- | --- | --- | --- |
@@ -910,7 +915,7 @@ El sistema implementa múltiples estrategias de fallback para mantener operació
 
 ### 9.2 Observabilidad de Fallbacks
 
-Todos los fallbacks se exponen localmente en `/tmp/mcubridge_status.json` y se transmiten vía telemetría gRPC hacia el Gateway central (disponibles en Prometheus `FleetMetrics`):
+Todos los fallbacks se exponen localmente en `/tmp/mcubridge_status.json` y se transmiten vía telemetría Pigweed RPC hacia el Gateway central (disponibles en Prometheus `FleetMetrics`):
 
 ```json
 {

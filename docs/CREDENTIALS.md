@@ -68,6 +68,10 @@ The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `mcubridge/scripts/m
 
 The **Services → McuBridge → Credentials & TLS** page now shows an "Arduino Secret Template" block once the rotation succeeds. Use the **Copy snippet** button to paste the synchronized `BRIDGE_SERIAL_SHARED_SECRET` line directly into your sketch (before `#include <Bridge.h>`) or into a local header that you manage inside your project.
 
+## Interactive Pigweed Console
+
+`pw bridge-console` uses the same LinkSync v2 HMAC calculations and `LinkCipher` as the daemon. On OpenWrt it reads the shared secret from UCI; on a workstation set `MCUBRIDGE_SERIAL_SHARED_SECRET` in the process environment. It refuses to start without a secret unless `--insecure` is explicitly supplied for an isolated development link. The console encrypts and decrypts HDLC frames before passing them to upstream `pw_hdlc.rpc.HdlcRpcClient`; LinkReset/LinkSync must be re-established by restarting the console.
+
 ## Verifying the new material
 
 1. Rebuild or re-upload your Arduino sketch so it includes the updated `#define BRIDGE_SERIAL_SHARED_SECRET "..."` line (or the header where you stored that snippet).
@@ -92,7 +96,7 @@ Following this workflow keeps the MCU and daemon secrets aligned and makes rotat
 | `serial handshake rejected` | MCU secret differs from daemon | Re-upload sketch with correct `BRIDGE_SERIAL_SHARED_SECRET` |
 | `HMAC verification failed` | Secret mismatch or corrupted frame | Verify hex string has no typos; check serial baud rate (115200) |
 | `Handshake timeout` | MCU not responding | Confirm MCU is powered and serial link connected |
-| `Anti-replay: nonce reused` | MCU reset without daemon restart | Restart daemon: `service mcubridge restart` |
+| `LinkSync` authentication mismatch | Different secrets, a v1/v2 mismatch, or erased MCU boot-epoch storage | Confirm the shared secret; rotate it after AVR EEPROM erase or SAMD21 reprogramming |
 | `Key derivation error` | Invalid secret length | Ensure secret is exactly 64 hex chars (32 bytes) |
 
 ### Manual Verification with local status
@@ -124,4 +128,4 @@ logread | grep mcubridge | grep -i handshake | tail -50
 Key log fields to inspect:
 - `handshake_state`: Progresses through the daemon FSM (`unsynchronized`, `resetting`, `syncing`, `confirming`, `synchronized`).
 - `LINK_SYNC_RESP auth mismatch` or nonce-mismatch messages indicate failed response verification.
-- No `hmac_valid` field or monotonic anti-replay counter is implemented; frame replay protection is not provided.
+- Handshake v2 verifies the MCU proof over both nonces and derives fresh session keys. Protected-frame counters reject repeated or older frames. The MCU boot epoch must remain intact: rotate the secret after AVR EEPROM erase or SAMD21 flash reprogramming. The plaintext `LinkReset` control remains a denial-of-service risk because transport access can force a new handshake.

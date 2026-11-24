@@ -77,9 +77,13 @@ PW_METRIC_STATIC(g_bridge_metrics, g_metric_stack_used_bytes,
 pw::metric::MetricService g_metric_service(pw::metric::global_metrics,
                                            pw::metric::global_groups);
 
+constexpr uint32_t kMetricValueUnavailable = static_cast<uint32_t>(-1);
+
 void refreshMemoryMetrics() {
   g_metric_free_memory_bytes.Set(bridge::hal::getFreeMemory());
-  g_metric_stack_used_bytes.Set(bridge::hal::getStackWatermark().used_bytes);
+  const bridge::hal::StackWatermark watermark = bridge::hal::getStackWatermark();
+  g_metric_stack_used_bytes.Set(
+      watermark.budget_bytes == 0U ? kMetricValueUnavailable : watermark.used_bytes);
 }
 
 class GpioRpcService final

@@ -68,6 +68,17 @@ HOST_LOG_LOGGER_NAME: Final[str] = "mcubridge.console.host"
 _LINK_RESET_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkReset"]
 _LINK_SYNC_SPEC: Final = protocol.BY_NAME["rpc.pb.SystemService/LinkSync"]
 
+
+def _require_rpc_ids(service_id: int | None, method_id: int | None) -> tuple[int, int]:
+    """Validate the generated operation descriptor and normalize fixed32 IDs."""
+    if service_id is None or method_id is None:
+        raise RuntimeError("Pigweed operation descriptor is missing its RPC identifiers")
+    return service_id & 0xFFFFFFFF, method_id & 0xFFFFFFFF
+
+
+_LINK_RESET_IDS: Final = _require_rpc_ids(_LINK_RESET_SPEC.service_id, _LINK_RESET_SPEC.method_id)
+_LINK_SYNC_IDS: Final = _require_rpc_ids(_LINK_SYNC_SPEC.service_id, _LINK_SYNC_SPEC.method_id)
+
 _PYSERIAL_URL_SCHEMES: Final[tuple[str, ...]] = ("loop://", "rfc2217://", "hwgrep://", "spy://", "alt://")
 
 _HOST_LOGGER = logging.getLogger(HOST_LOG_LOGGER_NAME)
@@ -355,8 +366,9 @@ def establish_link_security(
                     continue
 
                 if (
-                    (packet.service_id & 0xFFFFFFFF) != (_LINK_SYNC_SPEC.service_id & 0xFFFFFFFF)
-                    or (packet.method_id & 0xFFFFFFFF) != (_LINK_SYNC_SPEC.method_id & 0xFFFFFFFF)
+                    (packet.service_id is None)
+                    or (packet.method_id is None)
+                    or _require_rpc_ids(packet.service_id, packet.method_id) != _LINK_SYNC_IDS
                     or packet.call_id != 2
                 ):
                     continue
@@ -397,7 +409,7 @@ class SecureHdlcReader(CancellableReader):
         *,
         initial_bytes: bytes = b"",
     ) -> None:
-        super().__init__(reader)
+        cast(Any, super()).__init__(reader)
         self._reader = reader
         self._cipher = cipher
         self._decoder = FrameDecoder()
@@ -437,8 +449,7 @@ class SecureHdlcWriter:
     def __init__(self, transport: BridgeTransport, cipher: LinkCipher | None) -> None:
         self._transport = transport
         self._cipher = cipher
-        self._link_reset_ids = (_LINK_RESET_SPEC.service_id, _LINK_RESET_SPEC.method_id)
-        self._link_sync_ids = (_LINK_SYNC_SPEC.service_id, _LINK_SYNC_SPEC.method_id)
+        self._protected_control_ids = (_LINK_RESET_IDS, _LINK_SYNC_IDS)
 
     def __call__(self, encoded_frame: bytes) -> None:
         frames = FrameDecoder().process(encoded_frame)
@@ -452,12 +463,10 @@ class SecureHdlcWriter:
                 packet = pw_packets.decode(frame.data)
             except (ProtobufDecodeError, ValueError, TypeError) as exc:
                 raise ValueError("Pigweed console produced a malformed RPC packet") from exc
-            method_key = (packet.service_id & 0xFFFFFFFF, packet.method_id & 0xFFFFFFFF)
-            protected_control_ids = tuple(
-                (service_id & 0xFFFFFFFF, method_id & 0xFFFFFFFF)
-                for service_id, method_id in (self._link_reset_ids, self._link_sync_ids)
-            )
-            if packet.type == PacketType.REQUEST and method_key in protected_control_ids:
+            if packet.service_id is None or packet.method_id is None:
+                raise ValueError("Pigweed console produced an RPC packet without service or method IDs")
+            method_key = _require_rpc_ids(packet.service_id, packet.method_id)
+            if packet.type == PacketType.REQUEST and method_key in self._protected_control_ids:
                 raise ValueError("LinkReset/LinkSync cannot be issued from the REPL; restart the console to re-handshake")
 
         payload = self._cipher.encrypt(frame.address, frame.data) if self._cipher is not None else frame.data

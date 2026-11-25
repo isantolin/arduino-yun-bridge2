@@ -6,7 +6,7 @@ import contextlib
 import os
 import ssl
 from collections.abc import AsyncGenerator, Callable
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeAlias
 
 import structlog
 import typer
@@ -16,9 +16,9 @@ from .client import GatewayClient, GatewayConnection
 from .definitions import build_bridge_args
 from .env import dump_client_env
 
-HostOption = Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")]
-PortOption = Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")]
-DeviceIdOption = Annotated[
+HostOption: TypeAlias = Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")]
+PortOption: TypeAlias = Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")]
+DeviceIdOption: TypeAlias = Annotated[
     str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
 ]
 

@@ -581,7 +581,7 @@ def test_mcu_wire_options_and_telemetry_contract_ssot() -> None:
         assert msg_desc is not None, f"mcu_wire.options references unknown message: {msg_name}"
         field_desc = msg_desc.fields_by_name.get(field_name)
         assert field_desc is not None, f"mcu_wire.options references unknown field: {msg_name}.{field_name}"
-        assert field_desc.type in (field_desc.TYPE_BYTES, field_desc.TYPE_STRING), (
+        assert field_desc.type in (FieldDescriptor.TYPE_BYTES, FieldDescriptor.TYPE_STRING), (
             f"mcu_wire.options max_size applied to non-bytes/string field: {msg_name}.{field_name}"
         )
         parsed_limits[(msg_name, field_name)] = max_size

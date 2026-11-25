@@ -9,17 +9,16 @@ import threading
 from pathlib import Path
 from typing import Any, cast
 
-import pw_hdlc.decode
-import pw_hdlc.encode
 import structlog
-from pw_metric import metric_parser
+from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
 from pw_metric_proto import metric_service_pb2
 from pw_rpc.callback_client.errors import RpcError as PwRpcError, RpcTimeout as PwRpcTimeout
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.descriptors import Channel as PwRpcChannel
-from pw_tokenizer import detokenize
 
+from tools.console.pw_bridge_console import build_detokenizer, collect_metrics_tree
 from tools.emulation.emulation_pki import get_emulation_pki
 
 __all__ = [
@@ -49,10 +48,10 @@ class _TlsMetricSession:
         self._sock = sock
         self._sock.settimeout(0.05)
         self._io_lock = threading.Lock()
-        self._decoder = pw_hdlc.decode.FrameDecoder()
+        self._decoder = FrameDecoder()
         self._stop = threading.Event()
         self._closed = False
-        self.errors: list[Exception] = []
+        self.errors: list[OSError] = []
         self.rpc_client = PwRpcClient.from_modules(
             PwCallbackClientImpl(default_unary_timeout_s=timeout_s),
             [PwRpcChannel(1, self._send_rpc_packet)],
@@ -66,7 +65,7 @@ class _TlsMetricSession:
         self._reader_thread.start()
 
     def _send_rpc_packet(self, payload: bytes) -> None:
-        frame = pw_hdlc.encode.ui_frame(1, payload)
+        frame = ui_frame(1, payload)
         with self._io_lock:
             if self._closed:
                 raise OSError("TLS gateway metrics socket is closed")
@@ -104,14 +103,13 @@ def _open_tls_client_socket(host: str, port: int, timeout_s: float) -> ssl.SSLSo
     pki = get_emulation_pki()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_3
-    ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_REQUIRED
     ctx.load_verify_locations(cafile=str(pki.ca_cert))
     ctx.load_cert_chain(certfile=str(pki.client.cert), keyfile=str(pki.client.key))
     raw_sock = socket.create_connection((host, port), timeout=timeout_s)
     try:
         return ctx.wrap_socket(raw_sock, server_hostname=host)
-    except Exception:
+    except (OSError, ssl.SSLError):
         raw_sock.close()
         raise
 
@@ -125,20 +123,16 @@ def fetch_gateway_pw_metrics(
 ) -> dict[str, Any]:
     """Query ``pw.metric.proto.MetricService/Get`` on the live emulation gateway."""
     binary = gateway_binary if gateway_binary is not None else resolve_gateway_binary()
-    detokenizer = detokenize.Detokenizer(binary) if binary.is_file() else detokenize.Detokenizer()
+    detokenizer, _resolved = build_detokenizer(firmware=binary if binary.is_file() else None)
     session = _TlsMetricSession(_open_tls_client_socket(host, port, timeout_s), timeout_s=timeout_s)
     try:
-        parse_metrics_fn: Any = metric_parser.parse_metrics
-        metrics: object = parse_metrics_fn(
-            session.rpc_client.channel(1).rpcs,
-            detokenizer,
-            timeout_s=timeout_s,
-        )
+        channel = session.rpc_client.channel(1)
+        if channel is None:
+            raise RuntimeError("Gateway MetricService RPC channel 1 unavailable")
+        metrics = collect_metrics_tree(channel.rpcs, detokenizer, timeout_s=timeout_s)
         if session.errors:
             raise RuntimeError(f"Gateway MetricService transport error: {session.errors[0]}")
-        if not isinstance(metrics, dict):
-            raise ValueError(f"Unexpected MetricService payload type: {type(metrics).__name__}")
-        return cast(dict[str, Any], metrics)
+        return metrics
     finally:
         session.close()
 

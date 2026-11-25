@@ -141,7 +141,7 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
 ) -> None:
     """fetch_gateway_pw_metrics parses the MetricService tree and always closes its TLS session."""
     closed: list[bool] = []
-    detokenizer_calls: list[tuple[object, ...]] = []
+    firmware_args: list[Path | None] = []
 
     class _FakeChannel:
         rpcs = object()
@@ -153,36 +153,36 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
     class _FakeSession:
         def __init__(self, _sock: Any, *, timeout_s: float = 5.0) -> None:
             self.timeout_s = timeout_s
-            self.errors: list[Exception] = []
+            self.errors: list[OSError] = []
             self.rpc_client = _FakeRpcClient()
 
         def close(self) -> None:
             closed.append(True)
 
-    def _fake_detokenizer(*args: object) -> object:
-        detokenizer_calls.append(args)
-        return object()
+    def _fake_build_detokenizer(*, firmware: Path | None = None) -> tuple[object, Path | None]:
+        firmware_args.append(firmware)
+        return object(), firmware
 
     def _fake_open_socket(_host: str, _port: int, _timeout_s: float) -> Any:
         return object()
 
-    def _fake_parse_metrics(_rpcs: Any, _detok: Any, timeout_s: float = 5.0) -> dict[str, Any]:
+    def _fake_collect_metrics(_rpcs: Any, _detok: Any, *, timeout_s: float = 5.0) -> dict[str, Any]:
         assert timeout_s > 0
         return {"gateway": {"dispatches_total": 4}}
 
     monkeypatch.setattr(gateway_metrics, "_open_tls_client_socket", _fake_open_socket)
     monkeypatch.setattr(gateway_metrics, "_TlsMetricSession", _FakeSession)
-    monkeypatch.setattr(gateway_metrics.detokenize, "Detokenizer", _fake_detokenizer)
-    monkeypatch.setattr(gateway_metrics.metric_parser, "parse_metrics", _fake_parse_metrics)
+    monkeypatch.setattr(gateway_metrics, "build_detokenizer", _fake_build_detokenizer)
+    monkeypatch.setattr(gateway_metrics, "collect_metrics_tree", _fake_collect_metrics)
 
     missing_bin = tmp_path / "missing-gateway"
     res = gateway_metrics.fetch_gateway_pw_metrics(gateway_binary=missing_bin)
     assert res == {"gateway": {"dispatches_total": 4}}
     assert closed == [True]
-    assert detokenizer_calls == [()]
+    assert firmware_args == [None]
 
     fake_bin = tmp_path / "mcubridge-gateway-cpp"
     fake_bin.write_bytes(b"ELF")
     res2 = gateway_metrics.fetch_gateway_pw_metrics(gateway_binary=fake_bin)
     assert res2 == {"gateway": {"dispatches_total": 4}}
-    assert detokenizer_calls == [(), (fake_bin,)]
+    assert firmware_args == [None, fake_bin]

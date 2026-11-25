@@ -5,8 +5,8 @@
 #include "services/Process.h"
 
 #include <etl/algorithm.h>
-#include <etl/string.h>
 #include <pw_span/span.h>
+#include <pw_string/string.h>
 
 #include "Bridge.h"
 
@@ -27,16 +27,16 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  etl::string<rpc::MAX_PAYLOAD_SIZE> command_buffer;
-  bool ok = (cmd.size() <= command_buffer.available());
+  pw::InlineString<rpc::MAX_PAYLOAD_SIZE> command_buffer;
+  bool ok = (cmd.size() <= command_buffer.max_size());
   if (ok) {
-    command_buffer.append(cmd.begin(), cmd.end());
+    command_buffer.append(cmd.data(), cmd.size());
     ok = etl::all_of(args.begin(), args.end(), [&](const auto& arg) {
-      if (1U + arg.size() > command_buffer.available()) {
+      if (1U + arg.size() > command_buffer.max_size() - command_buffer.size()) {
         return false;
       }
-      command_buffer.append(" ");
-      command_buffer.append(arg.begin(), arg.end());
+      command_buffer.push_back(' ');
+      command_buffer.append(arg.data(), arg.size());
       return true;
     });
   }

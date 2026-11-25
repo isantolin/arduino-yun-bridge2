@@ -15,19 +15,18 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import json
 import secrets
 import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 import serial
 import structlog
-import tenacity
 import typer
 from google.protobuf.message import DecodeError
 from pw_emu.frontend import Emulator
@@ -55,6 +54,7 @@ from tools.emulation.emulation_runner import (
     ensure_cloud_gateway,
     resolve_firmware_token_database,
     setup_fake_uci,
+    wait_for_daemon_sync,
 )
 from tools.emulation.process_utils import (
     cleanup_paths,
@@ -252,43 +252,7 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
 
 def wait_for_node_ready(status_file: Path, timeout: float = 30.0) -> bool:
     """Wait for node to complete both cryptographic synchronization and capabilities discovery."""
-
-    def _is_ready() -> bool:
-        if not status_file.exists():
-            return False
-        try:
-            raw_obj = json.loads(status_file.read_text(encoding="utf-8"))
-            if not isinstance(raw_obj, dict):
-                return False
-            data = cast(dict[str, object], raw_obj)
-            bridge_obj = data.get("bridge")
-            if isinstance(bridge_obj, dict):
-                bridge = cast(dict[str, object], bridge_obj)
-                is_sync = bridge.get("is_synchronized") is True or bridge.get("synchronised") is True
-                serial_obj = bridge.get("serial_link")
-                if isinstance(serial_obj, dict):
-                    serial_link = cast(dict[str, object], serial_obj)
-                    if serial_link.get("synchronised") is True:
-                        is_sync = True
-                caps_obj = bridge.get("capabilities")
-                if isinstance(caps_obj, dict):
-                    caps = cast(dict[str, object], caps_obj)
-                    if is_sync and bool(caps):
-                        return True
-            return False
-        except (json.JSONDecodeError, OSError):
-            return False
-
-    sync_retryer = tenacity.Retrying(
-        stop=tenacity.stop_after_delay(timeout),
-        wait=tenacity.wait_fixed(0.25),
-        retry=tenacity.retry_if_result(lambda ok: not ok),
-        reraise=False,
-    )
-    try:
-        return sync_retryer(_is_ready)
-    except tenacity.RetryError:
-        return False
+    return wait_for_daemon_sync(status_file, timeout=timeout, require_capabilities=True)
 
 
 EMULATOR_LIVENESS_POLL_SECONDS = 0.5
@@ -367,65 +331,74 @@ async def get_node_version_with_reconnect(node: NodeRuntime) -> mcu_wire_pb2.Ver
     return None
 
 
+async def _retry_node_rpc[T](
+    node_name: str,
+    label: str,
+    action: Callable[[], Awaitable[T]],
+    *,
+    validate: Callable[[T], bool] | None = None,
+    attempts: int = 5,
+    delay_seconds: float = 1.5,
+) -> T | None:
+    """Retry a node RPC probe up to `attempts` times on transient transport errors or invalid results."""
+    last_error: str | None = None
+    for attempt in range(attempts):
+        try:
+            result = await action()
+            if validate is None or validate(result):
+                return result
+            logger.warning(f"{label} returned invalid result, retrying...", node=node_name, attempt=attempt)
+        except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
+            last_error = str(exc)
+            logger.warning(f"{label} attempt failed, retrying...", node=node_name, attempt=attempt, error=last_error)
+        if attempt + 1 < attempts:
+            await asyncio.sleep(delay_seconds)
+    logger.error(f"{label} failed", node=node_name, error=last_error)
+    return None
+
+
 async def verify_mesh_interoperability(nodes: tuple[NodeRuntime, ...]) -> bool:
     """Verify that all nodes are independently reachable, responsive to RPCs, and communicating."""
     logger.info("Executing cross-node RPC and mesh verification across all nodes simultaneously...")
     for node in nodes:
         logger.info("Verifying RPC services for node", node=node.name, board=node.board.label)
-        ver_resp = await get_node_version_with_reconnect(node)
-        if ver_resp is None:
+        if await get_node_version_with_reconnect(node) is None:
             return False
 
         async with bridge_session(host=CLOUD_HOST, port=CLOUD_PORT, device_id=node.name, timeout_ms=60000) as (
             _channel,
             stub,
         ):
-            mem_resp: mcu_wire_pb2.FreeMemoryResponse | None = None
-            for attempt in range(5):
-                try:
-                    mem_resp = await stub.GetFreeMemory(mcu_wire_pb2.SubscribeRequest())
-                    if mem_resp.value > 0:
-                        break
-                    logger.warning(
-                        "GetFreeMemory returned 0, retrying...",
-                        node=node.name,
-                        attempt=attempt,
-                    )
-                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
-                    logger.warning(
-                        "GetFreeMemory attempt failed, retrying...",
-                        node=node.name,
-                        attempt=attempt,
-                        error=str(exc),
-                    )
-                await asyncio.sleep(1.5)
-            if mem_resp is None or mem_resp.value == 0:
-                logger.error("Free memory reported as 0 or unavailable", node=node.name)
+            mem_resp = await _retry_node_rpc(
+                node.name,
+                "GetFreeMemory",
+                lambda: stub.GetFreeMemory(mcu_wire_pb2.SubscribeRequest()),
+                validate=lambda r: int(r.value) > 0,
+            )
+            if mem_resp is None:
                 return False
             logger.info("Node GetFreeMemory verified", node=node.name, free_bytes=mem_resp.value)
 
             led_pin = node.metadata.led_builtin
-            for attempt in range(5):
-                try:
-                    await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=1))
-                    await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=led_pin, value=0))
-                    break
-                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
-                    if attempt == 4:
-                        logger.error("DigitalWrite failed", node=node.name, pin=led_pin, error=str(exc))
-                        return False
-                    await asyncio.sleep(1.5)
+
+            async def _toggle_led(pin: int = led_pin) -> bool:
+                await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=pin, value=1))
+                await stub.DigitalWrite(mcu_wire_pb2.DigitalWrite(pin=pin, value=0))
+                return True
+
+            if await _retry_node_rpc(node.name, "DigitalWrite", _toggle_led) is None:
+                return False
             logger.info("Node hardware actuation (LED) verified", node=node.name, pin=led_pin)
 
-            for attempt in range(5):
-                try:
-                    await stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING"))
-                    break
-                except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
-                    if attempt == 4:
-                        logger.error("MailboxPush failed", node=node.name, error=str(exc))
-                        return False
-                    await asyncio.sleep(1.5)
+            if (
+                await _retry_node_rpc(
+                    node.name,
+                    "MailboxPush",
+                    lambda: stub.MailboxPush(mcu_wire_pb2.MailboxPush(data=b"PING")),
+                )
+                is None
+            ):
+                return False
             logger.info("Node MailboxPush verified", node=node.name)
 
             if node.board.fqbn.startswith("arduino:avr:") and not await verify_eeprom_round_trip(node, stub):
@@ -518,25 +491,39 @@ def compile_fleet_firmwares() -> (
 ):
     """Compile universal firmwares and extract metadata for all 3 targets."""
     sketch_path = repo_root / "mcubridge-library-arduino" / "examples" / "MeshFullServices" / "MeshFullServices.ino"
-    fw_mega = ensure_firmware_compiled(
-        sketch_path, BOARD_MEGA.fqbn, repo_root / "build" / str(BOARD_MEGA.emulator) / BOARD_MEGA.slug / "firmware.elf"
-    )
-    meta_mega = resolve_node_metadata(BOARD_MEGA, fw_mega.parent)
 
-    fw_mkr = ensure_firmware_compiled(
-        sketch_path,
-        BOARD_MKRWIFI1010.fqbn,
-        repo_root / "build" / str(BOARD_MKRWIFI1010.emulator) / BOARD_MKRWIFI1010.slug / "firmware.elf",
-    )
-    meta_mkr = resolve_node_metadata(BOARD_MKRWIFI1010, fw_mkr.parent)
+    def _compile(board: BoardSpec, artifact_name: str) -> tuple[Path, ArduinoCoreMetadata]:
+        fw_path = ensure_firmware_compiled(
+            sketch_path, board.fqbn, repo_root / "build" / str(board.emulator) / board.slug / artifact_name
+        )
+        return fw_path, resolve_node_metadata(board, fw_path.parent)
 
-    fw_esp32 = ensure_firmware_compiled(
-        sketch_path,
-        BOARD_NANO_ESP32.fqbn,
-        repo_root / "build" / str(BOARD_NANO_ESP32.emulator) / BOARD_NANO_ESP32.slug / "firmware_flash.bin",
+    return (
+        _compile(BOARD_MEGA, "firmware.elf"),
+        _compile(BOARD_MKRWIFI1010, "firmware.elf"),
+        _compile(BOARD_NANO_ESP32, "firmware_flash.bin"),
     )
-    meta_esp32 = resolve_node_metadata(BOARD_NANO_ESP32, fw_esp32.parent)
-    return (fw_mega, meta_mega), (fw_mkr, meta_mkr), (fw_esp32, meta_esp32)
+
+
+def _init_node_runtime(
+    name: str,
+    board: BoardSpec,
+    metadata: ArduinoCoreMetadata,
+    firmware_path: Path,
+    base_temp_dir: Path,
+) -> tuple[NodeRuntime, Path]:
+    """Create a node temp workspace and return (NodeRuntime, pw_emu_wdir)."""
+    temp_dir = base_temp_dir / board.slug
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    node = NodeRuntime(
+        name=name,
+        board=board,
+        metadata=metadata,
+        firmware_path=firmware_path,
+        temp_dir=temp_dir,
+        status_file=base_temp_dir / f"status_{board.slug}.json",
+    )
+    return node, temp_dir / "pw_emu"
 
 
 def verify_host_binaries() -> tuple[Path, str, str] | None:
@@ -587,54 +574,26 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
             all_procs.append(gw_proc)
 
         # Node 1: Arduino Mega 2560 (simavr via Pigweed pw_emu)
-        node_mega = NodeRuntime(
-            name="mega-01",
-            board=BOARD_MEGA,
-            metadata=meta_mega,
-            firmware_path=fw_mega,
-            temp_dir=base_temp_dir / BOARD_MEGA.slug,
-            status_file=base_temp_dir / f"status_{BOARD_MEGA.slug}.json",
-        )
-        node_mega.temp_dir.mkdir(parents=True, exist_ok=True)
-        simavr_wdir = node_mega.temp_dir / "pw_emu"
-        simavr_emu, pty_mega = start_simavr_emulator(
+        node_mega, simavr_wdir = _init_node_runtime("mega-01", BOARD_MEGA, meta_mega, fw_mega, base_temp_dir)
+        simavr_emu, node_mega.pty_path = start_simavr_emulator(
             simavr_wdir,
             node_mega.firmware_path,
             node_mega.metadata.mcu,
             node_mega.metadata.frequency_hz,
             "0",
         )
-        node_mega.pty_path = pty_mega
 
         # Node 2: Arduino MKR WiFi 1010 (Renode via Pigweed pw_emu)
-        node_mkr = NodeRuntime(
-            name="mkr-02",
-            board=BOARD_MKRWIFI1010,
-            metadata=meta_mkr,
-            firmware_path=fw_mkr,
-            temp_dir=base_temp_dir / BOARD_MKRWIFI1010.slug,
-            status_file=base_temp_dir / f"status_{BOARD_MKRWIFI1010.slug}.json",
-        )
-        node_mkr.temp_dir.mkdir(parents=True, exist_ok=True)
-        renode_wdir = node_mkr.temp_dir / "pw_emu"
+        node_mkr, renode_wdir = _init_node_runtime("mkr-02", BOARD_MKRWIFI1010, meta_mkr, fw_mkr, base_temp_dir)
         logger.info("Starting Renode via pw_emu for Node 2 (MKR WiFi 1010)")
-        renode_emu, pty_mkr = start_renode_emulator(renode_wdir, node_mkr.firmware_path)
-        node_mkr.pty_path = pty_mkr
+        renode_emu, node_mkr.pty_path = start_renode_emulator(renode_wdir, node_mkr.firmware_path)
 
         # Node 3: Arduino Nano ESP32 (QEMU via Pigweed pw_emu)
-        node_esp32 = NodeRuntime(
-            name="esp32-03",
-            board=BOARD_NANO_ESP32,
-            metadata=meta_esp32,
-            firmware_path=fw_esp32,
-            temp_dir=base_temp_dir / BOARD_NANO_ESP32.slug,
-            status_file=base_temp_dir / f"status_{BOARD_NANO_ESP32.slug}.json",
-        )
-        node_esp32.temp_dir.mkdir(parents=True, exist_ok=True)
-        qemu_wdir = node_esp32.temp_dir / "pw_emu"
+        node_esp32, qemu_wdir = _init_node_runtime("esp32-03", BOARD_NANO_ESP32, meta_esp32, fw_esp32, base_temp_dir)
         logger.info("Starting QEMU via pw_emu for Node 3 (Nano ESP32)")
-        qemu_emu, pty_qemu = start_qemu_emulator(qemu_wdir, node_esp32.firmware_path, target=node_esp32.metadata.mcu)
-        node_esp32.pty_path = pty_qemu
+        qemu_emu, node_esp32.pty_path = start_qemu_emulator(
+            qemu_wdir, node_esp32.firmware_path, target=node_esp32.metadata.mcu
+        )
 
         nodes = (node_mega, node_mkr, node_esp32)
         ready_deadline = time.monotonic() + timeout_seconds

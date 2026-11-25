@@ -294,8 +294,8 @@ def setup_fake_uci(
     return fake_uci_dir, storage_path, daemon_env
 
 
-def wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
-    """Wait for Daemon/MCU synchronization using declarative tenacity retry."""
+def wait_for_daemon_sync(status_file: Path, timeout: float = 15.0, *, require_capabilities: bool = False) -> bool:
+    """Wait for Daemon/MCU synchronization (and optionally capabilities) using declarative tenacity retry."""
 
     def _is_synced() -> bool:
         if not status_file.exists():
@@ -305,27 +305,25 @@ def wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
             if not isinstance(raw_obj, dict):
                 return False
             data = cast(dict[str, object], raw_obj)
+            is_sync = False
             metrics_obj = data.get("metrics")
             if isinstance(metrics_obj, dict):
                 metrics = cast(dict[str, object], metrics_obj)
                 if metrics.get("link_state") == "connected" and metrics.get("handshake_state") == "synchronized":
-                    return True
+                    is_sync = True
+            has_caps = False
             bridge_obj = data.get("bridge")
             if isinstance(bridge_obj, dict):
                 bridge = cast(dict[str, object], bridge_obj)
                 if bridge.get("is_synchronized") is True or bridge.get("synchronised") is True:
-                    return True
-                serial_obj = bridge.get("serial_link")
-                if isinstance(serial_obj, dict):
-                    serial_link = cast(dict[str, object], serial_obj)
-                    if serial_link.get("synchronised") is True:
-                        return True
-                handshake_obj = bridge.get("handshake")
-                if isinstance(handshake_obj, dict):
-                    handshake = cast(dict[str, object], handshake_obj)
-                    if handshake.get("synchronised") is True:
-                        return True
-            return False
+                    is_sync = True
+                for nested_key in ("serial_link", "handshake"):
+                    nested_obj = bridge.get(nested_key)
+                    if isinstance(nested_obj, dict) and cast(dict[str, object], nested_obj).get("synchronised") is True:
+                        is_sync = True
+                caps_obj = bridge.get("capabilities")
+                has_caps = isinstance(caps_obj, dict) and bool(cast(dict[str, object], caps_obj))
+            return is_sync and (has_caps if require_capabilities else True)
         except (json.JSONDecodeError, OSError):
             return False
 

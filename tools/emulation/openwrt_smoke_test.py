@@ -310,6 +310,39 @@ def wait_for_boot(child: Any, timeout: int = 180) -> None:
     wait_for_prompt(child, timeout=60)
 
 
+def _configure_qemu_network(child: Any) -> None:
+    """Bring up IPv4 DHCP networking and time/wget defaults inside QEMU OpenWrt."""
+    send_and_wait(
+        child,
+        "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
+        "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
+        "uci set network.lan.proto='dhcp'; "
+        "uci commit network; "
+        "/etc/init.d/network restart",
+        timeout=30,
+    )
+    # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
+    # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
+    send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
+    send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
+    send_and_wait(
+        child,
+        "sed -i 's/https:/http:/g' /etc/apk/repositories /etc/apk/repositories.d/*.list 2>/dev/null || true",
+        timeout=5,
+    )
+    send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
+    send_and_wait(child, "sleep 10", timeout=15)
+
+
+def _assert_guest_check(child: Any, command: str, tag: str, error_message: str, timeout: int = 10) -> None:
+    """Run a guest shell check and raise ValueError if it reports failure."""
+    child.sendline(f"{command} && echo 'VERIFY_{tag}_OK' || echo 'VERIFY_{tag}_FAIL'")
+    child.expect(rf"VERIFY_{tag}_(OK|FAIL)", timeout=timeout)
+    if f"VERIFY_{tag}_FAIL" in child.after:
+        raise ValueError(error_message)
+    wait_for_prompt(child, timeout=timeout)
+
+
 # ---------------------------------------------------------------------------
 # Test phases
 # ---------------------------------------------------------------------------
@@ -334,35 +367,9 @@ def phase_expand(child: Any) -> None:
         timeout=10,
     )
 
-    # Bring up network for apk update via DHCP on LAN bridge
-    send_and_wait(
-        child,
-        "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
-        "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
-        "uci set network.lan.proto='dhcp'; "
-        "uci commit network; "
-        "/etc/init.d/network restart",
-        timeout=30,
-    )
+    _configure_qemu_network(child)
 
-    # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
-    # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
-    send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
-    send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
-    send_and_wait(
-        child,
-        "sed -i 's/https:/http:/g' /etc/apk/repositories /etc/apk/repositories.d/*.list 2>/dev/null || true",
-        timeout=5,
-    )
-    send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
-
-    # Wait for network to establish
-    child.sendline("sleep 10")
-    wait_for_prompt(child, timeout=15)
-
-    # Run with 512MB swap and target /dev/vdc
-    # The script ends with sleep 5 + reboot
-    # Use FORCE=1 to ensure non-interactive execution
+    # Run with 512MB swap and target /dev/sdc (script ends with sleep 5 + reboot)
     child.sendline("FORCE=1 /root/2_expand.sh 512 /dev/sdc")
 
     log_info("[WAIT] Waiting for reboot after 2_expand.sh...")
@@ -388,31 +395,7 @@ def phase_install(child: Any) -> None:
     send_and_wait(child, "cp /mnt/bin/*.apk /root/deploy/bin/", timeout=10)
     send_and_wait(child, "umount /mnt", timeout=5)
 
-    # Bring up network for apk update via DHCP on LAN bridge
-    send_and_wait(
-        child,
-        "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
-        "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
-        "uci set network.lan.proto='dhcp'; "
-        "uci commit network; "
-        "/etc/init.d/network restart",
-        timeout=30,
-    )
-
-    # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
-    # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
-    send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
-    send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
-    send_and_wait(
-        child,
-        "sed -i 's/https:/http:/g' /etc/apk/repositories /etc/apk/repositories.d/*.list 2>/dev/null || true",
-        timeout=5,
-    )
-    send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
-
-    # Wait for network to establish
-    child.sendline("sleep 10")
-    wait_for_prompt(child, timeout=15)
+    _configure_qemu_network(child)
 
     # Run non-interactively: pipe "n" for the PPP removal prompt
     child.sendline("cd /root/deploy && echo 'n' | FORCE=1 sh ./3_install.sh")
@@ -427,19 +410,18 @@ def phase_verify(child: Any) -> None:
     """Phase 3: Verify mcubridge installation and daemon."""
     log_info("[PHASE 3] Verifying installation...")
 
-    # 1. Init script exists and is executable
-    child.sendline("test -x /etc/init.d/mcubridge && echo 'VERIFY_INIT_OK' || echo 'VERIFY_INIT_FAIL'")
-    child.expect(r"VERIFY_INIT_(OK|FAIL)", timeout=10)
-    if "VERIFY_INIT_FAIL" in child.after:
-        raise ValueError("Verification failed: /etc/init.d/mcubridge not found or not executable.")
-    wait_for_prompt(child, timeout=10)
-
-    # 2. Cloud gateway exists and is executable
-    child.sendline("test -x /usr/bin/mcubridge-gateway && echo 'VERIFY_GW_OK' || echo 'VERIFY_GW_FAIL'")
-    child.expect(r"VERIFY_GW_(OK|FAIL)", timeout=10)
-    if "VERIFY_GW_FAIL" in child.after:
-        raise ValueError("Verification failed: /usr/bin/mcubridge-gateway not found or not executable.")
-    wait_for_prompt(child, timeout=10)
+    _assert_guest_check(
+        child,
+        "test -x /etc/init.d/mcubridge",
+        "INIT",
+        "Verification failed: /etc/init.d/mcubridge not found or not executable.",
+    )
+    _assert_guest_check(
+        child,
+        "test -x /usr/bin/mcubridge-gateway",
+        "GW",
+        "Verification failed: /usr/bin/mcubridge-gateway not found or not executable.",
+    )
 
     # 3. UCI configuration was created
     send_and_wait(child, "uci show mcubridge 2>/dev/null | head -10", timeout=10)
@@ -455,29 +437,25 @@ def phase_verify(child: Any) -> None:
     if not valid_secret:
         raise ValueError(f"Verification failed: invalid serial_shared_secret in UCI. Output:\n{output}")
 
-    # 5. Service is enabled in rc.d
-    child.sendline("ls -l /etc/rc.d/*mcubridge* && echo 'VERIFY_RCD_OK' || echo 'VERIFY_RCD_FAIL'")
-    child.expect(r"VERIFY_RCD_(OK|FAIL)", timeout=10)
-    if "VERIFY_RCD_FAIL" in child.after:
-        raise ValueError("Verification failed: mcubridge service not enabled in /etc/rc.d/.")
-    wait_for_prompt(child, timeout=10)
-
-    # 6. Core mcubridge packages installed in APK database and version verified
-    version = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
-    check_cmd = (
-        "apk info -e mcubridge && "
-        "apk info -e mcubridge-gateway && "
-        "apk info -e luci-app-mcubridge && "
-        f"apk info -v mcubridge | grep -q '{version}' && "
-        "echo 'VERIFY_APK_OK' || echo 'VERIFY_APK_FAIL'"
+    _assert_guest_check(
+        child,
+        "ls -l /etc/rc.d/*mcubridge*",
+        "RCD",
+        "Verification failed: mcubridge service not enabled in /etc/rc.d/.",
     )
-    child.sendline(check_cmd)
-    child.expect(r"VERIFY_APK_(OK|FAIL)", timeout=10)
-    if "VERIFY_APK_FAIL" in child.after:
-        raise ValueError(
-            f"Verification failed: core mcubridge packages (v{version}) not properly installed in apk database."
-        )
-    wait_for_prompt(child, timeout=10)
+
+    version = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+    _assert_guest_check(
+        child,
+        (
+            "apk info -e mcubridge && "
+            "apk info -e mcubridge-gateway && "
+            "apk info -e luci-app-mcubridge && "
+            f"apk info -v mcubridge | grep -q '{version}'"
+        ),
+        "APK",
+        f"Verification failed: core mcubridge packages (v{version}) not properly installed in apk database.",
+    )
 
     log_info("[SUCCESS] Full pipeline smoke test passed!")
 

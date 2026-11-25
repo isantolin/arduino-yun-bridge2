@@ -169,7 +169,7 @@ def fetch_gateway_pw_metrics(
 ) -> dict[str, Any]:
     """Query ``pw.metric.proto.MetricService/Get`` on the live emulation gateway."""
     binary = gateway_binary if gateway_binary is not None else resolve_gateway_binary()
-    detokenizer, _resolved = build_detokenizer(firmware=binary if binary.is_file() else None)
+    detokenizer, _resolved = build_detokenizer(token_database=binary if binary.is_file() else None)
     session = TlsMetricSession(open_tls_client_socket(host, port, timeout_s))
     try:
         metrics = collect_metrics_tree(session.rpc_client.channel(1).rpcs, detokenizer, timeout_s=timeout_s)

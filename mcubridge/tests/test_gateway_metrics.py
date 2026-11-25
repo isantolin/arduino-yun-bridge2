@@ -140,7 +140,7 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
 ) -> None:
     """fetch_gateway_pw_metrics parses the MetricService tree and always closes its TLS session."""
     closed: list[bool] = []
-    firmware_args: list[Path | None] = []
+    db_args: list[Path | None] = []
 
     class _FakeChannel:
         rpcs: object = object()
@@ -157,9 +157,9 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
         def close(self) -> None:
             closed.append(True)
 
-    def _fake_build_detokenizer(*, firmware: Path | None = None) -> tuple[object, Path | None]:
-        firmware_args.append(firmware)
-        return object(), firmware
+    def _fake_build_detokenizer(*, token_database: Path | None = None) -> tuple[object, Path | None]:
+        db_args.append(token_database)
+        return object(), token_database
 
     def _fake_open_socket(_host: str, _port: int, _timeout_s: float) -> Any:
         return object()
@@ -177,10 +177,10 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
     res = pw_emu_runner.fetch_gateway_pw_metrics(gateway_binary=missing_bin)
     assert res == {"gateway": {"dispatches_total": 4}}
     assert closed == [True]
-    assert firmware_args == [None]
+    assert db_args == [None]
 
     fake_bin = tmp_path / "mcubridge-gateway-cpp"
     fake_bin.write_bytes(b"ELF")
     res2 = pw_emu_runner.fetch_gateway_pw_metrics(gateway_binary=fake_bin)
     assert res2 == {"gateway": {"dispatches_total": 4}}
-    assert firmware_args == [None, fake_bin]
+    assert db_args == [None, fake_bin]

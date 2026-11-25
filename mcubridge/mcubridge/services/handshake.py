@@ -77,22 +77,8 @@ class HandshakeMachine(StateMachine):
     reset_sent = resetting.to(syncing)
     sync_sent = syncing.to(confirming)
     sync_confirmed = confirming.to(synchronized) | syncing.to(synchronized)
-    failure = (
-        unsynchronized.to(fault)
-        | resetting.to(fault)
-        | syncing.to(fault)
-        | confirming.to(fault)
-        | synchronized.to(fault)
-        | fault.to(fault)
-    )
-    reset = (
-        unsynchronized.to(unsynchronized)
-        | resetting.to(unsynchronized)
-        | syncing.to(unsynchronized)
-        | confirming.to(unsynchronized)
-        | synchronized.to(unsynchronized)
-        | fault.to(unsynchronized)
-    )
+    failure = fault.from_.any()
+    reset = unsynchronized.from_.any()
 
 
 class RateLimiter:

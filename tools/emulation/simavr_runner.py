@@ -85,6 +85,33 @@ def build_simavr_runner() -> Path | None:
     return None
 
 
+def resolve_simavr_config(wdir: Path, *, gdb_port: int | None = None) -> Path:
+    """Return canonical ``pw_emu`` config, optionally enabling the simavr GDB channel."""
+    cfg_path = PW_EMU_CONFIG_PATH
+    if gdb_port is None:
+        return cfg_path
+
+    raw_obj: object = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if not isinstance(raw_obj, dict):
+        return cfg_path
+
+    raw = cast(dict[str, Any], raw_obj)
+    pw_emu_cfg = raw.setdefault("pw", {}).setdefault("pw_emu", {})
+    if isinstance(target_files := pw_emu_cfg.get("target_files"), list):
+        pw_emu_cfg["target_files"] = [
+            str(entry) if Path(str(entry)).is_absolute() else str((cfg_path.parent / str(entry)).resolve())
+            for entry in cast(list[object], target_files)
+        ]
+    simavr_cfg = pw_emu_cfg.setdefault("simavr", {})
+    channels_cfg = simavr_cfg.setdefault("channels", {})
+    channels_cfg["gdb"] = {"enabled": True, "port": gdb_port}
+
+    wdir.mkdir(parents=True, exist_ok=True)
+    resolved_cfg = wdir / "pw_emu_simavr_config.json"
+    resolved_cfg.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    return resolved_cfg
+
+
 def start_simavr_emulator(
     wdir: Path,
     firmware_path: Path,
@@ -93,9 +120,11 @@ def start_simavr_emulator(
     uart_id: str | None = None,
     *,
     pause: bool = False,
+    gdb_port: int | None = None,
 ) -> tuple[Emulator, str]:
     """Start an AVR target via Pigweed ``pw_emu.frontend.Emulator`` and return ``(emu, pty_path)``."""
-    emu = Emulator(wdir, config_path=PW_EMU_CONFIG_PATH)
+    config_path = resolve_simavr_config(wdir, gdb_port=gdb_port)
+    emu = Emulator(wdir, config_path=config_path)
     uart_channel = f"uart{uart_id or '0'}"
     logger.info(
         "Starting simavr via pw_emu",
@@ -103,6 +132,7 @@ def start_simavr_emulator(
         frequency=frequency,
         firmware=str(firmware_path),
         uart_channel=uart_channel,
+        gdb_port=gdb_port,
     )
     emu.start(target=mcu, file=firmware_path, pause=pause, args=f"--frequency {frequency}" if frequency > 0 else None)
     pty_path = emu.get_channel_path(uart_channel)
@@ -193,6 +223,10 @@ def run_simavr_emulation(
     test_scripts: list[Path],
     timeout_seconds: float = 90.0,
     uart_id: str | None = None,
+    *,
+    pause: bool = False,
+    gdb_port: int | None = None,
+    verify_reset: bool = False,
 ) -> bool:
     """Run full E2E tests against an AVR ELF running in simavr via Pigweed pw_emu."""
     if not firmware_path.exists():
@@ -209,12 +243,15 @@ def run_simavr_emulation(
     return run_pw_emu_session(
         SIMAVR_PROFILE,
         firmware_path,
-        lambda wdir: start_simavr_emulator(wdir, firmware_path, mcu, frequency, uart_id),
+        lambda wdir: start_simavr_emulator(
+            wdir, firmware_path, mcu, frequency, uart_id, pause=pause, gdb_port=gdb_port
+        ),
         led_builtin_pin=led_builtin_pin,
         test_scripts=test_scripts,
         timeout_seconds=timeout_seconds,
         on_started=lambda _pty: time.sleep(SIMAVR_STARTUP_SETTLE_SECONDS),
         on_teardown=_after_teardown,
+        verify_reset=verify_reset,
     )
 
 
@@ -305,6 +342,11 @@ def main(
     scripts: Annotated[list[str] | None, typer.Argument(help="Test scripts to run")] = None,
     timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout per client script in seconds")] = 90.0,
     uart: Annotated[str | None, typer.Option("--uart", "-u", help="UART peripheral ID (e.g. 0, 1)")] = None,
+    gdb_port: Annotated[int | None, typer.Option("--gdb-port", help="Enable simavr GDB server on TCP port")] = None,
+    pause: Annotated[bool, typer.Option("--pause", help="Start CPU paused for GDB attachment")] = False,
+    verify_reset: Annotated[
+        bool, typer.Option("--verify-reset", help="Verify live pw_emu reset recovery after scripts")
+    ] = False,
 ) -> None:
     """Entrypoint for the simavr hardware emulation runner."""
     if sketch is not None:
@@ -321,7 +363,18 @@ def main(
 
     fw, mcu, freq, led_pin, eff_uart = _resolve_board_target(board, firmware, frequency, led_builtin_pin, uart)
     test_paths = [Path(s) for s in scripts] if scripts else default_client_test_paths()
-    if not run_simavr_emulation(fw, mcu, freq, led_pin, test_paths, timeout_seconds=timeout, uart_id=eff_uart):
+    if not run_simavr_emulation(
+        fw,
+        mcu,
+        freq,
+        led_pin,
+        test_paths,
+        timeout_seconds=timeout,
+        uart_id=eff_uart,
+        pause=pause,
+        gdb_port=gdb_port,
+        verify_reset=verify_reset,
+    ):
         logger.error("simavr emulation suite failed!")
         sys.exit(1)
     logger.info("All simavr emulation tests completed successfully!")

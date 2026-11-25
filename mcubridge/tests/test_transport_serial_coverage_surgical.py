@@ -246,10 +246,14 @@ async def test_serial_log_channel_status_dispatch_and_close_errors(
             raise OSError("close failed")
 
     failing_sock = _FailingSocket()
-    ser_with_sock = MagicMock(spec=serial.Serial)
-    setattr(ser_with_sock, "_socket", failing_sock)
-    close_serial_port(ser_with_sock)
-    ser_with_sock.close.assert_called_once()
+    close_mock = MagicMock()
+
+    class _FakeSerialWithSocket:
+        _socket = failing_sock
+        close = close_mock
+
+    close_serial_port(cast(Any, _FakeSerialWithSocket()))
+    close_mock.assert_called_once()
     socket.socket.close(failing_sock)
 
     # 4. stop() tolerates OSError raised while closing the serial handle

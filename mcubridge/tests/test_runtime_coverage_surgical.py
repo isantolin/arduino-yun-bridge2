@@ -139,7 +139,7 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
 
 async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock()
-    mock_serial.send.return_value = True
+    mock_serial.invoke_rpc.return_value = True
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     mock_enqueue = AsyncMock()
     svc.cloud_publisher = mock_enqueue
@@ -149,14 +149,14 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
         "rpc.pb.MailboxService/Push",
         mcu_wire_pb2.MailboxPush(data=b"hello-mcu").SerializeToString(),
     )
-    mock_serial.send.assert_awaited_once()
+    mock_serial.invoke_rpc.assert_awaited_once()
 
 
 async def test_cloud_events_and_direct_rpc_dispatch(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.send = AsyncMock(return_value=True)
+    mock_serial.invoke_rpc = AsyncMock(return_value=True)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
     mock_client = MagicMock()
     mock_writer = MagicMock()
@@ -175,12 +175,13 @@ async def test_cloud_events_and_direct_rpc_dispatch(
         mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString(),
     )
     assert res_bytes is not None
-    mock_serial.send.assert_awaited_once()
+    mock_serial.invoke_rpc.assert_awaited_once()
 
 
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.send.return_value = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=5)
+    mock_serial.invoke_rpc.return_value = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=5)
+    mock_serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
 
     # Bootloader action
@@ -188,7 +189,7 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
         "rpc.pb.SystemService/EnterBootloader",
         mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
     )
-    mock_serial.send.assert_awaited_with(
+    mock_serial.invoke_rpc.assert_awaited_with(
         "rpc.pb.SystemService/EnterBootloader", mcu_wire_pb2.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC)
     )
 
@@ -350,7 +351,7 @@ async def test_request_mcu_version_branches(test_config: RuntimeConfig, mock_bri
     assert await svc.request_mcu_version() is False
 
     svc.serial = mock_serial
-    mock_serial.send.return_value = b"\xff\xff\xff"
+    mock_serial.invoke_rpc.return_value = b"\xff\xff\xff"
     assert await svc.request_mcu_version() is False
 
 

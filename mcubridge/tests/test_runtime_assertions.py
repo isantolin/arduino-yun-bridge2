@@ -45,7 +45,8 @@ async def test_cloud_file_write_asserts_serial(
     serial.transfer_write = AsyncMock()
     await serial.transfer_write(0x4D454741, b"new_data")
     serial.transfer_write.assert_awaited_once_with(0x4D454741, b"new_data")
-    serial.send.assert_not_called()
+    serial.invoke_rpc.assert_not_called()
+    serial.send_raw.assert_not_called()
 
 
 async def test_cloud_datastore_put_asserts_cache(
@@ -119,16 +120,16 @@ async def test_cloud_mailbox_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = service_setup
-    serial.send.return_value = True
+    serial.invoke_rpc.return_value = True
     await service.execute_rpc(
         "rpc.pb.MailboxService/Push",
         pb.MailboxPush(data=b"outbound_box").SerializeToString(),
     )
 
-    serial.send.assert_called_once()
-    assert serial.send.call_args[0][0] == "rpc.pb.MailboxService/Push"
-    assert isinstance(serial.send.call_args[0][1], pb.MailboxPush)
-    assert serial.send.call_args[0][1].data == b"outbound_box"
+    serial.invoke_rpc.assert_called_once()
+    assert serial.invoke_rpc.call_args[0][0] is serial.rpcs.rpc.pb.MailboxService.Push
+    assert isinstance(serial.invoke_rpc.call_args[0][1], pb.MailboxPush)
+    assert serial.invoke_rpc.call_args[0][1].data == b"outbound_box"
     # Delivered by push, so it must not also be queued for MailboxService/Read.
     assert len(state.mailbox_queue) == 0
 
@@ -138,11 +139,11 @@ async def test_cloud_mailbox_push_failure_queues_for_read(
 ) -> None:
     """A message the MCU did not take stays available to MailboxService/Read."""
     service, state, serial = service_setup
-    serial.send.return_value = False
+    serial.invoke_rpc.return_value = False
 
     await service.mailbox_push(b"retry_later")
 
-    serial.send.assert_awaited_once()
+    serial.invoke_rpc.assert_awaited_once()
     assert len(state.mailbox_queue) == 1
     read = await service.mailbox_read(0)
     assert read.content == b"retry_later"
@@ -164,13 +165,13 @@ async def test_mcu_process_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = service_setup
-    serial.send.return_value = True
+    serial.send_raw.return_value = True
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
 
     await service.handle_mcu_frame("rpc.pb.ProcessService/RunAsync", 1, payload)
 
-    serial.send.assert_awaited()
-    args = serial.send.call_args[0]
+    serial.send_raw.assert_awaited()
+    args = serial.send_raw.call_args[0]
     assert args[0] == "rpc.pb.ProcessService/RunAsync"
     assert isinstance(args[1], pb.ProcessRunAsyncResponse)
     pid = args[1].pid
@@ -217,16 +218,17 @@ async def test_cloud_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = service_setup
-    serial.send.return_value = True
+    serial.invoke_rpc.return_value = True
+    serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
     await service.execute_rpc(
         "rpc.pb.SpiService/Transfer",
         pb.SpiTransfer(data=b"\x01\x02\x03").SerializeToString(),
     )
 
-    serial.send.assert_called_once()
-    assert serial.send.call_args[0][0] == "rpc.pb.SpiService/Transfer"
-    assert isinstance(serial.send.call_args[0][1], pb.SpiTransfer)
-    assert serial.send.call_args[0][1].data == b"\x01\x02\x03"
+    serial.invoke_rpc.assert_called_once()
+    assert serial.invoke_rpc.call_args[0][0] == "rpc.pb.SpiService/Transfer"
+    assert isinstance(serial.invoke_rpc.call_args[0][1], pb.SpiTransfer)
+    assert serial.invoke_rpc.call_args[0][1].data == b"\x01\x02\x03"
 
 
 async def test_cloud_retired_file_write_is_rejected_and_remove_works(

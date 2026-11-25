@@ -80,7 +80,7 @@ async def test_unsupported_mcu_request(
     if not has_serial:
         service.serial = None
     else:
-        serial.send.return_value = True
+        serial.send_raw.return_value = True
 
     dr_op = protocol.get_operation("rpc.pb.GpioService/DigitalRead")
     assert dr_op is not None
@@ -109,14 +109,16 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
 
     # With serial and empty queue
     service.serial = serial
-    serial.send.return_value = True
+    serial.send_raw.return_value = True
     assert await on_avail(1, None) is True
-    serial.send.assert_called_with("rpc.pb.MailboxService/Available", mcu_wire_pb2.MailboxAvailableResponse(count=0))
+    serial.send_raw.assert_called_with(
+        "rpc.pb.MailboxService/Available", mcu_wire_pb2.MailboxAvailableResponse(count=0)
+    )
 
     # With items in queue
     await state.mailbox_queue.append(b"item1")
     assert await on_avail(2, None) is True
-    resp = serial.send.call_args[0][1]
+    resp = serial.send_raw.call_args[0][1]
     assert resp.count == IsPositiveInt
 
 
@@ -130,16 +132,16 @@ async def test_mailbox_read_scenarios(svc: tuple[BridgeService, RuntimeState, As
 
     # Empty queue
     service.serial = serial
-    serial.send.return_value = True
+    serial.send_raw.return_value = True
     assert (await on_read(1, None)).content == b""
-    assert serial.send.call_args[0][0] == "rpc.pb.MailboxService/Read"
-    assert serial.send.call_args[0][1].content == b""
+    assert serial.send_raw.call_args[0][0] == "rpc.pb.MailboxService/Read"
+    assert serial.send_raw.call_args[0][1].content == b""
 
     # With queue items
     await state.mailbox_queue.append(b"msg_a")
     await state.mailbox_queue.append(b"msg_b")
     assert (await on_read(2, None)).content == b"msg_a"
-    assert serial.send.call_args[0][1].content == b"msg_a"
+    assert serial.send_raw.call_args[0][1].content == b"msg_a"
 
 
 async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
@@ -175,7 +177,7 @@ async def test_filesystem_local_write_and_remove_scenarios(svc: tuple[BridgeServ
     service.serial = serial
     state.allow_non_tmp_paths = False
     service.config.file_system_root = "/tmp/fs"
-    serial.send.return_value = True
+    serial.send_raw.return_value = True
     assert (await service.file_write("../../../etc/shadow", b"evil")).status == "error"
     assert (await service.file_write("valid.txt", b"content")).status == "ok"
 
@@ -207,21 +209,21 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
 
     # Disallowed command
     service.serial = serial
-    serial.send.return_value = True
+    serial.send_raw.return_value = True
     assert (await on_run(1, mcu_wire_pb2.ProcessRunAsync(command="rm -rf /"))).pid == 0
     run_spec = protocol.BY_NAME["rpc.pb.ProcessService/RunAsync"]
     serial.send_status.assert_awaited_with(Status.PERMISSION_DENIED, 1, run_spec.service_id, run_spec.method_id)
 
     # Allowed command
     assert (await on_run(2, mcu_wire_pb2.ProcessRunAsync(command="echo test_exec"))).pid == IsPositiveInt
-    args = serial.send.call_args[0]
+    args = serial.send_raw.call_args[0]
     assert args[0] == "rpc.pb.ProcessService/RunAsync"
     pid = args[1].pid
     assert pid == IsPositiveInt
 
     # Poll process
     assert (await on_poll(3, mcu_wire_pb2.ProcessPoll(pid=pid))).status == Status.OK.value
-    assert serial.send.call_args[0][0] == "rpc.pb.ProcessService/Poll"
+    assert serial.send_raw.call_args[0][0] == "rpc.pb.ProcessService/Poll"
     await service.process_kill(pid)
 
     # Disallowed command name fallback

@@ -60,7 +60,6 @@
 #include "pw_sync/timed_thread_notification.h"
 #include "pw_thread/thread.h"
 #include "pw_thread_stl/options.h"
-#include "pw_transfer/client.h"
 #include "pw_transfer/handler.h"
 #include "pw_transfer/transfer.h"
 #include "pw_transfer/transfer_thread.h"

@@ -184,16 +184,14 @@ class BridgeService:
         self._tg = None
 
         async def _send_handshake_frame(
-            command_id: int | str | protocol.OperationSpec | tuple[int, int],
+            command_id: str,
             payload: bytes | ProtobufMessage,
             seq_id: int | None = None,
-            timeout: float | None = None,
         ) -> bool | bytes | ProtobufMessage:
             if command_id == "rpc.pb.SystemService/GetCapabilities":
                 return await serial.invoke_rpc(
                     serial.rpcs.rpc.pb.SystemService.GetCapabilities,
                     mcu_wire_pb2.SubscribeRequest(),
-                    timeout=timeout,
                 )
             return await serial.send_raw(command_id, payload, seq_id)
 

@@ -15,6 +15,7 @@ from typing import Annotated, Any, cast
 
 import structlog
 import typer
+from mcubridge.transport.ubus_client import ubus_connection, unwrap_ubus_response
 
 logger = structlog.get_logger("mcubridge.hw-smoke")
 app = typer.Typer(help="Execute hardware smoke tests for McuBridge.", add_completion=False)
@@ -35,15 +36,11 @@ def ubus_call(
 ) -> dict[str, Any] | None:
     """Call a UBUS method directly via the native OpenWrt python-ubus library API. [Rule 37]"""
     ubus_mod = ubus_module if ubus_module is not None else ubus
-    if ubus_mod is None:
-        logger.error("Native OpenWrt python-ubus library is required for hardware smoke tests")
-        return None
     payload = params if params is not None else {}
     try:
-        if ubus_mod.connect() is not True:
-            raise OSError("ubus.connect() did not return True")
-        res: Any = ubus_mod.call(obj, method, payload)
-        first: object = cast(list[object], res)[0] if isinstance(res, list) and res else cast(object, res)
+        with ubus_connection(ubus_mod) as conn:
+            res: Any = conn.call(obj, method, payload)
+        first = unwrap_ubus_response(res)
         if isinstance(first, dict):
             return cast(dict[str, Any], first)
         if res is not None:

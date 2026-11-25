@@ -15,6 +15,7 @@ from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import cloud_gateway_pb2 as pb
+from mcubridge.transport.ubus_client import ubus_connection, unwrap_ubus_response
 
 logger = structlog.get_logger("mcubridge.pin_rest")
 
@@ -45,16 +46,13 @@ app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_com
 
 def set_pin_digital_sync(pin: int, value: int) -> None:
     """Synchronous digital write via native OpenWrt UBUS. [SIL-2]"""
-    if ubus is None:
-        logger.error("Native OpenWrt UBUS module unavailable")
-        raise RuntimeError("Native OpenWrt UBUS module unavailable")
     try:
-        if ubus.connect() is not True:
-            raise OSError("ubus.connect() did not return True")
-        result = ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
-        if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+        with ubus_connection(ubus) as conn:
+            result = conn.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+        first = unwrap_ubus_response(result)
+        if not isinstance(first, dict):
             raise RuntimeError("UBUS digital_write returned no response")
-        response = cast(dict[str, Any], result[0])
+        response = cast(dict[str, Any], first)
         if response.get("status") != "accepted":
             raise RuntimeError(f"UBUS digital_write was not accepted: {response}")
     except (OSError, RuntimeError, AttributeError) as exc:

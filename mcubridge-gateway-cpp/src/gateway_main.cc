@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
@@ -807,27 +808,224 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
   std::optional<pw::stream::MemoryWriter> writer_;
 };
 
-class GatewaySession final
-    : public SessionControl,
-      public std::enable_shared_from_this<GatewaySession> {
+class GatewayTransportSession : public SessionControl {
  public:
-  GatewaySession(SSL* ssl, int fd, std::string device_id,
-                 DeviceSessionRegistry& registry, GatewayMetrics& metrics)
+  GatewayTransportSession(SSL* ssl, int fd, std::string_view peer_role,
+                          std::string peer_id,
+                          std::filesystem::path staging_dir,
+                          bool log_tx_frames)
       : socket_(ssl, fd),
-        registry_(registry),
-        metrics_(metrics),
+        peer_role_(peer_role),
+        peer_id_(std::move(peer_id)),
+        staging_dir_(std::move(staging_dir)),
+        log_tx_frames_(log_tx_frames),
         channel_output_(tx_writer_, kRpcHdlcAddress),
-        client_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
         server_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
-        rpc_client_(client_channels_),
         rpc_server_(server_channels_),
         transfer_thread_(pw::ByteSpan(transfer_chunk_),
                          pw::ByteSpan(transfer_encode_)),
         transfer_service_(transfer_thread_, kTransferWindowBytes),
+        default_transfer_handler_(kDefaultTransferResource,
+                                  pw::ByteSpan(transfer_buffer_)),
+        file_transfer_handler_(kFileTransferResource, staging_dir_,
+                               std::string(kFileStagingName),
+                               kFileStagingMaxBytes),
+        eeprom_transfer_handler_(kEepromTransferResource, staging_dir_,
+                                 std::string(kEepromStagingName),
+                                 kEepromResourceBytes),
+        decoder_(pw::ByteSpan(decoder_storage_)) {}
+  GatewayTransportSession(const GatewayTransportSession&) = delete;
+  GatewayTransportSession& operator=(const GatewayTransportSession&) = delete;
+
+  void Stop() override {
+    stopping_.store(true);
+    OnStopSignal();
+    socket_.Stop();
+    tx_writer_.Stop();
+  }
+
+ protected:
+  virtual void RegisterRpcServices() = 0;
+  virtual void UnregisterRpcServices() = 0;
+  virtual void OnStopSignal() {}
+  virtual pw::Status ProcessInboundPacket(pw::ConstByteSpan data) {
+    return rpc_server_.ProcessPacket(data);
+  }
+
+  void RunTransportLoop() {
+    if (stopping_.load()) return;
+
+    // The transfer thread must run before handlers are registered:
+    // TransferService::RegisterHandler() posts an event that only the running
+    // thread can process, and returns false after the event-processing timeout
+    // when the thread has not started, leaving the resource unregistered.
+    pw::thread::stl::Options thread_options;
+    transfer_worker_ =
+        pw::thread::Thread(thread_options, transfer_thread_.AsFunction());
+
+    RegisterRpcServices();
+    services_registered_.store(true);
+    RegisterTransferHandler(default_transfer_handler_,
+                            default_handler_registered_);
+    RegisterTransferHandler(file_transfer_handler_, file_handler_registered_);
+    RegisterTransferHandler(eeprom_transfer_handler_,
+                            eeprom_handler_registered_);
+
+    tx_worker_ = pw::thread::Thread(thread_options, [this] { TransmitLoop(); });
+    PW_LOG_INFO("%s=%s event=session_open", peer_role_.data(),
+                peer_id_.c_str());
+    ReceiveLoop();
+    stopping_.store(true);
+    OnStopSignal();
+    socket_.Stop();
+    tx_writer_.Stop();
+    if (tx_worker_.joinable()) tx_worker_.join();
+    TerminateTransfer();
+    UnregisterServices();
+    RemoveStagingDirectory(staging_dir_);
+    PW_LOG_INFO("%s=%s event=session_closed", peer_role_.data(),
+                peer_id_.c_str());
+  }
+
+  void CleanupTransport() {
+    stopping_.store(true);
+    OnStopSignal();
+    TerminateTransfer();
+    UnregisterServices();
+    if (tx_worker_.joinable()) tx_worker_.join();
+  }
+
+  void RegisterTransferHandler(pw::transfer::Handler& handler,
+                               std::atomic<bool>& registered) {
+    if (transfer_service_.RegisterHandler(handler)) {
+      registered.store(true);
+    } else {
+      LogHandlerRegistrationFailure(peer_role_, peer_id_, handler);
+    }
+  }
+
+  void UnregisterTransferHandlers() {
+    if (default_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(default_transfer_handler_);
+      default_handler_registered_.store(false);
+    }
+    if (file_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(file_transfer_handler_);
+      file_handler_registered_.store(false);
+    }
+    if (eeprom_handler_registered_.load()) {
+      transfer_service_.UnregisterHandler(eeprom_transfer_handler_);
+      eeprom_handler_registered_.store(false);
+    }
+  }
+
+  void TerminateTransfer() {
+    bool expected = false;
+    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
+      if (transfer_worker_.joinable()) {
+        UnregisterTransferHandlers();
+        transfer_thread_.Terminate();
+        transfer_worker_.join();
+      }
+    }
+  }
+
+  void UnregisterServices() {
+    bool expected = false;
+    if (services_unregistered_.compare_exchange_strong(expected, true)) {
+      if (services_registered_.load()) {
+        UnregisterRpcServices();
+        services_registered_.store(false);
+      }
+    }
+  }
+
+  void TransmitLoop() {
+    std::vector<std::byte> frame;
+    while (!stopping_.load()) {
+      if (!tx_writer_.Pop(frame, stopping_)) continue;
+      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
+        if (log_tx_frames_) {
+          PW_LOG_WARN("%s=%s event=tx_frame_failed frame_bytes=%zu",
+                      peer_role_.data(), peer_id_.c_str(), frame.size());
+        }
+        stopping_.store(true);
+        OnStopSignal();
+        socket_.Stop();
+        break;
+      }
+      if (log_tx_frames_) {
+        PW_LOG_INFO("%s=%s event=tx_frame_sent frame_bytes=%zu",
+                    peer_role_.data(), peer_id_.c_str(), frame.size());
+      }
+    }
+  }
+
+  void ReceiveLoop() {
+    std::array<std::byte, 4096> input{};
+    while (!stopping_.load()) {
+      size_t received = 0;
+      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
+      for (size_t i = 0; i < received; ++i) {
+        auto frame = decoder_.Process(input[i]);
+        if (frame.status() == pw::Status::Unavailable()) continue;
+        if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
+        const pw::Status status = ProcessInboundPacket(frame->data());
+        if (!status.ok() && status != pw::Status::Unavailable()) {
+          PW_LOG_WARN("%s=%s event=rpc_packet_rejected status=%u",
+                      peer_role_.data(), peer_id_.c_str(),
+                      static_cast<unsigned>(status.code()));
+        }
+      }
+    }
+  }
+
+  TlsSocket socket_;
+  std::string_view peer_role_;
+  std::string peer_id_;
+  std::filesystem::path staging_dir_;
+  bool log_tx_frames_;
+  TlsQueueWriter tx_writer_{kTxQueueBytes};
+  HdlcChannelOutput channel_output_;
+  std::array<pw::rpc::Channel, 1> server_channels_;
+  pw::rpc::Server rpc_server_;
+  std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
+  std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
+  pw::transfer::Thread<1, 1> transfer_thread_;
+  pw::transfer::TransferService transfer_service_;
+  pw::thread::Thread transfer_worker_;
+  std::array<std::byte, 64 * 1024> transfer_buffer_{};
+  BufferTransferHandler default_transfer_handler_;
+  BoundedFileTransferHandler file_transfer_handler_;
+  BoundedFileTransferHandler eeprom_transfer_handler_;
+  std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
+  pw::hdlc::Decoder decoder_;
+  std::atomic<bool> stopping_{false};
+  std::atomic<bool> default_handler_registered_{false};
+  std::atomic<bool> file_handler_registered_{false};
+  std::atomic<bool> eeprom_handler_registered_{false};
+  std::atomic<bool> transfer_terminated_{false};
+  std::atomic<bool> services_registered_{false};
+  std::atomic<bool> services_unregistered_{false};
+  pw::thread::Thread tx_worker_;
+};
+
+class GatewaySession final
+    : public GatewayTransportSession,
+      public std::enable_shared_from_this<GatewaySession> {
+ public:
+  GatewaySession(SSL* ssl, int fd, std::string device_id,
+                 DeviceSessionRegistry& registry, GatewayMetrics& metrics)
+      : GatewayTransportSession(ssl, fd, "device", device_id,
+                                DeviceStagingDir(device_id),
+                                /*log_tx_frames=*/false),
+        registry_(registry),
+        metrics_(metrics),
+        client_channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
+        rpc_client_(client_channels_),
         device_id_(std::move(device_id)),
         telemetry_service_(device_id_, metrics_),
-        edge_control_client_(rpc_client_, 1),
-        decoder_(pw::ByteSpan(decoder_storage_)) {}
+        edge_control_client_(rpc_client_, 1) {}
   GatewaySession(const GatewaySession&) = delete;
   GatewaySession& operator=(const GatewaySession&) = delete;
 
@@ -853,65 +1051,10 @@ class GatewaySession final
       }
     } registration{registry_, metrics_, device_id_, this};
 
-    if (stopping_.load()) return;
-
-    // The transfer thread must run before handlers are registered:
-    // TransferService::RegisterHandler() posts an event that only the running
-    // thread can process, and returns false after the event-processing timeout
-    // when the thread has not started, leaving the resource unregistered.
-    pw::thread::stl::Options thread_options;
-    transfer_worker_ =
-        pw::thread::Thread(thread_options, transfer_thread_.AsFunction());
-
-    rpc_server_.RegisterService(telemetry_service_, transfer_service_);
-    services_registered_.store(true);
-    if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
-      default_handler_registered_.store(true);
-    } else {
-      LogHandlerRegistrationFailure("device", device_id_,
-                                    default_transfer_handler_);
-    }
-    if (transfer_service_.RegisterHandler(file_transfer_handler_)) {
-      file_handler_registered_.store(true);
-    } else {
-      LogHandlerRegistrationFailure("device", device_id_,
-                                    file_transfer_handler_);
-    }
-    if (transfer_service_.RegisterHandler(eeprom_transfer_handler_)) {
-      eeprom_handler_registered_.store(true);
-    } else {
-      LogHandlerRegistrationFailure("device", device_id_,
-                                    eeprom_transfer_handler_);
-    }
-
-    tx_worker_ = pw::thread::Thread(thread_options, [this] { TransmitLoop(); });
-    PW_LOG_INFO("device=%s event=session_open", device_id_.c_str());
-    ReceiveLoop();
-    stopping_.store(true);
-    dispatch_done_.release();
-    socket_.Stop();
-    tx_writer_.Stop();
-    if (tx_worker_.joinable()) tx_worker_.join();
-    TerminateTransfer();
-    UnregisterServices();
-    RemoveStagingDirectory(DeviceStagingDir(device_id_));
-    PW_LOG_INFO("device=%s event=session_closed", device_id_.c_str());
+    RunTransportLoop();
   }
 
-  void Stop() override {
-    stopping_.store(true);
-    dispatch_done_.release();
-    socket_.Stop();
-    tx_writer_.Stop();
-  }
-
-  ~GatewaySession() override {
-    stopping_.store(true);
-    dispatch_done_.release();
-    TerminateTransfer();
-    UnregisterServices();
-    if (tx_worker_.joinable()) tx_worker_.join();
-  }
+  ~GatewaySession() override { CleanupTransport(); }
 
   pw::Status Dispatch(
       const mcubridge::gateway::pwpb::DispatchRequest::Message& request,
@@ -1013,56 +1156,17 @@ class GatewaySession final
   }
 
  private:
-  void UnregisterTransferHandlers() {
-    if (default_handler_registered_.load()) {
-      transfer_service_.UnregisterHandler(default_transfer_handler_);
-      default_handler_registered_.store(false);
-    }
-    if (file_handler_registered_.load()) {
-      transfer_service_.UnregisterHandler(file_transfer_handler_);
-      file_handler_registered_.store(false);
-    }
-    if (eeprom_handler_registered_.load()) {
-      transfer_service_.UnregisterHandler(eeprom_transfer_handler_);
-      eeprom_handler_registered_.store(false);
-    }
+  void RegisterRpcServices() override {
+    rpc_server_.RegisterService(telemetry_service_, transfer_service_);
   }
 
-  void TerminateTransfer() {
-    bool expected = false;
-    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
-      if (transfer_worker_.joinable()) {
-        UnregisterTransferHandlers();
-        transfer_thread_.Terminate();
-        transfer_worker_.join();
-      }
-    }
+  void UnregisterRpcServices() override {
+    rpc_server_.UnregisterService(telemetry_service_, transfer_service_);
   }
 
-  void UnregisterServices() {
-    bool expected = false;
-    if (services_unregistered_.compare_exchange_strong(expected, true)) {
-      if (services_registered_.load()) {
-        rpc_server_.UnregisterService(telemetry_service_, transfer_service_);
-        services_registered_.store(false);
-      }
-    }
-  }
+  void OnStopSignal() override { dispatch_done_.release(); }
 
-  void TransmitLoop() {
-    std::vector<std::byte> frame;
-    while (!stopping_.load()) {
-      if (!tx_writer_.Pop(frame, stopping_)) continue;
-      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
-        stopping_.store(true);
-        dispatch_done_.release();
-        socket_.Stop();
-        break;
-      }
-    }
-  }
-
-  pw::Status ProcessDevicePacket(pw::ConstByteSpan data) {
+  pw::Status ProcessInboundPacket(pw::ConstByteSpan data) override {
     const pw::Result<pw::rpc::PacketMeta> meta =
         pw::rpc::PacketMeta::FromBuffer(data);
     if (!meta.ok()) {
@@ -1083,64 +1187,17 @@ class GatewaySession final
     return pw::Status::InvalidArgument();
   }
 
-  void ReceiveLoop() {
-    std::array<std::byte, 4096> input{};
-    while (!stopping_.load()) {
-      size_t received = 0;
-      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
-      for (size_t i = 0; i < received; ++i) {
-        auto frame = decoder_.Process(input[i]);
-        if (frame.status() == pw::Status::Unavailable()) continue;
-        if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        const pw::Status status = ProcessDevicePacket(frame->data());
-        if (!status.ok() && status != pw::Status::Unavailable()) {
-          PW_LOG_WARN("device=%s event=rpc_packet_rejected status=%u",
-                      device_id_.c_str(), static_cast<unsigned>(status.code()));
-        }
-      }
-    }
-  }
-
-  TlsSocket socket_;
   DeviceSessionRegistry& registry_;
   GatewayMetrics& metrics_;
-  TlsQueueWriter tx_writer_{kTxQueueBytes};
-  HdlcChannelOutput channel_output_;
   std::array<pw::rpc::Channel, 1> client_channels_;
-  std::array<pw::rpc::Channel, 1> server_channels_;
   pw::rpc::Client rpc_client_;
-  pw::rpc::Server rpc_server_;
-  std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
-  std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
-  pw::transfer::Thread<1, 1> transfer_thread_;
-  pw::transfer::TransferService transfer_service_;
-  pw::thread::Thread transfer_worker_;
   std::string device_id_;
-  std::array<std::byte, 64 * 1024> device_transfer_buffer_{};
-  BufferTransferHandler default_transfer_handler_{
-      kDefaultTransferResource, pw::ByteSpan(device_transfer_buffer_)};
-  BoundedFileTransferHandler file_transfer_handler_{
-      kFileTransferResource, DeviceStagingDir(device_id_),
-      std::string(kFileStagingName), kFileStagingMaxBytes};
-  BoundedFileTransferHandler eeprom_transfer_handler_{
-      kEepromTransferResource, DeviceStagingDir(device_id_),
-      std::string(kEepromStagingName), kEepromResourceBytes};
   DeviceTelemetryService telemetry_service_;
   mutable pw::sync::Mutex staging_mutex_;
   pw::sync::Mutex dispatch_mutex_ PW_ACQUIRED_AFTER(staging_mutex_);
   mcubridge::gateway::pw_rpc::pwpb::EdgeControl::Client edge_control_client_
       PW_GUARDED_BY(dispatch_mutex_);
-  std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
-  pw::hdlc::Decoder decoder_;
-  std::atomic<bool> stopping_{false};
-  std::atomic<bool> default_handler_registered_{false};
-  std::atomic<bool> file_handler_registered_{false};
-  std::atomic<bool> eeprom_handler_registered_{false};
-  std::atomic<bool> transfer_terminated_{false};
-  std::atomic<bool> services_registered_{false};
-  std::atomic<bool> services_unregistered_{false};
   pw::sync::TimedThreadNotification dispatch_done_;
-  pw::thread::Thread tx_worker_;
 };
 
 class GatewayControlService final
@@ -1312,25 +1369,20 @@ class GatewayControlService final
   std::string client_id_;
 };
 
-class GatewayClientSession final : public SessionControl {
+class GatewayClientSession final : public GatewayTransportSession {
  public:
   GatewayClientSession(SSL* ssl, int fd, std::string client_id,
                        DeviceSessionRegistry& devices,
                        ClientSessionRegistry& clients, const GatewayAcl& acl,
                        GatewayMetrics& metrics)
-      : socket_(ssl, fd),
+      : GatewayTransportSession(ssl, fd, "client", client_id,
+                                ClientStagingDir(client_id),
+                                /*log_tx_frames=*/true),
         clients_(clients),
         metrics_(metrics),
         client_id_(std::move(client_id)),
         control_service_(devices, clients, acl, metrics, client_id_),
-        metric_service_(metrics.root_metrics, metrics.root_groups),
-        channel_output_(tx_writer_, kRpcHdlcAddress),
-        channels_{pw::rpc::Channel::Create<1>(&channel_output_)},
-        rpc_server_(channels_),
-        transfer_thread_(pw::ByteSpan(transfer_chunk_),
-                         pw::ByteSpan(transfer_encode_)),
-        transfer_service_(transfer_thread_, kTransferWindowBytes),
-        decoder_(pw::ByteSpan(decoder_storage_)) {}
+        metric_service_(metrics.root_metrics, metrics.root_groups) {}
   GatewayClientSession(const GatewayClientSession&) = delete;
   GatewayClientSession& operator=(const GatewayClientSession&) = delete;
 
@@ -1356,165 +1408,27 @@ class GatewayClientSession final : public SessionControl {
       }
     } registration{clients_, metrics_, client_id_, this};
 
-    if (stopping_.load()) return;
-
-    pw::thread::stl::Options thread_options;
-    transfer_worker_ =
-        pw::thread::Thread(thread_options, transfer_thread_.AsFunction());
-
-    rpc_server_.RegisterService(control_service_, transfer_service_,
-                                metric_service_);
-    services_registered_.store(true);
-    if (transfer_service_.RegisterHandler(default_transfer_handler_)) {
-      default_handler_registered_.store(true);
-    } else {
-      LogHandlerRegistrationFailure("client", client_id_,
-                                    default_transfer_handler_);
-    }
-    if (transfer_service_.RegisterHandler(eeprom_transfer_handler_)) {
-      eeprom_handler_registered_.store(true);
-    } else {
-      LogHandlerRegistrationFailure("client", client_id_,
-                                    eeprom_transfer_handler_);
-    }
-    if (transfer_service_.RegisterHandler(file_transfer_handler_)) {
-      file_handler_registered_.store(true);
-    } else {
-      LogHandlerRegistrationFailure("client", client_id_,
-                                    file_transfer_handler_);
-    }
-    tx_worker_ = pw::thread::Thread(thread_options, [this] { TransmitLoop(); });
-    PW_LOG_INFO("client=%s event=session_open", client_id_.c_str());
-    ReceiveLoop();
-    stopping_.store(true);
-    socket_.Stop();
-    tx_writer_.Stop();
-    if (tx_worker_.joinable()) tx_worker_.join();
-    TerminateTransfer();
-    UnregisterServices();
-    RemoveStagingDirectory(ClientStagingDir(client_id_));
-    PW_LOG_INFO("client=%s event=session_closed", client_id_.c_str());
+    RunTransportLoop();
   }
 
-  void Stop() override {
-    stopping_.store(true);
-    socket_.Stop();
-    tx_writer_.Stop();
-  }
-
-  ~GatewayClientSession() override {
-    stopping_.store(true);
-    TerminateTransfer();
-    UnregisterServices();
-    if (tx_worker_.joinable()) tx_worker_.join();
-  }
+  ~GatewayClientSession() override { CleanupTransport(); }
 
  private:
-  void UnregisterTransferHandlers() {
-    if (default_handler_registered_.load()) {
-      transfer_service_.UnregisterHandler(default_transfer_handler_);
-      default_handler_registered_.store(false);
-    }
-    if (eeprom_handler_registered_.load()) {
-      transfer_service_.UnregisterHandler(eeprom_transfer_handler_);
-      eeprom_handler_registered_.store(false);
-    }
-    if (file_handler_registered_.load()) {
-      transfer_service_.UnregisterHandler(file_transfer_handler_);
-      file_handler_registered_.store(false);
-    }
+  void RegisterRpcServices() override {
+    rpc_server_.RegisterService(control_service_, transfer_service_,
+                                metric_service_);
   }
 
-  void TerminateTransfer() {
-    bool expected = false;
-    if (transfer_terminated_.compare_exchange_strong(expected, true)) {
-      if (transfer_worker_.joinable()) {
-        UnregisterTransferHandlers();
-        transfer_thread_.Terminate();
-        transfer_worker_.join();
-      }
-    }
+  void UnregisterRpcServices() override {
+    rpc_server_.UnregisterService(control_service_, transfer_service_,
+                                  metric_service_);
   }
 
-  void UnregisterServices() {
-    bool expected = false;
-    if (services_unregistered_.compare_exchange_strong(expected, true)) {
-      if (services_registered_.load()) {
-        rpc_server_.UnregisterService(control_service_, transfer_service_,
-                                      metric_service_);
-        services_registered_.store(false);
-      }
-    }
-  }
-
-  void TransmitLoop() {
-    std::vector<std::byte> frame;
-    while (!stopping_.load()) {
-      if (!tx_writer_.Pop(frame, stopping_)) continue;
-      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
-        PW_LOG_WARN("client=%s event=tx_frame_failed frame_bytes=%zu",
-                    client_id_.c_str(), frame.size());
-        stopping_.store(true);
-        socket_.Stop();
-        break;
-      }
-      PW_LOG_INFO("client=%s event=tx_frame_sent frame_bytes=%zu",
-                  client_id_.c_str(), frame.size());
-    }
-  }
-
-  void ReceiveLoop() {
-    std::array<std::byte, 4096> input{};
-    while (!stopping_.load()) {
-      size_t received = 0;
-      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
-      for (size_t i = 0; i < received; ++i) {
-        auto frame = decoder_.Process(input[i]);
-        if (frame.status() == pw::Status::Unavailable()) continue;
-        if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
-        const pw::Status status = rpc_server_.ProcessPacket(frame->data());
-        if (!status.ok() && status != pw::Status::Unavailable()) {
-          PW_LOG_WARN("client=%s event=rpc_packet_rejected status=%u",
-                      client_id_.c_str(), static_cast<unsigned>(status.code()));
-        }
-      }
-    }
-  }
-
-  TlsSocket socket_;
   ClientSessionRegistry& clients_;
   GatewayMetrics& metrics_;
   std::string client_id_;
   GatewayControlService control_service_;
   pw::metric::MetricService metric_service_;
-  TlsQueueWriter tx_writer_{kTxQueueBytes};
-  HdlcChannelOutput channel_output_;
-  std::array<pw::rpc::Channel, 1> channels_;
-  pw::rpc::Server rpc_server_;
-  std::array<std::byte, kTransferChunkBytes> transfer_chunk_{};
-  std::array<std::byte, kRpcEncodeBytes> transfer_encode_{};
-  pw::transfer::Thread<1, 1> transfer_thread_;
-  pw::transfer::TransferService transfer_service_;
-  pw::thread::Thread transfer_worker_;
-  std::array<std::byte, 64 * 1024> client_transfer_buffer_{};
-  BufferTransferHandler default_transfer_handler_{
-      kDefaultTransferResource, pw::ByteSpan(client_transfer_buffer_)};
-  BoundedFileTransferHandler eeprom_transfer_handler_{
-      kEepromTransferResource, ClientStagingDir(client_id_),
-      std::string(kEepromStagingName), kEepromResourceBytes};
-  BoundedFileTransferHandler file_transfer_handler_{
-      kFileTransferResource, ClientStagingDir(client_id_),
-      std::string(kFileStagingName), kFileStagingMaxBytes};
-  std::array<std::byte, kHdlcDecodeBytes> decoder_storage_{};
-  pw::hdlc::Decoder decoder_;
-  std::atomic<bool> stopping_{false};
-  std::atomic<bool> transfer_terminated_{false};
-  std::atomic<bool> services_registered_{false};
-  std::atomic<bool> services_unregistered_{false};
-  std::atomic<bool> default_handler_registered_{false};
-  std::atomic<bool> eeprom_handler_registered_{false};
-  std::atomic<bool> file_handler_registered_{false};
-  pw::thread::Thread tx_worker_;
 };
 
 struct SessionTask {
@@ -1719,12 +1633,63 @@ pw::Result<GatewayStartup> InitializeGateway(
   return GatewayStartup{std::move(acl), std::move(tls_context), listener};
 }
 
-std::string Argument(int argc, char** argv, std::string_view name,
-                     std::string fallback = {}) {
-  for (int i = 1; i + 1 < argc; ++i) {
-    if (std::string_view(argv[i]) == name) return argv[i + 1];
+struct GatewayCliOptions {
+  std::string certificate;
+  std::string private_key;
+  std::string client_ca;
+  std::string bind_address = "*";
+  std::string port = "8443";
+  std::string acl_path;
+  std::string staging_dir = "/var/lib/mcubridge-gateway";
+  bool show_help = false;
+};
+
+bool ParseCliOptions(int argc, char** argv, GatewayCliOptions& options) {
+  static constexpr option kLongOptions[] = {
+      {"cert", required_argument, nullptr, 'c'},
+      {"key", required_argument, nullptr, 'k'},
+      {"client-ca", required_argument, nullptr, 'a'},
+      {"bind", required_argument, nullptr, 'b'},
+      {"port", required_argument, nullptr, 'p'},
+      {"acl", required_argument, nullptr, 'l'},
+      {"staging-dir", required_argument, nullptr, 's'},
+      {"help", no_argument, nullptr, 'h'},
+      {nullptr, 0, nullptr, 0},
+  };
+  optind = 1;
+  opterr = 0;
+  int opt = 0;
+  while ((opt = getopt_long(argc, argv, "h", kLongOptions, nullptr)) != -1) {
+    switch (opt) {
+      case 'c':
+        options.certificate = optarg;
+        break;
+      case 'k':
+        options.private_key = optarg;
+        break;
+      case 'a':
+        options.client_ca = optarg;
+        break;
+      case 'b':
+        options.bind_address = optarg;
+        break;
+      case 'p':
+        options.port = optarg;
+        break;
+      case 'l':
+        options.acl_path = optarg;
+        break;
+      case 's':
+        options.staging_dir = optarg;
+        break;
+      case 'h':
+        options.show_help = true;
+        return true;
+      default:
+        return false;
+    }
   }
-  return fallback;
+  return optind == argc;
 }
 
 void ReapTasks(std::vector<std::unique_ptr<SessionTask>>& tasks) {
@@ -1746,29 +1711,26 @@ int main(int argc, char** argv) {
       "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
       "--client-ca FILE [--acl FILE] [--staging-dir DIR] [--bind ADDRESS] "
       "[--port PORT]\n";
-  for (int i = 1; i < argc; ++i) {
-    const std::string_view arg(argv[i]);
-    if (arg == "--help" || arg == "-h") {
-      std::cout << kUsage;
-      return 0;
-    }
-  }
-  const std::string certificate = Argument(argc, argv, "--cert");
-  const std::string private_key = Argument(argc, argv, "--key");
-  const std::string client_ca = Argument(argc, argv, "--client-ca");
-  const std::string bind_address = Argument(argc, argv, "--bind", "*");
-  const std::string port = Argument(argc, argv, "--port", "8443");
-  const std::string acl_path = Argument(argc, argv, "--acl");
-  const std::string staging_dir =
-      Argument(argc, argv, "--staging-dir", "/var/lib/mcubridge-gateway");
-  if (certificate.empty() || private_key.empty() || client_ca.empty()) {
+  GatewayCliOptions cli;
+  if (!ParseCliOptions(argc, argv, cli)) {
     std::cerr << kUsage;
     return 2;
   }
+  if (cli.show_help) {
+    std::cout << kUsage;
+    return 0;
+  }
+  if (cli.certificate.empty() || cli.private_key.empty() ||
+      cli.client_ca.empty()) {
+    std::cerr << kUsage;
+    return 2;
+  }
+  const std::string& bind_address = cli.bind_address;
+  const std::string& port = cli.port;
   std::string error;
-  auto startup =
-      InitializeGateway(certificate, private_key, client_ca, acl_path,
-                        staging_dir, bind_address, port, error);
+  auto startup = InitializeGateway(cli.certificate, cli.private_key,
+                                   cli.client_ca, cli.acl_path, cli.staging_dir,
+                                   bind_address, port, error);
   if (!startup.ok()) {
     PW_LOG_CRITICAL("fatal=%s", error.c_str());
     return 1;

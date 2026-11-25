@@ -11,6 +11,7 @@ from typing import Annotated, Any, cast
 
 import structlog
 import typer
+from mcubridge.transport.ubus_client import ubus_connection, unwrap_ubus_response
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.file-push")
@@ -21,19 +22,18 @@ def push_file_ubus(target_path: str, data: bytes, *, ubus_module: Any = None) ->
     """Attempt file write via OpenWrt UBUS."""
     try:
         ubus_mod = ubus_module if ubus_module is not None else importlib.import_module("ubus")
-        if ubus_mod.connect() is not True:
-            return False
-        try:
-            data_str = data.decode("utf-8")
-            encoding = "utf-8"
-        except UnicodeDecodeError as exc:
-            logger.debug("Payload is binary; hex encoding for UBUS transmission", error=str(exc))
-            data_str = data.hex()
-            encoding = "hex"
-        res: Any = ubus_mod.call(
-            "mcubridge", "file_write", {"path": target_path, "data": data_str, "encoding": encoding}
-        )
-        first: object = cast(list[object], res)[0] if isinstance(res, list) and res else cast(object, res)
+        with ubus_connection(ubus_mod) as conn:
+            try:
+                data_str = data.decode("utf-8")
+                encoding = "utf-8"
+            except UnicodeDecodeError as exc:
+                logger.debug("Payload is binary; hex encoding for UBUS transmission", error=str(exc))
+                data_str = data.hex()
+                encoding = "hex"
+            res: Any = conn.call(
+                "mcubridge", "file_write", {"path": target_path, "data": data_str, "encoding": encoding}
+            )
+        first = unwrap_ubus_response(res)
         if isinstance(first, dict):
             res_dict = cast(dict[str, Any], first)
             if res_dict.get("status") in ("accepted", "ok"):

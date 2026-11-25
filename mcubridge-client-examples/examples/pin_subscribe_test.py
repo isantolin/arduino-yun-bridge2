@@ -9,7 +9,7 @@ from typing import Annotated
 import structlog
 import typer
 from mcubridge_client import config_schema_pb2, mcu_wire_pb2
-from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.cli import DEVICE_ID_OPTION, HOST_OPTION, PORT_OPTION, bridge_session, configure_logging
 
 configure_logging()
 logger = structlog.get_logger("pin-subscribe-test")
@@ -111,11 +111,9 @@ def cli_main(
     interval_ms: Annotated[int, typer.Option("--interval-ms", help="Sampling interval in ms")] = 100,
     hysteresis: Annotated[int, typer.Option("--hysteresis", help="Threshold hysteresis for reporting")] = 1,
     duration: Annotated[float, typer.Option("--duration", help="Observation duration in seconds")] = 2.0,
-    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
-    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
-    device_id: Annotated[
-        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
-    ] = None,
+    host: Annotated[str | None, HOST_OPTION] = None,
+    port: Annotated[int | None, PORT_OPTION] = None,
+    device_id: Annotated[str | None, DEVICE_ID_OPTION] = None,
 ) -> None:
     """Execute pin subscription test."""
     main(

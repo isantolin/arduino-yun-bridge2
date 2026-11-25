@@ -10,7 +10,7 @@ from typing import Annotated
 import structlog
 import typer
 from mcubridge_client import mcu_wire_pb2
-from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.cli import DEVICE_ID_OPTION, HOST_OPTION, PORT_OPTION, bridge_session, configure_logging
 
 configure_logging()
 logger = structlog.get_logger("all-features-test")
@@ -72,9 +72,9 @@ cli = typer.Typer(help="Unified e2e feature test using direct GatewayClient thro
 @cli.command()
 def cli_main(
     led_builtin_pin: Annotated[int, typer.Option("--pin", help="Pin number from the target core's LED_BUILTIN")],
-    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
-    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
-    device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
+    host: Annotated[str | None, HOST_OPTION] = None,
+    port: Annotated[int | None, PORT_OPTION] = None,
+    device_id: Annotated[str | None, DEVICE_ID_OPTION] = None,
 ) -> None:
     main(led_builtin_pin, host, port, device_id)
 

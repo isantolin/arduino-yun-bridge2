@@ -33,12 +33,14 @@ BINARY = Path(
 
 def _extract_cli_flags_from_source() -> set[str]:
     source = GATEWAY_MAIN.read_text(encoding="utf-8")
-    return set(re.findall(r'Argument\(argc,\s*argv,\s*"(--[a-z-]+)"', source))
+    flags = {f"--{name}" for name in re.findall(r'\{"([a-z-]+)",\s*required_argument,', source)}
+    assert flags, "Could not locate getopt_long required_argument flags in gateway_main.cc"
+    return flags
 
 
 def _extract_default_port_from_source() -> str:
     source = GATEWAY_MAIN.read_text(encoding="utf-8")
-    match = re.search(r'Argument\(argc,\s*argv,\s*"--port",\s*"(\d+)"\)', source)
+    match = re.search(r'std::string\s+port\s*=\s*"(\d+)";', source)
     assert match is not None, "Could not locate default --port in gateway_main.cc"
     return match.group(1)
 

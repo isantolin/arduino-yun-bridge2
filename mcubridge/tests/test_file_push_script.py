@@ -10,6 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from mcubridge.transport.ubus_client import ubus_connection, unwrap_ubus_response
+
 # Dynamically load the standalone script
 _script_path = Path(__file__).resolve().parent.parent / "scripts" / "mcubridge_file_push.py"
 _spec = importlib.util.spec_from_file_location("mcubridge_file_push", str(_script_path))
@@ -21,6 +23,29 @@ _spec.loader.exec_module(_file_push)
 push_file = cast(Callable[..., None], _file_push.push_file)
 push_file_ubus = cast(Callable[..., bool], _file_push.push_file_ubus)
 cli_main = cast(Callable[..., None], _file_push.main)
+
+
+def test_ubus_client_helpers_branches() -> None:
+    """Cover all branches of ubus_connection and unwrap_ubus_response."""
+    with pytest.raises(RuntimeError, match="unavailable"):
+        with ubus_connection(None):
+            pass
+
+    mock_fail: Any = MagicMock()
+    mock_fail.connect.return_value = False
+    with pytest.raises(OSError, match="did not return True"):
+        with ubus_connection(mock_fail):
+            pass
+
+    mock_ok: Any = MagicMock()
+    mock_ok.connect.return_value = True
+    with ubus_connection(mock_ok) as conn:
+        assert conn is mock_ok
+
+    assert unwrap_ubus_response([{"status": "ok"}]) == {"status": "ok"}
+    assert unwrap_ubus_response([]) == []
+    assert unwrap_ubus_response({"status": "ok"}) == {"status": "ok"}
+    assert unwrap_ubus_response(None) is None
 
 
 def test_push_file_ubus_success() -> None:

@@ -561,3 +561,46 @@ def test_default_configuration_centralization_ssot() -> None:
     assert "8843" not in gateway_content
 
     assert validate_luci_app(repo_root) == 0
+
+
+def test_mcu_wire_options_and_telemetry_contract_ssot() -> None:
+    """SIL-2: Verify mcu_wire.options bounds and gateway_control.proto TelemetryReport match SSoT."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    options_text = (repo_root / "tools/protocol/mcu_wire.options").read_text(encoding="utf-8")
+    parsed_limits: dict[tuple[str, str], int] = {}
+    for line in options_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = re.match(r"^rpc\.pb\.(\w+)\.(\w+)\s+max_size:(\d+)$", stripped)
+        assert match is not None, f"Unexpected mcu_wire.options entry: {stripped}"
+        msg_name, field_name, max_size_str = match.groups()
+        max_size = int(max_size_str)
+        assert max_size > 0, f"max_size must be positive for {msg_name}.{field_name}"
+        msg_desc = mcu_wire_pb2.DESCRIPTOR.message_types_by_name.get(msg_name)
+        assert msg_desc is not None, f"mcu_wire.options references unknown message: {msg_name}"
+        field_desc = msg_desc.fields_by_name.get(field_name)
+        assert field_desc is not None, f"mcu_wire.options references unknown field: {msg_name}.{field_name}"
+        assert field_desc.type in (FieldDescriptor.TYPE_BYTES, FieldDescriptor.TYPE_STRING), (
+            f"mcu_wire.options max_size applied to non-bytes/string field: {msg_name}.{field_name}"
+        )
+        parsed_limits[(msg_name, field_name)] = max_size
+
+    assert parsed_limits[("LinkSync", "nonce")] == protocol.HANDSHAKE_NONCE_LENGTH
+    assert parsed_limits[("LinkSync", "tag")] == protocol.HANDSHAKE_TAG_LENGTH
+    assert parsed_limits[("LinkSync", "mcu_nonce")] == protocol.HANDSHAKE_NONCE_LENGTH
+
+    gw_proto = (repo_root / "tools/protocol/gateway/gateway_control.proto").read_text(encoding="utf-8")
+    gw_block = re.search(r"message\s+TelemetryReport\s*\{([^}]*)\}", gw_proto, re.S)
+    assert gw_block is not None, "TelemetryReport missing from gateway_control.proto"
+    gw_fields = {
+        name: int(num)
+        for name, num in re.findall(r"bytes\s+(\w+)\s*=\s*(\d+)\s*;", gw_block.group(1))
+    }
+    cloud_fields = {
+        field.name: field.number
+        for field in cloud_gateway_pb2.TelemetryReport.DESCRIPTOR.fields
+    }
+    assert gw_fields == cloud_fields, (
+        f"gateway_control.proto TelemetryReport {gw_fields} diverges from cloud_gateway.proto {cloud_fields}"
+    )

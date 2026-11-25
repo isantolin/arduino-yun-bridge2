@@ -1,43 +1,11 @@
 'use strict';
 'require view';
-'require rpc';
-'require fs';
 'require poll';
-
-var callMcuStatus = rpc.declare({
-	object: 'mcubridge',
-	method: 'status',
-	expect: { '': {} },
-	reject: true
-});
-
-function getFallbackStatus() {
-	return fs.read('/tmp/mcubridge_status.json').then(function (content) {
-		if (!content || content.trim() === '') return null;
-		try {
-			return JSON.parse(content);
-		} catch (e) {
-			return null;
-		}
-	}).catch(function () {
-		return null;
-	});
-}
-
-function fetchStatus() {
-	return callMcuStatus().then(function (res) {
-		if (!res || typeof res !== 'object' || Array.isArray(res) || Object.keys(res).length === 0) {
-			return getFallbackStatus();
-		}
-		return res;
-	}).catch(function () {
-		return getFallbackStatus();
-	});
-}
+'require view.mcubridge.status_client as statusClient';
 
 return view.extend({
 	load: function () {
-		return fetchStatus();
+		return statusClient.fetchStatus();
 	},
 
 	render: function (statusData) {
@@ -46,7 +14,7 @@ return view.extend({
 		]);
 
 		poll.add(function () {
-			return fetchStatus().then(function (res) {
+			return statusClient.fetchStatus().then(function (res) {
 				preEl.textContent = res ? JSON.stringify(res, null, 2) : _('Status not available. The daemon may be stopped, starting up, or the device may have rebooted.');
 			});
 		}, 5);

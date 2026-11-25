@@ -13,6 +13,7 @@ from typing import Annotated, Any, cast
 
 import structlog
 import typer
+from mcubridge.transport.ubus_client import ubus_connection, unwrap_ubus_response
 
 logger = structlog.get_logger("mcubridge.led-control")
 app = typer.Typer(help="Control MCU GPIO LEDs via McuBridge UBUS IPC.", add_completion=False)
@@ -27,20 +28,15 @@ except (ImportError, TypeError) as exc:
 def set_digital_pin(pin: int, value: int, *, ubus_module: Any = None) -> bool:
     """Set digital pin state via OpenWrt UBUS IPC. [SIL-2 / Rule 37]"""
     ubus_mod = ubus_module if ubus_module is not None else ubus
-    if ubus_mod is None:
-        logger.error("Native OpenWrt UBUS module unavailable")
-        return False
-
     payload: dict[str, Any] = {
         "pin": pin,
         "value": 1 if value else 0,
     }
 
     try:
-        if ubus_mod.connect() is not True:
-            raise OSError("ubus.connect() did not return True")
-        res: Any = ubus_mod.call("mcubridge", "digital_write", payload)
-        first: object = cast(list[object], res)[0] if isinstance(res, list) and res else cast(object, res)
+        with ubus_connection(ubus_mod) as conn:
+            res: Any = conn.call("mcubridge", "digital_write", payload)
+        first = unwrap_ubus_response(res)
         if isinstance(first, dict):
             res_dict: dict[str, Any] = cast(dict[str, Any], first)
             if res_dict.get("status") in ("accepted", "ok"):

@@ -135,13 +135,13 @@ def test_audit_gateway_pw_metrics_handles_transport_error(monkeypatch: pytest.Mo
     assert gateway_metrics.audit_gateway_pw_metrics() is False
 
 
-def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_peer(
+def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """fetch_gateway_pw_metrics parses the MetricService tree and always closes its TLS peer."""
+    """fetch_gateway_pw_metrics parses the MetricService tree and always closes its TLS session."""
     closed: list[bool] = []
-    detokenizer_args: list[object] = []
+    detokenizer_calls: list[tuple[object, ...]] = []
 
     class _FakeChannel:
         rpcs = object()
@@ -150,17 +150,17 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_peer(
         def channel(self, _cid: int) -> _FakeChannel:
             return _FakeChannel()
 
-    class _FakePeer:
+    class _FakeSession:
         def __init__(self, _sock: Any, *, timeout_s: float = 5.0) -> None:
             self.timeout_s = timeout_s
-            self.errors: list[BaseException] = []
+            self.errors: list[Exception] = []
             self.rpc_client = _FakeRpcClient()
 
         def close(self) -> None:
             closed.append(True)
 
-    def _fake_detokenizer(arg: object) -> object:
-        detokenizer_args.append(arg)
+    def _fake_detokenizer(*args: object) -> object:
+        detokenizer_calls.append(args)
         return object()
 
     def _fake_open_socket(_host: str, _port: int, _timeout_s: float) -> Any:
@@ -171,7 +171,7 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_peer(
         return {"gateway": {"dispatches_total": 4}}
 
     monkeypatch.setattr(gateway_metrics, "_open_tls_client_socket", _fake_open_socket)
-    monkeypatch.setattr(gateway_metrics, "_TlsMetricPeer", _FakePeer)
+    monkeypatch.setattr(gateway_metrics, "_TlsMetricSession", _FakeSession)
     monkeypatch.setattr(gateway_metrics.detokenize, "Detokenizer", _fake_detokenizer)
     monkeypatch.setattr(gateway_metrics.metric_parser, "parse_metrics", _fake_parse_metrics)
 
@@ -179,10 +179,10 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_peer(
     res = gateway_metrics.fetch_gateway_pw_metrics(gateway_binary=missing_bin)
     assert res == {"gateway": {"dispatches_total": 4}}
     assert closed == [True]
-    assert detokenizer_args == [None]
+    assert detokenizer_calls == [()]
 
     fake_bin = tmp_path / "mcubridge-gateway-cpp"
     fake_bin.write_bytes(b"ELF")
     res2 = gateway_metrics.fetch_gateway_pw_metrics(gateway_binary=fake_bin)
     assert res2 == {"gateway": {"dispatches_total": 4}}
-    assert detokenizer_args == [None, fake_bin]
+    assert detokenizer_calls == [(), (fake_bin,)]

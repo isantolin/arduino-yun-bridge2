@@ -1,45 +1,11 @@
 'use strict';
 'require view';
-'require rpc';
-'require fs';
 'require poll';
-
-var callMcuStatus = rpc.declare({
-	object: 'mcubridge',
-	method: 'status',
-	expect: { '': {} },
-	reject: true
-});
-
-function getFallbackCaps() {
-	return fs.read('/tmp/mcubridge_status.json').then(function (content) {
-		if (!content || content.trim() === '') return null;
-		try {
-			var parsed = JSON.parse(content);
-			return (parsed && parsed.bridge && parsed.bridge.capabilities) || (parsed && parsed.capabilities) || null;
-		} catch (e) {
-			return null;
-		}
-	}).catch(function () {
-		return null;
-	});
-}
-
-function fetchCaps() {
-	return callMcuStatus().then(function (res) {
-		var caps = (res && typeof res === 'object' && !Array.isArray(res) && res.capabilities) || null;
-		if (!caps || Object.keys(caps).length === 0) {
-			return getFallbackCaps();
-		}
-		return caps;
-	}).catch(function () {
-		return getFallbackCaps();
-	});
-}
+'require view.mcubridge.status_client as statusClient';
 
 return view.extend({
 	load: function () {
-		return fetchCaps();
+		return statusClient.fetchCapabilities();
 	},
 
 	renderBool: function (value) {
@@ -98,7 +64,7 @@ return view.extend({
 
 		var self = this;
 		poll.add(function () {
-			return fetchCaps().then(function (caps) {
+			return statusClient.fetchCapabilities().then(function (caps) {
 				self.renderContent(caps, container);
 			});
 		}, 5);

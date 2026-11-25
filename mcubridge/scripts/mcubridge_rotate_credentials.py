@@ -10,6 +10,7 @@ from typing import Annotated, Any
 
 import structlog
 import typer
+from mcubridge.transport.ubus_client import ubus_connection
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.rotate-credentials")
@@ -51,13 +52,9 @@ def update_uci_credentials(new_secret: str) -> None:
 
 def restart_service() -> None:
     """Restart the mcubridge service via native OpenWrt UBUS. [SIL-2 / Rule 37]"""
-    if ubus is None:
-        logger.error("Native OpenWrt UBUS module unavailable")
-        raise RuntimeError("Native OpenWrt UBUS module unavailable")
     try:
-        if ubus.connect() is not True:
-            raise OSError("ubus.connect() did not return True")
-        ubus.call("service", "restart", {"name": "mcubridge"})
+        with ubus_connection(ubus) as conn:
+            conn.call("service", "restart", {"name": "mcubridge"})
         logger.info("Bridge service restarted successfully via ubus")
     except (OSError, RuntimeError, AttributeError) as e:
         logger.error("Failed to restart service via ubus", error=str(e))

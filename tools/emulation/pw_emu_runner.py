@@ -26,7 +26,7 @@ from pw_metric_proto import metric_service_pb2
 from pw_rpc.callback_client.errors import RpcError as PwRpcError, RpcTimeout as PwRpcTimeout
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
 
 from tools.console.pw_bridge_console import build_detokenizer, collect_metrics_tree
 from tools.emulation.emulation_pki import get_emulation_pki
@@ -57,6 +57,12 @@ from tools.emulation.stack_metrics import (
 logger = structlog.get_logger("pw_emu_runner")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+_METRIC_SERVICES = PwRpcServices(
+    [
+        PwRpcService.from_descriptor(desc)
+        for desc in cast(Any, metric_service_pb2).DESCRIPTOR.services_by_name.values()
+    ]
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,10 +102,10 @@ class TlsMetricSession:
         self._stop = threading.Event()
         self._closed = False
         self.errors: list[OSError] = []
-        self.rpc_client = PwRpcClient.from_modules(
+        self.rpc_client = PwRpcClient(
             PwCallbackClientImpl(),
             [PwRpcChannel(1, self._send_rpc_packet)],
-            [metric_service_pb2],
+            _METRIC_SERVICES,
         )
         self._reader_thread = start_daemon_thread(self._pump_incoming, "gateway-metrics-reader")
 
@@ -189,7 +195,7 @@ def audit_gateway_pw_metrics(
         logger.error("Pigweed MetricService gateway audit failed", error=str(exc))
         return False
 
-    gateway_obj = metrics.get("gateway")
+    gateway_obj: object = metrics.get("gateway")
     if not isinstance(gateway_obj, dict):
         logger.error("Gateway MetricService response missing 'gateway' group", keys=sorted(metrics.keys()))
         return False

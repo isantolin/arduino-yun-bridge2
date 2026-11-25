@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from typing import Any, cast
 
 __all__ = ["ubus_connection", "unwrap_ubus_response"]
 
 
 @contextlib.contextmanager
-def ubus_connection(ubus_module: Any) -> Iterator[Any]:
+def ubus_connection(ubus_module: Any) -> Generator[Any]:
     """Validate and open a native OpenWrt python-ubus connection."""
     if ubus_module is None:
         raise RuntimeError("Native OpenWrt UBUS module unavailable")

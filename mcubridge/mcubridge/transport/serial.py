@@ -30,7 +30,7 @@ from serial.urlhandler import protocol_socket
 import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
-from pw_hdlc.decode import Frame, FrameDecoder
+from pw_hdlc.decode import Frame, FrameDecoder, FrameStatus
 from pw_hdlc.encode import ui_frame
 from pw_rpc import ids as pw_ids, packets as pw_packets
 from pw_rpc.callback_client.call import UnaryCall
@@ -415,6 +415,8 @@ class SerialTransport:
         for frame in self.decoder.process(raw_bytes):
             if not frame.ok():
                 self.state.serial_decode_errors += 1
+                if frame.status == FrameStatus.FCS_MISMATCH:
+                    self.state.metrics.serial_crc_errors += 1
                 logger.debug(
                     "Dropping corrupt HDLC frame",
                     status=str(frame.status),
@@ -730,12 +732,15 @@ class SerialTransport:
                     encoded.hex().upper(),
                 )
 
+            write_started = time.monotonic()
             try:
                 await asyncio.to_thread(_write_and_flush, serial_port, encoded)
             except (AttributeError, OSError, RuntimeError, ValueError) as exc:
+                self.state.metrics.serial_failures += 1
                 logger.error("Serial write failed", label=label, error=str(exc))
                 return False
 
+        self.state.metrics.serial_latency_ms = (time.monotonic() - write_started) * 1000.0
         self.state.metrics.serial_bytes_sent += len(encoded)
         self.state.metrics.serial_frames_sent += 1
         return True
@@ -839,19 +844,24 @@ class SerialTransport:
 
         def _on_error(_call: UnaryCall, error: Any) -> None:
             if not completion.done():
+                self.state.metrics.serial_failures += 1
                 logger.warning("Pigweed unary RPC failed", method=method_name, error=str(error))
                 completion.set_result(False)
 
+        rpc_started = time.monotonic()
         try:
             call = rpc_method.invoke(request, on_completed=_on_completed, on_error=_on_error)
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            self.state.metrics.serial_failures += 1
             logger.error("Unable to invoke Pigweed unary RPC", method=method_name, error=str(exc))
             return False
 
         self._active_rpc_calls.add(call)
         try:
             async with asyncio.timeout(timeout):
-                return await completion
+                result = await completion
+            self.state.metrics.rpc_latency_ms = (time.monotonic() - rpc_started) * 1000.0
+            return result
         except TimeoutError:
             cancel_rpc_call(call, "Pigweed RPC cancellation raced with completion", method=method_name)
             raise
@@ -873,9 +883,11 @@ class SerialTransport:
                 return await self._invoke_unary_once(rpc_method, request, method_name, timeout)
             except TimeoutError:
                 if attempt < self.max_attempts:
+                    self.state.metrics.serial_retries += 1
                     await asyncio.sleep(
                         min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (attempt - 1)), SERIAL_HANDSHAKE_BACKOFF_MAX)
                     )
+        self.state.metrics.serial_failures += 1
         logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
         return False
 

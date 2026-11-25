@@ -64,6 +64,7 @@ async def test_feed_data_crc_mismatch_reports_crc() -> None:
         await transport.feed_data(bad_frame)
 
         assert state.serial_decode_errors == 1
+        assert state.metrics.serial_crc_errors == 1
     finally:
         state.cleanup()
 
@@ -177,6 +178,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
 
         ok = await transport.send("rpc.pb.ConsoleService/Write", b"hi")
         assert not ok
+        assert state.metrics.serial_failures == 1
     finally:
         state.cleanup()
 
@@ -1485,3 +1487,61 @@ async def test_pw_transfer_packets_from_mcu_reach_the_pigweed_client(
 
     process_packet.assert_called_once_with(chunk)
     service.handle_mcu_frame.assert_not_awaited()
+
+
+async def test_serial_transport_records_retry_failure_and_latency_metrics(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """SerialTransport populates retry, failure, and latency fields in DaemonMetrics."""
+    runtime_config.serial_shared_secret = b""
+    runtime_config.serial_retry_attempts = 2
+    runtime_state.serial_tx_allowed.set()
+    transport = SerialTransport(runtime_config, runtime_state, service=None)
+
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=16)
+    mock_serial.flush = MagicMock()
+    transport.serial = mock_serial
+
+    # 1. Raw frame TX updates serial_latency_ms
+    assert await transport.send("rpc.pb.ConsoleService/Write", b"ping") is True
+    assert runtime_state.metrics.serial_latency_ms > 0.0
+
+    # 2. Unary RPC retry + timeout updates serial_retries and serial_failures
+    assert await transport.send("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest(), timeout=0.01) is False
+    assert runtime_state.metrics.serial_retries == 1
+    assert runtime_state.metrics.serial_failures == 1
+
+    # 3. Successful unary RPC updates rpc_latency_ms and surfaces in DaemonMetrics snapshot
+    sent_packets: list[bytes] = []
+
+    async def loopback_writer(packet: bytes) -> bool:
+        sent_packets.append(packet)
+        req = pw_packets.decode(packet)
+        resp_pkt = RpcPacket(
+            type=PacketType.RESPONSE,
+            channel_id=req.channel_id,
+            service_id=req.service_id,
+            method_id=req.method_id,
+            call_id=req.call_id,
+            status=Status.OK.value,
+            payload=pb.VersionResponse(major=2, minor=8, patch=0).SerializeToString(),
+        ).SerializeToString()
+        await loopback.feed_data(ui_frame(protocol.HDLC_ADDRESS_RPC, resp_pkt))
+        return True
+
+    loopback = SerialTransport(runtime_config, runtime_state, service=None, rpc_packet_writer=loopback_writer)
+    loopback.serial = mock_serial
+    resp = await loopback.send("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest(), timeout=1.0)
+    assert isinstance(resp, pb.VersionResponse)
+    assert resp.major == 2
+    assert runtime_state.metrics.rpc_latency_ms > 0.0
+
+    snapshot = runtime_state.build_metrics_snapshot()
+    assert snapshot.serial_retries == 1
+    assert snapshot.serial_failures == 1
+    assert snapshot.serial_latency_ms > 0.0
+    assert snapshot.rpc_latency_ms > 0.0
+    assert len(sent_packets) == 1

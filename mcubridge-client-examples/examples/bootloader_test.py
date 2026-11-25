@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Annotated
 
 import structlog
 import typer
 from mcubridge_client import mcu_wire_pb2
-from mcubridge_client.cli import DeviceIdOption, HostOption, PortOption, bridge_session, configure_logging
+from mcubridge_client.cli import DEVICE_ID_OPTION, HOST_OPTION, PORT_OPTION, bridge_session, configure_logging
 from mcubridge_client.protocol import BOOTLOADER_MAGIC
 
 configure_logging()
@@ -47,9 +48,9 @@ cli = typer.Typer(
 
 @cli.command()
 def cli_main(
-    host: HostOption = None,
-    port: PortOption = None,
-    device_id: DeviceIdOption = None,
+    host: Annotated[str | None, HOST_OPTION] = None,
+    port: Annotated[int | None, PORT_OPTION] = None,
+    device_id: Annotated[str | None, DEVICE_ID_OPTION] = None,
 ) -> None:
     main(host, port, device_id)
 

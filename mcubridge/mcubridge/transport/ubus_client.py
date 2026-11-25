@@ -6,6 +6,8 @@ import contextlib
 from collections.abc import Iterator
 from typing import Any, cast
 
+__all__ = ["ubus_connection", "unwrap_ubus_response"]
+
 
 @contextlib.contextmanager
 def ubus_connection(ubus_module: Any) -> Iterator[Any]:

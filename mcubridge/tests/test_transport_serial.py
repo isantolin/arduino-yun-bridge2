@@ -110,7 +110,7 @@ async def test_negotiate_baudrate_switches_local_baudrate(
         target_baud = config.serial_safe_baud
         mock_serial.baudrate = config.serial_baud
         transport.serial = mock_serial
-        mocker.patch.object(transport, "send", AsyncMock(return_value=True))
+        mocker.patch.object(transport, "invoke_rpc", AsyncMock(return_value=True))
 
         assert await transport.negotiate_baudrate(target_baud)
         assert mock_serial.baudrate == target_baud
@@ -160,7 +160,7 @@ async def test_write_frame_debug_logs_unknown_command(
             side_effect=mock_log,
         )
 
-        ok = await transport.send(0xFE, b"payload")
+        ok = await transport.send_raw(0xFE, b"payload")
         assert ok
         assert mock_serial.write.called
         # Check that the operation identifier 254 (0xFE) is present in debug log
@@ -182,7 +182,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         mock_serial.write = MagicMock(side_effect=OSError("boom"))
         transport.serial = mock_serial
 
-        ok = await transport.send("rpc.pb.ConsoleService/Write", b"hi")
+        ok = await transport.send_console(b"hi")
         assert not ok
         assert state.metrics.serial_failures == 1
     finally:
@@ -207,7 +207,7 @@ async def test_feed_data_fallback_triggers_negotiation(
         mock_serial = MagicMock(spec=serial.Serial)
         mock_serial.is_open = True
 
-        send_mock = mocker.patch.object(transport, "send", AsyncMock(return_value=True))
+        send_mock = mocker.patch.object(transport, "invoke_rpc", AsyncMock(return_value=True))
         transport.serial = mock_serial
 
         bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
@@ -348,8 +348,9 @@ async def test_unary_rpc_calls_use_pigweed_client_and_correlate_concurrently(
 
     first_request = pb.ClockSyncRequest(host_time_us=111)
     second_request = pb.ClockSyncRequest(host_time_us=222)
-    first = asyncio.create_task(transport.send("rpc.pb.ClockSyncService/ClockSync", first_request))
-    second = asyncio.create_task(transport.send("rpc.pb.ClockSyncService/ClockSync", second_request))
+    clock_sync_rpc = transport.rpcs.rpc.pb.ClockSyncService.ClockSync
+    first = asyncio.create_task(transport.invoke_rpc(clock_sync_rpc, first_request))
+    second = asyncio.create_task(transport.invoke_rpc(clock_sync_rpc, second_request))
 
     for _ in range(100):
         if len(outgoing) == 2:
@@ -397,7 +398,9 @@ async def test_unary_rpc_decodes_empty_request_payload(
         protocol.PW_SERVICES,
     )
 
-    send_task = asyncio.create_task(transport.send("rpc.pb.SystemService/GetVersion", b""))
+    send_task = asyncio.create_task(
+        transport.invoke_rpc(transport.rpcs.rpc.pb.SystemService.GetVersion, pb.SubscribeRequest())
+    )
     for _ in range(100):
         if outgoing:
             break
@@ -504,10 +507,11 @@ async def test_serial_transport_edge_branches(
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
     _install_link_cipher(runtime_config, runtime_state)
 
-    # 1. send() when serial is None
+    # 1. invoke_rpc() and send_console() when serial is None
     transport.serial = None
-    res = await transport.send("rpc.pb.GpioService/DigitalWrite", b"payload")
+    res = await transport.invoke_rpc(transport.rpcs.rpc.pb.GpioService.DigitalWrite, pb.DigitalWrite(pin=1, value=1))
     assert res is False
+    assert await transport.send_console(b"offline") is False
 
     # 3. send_raw when serial_tx_allowed is clear and wait times out
     mock_serial = MagicMock(spec=serial.Serial)
@@ -523,14 +527,14 @@ async def test_serial_transport_edge_branches(
 
     # 4. negotiate_baudrate when send fails, raises, or succeeds
     negotiate: Callable[[int], Awaitable[bool]] = transport.negotiate_baudrate
-    mocker.patch.object(transport, "send", AsyncMock(return_value=False))
+    mocker.patch.object(transport, "invoke_rpc", AsyncMock(return_value=False))
     res_neg_fail = await negotiate(115200)
     assert res_neg_fail is False
 
-    mocker.patch.object(transport, "send", AsyncMock(side_effect=OSError("Write failed")))
+    mocker.patch.object(transport, "invoke_rpc", AsyncMock(side_effect=OSError("Write failed")))
     assert await negotiate(115200) is False
 
-    mocker.patch.object(transport, "send", AsyncMock(return_value=True))
+    mocker.patch.object(transport, "invoke_rpc", AsyncMock(return_value=True))
     res_neg_ok = await negotiate(115200)
     assert res_neg_ok is True
 
@@ -970,7 +974,9 @@ async def test_bidirectional_ack_response_returns_true_and_is_not_redispatched()
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, queue_rpc_packet)],
             protocol.PW_SERVICES,
         )
-        send_task = asyncio.create_task(transport.send("rpc.pb.MailboxService/Push", pb.MailboxPush(data=b"PING")))
+        send_task = asyncio.create_task(
+            transport.invoke_rpc(transport.rpcs.rpc.pb.MailboxService.Push, pb.MailboxPush(data=b"PING"))
+        )
         for _ in range(100):
             if outgoing:
                 break
@@ -1139,44 +1145,23 @@ def _private_attribute(instance: object, name: str) -> Any:
     return getattr(instance, name)
 
 
-async def test_decode_rpc_request_rejects_invalid_payloads(
+async def test_invoke_rpc_dispatches_server_streaming_directly(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    from types import SimpleNamespace
-
+    runtime_config.serial_shared_secret = b""
     transport = SerialTransport(runtime_config, runtime_state, None)
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
+    mock_serial.write = MagicMock(return_value=16)
+    mock_serial.flush = MagicMock()
     transport.serial = mock_serial
-    spec = protocol.get_operation("rpc.pb.ClockSyncService/ClockSync")
-    assert spec is not None
 
-    decode_rpc_request = cast(
-        Callable[[Any, Any], Any],
-        _private_attribute(transport, "_decode_rpc_request"),
+    ok = await transport.invoke_rpc(
+        transport.rpcs.rpc.pb.GpioService.SubscribePins,
+        pb.PinSubscribeRequest(pin=2, enabled=True),
     )
-    assert decode_rpc_request(spec, cast(Any, object())) is None
-    assert decode_rpc_request(spec, b"\x0a\xff") is None
-    assert decode_rpc_request(SimpleNamespace(request_type=None, name="missing"), b"") is None
-    assert not await transport.send("rpc.pb.ClockSyncService/ClockSync", cast(Any, object()))
-
-
-async def test_get_rpc_method_returns_none_when_descriptor_is_missing(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, None)
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.is_open = True
-    transport.serial = mock_serial
-    rpc_client = MagicMock()
-    rpc_client.channel.return_value.method.side_effect = KeyError("missing method")
-    transport.rpc_client = rpc_client
-
-    spec = protocol.get_operation("rpc.pb.ClockSyncService/ClockSync")
-    assert spec is not None
-    get_rpc_method = cast(Callable[[Any], Any], _private_attribute(transport, "_get_rpc_method"))
-    assert get_rpc_method(spec) is None
-    assert not await transport.send("rpc.pb.ClockSyncService/ClockSync", pb.ClockSyncRequest(host_time_us=1))
+    assert ok is True
+    transport.cancel_pin_stream()
 
 
 async def test_invoke_rpc_completion_without_response_and_error_callback(
@@ -1451,7 +1436,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
         ),
     )
     await transport.feed_data(mcu_req_frame)
-    assert await transport.send("rpc.pb.DataStoreService/Get", pb.DatastoreGetResponse(value=b"val"))
+    assert await transport.send_raw("rpc.pb.DataStoreService/Get", pb.DatastoreGetResponse(value=b"val"))
     written_raw: bytes = mock_serial.write.call_args[0][0]
     out_frame = next(iter(FrameDecoder().process(written_raw)))
     out_pkt = pw_packets.decode(out_frame.data)
@@ -1511,12 +1496,17 @@ async def test_serial_transport_records_retry_failure_and_latency_metrics(
     mock_serial.flush = MagicMock()
     transport.serial = mock_serial
 
-    # 1. Raw frame TX updates serial_latency_ms
-    assert await transport.send("rpc.pb.ConsoleService/Write", b"ping") is True
+    # 1. Raw console TX updates serial_latency_ms
+    assert await transport.send_console(b"ping") is True
     assert runtime_state.metrics.serial_latency_ms > 0.0
 
     # 2. Unary RPC retry + timeout updates serial_retries and serial_failures
-    assert await transport.send("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest(), timeout=0.01) is False
+    assert (
+        await transport.invoke_rpc(
+            transport.rpcs.rpc.pb.SystemService.GetVersion, pb.SubscribeRequest(), timeout=0.01
+        )
+        is False
+    )
     assert runtime_state.metrics.serial_retries == 1
     assert runtime_state.metrics.serial_failures == 1
 
@@ -1540,7 +1530,9 @@ async def test_serial_transport_records_retry_failure_and_latency_metrics(
 
     loopback = SerialTransport(runtime_config, runtime_state, service=None, rpc_packet_writer=loopback_writer)
     loopback.serial = mock_serial
-    resp = await loopback.send("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest(), timeout=1.0)
+    resp = await loopback.invoke_rpc(
+        loopback.rpcs.rpc.pb.SystemService.GetVersion, pb.SubscribeRequest(), timeout=1.0
+    )
     assert isinstance(resp, pb.VersionResponse)
     assert resp.major == 2
     assert runtime_state.metrics.rpc_latency_ms > 0.0

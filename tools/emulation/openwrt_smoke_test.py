@@ -14,10 +14,12 @@ Requires: qemu-system-mips, python3-pexpect, e2fsprogs
 from __future__ import annotations
 
 import gzip
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+from enum import StrEnum
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Any
@@ -53,6 +55,14 @@ EXTROOT_DISK_MB = 2048  # extroot overlay + swap
 
 PROMPT = r"root@.*:.*#"
 DEPLOY_SCRIPTS = ["2_expand.sh", "3_install.sh"]
+DEFAULT_STANDALONE_SSH_PORT = 2222
+DEFAULT_STANDALONE_LUCI_PORT = 8080
+
+
+class SmokeMode(StrEnum):
+    CI = "ci"
+    STANDALONE = "standalone"
+
 
 SYS_APKS_BASE_URL = f"https://downloads.openwrt.org/releases/{OPENWRT_VERSION}/packages/mips_24kc/base"
 SYS_APKS_TARGET_URL = f"https://downloads.openwrt.org/releases/{OPENWRT_VERSION}/targets/{TARGET}/packages"
@@ -140,19 +150,23 @@ def _download_file_with_retry(url: str, filename: Path | str, attempts: int = 3)
 # ---------------------------------------------------------------------------
 # Image download
 # ---------------------------------------------------------------------------
-def download_images() -> None:
+def download_images(*, reuse_rootfs: bool = False) -> None:
     log_info("[INFO] Downloading OpenWrt images...")
     kernel_path = Path(KERNEL_FILE)
     if not kernel_path.exists():
         log_info(f"[INFO] Downloading kernel {KERNEL_FILE}...")
         _download_file_with_retry(f"{BASE_URL}/{KERNEL_FILE}", kernel_path)
 
+    rootfs_img = Path(ROOTFS_IMG)
+    if reuse_rootfs and rootfs_img.exists():
+        log_info(f"[INFO] Reusing existing {ROOTFS_IMG} (standalone persistence).")
+        return
+
     rootfs_gz = Path(ROOTFS_GZ)
     if not rootfs_gz.exists():
         log_info(f"[INFO] Downloading rootfs {ROOTFS_GZ}...")
         _download_file_with_retry(f"{BASE_URL}/{ROOTFS_GZ}", rootfs_gz)
 
-    rootfs_img = Path(ROOTFS_IMG)
     log_info(f"[INFO] Decompressing pristine {ROOTFS_GZ} -> {ROOTFS_IMG}...")
     with gzip.open(rootfs_gz, "rb") as f_in, rootfs_img.open("wb") as f_out:
         shutil.copyfileobj(f_in, f_out)
@@ -253,11 +267,14 @@ def create_apk_disk(apk_dir: Path, sys_apk_dir: Path, repo_root: Path) -> str:
     return apk_disk
 
 
-def create_extroot_disk() -> str:
-    """Create an empty raw disk for extroot + swap."""
-    log_info(f"[INFO] Creating {EXTROOT_DISK_MB}MB extroot disk...")
+def create_extroot_disk(*, reuse_existing: bool = False) -> str:
+    """Create an empty raw disk for extroot + swap (or reuse an existing one)."""
     extroot_disk = "extroot.img"
     extroot_path = Path(extroot_disk)
+    if reuse_existing and extroot_path.exists():
+        log_info(f"[INFO] Reusing existing {extroot_disk}.")
+        return extroot_disk
+    log_info(f"[INFO] Creating {EXTROOT_DISK_MB}MB extroot disk...")
     with extroot_path.open("wb") as f:
         f.truncate(EXTROOT_DISK_MB * 1024 * 1024)
     return extroot_disk
@@ -266,8 +283,21 @@ def create_extroot_disk() -> str:
 # ---------------------------------------------------------------------------
 # QEMU helpers
 # ---------------------------------------------------------------------------
-def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
-    return [
+def build_qemu_cmd(
+    apk_disk: str | None,
+    extroot_disk: str,
+    *,
+    memory_mb: int = 256,
+    ssh_port: int | None = None,
+    luci_port: int | None = None,
+    gateway_port: int | None = None,
+) -> list[str]:
+    netdev_opts = ["user", "id=net0", "ipv6=off"]
+    for host_port, guest_port in ((ssh_port, 22), (luci_port, 80), (gateway_port, 5555)):
+        if host_port is not None and host_port > 0:
+            netdev_opts.append(f"hostfwd=tcp::{host_port}-:{guest_port}")
+
+    cmd = [
         "qemu-system-mips",
         "-M",
         "malta",
@@ -275,23 +305,28 @@ def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
         KERNEL_FILE,
         "-drive",
         f"file={ROOTFS_IMG},format=raw,if=ide",  # sda — rootfs
-        "-drive",
-        f"file={apk_disk},format=raw,if=ide",  # sdb — APKs + scripts
-        "-drive",
-        f"file={extroot_disk},format=raw,if=ide",  # sdc — extroot target
-        "-append",
-        "root=/dev/sda rw console=ttyS0",
-        "-nographic",
-        "-serial",
-        "mon:stdio",
-        "-m",
-        "256",
-        # [SIL-2] Improved QEMU networking for Malta (pcnet is more native than virtio)
-        "-netdev",
-        "user,id=net0,ipv6=off",
-        "-device",
-        "pcnet,netdev=net0",
     ]
+    if apk_disk is not None:
+        cmd.extend(["-drive", f"file={apk_disk},format=raw,if=ide"])  # sdb — APKs + scripts
+    cmd.extend(
+        [
+            "-drive",
+            f"file={extroot_disk},format=raw,if=ide",  # sdc (or sdb) — extroot target
+            "-append",
+            "root=/dev/sda rw console=ttyS0",
+            "-nographic",
+            "-serial",
+            "mon:stdio",
+            "-m",
+            str(memory_mb),
+            # [SIL-2] Improved QEMU networking for Malta (pcnet is more native than virtio)
+            "-netdev",
+            ",".join(netdev_opts),
+            "-device",
+            "pcnet,netdev=net0",
+        ]
+    )
+    return cmd
 
 
 def wait_for_prompt(child: Any, timeout: int = 30) -> None:
@@ -463,12 +498,35 @@ def phase_verify(child: Any) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def run_test(apk_disk: str, extroot_disk: str) -> None:
-    log_info("[INFO] Starting QEMU Emulation (full pipeline)...")
+def _resolve_optional_port(port: int | None, *, default_port: int | None) -> int | None:
+    """Resolve an optional host-forwarded TCP port (0 disables forwarding)."""
+    effective = default_port if port is None else port
+    return effective if effective is not None and effective > 0 else None
+
+
+def run_test(
+    apk_disk: str | None,
+    extroot_disk: str,
+    *,
+    mode: SmokeMode = SmokeMode.CI,
+    skip_install: bool = False,
+    memory_mb: int = 256,
+    ssh_port: int | None = None,
+    luci_port: int | None = None,
+    gateway_port: int | None = None,
+) -> None:
+    log_info(f"[INFO] Starting QEMU Emulation (mode={mode.value})...")
 
     pexpect = __import__("pexpect")
 
-    qemu_cmd = build_qemu_cmd(apk_disk, extroot_disk)
+    qemu_cmd = build_qemu_cmd(
+        apk_disk,
+        extroot_disk,
+        memory_mb=memory_mb,
+        ssh_port=ssh_port,
+        luci_port=luci_port,
+        gateway_port=gateway_port,
+    )
     child: Any = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding="utf-8", timeout=300)
     child.logfile = sys.stdout
 
@@ -477,9 +535,22 @@ def run_test(apk_disk: str, extroot_disk: str) -> None:
         wait_for_boot(child, timeout=180)
         log_info("[INFO] Console active.")
 
-        phase_expand(child)
-        phase_install(child)
-        phase_verify(child)
+        if not skip_install:
+            phase_expand(child)
+            phase_install(child)
+            phase_verify(child)
+
+        if mode is SmokeMode.STANDALONE:
+            if ssh_port:
+                log_info(f"[STANDALONE] SSH forwarded on localhost:{ssh_port} (ssh -p {ssh_port} root@127.0.0.1)")
+            if luci_port:
+                log_info(f"[STANDALONE] LuCI forwarded on http://127.0.0.1:{luci_port}")
+            if gateway_port:
+                log_info(f"[STANDALONE] Gateway forwarded on localhost:{gateway_port}")
+            log_info("[STANDALONE] Attaching interactive OpenWrt console (Ctrl+A then X to exit QEMU)...")
+            child.logfile = None
+            child.interact()
+            return
 
         child.sendline("poweroff")
         child.expect(pexpect.EOF, timeout=30)
@@ -492,22 +563,80 @@ def run_test(apk_disk: str, extroot_disk: str) -> None:
         sys.exit(1)
 
 
-app = typer.Typer(help="OpenWrt Smoke Test using QEMU (MIPS Malta).", add_completion=False)
+app = typer.Typer(help="OpenWrt Smoke Test & Standalone QEMU VM (MIPS Malta).", add_completion=False)
 
 
 @app.command()
 def main(
-    apk_directory: Annotated[Path, typer.Argument(help="Path to directory containing APK packages")],
+    apk_directory: Annotated[
+        Path | None, typer.Argument(help="Path to directory containing APK packages (optional with --skip-install)")
+    ] = None,
+    mode: Annotated[SmokeMode, typer.Option("--mode", "-m", help="Execution mode: ci or standalone")] = SmokeMode.CI,
+    workdir: Annotated[
+        Path | None, typer.Option("--workdir", "-w", help="Working directory for OpenWrt images and disks")
+    ] = None,
+    keep_disks: Annotated[
+        bool, typer.Option("--keep-disks", help="Reuse existing rootfs and extroot images instead of recreating them")
+    ] = False,
+    skip_install: Annotated[
+        bool, typer.Option("--skip-install", help="Standalone mode: boot straight to console without installers")
+    ] = False,
+    memory_mb: Annotated[int, typer.Option("--memory-mb", help="QEMU VM RAM in MiB")] = 256,
+    ssh_port: Annotated[
+        int | None, typer.Option("--ssh-port", help="Host TCP port forwarded to guest SSH :22 (0 disables)")
+    ] = None,
+    luci_port: Annotated[
+        int | None, typer.Option("--luci-port", help="Host TCP port forwarded to guest HTTP/LuCI :80 (0 disables)")
+    ] = None,
+    gateway_port: Annotated[
+        int | None, typer.Option("--gateway-port", help="Host TCP port forwarded to guest gateway :5555 (0 disables)")
+    ] = None,
 ) -> None:
+    if skip_install and mode is not SmokeMode.STANDALONE:
+        raise typer.BadParameter("--skip-install is only supported with --mode standalone")
+    if not skip_install and apk_directory is None:
+        raise typer.BadParameter("apk_directory is required unless --skip-install is set")
+    if memory_mb <= 0:
+        raise typer.BadParameter("--memory-mb must be greater than zero")
+
     repo_root = Path(__file__).resolve().parents[2]
+    resolved_apk_dir = apk_directory.resolve() if apk_directory is not None else None
+    orig_cwd = Path.cwd()
+    if workdir is not None:
+        workdir.mkdir(parents=True, exist_ok=True)
+        os.chdir(workdir)
 
-    download_images()
-    sys_apk_dir = repo_root / "dl_sys_apks"
-    download_system_apks(sys_apk_dir)
+    try:
+        reuse = keep_disks or skip_install
+        download_images(reuse_rootfs=reuse)
+        apk_disk: str | None = None
+        if not skip_install and resolved_apk_dir is not None:
+            sys_apk_dir = repo_root / "dl_sys_apks"
+            download_system_apks(sys_apk_dir)
+            apk_disk = create_apk_disk(resolved_apk_dir, sys_apk_dir, repo_root)
+        extroot_disk = create_extroot_disk(reuse_existing=reuse)
 
-    apk_disk = create_apk_disk(apk_directory, sys_apk_dir, repo_root)
-    extroot_disk = create_extroot_disk()
-    run_test(apk_disk, extroot_disk)
+        eff_ssh = _resolve_optional_port(
+            ssh_port, default_port=DEFAULT_STANDALONE_SSH_PORT if mode is SmokeMode.STANDALONE else None
+        )
+        eff_luci = _resolve_optional_port(
+            luci_port, default_port=DEFAULT_STANDALONE_LUCI_PORT if mode is SmokeMode.STANDALONE else None
+        )
+        eff_gateway = _resolve_optional_port(gateway_port, default_port=None)
+
+        run_test(
+            apk_disk,
+            extroot_disk,
+            mode=mode,
+            skip_install=skip_install,
+            memory_mb=memory_mb,
+            ssh_port=eff_ssh,
+            luci_port=eff_luci,
+            gateway_port=eff_gateway,
+        )
+    finally:
+        if workdir is not None:
+            os.chdir(orig_cwd)
 
 
 if __name__ == "__main__":

@@ -183,11 +183,25 @@ class BridgeService:
         self.gpio = GpioService(self)
         self._tg = None
 
+        async def _send_handshake_frame(
+            command_id: int | str | protocol.OperationSpec | tuple[int, int],
+            payload: bytes | ProtobufMessage,
+            seq_id: int | None = None,
+            timeout: float | None = None,
+        ) -> bool | bytes | ProtobufMessage:
+            if command_id == "rpc.pb.SystemService/GetCapabilities":
+                return await serial.invoke_rpc(
+                    serial.rpcs.rpc.pb.SystemService.GetCapabilities,
+                    mcu_wire_pb2.SubscribeRequest(),
+                    timeout=timeout,
+                )
+            return await serial.send_raw(command_id, payload, seq_id)
+
         self.handshake = handshake or SerialHandshakeManager(
             config=config,
             state=state,
             serial_timing=derive_serial_timing(config),
-            send_frame=serial.send,
+            send_frame=_send_handshake_frame,
             enqueue_cloud=self.enqueue_cloud,
             logger_=logger,
         )
@@ -493,7 +507,7 @@ class BridgeService:
         val = res if isinstance(res, bytes) else b""
         resp = mcu_wire_pb2.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
         if p is not None and self.serial:
-            await self.serial.send("rpc.pb.DataStoreService/Get", resp)
+            await self.serial.send_raw("rpc.pb.DataStoreService/Get", resp)
         return resp
 
     # --- Mailbox Subsystem ---
@@ -505,7 +519,7 @@ class BridgeService:
             await self.state.mailbox_incoming_queue.append(p.data)
             await self.publish_mcu_message(p, p.data)
             if self.serial:
-                await self.serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty())
+                await self.serial.send_raw("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty())
             return mcu_wire_pb2.Empty()
         data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
         # Push first. Queue only when the MCU did not take the message, so the
@@ -514,7 +528,8 @@ class BridgeService:
         serial = self.serial
         delivered = (
             serial is not None
-            and await serial.send("rpc.pb.MailboxService/Push", mcu_wire_pb2.MailboxPush(data=data)) is not False
+            and await serial.invoke_rpc(serial.rpcs.rpc.pb.MailboxService.Push, mcu_wire_pb2.MailboxPush(data=data))
+            is not False
         )
         if not delivered:
             await self.state.mailbox_queue.append(data)
@@ -531,13 +546,13 @@ class BridgeService:
             content = b""
         resp = mcu_wire_pb2.MailboxReadResponse(content=content)
         if from_mcu and self.serial:
-            await self.serial.send("rpc.pb.MailboxService/Read", resp)
+            await self.serial.send_raw("rpc.pb.MailboxService/Read", resp)
         return resp
 
     async def mailbox_available(self, _seq: int, _p: Any) -> bool:
         return bool(
             self.serial
-            and await self.serial.send(
+            and await self.serial.send_raw(
                 "rpc.pb.MailboxService/Available",
                 mcu_wire_pb2.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
             )
@@ -830,7 +845,7 @@ class BridgeService:
         resp = mcu_wire_pb2.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:
             if pid:
-                await self.serial.send("rpc.pb.ProcessService/RunAsync", resp)
+                await self.serial.send_raw("rpc.pb.ProcessService/RunAsync", resp)
             else:
                 await self.send_mcu_status(
                     Status.INTERNAL if allowed else Status.PERMISSION_DENIED, cast(int, req_or_cmd), src
@@ -889,7 +904,7 @@ class BridgeService:
                         stderr_truncated=te,
                     )
         if p is not None and self.serial:
-            await self.serial.send("rpc.pb.ProcessService/Poll", resp)
+            await self.serial.send_raw("rpc.pb.ProcessService/Poll", resp)
         return resp
 
     def release_process(self, pid: int) -> ProcessContext | None:
@@ -963,7 +978,7 @@ class BridgeService:
             max_chunk = protocol.MAX_PAYLOAD_SIZE
             for i in range(0, len(buf), max_chunk):
                 end = i + max_chunk
-                if not await serial.send("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=buf[i:end])):
+                if not await serial.send_console(buf[i:end]):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
@@ -1012,7 +1027,11 @@ class BridgeService:
 
     async def _fetch_mcu_version(self) -> mcu_wire_pb2.VersionResponse | None:
         serial = self.serial
-        res = (await serial.send("rpc.pb.SystemService/GetVersion", b"")) if serial else None
+        res = (
+            await serial.invoke_rpc(serial.rpcs.rpc.pb.SystemService.GetVersion, mcu_wire_pb2.SubscribeRequest())
+            if serial
+            else None
+        )
         if not isinstance(res, mcu_wire_pb2.VersionResponse):
             return None
         self.state.mcu_version = (res.major, res.minor, res.patch)
@@ -1395,11 +1414,11 @@ class BridgeService:
             if self.serial is None:
                 raise ConnectionError(f"Serial link disconnected for {target}")
 
-            payload = b"" if isinstance(req, mcu_wire_pb2.SubscribeRequest) else req
+            rpc_method = self.serial.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(spec.name)
             if timeout_ms > 0:
-                res = await self.serial.send(spec.name, payload, timeout=float(timeout_ms) / 1000.0)
+                res = await self.serial.invoke_rpc(rpc_method, req, timeout=float(timeout_ms) / 1000.0)
             else:
-                res = await self.serial.send(spec.name, payload)
+                res = await self.serial.invoke_rpc(rpc_method, req)
             if isinstance(res, mcu_wire_pb2.VersionResponse):
                 self.state.mcu_version = (res.major, res.minor, res.patch)
             if res is True:

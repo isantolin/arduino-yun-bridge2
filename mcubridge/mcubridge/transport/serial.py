@@ -36,7 +36,7 @@ from pw_rpc import ids as pw_ids, packets as pw_packets
 from pw_rpc.callback_client.call import UnaryCall
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel, RpcIds
+from pw_rpc.descriptors import Channel as PwRpcChannel, Method as PwRpcMethod, RpcIds
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_tokenizer import detokenize, elf_reader
 from pw_tokenizer.tokens import DatabaseFormatError
@@ -181,6 +181,7 @@ class SerialTransport:
     service: SerialBridgeService | None
     serial: serial.Serial | None
     stop_event: asyncio.Event
+    rpc_client: PwRpcClient
 
     def __init__(
         self,
@@ -599,6 +600,28 @@ class SerialTransport:
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self.negotiate_baudrate(self.config.serial_safe_baud)
 
+    @property
+    def rpcs(self) -> Any:
+        """Return Pigweed's native pw_rpc service tree on the MCU RPC channel."""
+        return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs
+
+    async def invoke_rpc(
+        self,
+        rpc_method: Any,
+        request: ProtobufMessage,
+        *,
+        timeout: float | None = None,
+    ) -> bool | ProtobufMessage:
+        """Invoke a typed Pigweed unary or server-streaming RPC directly on pw_rpc.Client."""
+        if not self.serial or not self.serial.is_open:
+            return False
+        method_desc = rpc_method.method
+        method_name = str(method_desc.full_name)
+        if method_desc.type is PwRpcMethod.Type.SERVER_STREAMING:
+            return await self._invoke_server_stream_rpc(rpc_method, request, method_name)
+        effective_timeout = timeout if timeout is not None else self._response_timeout
+        return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
+
     async def send(
         self,
         command_id: int | str | protocol.OperationSpec | tuple[int, int],
@@ -948,10 +971,7 @@ class SerialTransport:
         rpc_method = self._get_rpc_method(spec)
         if rpc_method is None:
             return False
-        if spec.is_server_streaming:
-            return await self._invoke_server_stream_rpc(rpc_method, request, spec.name)
-        effective_timeout = timeout if timeout is not None else self._response_timeout
-        return await self._invoke_rpc_with_retries(rpc_method, request, spec.name, effective_timeout)
+        return await self.invoke_rpc(rpc_method, request, timeout=timeout)
 
     async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
         """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""

@@ -62,6 +62,7 @@ from tools.emulation.process_utils import (
     stream_pump,
     terminate_process_tree,
 )
+from tools.emulation.pw_emu_runner import audit_gateway_pw_metrics
 from tools.emulation.qemu_runner import (
     find_qemu_binary,
     start_qemu_emulator,
@@ -648,6 +649,10 @@ def run_fleet_mesh_hardware_e2e(timeout_seconds: float = 180.0) -> bool:
                 logger.error("Rule 29 health audit failed for node", node=node.name)
                 return False
             logger.info("Rule 29 status audit passed with 0 errors", node=node.name)
+
+        if not audit_gateway_pw_metrics(min_device_sessions=len(nodes), min_dispatches=len(nodes)):
+            logger.error("Pigweed MetricService gateway audit failed for fleet mesh")
+            return False
 
         logger.info("================================================================================")
         logger.info("✅ SUCCESS: All 3 hardware emulations executed and communicated simultaneously!")

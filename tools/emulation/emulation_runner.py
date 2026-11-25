@@ -441,6 +441,13 @@ def audit_post_execution_status(status_file: Path = Path("/tmp/mcubridge_status.
         return False
 
 
+def audit_live_gateway_metrics(min_dispatches: int = 0) -> bool:
+    """Audit live gateway ``pw_metric`` counters via Pigweed MetricService."""
+    from tools.emulation.pw_emu_runner import audit_gateway_pw_metrics
+
+    return audit_gateway_pw_metrics(min_dispatches=min_dispatches)
+
+
 def write_matrix_summary(
     summary_dir: Path,
     *,
@@ -614,6 +621,8 @@ def run_emulation(
                 time.sleep(1)
 
         if all_success and not audit_post_execution_status(status_file):
+            all_success = False
+        if all_success and not audit_live_gateway_metrics(min_dispatches=1 if run_scripts else 0):
             all_success = False
     except (OSError, RuntimeError, ValueError) as exc:
         logger.error("Emulation error", error=str(exc))

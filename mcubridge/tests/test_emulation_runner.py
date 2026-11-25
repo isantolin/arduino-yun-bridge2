@@ -338,3 +338,19 @@ def test_setup_fake_uci_grants_every_cloud_permission(monkeypatch: pytest.Monkey
     fields = config_schema_pb2.TopicAuthorization.DESCRIPTOR.fields
     assert {f"cloud_allow_{field.name}" for field in fields} <= captured.keys()
     assert all(captured[f"cloud_allow_{field.name}"] == "1" for field in fields)
+
+
+def test_audit_live_gateway_metrics_delegates_to_pw_emu_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """audit_live_gateway_metrics forwards min_dispatches to pw_emu_runner.audit_gateway_pw_metrics."""
+    from tools.emulation import pw_emu_runner
+
+    recorded: list[int] = []
+
+    def _fake_audit(*, min_dispatches: int = 0) -> bool:
+        recorded.append(min_dispatches)
+        return True
+
+    monkeypatch.setattr(pw_emu_runner, "audit_gateway_pw_metrics", _fake_audit)
+
+    assert emulation_runner.audit_live_gateway_metrics(min_dispatches=2) is True
+    assert recorded == [2]

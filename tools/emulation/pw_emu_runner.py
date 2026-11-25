@@ -30,6 +30,7 @@ from tools.emulation.emulation_runner import (
     setup_fake_uci,
     write_matrix_summary,
 )
+from tools.emulation.gateway_metrics import audit_gateway_pw_metrics
 from tools.emulation.process_utils import (
     cleanup_paths,
     start_daemon_thread,
@@ -214,6 +215,7 @@ def run_pw_emu_session(
         return (
             run_client_scripts(test_scripts, device_id=profile.device_id, led_builtin_pin=led_builtin_pin)
             and audit_post_execution_status()
+            and audit_gateway_pw_metrics(min_dispatches=1 if test_scripts else 0)
         )
     finally:
         procs: list[subprocess.Popen[Any]] = [p for p in (daemon_proc, gateway_proc) if p is not None]

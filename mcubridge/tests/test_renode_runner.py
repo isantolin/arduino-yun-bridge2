@@ -250,6 +250,9 @@ def test_run_renode_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest
         _ = status_file
         return True
 
+    def mock_gateway_metrics(**_kwargs: Any) -> bool:
+        return True
+
     def mock_start_thread(*args: Any, **kwargs: Any) -> None:
         _ = (args, kwargs)
 
@@ -281,6 +284,7 @@ def test_run_renode_emulation_full_lifecycle(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(pw_emu_runner, "setup_fake_uci", mock_setup_uci)
     monkeypatch.setattr(pw_emu_runner, "run_client_scripts", mock_run_scripts)
     monkeypatch.setattr(pw_emu_runner, "audit_post_execution_status", mock_audit)
+    monkeypatch.setattr(pw_emu_runner, "audit_gateway_pw_metrics", mock_gateway_metrics)
     monkeypatch.setattr(subprocess, "Popen", _MockPopen)
     monkeypatch.setattr(pw_emu_runner, "start_daemon_thread", mock_start_thread)
     monkeypatch.setattr(pw_emu_runner, "terminate_process_tree", mock_terminate)

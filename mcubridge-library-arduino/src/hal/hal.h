@@ -12,6 +12,7 @@
 #include <Arduino.h>
 #undef min
 #undef max
+#undef abs
 #undef round
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>

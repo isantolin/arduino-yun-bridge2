@@ -936,14 +936,15 @@ async def test_frames_without_service_or_unknown_address_are_consumed(
     assert runtime_state.serial_decode_errors == 0
 
 
-async def test_send_raw_console_payload_variants(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+async def test_send_console_payload_variants(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     mcu_cipher = _install_link_cipher(runtime_config, runtime_state)
     mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
     transport.serial = mock_serial
 
-    assert await transport.send_raw("rpc.pb.ConsoleService/Write", pb.ConsoleWrite(data=b"abc"))
-    assert await transport.send_raw("rpc.pb.ConsoleService/Write", cast(Any, object()))
+    assert await transport.send_console(b"abc")
+    assert await transport.send_console(b"")
 
     written = [next(iter(FrameDecoder().process(c.args[0]))) for c in mock_serial.write.call_args_list]
     assert written[0].address == protocol.HDLC_ADDRESS_CONSOLE

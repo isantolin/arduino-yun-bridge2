@@ -18,7 +18,6 @@ import logging
 import os
 import socket
 from pathlib import Path
-import sys
 import time
 from collections.abc import Callable, Coroutine
 from typing import Any, Final, Protocol, cast
@@ -26,7 +25,6 @@ from typing import Any, Final, Protocol, cast
 import anyio
 from pw_transfer.client import Error as PwTransferError, Manager as PwTransferManager
 import serial
-from serial.urlhandler import protocol_socket
 import structlog
 import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
@@ -82,10 +80,6 @@ DEFAULT_TOKEN_DATABASE_CANDIDATES: Final[tuple[Path, ...]] = (
     Path("/etc/mcubridge/tokens.bin"),
     Path("/usr/share/mcubridge/tokens.csv"),
 )
-
-# Register wifi:// and tcp:// scheme aliases in pyserial
-sys.modules["serial.urlhandler.protocol_wifi"] = protocol_socket
-sys.modules["serial.urlhandler.protocol_tcp"] = protocol_socket
 
 
 class SerialBridgeService(Protocol):
@@ -602,7 +596,7 @@ class SerialTransport:
 
     @property
     def rpc_channel(self) -> Any:
-        """Return Pigweed's native pw_rpc ChannelClient bound to the MCU RPC channel."""
+        """Return Pigweed's native pw_rpc channel client for the MCU RPC channel."""
         return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC)
 
     @property
@@ -855,18 +849,29 @@ class SerialTransport:
         method_name: str,
         timeout: float,
     ) -> bool | ProtobufMessage:
-        for attempt in range(1, self.max_attempts + 1):
-            try:
-                return await self._invoke_unary_once(rpc_method, request, method_name, timeout)
-            except TimeoutError:
-                if attempt < self.max_attempts:
-                    self.state.metrics.serial_retries += 1
-                    await asyncio.sleep(
-                        min(SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (attempt - 1)), SERIAL_HANDSHAKE_BACKOFF_MAX)
-                    )
-        self.state.metrics.serial_failures += 1
-        logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
-        return False
+        def _before_sleep(_retry_state: tenacity.RetryCallState) -> None:
+            self.state.metrics.serial_retries += 1
+
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(self.max_attempts),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
+            retry=tenacity.retry_if_exception_type(TimeoutError),
+            before_sleep=_before_sleep,
+            reraise=False,
+        )
+
+        async def _attempt() -> bool | ProtobufMessage:
+            return await self._invoke_unary_once(rpc_method, request, method_name, timeout)
+
+        try:
+            return await retryer(_attempt)
+        except tenacity.RetryError:
+            self.state.metrics.serial_failures += 1
+            logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)
+            return False
 
     async def _invoke_server_stream_rpc(
         self,
@@ -953,15 +958,6 @@ class SerialTransport:
                 seq_id = self.tx_sequence_id
 
         label = spec.name if spec is not None else str(command_id)
-        if spec is _CONSOLE_WRITE_SPEC:
-            if isinstance(payload, bytes):
-                data = payload
-            elif hasattr(payload, "data"):
-                data = cast(bytes, getattr(payload, "data", b""))
-            else:
-                data = b""
-            return await self._write_hdlc_frame(protocol.HDLC_ADDRESS_CONSOLE, data, encrypt=True, label=label)
-
         is_link_reset = spec is _LINK_RESET_SPEC
         is_link_sync = spec is _LINK_SYNC_SPEC
         if self.config.serial_shared_secret and self.state.link_cipher is not None and is_link_sync:

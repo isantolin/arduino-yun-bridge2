@@ -4,20 +4,32 @@ from __future__ import annotations
 
 import contextlib
 import os
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import structlog
 import typer
 from pw_emu.core import Error as PwEmuError
 from pw_emu.frontend import Emulator
+from pw_hdlc.decode import FrameDecoder
+from pw_hdlc.encode import ui_frame
+from pw_metric_proto import metric_service_pb2
+from pw_rpc.callback_client.errors import RpcError as PwRpcError, RpcTimeout as PwRpcTimeout
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
+from pw_rpc.client import Client as PwRpcClient
+from pw_rpc.descriptors import Channel as PwRpcChannel
 
+from tools.console.pw_bridge_console import build_detokenizer, collect_metrics_tree
+from tools.emulation.emulation_pki import get_emulation_pki
 from tools.emulation.emulation_runner import (
     CLOUD_HOST,
     CLOUD_PORT,
@@ -30,7 +42,6 @@ from tools.emulation.emulation_runner import (
     setup_fake_uci,
     write_matrix_summary,
 )
-from tools.emulation.gateway_metrics import audit_gateway_pw_metrics
 from tools.emulation.process_utils import (
     cleanup_paths,
     start_daemon_thread,
@@ -44,6 +55,8 @@ from tools.emulation.stack_metrics import (
 )
 
 logger = structlog.get_logger("pw_emu_runner")
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +76,143 @@ class PwEmuTargetProfile:
     watermark_log_title: str = ""
     missing_tool_label: str = ""
     skipped_compile_label: str = "⚠️ Skipped"
+
+
+def resolve_gateway_binary() -> Path:
+    """Return the standalone gateway ELF binary path used to detokenize ``pw_metric`` names."""
+    return Path(
+        os.environ.get("MCUBRIDGE_GATEWAY_BINARY") or _REPO_ROOT / "build/mcubridge-gateway/mcubridge-gateway-cpp"
+    )
+
+
+class TlsMetricSession:
+    """Serialized TLS 1.3 + HDLC + pw_rpc session dedicated to MetricService queries."""
+
+    def __init__(self, sock: ssl.SSLSocket, *, timeout_s: float = 5.0) -> None:
+        self._sock = sock
+        self._sock.settimeout(0.05)
+        self._io_lock = threading.Lock()
+        self._decoder = FrameDecoder()
+        self._stop = threading.Event()
+        self._closed = False
+        self.errors: list[OSError] = []
+        self.rpc_client: Any = PwRpcClient.from_modules(
+            cast(Any, PwCallbackClientImpl)(default_unary_timeout_s=timeout_s),
+            [PwRpcChannel(1, self._send_rpc_packet)],
+            [metric_service_pb2],
+        )
+        self._reader_thread = start_daemon_thread(self._pump_incoming, "gateway-metrics-reader")
+
+    def _send_rpc_packet(self, payload: bytes) -> None:
+        frame = ui_frame(1, payload)
+        with self._io_lock:
+            if self._closed:
+                raise OSError("TLS gateway metrics socket is closed")
+            self._sock.sendall(frame)
+
+    def _pump_incoming(self) -> None:
+        while not self._stop.is_set():
+            with self._io_lock:
+                if self._closed:
+                    return
+                try:
+                    chunk = self._sock.recv(4096)
+                except (TimeoutError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                    continue
+                except OSError as exc:
+                    if not self._stop.is_set():
+                        self.errors.append(exc)
+                    return
+            if not chunk:
+                return
+            for frame in self._decoder.process(chunk):
+                if frame.ok() and frame.address == 1:
+                    self.rpc_client.process_packet(frame.data)
+
+    def close(self) -> None:
+        self._stop.set()
+        self._reader_thread.join(timeout=2.0)
+        with self._io_lock:
+            if not self._closed:
+                self._closed = True
+                self._sock.close()
+
+
+def open_tls_client_socket(host: str, port: int, timeout_s: float) -> ssl.SSLSocket:
+    """Open a mutually authenticated TLS 1.3 client socket to the emulation gateway."""
+    pki = get_emulation_pki()
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.load_verify_locations(cafile=str(pki.ca_cert))
+    ctx.load_cert_chain(certfile=str(pki.client.cert), keyfile=str(pki.client.key))
+    raw_sock = socket.create_connection((host, port), timeout=timeout_s)
+    try:
+        return ctx.wrap_socket(raw_sock, server_hostname=host)
+    except (OSError, ssl.SSLError):
+        raw_sock.close()
+        raise
+
+
+def fetch_gateway_pw_metrics(
+    host: str = CLOUD_HOST,
+    port: int = CLOUD_PORT,
+    *,
+    timeout_s: float = 5.0,
+    gateway_binary: Path | None = None,
+) -> dict[str, Any]:
+    """Query ``pw.metric.proto.MetricService/Get`` on the live emulation gateway."""
+    binary = gateway_binary if gateway_binary is not None else resolve_gateway_binary()
+    detokenizer, _resolved = build_detokenizer(firmware=binary if binary.is_file() else None)
+    session = TlsMetricSession(open_tls_client_socket(host, port, timeout_s), timeout_s=timeout_s)
+    try:
+        metrics = collect_metrics_tree(session.rpc_client.channel(1).rpcs, detokenizer, timeout_s=timeout_s)
+        if session.errors:
+            raise RuntimeError(f"Gateway MetricService transport error: {session.errors[0]}")
+        return metrics
+    finally:
+        session.close()
+
+
+def audit_gateway_pw_metrics(
+    host: str = CLOUD_HOST,
+    port: int = CLOUD_PORT,
+    *,
+    timeout_s: float = 5.0,
+    min_device_sessions: int = 1,
+    min_dispatches: int = 0,
+) -> bool:
+    """Audit live gateway ``pw_metric`` counters after an emulation session."""
+    try:
+        metrics = fetch_gateway_pw_metrics(host=host, port=port, timeout_s=timeout_s)
+    except (OSError, ssl.SSLError, TimeoutError, RuntimeError, ValueError, PwRpcError, PwRpcTimeout) as exc:
+        logger.error("Pigweed MetricService gateway audit failed", error=str(exc))
+        return False
+
+    gateway_obj = metrics.get("gateway")
+    if not isinstance(gateway_obj, dict):
+        logger.error("Gateway MetricService response missing 'gateway' group", keys=sorted(metrics.keys()))
+        return False
+
+    gw = cast(dict[str, Any], gateway_obj)
+    anomalies: list[str] = []
+    if int(gw.get("device_sessions_opened", 0)) < min_device_sessions:
+        anomalies.append(f"device_sessions_opened={gw.get('device_sessions_opened')} < {min_device_sessions}")
+    if int(gw.get("client_sessions_opened", 0)) < 1:
+        anomalies.append(f"client_sessions_opened={gw.get('client_sessions_opened')} < 1")
+    if int(gw.get("dispatches_total", 0)) < min_dispatches:
+        anomalies.append(f"dispatches_total={gw.get('dispatches_total')} < {min_dispatches}")
+    if int(gw.get("client_rejections_total", 0)) != 0:
+        anomalies.append(f"client_rejections_total={gw.get('client_rejections_total')} != 0")
+    if int(gw.get("acl_denials_total", 0)) != 0:
+        anomalies.append(f"acl_denials_total={gw.get('acl_denials_total')} != 0")
+
+    if anomalies:
+        logger.error("Pigweed MetricService gateway audit detected anomalies", anomalies=anomalies, gateway=gw)
+        return False
+
+    logger.info("Pigweed MetricService gateway audit passed", gateway=gw)
+    return True
 
 
 @contextlib.contextmanager

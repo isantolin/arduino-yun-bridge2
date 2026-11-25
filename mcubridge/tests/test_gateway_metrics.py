@@ -1,4 +1,4 @@
-"""Unit tests for tools.emulation.gateway_metrics (pw.metric.proto.MetricService audit)."""
+"""Unit tests for Pigweed MetricService gateway auditing in tools.emulation.pw_emu_runner."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from tools.emulation import gateway_metrics
+from tools.emulation import pw_emu_runner
 
 
 def test_audit_gateway_pw_metrics_passes_on_healthy_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,9 +25,9 @@ def test_audit_gateway_pw_metrics_passes_on_healthy_snapshot(monkeypatch: pytest
     def _fake_fetch(**_kwargs: Any) -> dict[str, Any]:
         return snapshot
 
-    monkeypatch.setattr(gateway_metrics, "fetch_gateway_pw_metrics", _fake_fetch)
+    monkeypatch.setattr(pw_emu_runner, "fetch_gateway_pw_metrics", _fake_fetch)
 
-    assert gateway_metrics.audit_gateway_pw_metrics(min_device_sessions=3, min_dispatches=3) is True
+    assert pw_emu_runner.audit_gateway_pw_metrics(min_device_sessions=3, min_dispatches=3) is True
 
 
 @pytest.mark.parametrize(
@@ -113,10 +113,10 @@ def test_audit_gateway_pw_metrics_rejects_anomalies(
     def _fake_fetch(**_kwargs: Any) -> dict[str, Any]:
         return snapshot
 
-    monkeypatch.setattr(gateway_metrics, "fetch_gateway_pw_metrics", _fake_fetch)
+    monkeypatch.setattr(pw_emu_runner, "fetch_gateway_pw_metrics", _fake_fetch)
 
     assert (
-        gateway_metrics.audit_gateway_pw_metrics(
+        pw_emu_runner.audit_gateway_pw_metrics(
             min_device_sessions=min_devices,
             min_dispatches=min_dispatches,
         )
@@ -130,9 +130,9 @@ def test_audit_gateway_pw_metrics_handles_transport_error(monkeypatch: pytest.Mo
     def _boom(**_kwargs: Any) -> dict[str, Any]:
         raise OSError("connection refused")
 
-    monkeypatch.setattr(gateway_metrics, "fetch_gateway_pw_metrics", _boom)
+    monkeypatch.setattr(pw_emu_runner, "fetch_gateway_pw_metrics", _boom)
 
-    assert gateway_metrics.audit_gateway_pw_metrics() is False
+    assert pw_emu_runner.audit_gateway_pw_metrics() is False
 
 
 def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
@@ -170,19 +170,19 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
         assert timeout_s > 0
         return {"gateway": {"dispatches_total": 4}}
 
-    monkeypatch.setattr(gateway_metrics, "_open_tls_client_socket", _fake_open_socket)
-    monkeypatch.setattr(gateway_metrics, "_TlsMetricSession", _FakeSession)
-    monkeypatch.setattr(gateway_metrics, "build_detokenizer", _fake_build_detokenizer)
-    monkeypatch.setattr(gateway_metrics, "collect_metrics_tree", _fake_collect_metrics)
+    monkeypatch.setattr(pw_emu_runner, "open_tls_client_socket", _fake_open_socket)
+    monkeypatch.setattr(pw_emu_runner, "TlsMetricSession", _FakeSession)
+    monkeypatch.setattr(pw_emu_runner, "build_detokenizer", _fake_build_detokenizer)
+    monkeypatch.setattr(pw_emu_runner, "collect_metrics_tree", _fake_collect_metrics)
 
     missing_bin = tmp_path / "missing-gateway"
-    res = gateway_metrics.fetch_gateway_pw_metrics(gateway_binary=missing_bin)
+    res = pw_emu_runner.fetch_gateway_pw_metrics(gateway_binary=missing_bin)
     assert res == {"gateway": {"dispatches_total": 4}}
     assert closed == [True]
     assert firmware_args == [None]
 
     fake_bin = tmp_path / "mcubridge-gateway-cpp"
     fake_bin.write_bytes(b"ELF")
-    res2 = gateway_metrics.fetch_gateway_pw_metrics(gateway_binary=fake_bin)
+    res2 = pw_emu_runner.fetch_gateway_pw_metrics(gateway_binary=fake_bin)
     assert res2 == {"gateway": {"dispatches_total": 4}}
     assert firmware_args == [None, fake_bin]

@@ -31,8 +31,6 @@ void __attribute__((weak)) handle_error(const etl::exception&) {
 
 namespace {
 
-uint32_t NowMillis() { return static_cast<uint32_t>(::millis()); }
-
 #if defined(ARDUINO_ARCH_AVR)
 void BridgePanicHook(int) {
   // Assertions are fatal. Put all application outputs into their configured
@@ -547,7 +545,7 @@ void BridgeClass::resetWcetStats() {
 void BridgeClass::_watchdogTask() {
   bridge::hal::watchdog_kick();
   if (_watchdog_timeout_ms > 0 && isSynchronized()) {
-    if (NowMillis() - _last_rx_ms > _watchdog_timeout_ms) {
+    if (bridge::hal::nowMillis() - _last_rx_ms > _watchdog_timeout_ms) {
       enterSafeState();
     }
   }
@@ -604,7 +602,7 @@ void zeroReceivedPlaintext(pw::span<const uint8_t> plaintext) {
 }  // namespace
 
 void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
-  _last_rx_ms = NowMillis();
+  _last_rx_ms = bridge::hal::nowMillis();
   g_metric_rx_frames.Increment();
   const uint64_t addr = frame.address();
   const auto raw_data = pw::span<const uint8_t>(
@@ -841,7 +839,7 @@ void BridgeClass::_emitStackWatermarkLog() {
 }
 
 void BridgeClass::_timerTask() {
-  const uint32_t now = NowMillis();
+  const uint32_t now = bridge::hal::nowMillis();
   if (_timer_last_tick_ms == 0) _timer_last_tick_ms = now;
   const uint32_t elapsed = now - _timer_last_tick_ms;
   if (elapsed > 0) {
@@ -854,7 +852,7 @@ bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
 bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
                                        uint32_t poll_delay_ms) {
-  const uint32_t start_ms = NowMillis();
+  const uint32_t start_ms = bridge::hal::nowMillis();
   const uint32_t step_ms = etl::max<uint32_t>(poll_delay_ms, 1U);
   uint8_t cursor = 0U;
   uint8_t sentinel = 0U;
@@ -863,7 +861,7 @@ bool BridgeClass::awaitSynchronization(uint32_t timeout_ms,
                      [this, start_ms, timeout_ms, step_ms](uint8_t) {
                        process();
                        if (isSynchronized()) return true;
-                       if (NowMillis() - start_ms >= timeout_ms) {
+                       if (bridge::hal::nowMillis() - start_ms >= timeout_ms) {
                          return true;
                        }
                        ::delay(step_ms);
@@ -1109,7 +1107,7 @@ void BridgeClass::_handleLinkReset() {
 
 void BridgeClass::_subscriptionTask() {
   if (!isSynchronized()) return;
-  const uint32_t now = NowMillis();
+  const uint32_t now = bridge::hal::nowMillis();
   etl::for_each(_pin_subscriptions.begin(), _pin_subscriptions.end(),
                 [this, now](PinSubscription& sub) {
                   if (!sub.active) return;

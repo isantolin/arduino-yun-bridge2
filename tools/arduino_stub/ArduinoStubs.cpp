@@ -1,4 +1,5 @@
 #include <etl/algorithm.h>
+#include <pw_chrono/system_clock.h>
 
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
@@ -35,3 +36,7 @@ void delay(unsigned long ms) {
 namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception& e) { (void)e; }
 }  // namespace etl
+
+namespace pw::chrono::backend {
+int64_t GetSystemClockTickCount() { return static_cast<int64_t>(::millis()); }
+}  // namespace pw::chrono::backend

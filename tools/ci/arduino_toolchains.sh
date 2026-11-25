@@ -16,8 +16,12 @@
 #     64-bit rollover-safe, interrupt-masked).
 #   - ESP32-S3 (xtensa-esp32s3-elf + ESP-IDF): std::chrono::steady_clock::now()
 #     calls clock_gettime(CLOCK_MONOTONIC) -> esp_time_impl_get_time(), which is
-#     ESP-IDF's 64-bit FreeRTOS/SMP-safe monotonic hardware timer. ESP32-S3 and
-#     Linux host builds therefore use upstream pw_chrono_stl.
+#     ESP-IDF's 64-bit FreeRTOS/SMP-safe monotonic hardware timer. ESP32-S3
+#     therefore uses upstream pw_chrono_stl.
+#   - Linux host tests & native emulators: use PW_CHRONO_ARDUINO_INC_FLAGS with
+#     GetSystemClockTickCount() in tools/arduino_stub/ArduinoStubs.cpp delegating
+#     to ::millis() so deterministic mock clocks and native emulators share one
+#     pw::chrono::SystemClock millisecond contract.
 
 MCUBRIDGE_MIN_ARM_GCC_MAJOR=10
 
@@ -91,7 +95,7 @@ PW_COMMON_INC_FLAGS=(
 )
 
 PW_INC_FLAGS=(
-    "${PW_CHRONO_STL_INC_FLAGS[@]}"
+    "${PW_CHRONO_ARDUINO_INC_FLAGS[@]}"
     "${PW_COMMON_INC_FLAGS[@]}"
 )
 PW_INC="${PW_INC_FLAGS[*]}"
@@ -211,7 +215,7 @@ stage_cooperative_pw_transfer() {
 
     PW_HOST_INC_FLAGS=(
         -I"${PW_TRANSFER_STAGED_INC_DIR}"
-        "${PW_CHRONO_STL_INC_FLAGS[@]}"
+        "${PW_CHRONO_ARDUINO_INC_FLAGS[@]}"
         "${PW_SYNC_STL_INC_FLAGS[@]}"
         "${PW_COMMON_INC_FLAGS[@]}"
     )

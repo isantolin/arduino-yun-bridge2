@@ -42,11 +42,13 @@ void SPIServiceClass::setConfig(const rpc_pb_SpiConfig& config) {
 size_t SPIServiceClass::transfer(pw::span<uint8_t> buffer) {
   if (!_initialized || buffer.empty()) return 0;
   SPI.beginTransaction(_settings);
-  const uint32_t start = millis();
+  const uint32_t start = bridge::hal::nowMillis();
   size_t transferred = 0U;
   const bool completed =
       etl::all_of(buffer.begin(), buffer.end(), [&](auto& b) {
-        if (millis() - start > bridge::config::SPI_TIMEOUT_MS) return false;
+        if (bridge::hal::nowMillis() - start > bridge::config::SPI_TIMEOUT_MS) {
+          return false;
+        }
         b = SPI.transfer(b);
         ++transferred;
         return true;

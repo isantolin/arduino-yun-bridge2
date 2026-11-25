@@ -26,7 +26,7 @@ from pw_metric_proto import metric_service_pb2
 from pw_rpc.callback_client.errors import RpcError as PwRpcError, RpcTimeout as PwRpcTimeout
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
-from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
+from pw_rpc.descriptors import Channel as PwRpcChannel
 
 from tools.console.pw_bridge_console import build_detokenizer, collect_metrics_tree
 from tools.emulation.emulation_pki import get_emulation_pki
@@ -57,12 +57,6 @@ from tools.emulation.stack_metrics import (
 logger = structlog.get_logger("pw_emu_runner")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_METRIC_SERVICES = PwRpcServices(
-    [
-        PwRpcService.from_descriptor(desc)
-        for desc in cast(Any, metric_service_pb2).DESCRIPTOR.services_by_name.values()
-    ]
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,10 +96,10 @@ class TlsMetricSession:
         self._stop = threading.Event()
         self._closed = False
         self.errors: list[OSError] = []
-        self.rpc_client = PwRpcClient(
+        self.rpc_client = PwRpcClient.from_modules(
             PwCallbackClientImpl(),
             [PwRpcChannel(1, self._send_rpc_packet)],
-            _METRIC_SERVICES,
+            [metric_service_pb2],
         )
         self._reader_thread = start_daemon_thread(self._pump_incoming, "gateway-metrics-reader")
 
@@ -172,10 +166,7 @@ def fetch_gateway_pw_metrics(
     detokenizer, _resolved = build_detokenizer(firmware=binary if binary.is_file() else None)
     session = TlsMetricSession(open_tls_client_socket(host, port, timeout_s))
     try:
-        channel = session.rpc_client.channel(1)
-        if channel is None:
-            raise RuntimeError("Gateway MetricService RPC channel 1 unavailable")
-        metrics = collect_metrics_tree(channel.rpcs, detokenizer, timeout_s=timeout_s)
+        metrics = collect_metrics_tree(session.rpc_client.channel(1).rpcs, detokenizer, timeout_s=timeout_s)
         if session.errors:
             raise RuntimeError(f"Gateway MetricService transport error: {session.errors[0]}")
         return metrics
@@ -198,7 +189,7 @@ def audit_gateway_pw_metrics(
         logger.error("Pigweed MetricService gateway audit failed", error=str(exc))
         return False
 
-    gateway_obj: object = metrics.get("gateway")
+    gateway_obj = metrics.get("gateway")
     if not isinstance(gateway_obj, dict):
         logger.error("Gateway MetricService response missing 'gateway' group", keys=sorted(metrics.keys()))
         return False

@@ -25,10 +25,7 @@ def test_rejects_incomplete_cli_summary() -> None:
 
 
 def test_calculates_avr_flash_and_static_ram_sections() -> None:
-    report = parse_avr_sections(
-        ".text 10000 0\n.data 200 8388864\n"
-        ".bss 700 8389064\n.noinit 16 8389764\n"
-    )
+    report = parse_avr_sections(".text 10000 0\n.data 200 8388864\n.bss 700 8389064\n.noinit 16 8389764\n")
     assert report["elf_flash_used_bytes"] == 10200
     assert report["elf_static_ram_used_bytes"] == 916
     assert report["elf_text_bytes"] == 10000

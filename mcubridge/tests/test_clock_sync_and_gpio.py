@@ -52,7 +52,7 @@ async def test_clock_sync_service() -> None:
 
         # Simulate MCU response
         now_us = time.time_ns() // 1000
-        mock_serial.send.return_value = mcu_wire_pb2.ClockSyncResponse(
+        mock_serial.invoke_rpc.return_value = mcu_wire_pb2.ClockSyncResponse(
             host_time_us=now_us - 1000,
             mcu_time_us=500000,
         )
@@ -132,13 +132,13 @@ async def test_gpio_service() -> None:
         gpio = service.gpio
         state.connection_fsm.connect()
 
-        mock_serial.send.return_value = True
+        mock_serial.invoke_rpc.return_value = True
 
         # Intervals below the floor would make the MCU report on every loop iteration.
-        sends_before = mock_serial.send.await_count
+        sends_before = mock_serial.invoke_rpc.await_count
         too_fast = await gpio.subscribe_pin(13, mode="INPUT", interval_ms=0, hysteresis=0)
         assert too_fast["status"] == "error"
-        assert mock_serial.send.await_count == sends_before
+        assert mock_serial.invoke_rpc.await_count == sends_before
 
         res = await gpio.subscribe_pin(13, mode="INPUT_PULLUP", interval_ms=100, hysteresis=2)
         assert res["status"] == "ok"
@@ -192,12 +192,12 @@ async def test_gpio_service() -> None:
         }
         assert await gpio.resubscribe_pins() == 1
         assert state.pin_subscriptions[5]["active"]
-        mock_serial.send.return_value = False
+        mock_serial.invoke_rpc.return_value = False
         assert await gpio.resubscribe_pins() == 0
         assert not state.pin_subscriptions[5]["active"]
 
         # Test rejection by MCU
-        mock_serial.send.return_value = False
+        mock_serial.invoke_rpc.return_value = False
         res_rej = await gpio.subscribe_pin(13, enabled=True)
         assert res_rej["status"] == "error"
         assert res_rej["message"] == "MCU rejected pin subscription"
@@ -223,7 +223,7 @@ async def test_ubus_clock_and_gpio_handlers() -> None:
         ubus.loop = asyncio.get_running_loop()
         state.connection_fsm.connect()
 
-        mock_serial.send.return_value = True
+        mock_serial.invoke_rpc.return_value = True
 
         # Native UBUS invokes synchronous handlers from its polling worker thread.
         sub_reply = await asyncio.to_thread(
@@ -258,13 +258,13 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
         state.mcu_capabilities = {"watchdog": True, "clock_sync": False}
         status = await clock.sync_now()
         assert status["sync_count"] == 0
-        assert mock_serial.send.call_count == 0
+        assert mock_serial.invoke_rpc.call_count == 0
         assert clock.fsm.current_state_value == "unsupported"
 
         # 2. Capabilities dict with clock_sync enabled -> executes send with timeout=1.0
         state.mcu_capabilities = {"watchdog": True, "clock_sync": True}
         now_us = time.time_ns() // 1000
-        mock_serial.send.return_value = mcu_wire_pb2.ClockSyncResponse(
+        mock_serial.invoke_rpc.return_value = mcu_wire_pb2.ClockSyncResponse(
             host_time_us=now_us - 500,
             mcu_time_us=123456,
         )
@@ -274,12 +274,12 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
             state="synchronized",
             is_synchronized=True,
         )
-        assert mock_serial.send.call_count == 1
-        call_kwargs = mock_serial.send.call_args.kwargs
+        assert mock_serial.invoke_rpc.call_count == 1
+        call_kwargs = mock_serial.invoke_rpc.call_args.kwargs
         assert call_kwargs.get("timeout") == 1.0
 
         # 3. Subsequent probe failure while synchronized transitions to degraded
-        mock_serial.send.return_value = False
+        mock_serial.invoke_rpc.return_value = False
         res_fail = await clock.sync_now()
         assert res_fail["state"] == "degraded"
         assert res_fail["is_synchronized"] is False
@@ -288,7 +288,7 @@ async def test_clock_sync_skipped_when_capability_missing() -> None:
         clock.fsm.disconnect()
         assert clock.fsm.current_state_value == "idle"
         state.mcu_capabilities = mcu_wire_pb2.Capabilities(watchdog=True, spi=True)
-        mock_serial.send.return_value = None
+        mock_serial.invoke_rpc.return_value = None
         res_probe_fail = await clock.sync_now()
         assert res_probe_fail["state"] == "unsupported"
         assert res_probe_fail["is_synchronized"] is False
@@ -324,12 +324,12 @@ async def test_clock_sync_fsm_lifecycle() -> None:
         # Successful sync -> synchronized
         state.mcu_capabilities = {"clock_sync": True}
         now_us = time.time_ns() // 1000
-        mock_serial.send.return_value = mcu_wire_pb2.ClockSyncResponse(host_time_us=now_us - 100, mcu_time_us=1000)
+        mock_serial.invoke_rpc.return_value = mcu_wire_pb2.ClockSyncResponse(host_time_us=now_us - 100, mcu_time_us=1000)
         await clock.sync_now()
         assert clock.fsm.current_state_value == "synchronized"
 
         # Failure while synchronized -> degraded
-        mock_serial.send.return_value = None
+        mock_serial.invoke_rpc.return_value = None
         await clock.sync_now()
         assert clock.fsm.current_state_value == "degraded"
 
@@ -354,7 +354,7 @@ async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
         # 1. Return ClockSyncResponse from mock_serial
         t1 = time.time_ns() // 1000 - 500
         resp_pb = mcu_wire_pb2.ClockSyncResponse(host_time_us=t1, mcu_time_us=123456)
-        mock_serial.send.return_value = resp_pb
+        mock_serial.invoke_rpc.return_value = resp_pb
 
         res1 = await clock.sync_now()
         assert res1["is_synchronized"] is True
@@ -381,7 +381,7 @@ async def test_clock_sync_initial_probe_failure() -> None:
         # No capabilities published yet, fsm in idle -> initial probe
         assert clock.fsm.idle.is_active
 
-        mock_serial.send.return_value = None
+        mock_serial.invoke_rpc.return_value = None
         res = await clock.sync_now()
         assert clock.fsm.unsupported.is_active
         assert res["state"] == "unsupported"
@@ -421,7 +421,7 @@ async def test_clock_sync_loop_exception_handling() -> None:
         assert clock.fsm.synchronized.is_active
 
         # Boundary mock_serial raises TimeoutError
-        mock_serial.send = AsyncMock(side_effect=TimeoutError("serial timeout"))
+        mock_serial.invoke_rpc = AsyncMock(side_effect=TimeoutError("serial timeout"))
 
         # Run loop iteration under exception via public lifecycle
         task = asyncio.create_task(clock.run())
@@ -453,7 +453,7 @@ async def test_local_bridge_pin_subscribe() -> None:
 
     try:
         state.connection_fsm.connect()
-        mock_serial.send.return_value = True
+        mock_serial.invoke_rpc.return_value = True
 
         req = mcu_wire_pb2.PinSubscribeRequest(
             pin=13,
@@ -510,7 +510,7 @@ async def test_clock_sync_loop_degraded_branch(
     assert clock.fsm.synchronized.is_active
 
     assert svc.serial is not None
-    svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
+    svc.serial.invoke_rpc = AsyncMock(side_effect=TimeoutError("Sync timed out"))
     task = asyncio.create_task(clock.run())
     await asyncio.sleep(0.03)
     assert clock.fsm.degraded.is_active
@@ -529,7 +529,7 @@ async def test_clock_sync_loop_idle_exception_marks_unsupported(
     assert clock.fsm.idle.is_active
 
     assert svc.serial is not None
-    svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
+    svc.serial.invoke_rpc = AsyncMock(side_effect=TimeoutError("Sync timed out"))
     task = asyncio.create_task(clock.run())
     await asyncio.sleep(0.03)
     assert clock.fsm.unsupported.is_active

@@ -63,7 +63,7 @@ class GpioService:
             enabled=enabled,
         )
 
-        if await serial.send("rpc.pb.GpioService/SubscribePins", req):
+        if await serial.invoke_rpc(serial.rpcs.rpc.pb.GpioService.SubscribePins, req):
             state = self._runtime.state
             if enabled:
                 state.pin_subscriptions[pin] = {
@@ -101,7 +101,7 @@ class GpioService:
                 hysteresis=int(sub.get("hysteresis", DEFAULT_PIN_HYSTERESIS)),
                 enabled=True,
             )
-            if await serial.send("rpc.pb.GpioService/SubscribePins", req):
+            if await serial.invoke_rpc(serial.rpcs.rpc.pb.GpioService.SubscribePins, req):
                 sub["active"] = True
                 restored += 1
             else:

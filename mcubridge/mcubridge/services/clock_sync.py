@@ -104,7 +104,7 @@ class ClockSyncService:
         # [SIL-2] Bounded response timeout: do not monopolize serial flow lock for 20s.
         timeout_seconds = float(protocol.DEFAULT_CLOCK_SYNC_TIMEOUT_MS) / 1000.0
         with structlog.contextvars.bound_contextvars(clock_state=self.fsm.current_state_value):
-            res = await serial.send("rpc.pb.ClockSyncService/ClockSync", req, timeout=timeout_seconds)
+            res = await serial.invoke_rpc(serial.rpcs.rpc.pb.ClockSyncService.ClockSync, req, timeout=timeout_seconds)
             if isinstance(res, pb.ClockSyncResponse):
                 return self.record_sync(res)
 

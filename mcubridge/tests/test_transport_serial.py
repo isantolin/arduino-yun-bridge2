@@ -59,11 +59,17 @@ async def test_feed_data_crc_mismatch_reports_crc() -> None:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         transport = SerialTransport(config, state, service)
 
-        # Invalid HDLC frame with bad FCS
+        # Invalid HDLC frame with bad FCS increments both decode and CRC counters
         bad_frame = b"\x7e\x01\x03" + b"x" * 20 + b"\x12\x34\x56\x78\x7e"
         await transport.feed_data(bad_frame)
 
         assert state.serial_decode_errors == 1
+        assert state.metrics.serial_crc_errors == 1
+
+        # Framing error (dangling escape) increments decode errors only, not CRC errors
+        await transport.feed_data(b"\x7e\x7d\x7e")
+
+        assert state.serial_decode_errors == 2
         assert state.metrics.serial_crc_errors == 1
     finally:
         state.cleanup()

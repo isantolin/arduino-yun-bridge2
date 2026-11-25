@@ -87,7 +87,7 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   mcu_wire_proto.raw_rpc pw_rpc.raw.client_api pw_rpc.client
   OpenSSL::SSL OpenSSL::Crypto Threads::Threads
   pw_assert pw_log pw_log_basic pw_hdlc pw_hdlc.rpc_channel_output
-  pw_metric pw_metric.metric_service_pwpb pw_result
+  pw_metric pw_metric.metric_service_pwpb pw_result pw_string
   pw_rpc.server pw_transfer
   pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.lock_annotations
   pw_sync.scoped_locker pw_sync.binary_semaphore

@@ -54,6 +54,7 @@
 #include "pw_status/try.h"
 #include "pw_stream/memory_stream.h"
 #include "pw_stream/stream.h"
+#include "pw_string/string_builder.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
 #include "pw_sync/scoped_locker.h"
@@ -143,28 +144,31 @@ std::filesystem::path DeviceStagingDir(const std::string& device_id) {
 // Creates `dir` if needed and verifies it is a real directory owned by this
 // process with mode 0700; refuses symlinks and foreign owners.
 pw::Status EnsurePrivateDirectory(const std::filesystem::path& dir,
-                                  std::string& error) {
+                                  pw::StringBuilder& error) {
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
   struct stat info{};
   if (lstat(dir.c_str(), &info) != 0 || !S_ISDIR(info.st_mode)) {
-    error =
-        "staging path is not a directory (or is a symlink): " + dir.string();
+    error.clear();
+    error.Format("staging path is not a directory (or is a symlink): %s",
+                 dir.c_str());
     return pw::Status::FailedPrecondition();
   }
   if (info.st_uid != geteuid()) {
-    error = "staging directory is owned by another user: " + dir.string();
+    error.clear();
+    error.Format("staging directory is owned by another user: %s", dir.c_str());
     return pw::Status::PermissionDenied();
   }
   if (chmod(dir.c_str(), S_IRWXU) != 0) {
-    error = "cannot set mode 0700 on staging directory: " + dir.string();
+    error.clear();
+    error.Format("cannot set mode 0700 on staging directory: %s", dir.c_str());
     return pw::Status::Internal();
   }
   return pw::OkStatus();
 }
 
 pw::Status PrepareStagingRoot(const std::filesystem::path& root,
-                              std::string& error) {
+                              pw::StringBuilder& error) {
   PW_TRY(EnsurePrivateDirectory(root, error));
   PW_TRY(EnsurePrivateDirectory(root / "clients", error));
   PW_TRY(EnsurePrivateDirectory(root / "devices", error));
@@ -267,56 +271,67 @@ class TlsSocket {
   }
   TlsSocket(const TlsSocket&) = delete;
   TlsSocket& operator=(const TlsSocket&) = delete;
-  bool SetNonBlocking() const {
+  pw::Status SetNonBlocking() const {
     const int flags = fcntl(fd_, F_GETFL, 0);
-    return flags >= 0 && fcntl(fd_, F_SETFL, flags | O_NONBLOCK) == 0;
+    if (flags < 0 || fcntl(fd_, F_SETFL, flags | O_NONBLOCK) != 0) {
+      return pw::Status::Internal();
+    }
+    return pw::OkStatus();
   }
-  bool Read(std::byte* destination, size_t capacity, size_t& bytes_read,
-            const std::atomic<bool>& stopping) PW_LOCKS_EXCLUDED(ssl_mutex_) {
-    bytes_read = 0;
+  pw::Result<size_t> Read(pw::ByteSpan destination,
+                          const std::atomic<bool>& stopping)
+      PW_LOCKS_EXCLUDED(ssl_mutex_) {
     while (!stopping.load()) {
+      size_t bytes_read = 0;
       int result;
       int ssl_error = SSL_ERROR_NONE;
       {
         pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
-        result = SSL_read_ex(ssl_, destination, capacity, &bytes_read);
+        result = SSL_read_ex(ssl_, destination.data(), destination.size(),
+                             &bytes_read);
         if (result != 1) ssl_error = SSL_get_error(ssl_, result);
       }
-      if (result == 1) return bytes_read > 0;
+      if (result == 1) {
+        if (bytes_read == 0) return pw::Status::OutOfRange();
+        return bytes_read;
+      }
       if (ssl_error == SSL_ERROR_WANT_READ) {
-        if (!Wait(POLLIN, stopping)) return false;
+        PW_TRY(Wait(POLLIN, stopping));
       } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
-        if (!Wait(POLLOUT, stopping)) return false;
+        PW_TRY(Wait(POLLOUT, stopping));
+      } else if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+        return pw::Status::OutOfRange();
       } else {
-        return false;
+        return pw::Status::Internal();
       }
     }
-    return false;
+    return pw::Status::Cancelled();
   }
-  bool Write(const std::byte* source, size_t size,
-             const std::atomic<bool>& stopping) PW_LOCKS_EXCLUDED(ssl_mutex_) {
+  pw::Status Write(pw::ConstByteSpan source, const std::atomic<bool>& stopping)
+      PW_LOCKS_EXCLUDED(ssl_mutex_) {
     size_t offset = 0;
-    while (offset < size && !stopping.load()) {
+    while (offset < source.size() && !stopping.load()) {
       size_t written = 0;
       int result;
       int ssl_error = SSL_ERROR_NONE;
       {
         pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
-        result = SSL_write_ex(ssl_, source + offset, size - offset, &written);
+        result = SSL_write_ex(ssl_, source.data() + offset,
+                              source.size() - offset, &written);
         if (result != 1) ssl_error = SSL_get_error(ssl_, result);
       }
       if (result == 1) {
-        if (written == 0) return false;
+        if (written == 0) return pw::Status::Internal();
         offset += written;
       } else if (ssl_error == SSL_ERROR_WANT_READ) {
-        if (!Wait(POLLIN, stopping)) return false;
+        PW_TRY(Wait(POLLIN, stopping));
       } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
-        if (!Wait(POLLOUT, stopping)) return false;
+        PW_TRY(Wait(POLLOUT, stopping));
       } else {
-        return false;
+        return pw::Status::Internal();
       }
     }
-    return offset == size;
+    return offset == source.size() ? pw::OkStatus() : pw::Status::Cancelled();
   }
   void Stop() const { shutdown(fd_, SHUT_RDWR); }
   ~TlsSocket() PW_LOCKS_EXCLUDED(ssl_mutex_) {
@@ -336,21 +351,21 @@ class TlsSocket {
     pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
     return SSL_pending(ssl_) > 0;
   }
-  bool Wait(short events, const std::atomic<bool>& stopping)
+  pw::Status Wait(short events, const std::atomic<bool>& stopping)
       PW_LOCKS_EXCLUDED(ssl_mutex_) {
     pollfd descriptor{fd_, events, 0};
     while (!stopping.load()) {
-      if ((events & POLLIN) != 0 && HasPending()) return true;
+      if ((events & POLLIN) != 0 && HasPending()) return pw::OkStatus();
       const int result = poll(&descriptor, 1, 250);
       if (result > 0) {
         if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
-          return false;
-        if ((descriptor.revents & events) != 0) return true;
+          return pw::Status::OutOfRange();
+        if ((descriptor.revents & events) != 0) return pw::OkStatus();
       } else if (result < 0 && errno != EINTR) {
-        return false;
+        return pw::Status::Internal();
       }
     }
-    return false;
+    return pw::Status::Cancelled();
   }
   pw::sync::Mutex ssl_mutex_;
   SSL* ssl_ PW_GUARDED_BY(ssl_mutex_);
@@ -366,24 +381,24 @@ class TlsQueueWriter final : public pw::stream::NonSeekableWriter {
     pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     return AvailableWriteBytesLocked();
   }
-  bool Pop(std::vector<std::byte>& output, const std::atomic<bool>& stopping)
+  pw::Result<std::vector<std::byte>> Pop(const std::atomic<bool>& stopping)
       PW_LOCKS_EXCLUDED(mutex_) {
     while (true) {
       {
         pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
         if (!queue_.empty()) {
-          output = std::move(queue_.front());
+          std::vector<std::byte> output = std::move(queue_.front());
           queue_.pop_front();
           queued_bytes_ -= output.size();
-          return true;
+          return output;
         }
         if (stopped_ || stopping.load()) {
-          return false;
+          return pw::Status::Cancelled();
         }
       }
       if (!ready_.try_acquire_for(pw::chrono::SystemClock::for_at_least(
               std::chrono::milliseconds(250)))) {
-        return false;
+        return pw::Status::DeadlineExceeded();
       }
     }
   }
@@ -466,11 +481,13 @@ class GatewaySession;
 
 class DeviceSessionRegistry {
  public:
-  bool Register(const std::string& device_id,
-                std::shared_ptr<GatewaySession> session)
+  pw::Status Register(const std::string& device_id,
+                      std::shared_ptr<GatewaySession> session)
       PW_LOCKS_EXCLUDED(mutex_) {
     pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
-    return sessions_.emplace(device_id, std::move(session)).second;
+    return sessions_.emplace(device_id, std::move(session)).second
+               ? pw::OkStatus()
+               : pw::Status::AlreadyExists();
   }
   void Unregister(const std::string& device_id, const GatewaySession* session)
       PW_LOCKS_EXCLUDED(mutex_) {
@@ -480,11 +497,12 @@ class DeviceSessionRegistry {
       sessions_.erase(it);
     }
   }
-  std::shared_ptr<GatewaySession> Lookup(const std::string& device_id)
-      PW_LOCKS_EXCLUDED(mutex_) {
+  pw::Result<std::shared_ptr<GatewaySession>> Lookup(
+      const std::string& device_id) PW_LOCKS_EXCLUDED(mutex_) {
     pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
     const auto it = sessions_.find(device_id);
-    return it != sessions_.end() ? it->second : nullptr;
+    if (it == sessions_.end()) return pw::Status::NotFound();
+    return it->second;
   }
   size_t size() const PW_LOCKS_EXCLUDED(mutex_) {
     pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
@@ -510,12 +528,13 @@ class GatewayAcl {
   };
 
   static pw::Result<GatewayAcl> Load(const std::string& path,
-                                     std::string& error) {
+                                     pw::StringBuilder& error) {
     GatewayAcl acl;
     if (path.empty()) return acl;
     std::ifstream input(path);
     if (!input) {
-      error = "cannot read ACL file " + path;
+      error.clear();
+      error.Format("cannot read ACL file %s", path.c_str());
       return pw::Status::NotFound();
     }
     std::string line;
@@ -530,9 +549,11 @@ class GatewayAcl {
       if (!(fields >> rule.client)) continue;  // blank or comment-only line
       if (!(fields >> rule.device >> rule.operation) || (fields >> extra) ||
           rule.client == "*") {
-        error = "invalid ACL rule at " + path + ":" +
-                std::to_string(line_number) +
-                " (expected: <client> <device|*> <operation|*>)";
+        error.clear();
+        error.Format(
+            "invalid ACL rule at %s:%zu (expected: <client> <device|*> "
+            "<operation|*>)",
+            path.c_str(), line_number);
         return pw::Status::InvalidArgument();
       }
       acl.rules_.push_back(std::move(rule));
@@ -560,10 +581,12 @@ class GatewayAcl {
 
 class ClientSessionRegistry {
  public:
-  bool Register(const std::string& principal_id, const void* session)
+  pw::Status Register(const std::string& principal_id, const void* session)
       PW_LOCKS_EXCLUDED(mutex_) {
     pw::ScopedLocker<pw::sync::Mutex> lock(mutex_);
-    return sessions_.emplace(principal_id, session).second;
+    return sessions_.emplace(principal_id, session).second
+               ? pw::OkStatus()
+               : pw::Status::AlreadyExists();
   }
   void Unregister(const std::string& principal_id, const void* session)
       PW_LOCKS_EXCLUDED(mutex_) {
@@ -940,13 +963,13 @@ class GatewayTransportSession : public SessionControl {
   }
 
   void TransmitLoop() {
-    std::vector<std::byte> frame;
     while (!stopping_.load()) {
-      if (!tx_writer_.Pop(frame, stopping_)) continue;
-      if (!socket_.Write(frame.data(), frame.size(), stopping_)) {
+      auto frame = tx_writer_.Pop(stopping_);
+      if (!frame.ok()) continue;
+      if (!socket_.Write(*frame, stopping_).ok()) {
         if (log_tx_frames_) {
           PW_LOG_WARN("%s=%s event=tx_frame_failed frame_bytes=%zu",
-                      peer_role_.data(), peer_id_.c_str(), frame.size());
+                      peer_role_.data(), peer_id_.c_str(), frame->size());
         }
         stopping_.store(true);
         OnStopSignal();
@@ -955,7 +978,7 @@ class GatewayTransportSession : public SessionControl {
       }
       if (log_tx_frames_) {
         PW_LOG_INFO("%s=%s event=tx_frame_sent frame_bytes=%zu",
-                    peer_role_.data(), peer_id_.c_str(), frame.size());
+                    peer_role_.data(), peer_id_.c_str(), frame->size());
       }
     }
   }
@@ -963,9 +986,9 @@ class GatewayTransportSession : public SessionControl {
   void ReceiveLoop() {
     std::array<std::byte, 4096> input{};
     while (!stopping_.load()) {
-      size_t received = 0;
-      if (!socket_.Read(input.data(), input.size(), received, stopping_)) break;
-      for (size_t i = 0; i < received; ++i) {
+      const pw::Result<size_t> received = socket_.Read(input, stopping_);
+      if (!received.ok()) break;
+      for (size_t i = 0; i < *received; ++i) {
         auto frame = decoder_.Process(input[i]);
         if (frame.status() == pw::Status::Unavailable()) continue;
         if (!frame.ok() || frame->address() != kRpcHdlcAddress) continue;
@@ -1029,8 +1052,8 @@ class GatewaySession final
   GatewaySession& operator=(const GatewaySession&) = delete;
 
   void Run() override {
-    if (!socket_.SetNonBlocking()) return;
-    if (!registry_.Register(device_id_, shared_from_this())) {
+    if (!socket_.SetNonBlocking().ok()) return;
+    if (!registry_.Register(device_id_, shared_from_this()).ok()) {
       metrics_.client_rejections_total.Increment();
       PW_LOG_WARN("device=%s event=session_rejected reason=duplicate_session",
                   device_id_.c_str());
@@ -1246,7 +1269,7 @@ class GatewayControlService final
                   client_id_.c_str(), target_id.c_str());
       return pw::Status::FailedPrecondition();
     }
-    std::string error;
+    pw::StringBuffer<256> error;
     if (!EnsurePrivateDirectory(DeviceStagingDir(target_id), error).ok()) {
       PW_LOG_ERROR("client=%s event=dispatch_staging_error target=%s detail=%s",
                    client_id_.c_str(), target_id.c_str(), error.c_str());
@@ -1272,7 +1295,7 @@ class GatewayControlService final
                   client_id_.c_str(), target_id.c_str());
       return pw::Status::NotFound();
     }
-    std::string error;
+    pw::StringBuffer<256> error;
     if (!EnsurePrivateDirectory(ClientStagingDir(client_id_), error).ok()) {
       std::filesystem::remove(device_file, ec);
       return pw::Status::Internal();
@@ -1299,10 +1322,7 @@ class GatewayControlService final
                   static_cast<int>(op.size()), op.data());
       return pw::Status::PermissionDenied();
     }
-    auto session = devices_.Lookup(target_id);
-    if (!session) {
-      return pw::Status::NotFound();
-    }
+    PW_TRY_ASSIGN(auto session, devices_.Lookup(target_id));
 
     // Operations that move a staged file between the client's and the
     // device's private directories (ADR-0007). Push consumes the client's
@@ -1386,8 +1406,8 @@ class GatewayClientSession final : public GatewayTransportSession {
   GatewayClientSession& operator=(const GatewayClientSession&) = delete;
 
   void Run() override {
-    if (!socket_.SetNonBlocking()) return;
-    if (!clients_.Register(client_id_, this)) {
+    if (!socket_.SetNonBlocking().ok()) return;
+    if (!clients_.Register(client_id_, this).ok()) {
       metrics_.client_rejections_total.Increment();
       PW_LOG_WARN("client=%s event=session_rejected reason=duplicate_session",
                   client_id_.c_str());
@@ -1542,10 +1562,11 @@ using TlsContext = std::unique_ptr<SSL_CTX, TlsContextDeleter>;
 pw::Result<TlsContext> CreateTlsContext(const std::string& certificate,
                                         const std::string& private_key,
                                         const std::string& client_ca,
-                                        std::string& error) {
+                                        pw::StringBuilder& error) {
   TlsContext context(SSL_CTX_new(TLS_server_method()));
   if (!context) {
-    error = "SSL_CTX_new failed";
+    error.clear();
+    error << "SSL_CTX_new failed";
     return pw::Status::Internal();
   }
   if (SSL_CTX_set_min_proto_version(context.get(), TLS1_3_VERSION) != 1 ||
@@ -1557,7 +1578,8 @@ pw::Result<TlsContext> CreateTlsContext(const std::string& certificate,
       SSL_CTX_load_verify_locations(context.get(), client_ca.c_str(),
                                     nullptr) != 1 ||
       SSL_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_CLIENT) != 1) {
-    error = "TLS certificate configuration failed";
+    error.clear();
+    error << "TLS certificate configuration failed";
     return pw::Status::InvalidArgument();
   }
   SSL_CTX_set_verify_depth(context.get(), 4);
@@ -1573,7 +1595,8 @@ pw::Result<TlsContext> CreateTlsContext(const std::string& certificate,
 }
 
 pw::Result<int> CreateListener(const std::string& bind_address,
-                               const std::string& port, std::string& error) {
+                               const std::string& port,
+                               pw::StringBuilder& error) {
   addrinfo hints{};
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
@@ -1582,7 +1605,8 @@ pw::Result<int> CreateListener(const std::string& bind_address,
   const char* host = bind_address == "*" ? nullptr : bind_address.c_str();
   const int lookup = getaddrinfo(host, port.c_str(), &hints, &addresses);
   if (lookup != 0) {
-    error = gai_strerror(lookup);
+    error.clear();
+    error << gai_strerror(lookup);
     return pw::Status::InvalidArgument();
   }
   int listener = -1;
@@ -1601,7 +1625,8 @@ pw::Result<int> CreateListener(const std::string& bind_address,
   }
   freeaddrinfo(addresses);
   if (listener < 0) {
-    error = "unable to bind TCP listener";
+    error.clear();
+    error << "unable to bind TCP listener";
     return pw::Status::Unavailable();
   }
   return listener;
@@ -1617,7 +1642,7 @@ pw::Result<GatewayStartup> InitializeGateway(
     const std::string& certificate, const std::string& private_key,
     const std::string& client_ca, const std::string& acl_path,
     const std::string& staging_dir, const std::string& bind_address,
-    const std::string& port, std::string& error) {
+    const std::string& port, pw::StringBuilder& error) {
   PW_TRY_ASSIGN(GatewayAcl acl, GatewayAcl::Load(acl_path, error));
   g_staging_root = staging_dir;
   PW_TRY(PrepareStagingRoot(g_staging_root, error));
@@ -1643,7 +1668,8 @@ struct GatewayCliOptions {
   bool show_help = false;
 };
 
-bool ParseCliOptions(int argc, char** argv, GatewayCliOptions& options) {
+pw::Result<GatewayCliOptions> ParseCliOptions(int argc, char** argv) {
+  GatewayCliOptions options;
   static constexpr option kLongOptions[] = {
       {"cert", required_argument, nullptr, 'c'},
       {"key", required_argument, nullptr, 'k'},
@@ -1683,12 +1709,13 @@ bool ParseCliOptions(int argc, char** argv, GatewayCliOptions& options) {
         break;
       case 'h':
         options.show_help = true;
-        return true;
+        return options;
       default:
-        return false;
+        return pw::Status::InvalidArgument();
     }
   }
-  return optind == argc;
+  if (optind != argc) return pw::Status::InvalidArgument();
+  return options;
 }
 
 void ReapTasks(std::vector<std::unique_ptr<SessionTask>>& tasks) {
@@ -1710,11 +1737,12 @@ int main(int argc, char** argv) {
       "usage: mcubridge-gateway-cpp --cert FILE --key FILE "
       "--client-ca FILE [--acl FILE] [--staging-dir DIR] [--bind ADDRESS] "
       "[--port PORT]\n";
-  GatewayCliOptions cli;
-  if (!ParseCliOptions(argc, argv, cli)) {
+  auto parsed_cli = ParseCliOptions(argc, argv);
+  if (!parsed_cli.ok()) {
     std::cerr << kUsage;
     return 2;
   }
+  const GatewayCliOptions& cli = *parsed_cli;
   if (cli.show_help) {
     std::cout << kUsage;
     return 0;
@@ -1726,7 +1754,7 @@ int main(int argc, char** argv) {
   }
   const std::string& bind_address = cli.bind_address;
   const std::string& port = cli.port;
-  std::string error;
+  pw::StringBuffer<256> error;
   auto startup = InitializeGateway(cli.certificate, cli.private_key,
                                    cli.client_ca, cli.acl_path, cli.staging_dir,
                                    bind_address, port, error);

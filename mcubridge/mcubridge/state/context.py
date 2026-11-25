@@ -81,7 +81,7 @@ class ProcessMachine(StateMachine):
 
     start = spawning.to(running)
     terminate = running.to(terminating) | terminating.to(terminating)
-    finish = exited.from_.any()
+    finish = running.to(exited) | terminating.to(exited) | spawning.to(exited)
 
 
 class ProcessContext:
@@ -117,12 +117,44 @@ class SerialLinkMachine(StateMachine):
         | synchronized.to(negotiating_baud)
         | negotiating_baud.to(negotiating_baud)
     )
-    connect = connected.from_.any()
-    synchronize = synchronized.from_.any()
+    connect = (
+        disconnected.to(connected)
+        | opening.to(connected)
+        | negotiating_baud.to(connected)
+        | synchronized.to(connected)
+        | paused.to(connected)
+        | fault.to(connected)
+        | connected.to(connected)
+    )
+    synchronize = (
+        disconnected.to(synchronized)
+        | opening.to(synchronized)
+        | negotiating_baud.to(synchronized)
+        | connected.to(synchronized)
+        | paused.to(synchronized)
+        | fault.to(synchronized)
+        | synchronized.to(synchronized)
+    )
     pause = synchronized.to(paused) | connected.to(paused) | paused.to(paused)
     resume = paused.to(synchronized) | synchronized.to(synchronized) | paused.to(connected) | connected.to(connected)
-    fail = fault.from_.any()
-    disconnect = disconnected.from_.any()
+    fail = (
+        disconnected.to(fault)
+        | opening.to(fault)
+        | negotiating_baud.to(fault)
+        | connected.to(fault)
+        | synchronized.to(fault)
+        | paused.to(fault)
+        | fault.to(fault)
+    )
+    disconnect = (
+        connected.to(disconnected)
+        | synchronized.to(disconnected)
+        | opening.to(disconnected)
+        | negotiating_baud.to(disconnected)
+        | paused.to(disconnected)
+        | fault.to(disconnected)
+        | disconnected.to(disconnected)
+    )
 
 
 class DaemonLifecycleMachine(StateMachine):
@@ -139,7 +171,13 @@ class DaemonLifecycleMachine(StateMachine):
     start = uninitialized.to(starting) | stopped.to(starting)
     run = starting.to(running) | running.to(running)
     drain = running.to(draining) | starting.to(draining) | draining.to(draining)
-    stop = stopped.from_.any()
+    stop = (
+        draining.to(stopped)
+        | running.to(stopped)
+        | starting.to(stopped)
+        | uninitialized.to(stopped)
+        | stopped.to(stopped)
+    )
 
 
 class CloudLinkState(StrEnum):
@@ -182,7 +220,13 @@ class CloudLinkMachine(StateMachine):
         | spooling_degraded.to(spooling_degraded)
     )
     start_reconnect = spooling_degraded.to(reconnecting) | connecting.to(reconnecting) | reconnecting.to(reconnecting)
-    disable = disabled.from_.any()
+    disable = (
+        connecting.to(disabled)
+        | connected_tls.to(disabled)
+        | spooling_degraded.to(disabled)
+        | reconnecting.to(disabled)
+        | disabled.to(disabled)
+    )
 
 
 class RuntimeState:

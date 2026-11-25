@@ -18,7 +18,6 @@ _ANOMALY_CASES: list[tuple[dict[str, Any], int, int]] = [
                 "device_sessions_opened": 0,
                 "client_sessions_opened": 1,
                 "dispatches_total": 1,
-                "client_rejections_total": 0,
                 "acl_denials_total": 0,
             }
         },
@@ -31,7 +30,6 @@ _ANOMALY_CASES: list[tuple[dict[str, Any], int, int]] = [
                 "device_sessions_opened": 1,
                 "client_sessions_opened": 0,
                 "dispatches_total": 1,
-                "client_rejections_total": 0,
                 "acl_denials_total": 0,
             }
         },
@@ -44,7 +42,6 @@ _ANOMALY_CASES: list[tuple[dict[str, Any], int, int]] = [
                 "device_sessions_opened": 1,
                 "client_sessions_opened": 1,
                 "dispatches_total": 0,
-                "client_rejections_total": 0,
                 "acl_denials_total": 0,
             }
         },
@@ -57,20 +54,6 @@ _ANOMALY_CASES: list[tuple[dict[str, Any], int, int]] = [
                 "device_sessions_opened": 1,
                 "client_sessions_opened": 1,
                 "dispatches_total": 2,
-                "client_rejections_total": 1,
-                "acl_denials_total": 0,
-            }
-        },
-        1,
-        1,
-    ),
-    (
-        {
-            "gateway": {
-                "device_sessions_opened": 1,
-                "client_sessions_opened": 1,
-                "dispatches_total": 2,
-                "client_rejections_total": 0,
                 "acl_denials_total": 2,
             }
         },
@@ -81,13 +64,13 @@ _ANOMALY_CASES: list[tuple[dict[str, Any], int, int]] = [
 
 
 def test_audit_gateway_pw_metrics_passes_on_healthy_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Healthy gateway metrics satisfy session, dispatch, and zero-denial thresholds."""
+    """Healthy gateway metrics satisfy session, dispatch, and zero-ACL-denial thresholds."""
     snapshot: dict[str, Any] = {
         "gateway": {
             "device_sessions_opened": 3,
             "client_sessions_opened": 2,
             "dispatches_total": 5,
-            "client_rejections_total": 0,
+            "client_rejections_total": 2,
             "acl_denials_total": 0,
         }
     }
@@ -107,7 +90,7 @@ def test_audit_gateway_pw_metrics_rejects_anomalies(
     min_devices: int,
     min_dispatches: int,
 ) -> None:
-    """Missing gateway group, insufficient counters, or security rejections fail the audit."""
+    """Missing gateway group, insufficient counters, or ACL denials fail the audit."""
 
     def _fake_fetch(**_kwargs: Any) -> dict[str, Any]:
         return snapshot

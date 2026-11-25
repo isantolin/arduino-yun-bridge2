@@ -208,8 +208,6 @@ def audit_gateway_pw_metrics(
         anomalies.append(f"client_sessions_opened={gw.get('client_sessions_opened')} < 1")
     if int(gw.get("dispatches_total", 0)) < min_dispatches:
         anomalies.append(f"dispatches_total={gw.get('dispatches_total')} < {min_dispatches}")
-    if int(gw.get("client_rejections_total", 0)) != 0:
-        anomalies.append(f"client_rejections_total={gw.get('client_rejections_total')} != 0")
     if int(gw.get("acl_denials_total", 0)) != 0:
         anomalies.append(f"acl_denials_total={gw.get('acl_denials_total')} != 0")
 

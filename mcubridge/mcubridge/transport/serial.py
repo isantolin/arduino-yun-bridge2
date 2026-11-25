@@ -862,8 +862,12 @@ class SerialTransport:
             before_sleep=_before_sleep,
             reraise=False,
         )
+
+        async def _attempt() -> bool | ProtobufMessage:
+            return await self._invoke_unary_once(rpc_method, request, method_name, timeout)
+
         try:
-            return await retryer(self._invoke_unary_once, rpc_method, request, method_name, timeout)
+            return await retryer(_attempt)
         except tenacity.RetryError:
             self.state.metrics.serial_failures += 1
             logger.warning("Pigweed unary RPC timed out", method=method_name, attempts=self.max_attempts)

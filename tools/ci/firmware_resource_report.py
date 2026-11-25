@@ -21,8 +21,7 @@ _SKETCH_RE = re.compile(
     re.IGNORECASE,
 )
 _RAM_RE = re.compile(
-    r"Global variables use\s+([\d,]+)\s+bytes.*?leaving\s+([\d,]+)"
-    r"\s+bytes.*?Maximum is\s+([\d,]+)\s+bytes",
+    r"Global variables use\s+([\d,]+)\s+bytes.*?leaving\s+([\d,]+)\s+bytes.*?Maximum is\s+([\d,]+)\s+bytes",
     re.IGNORECASE,
 )
 _AVR_SECTION_RE = re.compile(r"^\.(text|data|bss|noinit)\s+(\d+)\s+", re.MULTILINE)
@@ -59,9 +58,7 @@ def parse_avr_sections(output: str) -> dict[str, int]:
         raise ValueError("avr-size output is missing one of .text, .data, or .bss")
     return {
         "elf_flash_used_bytes": sections["text"] + sections["data"],
-        "elf_static_ram_used_bytes": (
-            sections["data"] + sections["bss"] + sections.get("noinit", 0)
-        ),
+        "elf_static_ram_used_bytes": (sections["data"] + sections["bss"] + sections.get("noinit", 0)),
         "elf_text_bytes": sections["text"],
         "elf_data_bytes": sections["data"],
         "elf_bss_bytes": sections["bss"],
@@ -116,9 +113,7 @@ def main() -> int:
         args.size_tool,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

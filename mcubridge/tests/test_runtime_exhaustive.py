@@ -34,7 +34,7 @@ async def test_on_serial_connected_and_disconnected(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = runtime_setup
-    serial.send.return_value = pb.VersionResponse(major=1, minor=0, patch=0)
+    serial.invoke_rpc.return_value = pb.VersionResponse(major=1, minor=0, patch=0)
 
     class FakeHandshake:
         async def synchronize(self) -> None:
@@ -59,7 +59,8 @@ async def test_handle_mcu_frame_pre_sync_denied(runtime_setup: tuple[BridgeServi
     assert not state.is_synchronized
 
     await service.handle_mcu_frame("rpc.pb.SystemService/GetVersion", 1, b"")
-    serial.send.assert_not_called()
+    serial.invoke_rpc.assert_not_called()
+    serial.send_raw.assert_not_called()
 
 
 async def test_handle_mcu_frame_handshake_routing(
@@ -80,7 +81,7 @@ async def test_handle_mcu_frame_rpc_handlers(
     service, state, serial = runtime_setup
     state.connection_fsm.connect()
     state.connection_fsm.synchronize()
-    serial.send.return_value = True
+    serial.send_raw.return_value = True
 
     # 1. MCU Mailbox Push (triggers enqueue_cloud_publish & acknowledge)
     mock_pub = AsyncMock()
@@ -113,20 +114,21 @@ async def test_execute_rpc_routing(runtime_setup: tuple[BridgeService, RuntimeSt
     service, state, serial = runtime_setup
     state.connection_fsm.connect()
     state.connection_fsm.synchronize()
-    serial.send.return_value = True
+    serial.invoke_rpc.return_value = True
+    serial.send_console.return_value = True
 
     # Console input queue
     state.console_to_mcu_queue.append(b"help\n")
     await service.flush_console_queue()
     assert len(state.console_to_mcu_queue) == 0  # Should be flushed immediately to serial
-    serial.send.assert_awaited()
+    serial.send_console.assert_awaited()
 
     # Mailbox write RPC
     await service.execute_rpc(
         "rpc.pb.MailboxService/Push",
         pb.MailboxPush(data=b"ping").SerializeToString(),
     )
-    serial.send.assert_awaited()
+    serial.invoke_rpc.assert_awaited()
 
 
 async def test_enqueue_cloud_spool_and_flush(

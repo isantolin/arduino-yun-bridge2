@@ -1,6 +1,5 @@
 #include "bridge_fsm.h"
 
-#include <etl/array.h>
 #include <etl/fsm.h>
 
 namespace bridge::fsm {

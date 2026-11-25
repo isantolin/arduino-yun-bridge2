@@ -240,8 +240,9 @@ class MeshNodeContext:
         self.state.connection_fsm.synchronize()
 
         self.serial_mock = MagicMock()
-        self.serial_mock.send = AsyncMock(return_value=True)
+        self.serial_mock.invoke_rpc = AsyncMock(return_value=True)
         self.serial_mock.send_raw = AsyncMock(return_value=True)
+        self.serial_mock.send_console = AsyncMock(return_value=True)
 
         self.service = BridgeService(
             self.config,
@@ -292,7 +293,7 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
     # SERVICIO 2: Sincronización de Reloj Hardware (Clock Synchronization)
     # -------------------------------------------------------------------------
     for node in nodes:
-        node.serial_mock.send.return_value = pb.ClockSyncResponse(
+        node.serial_mock.invoke_rpc.return_value = pb.ClockSyncResponse(
             host_time_us=1_000_000,
             mcu_time_us=1_000_050,
         )
@@ -365,7 +366,7 @@ async def test_fleet_heterogeneous_mesh_all_services(tmp_path: Path) -> None:
     # -------------------------------------------------------------------------
     # SERVICIO 8: Reactividad GPIO & Suscripciones de Pines con Histéresis
     # -------------------------------------------------------------------------
-    mesh_mega.serial_mock.send.return_value = True
+    mesh_mega.serial_mock.invoke_rpc.return_value = True
     sub_res = await mesh_mega.service.gpio.subscribe_pin(
         pin=7,
         mode="INPUT_PULLUP",

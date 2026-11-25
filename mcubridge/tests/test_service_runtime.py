@@ -53,13 +53,15 @@ async def test_send_frame_via_transport() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.send.return_value = True
+        mock_serial.invoke_rpc.return_value = True
         service = BridgeService(config, state, mock_serial)
 
         assert service.serial is not None
-        ok = await service.serial.send("rpc.pb.SystemService/GetVersion", b"x")
+        ok = await service.serial.invoke_rpc(
+            service.serial.rpcs.rpc.pb.SystemService.GetVersion, mcu_wire_pb2.SubscribeRequest()
+        )
         assert ok
-        mock_serial.send.assert_called_once()
+        mock_serial.invoke_rpc.assert_called_once()
     finally:
         if service is not None:
             service.cleanup()
@@ -106,7 +108,7 @@ async def test_handle_mcu_frame_dispatches_by_pigweed_service_and_method() -> No
         await service.handle_mcu_frame((spec.service_id, spec.method_id), 17, payload)
 
         handler.assert_awaited_once_with(17, payload)
-        mock_serial.send.assert_not_called()
+        mock_serial.invoke_rpc.assert_not_called()
     finally:
         if service is not None:
             service.cleanup()
@@ -143,7 +145,7 @@ async def test_handle_cloud_console_queues_and_flushes() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.send.return_value = True
+        mock_serial.send_console.return_value = True
         service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"
         state.link_sync_event.set()
@@ -152,7 +154,7 @@ async def test_handle_cloud_console_queues_and_flushes() -> None:
         service.state.console_to_mcu_queue.append(b"hello")
         await service.flush_console_queue()
 
-        mock_serial.send.assert_called()
+        mock_serial.send_console.assert_called()
     finally:
         if service is not None:
             service.cleanup()
@@ -195,7 +197,7 @@ async def test_handle_cloud_pin_overflow_reports_error() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.send.side_effect = RuntimeError("serial-transport-error")
+        mock_serial.invoke_rpc.side_effect = RuntimeError("serial-transport-error")
         service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"
         state.link_sync_event.set()
@@ -316,7 +318,7 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
         )
         state = create_runtime_state(cfg)
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.send = AsyncMock(return_value=True)
+        mock_serial.invoke_rpc = AsyncMock(return_value=True)
         service = BridgeService(cfg, state, mock_serial)
 
         put_resp = await service.execute_rpc(
@@ -376,7 +378,7 @@ def test_runtime_request_mcu_version_and_system_version(
         service = BridgeService(cfg, state, mock_serial)
 
         v_resp = mcu_wire_pb2.VersionResponse(major=major, minor=minor, patch=patch_ver)
-        mock_serial.send = AsyncMock(return_value=v_resp)
+        mock_serial.invoke_rpc = AsyncMock(return_value=v_resp)
 
         res = await service.request_mcu_version()
         assert res is True
@@ -403,14 +405,15 @@ def test_runtime_pin_analog_and_invalid_digits(
         state = create_runtime_state(cfg)
         state.link_sync_event.set()
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.send = AsyncMock(return_value=True)
+        mock_serial.invoke_rpc = AsyncMock(return_value=True)
+        mock_serial.rpc_channel.method.side_effect = str
         service = BridgeService(cfg, state, mock_serial)
 
         await service.execute_rpc(
             "rpc.pb.GpioService/AnalogWrite",
             mcu_wire_pb2.AnalogWrite(pin=pin, value=analog_val).SerializeToString(),
         )
-        mock_serial.send.assert_called_with(
+        mock_serial.invoke_rpc.assert_called_with(
             "rpc.pb.GpioService/AnalogWrite", mcu_wire_pb2.AnalogWrite(pin=pin, value=analog_val)
         )
 
@@ -418,7 +421,7 @@ def test_runtime_pin_analog_and_invalid_digits(
             "rpc.pb.GpioService/DigitalWrite",
             mcu_wire_pb2.DigitalWrite(pin=pin, value=0).SerializeToString(),
         )
-        mock_serial.send.assert_called_with(
+        mock_serial.invoke_rpc.assert_called_with(
             "rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=pin, value=0)
         )
 
@@ -542,7 +545,7 @@ async def test_runtime_terminate_process_escalation(mock_bridge_service: BridgeS
 async def test_runtime_flush_console_queue_send_failed(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
-    mock_serial.send.return_value = False
+    mock_serial.send_console.return_value = False
     svc = mock_bridge_service
 
     svc.state.console_to_mcu_queue.append(b"console payload")
@@ -594,7 +597,7 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
 
     svc.serial = None
     await svc.handle_mcu_frame("rpc.pb.SystemService/GetVersion", 1, b"")
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
     svc.serial = mock_serial
     svc.state.connection_fsm.synchronize()
@@ -629,7 +632,7 @@ async def test_runtime_handle_console_empty_payload(mock_bridge_service: BridgeS
         "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"").SerializeToString()
     )
     assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
 
 async def test_runtime_handle_datastore_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
@@ -640,18 +643,18 @@ async def test_runtime_handle_datastore_branches(mock_bridge_service: BridgeServ
         mcu_wire_pb2.DatastorePut(key="mykey", value=b"x" * 600).SerializeToString(),
     )
     assert cloud_gateway_pb2.GenericResponse.FromString(put_resp).status == "error"
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
     get_resp = await svc.execute_rpc(
         "rpc.pb.DataStoreService/Get",
         mcu_wire_pb2.DatastoreGet(key="missingkey").SerializeToString(),
     )
     assert mcu_wire_pb2.DatastoreGetResponse.FromString(get_resp).value == b""
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
     with pytest.raises(ValueError, match="Unknown RPC method"):
         await svc.execute_rpc("unknown_act", b"")
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
 
 async def test_runtime_handle_file_unhandled_action_and_failed_writes(
@@ -698,17 +701,17 @@ async def test_runtime_handle_shell_branches(mock_bridge_service: BridgeService,
 async def test_runtime_handle_system_free_memory_non_bytes(
     mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
-    mock_serial.send = AsyncMock(return_value=False)
+    mock_serial.invoke_rpc = AsyncMock(return_value=False)
     svc = mock_bridge_service
 
     with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
         await svc.execute_rpc("rpc.pb.SystemService/GetFreeMemory", b"")
-    assert mock_serial.send.called
+    assert mock_serial.invoke_rpc.called
 
-    mock_serial.send = AsyncMock(return_value=mcu_wire_pb2.FreeMemoryResponse(value=1024))
+    mock_serial.invoke_rpc = AsyncMock(return_value=mcu_wire_pb2.FreeMemoryResponse(value=1024))
     resp_bytes = await svc.execute_rpc("rpc.pb.SystemService/GetFreeMemory", b"")
     assert mcu_wire_pb2.FreeMemoryResponse.FromString(resp_bytes).value == 1024
-    assert mock_serial.send.called
+    assert mock_serial.invoke_rpc.called
 
 
 async def test_runtime_cloud_spool_locked_limit_errors(
@@ -861,13 +864,13 @@ async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeS
 
     svc.serial = None
     await svc.mailbox_push(mcu_wire_pb2.MailboxPush(data=b"hi"))
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
     svc.serial = mock_serial
     await svc.state.mailbox_incoming_queue.clear()
     res = await svc.mailbox_read(mcu_wire_pb2.SubscribeRequest())
     assert res.content == b""
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
 
 async def test_runtime_handle_file_and_shell_edge_branches(
@@ -879,16 +882,16 @@ async def test_runtime_handle_file_and_shell_edge_branches(
 
     svc.serial = None
     res_f = await svc.file_remove(mcu_wire_pb2.FileRemove(path="test.txt"))
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
     assert res_f.status == "error"
 
     svc.serial = mock_serial
     res_unsafe = await svc.file_remove(mcu_wire_pb2.FileRemove(path="../../../etc/shadow"))
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
     assert res_unsafe.status == "error"
 
     res_empty = await svc.process_run_async(mcu_wire_pb2.ProcessRunAsync(command=""))
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
     assert res_empty.pid == 0
 
     svc.state.allowed_policy = config_schema_pb2.AllowedCommandPolicy(entries=["echo"])
@@ -918,22 +921,22 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     svc.serial = None
     with pytest.raises(ConnectionError):
         await svc.execute_rpc("rpc.pb.SpiService/SetConfig", mcu_wire_pb2.SpiConfig().SerializeToString())
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
     svc.serial = mock_serial
-    mock_serial.send.return_value = False
+    mock_serial.invoke_rpc.return_value = False
     with pytest.raises(RuntimeError):
         await svc.execute_rpc("rpc.pb.SpiService/Transfer", mcu_wire_pb2.SpiTransfer(data=b"data").SerializeToString())
-    assert mock_serial.send.called
+    assert mock_serial.invoke_rpc.called
 
-    mock_serial.send.return_value = mcu_wire_pb2.SpiTransferResponse(data=b"resp")
+    mock_serial.invoke_rpc.return_value = mcu_wire_pb2.SpiTransferResponse(data=b"resp")
     res_spi_xfer_ok = mcu_wire_pb2.SpiTransferResponse.FromString(
         await svc.execute_rpc("rpc.pb.SpiService/Transfer", mcu_wire_pb2.SpiTransfer(data=b"data").SerializeToString())
     )
     assert res_spi_xfer_ok.data == b"resp"
 
-    mock_serial.send.reset_mock()
-    mock_serial.send.return_value = True
+    mock_serial.invoke_rpc.reset_mock()
+    mock_serial.invoke_rpc.return_value = True
     res_boot = mcu_wire_pb2.Empty.FromString(
         await svc.execute_rpc(
             "rpc.pb.SystemService/EnterBootloader", mcu_wire_pb2.EnterBootloader().SerializeToString()
@@ -941,22 +944,22 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     )
     assert res_boot is not None
 
-    mock_serial.send.reset_mock()
+    mock_serial.invoke_rpc.reset_mock()
     svc.serial = None
     with pytest.raises(ConnectionError):
         await svc.execute_rpc(
             "rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString()
         )
-    assert not mock_serial.send.called
+    assert not mock_serial.invoke_rpc.called
 
     svc.serial = mock_serial
-    mock_serial.send.return_value = True
+    mock_serial.invoke_rpc.return_value = True
     res_pin_ok = mcu_wire_pb2.Empty.FromString(
         await svc.execute_rpc(
             "rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite(pin=13, value=1).SerializeToString()
         )
     )
-    assert mock_serial.send.called
+    assert mock_serial.invoke_rpc.called
     assert res_pin_ok is not None
 
 
@@ -1011,24 +1014,24 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     assert (await handle_ds_get(1, req)).value == b""
 
     mock_serial = AsyncMock()
-    mock_serial.send = AsyncMock(return_value=True)
+    mock_serial.send_raw = AsyncMock(return_value=True)
     svc.serial = mock_serial
     svc.state.datastore_cache = AsyncMock()
     svc.state.datastore_cache.get = AsyncMock(return_value=b"active")
 
     res = await handle_ds_get(1, req)
     assert res.value == b"active"
-    mock_serial.send.assert_awaited_once()
-    sent_cmd = mock_serial.send.call_args[0][0]
-    sent_resp = mock_serial.send.call_args[0][1]
+    mock_serial.send_raw.assert_awaited_once()
+    sent_cmd = mock_serial.send_raw.call_args[0][0]
+    sent_resp = mock_serial.send_raw.call_args[0][1]
     assert sent_cmd == "rpc.pb.DataStoreService/Get"
     assert sent_resp.value == b"active"
 
-    mock_serial.send.reset_mock()
+    mock_serial.send_raw.reset_mock()
     svc.state.datastore_cache = None
     res_none = await handle_ds_get(2, req)
     assert res_none.value == b""
-    assert mock_serial.send.call_args[0][1].value == b""
+    assert mock_serial.send_raw.call_args[0][1].value == b""
 
 
 async def test_runtime_cloud_session_rpc_commands_and_errors(
@@ -1042,7 +1045,8 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         raise OSError("Hardware IO error")
 
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.send = AsyncMock(side_effect=mock_serial_send)
+    mock_serial.rpc_channel.method.side_effect = str
+    mock_serial.invoke_rpc = AsyncMock(side_effect=mock_serial_send)
     svc.serial = mock_serial
 
     # 1. Successful RPC dispatch: rpc.pb.SystemService/GetVersion -> status_code 200
@@ -1299,7 +1303,7 @@ async def test_runtime_canonical_rpc_dispatch(mock_bridge_service: BridgeService
     mock_writer.drain = AsyncMock()
 
     # 1. Successful RPC dispatch via handle_cloud_edge_dispatch
-    mock_serial.send.return_value = True
+    mock_serial.invoke_rpc.return_value = True
     await svc.handle_cloud_edge_dispatch(
         _edge_packet("rpc.pb.GpioService/DigitalWrite", req_dw.SerializeToString(), 1),
         mock_writer,
@@ -1377,37 +1381,33 @@ async def test_runtime_execute_rpc_branches(mock_bridge_service: BridgeService) 
 
     # 3. execute_rpc with True response
     mock_serial = MagicMock()
-    mock_serial.send = AsyncMock(return_value=True)
+    mock_serial.invoke_rpc = AsyncMock(return_value=True)
     svc.serial = mock_serial
     res_rpc_true = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"")
     assert res_rpc_true == mcu_wire_pb2.Empty().SerializeToString()
 
     # 4. execute_rpc with ProtobufMessage response (e.g. VersionResponse)
     ver_resp = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=9)
-    mock_serial.send = AsyncMock(return_value=ver_resp)
+    mock_serial.invoke_rpc = AsyncMock(return_value=ver_resp)
     res_rpc_proto = await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
     assert res_rpc_proto == ver_resp.SerializeToString()
     assert svc.state.mcu_version == (2, 8, 9)
 
-    # 5. execute_rpc with raw bytes response
-    mock_serial.send = AsyncMock(return_value=b"raw_bytes")
-    res_rpc_bytes = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"")
-    assert res_rpc_bytes == b"raw_bytes"
-
-    # 6. execute_rpc failure (None or False)
-    mock_serial.send = AsyncMock(return_value=None)
+    # 5. execute_rpc failure (None or False)
+    mock_serial.invoke_rpc = AsyncMock(return_value=None)
     with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
         await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
 
-    mock_serial.send = AsyncMock(return_value=False)
+    mock_serial.invoke_rpc = AsyncMock(return_value=False)
     with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
         await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
 
-    # 7. execute_rpc with timeout_ms > 0
-    mock_serial.send = AsyncMock(return_value=True)
+    # 6. execute_rpc with timeout_ms > 0
+    mock_serial.rpc_channel.method.side_effect = str
+    mock_serial.invoke_rpc = AsyncMock(return_value=True)
     res_rpc_timeout = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"", timeout_ms=5000)
     assert res_rpc_timeout == mcu_wire_pb2.Empty().SerializeToString()
-    mock_serial.send.assert_awaited_once_with("rpc.pb.SystemService/EnterBootloader", ANY, timeout=5.0)
+    mock_serial.invoke_rpc.assert_awaited_once_with("rpc.pb.SystemService/EnterBootloader", ANY, timeout=5.0)
 
 
 async def test_runtime_console_write_both_directions(
@@ -1432,21 +1432,19 @@ async def test_runtime_console_write_both_directions(
 
     # Linux -> MCU: bytes are queued and flushed over the console HDLC channel.
     svc.serial = mock_serial
-    mock_serial.send = AsyncMock(return_value=True)
+    mock_serial.send_console = AsyncMock(return_value=True)
     outbound = await svc.console_write(mcu_wire_pb2.ConsoleWrite(data=b"ping"))
     assert isinstance(outbound, mcu_wire_pb2.Empty)
-    mock_serial.send.assert_awaited_once_with("rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"ping"))
+    mock_serial.send_console.assert_awaited_once_with(b"ping")
     assert len(svc.state.console_to_mcu_queue) == 0
 
     # The cloud dispatch path reaches the same handler through the canonical operation name.
-    mock_serial.send.reset_mock()
+    mock_serial.send_console.reset_mock()
     resp_bytes = await svc.execute_rpc(
         "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway").SerializeToString()
     )
     assert resp_bytes == mcu_wire_pb2.Empty().SerializeToString()
-    mock_serial.send.assert_awaited_once_with(
-        "rpc.pb.ConsoleService/Write", mcu_wire_pb2.ConsoleWrite(data=b"via-gateway")
-    )
+    mock_serial.send_console.assert_awaited_once_with(b"via-gateway")
 
 
 async def test_cloud_edge_dispatch_enforces_topic_authorization(mock_bridge_service: BridgeService) -> None:

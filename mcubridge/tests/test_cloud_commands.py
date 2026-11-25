@@ -31,7 +31,8 @@ def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     state = RuntimeState(cloud_topic_prefix=cfg.topic_prefix, topic_authorization=cfg.topic_authorization)
     state.link_sync_event.set()
     serial_mock = AsyncMock(spec=SerialTransport)
-    serial_mock.send.return_value = True
+    serial_mock.invoke_rpc.return_value = True
+    serial_mock.rpc_channel.method.side_effect = str
     mock_publisher = AsyncMock()
     svc = BridgeService(cfg, state, serial_mock, cloud_publisher=mock_publisher)
     return svc, state, serial_mock, mock_publisher
@@ -57,13 +58,13 @@ async def test_cloud_command_pin_dispatch_property(
             else mcu_wire_pb2.DigitalWrite(pin=pin, value=val).SerializeToString()
         )
 
-        serial_mock.send.return_value = cloud_gateway_pb2.GenericResponse(status="ok")
+        serial_mock.invoke_rpc.return_value = cloud_gateway_pb2.GenericResponse(status="ok")
         resp_bytes = await svc.execute_rpc(method, payload)
 
         # Validate serial command was dispatched
-        serial_mock.send.assert_awaited_once()
-        assert serial_mock.send.await_args is not None
-        args, _ = serial_mock.send.await_args
+        serial_mock.invoke_rpc.assert_awaited_once()
+        assert serial_mock.invoke_rpc.await_args is not None
+        args, _ = serial_mock.invoke_rpc.await_args
         if is_mode:
             assert args[0] in ("rpc.pb.GpioService/SetPinMode", protocol.get_operation("rpc.pb.GpioService/SetPinMode"))
             assert isinstance(args[1], mcu_wire_pb2.PinMode)

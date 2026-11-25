@@ -200,7 +200,9 @@ async def test_serial_transport_send_uses_pigweed_rpc(tmp_path: Path) -> None:
             [PwRpcChannel(protocol.HDLC_ADDRESS_RPC, outgoing.append)],
             protocol.PW_SERVICES,
         )
-        send_task = asyncio.create_task(transport.send("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13)))
+        send_task = asyncio.create_task(
+            transport.invoke_rpc(transport.rpcs.rpc.pb.GpioService.DigitalRead, pb.PinRead(pin=13))
+        )
         for _ in range(100):
             if outgoing:
                 break

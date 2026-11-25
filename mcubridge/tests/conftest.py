@@ -374,8 +374,12 @@ def service_stack(
 def mock_serial() -> AsyncMock:
     """Provide an AsyncMock for serial transport/device in unit tests."""
     mock = AsyncMock()
-    mock.send = AsyncMock(return_value=True)
+    mock.invoke_rpc = AsyncMock(return_value=True)
+    mock.send_console = AsyncMock(return_value=True)
     mock.send_raw = AsyncMock(return_value=True)
+    mock.rpc_channel = MagicMock()
+    mock.rpc_channel.method.side_effect = str
+    mock.rpcs = MagicMock()
     mock.write = AsyncMock()
     mock.drain = AsyncMock()
     mock.close = AsyncMock()

@@ -74,7 +74,6 @@
 #include <etl/callback_timer.h>
 #include <etl/debounce.h>
 #include <etl/delegate.h>
-#include <etl/fsm.h>
 #include <etl/string_view.h>
 // clang-format on
 

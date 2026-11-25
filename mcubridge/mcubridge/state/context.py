@@ -7,7 +7,7 @@ import collections
 import time
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 import psutil
 import structlog
@@ -53,9 +53,6 @@ def terminate_pid_tree(pid: int, timeout: float = float(protocol.PROCESS_KILL_TI
     except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied) as exc:
         logger.debug("Process termination skipped; process already dead or inaccessible", pid=pid, error=str(exc))
         return
-
-
-T = TypeVar("T")
 
 
 def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[cloud_gateway_pb2.CloudQueuedPublish]:

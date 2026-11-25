@@ -203,3 +203,67 @@ def test_serial_transport_negotiating_state(mock_config: RuntimeConfig, mock_sta
     assert transport.state.connection_fsm.negotiating_baud.is_active
     transport.state.connection_fsm.disconnect()
     assert not transport.state.connection_fsm.negotiating_baud.is_active
+
+
+async def test_serial_log_channel_status_dispatch_and_close_errors(
+    mock_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    """Cover HDLC log channel isolation, status-code RPC dispatch, and close error resilience."""
+    import socket
+
+    from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
+
+    from mcubridge.protocol.protocol import Status
+    from mcubridge.services.runtime import BridgeService
+    from mcubridge.transport.serial import close_serial_port
+
+    mock_config.serial_shared_secret = b""
+    service = AsyncMock(spec=BridgeService)
+    transport = SerialTransport(mock_config, mock_state, service=service)
+
+    # 1. HDLC log channel frames are consumed locally without invoking service.handle_mcu_frame
+    await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_LOG, b"boot ok"))
+    assert mock_state.metrics.serial_frames_received == 1
+    service.handle_mcu_frame.assert_not_awaited()
+
+    # 2. Unknown service_id with a known status-code method_id dispatches by status code
+    status_pkt = RpcPacket(
+        type=PacketType.REQUEST,
+        channel_id=1,
+        service_id=0xDEADBEEF,
+        method_id=int(Status.INVALID_ARGUMENT.value),
+        call_id=5,
+    ).SerializeToString()
+    await transport.feed_data(ui_frame(protocol.HDLC_ADDRESS_RPC, status_pkt))
+    service.handle_mcu_frame.assert_awaited_once_with(int(Status.INVALID_ARGUMENT.value), 5, b"")
+
+    # 3. close_serial_port tolerates OSError from raw socket shutdown and close
+    class _FailingSocket(socket.socket):
+        def shutdown(self, how: int, /) -> None:
+            raise OSError(f"shutdown failed: {how}")
+
+        def close(self) -> None:
+            raise OSError("close failed")
+
+    failing_sock = _FailingSocket()
+    close_mock = MagicMock()
+
+    class _FakeSerialWithSocket:
+        _socket = failing_sock
+        close = close_mock
+
+    close_serial_port(cast(Any, _FakeSerialWithSocket()))
+    close_mock.assert_called_once()
+    socket.socket.close(failing_sock)
+
+    # 4. stop() tolerates OSError raised while closing the serial handle
+    failing_ser = MagicMock(spec=serial.Serial)
+    failing_ser.close.side_effect = OSError("port close failed")
+    transport.serial = failing_ser
+    await transport.stop()
+    assert transport.stop_event.is_set()
+    failing_ser.close.assert_called_once()
+
+    # 5. toggle_dtr() is a safe no-op when no serial handle is open
+    transport.serial = None
+    await transport.toggle_dtr()

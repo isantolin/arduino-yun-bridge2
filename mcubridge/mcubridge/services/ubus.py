@@ -303,24 +303,22 @@ class UbusService:
 
     def _handle_pin_write(
         self,
-        cmd: str,
+        rpc_method_name: str,
         msg_cls: type[mcu_wire_pb2.DigitalWrite | mcu_wire_pb2.AnalogWrite],
         _req: Any,
         msg: dict[str, Any],
     ) -> dict[str, Any]:
         proto = msg_cls()
         ParseDict(msg, proto, ignore_unknown_fields=True)
-        if not self.runtime.serial:
+        serial_transport = self.runtime.serial
+        if not serial_transport:
             return {"status": "error", "message": "Serial service unavailable"}
-        self.schedule_async(self.runtime.serial.send(cmd, proto))
+        rpc_method = getattr(serial_transport.rpcs.rpc.pb.GpioService, rpc_method_name)
+        self.schedule_async(serial_transport.invoke_rpc(rpc_method, proto))
         return {"status": "accepted", "pin": proto.pin, "value": proto.value}
 
-    ubus_handle_digital_write = functools.partialmethod(
-        _handle_pin_write, "rpc.pb.GpioService/DigitalWrite", mcu_wire_pb2.DigitalWrite
-    )
-    ubus_handle_analog_write = functools.partialmethod(
-        _handle_pin_write, "rpc.pb.GpioService/AnalogWrite", mcu_wire_pb2.AnalogWrite
-    )
+    ubus_handle_digital_write = functools.partialmethod(_handle_pin_write, "DigitalWrite", mcu_wire_pb2.DigitalWrite)
+    ubus_handle_analog_write = functools.partialmethod(_handle_pin_write, "AnalogWrite", mcu_wire_pb2.AnalogWrite)
 
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""

@@ -27,7 +27,7 @@ class MockRuntimeFacade:
         self.process_kill = AsyncMock(return_value=cloud_gateway_pb2.GenericResponse(status="ok"))
         self.reset_link = AsyncMock(return_value=True)
         self.serial: AsyncMock | None = AsyncMock()
-        self.serial.send = AsyncMock(return_value=True)
+        self.serial.invoke_rpc = AsyncMock(return_value=True)
         self.mailbox_push = AsyncMock(return_value=True)
         self.mailbox_read = AsyncMock(return_value=b"")
         self.datastore_put = AsyncMock(return_value=True)
@@ -266,8 +266,8 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
     assert res == {"status": "accepted", "pin": 13, "value": 1}
     await asyncio.sleep(0.01)
     assert mock_runtime.serial is not None
-    mock_runtime.serial.send.assert_awaited_once_with(
-        "rpc.pb.GpioService/DigitalWrite", pb.DigitalWrite(pin=13, value=1)
+    mock_runtime.serial.invoke_rpc.assert_awaited_once_with(
+        mock_runtime.serial.rpcs.rpc.pb.GpioService.DigitalWrite, pb.DigitalWrite(pin=13, value=1)
     )
 
 
@@ -285,8 +285,8 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
     assert res == {"status": "accepted", "pin": 9, "value": 128}
     await asyncio.sleep(0.01)
     assert mock_runtime.serial is not None
-    mock_runtime.serial.send.assert_awaited_once_with(
-        "rpc.pb.GpioService/AnalogWrite", pb.AnalogWrite(pin=9, value=128)
+    mock_runtime.serial.invoke_rpc.assert_awaited_once_with(
+        mock_runtime.serial.rpcs.rpc.pb.GpioService.AnalogWrite, pb.AnalogWrite(pin=9, value=128)
     )
 
 
@@ -817,8 +817,8 @@ def test_ubus_handle_pin_write_property(pin: int, val: int) -> None:
         resp_d = svc.ubus_handle_digital_write(None, {"pin": pin, "value": val})
         assert resp_d == {"status": "accepted", "pin": pin, "value": val}
         assert mock_rt.serial is not None
-        mock_rt.serial.send.assert_awaited_once_with(
-            "rpc.pb.GpioService/DigitalWrite",
+        mock_rt.serial.invoke_rpc.assert_awaited_once_with(
+            mock_rt.serial.rpcs.rpc.pb.GpioService.DigitalWrite,
             pb.DigitalWrite(pin=pin, value=val),
         )
 
@@ -826,8 +826,8 @@ def test_ubus_handle_pin_write_property(pin: int, val: int) -> None:
         resp_a = svc.ubus_handle_analog_write(None, {"pin": pin, "value": val})
         assert resp_a == {"status": "accepted", "pin": pin, "value": val}
         assert mock_rt.serial is not None
-        mock_rt.serial.send.assert_awaited_with(
-            "rpc.pb.GpioService/AnalogWrite",
+        mock_rt.serial.invoke_rpc.assert_awaited_with(
+            mock_rt.serial.rpcs.rpc.pb.GpioService.AnalogWrite,
             pb.AnalogWrite(pin=pin, value=val),
         )
     finally:

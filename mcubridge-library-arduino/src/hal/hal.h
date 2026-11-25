@@ -12,6 +12,7 @@
 #include <Arduino.h>
 #undef min
 #undef max
+#undef abs
 #undef round
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
@@ -20,11 +21,29 @@
 #include <pw_status/status.h>
 #endif
 #include <etl/string_view.h>
+#include <pw_chrono/system_clock.h>
 #include <stdint.h>
 
 #include "protocol/mcu_wire.pb.h"
 
 namespace bridge::hal {
+
+/**
+ * @brief Monotonic millisecond timestamp sourced from pw::chrono::SystemClock.
+ */
+inline uint32_t nowMillis() {
+  const int64_t ticks =
+      pw::chrono::SystemClock::now().time_since_epoch().count();
+  constexpr int64_t kNum = pw::chrono::SystemClock::period::num;
+  constexpr int64_t kDen = pw::chrono::SystemClock::period::den;
+  if constexpr (kNum * 1000 == kDen) {
+    return static_cast<uint32_t>(ticks);
+  } else if constexpr (kDen >= kNum * 1000 && (kDen % (kNum * 1000)) == 0) {
+    return static_cast<uint32_t>(ticks / (kDen / (kNum * 1000)));
+  } else {
+    return static_cast<uint32_t>((ticks * kNum * 1000) / kDen);
+  }
+}
 
 /**
  * @brief Force all safety-critical pins to a safe state (e.g. LOW/Input).

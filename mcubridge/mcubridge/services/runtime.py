@@ -1426,8 +1426,6 @@ class BridgeService:
                 return resp_cls().SerializeToString()
             if isinstance(res, ProtobufMessage):
                 return res.SerializeToString()
-            if isinstance(res, bytes):
-                return res
             raise RuntimeError(f"Serial RPC invocation failed: {target}")
 
     async def pin_subscribe(

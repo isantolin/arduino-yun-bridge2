@@ -292,8 +292,8 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     await transport.process_hdlc_frame(sync_resp_frame)
     assert runtime_state.serial_decode_errors == 1
 
-    # 4. Pre-handshake send_raw guards when secret is configured and cipher is None
-    assert not await transport.send_raw("rpc.pb.ConsoleService/Write", b"console")
+    # 4. Pre-handshake guards when secret is configured and cipher is None
+    assert not await transport.send_console(b"console")
     assert not await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
     assert await transport.send_raw("rpc.pb.SystemService/LinkReset", b"")
 
@@ -304,18 +304,15 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     await transport.process_hdlc_frame(bad_encrypted_frame)
     assert runtime_state.serial_decode_errors == 2
 
-    # 6. Post-handshake send_raw guards: LinkSync rejected while cipher active; LinkReset sent cleartext
+    # 6. Post-handshake guards: LinkSync rejected while cipher active; LinkReset sent cleartext
     assert not await transport.send_raw("rpc.pb.SystemService/LinkSync", b"")
     assert await transport.send_raw("rpc.pb.SystemService/LinkReset", b"")
-    assert await transport.send_raw(
-        "rpc.pb.ConsoleService/Write",
-        pb.ConsoleWrite(data=b"encrypted-console"),
-    )
+    assert await transport.send_console(b"encrypted-console")
 
-    # 7. Cleartext console write when shared secret is empty and payload has no .data
+    # 7. Cleartext console write when shared secret is empty
     runtime_config.serial_shared_secret = b""
     runtime_state.link_cipher = None
-    assert await transport.send_raw("rpc.pb.ConsoleService/Write", pb.Empty())
+    assert await transport.send_console(b"")
 
 
 def test_get_operation_resolves_server_stream_packet() -> None:

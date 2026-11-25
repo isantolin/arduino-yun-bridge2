@@ -118,7 +118,7 @@ class RateLimiter:
 class SendFrameCallable(Protocol):
     async def __call__(
         self,
-        command_id: int | str | protocol.OperationSpec | tuple[int, int],
+        command_id: str,
         payload: bytes | ProtobufMessage,
         seq_id: int | None = None,
     ) -> bool | bytes | ProtobufMessage: ...

@@ -240,9 +240,9 @@ class MeshNodeContext:
         self.state.connection_fsm.synchronize()
 
         self.serial_mock = MagicMock()
-        self.serial_mock.send = AsyncMock(return_value=True)
-        self.serial_mock.send_raw = AsyncMock(return_value=True)
         self.serial_mock.invoke_rpc = AsyncMock(return_value=True)
+        self.serial_mock.send_raw = AsyncMock(return_value=True)
+        self.serial_mock.send_console = AsyncMock(return_value=True)
 
         self.service = BridgeService(
             self.config,

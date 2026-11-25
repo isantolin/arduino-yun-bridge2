@@ -622,39 +622,16 @@ class SerialTransport:
         effective_timeout = timeout if timeout is not None else self._response_timeout
         return await self._invoke_rpc_with_retries(rpc_method, request, method_name, effective_timeout)
 
-    async def send(
-        self,
-        command_id: int | str | protocol.OperationSpec | tuple[int, int],
-        payload: bytes | ProtobufMessage,
-        seq_id: int | None = None,
-        timeout: float | None = None,
-    ) -> bool | bytes | ProtobufMessage:
-        """Send an operation, delegating unary and server-streaming RPCs to Pigweed's native client."""
+    async def send_console(self, data: bytes) -> bool:
+        """Transmit raw console bytes over the dedicated Pigweed HDLC console channel."""
         if not self.serial or not self.serial.is_open:
             return False
-
-        spec = get_operation(command_id)
-        if spec is _CONSOLE_WRITE_SPEC:
-            return await self.send_raw(_CONSOLE_WRITE_SPEC, payload, seq_id)
-        is_streaming_response = (
-            spec is not None and spec.is_server_streaming and isinstance(payload, bytes) and payload == b""
+        return await self._write_hdlc_frame(
+            protocol.HDLC_ADDRESS_CONSOLE,
+            data,
+            encrypt=True,
+            label=_CONSOLE_WRITE_SPEC.name,
         )
-        is_server_response = (
-            spec is not None
-            and spec.response_type is not None
-            and spec.response_type is not spec.request_type
-            and (isinstance(payload, spec.response_type) or is_streaming_response)
-        )
-        if (
-            spec is not None
-            and not is_server_response
-            and spec.service_name
-            and spec.method_name
-            and spec.name not in _HANDSHAKE_RAW_NAMES
-        ):
-            return await self._send_rpc(spec, payload, timeout)
-
-        return await self.send_raw(spec if spec is not None else command_id, payload, seq_id)
 
     def queue_rpc_packet(self, packet: bytes) -> None:
         """Schedule Pigweed RPC output safely from the event loop or worker threads."""
@@ -778,22 +755,6 @@ class SerialTransport:
             label="pw_rpc",
         )
 
-    def _decode_rpc_request(self, spec: Any, payload: bytes | ProtobufMessage) -> ProtobufMessage | None:
-        if spec.request_type is None:
-            logger.error("Pigweed RPC descriptor has no request type", operation=spec.name)
-            return None
-        request_type = spec.request_type
-        if isinstance(payload, request_type):
-            return cast(ProtobufMessage, payload)
-        if isinstance(payload, bytes):
-            try:
-                return cast(ProtobufMessage, request_type.FromString(payload))
-            except ProtobufDecodeError as exc:
-                logger.error("Unable to decode Pigweed RPC request payload", operation=spec.name, error=str(exc))
-                return None
-        logger.error("Invalid request type for Pigweed RPC", operation=spec.name)
-        return None
-
     def _get_transfer_manager(self) -> PwTransferManager:
         """Return the single upstream pw_transfer manager for the MCU RPC channel."""
         if self._transfer_manager is None:
@@ -834,18 +795,6 @@ class SerialTransport:
     async def transfer_write(self, resource_id: int, data: bytes, *, offset: int = 0) -> None:
         """Write an MCU transfer resource without blocking the asyncio serial loop."""
         await self._run_transfer_in_worker(lambda mgr: mgr.write(resource_id, data, initial_offset=offset))
-
-    def _get_rpc_method(self, spec: protocol.OperationSpec) -> Any | None:
-        method_name = spec.name
-        try:
-            return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(method_name)
-        except (KeyError, ValueError) as exc:
-            logger.error(
-                "Pigweed RPC method is not present in generated descriptors",
-                method=method_name,
-                error=str(exc),
-            )
-            return None
 
     async def _invoke_unary_once(
         self,
@@ -958,21 +907,6 @@ class SerialTransport:
         except TimeoutError:
             return True
 
-    async def _send_rpc(
-        self,
-        spec: protocol.OperationSpec,
-        payload: bytes | ProtobufMessage,
-        timeout: float | None,
-    ) -> bool | ProtobufMessage:
-        """Invoke a unary or server-streaming method through pw_rpc.Client."""
-        request = self._decode_rpc_request(spec, payload)
-        if request is None:
-            return False
-        rpc_method = self._get_rpc_method(spec)
-        if rpc_method is None:
-            return False
-        return await self.invoke_rpc(rpc_method, request, timeout=timeout)
-
     async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
         """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""
         rpc_ids = RpcIds(protocol.HDLC_ADDRESS_RPC, service_id, method_id, call_id)
@@ -1042,8 +976,8 @@ class SerialTransport:
         was_synchronized = self.state.is_synchronized
         self.state.connection_fsm.start_negotiating()
         try:
-            if not await self.send(
-                "rpc.pb.SystemService/SetBaudrate",
+            if not await self.invoke_rpc(
+                self.rpcs.rpc.pb.SystemService.SetBaudrate,
                 payload,
                 timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
             ):

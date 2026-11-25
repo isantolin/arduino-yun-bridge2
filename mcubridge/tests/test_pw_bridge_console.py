@@ -664,3 +664,100 @@ def test_main_help_exits_cleanly(capsys: pytest.CaptureFixture[str]) -> None:
     assert "--device" in output
     assert "--token-database" in output
     assert "--check" in output
+
+
+def test_gateway_metrics_cli_single_and_watch_samples(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--gateway-metrics validates mTLS paths and emits JSON snapshots for one-shot and watch modes."""
+    monkeypatch.delenv("MCUBRIDGE_CA_CERT", raising=False)
+    monkeypatch.delenv("MCUBRIDGE_CLIENT_CERT", raising=False)
+    monkeypatch.delenv("MCUBRIDGE_CLIENT_KEY", raising=False)
+    assert pw_bridge_console.main(["--gateway-metrics"]) != 0
+
+    ca = tmp_path / "ca.pem"
+    cert = tmp_path / "client.pem"
+    key = tmp_path / "client.key"
+    for p in (ca, cert, key):
+        p.write_text("PEM", encoding="utf-8")
+
+    calls: list[tuple[str, int]] = []
+
+    def _fake_fetch(host: str, port: int, **_kwargs: Any) -> dict[str, Any]:
+        calls.append((host, port))
+        return {"gateway": {"dispatches_total": len(calls)}}
+
+    monkeypatch.setattr(pw_bridge_console, "fetch_gateway_metrics", _fake_fetch)
+
+    def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(pw_bridge_console.time, "sleep", _no_sleep)
+
+    rc = pw_bridge_console.main(
+        [
+            "--gateway-metrics",
+            "--gateway-host",
+            "127.0.0.1",
+            "--gateway-port",
+            "8443",
+            "--cafile",
+            str(ca),
+            "--certfile",
+            str(cert),
+            "--keyfile",
+            str(key),
+            "--watch",
+            "0.1",
+            "--count",
+            "2",
+        ]
+    )
+    assert rc == 0
+    assert calls == [("127.0.0.1", 8443), ("127.0.0.1", 8443)]
+    out = capsys.readouterr().out
+    assert '"dispatches_total": 1' in out
+    assert '"dispatches_total": 2' in out
+
+
+def test_fetch_gateway_metrics_closes_socket_and_uses_detokenizer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """fetch_gateway_metrics detokenizes the MetricService tree and always closes the TLS socket."""
+    closed: list[bool] = []
+
+    class _FakeTlsSocket:
+        def settimeout(self, _t: float) -> None:
+            pass
+
+        def recv(self, _n: int) -> bytes:
+            return b""
+
+        def sendall(self, _data: bytes) -> None:
+            pass
+
+        def close(self) -> None:
+            closed.append(True)
+
+    def _fake_open(*_args: Any, **_kwargs: Any) -> _FakeTlsSocket:
+        return _FakeTlsSocket()
+
+    def _fake_collect(_rpcs: Any, _detok: Any, *, timeout_s: float = 5.0) -> dict[str, Any]:
+        assert timeout_s > 0
+        return {"gateway": {"active_device_sessions": 2}}
+
+    monkeypatch.setattr(pw_bridge_console, "open_gateway_tls_socket", _fake_open)
+    monkeypatch.setattr(pw_bridge_console, "collect_metrics_tree", _fake_collect)
+
+    res = pw_bridge_console.fetch_gateway_metrics(
+        "127.0.0.1",
+        8443,
+        cafile=tmp_path / "ca.pem",
+        certfile=tmp_path / "cert.pem",
+        keyfile=tmp_path / "key.pem",
+    )
+    assert res == {"gateway": {"active_device_sessions": 2}}
+    assert closed == [True]

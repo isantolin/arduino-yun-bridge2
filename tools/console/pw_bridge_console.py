@@ -19,7 +19,9 @@ from pathlib import Path
 import select
 import secrets
 import socket
+import ssl
 import sys
+import threading
 import time
 from types import ModuleType
 from typing import Annotated, Any, Final, cast
@@ -34,8 +36,10 @@ from pw_metric import metric_parser
 from pw_metric_proto import metric_service_pb2
 from pw_rpc import packets as pw_packets
 from pw_rpc.callback_client.errors import RpcError, RpcTimeout
+from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
+from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.console_tools.console import ClientInfo, flattened_rpc_completions
-from pw_rpc.descriptors import Channel as PwRpcChannel
+from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_stream.stream_readers import CancellableReader
 from pw_tokenizer import detokenize, elf_reader
@@ -241,6 +245,156 @@ def collect_metrics_tree(
         _HOST_LOGGER.warning("MetricService.Get failed: %s", exc)
         return {}
     return dict(cast(dict[str, Any], parsed)) if isinstance(parsed, dict) else {}
+
+
+_GATEWAY_METRIC_SERVICES = PwRpcServices(
+    [
+        PwRpcService.from_descriptor(desc)
+        for desc in cast(Any, metric_service_pb2).DESCRIPTOR.services_by_name.values()
+    ]
+)
+
+
+def open_gateway_tls_socket(
+    host: str,
+    port: int,
+    *,
+    cafile: Path,
+    certfile: Path,
+    keyfile: Path,
+    timeout_s: float = DEFAULT_METRICS_TIMEOUT_S,
+) -> ssl.SSLSocket:
+    """Open a mutually authenticated TLS 1.3 socket to ``mcubridge-gateway-cpp``."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    ctx.load_verify_locations(cafile=str(cafile))
+    ctx.load_cert_chain(certfile=str(certfile), keyfile=str(keyfile))
+    raw_sock = socket.create_connection((host, port), timeout=timeout_s)
+    try:
+        return ctx.wrap_socket(raw_sock, server_hostname=host)
+    except OSError:
+        raw_sock.close()
+        raise
+
+
+def fetch_gateway_metrics(
+    host: str,
+    port: int,
+    *,
+    cafile: Path,
+    certfile: Path,
+    keyfile: Path,
+    token_database: Path | None = None,
+    timeout_s: float = DEFAULT_METRICS_TIMEOUT_S,
+) -> dict[str, Any]:
+    """Query ``pw.metric.proto.MetricService/Get`` over mTLS 1.3 + HDLC + pw_rpc."""
+    detokenizer, _resolved = build_detokenizer(token_database=token_database)
+    sock = open_gateway_tls_socket(
+        host,
+        port,
+        cafile=cafile,
+        certfile=certfile,
+        keyfile=keyfile,
+        timeout_s=timeout_s,
+    )
+    sock.settimeout(0.05)
+    io_lock = threading.Lock()
+    stop_event = threading.Event()
+    decoder = FrameDecoder()
+    errors: list[OSError] = []
+
+    def _send_packet(payload: bytes) -> None:
+        frame = ui_frame(1, payload)
+        with io_lock:
+            sock.sendall(frame)
+
+    rpc_client = PwRpcClient(
+        PwCallbackClientImpl(),
+        [PwRpcChannel(1, _send_packet)],
+        _GATEWAY_METRIC_SERVICES,
+    )
+
+    def _reader() -> None:
+        while not stop_event.is_set():
+            with io_lock:
+                try:
+                    chunk = sock.recv(4096)
+                except (TimeoutError, ssl.SSLWantReadError, ssl.SSLWantWriteError):
+                    continue
+                except OSError as exc:
+                    if not stop_event.is_set():
+                        errors.append(exc)
+                    return
+            if not chunk:
+                return
+            for frame in decoder.process(chunk):
+                if frame.ok() and frame.address == 1:
+                    rpc_client.process_packet(frame.data)
+
+    reader_thread = threading.Thread(target=_reader, name="gateway-metric-reader", daemon=True)
+    reader_thread.start()
+    try:
+        metrics = collect_metrics_tree(
+            cast(Any, rpc_client.channel(1)).rpcs,
+            detokenizer,
+            timeout_s=timeout_s,
+        )
+        if errors:
+            raise RuntimeError(f"Gateway MetricService transport error: {errors[0]}")
+        return metrics
+    finally:
+        stop_event.set()
+        reader_thread.join(timeout=2.0)
+        with io_lock:
+            sock.close()
+
+
+def _resolve_gateway_tls_material(
+    cafile: Path | None,
+    certfile: Path | None,
+    keyfile: Path | None,
+) -> tuple[Path, Path, Path]:
+    resolved_ca = cafile or (Path(v) if (v := os.environ.get("MCUBRIDGE_CA_CERT")) else None)
+    resolved_cert = certfile or (Path(v) if (v := os.environ.get("MCUBRIDGE_CLIENT_CERT")) else None)
+    resolved_key = keyfile or (Path(v) if (v := os.environ.get("MCUBRIDGE_CLIENT_KEY")) else None)
+    if resolved_ca is None or resolved_cert is None or resolved_key is None:
+        raise typer.BadParameter(
+            "--gateway-metrics requires --cafile, --certfile, and --keyfile "
+            "(or MCUBRIDGE_CA_CERT, MCUBRIDGE_CLIENT_CERT, MCUBRIDGE_CLIENT_KEY)"
+        )
+    return resolved_ca, resolved_cert, resolved_key
+
+
+def run_gateway_metrics_poll(
+    *,
+    host: str,
+    port: int,
+    cafile: Path,
+    certfile: Path,
+    keyfile: Path,
+    token_database: Path | None = None,
+    timeout_s: float = DEFAULT_METRICS_TIMEOUT_S,
+    watch_interval: float | None = None,
+    count: int = 1,
+) -> int:
+    """Query and print detokenized gateway ``pw_metric`` JSON snapshots (one-shot or polling)."""
+    samples = 0
+    while True:
+        metrics = fetch_gateway_metrics(
+            host,
+            port,
+            cafile=cafile,
+            certfile=certfile,
+            keyfile=keyfile,
+            token_database=token_database,
+            timeout_s=timeout_s,
+        )
+        typer.echo(json.dumps(metrics, indent=2, sort_keys=True))
+        samples += 1
+        if watch_interval is None or (count > 0 and samples >= count):
+            return samples
+        time.sleep(watch_interval)
 
 
 def _parse_socket_host_port(socket_url: str) -> tuple[str, int]:
@@ -686,8 +840,61 @@ def run_console(
             help="Explicitly use an unauthenticated link. Only for isolated development/testing links.",
         ),
     ] = False,
+    gateway_metrics: Annotated[
+        bool,
+        typer.Option(
+            "--gateway-metrics",
+            help="Query live pw.metric.proto.MetricService/Get counters from mcubridge-gateway-cpp over mTLS 1.3.",
+        ),
+    ] = False,
+    gateway_host: Annotated[
+        str,
+        typer.Option("--gateway-host", help="Gateway hostname for --gateway-metrics."),
+    ] = "127.0.0.1",
+    gateway_port: Annotated[
+        int,
+        typer.Option("--gateway-port", help="Gateway mTLS port for --gateway-metrics."),
+    ] = protocol.DEFAULT_CLOUD_PORT,
+    cafile: Annotated[
+        Path | None,
+        typer.Option("--cafile", help="CA certificate PEM for --gateway-metrics (env: MCUBRIDGE_CA_CERT)."),
+    ] = None,
+    certfile: Annotated[
+        Path | None,
+        typer.Option("--certfile", help="Client certificate PEM for --gateway-metrics (env: MCUBRIDGE_CLIENT_CERT)."),
+    ] = None,
+    keyfile: Annotated[
+        Path | None,
+        typer.Option("--keyfile", help="Client private key PEM for --gateway-metrics (env: MCUBRIDGE_CLIENT_KEY)."),
+    ] = None,
+    watch: Annotated[
+        float | None,
+        typer.Option("--watch", help="Polling interval in seconds for continuous --gateway-metrics collection."),
+    ] = None,
+    count: Annotated[
+        int,
+        typer.Option("--count", help="Number of --gateway-metrics samples to collect with --watch (0=infinite)."),
+    ] = 1,
 ) -> None:
     """Launch the interactive Pigweed bridge console or validate its configuration."""
+    if gateway_metrics:
+        if watch is not None and watch <= 0:
+            raise typer.BadParameter("--watch must be greater than zero")
+        if count < 0:
+            raise typer.BadParameter("--count must be non-negative")
+        resolved_ca, resolved_cert, resolved_key = _resolve_gateway_tls_material(cafile, certfile, keyfile)
+        run_gateway_metrics_poll(
+            host=gateway_host,
+            port=gateway_port,
+            cafile=resolved_ca,
+            certfile=resolved_cert,
+            keyfile=resolved_key,
+            token_database=token_database,
+            timeout_s=metrics_timeout,
+            watch_interval=watch,
+            count=count,
+        )
+        return
     if check:
         summary = build_check_summary(
             device=device,

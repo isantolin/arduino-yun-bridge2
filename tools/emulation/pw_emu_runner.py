@@ -219,6 +219,33 @@ def audit_gateway_pw_metrics(
     return True
 
 
+def verify_pw_emu_reset_recovery(
+    emu: Emulator,
+    state: EmulationState,
+    *,
+    engine_name: str,
+    timeout_seconds: float = 30.0,
+    after_reset: Callable[[Emulator], None] | None = None,
+) -> bool:
+    """Trigger a live ``pw_emu`` hardware reset and verify daemon link re-synchronization."""
+    state.sync_event.clear()
+    state.capabilities_event.clear()
+    try:
+        emu.reset()
+        if after_reset is not None:
+            after_reset(emu)
+    except (PwEmuError, OSError) as exc:
+        logger.error("Hardware reset via pw_emu failed", engine=engine_name, error=str(exc))
+        return False
+
+    if not state.sync_event.wait(timeout=timeout_seconds):
+        logger.error("MCU/daemon link failed to re-synchronize after pw_emu reset", engine=engine_name)
+        return False
+    state.capabilities_event.wait(timeout=min(30.0, timeout_seconds))
+    logger.info("Hardware reset recovery verified via pw_emu", engine=engine_name)
+    return True
+
+
 @contextlib.contextmanager
 def prepend_to_path(directory: Path) -> Generator[None]:
     """Temporarily prepend ``directory`` to PATH so ``pw_emu`` resolves the selected binary."""
@@ -304,6 +331,8 @@ def run_pw_emu_session(
     log_dir: Path | None = None,
     on_started: Callable[[str], None] | None = None,
     on_teardown: Callable[[Path, EmulationState, Emulator | None], None] | None = None,
+    verify_reset: bool = False,
+    after_reset: Callable[[Emulator], None] | None = None,
 ) -> bool:
     """Execute one full E2E session against a Pigweed ``pw_emu`` hardware emulator."""
     state = EmulationState()
@@ -366,8 +395,17 @@ def run_pw_emu_session(
         state.capabilities_event.wait(timeout=30.0)
         time.sleep(1.0)
 
+        ok = run_client_scripts(test_scripts, device_id=profile.device_id, led_builtin_pin=led_builtin_pin)
+        if ok and verify_reset:
+            ok = verify_pw_emu_reset_recovery(
+                emu,
+                state,
+                engine_name=profile.engine_name,
+                timeout_seconds=max(timeout_seconds, profile.sync_timeout_floor),
+                after_reset=after_reset,
+            )
         return (
-            run_client_scripts(test_scripts, device_id=profile.device_id, led_builtin_pin=led_builtin_pin)
+            ok
             and audit_post_execution_status()
             and audit_gateway_pw_metrics(min_dispatches=1 if test_scripts else 0)
         )

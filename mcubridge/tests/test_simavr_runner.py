@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import typer
@@ -344,3 +344,71 @@ def test_run_matrix_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     summary_file = tmp_path / "metrics" / "simavr_summary.md"
     content = summary_file.read_text(encoding="utf-8")
     assert "FAIL" in content
+
+
+def test_resolve_simavr_config_default_and_gdb(tmp_path: Path) -> None:
+    """resolve_simavr_config returns PW_EMU_CONFIG_PATH by default and enables GDB when requested."""
+    assert simavr_runner.resolve_simavr_config(tmp_path) == simavr_runner.PW_EMU_CONFIG_PATH
+
+    gdb_cfg_path = simavr_runner.resolve_simavr_config(tmp_path, gdb_port=1234)
+    assert gdb_cfg_path == tmp_path / "pw_emu_simavr_config.json"
+    data = json.loads(gdb_cfg_path.read_text(encoding="utf-8"))
+    assert data["pw"]["pw_emu"]["simavr"]["channels"]["gdb"] == {"enabled": True, "port": 1234}
+
+
+def test_verify_pw_emu_reset_recovery_paths() -> None:
+    """verify_pw_emu_reset_recovery covers success, after_reset hook, PwEmuError, and timeout."""
+    from pw_emu.core import Error as PwEmuError
+    from tools.emulation import emulation_runner, pw_emu_runner
+
+    calls: list[str] = []
+
+    class _FakeEmu:
+        def __init__(self, *, fail: bool = False) -> None:
+            self._fail = fail
+
+        def reset(self) -> None:
+            calls.append("reset")
+            if self._fail:
+                raise PwEmuError("reset unsupported")
+
+    state = emulation_runner.EmulationState()
+    state.sync_event.set()
+    state.capabilities_event.set()
+
+    def _after_reset(_emu: Any) -> None:
+        calls.append("after_reset")
+        state.sync_event.set()
+        state.capabilities_event.set()
+
+    assert (
+        pw_emu_runner.verify_pw_emu_reset_recovery(
+            cast(Any, _FakeEmu()),
+            state,
+            engine_name="renode",
+            timeout_seconds=0.1,
+            after_reset=_after_reset,
+        )
+        is True
+    )
+    assert calls == ["reset", "after_reset"]
+
+    assert (
+        pw_emu_runner.verify_pw_emu_reset_recovery(
+            cast(Any, _FakeEmu(fail=True)),
+            state,
+            engine_name="simavr",
+            timeout_seconds=0.1,
+        )
+        is False
+    )
+
+    assert (
+        pw_emu_runner.verify_pw_emu_reset_recovery(
+            cast(Any, _FakeEmu()),
+            emulation_runner.EmulationState(),
+            engine_name="qemu",
+            timeout_seconds=0.01,
+        )
+        is False
+    )

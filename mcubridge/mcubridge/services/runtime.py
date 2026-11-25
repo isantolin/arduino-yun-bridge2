@@ -1414,7 +1414,7 @@ class BridgeService:
             if self.serial is None:
                 raise ConnectionError(f"Serial link disconnected for {target}")
 
-            rpc_method = self.serial.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).method(spec.name)
+            rpc_method = self.serial.rpc_channel.method(spec.name)
             if timeout_ms > 0:
                 res = await self.serial.invoke_rpc(rpc_method, req, timeout=float(timeout_ms) / 1000.0)
             else:

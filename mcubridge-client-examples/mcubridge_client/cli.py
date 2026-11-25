@@ -6,16 +6,30 @@ import contextlib
 import os
 import ssl
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from typing import Annotated, Any
 
 import structlog
+import typer
 from mcubridge.config.logging import configure_logging as configure_logging
 
 from .client import GatewayClient, GatewayConnection
 from .definitions import build_bridge_args
 from .env import dump_client_env
 
-__all__ = ["bridge_session", "build_gateway_ssl_context", "configure_logging"]
+HostOption = Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")]
+PortOption = Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")]
+DeviceIdOption = Annotated[
+    str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+]
+
+__all__ = [
+    "DeviceIdOption",
+    "HostOption",
+    "PortOption",
+    "bridge_session",
+    "build_gateway_ssl_context",
+    "configure_logging",
+]
 
 
 def build_gateway_ssl_context() -> ssl.SSLContext | None:

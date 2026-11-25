@@ -9,7 +9,7 @@ from typing import Annotated
 import structlog
 import typer
 from mcubridge_client import mcu_wire_pb2
-from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.cli import DeviceIdOption, HostOption, PortOption, bridge_session, configure_logging
 
 configure_logging()
 logger = structlog.get_logger(__name__)
@@ -52,11 +52,9 @@ cli = typer.Typer(help="Test generic pin control using direct GatewayClient thro
 @cli.command()
 def cli_main(
     led_builtin_pin: Annotated[int, typer.Option("--pin", help="Pin number from the target core's LED_BUILTIN")],
-    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
-    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
-    device_id: Annotated[
-        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
-    ] = None,
+    host: HostOption = None,
+    port: PortOption = None,
+    device_id: DeviceIdOption = None,
 ) -> None:
     main(led_builtin_pin, host, port, device_id)
 

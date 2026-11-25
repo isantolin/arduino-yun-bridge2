@@ -9,7 +9,7 @@ from typing import Annotated
 import structlog
 import typer
 from mcubridge_client import mcu_wire_pb2
-from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.cli import DeviceIdOption, HostOption, PortOption, bridge_session, configure_logging
 
 configure_logging()
 logger = structlog.get_logger(__name__)
@@ -74,11 +74,9 @@ cli = typer.Typer(help="Poll sensor values via direct GatewayClient through Gate
 def cli_main(
     pin: Annotated[str, typer.Option("--pin", help="Pin to read (e.g. A0, A1, D13, 13)")] = "A0",
     interval: Annotated[float, typer.Option("--interval", help="Poll interval in seconds")] = 1.0,
-    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
-    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
-    device_id: Annotated[
-        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
-    ] = None,
+    host: HostOption = None,
+    port: PortOption = None,
+    device_id: DeviceIdOption = None,
 ) -> None:
     main(pin, interval, host, port, device_id)
 

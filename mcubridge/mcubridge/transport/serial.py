@@ -601,9 +601,14 @@ class SerialTransport:
                 await self.negotiate_baudrate(self.config.serial_safe_baud)
 
     @property
+    def rpc_channel(self) -> Any:
+        """Return Pigweed's native pw_rpc ChannelClient bound to the MCU RPC channel."""
+        return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC)
+
+    @property
     def rpcs(self) -> Any:
         """Return Pigweed's native pw_rpc service tree on the MCU RPC channel."""
-        return self.rpc_client.channel(protocol.HDLC_ADDRESS_RPC).rpcs
+        return self.rpc_channel.rpcs
 
     async def invoke_rpc(
         self,

@@ -219,7 +219,7 @@ async def test_cloud_spi_transfer_asserts_serial(
 ) -> None:
     service, _state, serial = service_setup
     serial.invoke_rpc.return_value = True
-    serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
+    serial.rpc_channel.method.side_effect = str
     await service.execute_rpc(
         "rpc.pb.SpiService/Transfer",
         pb.SpiTransfer(data=b"\x01\x02\x03").SerializeToString(),

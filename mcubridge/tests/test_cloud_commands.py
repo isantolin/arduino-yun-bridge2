@@ -32,7 +32,7 @@ def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
     state.link_sync_event.set()
     serial_mock = AsyncMock(spec=SerialTransport)
     serial_mock.invoke_rpc.return_value = True
-    serial_mock.rpc_client.channel.return_value.method.side_effect = lambda name: name
+    serial_mock.rpc_channel.method.side_effect = str
     mock_publisher = AsyncMock()
     svc = BridgeService(cfg, state, serial_mock, cloud_publisher=mock_publisher)
     return svc, state, serial_mock, mock_publisher

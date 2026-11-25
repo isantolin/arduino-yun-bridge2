@@ -181,7 +181,7 @@ async def test_cloud_events_and_direct_rpc_dispatch(
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.invoke_rpc.return_value = mcu_wire_pb2.VersionResponse(major=2, minor=8, patch=5)
-    mock_serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
+    mock_serial.rpc_channel.method.side_effect = str
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
 
     # Bootloader action

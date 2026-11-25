@@ -406,7 +406,7 @@ def test_runtime_pin_analog_and_invalid_digits(
         state.link_sync_event.set()
         mock_serial = AsyncMock(spec=SerialTransport)
         mock_serial.invoke_rpc = AsyncMock(return_value=True)
-        mock_serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
+        mock_serial.rpc_channel.method.side_effect = str
         service = BridgeService(cfg, state, mock_serial)
 
         await service.execute_rpc(
@@ -1045,7 +1045,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         raise OSError("Hardware IO error")
 
     mock_serial = AsyncMock(spec=SerialTransport)
-    mock_serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
+    mock_serial.rpc_channel.method.side_effect = str
     mock_serial.invoke_rpc = AsyncMock(side_effect=mock_serial_send)
     svc.serial = mock_serial
 
@@ -1403,7 +1403,7 @@ async def test_runtime_execute_rpc_branches(mock_bridge_service: BridgeService) 
         await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
 
     # 6. execute_rpc with timeout_ms > 0
-    mock_serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
+    mock_serial.rpc_channel.method.side_effect = str
     mock_serial.invoke_rpc = AsyncMock(return_value=True)
     res_rpc_timeout = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"", timeout_ms=5000)
     assert res_rpc_timeout == mcu_wire_pb2.Empty().SerializeToString()

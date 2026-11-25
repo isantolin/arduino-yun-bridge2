@@ -183,7 +183,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 
         # 2. Execute RPC digital write command over Wireless TCP
         dw_req = pb.DigitalWrite(pin=13, value=1)
-        res = await transport.send("rpc.pb.GpioService/DigitalWrite", dw_req)
+        res = await transport.invoke_rpc(transport.rpcs.rpc.pb.GpioService.DigitalWrite, dw_req)
         assert res is not None
 
         # 3. Assert frames were delivered over TCP wire
@@ -306,7 +306,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
             await asyncio.sleep(0.02)
 
         ar_req = pb.PinRead(pin=0)
-        raw_res = await transport.send("rpc.pb.GpioService/AnalogRead", ar_req)
+        raw_res = await transport.invoke_rpc(transport.rpcs.rpc.pb.GpioService.AnalogRead, ar_req)
         assert raw_res is not None
         if isinstance(raw_res, pb.AnalogReadResponse):
             ar_resp = raw_res

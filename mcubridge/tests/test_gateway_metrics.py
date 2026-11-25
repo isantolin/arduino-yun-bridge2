@@ -151,8 +151,7 @@ def test_fetch_gateway_pw_metrics_uses_detokenizer_and_closes_session(
             return _FakeChannel()
 
     class _FakeSession:
-        def __init__(self, _sock: Any, *, timeout_s: float = 5.0) -> None:
-            self.timeout_s = timeout_s
+        def __init__(self, _sock: Any) -> None:
             self.errors: list[OSError] = []
             self.rpc_client = _FakeRpcClient()
 

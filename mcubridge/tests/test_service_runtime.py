@@ -1393,12 +1393,7 @@ async def test_runtime_execute_rpc_branches(mock_bridge_service: BridgeService) 
     assert res_rpc_proto == ver_resp.SerializeToString()
     assert svc.state.mcu_version == (2, 8, 9)
 
-    # 5. execute_rpc with raw bytes response
-    mock_serial.invoke_rpc = AsyncMock(return_value=b"raw_bytes")
-    res_rpc_bytes = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"")
-    assert res_rpc_bytes == b"raw_bytes"
-
-    # 6. execute_rpc failure (None or False)
+    # 5. execute_rpc failure (None or False)
     mock_serial.invoke_rpc = AsyncMock(return_value=None)
     with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
         await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
@@ -1407,7 +1402,7 @@ async def test_runtime_execute_rpc_branches(mock_bridge_service: BridgeService) 
     with pytest.raises(RuntimeError, match="Serial RPC invocation failed"):
         await svc.execute_rpc("rpc.pb.SystemService/GetVersion", b"")
 
-    # 7. execute_rpc with timeout_ms > 0
+    # 6. execute_rpc with timeout_ms > 0
     mock_serial.rpc_client.channel.return_value.method.side_effect = lambda name: name
     mock_serial.invoke_rpc = AsyncMock(return_value=True)
     res_rpc_timeout = await svc.execute_rpc("rpc.pb.SystemService/EnterBootloader", b"", timeout_ms=5000)

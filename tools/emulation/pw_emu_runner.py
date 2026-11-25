@@ -155,7 +155,7 @@ def open_tls_client_socket(host: str, port: int, timeout_s: float) -> ssl.SSLSoc
     raw_sock = socket.create_connection((host, port), timeout=timeout_s)
     try:
         return ctx.wrap_socket(raw_sock, server_hostname=host)
-    except (OSError, ssl.SSLError):
+    except OSError:
         raw_sock.close()
         raise
 
@@ -191,7 +191,7 @@ def audit_gateway_pw_metrics(
     """Audit live gateway ``pw_metric`` counters after an emulation session."""
     try:
         metrics = fetch_gateway_pw_metrics(host=host, port=port, timeout_s=timeout_s)
-    except (OSError, ssl.SSLError, TimeoutError, RuntimeError, ValueError, PwRpcError, PwRpcTimeout) as exc:
+    except (OSError, RuntimeError, ValueError, PwRpcError, PwRpcTimeout) as exc:
         logger.error("Pigweed MetricService gateway audit failed", error=str(exc))
         return False
 

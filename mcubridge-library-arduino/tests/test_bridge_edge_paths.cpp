@@ -550,9 +550,8 @@ void test_fault_injection_harness_paths() {
   SPIService.begin();
   etl::array<uint8_t, 2> spi_buf = {0x10, 0x20};
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
-  TEST_ASSERT_EQUAL_UINT32(
-      0,
-      static_cast<uint32_t>(SPIService.transfer(pw::span<uint8_t>(spi_buf))));
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(spi_buf)) ==
+                   pw::Status::DeadlineExceeded());
   SPIService.end();
 
   TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());

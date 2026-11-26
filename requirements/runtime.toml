@@ -192,7 +192,17 @@ ref_type = "tags"
 version = "5.8.4"
 check_file = "library.properties"
 sha256 = "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
-rationale = "GPL-3.0-or-later wolfCrypt unified cryptographic provider (HKDF-SHA256, HMAC-SHA256, and ChaCha20-Poly1305) across AVR, SAMD, ESP32, and host"
+rationale = "GPL-3.0-or-later Arduino wolfCrypt primitives for AVR, SAMD and ESP32 firmware; Linux Gateway TLS is pinned independently below"
+
+[[cpp_dependency]]
+name = "wolfssl_gateway"
+github = "wolfSSL/wolfssl"
+ref_type = "tags"
+version = "v5.9.4-stable"
+check_file = "CMakeLists.txt"
+sha256 = "9cd0d69d208d025b16836c177658cc0deebc2a85c4b60898c9bc546bc6cbdf18"
+rationale = "GPLv3 full wolfSSL TLS 1.3 and wolfCrypt backend for the Linux Gateway; identical source archive is pinned in CMake and Bazel"
+
 
 [[cpp_dependency]]
 name = "FlashStorage"

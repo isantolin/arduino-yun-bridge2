@@ -1,4 +1,5 @@
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@pigweed//pw_protobuf_compiler:pw_proto_filegroup.bzl", "pw_proto_filegroup")
 load("@pigweed//pw_protobuf_compiler:pwpb_proto_library.bzl", "pwpb_proto_library")
 load("@pigweed//pw_protobuf_compiler:pwpb_rpc_proto_library.bzl", "pwpb_rpc_proto_library")
 load("@pigweed//pw_protobuf_compiler:raw_rpc_proto_library.bzl", "raw_rpc_proto_library")
@@ -9,6 +10,7 @@ proto_library(
     name = "config_schema_proto",
     srcs = ["config_schema.proto"],
     strip_import_prefix = "/tools/protocol",
+    deps = ["@com_google_protobuf//:descriptor_proto"],
 )
 
 proto_library(
@@ -18,9 +20,15 @@ proto_library(
     deps = [":config_schema_proto"],
 )
 
+pw_proto_filegroup(
+    name = "gateway_control_proto_and_options",
+    srcs = ["gateway/gateway_control.proto"],
+    options_files = ["gateway/gateway_control.pwpb_options"],
+)
+
 proto_library(
     name = "gateway_control_proto",
-    srcs = ["gateway/gateway_control.proto"],
+    srcs = [":gateway_control_proto_and_options"],
     strip_import_prefix = "/tools/protocol",
 )
 

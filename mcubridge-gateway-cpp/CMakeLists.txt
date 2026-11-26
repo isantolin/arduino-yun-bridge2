@@ -3,7 +3,23 @@ project(mcubridge_gateway_cpp LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-find_package(OpenSSL 3.0 REQUIRED COMPONENTS SSL Crypto)
+include(FetchContent)
+
+# Full wolfSSL TLS 1.3 for Linux; MCU targets keep their own WOLFCRYPT_ONLY config.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build wolfSSL as a static library" FORCE)
+set(WOLFSSL_OPENSSLEXTRA yes CACHE STRING "" FORCE)
+set(WOLFSSL_TLS13 yes CACHE STRING "" FORCE)
+set(WOLFSSL_RSA yes CACHE STRING "" FORCE)
+set(WOLFSSL_ECC yes CACHE STRING "" FORCE)
+set(WOLFSSL_ASN yes CACHE STRING "" FORCE)
+set(WOLFSSL_FILESYSTEM yes CACHE STRING "" FORCE)
+FetchContent_Declare(
+  wolfssl
+  URL https://www.wolfssl.com/download/wolfssl-5.9.4.zip
+  URL_HASH SHA256=9cd0d69d208d025b16836c177658cc0deebc2a85c4b60898c9bc546bc6cbdf18
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+)
+FetchContent_MakeAvailable(wolfssl)
 find_package(Threads REQUIRED)
 
 get_filename_component(DEFAULT_PIGWEED_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pigweed" ABSOLUTE)
@@ -85,7 +101,7 @@ add_executable(mcubridge-gateway-cpp src/gateway_main.cc)
 target_link_libraries(mcubridge-gateway-cpp PRIVATE
   gateway_control_proto.pwpb_rpc pw_rpc.pwpb.server_api pw_rpc.pwpb.client_api pw_protobuf
   mcu_wire_proto.raw_rpc pw_rpc.raw.client_api pw_rpc.client
-  OpenSSL::SSL OpenSSL::Crypto Threads::Threads
+  wolfssl Threads::Threads
   pw_assert pw_log pw_log_basic pw_hdlc pw_hdlc.rpc_channel_output
   pw_metric pw_metric.metric_service_pwpb pw_result
   pw_rpc.server pw_transfer

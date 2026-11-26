@@ -44,6 +44,13 @@ pw_proto_library(gateway_control_proto
   STRIP_PREFIX "${MCUBRIDGE_PROTOCOL_DIR}"
   SOURCES "${MCUBRIDGE_PROTOCOL_DIR}/gateway/gateway_control.proto"
   INPUTS "${MCUBRIDGE_PROTOCOL_DIR}/gateway/gateway_control.pwpb_options")
+# Keep both source protos at the same import root so mcu_wire.proto can
+# resolve its sibling import "config_schema.proto" in every generated language.
+pw_proto_library(mcu_wire_proto
+  STRIP_PREFIX "${MCUBRIDGE_PROTOCOL_DIR}"
+  SOURCES
+    "${MCUBRIDGE_PROTOCOL_DIR}/config_schema.proto"
+    "${MCUBRIDGE_PROTOCOL_DIR}/mcu_wire.proto")
 # pw_rpc encodes every outgoing packet in a buffer of
 # PW_RPC_ENCODING_BUFFER_SIZE_BYTES (default 512). pw_transfer data chunks are
 # up to kTransferChunkBytes (1024) plus chunk and packet headers; with the
@@ -77,14 +84,14 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/pigweed_gateway.cmake")
 add_executable(mcubridge-gateway-cpp src/gateway_main.cc)
 target_link_libraries(mcubridge-gateway-cpp PRIVATE
   gateway_control_proto.pwpb_rpc pw_rpc.pwpb.server_api pw_rpc.pwpb.client_api pw_protobuf
-  pw_rpc.client
+  mcu_wire_proto.raw_rpc pw_rpc.raw.client_api pw_rpc.client
   OpenSSL::SSL OpenSSL::Crypto Threads::Threads
   pw_assert pw_log pw_log_basic pw_hdlc pw_hdlc.rpc_channel_output
-  pw_metric pw_metric.metric_service_pwpb pw_result pw_string
+  pw_metric pw_metric.metric_service_pwpb pw_result
   pw_rpc.server pw_transfer
   pw_thread.thread pw_thread_stl.thread pw_sync.mutex pw_sync.lock_annotations
-  pw_sync.scoped_locker
-  pw_sync.timed_thread_notification pw_chrono.system_clock
+  pw_sync.scoped_locker pw_sync.binary_semaphore
+  pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )
 target_compile_options(mcubridge-gateway-cpp PRIVATE -Wall -Wextra -Wpedantic)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")

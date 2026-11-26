@@ -1,4 +1,16 @@
 common --enable_bzlmod
+# Required upstream Pigweed Bzlmod flags (pigweed.dev/build/bazel/integration/setup.html).
+common --incompatible_default_to_explicit_init_py
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+common --experimental_exclude_defines_from_exec_config
+common --experimental_exclude_starlark_flags_from_exec_config
+build --incompatible_strict_action_env
+common --legacy_external_runfiles=True
+common --incompatible_bazel_test_exec_run_under=True
+common --experimental_platform_in_output_dir=True
+common --incompatible_enable_proto_toolchain_resolution
+build --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
+build --extra_toolchains=@pigweed//pw_build:pw_python_proto_toolchain_toolchain
 common --repo_env=DO_NOT_TRACK=1
 
 build --cxxopt=-std=c++20

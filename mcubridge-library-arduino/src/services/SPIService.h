@@ -5,7 +5,7 @@
 
 #if BRIDGE_ENABLE_SPI
 
-#include <pw_bytes/span.h>
+#include <pw_span/span.h>
 #include <pw_spi_avr/initiator.h>
 
 #include "protocol/mcu_wire.pb.h"

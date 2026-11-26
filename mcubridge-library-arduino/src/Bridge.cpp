@@ -191,7 +191,8 @@ class GpioRpcService final
             pin, false,
             g_pin_runtime_modes[pin] == PinRuntimeMode::kOutputHigh
                 ? pw::digital_io::State::kActive
-                : pw::digital_io::State::kInactive);
+                : pw::digital_io::State::kInactive,
+            false);
         const pw::Status enabled = input.Enable();
         if (!enabled.ok()) return enabled;
         auto value = input.GetState();
@@ -208,7 +209,8 @@ class GpioRpcService final
       case PinRuntimeMode::kInputPullup:
       default: {
         pw::digital_io::ArduinoDigitalIn input(
-            pin, g_pin_runtime_modes[pin] == PinRuntimeMode::kInputPullup);
+            pin, g_pin_runtime_modes[pin] == PinRuntimeMode::kInputPullup,
+            false);
         const pw::Status enabled = input.Enable();
         if (!enabled.ok()) return enabled;
         auto value = input.GetState();
@@ -1281,7 +1283,8 @@ void BridgeClass::_subscriptionTask() {
                         sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
                       pw::digital_io::ArduinoDigitalIn input(
                           sub.pin,
-                          sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP);
+                          sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP,
+                          false);
                       const pw::Status enabled = input.Enable();
                       if (!enabled.ok()) {
                         emitStatus(enabled);

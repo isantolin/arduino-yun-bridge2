@@ -55,6 +55,10 @@
 #include <pw_tokenizer/hash.h>
 #include <pw_tokenizer/tokenize.h>
 #endif
+
+#include <pw_analog_avr/analog_input.h>
+#include <pw_digital_io_avr/digital_io.h>
+#include <pw_spi_avr/initiator.h>
 #include <wolfssl.h>
 
 #include "hal/arduino_stream.h"
@@ -257,20 +261,9 @@ class BridgeClass {
   void _onBaudrateChange();
   void _onHandshakeTimeout();
 
-  static void _handleSetPinMode(const rpc_pb_PinMode& m);
-  template <typename MsgType, bool IsAnalog>
-  static void _handlePinWrite(const MsgType& m) {
-#if defined(ARDUINO_ARCH_ESP32)
-    if (!digitalPinIsValid(m.pin)) return;
-#endif
-    if constexpr (IsAnalog) {
-      analogWrite(m.pin,
-                  static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
-    } else {
-      pinMode(m.pin, OUTPUT);
-      digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
-    }
-  }
+  static pw::Status _handleSetPinMode(const rpc_pb_PinMode& m);
+  static pw::Status _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
+  static pw::Status _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
 
   void _handlePinSubscribe(
       const rpc_pb_PinSubscribeRequest& m,

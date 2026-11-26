@@ -662,7 +662,7 @@ jobs:
           bazel-bin/mcubridge-gateway-cpp/mcubridge-gateway-cpp --help
       - name: Run Arduino host C++ tests with Bazel
         run: |
-          bazel test --test_output=errors //mcubridge-library-arduino:...
+          bazel test --test_output=errors //mcubridge-library-arduino/...
       - name: Build Linux Gateway OCI image with Bazel
         run: |
           bazel build //mcubridge-gateway-cpp:mcubridge-gateway-image

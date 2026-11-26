@@ -3,10 +3,6 @@
 #endif
 #include "SPIService.h"
 
-#include <pw_span/span.h>
-#if defined(ARDUINO_ARCH_AVR)
-#include <avr/pgmspace.h>
-#endif
 #if BRIDGE_ENABLE_SPI
 SPIServiceClass::SPIServiceClass() = default;
 
@@ -62,10 +58,10 @@ pw::Status SPIServiceClass::transfer(pw::span<uint8_t> buffer) {
     return pw::OkStatus();
   }
 
-  const pw::ConstByteSpan tx(
-      reinterpret_cast<const std::byte*>(buffer.data()), buffer.size());
-  const pw::ByteSpan rx(reinterpret_cast<std::byte*>(buffer.data()),
-                        buffer.size());
+  const pw::ConstByteSpan tx =
+      pw::as_bytes(pw::span<const uint8_t>(buffer.data(), buffer.size()));
+  const pw::ByteSpan rx =
+      pw::as_writable_bytes(pw::span<uint8_t>(buffer.data(), buffer.size()));
   return _initiator.WriteRead(tx, rx);
 }
 SPIServiceType SPIService;

@@ -11,6 +11,10 @@ cc_binary(
         "-Wall",
         "-Wextra",
         "-Wpedantic",
+        # Pigweed's PW_METRIC macro uses __COUNTER__. Clang diagnoses that
+        # compiler builtin as a C2y extension in this C++20 translation unit;
+        # keep the diagnostic visible without turning it into a build failure.
+        "-Wno-error=counter-extension",
     ],
     defines = [
         "PW_RPC_ENCODING_BUFFER_SIZE_BYTES=2048",

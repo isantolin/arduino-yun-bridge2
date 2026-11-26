@@ -97,6 +97,7 @@ PW_OBJECTS=()
 PW_ALL_SRCS=(
     "${PW_PIGWEED_SRCS[@]}"
     "${PW_TRANSFER_STAGED_SRCS[@]}"
+    "${PW_PERIPHERAL_STAGED_SRCS[@]}"
 )
 for source in "${PW_ALL_SRCS[@]}"; do
     object_name="${source#"$ROOT_DIR/"}"
@@ -108,6 +109,11 @@ for source in "${PW_ALL_SRCS[@]}"; do
         -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
         "${PW_COOPERATIVE_DEFINES[@]}" \
         -I"${SRC_DIR}" \
+        -I"${STUB_DIR}" \
+        -I"${METADATA_DIR}" \
+        -I"${ETL_PATH}" \
+        -I"${ETL_PATH}/include" \
+        -I"${ETL_PATH}/arduino" \
         "${PW_HOST_INC_FLAGS[@]}" \
         -c "$source" -o "$object"
     PW_OBJECTS+=("$object")

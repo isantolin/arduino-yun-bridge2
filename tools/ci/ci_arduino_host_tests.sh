@@ -117,6 +117,7 @@ SOURCES=(
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
     "${PW_PIGWEED_SRCS[@]}"
     "${PW_TRANSFER_STAGED_SRCS[@]}"
+    "${PW_PERIPHERAL_STAGED_SRCS[@]}"
 )
 
 INC_FLAGS=(

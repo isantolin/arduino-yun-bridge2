@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <SPI.h>
 #include <unity.h>
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
@@ -218,36 +219,44 @@ void test_spi_data_modes_map_to_native_settings() {
   config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST;
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(
+                                   payload.data(), payload.size())).ok());
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_1;
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(
+                                   payload.data(), payload.size())).ok());
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE1, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_2;
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(
+                                   payload.data(), payload.size())).ok());
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE2, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(
+                                   payload.data(), payload.size())).ok());
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE3, SPI.last_settings.data_mode);
   TEST_ASSERT_EQUAL_UINT8(LSBFIRST, SPI.last_settings.bit_order);
   TEST_ASSERT_EQUAL_UINT32(config.frequency, SPI.last_settings.clock);
 
   config.data_mode = static_cast<rpc_pb_SpiDataMode>(99);
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
-  TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
+  TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
+                   pw::Status::InvalidArgument());
+
+  config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
+  config.bit_order = static_cast<rpc_pb_SpiBitOrder>(99);
+  TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
+                   pw::Status::InvalidArgument());
+
+  config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  config.frequency = 0U;
+  TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
+                   pw::Status::InvalidArgument());
 
   SPIService.end();
 }
@@ -578,24 +587,22 @@ void test_spi_edges() {
   sc.frequency = 4000000;
   sc.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
   sc.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
-  SPIService.setConfig(sc);
+  TEST_ASSERT_TRUE(SPIService.setConfig(sc).ok());
 
   // 2. Normal transfer, empty transfer, uninitialized transfer
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
-  size_t n = SPIService.transfer(pw::span<uint8_t>(buf));
-  TEST_ASSERT_EQUAL(4, n);
-  n = SPIService.transfer(pw::span<uint8_t>());
-  TEST_ASSERT_EQUAL(0, n);
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>()).ok());
 
   SPIService.end();
-  n = SPIService.transfer(pw::span<uint8_t>(buf));
-  TEST_ASSERT_EQUAL(0, n);
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)) ==
+                   pw::Status::FailedPrecondition());
 
   // 3. Timeout fault
   SPIService.begin();
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
-  size_t t3 = SPIService.transfer(pw::span<uint8_t>(buf));
-  TEST_ASSERT_EQUAL(0U, t3);
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)) ==
+                   pw::Status::DeadlineExceeded());
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
   // 4. SPI Transfer via HDLC RPC
@@ -1146,6 +1153,79 @@ void test_mailbox_rpc_correlation_and_status_propagation() {
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
+void test_gpio_hal_and_safety_mode_coverage() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+
+  // Exercise SetPinMode across INPUT, INPUT_PULLUP, OUTPUT (high/low), and
+  // invalid mode/pin.
+  rpc_pb_PinMode pm = rpc_pb_PinMode_init_default;
+  pm.pin = 5U;
+  pm.mode = rpc_pb_PinModeType_PIN_INPUT;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+  pm.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+  pm.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+  pm.mode = static_cast<rpc_pb_PinModeType>(99);
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+
+  // Exercise DigitalWrite (0 and 1) and AnalogWrite (0 and 128) on valid pin.
+  rpc_pb_DigitalWrite dw = rpc_pb_DigitalWrite_init_default;
+  dw.pin = 5U;
+  dw.value = 0U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                   rpc_pb_DigitalWrite_fields, dw);
+  dw.value = 1U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                   rpc_pb_DigitalWrite_fields, dw);
+
+  rpc_pb_AnalogWrite aw = rpc_pb_AnalogWrite_init_default;
+  aw.pin = 5U;
+  aw.value = 0U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
+                   rpc_pb_AnalogWrite_fields, aw);
+  aw.value = 128U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
+                   rpc_pb_AnalogWrite_fields, aw);
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields,
+                   rpc_pb_PinMode{5U, rpc_pb_PinModeType_PIN_OUTPUT});
+
+  // Exercise DigitalRead and AnalogRead on valid pin.
+  rpc_pb_PinRead pr = rpc_pb_PinRead_init_default;
+  pr.pin = 5U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalRead"),
+                   rpc_pb_PinRead_fields, pr);
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogRead"),
+                   rpc_pb_PinRead_fields, pr);
+
+  // Exercise SubscribePins invalid mode branch.
+  rpc_pb_PinSubscribeRequest bad_sub = rpc_pb_PinSubscribeRequest_init_default;
+  bad_sub.pin = 5U;
+  bad_sub.mode = static_cast<rpc_pb_PinModeType>(99);
+  bad_sub.enabled = true;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                   rpc_pb_PinSubscribeRequest_fields, bad_sub);
+
+  // Exercise enterSafeState with all SafetyPinState variants.
+  Bridge.clearSafetyPins();
+  Bridge.registerSafetyPin(4U, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
+  Bridge.registerSafetyPin(5U, BridgeClass::SafetyPinState::SAFE_PIN_HIGH);
+  Bridge.registerSafetyPin(6U,
+                           BridgeClass::SafetyPinState::SAFE_PIN_INPUT_PULLUP);
+  Bridge.registerSafetyPin(7U, BridgeClass::SafetyPinState::SAFE_PIN_INPUT);
+  Bridge.registerSafetyPin(255U, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
+  Bridge.enterSafeState();
+  Bridge.clearSafetyPins();
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_all_handlers_coverage);
@@ -1165,5 +1245,6 @@ int main() {
   RUN_TEST(test_process_rpc_correlation_and_status_propagation);
   RUN_TEST(test_datastore_rpc_correlation_and_status_propagation);
   RUN_TEST(test_mailbox_rpc_correlation_and_status_propagation);
+  RUN_TEST(test_gpio_hal_and_safety_mode_coverage);
   return UNITY_END();
 }

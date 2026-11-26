@@ -30,6 +30,7 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
+    integrity = "sha256-6E6zAcp5Z4MeaLFyj5Eeh/otNF2N22T4l7wvLuJKMhw=",
     strip_prefix = "Unity-2.7.0",
     urls = ["https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v2.7.0.tar.gz"],
 )
@@ -47,7 +48,7 @@ cc_library(
 )
 """,
     strip_prefix = "etl-20.49.0",
-    urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/v20.49.0.tar.gz"],
+    urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
 )
 
 http_archive(
@@ -62,8 +63,8 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
-    strip_prefix = "nanopb-0.4.9.2",
-    urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/0.4.9.2.tar.gz"],
+    strip_prefix = "nanopb-nanopb-0.4.9.2",
+    urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/nanopb-0.4.9.2.tar.gz"],
 )
 
 http_archive(

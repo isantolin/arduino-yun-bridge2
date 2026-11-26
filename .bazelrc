@@ -23,6 +23,8 @@ build --per_file_copt=external/.*@-Wno-deprecated-declarations
 # These sources compile in Bazel's exec configuration ([for tool]), so use
 # host_per_file_copt rather than per_file_copt (which targets the target config).
 build --host_per_file_copt=external/.*rules_cc_autoconf.*/.*.cc@-fexceptions
+# Host-side tools such as rules_foreign_cc's GNU make load modules with dlopen().
+build --host_linkopt=-ldl
 # Keep the upstream helper's unused-but-set-variable diagnostic visible,
 # but do not let this third-party source warning stop the Gateway host build.
 build --host_per_file_copt=external/.*rules_cc_autoconf.*/autoconf/private/checker/checker.cc@-Wno-error=unused-but-set-variable

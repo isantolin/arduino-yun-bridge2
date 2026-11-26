@@ -23,6 +23,7 @@ cc_binary(
     deps = [
         "//tools/protocol:gateway_control_pwpb_rpc",
         "//tools/protocol:mcu_wire_raw_rpc",
+        "@pigweed//pw_assert:backend_impl",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",
         "@pigweed//pw_chrono:system_clock",
@@ -30,6 +31,7 @@ cc_binary(
         "@pigweed//pw_hdlc",
         "@pigweed//pw_hdlc:rpc_channel_output",
         "@pigweed//pw_log",
+        "@pigweed//pw_log:backend_impl",
         "@pigweed//pw_log_basic",
         "@pigweed//pw_metric:metric",
         "@pigweed//pw_metric:metric_service_pwpb",

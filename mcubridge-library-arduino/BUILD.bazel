@@ -112,6 +112,8 @@ HOST_TEST_SUITES = [
         deps = [
             ":bridge_core",
             ":host_filesystem_mock",
+            "@pigweed//pw_assert:backend_impl",
+            "@pigweed//pw_log:backend_impl",
             "@unity",
         ],
     )
@@ -125,6 +127,8 @@ cc_test(
     defines = HOST_DEFINES,
     deps = [
         ":bridge_core",
+        "@pigweed//pw_assert:backend_impl",
+        "@pigweed//pw_log:backend_impl",
         "@unity",
     ],
 )

@@ -1,0 +1,18 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Non-inline pw_chrono SystemClock backend for Linux host tests where
+# //tools/arduino_stub (ArduinoStubs.cpp) defines GetSystemClockTickCount()
+# backed by simulated millis().
+cc_library(
+    name = "system_clock_host",
+    hdrs = [
+        "public_overrides/pw_chrono_backend/system_clock_config.h",
+        "public_overrides/pw_chrono_backend/system_clock_inline.h",
+    ],
+    includes = ["public_overrides"],
+    deps = [
+        "@pigweed//pw_chrono:system_clock.facade",
+    ],
+)

@@ -10,5 +10,9 @@ build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_basic
 build --@pigweed//pw_assert:check_backend=@pigweed//pw_assert_basic
 build --@pigweed//pw_assert:backend_impl=@pigweed//pw_assert_basic:impl
 
+# Host cc_test suites use ArduinoStubs.cpp's simulated millis()-backed clock
+# instead of pw_chrono_stl's inline GetSystemClockTickCount().
+test --@pigweed//pw_chrono:system_clock_backend=//tools/pw_chrono_arduino:system_clock_host
+
 coverage --combined_report=lcov
 coverage --instrumentation_filter="^//mcubridge-gateway-cpp[/:],^//mcubridge-library-arduino[/:]"

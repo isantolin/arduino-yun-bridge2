@@ -133,7 +133,12 @@ void resetPinRuntimeModesToSafeState() {
 
 void setPinRuntimeModeForSafety(uint8_t pin,
                                 bridge::hal::SafetyPinState state) {
-  if (pin >= NUM_DIGITAL_PINS) return;
+  if (!isValidDigitalPin(pin)) return;
+  if ((state == bridge::hal::SafetyPinState::SAFE_PIN_LOW ||
+       state == bridge::hal::SafetyPinState::SAFE_PIN_HIGH) &&
+      !isValidDigitalOutputPin(pin)) {
+    return;
+  }
   switch (state) {
     case bridge::hal::SafetyPinState::SAFE_PIN_LOW:
       g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
@@ -1076,8 +1081,14 @@ pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
     }
     case rpc_pb_PinModeType_PIN_OUTPUT: {
       if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
+      const PinRuntimeMode previous_mode = g_pin_runtime_modes[pin];
+      const bool initial_active =
+          previous_mode == PinRuntimeMode::kInputPullup ||
+          previous_mode == PinRuntimeMode::kOutputHigh ||
+          previous_mode == PinRuntimeMode::kPwmHigh;
       pw::digital_io::ArduinoDigitalOut output(
-          pin, pw::digital_io::State::kInactive);
+          pin, initial_active ? pw::digital_io::State::kActive
+                              : pw::digital_io::State::kInactive);
       const pw::Status status = output.Enable();
       if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
       return status;

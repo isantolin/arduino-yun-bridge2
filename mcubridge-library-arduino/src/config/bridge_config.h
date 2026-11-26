@@ -46,6 +46,14 @@ namespace config {
 
 static_assert(RX_BUFFER_SIZE > 0);
 
+// Canonical raw ADC scale of the selected Arduino core. PWM duty is deliberately
+// separate: pw_analog::AnalogInput models ADC acquisition, not PWM output.
+#if defined(ARDUINO_ARCH_ESP32)
+inline constexpr int32_t ADC_MAX_SAMPLE = 4095;
+#else
+inline constexpr int32_t ADC_MAX_SAMPLE = 1023;
+#endif
+
 // Pin counts come from the selected Arduino core.
 #if !defined(NUM_DIGITAL_PINS) || !defined(NUM_ANALOG_INPUTS)
 #error "The Arduino core must define NUM_DIGITAL_PINS and NUM_ANALOG_INPUTS"

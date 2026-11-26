@@ -20,7 +20,7 @@ build --per_file_copt=external/.*@-Wno-deprecated-declarations
 # checker and resolver implementations. Enable exceptions only for source files
 # in that external build-tool repository; project, Pigweed, Gateway, and AVR
 # targets retain the hermetic toolchain's -fno-exceptions default.
-build --per_file_copt=external/.*rules_cc_autoconf.*/.*\\.cc@-fexceptions
+build --per_file_copt=external/.*rules_cc_autoconf.*/.*.cc@-fexceptions
 build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
 build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_stdio
 build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_basic

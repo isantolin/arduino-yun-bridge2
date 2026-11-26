@@ -2,7 +2,6 @@ from pathlib import Path
 
 from tools.protocol import generate
 
-
 def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_path: Path) -> None:
     proto_dir = tmp_path / "tools" / "protocol"
     template_dir = proto_dir / "templates"
@@ -77,10 +76,8 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
     missing_output, _, _ = generate.check_incremental_build(args, "2.1.0", repo_root=tmp_path)
     assert not missing_output
 
-
-
 def test_generated_nanopb_headers_keep_the_public_runtime_include() -> None:
-    generated = "#include <pb.h>\\n\\nstruct rpc_message {};\\n"
+    generated = "#include <pb.h>\n\nstruct rpc_message {};\n"
 
     rewritten = generate._nanopb_header_with_public_runtime_include(generated, "mcu_wire")
 
@@ -89,9 +86,8 @@ def test_generated_nanopb_headers_keep_the_public_runtime_include() -> None:
     assert "typedef pb_byte_t mcu_wire_pb_byte_t;" in rewritten
     assert generate._nanopb_header_with_public_runtime_include(rewritten, "mcu_wire") == rewritten
 
-
 def test_generated_nanopb_header_requires_the_runtime_include() -> None:
     import pytest
 
     with pytest.raises(ValueError, match="public <pb.h> include"):
-        generate._nanopb_header_with_public_runtime_include("struct rpc_message {};\\n", "mcu_wire")
+        generate._nanopb_header_with_public_runtime_include("struct rpc_message {};\n", "mcu_wire")

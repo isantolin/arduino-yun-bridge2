@@ -759,7 +759,7 @@ def _nanopb_header_with_public_runtime_include(content: str, stem: str) -> str:
     alias = f"typedef pb_byte_t {stem}_pb_byte_t;"
     if alias in content:
         return content
-    return content.replace(include, f"{include}\\n\\n{alias}", 1)
+    return content.replace(include, f"{include}\n\n{alias}", 1)
 
 
 def _dispatch_generated_file(

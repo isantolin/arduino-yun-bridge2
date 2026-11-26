@@ -45,7 +45,7 @@ filegroup(
 )
 """,
     sha256 = "c9ac97ef8bd1888d66460a2bf7bb941d4511d4cc0b964e9e2b4bdce9934696a1",
-    strip_prefix = "wolfssl-5.9.4",
+    strip_prefix = "wolfssl-5.9.4-stable",
     urls = ["https://downloads.sourceforge.net/project/wolfssl/v5.9.4-stable/wolfSSL%20Release%205.9.4%20%28September%2025%2C%202026%29%20source%20code.zip"],
 )
 

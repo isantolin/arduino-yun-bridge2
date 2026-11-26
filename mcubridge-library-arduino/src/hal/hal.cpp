@@ -357,6 +357,7 @@ __attribute__((weak)) pw::Status removeFile(etl::string_view) {
 }
 
 void applySafetyPin(uint8_t pin, SafetyPinState state) {
+  if (pin >= NUM_DIGITAL_PINS) return;
 #if defined(ARDUINO_ARCH_ESP32)
   if (!digitalPinIsValid(pin)) return;
 #endif

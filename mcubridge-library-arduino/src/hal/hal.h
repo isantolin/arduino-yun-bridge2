@@ -20,6 +20,7 @@
 #include <pw_bytes/span.h>
 #include <pw_status/status.h>
 #endif
+#include <pw_digital_io_avr/digital_io.h>
 #include <etl/string_view.h>
 #include <pw_chrono/system_clock.h>
 #include <stdint.h>

@@ -137,7 +137,7 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 name = "nanopb"
 openwrt = "nanopb"
 pip = "nanopb==0.4.9.3"
-rationale = "Latest stable PyPI generator release; C runtime is independently pinned to upstream nanopb 0.4.9.2 [BUILD-ONLY]"
+rationale = "Latest stable PyPI generator release; C runtime is pinned to the same upstream nanopb 0.4.9.3 release [BUILD-ONLY]"
 
 [[dependency]]
 name = "lmdb"
@@ -171,7 +171,7 @@ rationale = "Host-based deterministic C/C++ unit testing harness for MCU compone
 name = "nanopb_core"
 github = "nanopb/nanopb"
 ref_type = "version"
-version = "0.4.9.2"
+version = "0.4.9.3"
 check_file = "pb.h"
 files = [
     "pb.h",
@@ -182,7 +182,7 @@ files = [
     "pb_encode.h",
     "pb_encode.c",
 ]
-rationale = "Nanopb 0.4.9.3 C runtime with current security fixes; matched to the 0.4.9.3 Python generator"
+rationale = "Upstream Nanopb 0.4.9.3 C runtime; matched to the 0.4.9.3 Python generator and Bzlmod module"
 
 [[cpp_dependency]]
 name = "wolfssl"

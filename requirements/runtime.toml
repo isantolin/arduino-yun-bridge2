@@ -200,8 +200,8 @@ github = "wolfSSL/wolfssl"
 ref_type = "tags"
 version = "v5.9.4-stable"
 check_file = "CMakeLists.txt"
-sha256 = "9cd0d69d208d025b16836c177658cc0deebc2a85c4b60898c9bc546bc6cbdf18"
-rationale = "GPLv3 full wolfSSL TLS 1.3 and wolfCrypt backend for the Linux Gateway; identical source archive is pinned in CMake and Bazel"
+sha256 = "c9ac97ef8bd1888d66460a2bf7bb941d4511d4cc0b964e9e2b4bdce9934696a1"
+rationale = "GPLv3 full wolfSSL TLS 1.3 and wolfCrypt backend for Linux Gateway; SourceForge mirror archive SHA-256 is pinned identically in CMake and Bazel"
 
 
 [[cpp_dependency]]

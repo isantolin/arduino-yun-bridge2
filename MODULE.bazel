@@ -16,6 +16,40 @@ local_path_override(
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
+pw_transfer_cooperative_repo = use_repo_rule("//tools/bazel:pw_transfer_cooperative.bzl", "pw_transfer_cooperative_repo")
+
+new_local_repository(
+    name = "avr_pigweed_port",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "pw_assert_avr",
+    srcs = ["pw_assert_avr/src/assert_avr.cpp"],
+    hdrs = glob(["pw_assert_avr/public/**/*.h"]),
+    includes = ["pw_assert_avr/public"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "pw_log_avr",
+    srcs = ["pw_log_avr/src/log_avr.cpp"],
+    hdrs = glob(["pw_log_avr/public/**/*.h"]),
+    includes = ["pw_log_avr/public"],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["patches/0001-avr-pw-transfer-and-protobuf.patch"])
+""",
+    path = "third_party/avr_pigweed_port",
+)
+
+pw_transfer_cooperative_repo(
+    name = "pw_transfer_cooperative",
+    avr_patch = "@avr_pigweed_port//:patches/0001-avr-pw-transfer-and-protobuf.patch",
+    pigweed_module = "@pigweed//:MODULE.bazel",
+)
 
 http_archive(
     name = "unity",

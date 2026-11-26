@@ -45,6 +45,7 @@ cc_library(
         "src/security/security.cpp",
         "src/services/Console.cpp",
         "src/services/DataStore.cpp",
+        "src/services/EepromTransfer.cpp",
         "src/services/FileSystem.cpp",
         "src/services/Mailbox.cpp",
         "src/services/Process.cpp",
@@ -66,6 +67,8 @@ cc_library(
     ],
     deps = [
         "//tools/arduino_stub",
+        "@avr_pigweed_port//:pw_assert_avr",
+        "@avr_pigweed_port//:pw_log_avr",
         "@etl",
         "@nanopb_c",
         "@pigweed//pw_assert:assert",
@@ -96,8 +99,8 @@ cc_library(
         "@pigweed//pw_string:util",
         "@pigweed//pw_sync:interrupt_spin_lock",
         "@pigweed//pw_tokenizer",
-        "@pigweed//pw_transfer",
         "@pigweed//pw_varint",
+        "@pw_transfer_cooperative",
         "@wolfssl",
     ],
 )

@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
+# Use fresh extraction timestamps on CMake versions that support CMP0135.
+if(POLICY CMP0135)
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 # Full wolfSSL TLS 1.3 for Linux; MCU targets keep their own WOLFCRYPT_ONLY config.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build wolfSSL as a static library" FORCE)
 set(WOLFSSL_OPENSSLEXTRA yes CACHE STRING "" FORCE)
@@ -17,7 +22,6 @@ FetchContent_Declare(
   wolfssl
   URL https://downloads.sourceforge.net/project/wolfssl/v5.9.4-stable/wolfSSL%20Release%205.9.4%20%28September%2025%2C%202026%29%20source%20code.zip
   URL_HASH SHA256=c9ac97ef8bd1888d66460a2bf7bb941d4511d4cc0b964e9e2b4bdce9934696a1
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(wolfssl)
 find_package(Threads REQUIRED)

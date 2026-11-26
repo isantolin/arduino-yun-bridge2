@@ -1,8 +1,8 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
-#include <openssl/ssl.h>
-#include <openssl/x509v3.h>
+#include <wolfssl/ssl.h>
+#include <wolfssl/wolfcrypt/asn.h>
 #include <poll.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -202,29 +202,45 @@ bool IsValidPrincipalId(std::string_view id) {
   return true;
 }
 
-pw::Result<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
-  if (SSL_get_verify_result(ssl) != X509_V_OK) {
+pw::Result<PeerIdentity> PeerIdentityFromCertificate(WOLFWOLFSSL* ssl) {
+  if (wolfSSL_get_verify_result(ssl) != WOLFSSL_X509_V_OK) {
     return pw::Status::Unauthenticated();
   }
-  X509* certificate = SSL_get1_peer_certificate(ssl);
+  WOLFSSL_X509* certificate = wolfSSL_get_peer_certificate(ssl);
   if (certificate == nullptr) {
     return pw::Status::Unauthenticated();
   }
-  auto* names = static_cast<GENERAL_NAMES*>(
-      X509_get_ext_d2i(certificate, NID_subject_alt_name, nullptr, nullptr));
+
+  // Preserve TLS client-purpose semantics: a missing EKU is allowed, but
+  // when present it must authorize client authentication (or any purpose).
+  const int eku_extension =
+      wolfSSL_X509_get_ext_by_NID(certificate, NID_ext_key_usage, -1);
+  const unsigned int extended_key_usage =
+      wolfSSL_X509_get_extended_key_usage(certificate);
+  if (eku_extension >= 0 &&
+      (extended_key_usage & (EXTKEYUSE_CLIENT_AUTH | EXTKEYUSE_ANY)) == 0U) {
+    wolfSSL_X509_free(certificate);
+    return pw::Status::Unauthenticated();
+  }
+
+  auto* names = static_cast<WOLFSSL_GENERAL_NAMES*>(
+      wolfSSL_X509_get_ext_d2i(certificate, NID_subject_alt_name, nullptr,
+                               nullptr));
   std::optional<PeerIdentity> identity;
   size_t uri_san_count = 0;
   if (names != nullptr) {
-    for (int i = 0; i < sk_GENERAL_NAME_num(names); ++i) {
-      const GENERAL_NAME* name = sk_GENERAL_NAME_value(names, i);
-      if (name == nullptr || name->type != GEN_URI) continue;
+    for (int i = 0; i < wolfSSL_sk_GENERAL_NAME_num(names); ++i) {
+      const WOLFSSL_GENERAL_NAME* name =
+          wolfSSL_sk_GENERAL_NAME_value(names, i);
+      // RFC 5280 GeneralName.uniformResourceIdentifier is context tag [6].
+      if (name == nullptr || name->type != 6) continue;
       if (++uri_san_count != 1U) {
         identity.reset();
         break;
       }
-      const ASN1_IA5STRING* uri = name->d.uniformResourceIdentifier;
-      const unsigned char* raw = ASN1_STRING_get0_data(uri);
-      const int raw_size = ASN1_STRING_length(uri);
+      const WOLFSSL_ASN1_STRING* uri = name->d.uniformResourceIdentifier;
+      const unsigned char* raw = wolfSSL_ASN1_STRING_get0_data(uri);
+      const int raw_size = wolfSSL_ASN1_STRING_length(uri);
       if (raw == nullptr || raw_size <= 0) continue;
       const std::string_view value(reinterpret_cast<const char*>(raw),
                                    static_cast<size_t>(raw_size));
@@ -253,8 +269,8 @@ pw::Result<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
       identity = PeerIdentity{role, std::string(principal_id)};
     }
   }
-  GENERAL_NAMES_free(names);
-  X509_free(certificate);
+  if (names != nullptr) wolfSSL_GENERAL_NAMES_free(names);
+  wolfSSL_X509_free(certificate);
   if (uri_san_count != 1U || !identity.has_value()) {
     return pw::Status::InvalidArgument();
   }
@@ -263,7 +279,7 @@ pw::Result<PeerIdentity> PeerIdentityFromCertificate(SSL* ssl) {
 
 class TlsSocket {
  public:
-  TlsSocket(SSL* ssl, int fd) : ssl_(ssl), fd_(fd) {
+  TlsSocket(WOLFSSL* ssl, int fd) : ssl_(ssl), fd_(fd) {
     PW_CHECK_NOTNULL(ssl);
     PW_CHECK_INT_GE(fd_, 0);
   }
@@ -282,22 +298,22 @@ class TlsSocket {
     while (!stopping.load()) {
       size_t bytes_read = 0;
       int result;
-      int ssl_error = SSL_ERROR_NONE;
+      int ssl_error = WOLFSSL_ERROR_NONE;
       {
         pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
-        result = SSL_read_ex(ssl_, destination.data(), destination.size(),
+        result = wolfSSL_read_ex(ssl_, destination.data(), destination.size(),
                              &bytes_read);
-        if (result != 1) ssl_error = SSL_get_error(ssl_, result);
+        if (result != 1) ssl_error = wolfSSL_get_error(ssl_, result);
       }
       if (result == 1) {
         if (bytes_read == 0) return pw::Status::OutOfRange();
         return bytes_read;
       }
-      if (ssl_error == SSL_ERROR_WANT_READ) {
+      if (ssl_error == WOLFSSL_ERROR_WANT_READ) {
         PW_TRY(Wait(POLLIN, stopping));
-      } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
+      } else if (ssl_error == WOLFSSL_ERROR_WANT_WRITE) {
         PW_TRY(Wait(POLLOUT, stopping));
-      } else if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+      } else if (ssl_error == WOLFSSL_ERROR_ZERO_RETURN) {
         return pw::Status::OutOfRange();
       } else {
         return pw::Status::Internal();
@@ -311,19 +327,19 @@ class TlsSocket {
     while (offset < source.size() && !stopping.load()) {
       size_t written = 0;
       int result;
-      int ssl_error = SSL_ERROR_NONE;
+      int ssl_error = WOLFSSL_ERROR_NONE;
       {
         pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
-        result = SSL_write_ex(ssl_, source.data() + offset,
+        result = wolfSSL_write_ex(ssl_, source.data() + offset,
                               source.size() - offset, &written);
-        if (result != 1) ssl_error = SSL_get_error(ssl_, result);
+        if (result != 1) ssl_error = wolfSSL_get_error(ssl_, result);
       }
       if (result == 1) {
         if (written == 0) return pw::Status::Internal();
         offset += written;
-      } else if (ssl_error == SSL_ERROR_WANT_READ) {
+      } else if (ssl_error == WOLFSSL_ERROR_WANT_READ) {
         PW_TRY(Wait(POLLIN, stopping));
-      } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
+      } else if (ssl_error == WOLFSSL_ERROR_WANT_WRITE) {
         PW_TRY(Wait(POLLOUT, stopping));
       } else {
         return pw::Status::Internal();
@@ -336,8 +352,8 @@ class TlsSocket {
     {
       pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
       if (ssl_ != nullptr) {
-        SSL_shutdown(ssl_);
-        SSL_free(ssl_);
+        wolfSSL_shutdown(ssl_);
+        wolfSSL_free(ssl_);
         ssl_ = nullptr;
       }
     }
@@ -347,7 +363,7 @@ class TlsSocket {
  private:
   bool HasPending() PW_LOCKS_EXCLUDED(ssl_mutex_) {
     pw::ScopedLocker<pw::sync::Mutex> lock(ssl_mutex_);
-    return SSL_pending(ssl_) > 0;
+    return wolfSSL_pending(ssl_) > 0;
   }
   pw::Status Wait(short events, const std::atomic<bool>& stopping)
       PW_LOCKS_EXCLUDED(ssl_mutex_) {
@@ -366,7 +382,7 @@ class TlsSocket {
     return pw::Status::Cancelled();
   }
   pw::sync::Mutex ssl_mutex_;
-  SSL* ssl_ PW_GUARDED_BY(ssl_mutex_);
+  WOLFSSL* ssl_ PW_GUARDED_BY(ssl_mutex_);
   const int fd_;
 };
 
@@ -830,7 +846,7 @@ class BoundedFileTransferHandler final : public pw::transfer::Handler {
 
 class GatewayTransportSession : public SessionControl {
  public:
-  GatewayTransportSession(SSL* ssl, int fd, std::string_view peer_role,
+  GatewayTransportSession(WOLFSSL* ssl, int fd, std::string_view peer_role,
                           std::string peer_id,
                           std::filesystem::path staging_dir,
                           bool log_tx_frames)
@@ -1034,7 +1050,7 @@ class GatewaySession final
     : public GatewayTransportSession,
       public std::enable_shared_from_this<GatewaySession> {
  public:
-  GatewaySession(SSL* ssl, int fd, std::string device_id,
+  GatewaySession(WOLFSSL* ssl, int fd, std::string device_id,
                  DeviceSessionRegistry& registry, GatewayMetrics& metrics)
       : GatewayTransportSession(ssl, fd, "device", device_id,
                                 DeviceStagingDir(device_id),
@@ -1388,7 +1404,7 @@ class GatewayControlService final
 
 class GatewayClientSession final : public GatewayTransportSession {
  public:
-  GatewayClientSession(SSL* ssl, int fd, std::string client_id,
+  GatewayClientSession(WOLFSSL* ssl, int fd, std::string client_id,
                        DeviceSessionRegistry& devices,
                        ClientSessionRegistry& clients, const GatewayAcl& acl,
                        GatewayMetrics& metrics)
@@ -1449,7 +1465,7 @@ class GatewayClientSession final : public GatewayTransportSession {
 };
 
 struct SessionTask {
-  SessionTask(int client_fd, SSL_CTX* tls_context,
+  SessionTask(int client_fd, WOLFSSL_CTX* tls_context,
               DeviceSessionRegistry& device_registry,
               ClientSessionRegistry& client_registry, const GatewayAcl& acl,
               GatewayMetrics& metrics)
@@ -1489,25 +1505,30 @@ struct SessionTask {
       pw::ScopedLocker<pw::sync::Mutex> lock(mutex);
       client_fd = fd;
     }
-    SSL* ssl = SSL_new(context);
+    WOLFSSL* ssl = wolfSSL_new(context);
     if (ssl == nullptr) {
       metrics_ref.client_rejections_total.Increment();
       CloseFd();
       done.store(true);
       return;
     }
-    SSL_set_fd(ssl, client_fd);
     timeval handshake_timeout{5, 0};
     setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &handshake_timeout,
                sizeof(handshake_timeout));
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &handshake_timeout,
                sizeof(handshake_timeout));
-    SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
-                          SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-    if (SSL_accept(ssl) != 1) {
+    if (wolfSSL_set_fd(ssl, client_fd) != WOLFSSL_SUCCESS) {
+      metrics_ref.client_rejections_total.Increment();
+      PW_LOG_WARN("event=client_rejected reason=tls_socket_attach_failed");
+      wolfSSL_free(ssl);
+      CloseFd();
+      done.store(true);
+      return;
+    }
+    if (wolfSSL_accept(ssl) != 1) {
       metrics_ref.client_rejections_total.Increment();
       PW_LOG_WARN("event=client_rejected reason=tls_handshake_failed");
-      SSL_free(ssl);
+      wolfSSL_free(ssl);
       CloseFd();
       done.store(true);
       return;
@@ -1516,8 +1537,8 @@ struct SessionTask {
     if (!identity.ok()) {
       metrics_ref.client_rejections_total.Increment();
       PW_LOG_WARN("event=client_rejected reason=missing_or_invalid_uri_san");
-      SSL_shutdown(ssl);
-      SSL_free(ssl);
+      wolfSSL_shutdown(ssl);
+      wolfSSL_free(ssl);
       CloseFd();
       done.store(true);
       return;
@@ -1540,7 +1561,7 @@ struct SessionTask {
     done.store(true);
   }
 
-  SSL_CTX* context{nullptr};
+  WOLFSSL_CTX* context{nullptr};
   DeviceSessionRegistry& devices;
   ClientSessionRegistry& clients;
   const GatewayAcl& acl_ref;
@@ -1553,42 +1574,57 @@ struct SessionTask {
 };
 
 struct TlsContextDeleter {
-  void operator()(SSL_CTX* context) const { SSL_CTX_free(context); }
+  void operator()(WOLFSSL_CTX* context) const { wolfSSL_CTX_free(context); }
 };
-using TlsContext = std::unique_ptr<SSL_CTX, TlsContextDeleter>;
+using TlsContext = std::unique_ptr<WOLFSSL_CTX, TlsContextDeleter>;
+
+class WolfSslRuntime {
+ public:
+  WolfSslRuntime() : initialized_(wolfSSL_Init() == WOLFSSL_SUCCESS) {}
+  WolfSslRuntime(const WolfSslRuntime&) = delete;
+  WolfSslRuntime& operator=(const WolfSslRuntime&) = delete;
+  ~WolfSslRuntime() {
+    if (initialized_) (void)wolfSSL_Cleanup();
+  }
+  bool initialized() const { return initialized_; }
+
+ private:
+  const bool initialized_;
+};
 
 pw::Result<TlsContext> CreateTlsContext(const std::string& certificate,
                                         const std::string& private_key,
                                         const std::string& client_ca,
                                         pw::StringBuilder& error) {
-  TlsContext context(SSL_CTX_new(TLS_server_method()));
+  TlsContext context(wolfSSL_CTX_new(wolfTLSv1_3_server_method()));
   if (!context) {
     error.clear();
-    error << "SSL_CTX_new failed";
+    error << "wolfSSL_CTX_new failed";
     return pw::Status::Internal();
   }
-  if (SSL_CTX_set_min_proto_version(context.get(), TLS1_3_VERSION) != 1 ||
-      SSL_CTX_use_certificate_chain_file(context.get(), certificate.c_str()) !=
-          1 ||
-      SSL_CTX_use_PrivateKey_file(context.get(), private_key.c_str(),
-                                  SSL_FILETYPE_PEM) != 1 ||
-      SSL_CTX_check_private_key(context.get()) != 1 ||
-      SSL_CTX_load_verify_locations(context.get(), client_ca.c_str(),
-                                    nullptr) != 1 ||
-      SSL_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_CLIENT) != 1) {
+  if (wolfSSL_CTX_use_certificate_chain_file(context.get(),
+                                             certificate.c_str()) !=
+          WOLFSSL_SUCCESS ||
+      wolfSSL_CTX_use_PrivateKey_file(context.get(), private_key.c_str(),
+                                      WOLFSSL_FILETYPE_PEM) != WOLFSSL_SUCCESS ||
+      wolfSSL_CTX_check_private_key(context.get()) != WOLFSSL_SUCCESS ||
+      wolfSSL_CTX_load_verify_locations(context.get(), client_ca.c_str(),
+                                        nullptr) != WOLFSSL_SUCCESS) {
     error.clear();
-    error << "TLS certificate configuration failed";
+    error << "wolfSSL TLS certificate configuration failed";
     return pw::Status::InvalidArgument();
   }
-  SSL_CTX_set_verify_depth(context.get(), 4);
-  SSL_CTX_set_session_cache_mode(context.get(), SSL_SESS_CACHE_OFF);
-  SSL_CTX_set_options(context.get(),
-                      SSL_OP_NO_RENEGOTIATION | SSL_OP_NO_TICKET);
-  SSL_CTX_set_mode(context.get(), SSL_MODE_ENABLE_PARTIAL_WRITE |
-                                      SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-  SSL_CTX_set_verify(context.get(),
-                     SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-                     nullptr);
+  wolfSSL_CTX_set_verify_depth(context.get(), 4);
+  wolfSSL_CTX_set_session_cache_mode(context.get(), WOLFSSL_SESS_CACHE_OFF);
+  wolfSSL_CTX_set_options(context.get(), WOLFSSL_OP_NO_RENEGOTIATION);
+  if (wolfSSL_CTX_no_ticket_TLSv13(context.get()) != WOLFSSL_SUCCESS) {
+    error.clear();
+    error << "wolfSSL could not disable TLS 1.3 session tickets";
+    return pw::Status::Internal();
+  }
+  wolfSSL_CTX_set_verify(
+      context.get(),
+      WOLFSSL_VERIFY_PEER | WOLFSSL_VERIFY_FAIL_IF_NO_PEER_CERT, nullptr);
   return context;
 }
 
@@ -1751,6 +1787,11 @@ int main(int argc, char** argv) {
     return 2;
   }
   const std::string& bind_address = cli.bind_address;
+  WolfSslRuntime wolfssl_runtime;
+  if (!wolfssl_runtime.initialized()) {
+    PW_LOG_CRITICAL("fatal=wolfSSL_Init failed");
+    return 1;
+  }
   const std::string& port = cli.port;
   pw::StringBuffer<256> error;
   auto startup = InitializeGateway(cli.certificate, cli.private_key,

@@ -165,7 +165,7 @@ def check_github_action_model_wiring() -> list[str]:
     """Ensure Gemini workflows load their model from tools/gemini_model."""
     workflow_dir = ROOT / ".github" / "workflows"
     required = (
-        "uses: 'actions/checkout@v7'",
+        "uses: 'actions/checkout@v7.0.1'",
         "id: 'gemini_model'",
         "IFS= read -r model < tools/gemini_model",
         "uses: 'google-github-actions/run-gemini-cli@v0'",
@@ -184,7 +184,7 @@ def check_github_action_model_wiring() -> list[str]:
             errors.append(f"{workflow_path.relative_to(ROOT)} is missing canonical model wiring: {', '.join(missing)}")
             continue
         if not (
-            content.index("actions/checkout@v7")
+            content.index("actions/checkout@v7.0.1")
             < content.index("id: 'gemini_model'")
             < content.index("run-gemini-cli@v0")
         ):

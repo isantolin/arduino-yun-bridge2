@@ -64,7 +64,7 @@ def test_wolfssl_archive_pin_is_synced_to_installer() -> None:
 
     assert wolfssl["version"] == "5.8.4"
     assert wolfssl["sha256"] == "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
-    assert not wolfssl["check_latest"]
+    assert wolfssl["check_latest"]
     assert f'WOLFSSL_VERSION="{wolfssl["version"]}"' in installer
     assert f'WOLFSSL_SHA256="{wolfssl["sha256"]}"' in installer
     assert "wolfssl-${WOLFSSL_VERSION}.zip" in installer
@@ -78,7 +78,7 @@ def test_flashstorage_archive_pin_is_synced_to_installer_and_ci() -> None:
     workflow = (sync_runtime_deps.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert flash["sha256"] == "2f5a349e1c5dc4ec7f7e22268c0f998af3f471b98ed873abd6e671ac67940e39"
-    assert not flash["check_latest"]
+    assert flash["check_latest"]
     assert f'FLASHSTORAGE_VERSION="{flash["version"]}"' in installer
     assert f'FLASHSTORAGE_SHA256="{flash["sha256"]}"' in installer
     assert "FlashStorage-${FLASHSTORAGE_VERSION}.zip" in installer
@@ -90,7 +90,8 @@ def test_check_latest_versions_skips_disabled_cpp_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manifest = sync_runtime_deps.load_manifest()
-    wolfssl = next(dep for dep in manifest.cpp if dep["name"] == "wolfssl")
+    wolfssl = next(dep for dep in manifest.cpp if dep["name"] == "wolfssl").copy()
+    wolfssl["check_latest"] = False
 
     def unexpected_http_request(*args: object, **kwargs: object) -> None:
         pytest.fail(f"unexpected dependency update request: {args}, {kwargs}")
@@ -266,8 +267,8 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
     assert runtime["protobuf"]["pip"] == "protobuf==5.28.3"
     assert runtime["nanopb"]["pip"] == "nanopb==0.4.9.3"
     assert cpp["nanopb_core"]["version"] == "0.4.9.2"
-    assert not runtime["nanopb"]["check_latest"]
-    assert not cpp["nanopb_core"]["check_latest"]
+    assert runtime["nanopb"]["check_latest"]
+    assert cpp["nanopb_core"]["check_latest"]
 
     bootstrap_paths = (
         sync_runtime_deps.ROOT / ".github/actions/setup-python-tox/action.yml",

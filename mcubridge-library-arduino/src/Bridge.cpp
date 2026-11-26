@@ -77,6 +77,35 @@ pw::metric::MetricService g_metric_service(pw::metric::global_metrics,
 
 constexpr uint32_t kMetricValueUnavailable = static_cast<uint32_t>(-1);
 
+enum class PinRuntimeMode : uint8_t {
+  kInput,
+  kInputPullup,
+  kOutputLow,
+  kOutputHigh,
+  kPwmLow,
+  kPwmHigh,
+};
+
+etl::array<PinRuntimeMode, NUM_DIGITAL_PINS> g_pin_runtime_modes{};
+
+bool isValidDigitalPin(uint32_t pin) {
+  if (pin >= NUM_DIGITAL_PINS) return false;
+#if defined(ARDUINO_ARCH_ESP32)
+  return digitalPinIsValid(static_cast<uint8_t>(pin));
+#else
+  return true;
+#endif
+}
+
+bool isValidDigitalOutputPin(uint32_t pin) {
+  if (!isValidDigitalPin(pin)) return false;
+#if defined(ARDUINO_ARCH_ESP32)
+  return digitalPinCanOutput(static_cast<uint8_t>(pin));
+#else
+  return true;
+#endif
+}
+
 void refreshMemoryMetrics() {
   g_metric_free_memory_bytes.Set(bridge::hal::getFreeMemory());
   const bridge::hal::StackWatermark watermark =
@@ -90,39 +119,62 @@ class GpioRpcService final
     : public rpc::pb::pw_rpc::nanopb::GpioService::Service<GpioRpcService> {
  public:
   pw::Status SetPinMode(const rpc_pb_PinMode& request, rpc_pb_Empty&) {
-    BridgeClass::_handleSetPinMode(request);
-    return pw::OkStatus();
+    return BridgeClass::_handleSetPinMode(request);
   }
 
   pw::Status DigitalWrite(const rpc_pb_DigitalWrite& request, rpc_pb_Empty&) {
-    BridgeClass::_handlePinWrite<rpc_pb_DigitalWrite, false>(request);
-    return pw::OkStatus();
+    return BridgeClass::_handleDigitalWrite(request);
   }
 
   pw::Status AnalogWrite(const rpc_pb_AnalogWrite& request, rpc_pb_Empty&) {
-    BridgeClass::_handlePinWrite<rpc_pb_AnalogWrite, true>(request);
-    return pw::OkStatus();
+    return BridgeClass::_handleAnalogWrite(request);
   }
 
   pw::Status DigitalRead(const rpc_pb_PinRead& request,
                          rpc_pb_DigitalReadResponse& response) {
-#if defined(ARDUINO_ARCH_ESP32)
-    if (!digitalPinIsValid(request.pin)) {
-      return pw::Status::InvalidArgument();
+    if (!isValidDigitalPin(request.pin)) return pw::Status::InvalidArgument();
+    const uint8_t pin = static_cast<uint8_t>(request.pin);
+    switch (g_pin_runtime_modes[pin]) {
+      case PinRuntimeMode::kOutputLow:
+      case PinRuntimeMode::kOutputHigh: {
+        pw::digital_io::ArduinoDigitalInOut input(
+            pin, false,
+            g_pin_runtime_modes[pin] == PinRuntimeMode::kOutputHigh
+                ? pw::digital_io::State::kActive
+                : pw::digital_io::State::kInactive);
+        PW_TRY(input.Enable());
+        auto value = input.GetState();
+        if (!value.ok()) return value.status();
+        response.value = value.value() == pw::digital_io::State::kActive ? 1U : 0U;
+        return pw::OkStatus();
+      }
+      case PinRuntimeMode::kPwmLow:
+      case PinRuntimeMode::kPwmHigh:
+        response.value =
+            g_pin_runtime_modes[pin] == PinRuntimeMode::kPwmHigh ? 1U : 0U;
+        return pw::OkStatus();
+      case PinRuntimeMode::kInput:
+      case PinRuntimeMode::kInputPullup:
+      default: {
+        pw::digital_io::ArduinoDigitalIn input(
+            pin, g_pin_runtime_modes[pin] == PinRuntimeMode::kInputPullup);
+        PW_TRY(input.Enable());
+        auto value = input.GetState();
+        if (!value.ok()) return value.status();
+        response.value = value.value() == pw::digital_io::State::kActive ? 1U : 0U;
+        return pw::OkStatus();
+      }
     }
-#endif
-    response.value = digitalRead(request.pin);
-    return pw::OkStatus();
   }
 
   pw::Status AnalogRead(const rpc_pb_PinRead& request,
                         rpc_pb_AnalogReadResponse& response) {
-#if defined(ARDUINO_ARCH_ESP32)
-    if (!digitalPinIsValid(request.pin)) {
-      return pw::Status::InvalidArgument();
-    }
-#endif
-    response.value = analogRead(request.pin);
+    if (!isValidDigitalPin(request.pin)) return pw::Status::InvalidArgument();
+    pw::analog::ArduinoAnalogInput input(
+        static_cast<uint8_t>(request.pin), bridge::config::ADC_MAX_SAMPLE);
+    auto sample = input.TryReadUntil(pw::chrono::SystemClock::time_point::max());
+    if (!sample.ok()) return sample.status();
+    response.value = static_cast<uint32_t>(sample.value());
     return pw::OkStatus();
   }
 
@@ -214,8 +266,7 @@ class SpiRpcService final
   }
 
   pw::Status SetConfig(const rpc_pb_SpiConfig& request, rpc_pb_Empty&) {
-    SPIService.setConfig(request);
-    return pw::OkStatus();
+    return SPIService.setConfig(request);
   }
 
   pw::Status Transfer(const rpc_pb_SpiTransfer& request,
@@ -223,9 +274,10 @@ class SpiRpcService final
     const size_t len = etl::min(static_cast<size_t>(request.data.size),
                                 sizeof(response.data.bytes));
     etl::copy_n(request.data.bytes, len, response.data.bytes);
-    const size_t transferred =
+    const pw::Status status =
         SPIService.transfer(pw::span<uint8_t>(response.data.bytes, len));
-    response.data.size = static_cast<pb_size_t>(etl::min(transferred, len));
+    if (!status.ok()) return status;
+    response.data.size = static_cast<pb_size_t>(len);
     return pw::OkStatus();
   }
 };
@@ -414,6 +466,7 @@ void BridgeClass::setStream(HardwareSerial& serial) {
 }
 
 void BridgeClass::_initializeRuntime() {
+  g_pin_runtime_modes.fill(PinRuntimeMode::kInput);
   _initObservers();
   _timer_last_tick_ms = 0;
   _state_flags = 0U;
@@ -955,71 +1008,120 @@ void BridgeClass::_handleEnterBootloader(const rpc_pb_EnterBootloader& msg) {
   }
 }
 
-void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
-  constexpr etl::array<etl::pair<rpc_pb_PinModeType, uint8_t>, 3> kPinModeMap{{
-      {rpc_pb_PinModeType_PIN_INPUT, INPUT},
-      {rpc_pb_PinModeType_PIN_OUTPUT, OUTPUT},
-      {rpc_pb_PinModeType_PIN_INPUT_PULLUP, INPUT_PULLUP},
-  }};
-  auto it = etl::find_if(kPinModeMap.begin(), kPinModeMap.end(),
-                         [&m](const etl::pair<rpc_pb_PinModeType, uint8_t>& p) {
-                           return p.first == m.mode;
-                         });
-  const uint8_t m_val = (it != kPinModeMap.end()) ? it->second : INPUT;
-#if defined(ARDUINO_ARCH_ESP32)
-  if (!digitalPinIsValid(m.pin)) return;
-#endif
-  pinMode(m.pin, m_val);
+pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
+  if (!isValidDigitalPin(m.pin)) return pw::Status::InvalidArgument();
+  const uint8_t pin = static_cast<uint8_t>(m.pin);
+  switch (m.mode) {
+    case rpc_pb_PinModeType_PIN_INPUT: {
+      pw::digital_io::ArduinoDigitalIn input(pin);
+      const pw::Status status = input.Enable();
+      if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kInput;
+      return status;
+    }
+    case rpc_pb_PinModeType_PIN_INPUT_PULLUP: {
+      pw::digital_io::ArduinoDigitalIn input(pin, true);
+      const pw::Status status = input.Enable();
+      if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kInputPullup;
+      return status;
+    }
+    case rpc_pb_PinModeType_PIN_OUTPUT: {
+      pw::digital_io::ArduinoDigitalOut output(
+          pin, pw::digital_io::State::kInactive);
+      const pw::Status status = output.Enable();
+      if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
+      return status;
+    }
+    default:
+      return pw::Status::InvalidArgument();
+  }
+}
+
+pw::Status BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
+  if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
+  const uint8_t pin = static_cast<uint8_t>(m.pin);
+  const bool active = m.value != 0U;
+  pw::digital_io::ArduinoDigitalOut output(
+      pin, active ? pw::digital_io::State::kActive
+                  : pw::digital_io::State::kInactive);
+  const pw::Status status = output.Enable();
+  if (status.ok()) {
+    g_pin_runtime_modes[pin] =
+        active ? PinRuntimeMode::kOutputHigh : PinRuntimeMode::kOutputLow;
+  }
+  return status;
+}
+
+pw::Status BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
+  if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
+  const uint8_t pin = static_cast<uint8_t>(m.pin);
+  const uint8_t duty = static_cast<uint8_t>(
+      etl::clamp<uint32_t>(m.value, 0UL, 255UL));
+  // Pigweed pw_analog models ADC inputs only; Arduino PWM remains the
+  // platform-owned output peripheral until an upstream PWM API exists.
+  ::analogWrite(pin, static_cast<int>(duty));
+  g_pin_runtime_modes[pin] =
+      duty == 0U ? PinRuntimeMode::kPwmLow : PinRuntimeMode::kPwmHigh;
+  return pw::OkStatus();
 }
 
 void BridgeClass::_handlePinSubscribe(
     const rpc_pb_PinSubscribeRequest& m,
     pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent>& writer) {
-#if defined(ARDUINO_ARCH_ESP32)
-  if (m.enabled && !digitalPinIsValid(static_cast<uint8_t>(m.pin))) {
+  if (m.enabled && !isValidDigitalPin(m.pin)) {
     (void)writer.Finish(pw::Status::InvalidArgument());
     return;
   }
-#endif
-  bool ok = false;
+  if (m.enabled && m.mode != rpc_pb_PinModeType_PIN_INPUT &&
+      m.mode != rpc_pb_PinModeType_PIN_INPUT_PULLUP &&
+      m.mode != rpc_pb_PinModeType_PIN_OUTPUT) {
+    (void)writer.Finish(pw::Status::InvalidArgument());
+    return;
+  }
+
   auto it = etl::find_if(
       _pin_subscriptions.begin(), _pin_subscriptions.end(),
-      [pin = m.pin](const PinSubscription& s) { return s.pin == pin; });
+      [pin = m.pin](const PinSubscription& sub) { return sub.pin == pin; });
   if (!m.enabled) {
-    if (it != _pin_subscriptions.end()) {
-      _pin_subscriptions.erase(it);
-    }
-    ok = true;
+    if (it != _pin_subscriptions.end()) _pin_subscriptions.erase(it);
   } else {
-    if (it == _pin_subscriptions.end() && !_pin_subscriptions.full()) {
+    const bool is_new = it == _pin_subscriptions.end();
+    if (is_new) {
+      if (_pin_subscriptions.full()) {
+        (void)writer.Finish(pw::Status::ResourceExhausted());
+        return;
+      }
       _pin_subscriptions.push_back(
           {static_cast<uint8_t>(m.pin), 0, 0, 0, 0, 0, false});
       it = _pin_subscriptions.end() - 1;
     }
-    if (it != _pin_subscriptions.end()) {
-      it->mode = static_cast<uint8_t>(m.mode);
-      it->interval_ms = static_cast<uint16_t>(m.interval_ms);
-      it->hysteresis = static_cast<uint16_t>(m.hysteresis);
-      it->active = true;
-      it->last_report_ms = 0;
-      if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
-        ::pinMode(static_cast<uint8_t>(m.pin), INPUT_PULLUP);
-      } else if (m.mode == rpc_pb_PinModeType_PIN_INPUT) {
-        ::pinMode(static_cast<uint8_t>(m.pin), INPUT);
-      }
-      ok = true;
-    }
-  }
 
-  if (!ok) {
-    (void)writer.Finish(pw::Status::ResourceExhausted());
-    return;
+    const uint8_t pin = static_cast<uint8_t>(m.pin);
+    if (m.mode == rpc_pb_PinModeType_PIN_INPUT ||
+        m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
+      pw::digital_io::ArduinoDigitalIn input(
+          pin, m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP);
+      const pw::Status status = input.Enable();
+      if (!status.ok()) {
+        if (is_new) _pin_subscriptions.erase(it);
+        (void)writer.Finish(status);
+        return;
+      }
+      g_pin_runtime_modes[pin] =
+          m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP
+              ? PinRuntimeMode::kInputPullup
+              : PinRuntimeMode::kInput;
+    }
+    it->mode = static_cast<uint8_t>(m.mode);
+    it->interval_ms = static_cast<uint16_t>(m.interval_ms);
+    it->hysteresis = static_cast<uint16_t>(m.hysteresis);
+    it->active = true;
+    it->last_report_ms = 0;
   }
 
   _pin_stream_writer = etl::move(writer);
   const bool any_active =
       etl::any_of(_pin_subscriptions.begin(), _pin_subscriptions.end(),
-                  [](const PinSubscription& s) { return s.active; });
+                  [](const PinSubscription& sub) { return sub.active; });
   if (!any_active && _pin_stream_writer.active()) {
     (void)_pin_stream_writer.Finish(pw::OkStatus());
   }
@@ -1112,11 +1214,36 @@ void BridgeClass::_subscriptionTask() {
                 [this, now](PinSubscription& sub) {
                   if (!sub.active) return;
                   if (now - sub.last_report_ms >= sub.interval_ms) {
-                    const uint16_t val =
-                        (sub.mode == rpc_pb_PinModeType_PIN_INPUT ||
-                         sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP)
-                            ? static_cast<uint16_t>(::digitalRead(sub.pin))
-                            : static_cast<uint16_t>(::analogRead(sub.pin));
+                    uint16_t val = 0U;
+                    if (sub.mode == rpc_pb_PinModeType_PIN_INPUT ||
+                        sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
+                      pw::digital_io::ArduinoDigitalIn input(
+                          sub.pin,
+                          sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP);
+                      const pw::Status enabled = input.Enable();
+                      if (!enabled.ok()) {
+                        emitStatus(enabled);
+                        return;
+                      }
+                      auto state = input.GetState();
+                      if (!state.ok()) {
+                        emitStatus(state.status());
+                        return;
+                      }
+                      val = state.value() == pw::digital_io::State::kActive
+                                ? 1U
+                                : 0U;
+                    } else {
+                      pw::analog::ArduinoAnalogInput input(
+                          sub.pin, bridge::config::ADC_MAX_SAMPLE);
+                      auto sample = input.TryReadUntil(
+                          pw::chrono::SystemClock::time_point::max());
+                      if (!sample.ok()) {
+                        emitStatus(sample.status());
+                        return;
+                      }
+                      val = static_cast<uint16_t>(sample.value());
+                    }
                     const uint16_t diff =
                         (val > sub.last_value)
                             ? static_cast<uint16_t>(val - sub.last_value)

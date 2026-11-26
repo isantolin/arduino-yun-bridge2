@@ -468,7 +468,9 @@ class GatewayTlsIdentityTests(unittest.TestCase):
     def test_wrong_extended_key_usage_is_rejected(self) -> None:
         # wolfSSL validates the chain during the TLS handshake; the Gateway
         # then enforces clientAuth EKU before creating any application session.
-        client = self.gateway.connect(self.certs.wrong_eku_cert, self.certs.wrong_eku_key)
+        client = self.gateway.connect(
+            self.certs.wrong_eku_cert, self.certs.wrong_eku_key
+        )
         client_err: Exception | None = None
         try:
             data = client.recv(1)

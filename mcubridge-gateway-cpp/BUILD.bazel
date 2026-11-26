@@ -1,8 +1,35 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_foreign_cc//foreign_cc:configure.bzl", "configure_make")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
+
+# Build a hermetic static OpenSSL matching Pigweed's C/C++ sysroot. The host
+# runner's libssl.so is intentionally not imported: it is built against a
+# newer glibc and cannot be linked safely with Pigweed's pinned sysroot.
+configure_make(
+    name = "openssl_static",
+    configure_command = "config",
+    configure_in_place = True,
+    configure_options = [
+        "no-shared",
+        "no-tests",
+        "no-apps",
+        "no-docs",
+        "--libdir=lib",
+    ],
+    lib_source = "@openssl_source//:all_srcs",
+    out_include_dir = "include",
+    out_static_libs = [
+        "libssl.a",
+        "libcrypto.a",
+    ],
+    targets = [
+        "build_libs",
+        "install_dev",
+    ],
+)
 
 cc_binary(
     name = "mcubridge-gateway-cpp",
@@ -19,11 +46,11 @@ cc_binary(
     defines = [
         "PW_RPC_ENCODING_BUFFER_SIZE_BYTES=2048",
     ],
-    linkopts = ["-lpthread"],
+    linkopts = ["-lpthread", "-ldl"],
     deps = [
         "//tools/protocol:gateway_control_pwpb_rpc",
         "//tools/protocol:mcu_wire_raw_rpc",
-        "@system_openssl//:openssl",
+        ":openssl_static",
         "@pigweed//pw_assert:backend_impl",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",

@@ -21,7 +21,7 @@ dependencies = [
     "shellingham==1.5.4",
     "structlog==26.1.0",
     "tenacity==9.2.1",
-    "typer==0.29.2",
+    "typer==0.29.3",
     "uvloop==0.23.0",
 ]
 

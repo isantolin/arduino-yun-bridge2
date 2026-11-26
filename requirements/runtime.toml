@@ -124,7 +124,7 @@ rationale = "Shell environment detection runtime required by Typer"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer==0.29.2"
+pip = "typer==0.29.3"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 

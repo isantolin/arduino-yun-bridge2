@@ -15,7 +15,10 @@ version). The source-of-truth manifests remain `MODULE.bazel`,
 | Bazel | `9.3.3` | Latest stable version selected for this migration; Bazel 10 is not selected |
 | Bazelisk | `1.31.0` | Explicitly pinned in CI |
 | setup-bazel action | `0.19.2` | Explicitly pinned in CI |
-| GitHub Actions checkout / upload-artifact | `v7` | Shared CI action versions in both repositories |
+| actions/checkout | `v7.0.1` | Stable latest patch release in both repositories |
+| actions/upload-artifact | `v7.0.2` | Stable latest patch release in both repositories |
+| actions/download-artifact | `v8.0.2` | Stable latest patch release in Bridge CI |
+| actions/cache | `v6.1.0` | Stable latest patch release in both repositories |
 | Pigweed Bzlmod module | `0.0.1` | Pigweed source module version; source identity is the Git SHA above |
 | AVR port Bzlmod module | `0.1.0` | Local module version |
 | Protobuf (Bzlmod/C++) | `36.2` | Separate from the Python Protobuf wheel |

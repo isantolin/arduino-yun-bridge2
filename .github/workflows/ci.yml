@@ -656,6 +656,13 @@ jobs:
         run: |
           export PYTHONPATH=.:mcubridge
           .tox/protocol/bin/pytest mcubridge-gateway-cpp/tests -vv --timeout=30 --timeout-method=thread
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.19.1
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: ${{ runner.os }}-${{ github.workflow }}
+
       - name: Build Linux Gateway with Bazel
         run: |
           bazel build //mcubridge-gateway-cpp:mcubridge-gateway-cpp

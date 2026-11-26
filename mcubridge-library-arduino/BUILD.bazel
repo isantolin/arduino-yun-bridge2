@@ -49,6 +49,8 @@ cc_library(
         "src/services/Process.cpp",
         "src/services/SPIService.cpp",
         "tests/bridge_test_global.cpp",
+        "@avr_pigweed_port//pw_digital_io_avr:pw_digital_io_avr_sources",
+        "@avr_pigweed_port//pw_spi_avr:pw_spi_avr_sources",
     ] + glob(["src/protocol/*.pb.c"], allow_empty = True),
     hdrs = glob([
         "src/**/*.h",
@@ -65,7 +67,10 @@ cc_library(
     ],
     deps = [
         "//tools/arduino_stub",
-        "@avr_pigweed_port//:pw_log_avr",
+        "@avr_pigweed_legacy//:pw_log_avr",
+        "@avr_pigweed_port//pw_analog_avr:pw_analog_avr",
+        "@avr_pigweed_port//pw_digital_io_avr:pw_digital_io_avr",
+        "@avr_pigweed_port//pw_spi_avr:pw_spi_avr",
         "@etl",
         "@nanopb_c",
         "@pigweed//pw_assert:assert",

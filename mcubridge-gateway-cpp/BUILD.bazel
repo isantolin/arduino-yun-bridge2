@@ -23,7 +23,7 @@ cc_binary(
     deps = [
         "//tools/protocol:gateway_control_pwpb_rpc",
         "//tools/protocol:mcu_wire_raw_rpc",
-        "@pigweed//pw_assert",
+        "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",
         "@pigweed//pw_chrono:system_clock",
         "@pigweed//pw_chrono:system_timer",

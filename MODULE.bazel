@@ -47,7 +47,7 @@ cc_library(
 )
 """,
     strip_prefix = "etl-20.49.0",
-    urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
+    urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/v20.49.0.tar.gz"],
 )
 
 http_archive(
@@ -103,4 +103,9 @@ oci.pull(
     ],
     tag = "bookworm-slim",
 )
-use_repo(oci, "debian_bookworm_slim")
+use_repo(
+    oci,
+    "debian_bookworm_slim",
+    "debian_bookworm_slim_linux_amd64",
+    "debian_bookworm_slim_linux_arm64",
+)

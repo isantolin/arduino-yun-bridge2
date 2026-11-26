@@ -214,6 +214,13 @@ stage_cooperative_pw_transfer() {
             return 1
         fi
     done
+    python3 -c '
+from pathlib import Path
+p = Path("'"${PW_TRANSFER_STAGED_INC_DIR}/pw_peripheral_backends/initiator.cpp"'")
+s = p.read_text(encoding="utf-8")
+s = s.replace("uint8_t arduino_order", "auto arduino_order").replace("uint8_t level", "auto level")
+p.write_text(s, encoding="utf-8")
+'
     mapfile -t PW_TRANSFER_STAGED_SRCS < <(
         find "${PW_TRANSFER_STAGED_SRC_DIR}" -maxdepth 1 -type f \
             \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' -o -name 'log_avr.cpp' \) -print | sort

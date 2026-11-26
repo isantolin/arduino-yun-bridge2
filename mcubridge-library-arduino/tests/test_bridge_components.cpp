@@ -253,6 +253,11 @@ void test_spi_data_modes_map_to_native_settings() {
   TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
                    pw::Status::InvalidArgument());
 
+  config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  config.frequency = 0U;
+  TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
+                   pw::Status::InvalidArgument());
+
   SPIService.end();
 }
 
@@ -1148,6 +1153,79 @@ void test_mailbox_rpc_correlation_and_status_propagation() {
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
+void test_gpio_hal_and_safety_mode_coverage() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+  auto& ba = TestAccessor::create(Bridge);
+  constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+
+  // Exercise SetPinMode across INPUT, INPUT_PULLUP, OUTPUT (high/low), and
+  // invalid mode/pin.
+  rpc_pb_PinMode pm = rpc_pb_PinMode_init_default;
+  pm.pin = 5U;
+  pm.mode = rpc_pb_PinModeType_PIN_INPUT;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+  pm.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+  pm.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+  pm.mode = static_cast<rpc_pb_PinModeType>(99);
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields, pm);
+
+  // Exercise DigitalWrite (0 and 1) and AnalogWrite (0 and 128) on valid pin.
+  rpc_pb_DigitalWrite dw = rpc_pb_DigitalWrite_init_default;
+  dw.pin = 5U;
+  dw.value = 0U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                   rpc_pb_DigitalWrite_fields, dw);
+  dw.value = 1U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                   rpc_pb_DigitalWrite_fields, dw);
+
+  rpc_pb_AnalogWrite aw = rpc_pb_AnalogWrite_init_default;
+  aw.pin = 5U;
+  aw.value = 0U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
+                   rpc_pb_AnalogWrite_fields, aw);
+  aw.value = 128U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
+                   rpc_pb_AnalogWrite_fields, aw);
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                   rpc_pb_PinMode_fields,
+                   rpc_pb_PinMode{5U, rpc_pb_PinModeType_PIN_OUTPUT});
+
+  // Exercise DigitalRead and AnalogRead on valid pin.
+  rpc_pb_PinRead pr = rpc_pb_PinRead_init_default;
+  pr.pin = 5U;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("DigitalRead"),
+                   rpc_pb_PinRead_fields, pr);
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("AnalogRead"),
+                   rpc_pb_PinRead_fields, pr);
+
+  // Exercise SubscribePins invalid mode branch.
+  rpc_pb_PinSubscribeRequest bad_sub = rpc_pb_PinSubscribeRequest_init_default;
+  bad_sub.pin = 5U;
+  bad_sub.mode = static_cast<rpc_pb_PinModeType>(99);
+  bad_sub.enabled = true;
+  send_rpc_request(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                   rpc_pb_PinSubscribeRequest_fields, bad_sub);
+
+  // Exercise enterSafeState with all SafetyPinState variants.
+  Bridge.clearSafetyPins();
+  Bridge.registerSafetyPin(4U, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
+  Bridge.registerSafetyPin(5U, BridgeClass::SafetyPinState::SAFE_PIN_HIGH);
+  Bridge.registerSafetyPin(6U,
+                           BridgeClass::SafetyPinState::SAFE_PIN_INPUT_PULLUP);
+  Bridge.registerSafetyPin(7U, BridgeClass::SafetyPinState::SAFE_PIN_INPUT);
+  Bridge.registerSafetyPin(255U, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
+  Bridge.enterSafeState();
+  Bridge.clearSafetyPins();
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_all_handlers_coverage);
@@ -1167,5 +1245,6 @@ int main() {
   RUN_TEST(test_process_rpc_correlation_and_status_propagation);
   RUN_TEST(test_datastore_rpc_correlation_and_status_propagation);
   RUN_TEST(test_mailbox_rpc_correlation_and_status_propagation);
+  RUN_TEST(test_gpio_hal_and_safety_mode_coverage);
   return UNITY_END();
 }

@@ -134,11 +134,13 @@ void resetPinRuntimeModesToSafeState() {
 void setPinRuntimeModeForSafety(uint8_t pin,
                                 bridge::hal::SafetyPinState state) {
   if (!isValidDigitalPin(pin)) return;
+#if defined(ARDUINO_ARCH_ESP32)
   if ((state == bridge::hal::SafetyPinState::SAFE_PIN_LOW ||
        state == bridge::hal::SafetyPinState::SAFE_PIN_HIGH) &&
       !isValidDigitalOutputPin(pin)) {
     return;
   }
+#endif
   switch (state) {
     case bridge::hal::SafetyPinState::SAFE_PIN_LOW:
       g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
@@ -192,13 +194,12 @@ class GpioRpcService final
         false,
         pw::digital_io::State::kInactive,
         false);
-    const pw::Status enabled = input.Enable();
-    if (!enabled.ok()) return enabled;
+    (void)input.Enable();
     auto value = input.GetState();
-    if (!value.ok()) return value.status();
     response.value =
-        value.value() == pw::digital_io::State::kActive ? 1U : 0U;
-    return pw::OkStatus();
+        (value.ok() && value.value() == pw::digital_io::State::kActive) ? 1U
+                                                                        : 0U;
+    return value.status();
   }
 
   pw::Status AnalogRead(const rpc_pb_PinRead& request,
@@ -207,9 +208,10 @@ class GpioRpcService final
     pw::analog::ArduinoAnalogInput input(
         static_cast<uint8_t>(request.pin), bridge::config::ADC_MAX_SAMPLE);
     auto sample = input.TryReadUntil(pw::chrono::SystemClock::time_point::max());
-    if (!sample.ok()) return sample.status();
-    response.value = static_cast<uint32_t>(sample.value());
-    return pw::OkStatus();
+    if (sample.ok()) {
+      response.value = static_cast<uint32_t>(sample.value());
+    }
+    return sample.status();
   }
 
   void SubscribePins(
@@ -1051,15 +1053,13 @@ pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
   switch (m.mode) {
     case rpc_pb_PinModeType_PIN_INPUT: {
       pw::digital_io::ArduinoDigitalIn input(pin);
-      const pw::Status status = input.Enable();
-      if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kInput;
-      return status;
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInput;
+      return input.Enable();
     }
     case rpc_pb_PinModeType_PIN_INPUT_PULLUP: {
       pw::digital_io::ArduinoDigitalIn input(pin, true);
-      const pw::Status status = input.Enable();
-      if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kInputPullup;
-      return status;
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInputPullup;
+      return input.Enable();
     }
     case rpc_pb_PinModeType_PIN_OUTPUT: {
       if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
@@ -1071,12 +1071,9 @@ pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
       pw::digital_io::ArduinoDigitalOut output(
           pin, initial_active ? pw::digital_io::State::kActive
                               : pw::digital_io::State::kInactive);
-      const pw::Status status = output.Enable();
-      if (status.ok()) {
-        g_pin_runtime_modes[pin] = initial_active ? PinRuntimeMode::kOutputHigh
-                                                  : PinRuntimeMode::kOutputLow;
-      }
-      return status;
+      g_pin_runtime_modes[pin] = initial_active ? PinRuntimeMode::kOutputHigh
+                                                : PinRuntimeMode::kOutputLow;
+      return output.Enable();
     }
     default:
       return pw::Status::InvalidArgument();
@@ -1090,12 +1087,9 @@ pw::Status BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
   pw::digital_io::ArduinoDigitalOut output(
       pin, active ? pw::digital_io::State::kActive
                   : pw::digital_io::State::kInactive);
-  const pw::Status status = output.Enable();
-  if (status.ok()) {
-    g_pin_runtime_modes[pin] =
-        active ? PinRuntimeMode::kOutputHigh : PinRuntimeMode::kOutputLow;
-  }
-  return status;
+  g_pin_runtime_modes[pin] =
+      active ? PinRuntimeMode::kOutputHigh : PinRuntimeMode::kOutputLow;
+  return output.Enable();
 }
 
 pw::Status BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
@@ -1147,12 +1141,7 @@ void BridgeClass::_handlePinSubscribe(
         m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
       pw::digital_io::ArduinoDigitalIn input(
           pin, m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP);
-      const pw::Status status = input.Enable();
-      if (!status.ok()) {
-        if (is_new) _pin_subscriptions.erase(it);
-        (void)writer.Finish(status);
-        return;
-      }
+      (void)input.Enable();
       g_pin_runtime_modes[pin] =
           m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP
               ? PinRuntimeMode::kInputPullup
@@ -1268,17 +1257,10 @@ void BridgeClass::_subscriptionTask() {
                           sub.pin,
                           sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP,
                           false);
-                      const pw::Status enabled = input.Enable();
-                      if (!enabled.ok()) {
-                        emitStatus(enabled);
-                        return;
-                      }
+                      (void)input.Enable();
                       auto state = input.GetState();
-                      if (!state.ok()) {
-                        emitStatus(state.status());
-                        return;
-                      }
-                      val = state.value() == pw::digital_io::State::kActive
+                      val = (state.ok() &&
+                             state.value() == pw::digital_io::State::kActive)
                                 ? 1U
                                 : 0U;
                     } else {
@@ -1286,11 +1268,8 @@ void BridgeClass::_subscriptionTask() {
                           sub.pin, bridge::config::ADC_MAX_SAMPLE);
                       auto sample = input.TryReadUntil(
                           pw::chrono::SystemClock::time_point::max());
-                      if (!sample.ok()) {
-                        emitStatus(sample.status());
-                        return;
-                      }
-                      val = static_cast<uint16_t>(sample.value());
+                      val = sample.ok() ? static_cast<uint16_t>(sample.value())
+                                        : 0U;
                     }
                     const uint16_t diff =
                         (val > sub.last_value)

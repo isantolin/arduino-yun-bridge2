@@ -58,6 +58,19 @@ to the wrapper, not directly to the core. Do not change its source URL/tag to
 settings, and Mega/ESP32 builds are preserved. This remains a security and
 integration review item.
 
+### Python development-tool compatibility pins
+
+- `mypy-protobuf 3.5.0` is retained with `protobuf 5.28.3` and `protoc 28.3`.
+  The current PyPI `mypy-protobuf 5.1.0` release requires `protoc >= 32.0`
+  and Python Protobuf `>= 6.32`; upgrading only that package would break the
+  currently pinned Pigweed Python wheel/toolchain.
+- The typeshed packages for psutil, pexpect, pyserial, and PyYAML remain pinned
+  to versions compatible with Pyright 1.1.414. Updating them requires a
+  compatible Pyright/typeshed upgrade and a clean typecheck.
+- `clang-format 22.1.8` is still pinned while the ecosystem has 23.1.5.
+  This is not a dependency constraint: it is a formatting migration gate.
+  Upgrade it only with a whole-tree format diff review and CI validation.
+
 ### Bazel lockfile
 
 `MODULE.bazel.lock` was previously excluded by `.gitignore`. That exclusion

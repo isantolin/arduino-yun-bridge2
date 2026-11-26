@@ -13,4 +13,8 @@ cc_library(
     ],
     includes = ["include"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@etl",
+        "@wolfssl",
+    ],
 )

@@ -365,12 +365,15 @@ void applySafetyPin(uint8_t pin, SafetyPinState state) {
 #if defined(ARDUINO_ARCH_ESP32)
     if (!digitalPinCanOutput(pin)) return;
 #endif
-    ::pinMode(pin, OUTPUT);
-    ::digitalWrite(pin, state == SafetyPinState::SAFE_PIN_HIGH ? HIGH : LOW);
-  } else if (state == SafetyPinState::SAFE_PIN_INPUT_PULLUP) {
-    ::pinMode(pin, INPUT_PULLUP);
+    pw::digital_io::ArduinoDigitalOut output(
+        pin, state == SafetyPinState::SAFE_PIN_HIGH
+                 ? pw::digital_io::State::kActive
+                 : pw::digital_io::State::kInactive);
+    (void)output.Enable();
   } else {
-    ::pinMode(pin, INPUT);
+    pw::digital_io::ArduinoDigitalIn input(
+        pin, state == SafetyPinState::SAFE_PIN_INPUT_PULLUP);
+    (void)input.Enable();
   }
 }
 

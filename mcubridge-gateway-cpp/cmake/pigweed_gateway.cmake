@@ -40,7 +40,7 @@ pw_add_facade(pw_sync.mutex STATIC
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public"
   PUBLIC_DEPS pw_sync.lock_annotations pw_sync.virtual_basic_lockable pw_preprocessor
   SOURCES "${PIGWEED_ROOT}/pw_sync/mutex.cc")
-pw_add_library(pw_sync.binary_semaphore STATIC
+pw_add_facade(pw_sync.binary_semaphore STATIC
   BACKEND pw_sync.binary_semaphore_BACKEND
   HEADERS "${PIGWEED_ROOT}/pw_sync/public/pw_sync/binary_semaphore.h"
   PUBLIC_INCLUDES "${PIGWEED_ROOT}/pw_sync/public"

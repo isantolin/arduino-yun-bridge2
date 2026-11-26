@@ -5,9 +5,15 @@
 - Renumbered: originally published as a second ADR-0003, which collided with [ADR-0003: Pigweed gateway replacement](0003-pigweed-gateway-replacement.md). The content below the amendment is the original decision.
 - Decision owners: Repository maintainer
 
-## Amendment (2026-11-16)
+## Amendments (2026-11-16 and 2026-11-26)
 
-The provider split described below no longer exists. wolfCrypt 5.8.4 is now the only cryptographic provider on AVR, SAMD21 and ESP32: SHA-256, HMAC-SHA256, HKDF-SHA256, ChaCha20-Poly1305 and zeroization (`ForceZero`) all come from wolfCrypt (`security.cpp`), and `library.properties` depends on `wolfssl`. Mbed TLS and PSA are no longer used by the firmware. The pinned archive, the repository-owned `wolfssl_user_settings.h`, the no-malloc configuration and the GPL-3.0-or-later obligations described below still apply to every platform.
+wolfCrypt 5.8.4 remains the sole cryptographic provider on AVR, SAMD21 and ESP32 firmware: SHA-256, HMAC-SHA256, HKDF-SHA256, ChaCha20-Poly1305 and zeroization (`ForceZero`) come from wolfCrypt (`security.cpp`). Mbed TLS and PSA are no longer used by the firmware. The Arduino package remains pinned separately to `wolfSSL/Arduino-wolfSSL` 5.8.4 and uses the MCU-specific `WOLFCRYPT_ONLY`, no-malloc settings.
+
+The Linux Gateway now uses the full wolfSSL 5.9.4 TLS implementation with wolfCrypt as its cryptographic backend. It provides TLS 1.3 only, mandatory client-certificate authentication, CA-chain verification, client-auth EKU enforcement, and the existing single-URI-SAN identity rules. The exact full-source archive and SHA-256 are pinned identically in CMake and Bazel. The Linux build does not reuse the MCU `WOLFCRYPT_ONLY` settings.
+
+OpenSSL has been removed from the Gateway executable, its CMake/Bazel link dependencies, and the production container. Python's TLS test client and the test-only `openssl` command used to generate certificate fixtures are test tooling, not Gateway runtime dependencies. wolfSSL source is distributed under GPLv3; distribution of the Gateway and its corresponding source must meet the applicable license obligations. This amendment does not claim FIPS validation or certification.
+
+The original decision below is retained as historical context; its provider split and implementation guidance are superseded by the amendments above.
 
 ## Context
 

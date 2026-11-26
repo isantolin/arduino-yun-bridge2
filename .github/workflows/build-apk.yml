@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 330
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
 
@@ -51,7 +51,7 @@ jobs:
 
       # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
       - name: Cache Downloads
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: dl
           key: ${{ runner.os }}-openwrt-dl-25.12.6
@@ -60,7 +60,7 @@ jobs:
 
       # Cache layer 2: Host toolchain (SDK Python, host tools — expensive to rebuild, rarely changes)
       - name: Cache Host Toolchain
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: |
             openwrt-sdk/staging_dir/hostpkg
@@ -71,7 +71,7 @@ jobs:
 
       # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
       - name: Cache OpenWrt SDK
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: openwrt-sdk
           key: ${{ runner.os }}-openwrt-sdk-25.12.6-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
@@ -123,7 +123,7 @@ jobs:
           fi
 
       - name: Upload APK Artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: openwrt-apk-packages
           path: bin/
@@ -136,7 +136,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Python 3.14 with Pip Cache
         uses: actions/setup-python@v7
@@ -145,7 +145,7 @@ jobs:
           cache: 'pip'
 
       - name: Cache OpenWrt QEMU Images
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: |
             openwrt-25.12.6-malta-be-vmlinux.elf
@@ -160,7 +160,7 @@ jobs:
           pip install typer pexpect tenacity
 
       - name: Download APK Artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: openwrt-apk-packages
           path: bin-download/
@@ -180,10 +180,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.1
 
       - name: Download APK Artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: openwrt-apk-packages
           path: bin/

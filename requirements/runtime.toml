@@ -35,8 +35,7 @@ rationale = "Pinned to protobuf 5.28.3 commanded by Google Pigweed priority (pig
 name = "pyserial"
 openwrt = "python3-pyserial"
 pip = "pyserial==3.5"
-check_latest = false
-rationale = "Cross-platform serial communication engine commanded by Google Pigweed"
+rationale = "Latest stable cross-platform serial communication engine"
 
 
 [[dependency]]
@@ -227,7 +226,7 @@ rationale = "Fast Python linter and code quality validator"
 name = "mypy-protobuf"
 pip = "mypy-protobuf==3.5.0"
 check_latest = false
-rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions [commanded by Pigweed]"
+rationale = "Pinned to the Pigweed 0.0.24 / Protobuf 5.28.3 / protoc 28.3 toolchain; mypy-protobuf 5.x requires protoc and Python Protobuf 6.32+ [BUILD-ONLY]"
 
 [[dev_dependency]]
 name = "pexpect"
@@ -364,7 +363,7 @@ rationale = "Standardized core utilities for Python package version parsing and 
 name = "clang-format"
 pip = "clang-format==22.1.8"
 check_latest = false
-rationale = "Deterministic C++ and Arduino code formatter matching clang-format 22.x toolchain"
+rationale = "Pinned to clang-format 22.x until a whole-tree formatting migration to 23.x is reviewed"
 
 [[dev_dependency]]
 name = "pytest-cov"

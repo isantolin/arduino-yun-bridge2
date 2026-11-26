@@ -245,13 +245,13 @@ void test_spi_data_modes_map_to_native_settings() {
   TEST_ASSERT_EQUAL_UINT32(config.frequency, SPI.last_settings.clock);
 
   config.data_mode = static_cast<rpc_pb_SpiDataMode>(99);
-  TEST_ASSERT_EQUAL(pw::Status::InvalidArgument(),
-                    SPIService.setConfig(config));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
+                   pw::Status::InvalidArgument());
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   config.bit_order = static_cast<rpc_pb_SpiBitOrder>(99);
-  TEST_ASSERT_EQUAL(pw::Status::InvalidArgument(),
-                    SPIService.setConfig(config));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config) ==
+                   pw::Status::InvalidArgument());
 
   SPIService.end();
 }
@@ -590,14 +590,14 @@ void test_spi_edges() {
   TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>()).ok());
 
   SPIService.end();
-  TEST_ASSERT_EQUAL(pw::Status::FailedPrecondition(),
-                    SPIService.transfer(pw::span<uint8_t>(buf)));
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)) ==
+                   pw::Status::FailedPrecondition());
 
   // 3. Timeout fault
   SPIService.begin();
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
-  TEST_ASSERT_EQUAL(pw::Status::DeadlineExceeded(),
-                    SPIService.transfer(pw::span<uint8_t>(buf)));
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)) ==
+                   pw::Status::DeadlineExceeded());
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
   // 4. SPI Transfer via HDLC RPC

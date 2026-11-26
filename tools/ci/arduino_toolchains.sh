@@ -149,6 +149,7 @@ PW_PIGWEED_SRCS=(
     "$PW_ROOT/pw_metric/metric_walker.cc"
     "$PW_ROOT/pw_metric/metric_service_pwpb.cc"
     "$PW_ROOT/pw_stream/memory_stream.cc"
+    "$PW_ROOT/pw_digital_io/digital_io.cc"
 )
 
 # Stages cooperative pw_transfer plus the selected Pigweed hardware backends

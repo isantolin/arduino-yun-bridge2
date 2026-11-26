@@ -1072,7 +1072,10 @@ pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
           pin, initial_active ? pw::digital_io::State::kActive
                               : pw::digital_io::State::kInactive);
       const pw::Status status = output.Enable();
-      if (status.ok()) g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
+      if (status.ok()) {
+        g_pin_runtime_modes[pin] = initial_active ? PinRuntimeMode::kOutputHigh
+                                                  : PinRuntimeMode::kOutputLow;
+      }
       return status;
     }
     default:

@@ -5,36 +5,24 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
-# Build a hermetic static OpenSSL matching Pigweed's C/C++ sysroot. The host
-# runner's libssl.so is intentionally not imported: it is built against a
-# newer glibc and cannot be linked safely with Pigweed's pinned sysroot.
+# Build the same pinned full wolfSSL source archive used by the CMake Gateway.
+# The static library contains wolfSSL TLS 1.3 and its wolfCrypt backend.
 configure_make(
-    name = "openssl_static",
-    configure_command = "config",
+    name = "wolfssl_static",
+    configure_command = "./configure",
     configure_in_place = True,
     configure_options = [
-        "no-shared",
-        "no-tests",
-        "no-apps",
-        "no-docs",
-        "--libdir=lib",
+        "--enable-static",
+        "--disable-shared",
+        "--enable-tls13",
+        "--enable-opensslextra",
+        "--enable-rsa",
+        "--enable-ecc",
     ],
-    # OpenSSL's upstream C sources intentionally trigger two strict-warning
-    # diagnostics under Pigweed's hermetic Clang flags. Keep warnings visible,
-    # but do not promote those specific OpenSSL warnings to build failures.
-    env = {
-        "CFLAGS": "-Wno-error=cast-qual -Wno-error=unused-parameter",
-    },
-    lib_source = "@openssl_source//:all_srcs",
+    lib_source = "@wolfssl_source//:all_srcs",
     out_include_dir = "include",
-    out_static_libs = [
-        "libssl.a",
-        "libcrypto.a",
-    ],
-    targets = [
-        "build_libs",
-        "install_dev",
-    ],
+    out_static_libs = ["libwolfssl.a"],
+    targets = ["install"],
 )
 
 cc_binary(
@@ -56,7 +44,7 @@ cc_binary(
     deps = [
         "//tools/protocol:gateway_control_pwpb_rpc",
         "//tools/protocol:mcu_wire_raw_rpc",
-        ":openssl_static",
+        ":wolfssl_static",
         "@pigweed//pw_assert:backend_impl",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",

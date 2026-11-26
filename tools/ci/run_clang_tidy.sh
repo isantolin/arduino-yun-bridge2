@@ -58,7 +58,7 @@ COMPILE_FLAGS=(
 )
 
 echo "[clang-tidy] Auditing C++ sources with clang-tidy..."
-SOURCES=($(find "${SRC_DIR}" -name "*.cpp" ! -name "pb_*.c" ! -name "*.pb.c"))
+SOURCES=($(find "${SRC_DIR}" -name "*.cpp" ! -name "pb_*.c" ! -name "*.pb.c") "${PW_PERIPHERAL_STAGED_SRCS[@]}")
 
 for src in "${SOURCES[@]}"; do
     echo "[clang-tidy] Checking $(basename "$src")..."

@@ -5,10 +5,8 @@
 
 #if BRIDGE_ENABLE_SPI
 
-#include <SPI.h>
-#undef min
-#undef max
 #include <pw_span/span.h>
+#include <pw_spi_avr/initiator.h>
 
 #include "protocol/mcu_wire.pb.h"
 
@@ -18,14 +16,13 @@ class SPIServiceClass : public bridge::BridgeObserver {
 
   void begin();
   void end();
-  void setConfig(const rpc_pb_SpiConfig& config);
-  size_t transfer(pw::span<uint8_t> buffer);
+  pw::Status setConfig(const rpc_pb_SpiConfig& config);
+  pw::Status transfer(pw::span<uint8_t> buffer);
 
   void onLost() override { end(); }
 
  private:
-  bool _initialized;
-  SPISettings _settings;
+  pw::spi::ArduinoInitiator _initiator;
 };
 
 using SPIServiceType = SPIServiceClass;

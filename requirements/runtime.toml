@@ -182,7 +182,7 @@ files = [
     "pb_encode.h",
     "pb_encode.c",
 ]
-rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded MCUs"
+rationale = "Nanopb 0.4.9.3 C runtime with current security fixes; matched to the 0.4.9.3 Python generator"
 
 [[cpp_dependency]]
 name = "wolfssl"

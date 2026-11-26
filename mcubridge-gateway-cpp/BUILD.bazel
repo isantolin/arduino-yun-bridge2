@@ -36,6 +36,8 @@ cc_binary(
         "-Wextra",
         "-Wpedantic",
         "-include",
+        "features.h",
+        "-include",
         "wolfssl/options.h",
         # Pigweed's PW_METRIC macro uses __COUNTER__. Clang diagnoses that
         # compiler builtin as a C2y extension in this C++20 translation unit;

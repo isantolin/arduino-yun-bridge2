@@ -115,7 +115,11 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   pw_sync.scoped_locker pw_sync.binary_semaphore
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )
-target_compile_options(mcubridge-gateway-cpp PRIVATE -Wall -Wextra -Wpedantic -include wolfssl/options.h)
+target_compile_options(mcubridge-gateway-cpp PRIVATE
+  -Wall -Wextra -Wpedantic
+  -include features.h
+  -include wolfssl/options.h
+)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(mcubridge-gateway-cpp PRIVATE
     -Wthread-safety

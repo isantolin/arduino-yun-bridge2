@@ -28,6 +28,7 @@ cc_binary(
         "@pigweed//pw_chrono:system_clock",
         "@pigweed//pw_chrono:system_timer",
         "@pigweed//pw_hdlc",
+        "@pigweed//pw_hdlc:rpc_channel_output",
         "@pigweed//pw_log",
         "@pigweed//pw_log_basic",
         "@pigweed//pw_metric:metric",
@@ -46,6 +47,7 @@ cc_binary(
         "@pigweed//pw_sync:scoped_locker",
         "@pigweed//pw_sync:timed_thread_notification",
         "@pigweed//pw_thread:thread",
+        "@pigweed//pw_thread_stl:thread",
         "@pigweed//pw_transfer",
     ],
 )

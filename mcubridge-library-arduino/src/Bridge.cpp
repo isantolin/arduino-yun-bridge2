@@ -106,6 +106,51 @@ bool isValidDigitalOutputPin(uint32_t pin) {
 #endif
 }
 
+void resetPinRuntimeModesToSafeState() {
+  for (uint16_t index = 0; index < NUM_DIGITAL_PINS; ++index) {
+    const uint8_t pin = static_cast<uint8_t>(index);
+    if (pin == PIN_SPI_SS) {
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputHigh;
+    } else if (pin == PIN_SPI_SCK || pin == PIN_SPI_MOSI) {
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
+    } else if (pin == PIN_SPI_MISO) {
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInput;
+    } else if (pin == PIN_WIRE_SDA || pin == PIN_WIRE_SCL) {
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInputPullup;
+    } else if (pin < 2U) {
+      // HAL deliberately leaves the supervisor UART pins unchanged.
+      continue;
+    } else if (bridge::config::SAFE_START_PINS_ENABLED) {
+#if defined(ARDUINO_ARCH_ESP32)
+      if (!digitalPinCanOutput(pin)) continue;
+#endif
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
+    } else {
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInputPullup;
+    }
+  }
+}
+
+void setPinRuntimeModeForSafety(uint8_t pin,
+                                bridge::hal::SafetyPinState state) {
+  if (pin >= NUM_DIGITAL_PINS) return;
+  switch (state) {
+    case bridge::hal::SafetyPinState::SAFE_PIN_LOW:
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputLow;
+      break;
+    case bridge::hal::SafetyPinState::SAFE_PIN_HIGH:
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kOutputHigh;
+      break;
+    case bridge::hal::SafetyPinState::SAFE_PIN_INPUT_PULLUP:
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInputPullup;
+      break;
+    case bridge::hal::SafetyPinState::SAFE_PIN_INPUT:
+    default:
+      g_pin_runtime_modes[pin] = PinRuntimeMode::kInput;
+      break;
+  }
+}
+
 void refreshMemoryMetrics() {
   g_metric_free_memory_bytes.Set(bridge::hal::getFreeMemory());
   const bridge::hal::StackWatermark watermark =
@@ -525,6 +570,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     }
   }
   bridge::hal::init();
+  resetPinRuntimeModesToSafeState();
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
 
@@ -934,9 +980,11 @@ void BridgeClass::enterSafeState() {
   }
   _clearLinkSession();
   bridge::hal::forceSafeState();
+  resetPinRuntimeModesToSafeState();
   etl::for_each(_safety_pins.begin(), _safety_pins.end(),
                 [](const SafetyPinEntry& entry) {
                   bridge::hal::applySafetyPin(entry.pin, entry.state);
+                  setPinRuntimeModeForSafety(entry.pin, entry.state);
                 });
   _setFlag(FLAG_TX_ENABLED, false);
   _setFlag(FLAG_SERIAL_XOFF, false);

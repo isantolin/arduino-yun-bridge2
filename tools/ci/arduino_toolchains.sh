@@ -151,10 +151,10 @@ PW_PIGWEED_SRCS=(
     "$PW_ROOT/pw_stream/memory_stream.cc"
 )
 
-# Stages ONLY the cooperative pw_transfer headers and implementation sources
-# exported by mcubridge-library-arduino/tools/install.sh into clean isolated
-# directories so 32-bit/host builds never inherit AVR-only headers from
-# PigweedAVR/src (avr-libstdcpp, pw_assert_avr, pw_chrono_avr).
+# Stages cooperative pw_transfer plus the selected Pigweed hardware backends
+# exported by mcubridge-library-arduino/tools/install.sh into isolated include
+# and source directories. This prevents host/32-bit builds from inheriting
+# unrelated AVR-only headers from PigweedAVR/src.
 stage_cooperative_pw_transfer() {
     local stage_root="$1"
     local arduino_libs="${2:-${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}}"
@@ -183,7 +183,7 @@ stage_cooperative_pw_transfer() {
         pw_analog/analog_input.h \
         pw_analog_avr/analog_input.h; do
         if [ ! -f "${export_src}/${req_hdr}" ]; then
-            echo "ERROR: exported cooperative pw_transfer/pw_log header missing: ${export_src}/${req_hdr}" >&2
+            echo "ERROR: exported Pigweed transfer/log/peripheral header missing: ${export_src}/${req_hdr}" >&2
             return 1
         fi
     done

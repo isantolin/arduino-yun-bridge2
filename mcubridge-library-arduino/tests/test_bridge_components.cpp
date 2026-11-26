@@ -21,6 +21,7 @@
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
+#include <SPI.h>
 #include "services/SPIService.h"
 #include "test_support.h"
 
@@ -218,9 +219,9 @@ void test_spi_data_modes_map_to_native_settings() {
   config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST;
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
+  TEST_ASSERT_TRUE(SPIService.setConfig(config).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(
+                                   payload.data(), payload.size())).ok());
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_1;
@@ -244,10 +245,8 @@ void test_spi_data_modes_map_to_native_settings() {
   TEST_ASSERT_EQUAL_UINT32(config.frequency, SPI.last_settings.clock);
 
   config.data_mode = static_cast<rpc_pb_SpiDataMode>(99);
-  SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(pw::span<uint8_t>(
-                                  payload.data(), payload.size())));
-  TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
+  TEST_ASSERT_EQUAL(pw::Status::InvalidArgument(),
+                    SPIService.setConfig(config));
 
   SPIService.end();
 }
@@ -578,24 +577,22 @@ void test_spi_edges() {
   sc.frequency = 4000000;
   sc.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
   sc.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
-  SPIService.setConfig(sc);
+  TEST_ASSERT_TRUE(SPIService.setConfig(sc).ok());
 
   // 2. Normal transfer, empty transfer, uninitialized transfer
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
-  size_t n = SPIService.transfer(pw::span<uint8_t>(buf));
-  TEST_ASSERT_EQUAL(4, n);
-  n = SPIService.transfer(pw::span<uint8_t>());
-  TEST_ASSERT_EQUAL(0, n);
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)).ok());
+  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>()).ok());
 
   SPIService.end();
-  n = SPIService.transfer(pw::span<uint8_t>(buf));
-  TEST_ASSERT_EQUAL(0, n);
+  TEST_ASSERT_EQUAL(pw::Status::FailedPrecondition(),
+                    SPIService.transfer(pw::span<uint8_t>(buf)));
 
   // 3. Timeout fault
   SPIService.begin();
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
-  size_t t3 = SPIService.transfer(pw::span<uint8_t>(buf));
-  TEST_ASSERT_EQUAL(0U, t3);
+  TEST_ASSERT_EQUAL(pw::Status::DeadlineExceeded(),
+                    SPIService.transfer(pw::span<uint8_t>(buf)));
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
   // 4. SPI Transfer via HDLC RPC

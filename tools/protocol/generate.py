@@ -751,6 +751,17 @@ def check_incremental_build(args: Any, version: str, *, repo_root: Path = REPO_R
     return up_to_date, hash_file, current_hash
 
 
+def _nanopb_header_with_public_runtime_include(content: str, stem: str) -> str:
+    """Keep Nanopb's runtime header public so Bazel and Arduino resolve it identically."""
+    include = "#include <pb.h>"
+    if include not in content:
+        raise ValueError("Generated Nanopb header is missing its public <pb.h> include")
+    alias = f"typedef pb_byte_t {stem}_pb_byte_t;"
+    if alias in content:
+        return content
+    return content.replace(include, f"{include}\\n\\n{alias}", 1)
+
+
 def _dispatch_generated_file(
     src: Path,
     targets: list[Path | None],
@@ -832,7 +843,7 @@ def main(
         _dispatch_generated_file(
             proto_path.parent / f"{stem}.pb.h",
             cpp_targets,
-            lambda t, s=stem: t.replace("#include <pb.h>", f'#include "../pb.h"\n\ntypedef pb_byte_t {s}_pb_byte_t;'),
+            lambda t, s=stem: _nanopb_header_with_public_runtime_include(t, s),
         )
         _dispatch_generated_file(proto_path.parent / f"{stem}.pb.c", cpp_targets)
 

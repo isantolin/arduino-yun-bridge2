@@ -5,6 +5,9 @@
 
 #if BRIDGE_ENABLE_SPI
 
+#include <SPI.h>
+#undef min
+#undef max
 #include <pw_span/span.h>
 #include <pw_spi_avr/initiator.h>
 

@@ -202,10 +202,13 @@ stage_cooperative_pw_transfer() {
     find "${export_src}" -maxdepth 1 -type f \
         \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' -o -name 'log_avr.cpp' \) \
         -exec cp {} "${PW_TRANSFER_STAGED_SRC_DIR}/" \;
-    # Stage the selected hardware backends as separate translation units.
+    # Stage the selected hardware backends as separate translation units for host
+    # builds and under pw_peripheral_backends/ for 32-bit arduino-cli builds.
+    mkdir -p "${PW_TRANSFER_STAGED_INC_DIR}/pw_peripheral_backends"
     for backend_src in initiator.cpp digital_io.cpp; do
         if [ -f "${export_src}/${backend_src}" ]; then
             cp "${export_src}/${backend_src}" "${PW_TRANSFER_STAGED_SRC_DIR}/pw_backend_${backend_src}"
+            cp "${export_src}/${backend_src}" "${PW_TRANSFER_STAGED_INC_DIR}/pw_peripheral_backends/${backend_src}"
         else
             echo "ERROR: exported Pigweed hardware backend source missing: ${export_src}/${backend_src}" >&2
             return 1
@@ -358,7 +361,7 @@ _build_pigweed_archive() {
     read -r -a c_flags <<< "$c_flags_str"
     read -r -a cxx_flags <<< "$cxx_flags_str"
 
-    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${PW_PERIPHERAL_STAGED_SRCS[@]}" "${extra_srcs[@]}")
+    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${extra_srcs[@]}")
     local objs=() src obj
     for src in "${all_srcs[@]}"; do
         obj="${build_tmp}/${src//\//_}.o"

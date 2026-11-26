@@ -120,7 +120,7 @@ void resetPinRuntimeModesToSafeState() {
     } else if (pin < 2U) {
       // HAL deliberately leaves the supervisor UART pins unchanged.
       continue;
-    } else if (bridge::config::SAFE_START_PINS_ENABLED) {
+    } else if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
 #if defined(ARDUINO_ARCH_ESP32)
       if (!digitalPinCanOutput(pin)) continue;
 #endif

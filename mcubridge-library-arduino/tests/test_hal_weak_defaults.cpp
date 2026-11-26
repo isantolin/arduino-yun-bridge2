@@ -1,4 +1,4 @@
-#include "Unity/src/unity.h"
+#include "unity.h"
 #include "hal/hal.h"
 #include "protocol/mcu_wire.pb.h"
 

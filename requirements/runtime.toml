@@ -136,8 +136,9 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 [[dependency]]
 name = "nanopb"
 openwrt = "nanopb"
-pip = "nanopb==0.4.9.3"
-rationale = "Latest stable PyPI generator release; C runtime is pinned to the same upstream nanopb 0.4.9.3 release [BUILD-ONLY]"
+pip = "nanopb==0.4.9.1"
+check_latest = false
+rationale = "Pinned to the last generator verified with Pigweed 0.0.24 / Protobuf 5.28.3; the C runtime and Bzlmod module use the security-fixed 0.4.9.3 release [BUILD-ONLY]"
 
 [[dependency]]
 name = "lmdb"
@@ -182,7 +183,7 @@ files = [
     "pb_encode.h",
     "pb_encode.c",
 ]
-rationale = "Upstream Nanopb 0.4.9.3 C runtime; matched to the 0.4.9.3 Python generator and Bzlmod module"
+rationale = "Upstream Nanopb 0.4.9.3 C runtime and Bzlmod module; intentionally newer than the Python generator because its bundled gencode requires Protobuf 7.x"
 
 [[cpp_dependency]]
 name = "wolfssl"

@@ -329,7 +329,7 @@ def test_cli_fix_is_repeatable_and_checks_generated_artifacts(mocker: MockerFixt
         "\n".join(
             [
                 "      - name: 'Checkout repository'",
-                "        uses: 'actions/checkout@v7'",
+                "        uses: 'actions/checkout@v7.0.1'",
                 "      - name: 'Read canonical Gemini model'",
                 "        id: 'gemini_model'",
                 "        run: |-",

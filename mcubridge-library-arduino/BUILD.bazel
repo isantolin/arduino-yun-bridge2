@@ -3,7 +3,6 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 package(default_visibility = ["//visibility:public"])
 
 HOST_COPTS = [
-    "-std=c++17",
     "-Wall",
     "-Wextra",
     "-Wno-unused-parameter",
@@ -23,6 +22,19 @@ HOST_DEFINES = [
     "PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY=2",
     "PW_TRANSFER_COOPERATIVE_CHUNK_BUFFER_SIZE=128",
 ]
+
+genrule(
+    name = "wolfssl_user_settings_hdr",
+    srcs = ["src/config/wolfssl_user_settings.h"],
+    outs = ["wolfssl_cfg/user_settings.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "wolfssl_user_settings",
+    hdrs = [":wolfssl_user_settings_hdr"],
+    includes = ["wolfssl_cfg"],
+)
 
 cc_library(
     name = "bridge_core",

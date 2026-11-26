@@ -632,8 +632,8 @@ message CloudDefaults {
 }
 
 message StatusReasons {
-  string sync_auth_mismatch: 17;
-  string sync_length_mismatch: 18;
+  string sync_auth_mismatch = 17;
+  string sync_length_mismatch = 18;
 }
 
 message ArchConfig {

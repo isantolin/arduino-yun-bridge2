@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Install the official Espressif Arduino core used for ESP32-S3 targets.
 #
-# Upstream Pigweed needs GCC >= 10; the arduino:esp32 2.0.x core ships GCC 8,
-# so ESP32 builds use the official Espressif core (3.x, modern xtensa-esp-elf
-# toolchain). The version is pinned for reproducible CI.
+# Upstream Pigweed needs GCC >= 10; the arduino:esp32 2.0.x core ships GCC 8.
+# ESP32 builds use the official Espressif core 4.0.0 (ESP-IDF 6.1.1) and its
+# modern xtensa-esp-elf toolchain. The version is pinned for reproducible CI.
 set -euo pipefail
 
 ESP32_INDEX_URL="https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json"

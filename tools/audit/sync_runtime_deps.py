@@ -495,6 +495,93 @@ def check_latest_versions(
     return outdated
 
 
+
+def _fetch_github_latest_commit(repo: str, branch: str = "main") -> str | None:
+    """Query GitHub API for the latest commit SHA on a branch."""
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github.v3+json"}
+    try:
+        resp = fetch_url_with_retry(
+            f"https://api.github.com/repos/{repo}/commits/{branch}", headers=headers, timeout=8.0
+        )
+        sha: Any = cast(dict[str, Any], resp.json()).get("sha")
+        return str(sha) if sha else None
+    except (httpx.HTTPError, ValueError, KeyError, tenacity.RetryError) as exc:
+        sys.stderr.write(f"[WARN] GitHub commit query failed for {repo}@{branch}: {exc}\n")
+        return None
+
+
+def _extract_regex_group(path: Path, pattern: str) -> str | None:
+    if not path.is_file():
+        return None
+    match = re.search(pattern, path.read_text(encoding="utf-8"), flags=re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def check_external_versions(root: Path = ROOT) -> list[tuple[str, str, str]]:
+    """Audit external/native-mechanism pins (Renode, Arduino scripts, Bazel, GitHub submodules)."""
+    outdated: list[tuple[str, str, str]] = []
+
+    manifest_path = root / "requirements" / "runtime.toml"
+    if manifest_path.is_file():
+        data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        renode_spec = cast(dict[str, Any], data.get("toolchain", {})).get("renode")
+        if isinstance(renode_spec, dict) and isinstance(renode_spec.get("version"), str):
+            pinned_renode = str(renode_spec["version"])
+            base_renode = pinned_renode.split("+", 1)[0]
+            latest_renode = _fetch_github_latest_version("renode/renode")
+            if latest_renode and _is_version_newer(base_renode, latest_renode.lstrip("v")):
+                outdated.append(("toolchain.renode (runtime.toml)", pinned_renode, latest_renode))
+
+    script_checks: tuple[tuple[str, Path, str, str], ...] = (
+        (
+            "arduino-cli (install_arduino_cli.sh)",
+            root / "tools" / "ci" / "install_arduino_cli.sh",
+            r'^VERSION="([^"]+)"',
+            "arduino/arduino-cli",
+        ),
+        (
+            "esp32:esp32 (install_espressif_core.sh)",
+            root / "tools" / "ci" / "install_espressif_core.sh",
+            r'^ESP32_CORE_VERSION="\$\{ESP32_CORE_VERSION:-([^}]+)\}"',
+            "espressif/arduino-esp32",
+        ),
+        (
+            "rules_cc (MODULE.bazel)",
+            root / "MODULE.bazel",
+            r'bazel_dep\(name = "rules_cc", version = "([^"]+)"\)',
+            "bazelbuild/rules_cc",
+        ),
+    )
+    for label, path, pattern, gh_repo in script_checks:
+        pinned = _extract_regex_group(path, pattern)
+        if not pinned:
+            continue
+        latest = _fetch_github_latest_version(gh_repo)
+        if latest and _is_version_newer(pinned.lstrip("v"), latest.lstrip("v")):
+            outdated.append((label, pinned, latest))
+
+    gitmodules_path = root / ".gitmodules"
+    if gitmodules_path.is_file():
+        gm_text = gitmodules_path.read_text(encoding="utf-8")
+        for sub_match in re.finditer(
+            r'\[submodule "([^"]+)"\]\s+path = ([^\n]+)\s+url = https://github\.com/([^/]+/[^/\s]+?)(?:\.git)?\s',
+            gm_text,
+        ):
+            sub_path = sub_match.group(2).strip()
+            gh_repo = sub_match.group(3).strip()
+            head_file = root / ".git" / "modules" / sub_path / "HEAD"
+            if not head_file.is_file():
+                continue
+            pinned_sha = head_file.read_text(encoding="utf-8").strip()
+            if len(pinned_sha) != 40:
+                continue
+            latest_sha = _fetch_github_latest_commit(gh_repo)
+            if latest_sha and latest_sha != pinned_sha:
+                outdated.append((f"{sub_path} (.gitmodules)", pinned_sha[:8], latest_sha[:8]))
+
+    return outdated
+
+
 def _to_apk_version(version: str) -> str:
     """Convert Python pre-release notation to APK (Alpine) version notation."""
     try:
@@ -594,6 +681,9 @@ def main(
     check: Annotated[bool, typer.Option("--check", help="Exit with status 1 if files would change")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show whether files would change without writing")] = False,
     check_latest: Annotated[bool, typer.Option("--check-latest", help="Check PyPI/GitHub for outdated pins")] = False,
+    strict_external: Annotated[
+        bool, typer.Option("--strict-external", help="Fail when external/native-mechanism dependencies are outdated")
+    ] = False,
     print_openwrt: Annotated[bool, typer.Option("--print-openwrt", help="Print OpenWrt package names")] = False,
     print_pip: Annotated[bool, typer.Option("--print-pip", help="Print pip requirement specifiers")] = False,
 ) -> None:
@@ -642,6 +732,13 @@ def main(
             fail = True
         else:
             print("All dependencies are up to date.")
+        external_outdated = check_external_versions()
+        if external_outdated:
+            print("External/native-mechanism updates available:")
+            for name, pinned, latest in external_outdated:
+                print(f"  {name}: {pinned} -> {latest}")
+            if strict_external:
+                fail = True
 
     if fail:
         raise SystemExit(1)

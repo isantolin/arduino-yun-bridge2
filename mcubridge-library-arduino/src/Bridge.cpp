@@ -1025,6 +1025,7 @@ pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
       return status;
     }
     case rpc_pb_PinModeType_PIN_OUTPUT: {
+      if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
       pw::digital_io::ArduinoDigitalOut output(
           pin, pw::digital_io::State::kInactive);
       const pw::Status status = output.Enable();
@@ -1052,7 +1053,7 @@ pw::Status BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
 }
 
 pw::Status BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
-  if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
+  if (!isValidDigitalPin(m.pin)) return pw::Status::InvalidArgument();
   const uint8_t pin = static_cast<uint8_t>(m.pin);
   const uint8_t duty = static_cast<uint8_t>(
       etl::clamp<uint32_t>(m.value, 0UL, 255UL));

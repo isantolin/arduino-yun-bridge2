@@ -142,7 +142,8 @@ class GpioRpcService final
             g_pin_runtime_modes[pin] == PinRuntimeMode::kOutputHigh
                 ? pw::digital_io::State::kActive
                 : pw::digital_io::State::kInactive);
-        PW_TRY(input.Enable());
+        const pw::Status enabled = input.Enable();
+        if (!enabled.ok()) return enabled;
         auto value = input.GetState();
         if (!value.ok()) return value.status();
         response.value = value.value() == pw::digital_io::State::kActive ? 1U : 0U;

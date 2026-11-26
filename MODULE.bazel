@@ -33,13 +33,26 @@ local_path_override(
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
 
-# The Gateway is a Linux host binary. Pigweed's hermetic Clang sysroot does not
-# ship OpenSSL; expose the system development package installed by CI instead.
+# The Gateway is a Linux host binary. Use the system OpenSSL development
+# headers and import the two exact shared objects. Do not add /usr/lib to the
+# global linker search path: that makes Pigweed's hermetic Clang mix the host
+# glibc libraries with its own startup objects and leaves __libc_csu_* undefined.
 new_local_repository(
     name = "system_openssl",
     path = "/usr",
     build_file_content = """
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
+
+cc_import(
+    name = "ssl",
+    shared_library = "lib/x86_64-linux-gnu/libssl.so.3",
+    deps = [":crypto"],
+)
+
+cc_import(
+    name = "crypto",
+    shared_library = "lib/x86_64-linux-gnu/libcrypto.so.3",
+)
 
 cc_library(
     name = "openssl",
@@ -51,10 +64,9 @@ cc_library(
         "include",
         "include/x86_64-linux-gnu",
     ],
-    linkopts = [
-        "-L/usr/lib/x86_64-linux-gnu",
-        "-lssl",
-        "-lcrypto",
+    deps = [
+        ":ssl",
+        ":crypto",
     ],
     visibility = ["//visibility:public"],
 )

@@ -241,6 +241,7 @@ pw::Result<PeerIdentity> PeerIdentityFromCertificate(WOLFSSL* ssl) {
         break;
       }
       const WOLFSSL_ASN1_STRING* uri = name->d.uniformResourceIdentifier;
+      if (uri == nullptr) continue;
       const unsigned char* raw = wolfSSL_ASN1_STRING_get0_data(uri);
       const int raw_size = wolfSSL_ASN1_STRING_length(uri);
       if (raw == nullptr || raw_size <= 0) continue;

@@ -75,7 +75,7 @@ rationale = "Cross-platform process supervision and resource tracking [SIL-2 com
 [[dependency]]
 name = "python-statemachine"
 openwrt = "python3-statemachine"
-pip = "python3-statemachine==3.2.2"
+pip = "python-statemachine==3.2.2"
 gateway = true
 rationale = "Deterministic finite state machine (FSM) implementation matching SIL-2 MCU architecture"
 

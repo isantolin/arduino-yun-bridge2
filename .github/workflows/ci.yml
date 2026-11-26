@@ -671,6 +671,14 @@ jobs:
       - name: Run Arduino host C++ tests with Bazel
         run: |
           bazel test --test_output=errors //mcubridge-library-arduino/...
+
+      - name: Upload resolved Bzlmod lockfile
+        if: always() && hashFiles('MODULE.bazel.lock') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: bazel-module-lockfile-bridge
+          path: MODULE.bazel.lock
+          if-no-files-found: warn
       - name: Build Linux Gateway OCI image with Bazel
         run: |
           bazel build //mcubridge-gateway-cpp:mcubridge-gateway-image

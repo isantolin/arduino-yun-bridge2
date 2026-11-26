@@ -4,11 +4,103 @@ module(
 )
 
 bazel_dep(name = "pigweed", version = "0.0.24")
-bazel_dep(name = "platforms", version = "0.0.11")
-bazel_dep(name = "protobuf", version = "28.3", repo_name = "com_google_protobuf")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "protobuf", version = "36.2", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.28")
+bazel_dep(name = "rules_oci", version = "2.2.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
 
 local_path_override(
     module_name = "pigweed",
     path = "third_party/pigweed",
 )
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "unity",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "unity",
+    srcs = ["src/unity.c"],
+    hdrs = glob(["src/*.h"]),
+    includes = ["src"],
+    defines = ["UNITY_INCLUDE_DOUBLE"],
+    visibility = ["//visibility:public"],
+)
+""",
+    strip_prefix = "Unity-2.7.0",
+    urls = ["https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v2.7.0.tar.gz"],
+)
+
+http_archive(
+    name = "etl",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "etl",
+    hdrs = glob(["include/**/*.h", "arduino/**/*.h"]),
+    includes = ["include", "arduino"],
+    defines = ["ETL_NO_STL", "ETL_FORCE_STD_INITIALIZER_LIST"],
+    visibility = ["//visibility:public"],
+)
+""",
+    strip_prefix = "etl-20.49.0",
+    urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
+)
+
+http_archive(
+    name = "nanopb_c",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "nanopb_c",
+    srcs = ["pb_common.c", "pb_decode.c", "pb_encode.c"],
+    hdrs = ["pb.h", "pb_common.h", "pb_decode.h", "pb_encode.h"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)
+""",
+    strip_prefix = "nanopb-0.4.9.2",
+    urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/0.4.9.2.tar.gz"],
+)
+
+http_archive(
+    name = "wolfssl",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "wolfssl",
+    srcs = [
+        "src/wolfcrypt/src/sha256.c",
+        "src/wolfcrypt/src/hmac.c",
+        "src/wolfcrypt/src/kdf.c",
+        "src/wolfcrypt/src/chacha.c",
+        "src/wolfcrypt/src/poly1305.c",
+        "src/wolfcrypt/src/chacha20_poly1305.c",
+        "src/wolfcrypt/src/hash.c",
+        "src/wolfcrypt/src/misc.c",
+    ],
+    hdrs = glob(["src/**/*.h"]),
+    includes = ["src"],
+    defines = ["WOLFSSL_USER_SETTINGS"],
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96",
+    strip_prefix = "wolfssl-5.8.4",
+    urls = ["https://downloads.arduino.cc/libraries/github.com/wolfSSL/wolfssl-5.8.4.zip"],
+)
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "debian_bookworm_slim",
+    image = "index.docker.io/library/debian",
+    platforms = [
+        "linux/amd64",
+        "linux/arm64",
+    ],
+    tag = "bookworm-slim",
+)
+use_repo(oci, "debian_bookworm_slim")

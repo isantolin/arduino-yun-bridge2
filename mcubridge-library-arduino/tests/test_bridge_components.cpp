@@ -248,6 +248,11 @@ void test_spi_data_modes_map_to_native_settings() {
   TEST_ASSERT_EQUAL(pw::Status::InvalidArgument(),
                     SPIService.setConfig(config));
 
+  config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
+  config.bit_order = static_cast<rpc_pb_SpiBitOrder>(99);
+  TEST_ASSERT_EQUAL(pw::Status::InvalidArgument(),
+                    SPIService.setConfig(config));
+
   SPIService.end();
 }
 

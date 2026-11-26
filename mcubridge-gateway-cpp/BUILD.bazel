@@ -14,6 +14,8 @@ cmake(
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INSTALL_LIBDIR": "lib",
         "CMAKE_INSTALL_INCLUDEDIR": "include",
+        "WOLFSSL_EXAMPLES": "no",
+        "WOLFSSL_CRYPT_TESTS": "no",
         "WOLFSSL_OPENSSLEXTRA": "yes",
         "WOLFSSL_TLS13": "yes",
         "WOLFSSL_RSA": "yes",
@@ -33,6 +35,8 @@ cc_binary(
         "-Wall",
         "-Wextra",
         "-Wpedantic",
+        "-include",
+        "wolfssl/options.h",
         # Pigweed's PW_METRIC macro uses __COUNTER__. Clang diagnoses that
         # compiler builtin as a C2y extension in this C++20 translation unit;
         # keep the diagnostic visible without turning it into a build failure.

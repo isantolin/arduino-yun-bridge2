@@ -12,6 +12,8 @@ endif()
 
 # Full wolfSSL TLS 1.3 for Linux; MCU targets keep their own WOLFCRYPT_ONLY config.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build wolfSSL as a static library" FORCE)
+set(WOLFSSL_EXAMPLES no CACHE STRING "" FORCE)
+set(WOLFSSL_CRYPT_TESTS no CACHE STRING "" FORCE)
 set(WOLFSSL_OPENSSLEXTRA yes CACHE STRING "" FORCE)
 set(WOLFSSL_TLS13 yes CACHE STRING "" FORCE)
 set(WOLFSSL_RSA yes CACHE STRING "" FORCE)
@@ -113,7 +115,7 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
   pw_sync.scoped_locker pw_sync.binary_semaphore
   pw_sync.timed_thread_notification pw_chrono.system_clock pw_chrono.system_timer
 )
-target_compile_options(mcubridge-gateway-cpp PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(mcubridge-gateway-cpp PRIVATE -Wall -Wextra -Wpedantic -include wolfssl/options.h)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(mcubridge-gateway-cpp PRIVATE
     -Wthread-safety

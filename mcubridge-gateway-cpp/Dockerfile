@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       cmake \
       curl \
-      libssl-dev \
       ninja-build \
       python3 \
       python3-venv \
@@ -60,14 +59,13 @@ ARG IMAGE_SOURCE="https://github.com/isantolin/arduino-yun-bridge2"
 LABEL org.opencontainers.image.title="mcubridge-gateway-cpp" \
       org.opencontainers.image.description="Standalone Pigweed C++20 mTLS 1.3 Gateway for Arduino MCU Bridge 2" \
       org.opencontainers.image.source="${IMAGE_SOURCE}" \
-      org.opencontainers.image.licenses="GPL-2.0-or-later"
+      org.opencontainers.image.licenses="GPL-3.0-only"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     MCUBRIDGE_GATEWAY_PORT=8443
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
-      libssl3 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 mcubridge \
     && useradd --system --uid 10001 --gid mcubridge \

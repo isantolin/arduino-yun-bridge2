@@ -13,8 +13,9 @@ version). The source-of-truth manifests remain `MODULE.bazel`,
 |---|---:|---|
 | Pigweed source | `55873baa1b37eaf7d0a830515a0846e3fc3a79e2` | Exact source revision used by the AVR port |
 | Bazel | `9.3.3` | Latest stable version selected for this migration; Bazel 10 is not selected |
-| Bazelisk | `1.30.0` | Explicitly pinned in CI |
+| Bazelisk | `1.31.0` | Explicitly pinned in CI |
 | setup-bazel action | `0.19.2` | Explicitly pinned in CI |
+| GitHub Actions checkout / upload-artifact | `v7` | Shared CI action versions in both repositories |
 | Pigweed Bzlmod module | `0.0.1` | Pigweed source module version; source identity is the Git SHA above |
 | AVR port Bzlmod module | `0.1.0` | Local module version |
 | Protobuf (Bzlmod/C++) | `36.2` | Separate from the Python Protobuf wheel |

@@ -277,3 +277,38 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
     )
     for path in bootstrap_paths:
         assert "nanopb==0.4.9.1" in path.read_text(encoding="utf-8"), str(path)
+
+
+def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path) -> None:
+    (tmp_path / "requirements").mkdir(parents=True)
+    (tmp_path / "requirements" / "runtime.toml").write_text(
+        '[toolchain.renode]\nversion = "1.17.0+20261025git04cafbb29"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "tools" / "ci").mkdir(parents=True)
+    (tmp_path / "tools" / "ci" / "install_arduino_cli.sh").write_text('VERSION="1.5.1"\n', encoding="utf-8")
+    (tmp_path / "tools" / "ci" / "install_espressif_core.sh").write_text(
+        'ESP32_CORE_VERSION="${ESP32_CORE_VERSION:-3.3.12}"\n', encoding="utf-8"
+    )
+    (tmp_path / "MODULE.bazel").write_text('bazel_dep(name = "rules_cc", version = "0.1.1")\n', encoding="utf-8")
+
+    latest_map = {
+        "renode/renode": "v1.17.1",
+        "arduino/arduino-cli": "v1.6.0",
+        "espressif/arduino-esp32": "3.3.13",
+        "bazelbuild/rules_cc": "0.2.28",
+    }
+
+    def _no_commit(_repo: str) -> str | None:
+        return None
+
+    outdated = sync_runtime_deps.check_external_versions(
+        tmp_path,
+        fetch_version=latest_map.get,
+        fetch_commit=_no_commit,
+    )
+    labels = {item[0] for item in outdated}
+    assert "toolchain.renode (runtime.toml)" in labels
+    assert "arduino-cli (install_arduino_cli.sh)" in labels
+    assert "esp32:esp32 (install_espressif_core.sh)" in labels
+    assert "rules_cc (MODULE.bazel)" in labels

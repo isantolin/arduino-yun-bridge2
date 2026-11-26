@@ -1103,7 +1103,7 @@ pw::Status BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
 }
 
 pw::Status BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
-  if (!isValidDigitalPin(m.pin)) return pw::Status::InvalidArgument();
+  if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
   const uint8_t pin = static_cast<uint8_t>(m.pin);
   const uint8_t duty = static_cast<uint8_t>(
       etl::clamp<uint32_t>(m.value, 0UL, 255UL));

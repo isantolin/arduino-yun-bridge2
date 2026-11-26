@@ -15,8 +15,8 @@ set(WOLFSSL_ASN yes CACHE STRING "" FORCE)
 set(WOLFSSL_FILESYSTEM yes CACHE STRING "" FORCE)
 FetchContent_Declare(
   wolfssl
-  URL https://www.wolfssl.com/download/wolfssl-5.9.4.zip
-  URL_HASH SHA256=9cd0d69d208d025b16836c177658cc0deebc2a85c4b60898c9bc546bc6cbdf18
+  URL https://downloads.sourceforge.net/project/wolfssl/v5.9.4-stable/wolfSSL%20Release%205.9.4%20%28September%2025%2C%202026%29%20source%20code.zip
+  URL_HASH SHA256=c9ac97ef8bd1888d66460a2bf7bb941d4511d4cc0b964e9e2b4bdce9934696a1
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(wolfssl)

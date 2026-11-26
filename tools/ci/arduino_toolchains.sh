@@ -103,6 +103,7 @@ PW_INC="${PW_INC_FLAGS[*]}"
 PW_TRANSFER_STAGED_INC_DIR=""
 PW_TRANSFER_STAGED_SRC_DIR=""
 PW_TRANSFER_STAGED_SRCS=()
+PW_PERIPHERAL_STAGED_SRCS=()
 PW_SAMD_INC_FLAGS=()
 PW_SAMD_INC=""
 PW_ESP32_INC_FLAGS=()
@@ -173,7 +174,14 @@ stage_cooperative_pw_transfer() {
         pw_transfer/transfer.pwpb.h \
         pw_transfer/transfer.raw_rpc.pb.h \
         pw_log_avr/log_avr.h \
-        pw_log_backend/log_backend.h; do
+        pw_log_backend/log_backend.h \
+        pw_spi/initiator.h \
+        pw_spi/chip_selector.h \
+        pw_spi_avr/initiator.h \
+        pw_digital_io/digital_io.h \
+        pw_digital_io_avr/digital_io.h \
+        pw_analog/analog_input.h \
+        pw_analog_avr/analog_input.h; do
         if [ ! -f "${export_src}/${req_hdr}" ]; then
             echo "ERROR: exported cooperative pw_transfer/pw_log header missing: ${export_src}/${req_hdr}" >&2
             return 1
@@ -187,12 +195,28 @@ stage_cooperative_pw_transfer() {
     cp -a "${export_src}/pw_transfer" "${PW_TRANSFER_STAGED_INC_DIR}/"
     cp -a "${export_src}/pw_log_avr" "${PW_TRANSFER_STAGED_INC_DIR}/"
     cp -a "${export_src}/pw_log_backend" "${PW_TRANSFER_STAGED_INC_DIR}/"
+    for module in pw_spi pw_spi_avr pw_digital_io pw_digital_io_avr pw_analog pw_analog_avr; do
+        cp -a "${export_src}/${module}" "${PW_TRANSFER_STAGED_INC_DIR}/"
+    done
     find "${export_src}" -maxdepth 1 -type f \
         \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' -o -name 'log_avr.cpp' \) \
         -exec cp {} "${PW_TRANSFER_STAGED_SRC_DIR}/" \;
+    # Stage the selected hardware backends as separate translation units.
+    for backend_src in initiator.cpp digital_io.cpp; do
+        if [ -f "${export_src}/${backend_src}" ]; then
+            cp "${export_src}/${backend_src}" "${PW_TRANSFER_STAGED_SRC_DIR}/pw_backend_${backend_src}"
+        else
+            echo "ERROR: exported Pigweed hardware backend source missing: ${export_src}/${backend_src}" >&2
+            return 1
+        fi
+    done
     mapfile -t PW_TRANSFER_STAGED_SRCS < <(
         find "${PW_TRANSFER_STAGED_SRC_DIR}" -maxdepth 1 -type f \
             \( -name 'pw_transfer_*.cc' -o -name 'pw_transfer_*.cpp' -o -name 'log_avr.cpp' \) -print | sort
+    )
+    PW_PERIPHERAL_STAGED_SRCS=(
+        "${PW_TRANSFER_STAGED_SRC_DIR}/pw_backend_initiator.cpp"
+        "${PW_TRANSFER_STAGED_SRC_DIR}/pw_backend_digital_io.cpp"
     )
     if [ "${#PW_TRANSFER_STAGED_SRCS[@]}" -eq 0 ]; then
         echo "ERROR: no exported cooperative pw_transfer sources found in ${export_src}" >&2
@@ -333,7 +357,7 @@ _build_pigweed_archive() {
     read -r -a c_flags <<< "$c_flags_str"
     read -r -a cxx_flags <<< "$cxx_flags_str"
 
-    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${extra_srcs[@]}")
+    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${PW_PERIPHERAL_STAGED_SRCS[@]}" "${extra_srcs[@]}")
     local objs=() src obj
     for src in "${all_srcs[@]}"; do
         obj="${build_tmp}/${src//\//_}.o"

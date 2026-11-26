@@ -45,7 +45,6 @@ cc_library(
         "src/security/security.cpp",
         "src/services/Console.cpp",
         "src/services/DataStore.cpp",
-        "src/services/EepromTransfer.cpp",
         "src/services/FileSystem.cpp",
         "src/services/Mailbox.cpp",
         "src/services/Process.cpp",
@@ -67,7 +66,6 @@ cc_library(
     ],
     deps = [
         "//tools/arduino_stub",
-        "@avr_pigweed_port//:pw_assert_avr",
         "@avr_pigweed_port//:pw_log_avr",
         "@etl",
         "@nanopb_c",

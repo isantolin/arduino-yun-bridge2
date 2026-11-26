@@ -21,7 +21,7 @@ runs:
       run: |
         echo "version=$(gcc -dumpfullversion -dumpversion)-$(g++ -dumpfullversion -dumpversion)" >> "$GITHUB_OUTPUT"
     - name: Restore native compilation cache
-      uses: actions/cache@v6
+      uses: actions/cache@v6.1.0
       with:
         path: ~/.cache/ccache
         key: ccache-${{ runner.os }}-${{ runner.arch }}-gcc-${{ steps.compiler.outputs.version }}

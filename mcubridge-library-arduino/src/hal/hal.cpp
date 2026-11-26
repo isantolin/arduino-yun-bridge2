@@ -51,37 +51,37 @@ constexpr uint8_t CURRENT_ARCH =
 namespace {
 template <size_t I>
 void _forceSinglePin() {
+  constexpr uint8_t pin = static_cast<uint8_t>(I);
 #if defined(ARDUINO_ARCH_ESP32)
-  if (!digitalPinIsValid(static_cast<uint8_t>(I))) {
-    return;
-  }
+  if (!digitalPinIsValid(pin)) return;
 #endif
   if constexpr (I == PIN_SPI_SS) {
-    ::pinMode(static_cast<uint8_t>(I), OUTPUT);
-    ::digitalWrite(static_cast<uint8_t>(I), HIGH);
+    pw::digital_io::ArduinoDigitalOut output(
+        pin, pw::digital_io::State::kActive);
+    (void)output.Enable();
   } else if constexpr (I == PIN_SPI_SCK || I == PIN_SPI_MOSI) {
-    ::pinMode(static_cast<uint8_t>(I), OUTPUT);
-    ::digitalWrite(static_cast<uint8_t>(I), LOW);
+    pw::digital_io::ArduinoDigitalOut output(
+        pin, pw::digital_io::State::kInactive);
+    (void)output.Enable();
   } else if constexpr (I == PIN_SPI_MISO) {
-    ::pinMode(static_cast<uint8_t>(I), INPUT);
+    pw::digital_io::ArduinoDigitalIn input(pin);
+    (void)input.Enable();
   } else if constexpr (I == PIN_WIRE_SDA || I == PIN_WIRE_SCL) {
-    ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
+    pw::digital_io::ArduinoDigitalIn input(pin, true);
+    (void)input.Enable();
   } else if constexpr (I < 2) {
-    // [SIL-2] Preserve primary UART communication pins (RX/TX) for supervisor
-    // link
+    // Preserve the supervisor UART's RX/TX pins.
     return;
-  } else {
-    if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+  } else if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
 #if defined(ARDUINO_ARCH_ESP32)
-      if (!digitalPinCanOutput(static_cast<uint8_t>(I))) {
-        return;
-      }
+    if (!digitalPinCanOutput(pin)) return;
 #endif
-      ::pinMode(static_cast<uint8_t>(I), OUTPUT);
-      ::digitalWrite(static_cast<uint8_t>(I), LOW);
-    } else {
-      ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
-    }
+    pw::digital_io::ArduinoDigitalOut output(
+        pin, pw::digital_io::State::kInactive);
+    (void)output.Enable();
+  } else {
+    pw::digital_io::ArduinoDigitalIn input(pin, true);
+    (void)input.Enable();
   }
 }
 

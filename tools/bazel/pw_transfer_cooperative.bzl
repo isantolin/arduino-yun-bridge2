@@ -1,6 +1,22 @@
 """Hermetic Bazel repository rule for cooperative pw_transfer from avr_pigweed_port."""
 
-_BUILD_FILE_CONTENT = """load("@rules_cc//cc:defs.bzl", "cc_library")
+_BUILD_FILE_TEMPLATE = """load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@pigweed//pw_protobuf_compiler:pw_proto_filegroup.bzl", "pw_proto_filegroup")
+load("@pigweed//pw_protobuf_compiler:pwpb_proto_library.bzl", "pwpb_proto_library")
+load("@pigweed//pw_protobuf_compiler:raw_rpc_proto_library.bzl", "raw_rpc_proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+{proto_section}
+
+pwpb_proto_library(
+    name = "transfer_pwpb",
+    deps = [":transfer_proto"],
+)
+
+raw_rpc_proto_library(
+    name = "transfer_raw_rpc",
+    deps = [":transfer_proto"],
+)
 
 cc_library(
     name = "pw_transfer_cooperative",
@@ -9,13 +25,19 @@ cc_library(
         exclude = [
             "pw_transfer/*_test.cc",
             "pw_transfer/*_fuzzer.cc",
+            "pw_transfer/fuzz_*.cc",
             "pw_transfer/test_*.cc",
             "pw_transfer/integration_test*.cc",
             "pw_transfer/atomic_file_transfer_handler.cc",
             "pw_transfer/java_jni*.cc",
         ],
     ),
-    hdrs = glob(["pw_transfer/public/**/*.h"]),
+    hdrs = glob(
+        ["pw_transfer/public/**/*.h"],
+        exclude = [
+            "pw_transfer/public/pw_transfer/atomic_file_transfer_handler.h",
+        ],
+    ),
     defines = [
         "PW_TRANSFER_COOPERATIVE=1",
         "PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY=2",
@@ -24,6 +46,8 @@ cc_library(
     includes = ["pw_transfer/public"],
     visibility = ["//visibility:public"],
     deps = [
+        ":transfer_pwpb",
+        ":transfer_raw_rpc",
         "@pigweed//pw_assert:assert",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",
@@ -43,8 +67,6 @@ cc_library(
         "@pigweed//pw_sync:mutex",
         "@pigweed//pw_sync:timed_thread_notification",
         "@pigweed//pw_thread:thread",
-        "@pigweed//pw_transfer:transfer_pwpb",
-        "@pigweed//pw_transfer:transfer_raw_rpc",
         "@pigweed//pw_varint",
     ],
 )
@@ -57,7 +79,13 @@ pigweed_dir = pathlib.Path(sys.argv[1])
 avr_port_dir = pathlib.Path(sys.argv[2])
 out_dir = pathlib.Path(sys.argv[3])
 
-shutil.copytree(pigweed_dir / "pw_transfer", out_dir / "pw_transfer")
+dst_transfer = out_dir / "pw_transfer"
+shutil.copytree(pigweed_dir / "pw_transfer", dst_transfer)
+
+# Remove nested BUILD/BUILD.bazel files so root glob() does not hit subpackages.
+for b in list(dst_transfer.rglob("BUILD")) + list(dst_transfer.rglob("BUILD.bazel")):
+    if b.is_file():
+        b.unlink()
 
 patch_file = avr_port_dir / "patches" / "0001-avr-pw-transfer-and-protobuf.patch"
 text = patch_file.read_text(encoding="utf-8")
@@ -82,7 +110,7 @@ if filtered:
         sys.exit(res.returncode)
 
 coop_hdr = avr_port_dir / "pw_transfer_avr" / "public" / "pw_transfer" / "cooperative_handler_registration.h"
-shutil.copy2(coop_hdr, out_dir / "pw_transfer" / "public" / "pw_transfer" / "cooperative_handler_registration.h")
+shutil.copy2(coop_hdr, dst_transfer / "public" / "pw_transfer" / "cooperative_handler_registration.h")
 """
 
 def _pw_transfer_cooperative_impl(rctx):
@@ -98,7 +126,25 @@ def _pw_transfer_cooperative_impl(rctx):
     ])
     if res.return_code != 0:
         fail("Failed to stage cooperative pw_transfer:\n{}\n{}".format(res.stdout, res.stderr))
-    rctx.file("BUILD.bazel", _BUILD_FILE_CONTENT)
+
+    if rctx.path("pw_transfer/transfer.pwpb_options").exists:
+        proto_section = """pw_proto_filegroup(
+    name = "transfer_proto_and_options",
+    srcs = ["pw_transfer/transfer.proto"],
+    options_files = ["pw_transfer/transfer.pwpb_options"],
+)
+
+proto_library(
+    name = "transfer_proto",
+    srcs = [":transfer_proto_and_options"],
+)"""
+    else:
+        proto_section = """proto_library(
+    name = "transfer_proto",
+    srcs = ["pw_transfer/transfer.proto"],
+)"""
+
+    rctx.file("BUILD.bazel", _BUILD_FILE_TEMPLATE.format(proto_section = proto_section))
 
 pw_transfer_cooperative_repo = repository_rule(
     implementation = _pw_transfer_cooperative_impl,

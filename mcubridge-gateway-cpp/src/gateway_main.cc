@@ -202,7 +202,7 @@ bool IsValidPrincipalId(std::string_view id) {
   return true;
 }
 
-pw::Result<PeerIdentity> PeerIdentityFromCertificate(WOLFWOLFSSL* ssl) {
+pw::Result<PeerIdentity> PeerIdentityFromCertificate(WOLFSSL* ssl) {
   if (wolfSSL_get_verify_result(ssl) != WOLFSSL_X509_V_OK) {
     return pw::Status::Unauthenticated();
   }

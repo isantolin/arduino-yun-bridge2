@@ -117,8 +117,8 @@ target_link_libraries(mcubridge-gateway-cpp PRIVATE
 )
 target_compile_options(mcubridge-gateway-cpp PRIVATE
   -Wall -Wextra -Wpedantic
-  -include features.h
-  -include wolfssl/options.h
+  "SHELL:-include features.h"
+  "SHELL:-include wolfssl/options.h"
 )
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(mcubridge-gateway-cpp PRIVATE

@@ -357,7 +357,7 @@ _build_pigweed_archive() {
     read -r -a c_flags <<< "$c_flags_str"
     read -r -a cxx_flags <<< "$cxx_flags_str"
 
-    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${PW_PERIPHERAL_STAGED_SRCS[@]}" "${extra_srcs[@]}")
+    local all_srcs=("${PW_PIGWEED_SRCS[@]}" "${PW_TRANSFER_STAGED_SRCS[@]}" "${extra_srcs[@]}")
     local objs=() src obj
     for src in "${all_srcs[@]}"; do
         obj="${build_tmp}/${src//\//_}.o"

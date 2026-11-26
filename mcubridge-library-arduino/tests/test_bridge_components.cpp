@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <SPI.h>
 #include <unity.h>
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
@@ -21,7 +22,6 @@
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
-#include <SPI.h>
 #include "services/SPIService.h"
 #include "test_support.h"
 

@@ -30,7 +30,7 @@ cc_binary(
         "@pigweed//pw_hdlc",
         "@pigweed//pw_log",
         "@pigweed//pw_log_basic",
-        "@pigweed//pw_metric",
+        "@pigweed//pw_metric:metric",
         "@pigweed//pw_metric:metric_service_pwpb",
         "@pigweed//pw_protobuf",
         "@pigweed//pw_result",

@@ -64,7 +64,7 @@ cc_library(
         "@pigweed//pw_function",
         "@pigweed//pw_hdlc",
         "@pigweed//pw_log",
-        "@pigweed//pw_metric",
+        "@pigweed//pw_metric:metric",
         "@pigweed//pw_polyfill",
         "@pigweed//pw_preprocessor",
         "@pigweed//pw_result",

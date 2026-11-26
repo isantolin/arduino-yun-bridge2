@@ -298,10 +298,14 @@ def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path
         "espressif/arduino-esp32": "3.3.13",
         "bazelbuild/rules_cc": "0.2.28",
     }
+
+    def _no_commit(_repo: str) -> str | None:
+        return None
+
     outdated = sync_runtime_deps.check_external_versions(
         tmp_path,
-        fetch_version=lambda repo: latest_map.get(repo),
-        fetch_commit=lambda _repo: None,
+        fetch_version=latest_map.get,
+        fetch_commit=_no_commit,
     )
     labels = {item[0] for item in outdated}
     assert "toolchain.renode (runtime.toml)" in labels

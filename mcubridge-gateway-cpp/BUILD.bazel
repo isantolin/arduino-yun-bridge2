@@ -19,6 +19,12 @@ configure_make(
         "no-docs",
         "--libdir=lib",
     ],
+    # OpenSSL's upstream C sources intentionally trigger two strict-warning
+    # diagnostics under Pigweed's hermetic Clang flags. Keep warnings visible,
+    # but do not promote those specific OpenSSL warnings to build failures.
+    env = {
+        "CFLAGS": "-Wno-error=cast-qual -Wno-error=unused-parameter",
+    },
     lib_source = "@openssl_source//:all_srcs",
     out_include_dir = "include",
     out_static_libs = [

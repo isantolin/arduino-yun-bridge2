@@ -626,7 +626,7 @@ jobs:
           cache-suffix: gateway
       - name: Install Gateway build dependencies
         run: |
-          bash tools/ci/apt_update_with_fallback.sh build-essential cmake ninja-build libssl-dev protobuf-compiler python3-venv
+          bash tools/ci/apt_update_with_fallback.sh build-essential cmake ninja-build openssl protobuf-compiler python3-venv
           python3 -m venv .venv-gateway
           . .venv-gateway/bin/activate
           python -m pip install --upgrade pip

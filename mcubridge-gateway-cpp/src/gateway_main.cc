@@ -1,4 +1,3 @@
-#include <arpa/inet.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
@@ -34,7 +33,6 @@
 #define PW_LOG_MODULE_NAME "GW"
 
 #include "gateway/gateway_control.rpc.pwpb.h"
-#include "mcu_wire.raw_rpc.pb.h"
 #include "pw_assert/check.h"
 #include "pw_bytes/span.h"
 #include "pw_chrono/system_clock.h"

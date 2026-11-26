@@ -1,0 +1,54 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@pigweed//pw_protobuf_compiler:pw_proto_filegroup.bzl", "pw_proto_filegroup")
+load("@pigweed//pw_protobuf_compiler:pwpb_proto_library.bzl", "pwpb_proto_library")
+load("@pigweed//pw_protobuf_compiler:pwpb_rpc_proto_library.bzl", "pwpb_rpc_proto_library")
+load("@pigweed//pw_protobuf_compiler:raw_rpc_proto_library.bzl", "raw_rpc_proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+proto_library(
+    name = "config_schema_proto",
+    srcs = ["config_schema.proto"],
+    strip_import_prefix = "/tools/protocol",
+    deps = ["@com_google_protobuf//:descriptor_proto"],
+)
+
+proto_library(
+    name = "mcu_wire_proto",
+    srcs = ["mcu_wire.proto"],
+    strip_import_prefix = "/tools/protocol",
+    deps = [":config_schema_proto"],
+)
+
+pw_proto_filegroup(
+    name = "gateway_control_proto_and_options",
+    srcs = ["gateway/gateway_control.proto"],
+    options_files = ["gateway/gateway_control.pwpb_options"],
+)
+
+proto_library(
+    name = "gateway_control_proto",
+    srcs = [":gateway_control_proto_and_options"],
+    strip_import_prefix = "/tools/protocol",
+)
+
+pwpb_proto_library(
+    name = "gateway_control_pwpb",
+    deps = [":gateway_control_proto"],
+)
+
+pwpb_rpc_proto_library(
+    name = "gateway_control_pwpb_rpc",
+    pwpb_proto_library_deps = [":gateway_control_pwpb"],
+    deps = [":gateway_control_proto"],
+)
+
+pwpb_proto_library(
+    name = "mcu_wire_pwpb",
+    deps = [":mcu_wire_proto"],
+)
+
+raw_rpc_proto_library(
+    name = "mcu_wire_raw_rpc",
+    deps = [":mcu_wire_proto"],
+)

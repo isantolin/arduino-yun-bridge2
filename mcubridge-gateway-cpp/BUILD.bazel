@@ -1,9 +1,87 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
-cc_library(
-    name = "gateway_lib",
-    srcs = glob(["src/**/*.cc", "src/**/*.cpp"], allow_empty = True),
-    hdrs = glob(["src/**/*.h", "src/**/*.hpp", "include/**/*.h", "include/**/*.hpp"], allow_empty = True),
-    includes = ["src", "include"],
-    visibility = ["//visibility:public"],
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "mcubridge-gateway-cpp",
+    srcs = ["src/gateway_main.cc"],
+    copts = [
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+    ],
+    defines = [
+        "PW_RPC_ENCODING_BUFFER_SIZE_BYTES=2048",
+    ],
+    linkopts = [
+        "-lssl",
+        "-lcrypto",
+        "-lpthread",
+    ],
+    deps = [
+        "//tools/protocol:gateway_control_pwpb_rpc",
+        "//tools/protocol:mcu_wire_raw_rpc",
+        "@pigweed//pw_assert:backend_impl",
+        "@pigweed//pw_assert:check",
+        "@pigweed//pw_bytes",
+        "@pigweed//pw_chrono:system_clock",
+        "@pigweed//pw_chrono:system_timer",
+        "@pigweed//pw_hdlc",
+        "@pigweed//pw_hdlc:rpc_channel_output",
+        "@pigweed//pw_log",
+        "@pigweed//pw_log:backend_impl",
+        "@pigweed//pw_log_basic",
+        "@pigweed//pw_metric:metric",
+        "@pigweed//pw_metric:metric_service_pwpb",
+        "@pigweed//pw_protobuf",
+        "@pigweed//pw_result",
+        "@pigweed//pw_rpc",
+        "@pigweed//pw_rpc/pwpb:client_api",
+        "@pigweed//pw_rpc/pwpb:server_api",
+        "@pigweed//pw_rpc/raw:client_api",
+        "@pigweed//pw_status",
+        "@pigweed//pw_stream",
+        "@pigweed//pw_sync:binary_semaphore",
+        "@pigweed//pw_sync:lock_annotations",
+        "@pigweed//pw_sync:mutex",
+        "@pigweed//pw_sync:scoped_locker",
+        "@pigweed//pw_sync:timed_thread_notification",
+        "@pigweed//pw_thread:thread",
+        "@pigweed//pw_thread_stl:thread",
+        "@pigweed//pw_transfer",
+    ],
+)
+
+pkg_tar(
+    name = "gateway_layer",
+    srcs = [":mcubridge-gateway-cpp"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "mcubridge-gateway-image",
+    base = "@debian_bookworm_slim",
+    cmd = [
+        "--cert",
+        "/etc/mcubridge-gateway/gateway.crt",
+        "--key",
+        "/etc/mcubridge-gateway/gateway.key",
+        "--client-ca",
+        "/etc/mcubridge-gateway/clients-ca.crt",
+        "--acl",
+        "/etc/mcubridge-gateway/gateway.acl",
+        "--staging-dir",
+        "/var/lib/mcubridge-gateway",
+        "--bind",
+        "*",
+        "--port",
+        "8443",
+    ],
+    entrypoint = ["/usr/local/bin/mcubridge-gateway-cpp"],
+    env = {"MCUBRIDGE_GATEWAY_PORT": "8443"},
+    exposed_ports = ["8443/tcp"],
+    tars = [":gateway_layer"],
+    workdir = "/var/lib/mcubridge-gateway",
 )

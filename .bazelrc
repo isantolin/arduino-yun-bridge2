@@ -1,0 +1,14 @@
+common --enable_bzlmod
+common --repo_env=DO_NOT_TRACK=1
+
+build --cxxopt=-std=c++20
+build --host_cxxopt=-std=c++20
+build --per_file_copt=external/.*@-Wno-deprecated-declarations
+build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
+build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_stdio
+build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_basic
+build --@pigweed//pw_assert:check_backend=@pigweed//pw_assert_basic
+build --@pigweed//pw_assert:backend_impl=@pigweed//pw_assert_basic:impl
+
+coverage --combined_report=lcov
+coverage --instrumentation_filter="^//mcubridge-gateway-cpp[/:],^//mcubridge-library-arduino[/:]"

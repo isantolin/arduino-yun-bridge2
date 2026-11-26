@@ -1,10 +1,155 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+HOST_COPTS = [
+    "-Wall",
+    "-Wextra",
+    "-Wno-unused-parameter",
+]
+
+HOST_DEFINES = [
+    "BRIDGE_HOST_TEST=1",
+    "BRIDGE_DEBUG_IO=1",
+    "BRIDGE_ENABLE_CONSOLE=1",
+    "BRIDGE_ENABLE_DATASTORE=1",
+    "BRIDGE_ENABLE_MAILBOX=1",
+    "BRIDGE_ENABLE_FILESYSTEM=1",
+    "BRIDGE_ENABLE_PROCESS=1",
+    "BRIDGE_ENABLE_SPI=1",
+    "PW_RPC_USE_GLOBAL_MUTEX=0",
+    "PW_TRANSFER_COOPERATIVE=1",
+    "PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY=2",
+    "PW_TRANSFER_COOPERATIVE_CHUNK_BUFFER_SIZE=128",
+]
+
+genrule(
+    name = "wolfssl_user_settings_hdr",
+    srcs = ["src/config/wolfssl_user_settings.h"],
+    outs = ["wolfssl_cfg/user_settings.h"],
+    cmd = "cp $< $@",
+)
+
+cc_library(
+    name = "wolfssl_user_settings",
+    hdrs = [":wolfssl_user_settings_hdr"],
+    includes = ["wolfssl_cfg"],
+)
 
 cc_library(
     name = "bridge_core",
-    srcs = glob(["src/**/*.cpp", "src/**/*.cc"], allow_empty = True),
-    hdrs = glob(["src/**/*.h", "src/**/*.hpp"], allow_empty = True),
-    includes = ["src"],
-    deps = ["//tools/arduino_stub"],
-    visibility = ["//visibility:public"],
+    srcs = [
+        "src/Bridge.cpp",
+        "src/fsm/bridge_fsm.cpp",
+        "src/hal/hal.cpp",
+        "src/security/security.cpp",
+        "src/services/Console.cpp",
+        "src/services/DataStore.cpp",
+        "src/services/FileSystem.cpp",
+        "src/services/Mailbox.cpp",
+        "src/services/Process.cpp",
+        "src/services/SPIService.cpp",
+        "tests/bridge_test_global.cpp",
+    ] + glob(["src/protocol/*.pb.c"], allow_empty = True),
+    hdrs = glob([
+        "src/**/*.h",
+        "src/**/*.hpp",
+        "tests/*.h",
+    ], allow_empty = True),
+    copts = HOST_COPTS,
+    defines = HOST_DEFINES,
+    includes = [
+        "src",
+        "src/config",
+        "src/protocol",
+        "tests",
+    ],
+    deps = [
+        "//tools/arduino_stub",
+        "@etl",
+        "@nanopb_c",
+        "@pigweed//pw_assert:assert",
+        "@pigweed//pw_assert:check",
+        "@pigweed//pw_bytes",
+        "@pigweed//pw_checksum",
+        "@pigweed//pw_chrono:system_clock",
+        "@pigweed//pw_containers:inline_queue",
+        "@pigweed//pw_containers:intrusive_forward_list",
+        "@pigweed//pw_containers:vector",
+        "@pigweed//pw_function",
+        "@pigweed//pw_hdlc",
+        "@pigweed//pw_log",
+        "@pigweed//pw_metric:global",
+        "@pigweed//pw_metric:metric",
+        "@pigweed//pw_metric:metric_service_pwpb",
+        "@pigweed//pw_polyfill",
+        "@pigweed//pw_preprocessor",
+        "@pigweed//pw_protobuf",
+        "@pigweed//pw_result",
+        "@pigweed//pw_rpc",
+        "@pigweed//pw_rpc/nanopb:client_api",
+        "@pigweed//pw_rpc/nanopb:server_api",
+        "@pigweed//pw_rpc/raw:client_api",
+        "@pigweed//pw_span",
+        "@pigweed//pw_status",
+        "@pigweed//pw_stream",
+        "@pigweed//pw_string:util",
+        "@pigweed//pw_sync:interrupt_spin_lock",
+        "@pigweed//pw_tokenizer",
+        "@pigweed//pw_transfer",
+        "@pigweed//pw_varint",
+        "@wolfssl",
+    ],
+)
+
+cc_library(
+    name = "host_filesystem_mock",
+    srcs = ["tests/test_host_filesystem_mock.cpp"],
+    copts = HOST_COPTS,
+    defines = HOST_DEFINES,
+    deps = [":bridge_core"],
+)
+
+HOST_TEST_SUITES = [
+    "test_integrated",
+    "test_bridge_core",
+    "test_bridge_components",
+    "test_host_filesystem",
+    "test_protocol",
+    "test_fsm_mutual_auth",
+    "test_rpc_structs",
+    "test_arduino_harden",
+    "test_arduino_crypto_harden",
+    "test_arduino_stress",
+    "test_bridge_edge_paths",
+]
+
+[
+    cc_test(
+        name = suite,
+        srcs = ["tests/{}.cpp".format(suite)],
+        copts = HOST_COPTS,
+        defines = HOST_DEFINES,
+        deps = [
+            ":bridge_core",
+            ":host_filesystem_mock",
+            "@pigweed//pw_assert:backend_impl",
+            "@pigweed//pw_log:backend_impl",
+            "@unity",
+        ],
+    )
+    for suite in HOST_TEST_SUITES
+]
+
+cc_test(
+    name = "test_hal_weak_defaults",
+    srcs = ["tests/test_hal_weak_defaults.cpp"],
+    copts = HOST_COPTS,
+    defines = HOST_DEFINES,
+    deps = [
+        ":bridge_core",
+        "@pigweed//pw_assert:backend_impl",
+        "@pigweed//pw_log:backend_impl",
+        "@unity",
+    ],
 )

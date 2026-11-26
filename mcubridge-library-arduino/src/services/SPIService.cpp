@@ -34,6 +34,18 @@ pw::Status SPIServiceClass::setConfig(const rpc_pb_SpiConfig& config) {
       return pw::Status::InvalidArgument();
   }
 
+  pw::spi::BitOrder bit_order;
+  switch (config.bit_order) {
+    case rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST:
+      bit_order = pw::spi::BitOrder::kLsbFirst;
+      break;
+    case rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST:
+      bit_order = pw::spi::BitOrder::kMsbFirst;
+      break;
+    default:
+      return pw::Status::InvalidArgument();
+  }
+
   if (config.frequency == 0U) {
     return pw::Status::InvalidArgument();
   }
@@ -43,10 +55,7 @@ pw::Status SPIServiceClass::setConfig(const rpc_pb_SpiConfig& config) {
       .polarity = polarity,
       .phase = phase,
       .bits_per_word = pw::spi::BitsPerWord(8),
-      .bit_order =
-          config.bit_order == rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST
-              ? pw::spi::BitOrder::kLsbFirst
-              : pw::spi::BitOrder::kMsbFirst,
+      .bit_order = bit_order,
   });
 }
 

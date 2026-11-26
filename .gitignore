@@ -161,4 +161,3 @@ gh_logs/Compile APKs for OpenWrt 25.12.6/system.txt
 
 bazel-*
 .compile_commands/
-MODULE.bazel.lock

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ESP32_INDEX_URL="https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json"
-ESP32_CORE_VERSION="${ESP32_CORE_VERSION:-3.3.12}"
+ESP32_CORE_VERSION="${ESP32_CORE_VERSION:-4.0.0}"
 
 if arduino-cli core list 2>/dev/null | grep -Eq "^esp32:esp32[[:space:]]+${ESP32_CORE_VERSION//./\\.}[[:space:]]"; then
     echo "[esp32-core] esp32:esp32@${ESP32_CORE_VERSION} already installed"

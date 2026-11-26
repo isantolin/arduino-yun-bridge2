@@ -158,5 +158,9 @@
     "--header-insertion=never",
     "--background-index",
     "-j=1"
-  ]
+  ],
+  "bazel.executable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/bazelisk/bazelisk-linux_amd64",
+  "bazel.buildifierExecutable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/buildifier/buildifier-linux_amd64",
+  "bazel.enableCodeLens": true,
+  "pigweed.disableBazelSettingsRecommendations": true
 }

@@ -43,7 +43,7 @@ runs:
         echo "$HOME/.local/bin" >> $GITHUB_PATH
 
     - name: Cache tox environments
-      uses: actions/cache@v6
+      uses: actions/cache@v6.1.0
       with:
         path: .tox
         key: tox-${{ runner.os }}-py${{ inputs.python-version }}-${{ inputs.cache-suffix }}-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.toml', 'requirements/runtime.txt') }}

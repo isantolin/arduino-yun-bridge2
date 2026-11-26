@@ -4,7 +4,10 @@ module(
 )
 
 bazel_dep(name = "pigweed", version = "0.0.24")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "protobuf", version = "28.3", repo_name = "com_google_protobuf")
 bazel_dep(name = "rules_cc", version = "0.2.28")
+
 local_path_override(
     module_name = "pigweed",
     path = "third_party/pigweed",

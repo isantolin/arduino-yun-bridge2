@@ -660,6 +660,12 @@ jobs:
         run: |
           bazel build //mcubridge-gateway-cpp:mcubridge-gateway-cpp
           bazel-bin/mcubridge-gateway-cpp/mcubridge-gateway-cpp --help
+      - name: Run Arduino host C++ tests with Bazel
+        run: |
+          bazel test --test_output=errors //mcubridge-library-arduino:...
+      - name: Build Linux Gateway OCI image with Bazel
+        run: |
+          bazel build //mcubridge-gateway-cpp:mcubridge-gateway-image
       - name: Generate Gateway Coverage Report
         run: |
           . .venv-gateway/bin/activate

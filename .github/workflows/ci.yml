@@ -656,6 +656,10 @@ jobs:
         run: |
           export PYTHONPATH=.:mcubridge
           .tox/protocol/bin/pytest mcubridge-gateway-cpp/tests -vv --timeout=30 --timeout-method=thread
+      - name: Build Linux Gateway with Bazel
+        run: |
+          bazel build //mcubridge-gateway-cpp:mcubridge-gateway-cpp
+          bazel-bin/mcubridge-gateway-cpp/mcubridge-gateway-cpp --help
       - name: Generate Gateway Coverage Report
         run: |
           . .venv-gateway/bin/activate

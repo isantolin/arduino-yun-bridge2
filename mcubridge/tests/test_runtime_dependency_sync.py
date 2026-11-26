@@ -265,9 +265,9 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
 
     assert runtime["pigweed"]["pip"] == "pigweed==0.0.24"
     assert runtime["protobuf"]["pip"] == "protobuf==5.28.3"
-    assert runtime["nanopb"]["pip"] == "nanopb==0.4.9.3"
+    assert runtime["nanopb"]["pip"] == "nanopb==0.4.9.1"
     assert cpp["nanopb_core"]["version"] == "0.4.9.3"
-    assert runtime["nanopb"]["check_latest"]
+    assert not runtime["nanopb"]["check_latest"]
     assert cpp["nanopb_core"]["check_latest"]
 
     bootstrap_paths = (
@@ -277,7 +277,7 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
         sync_runtime_deps.ROOT / ".github/workflows/publish-packages.yml",
     )
     for path in bootstrap_paths:
-        assert "nanopb==0.4.9.3" in path.read_text(encoding="utf-8"), str(path)
+        assert "nanopb==0.4.9.1" in path.read_text(encoding="utf-8"), str(path)
 
 
 def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path) -> None:

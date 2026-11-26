@@ -316,7 +316,7 @@ jobs:
         run: |
           ./mcubridge-library-arduino/tools/install.sh
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v8.0.2.0.2
+        uses: actions/download-artifact@v8.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -385,7 +385,7 @@ jobs:
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v8.0.2.0.2
+        uses: actions/download-artifact@v8.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -445,7 +445,7 @@ jobs:
       - name: Install Renode
         uses: ./.github/actions/setup-renode
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v8.0.2.0.2
+        uses: actions/download-artifact@v8.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -520,7 +520,7 @@ jobs:
             echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
           fi
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v8.0.2.0.2
+        uses: actions/download-artifact@v8.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -600,7 +600,7 @@ jobs:
             echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
           fi
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v8.0.2.0.2
+        uses: actions/download-artifact@v8.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway

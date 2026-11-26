@@ -1,28 +1,29 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary")
-load("@rules_foreign_cc//foreign_cc:configure.bzl", "configure_make")
+load("@rules_foreign_cc//foreign_cc:cmake.bzl", "cmake")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
-# Build the same pinned full wolfSSL source archive used by the CMake Gateway.
-# The static library contains wolfSSL TLS 1.3 and its wolfCrypt backend.
-configure_make(
+# Build the pinned wolfSSL source with its upstream CMake project.
+# The Git tag/source archive does not ship a generated Autotools configure script.
+cmake(
     name = "wolfssl_static",
-    configure_command = "./configure",
-    configure_in_place = True,
-    configure_options = [
-        "--enable-static",
-        "--disable-shared",
-        "--enable-tls13",
-        "--enable-opensslextra",
-        "--enable-rsa",
-        "--enable-ecc",
-    ],
+    cache_entries = {
+        "BUILD_SHARED_LIBS": "OFF",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_LIBDIR": "lib",
+        "CMAKE_INSTALL_INCLUDEDIR": "include",
+        "WOLFSSL_OPENSSLEXTRA": "yes",
+        "WOLFSSL_TLS13": "yes",
+        "WOLFSSL_RSA": "yes",
+        "WOLFSSL_ECC": "yes",
+        "WOLFSSL_ASN": "yes",
+        "WOLFSSL_FILESYSTEM": "yes",
+    },
     lib_source = "@wolfssl_source//:all_srcs",
     out_include_dir = "include",
-    out_static_libs = ["libwolfssl.a"],
-    targets = ["install"],
+    out_static_libs = ["lib/libwolfssl.a"],
 )
 
 cc_binary(

@@ -32,7 +32,7 @@ jobs:
       matrix:
         env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, agent-parity, codebase-auditor, py, arduino]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - name: Enforce upstream Pigweed RPC and transfer
@@ -106,7 +106,7 @@ jobs:
     env:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-arduino-cache
@@ -174,7 +174,7 @@ jobs:
             exit 1
           fi
       - name: Cache Bloaty (Pigweed pw_bloat)
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: ${{ github.workspace }}/bin/bloaty
           key: bloaty-${{ runner.os }}-${{ hashFiles('tools/ci/install_bloaty.sh') }}
@@ -195,7 +195,7 @@ jobs:
           fi
       - name: Upload Arduino Logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: arduino-logs
           path: arduino-logs
@@ -210,7 +210,7 @@ jobs:
     needs: [tox-checks]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-ccache
@@ -235,7 +235,7 @@ jobs:
         run: tox -e coverage
       - name: Upload Python Coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-python
           path: coverage/python
@@ -243,7 +243,7 @@ jobs:
           if-no-files-found: ignore
       - name: Upload Arduino Coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-arduino-host
           path: coverage/arduino
@@ -281,7 +281,7 @@ jobs:
               mcubridge-client-examples/tests/test_gateway_northbound.py
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-ccache
@@ -316,7 +316,7 @@ jobs:
         run: |
           ./mcubridge-library-arduino/tools/install.sh
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8.0.2.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -335,7 +335,7 @@ jobs:
     needs: [tox-checks]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-arduino-cache
@@ -366,7 +366,7 @@ jobs:
       SIMAVR_METRICS_DIR: simavr-logs
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-ccache
@@ -385,7 +385,7 @@ jobs:
           arduino-cli core update-index || { mkdir -p "$HOME/.arduino15" && curl -fsSL "https://downloads.arduino.cc/packages/package_index.tar.bz2" | tar -xjf - -C "$HOME/.arduino15"; }
           arduino-cli core install arduino:avr
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8.0.2.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -397,14 +397,14 @@ jobs:
           tox -e simavr
       - name: Upload simavr Logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: simavr-logs
           path: simavr-logs
           if-no-files-found: ignore
       - name: Upload AVR memory maps and stack usage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: avr-memory-analysis
           path: |
@@ -424,7 +424,7 @@ jobs:
       RENODE_METRICS_DIR: renode-logs
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-arduino-cache
@@ -445,7 +445,7 @@ jobs:
       - name: Install Renode
         uses: ./.github/actions/setup-renode
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8.0.2.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -457,14 +457,14 @@ jobs:
           tox -e renode
       - name: Upload Renode Logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: renode-logs
           path: renode-logs
           if-no-files-found: ignore
       - name: Upload Renode firmware resource report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: firmware-resource-renode
           path: build/renode/**/resource_report.json
@@ -479,7 +479,7 @@ jobs:
       QEMU_METRICS_DIR: qemu-logs
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-arduino-cache
@@ -499,7 +499,7 @@ jobs:
           python -m pip install pyserial esptool
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: /opt/qemu-esp32
           key: qemu-xtensa-softmmu-9.2.2-20260417-x86_64
@@ -520,7 +520,7 @@ jobs:
             echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
           fi
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8.0.2.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -532,14 +532,14 @@ jobs:
           tox -e qemu-esp32
       - name: Upload QEMU Logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: qemu-logs
           path: qemu-logs
           if-no-files-found: ignore
       - name: Upload QEMU firmware resource report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: firmware-resource-qemu
           path: build/qemu/**/resource_report.json
@@ -553,7 +553,7 @@ jobs:
     env:
       CONSOLIDATE_EMULATION_SUMMARY: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-ccache
@@ -579,7 +579,7 @@ jobs:
         uses: ./.github/actions/setup-renode
       - name: Cache Espressif QEMU
         id: cache-qemu-esp32
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         with:
           path: /opt/qemu-esp32
           key: qemu-xtensa-softmmu-9.2.2-20260417-x86_64
@@ -600,7 +600,7 @@ jobs:
             echo "/opt/qemu-esp32/bin" >> "$GITHUB_PATH"
           fi
       - name: Download standalone Gateway binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8.0.2.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway
@@ -617,7 +617,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-protoc
@@ -649,7 +649,7 @@ jobs:
           test -f build/mcubridge-gateway-stage/usr/local/share/mcubridge-gateway/mcubridge-gateway.env.example
           build/mcubridge-gateway-stage/usr/local/bin/mcubridge-gateway-cpp --help
       - name: Upload standalone Gateway binary for emulation jobs
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: gateway-binary
           path: build/mcubridge-gateway/mcubridge-gateway-cpp
@@ -677,7 +677,7 @@ jobs:
 
       - name: Upload resolved Bzlmod lockfile
         if: always() && hashFiles('MODULE.bazel.lock') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: bazel-module-lockfile-bridge
           path: MODULE.bazel.lock
@@ -717,7 +717,7 @@ jobs:
           gcovr -r . build/mcubridge-gateway --filter 'mcubridge-gateway-cpp/src/' --txt coverage/gateway/summary.txt --html-details coverage/gateway/index.html --print-summary
       - name: Upload Gateway Coverage
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-gateway
           path: coverage/gateway
@@ -742,7 +742,7 @@ jobs:
     if: ${{ success() && !cancelled() }}
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
       - uses: ./.github/actions/setup-protoc
@@ -751,62 +751,62 @@ jobs:
           cache-suffix: summary
 
       - name: Download Python Coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: coverage-python
           path: coverage/python
         continue-on-error: true
 
       - name: Download Arduino Coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: coverage-arduino-host
           path: coverage/arduino
         continue-on-error: true
 
       - name: Download Gateway Coverage
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: coverage-gateway
           path: coverage/gateway
         continue-on-error: true
 
       - name: Download Arduino Logs
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: arduino-logs
           path: arduino-logs
         continue-on-error: true
       - name: Download Renode firmware resource report
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: firmware-resource-renode
           path: arduino-logs/renode
         continue-on-error: true
 
       - name: Download QEMU firmware resource report
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: firmware-resource-qemu
           path: arduino-logs/qemu
         continue-on-error: true
 
       - name: Download simavr Logs
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: simavr-logs
           path: simavr-logs
         continue-on-error: true
 
       - name: Download Renode Logs
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: renode-logs
           path: renode-logs
         continue-on-error: true
 
       - name: Download QEMU Logs
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: qemu-logs
           path: qemu-logs
@@ -952,7 +952,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: coverage-combined
           path: coverage/

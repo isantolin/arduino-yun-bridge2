@@ -60,6 +60,34 @@ cc_library(
 )
 """,
 )
+
+# The Gateway is a Linux host binary. Pigweed's hermetic Clang sysroot does not
+# ship OpenSSL; expose the system development package installed by CI instead.
+new_local_repository(
+    name = "system_openssl",
+    path = "/usr",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "openssl",
+    hdrs = glob([
+        "include/openssl/**/*.h",
+        "include/x86_64-linux-gnu/openssl/**/*.h",
+    ]),
+    includes = [
+        "include",
+        "include/x86_64-linux-gnu",
+    ],
+    linkopts = [
+        "-L/usr/lib/x86_64-linux-gnu",
+        "-lssl",
+        "-lcrypto",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
 pw_transfer_cooperative_repo = use_repo_rule("//tools/bazel:pw_transfer_cooperative.bzl", "pw_transfer_cooperative_repo")
 
 new_local_repository(

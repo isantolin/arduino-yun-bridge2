@@ -46,12 +46,17 @@ Pigweed source is the recursively initialized submodule pinned at
 
 On Debian/Ubuntu host:
 
-    sudo apt-get install -y build-essential cmake ninja-build libssl-dev protobuf-compiler python3 python3-venv
+    sudo apt-get install -y build-essential ca-certificates cmake curl ninja-build protobuf-compiler python3 python3-venv
     python3 -m venv .venv-gateway
     . .venv-gateway/bin/activate
     pip install "pigweed==0.0.24" "protobuf==5.28.3"
     cmake -S mcubridge-gateway-cpp -B build/mcubridge-gateway -G Ninja -DCMAKE_BUILD_TYPE=Release
     cmake --build build/mcubridge-gateway
+
+wolfSSL 5.9.4 is fetched and SHA-256 verified by CMake at configure time. It is
+built statically into the Gateway; no OpenSSL development or runtime package is
+required. Install the `openssl` CLI separately only when running the Python TLS
+test suite, which uses it to create disposable certificate fixtures.
     sudo cmake --install build/mcubridge-gateway --prefix /usr/local
 
 `cmake --install` installs:
@@ -88,8 +93,8 @@ without affecting `build-apk.yml`'s `Dockerfile.apk-feed`):
     docker build -f mcubridge-gateway-cpp/Dockerfile -t mcubridge-gateway:latest .
 
 The multi-stage `debian:bookworm-slim` image compiles the Release binary in the
-`builder` stage and copies only the stripped executable onto a minimal `libssl3`
-runtime image running as unprivileged user `mcubridge:mcubridge` (UID/GID
+`builder` stage and copies only the stripped executable onto a minimal runtime
+image (no OpenSSL runtime dependency) running as unprivileged user `mcubridge:mcubridge` (UID/GID
 `10001`), exposing `8443/tcp`, handling `SIGTERM`, and verifying the listening
 socket via `/proc/net/tcp{,6}` in `HEALTHCHECK`.
 

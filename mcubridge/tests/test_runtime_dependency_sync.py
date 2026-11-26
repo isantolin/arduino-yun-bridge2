@@ -279,10 +279,7 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
         assert "nanopb==0.4.9.1" in path.read_text(encoding="utf-8"), str(path)
 
 
-def test_check_external_versions_reports_native_mechanism_updates(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path) -> None:
     (tmp_path / "requirements").mkdir(parents=True)
     (tmp_path / "requirements" / "runtime.toml").write_text(
         '[toolchain.renode]\nversion = "1.17.0+20261025git04cafbb29"\n',
@@ -301,9 +298,11 @@ def test_check_external_versions_reports_native_mechanism_updates(
         "espressif/arduino-esp32": "3.3.13",
         "bazelbuild/rules_cc": "0.2.28",
     }
-    monkeypatch.setattr(sync_runtime_deps, "_fetch_github_latest_version", lambda repo: latest_map.get(repo))
-
-    outdated = sync_runtime_deps.check_external_versions(tmp_path)
+    outdated = sync_runtime_deps.check_external_versions(
+        tmp_path,
+        fetch_version=lambda repo: latest_map.get(repo),
+        fetch_commit=lambda _repo: None,
+    )
     labels = {item[0] for item in outdated}
     assert "toolchain.renode (runtime.toml)" in labels
     assert "arduino-cli (install_arduino_cli.sh)" in labels

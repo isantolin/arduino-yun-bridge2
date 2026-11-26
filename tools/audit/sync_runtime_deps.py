@@ -7,7 +7,7 @@ import importlib.metadata
 import re
 import sys
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
@@ -495,7 +495,6 @@ def check_latest_versions(
     return outdated
 
 
-
 def _fetch_github_latest_commit(repo: str, branch: str = "main") -> str | None:
     """Query GitHub API for the latest commit SHA on a branch."""
     headers = {"User-Agent": USER_AGENT, "Accept": "application/vnd.github.v3+json"}
@@ -517,20 +516,32 @@ def _extract_regex_group(path: Path, pattern: str) -> str | None:
     return match.group(1) if match else None
 
 
-def check_external_versions(root: Path = ROOT) -> list[tuple[str, str, str]]:
+def check_external_versions(
+    root: Path = ROOT,
+    *,
+    fetch_version: Callable[[str], str | None] | None = None,
+    fetch_commit: Callable[[str], str | None] | None = None,
+) -> list[tuple[str, str, str]]:
     """Audit external/native-mechanism pins (Renode, Arduino scripts, Bazel, GitHub submodules)."""
+    version_fetcher = fetch_version or _fetch_github_latest_version
+    commit_fetcher = fetch_commit or _fetch_github_latest_commit
     outdated: list[tuple[str, str, str]] = []
 
     manifest_path = root / "requirements" / "runtime.toml"
     if manifest_path.is_file():
         data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-        renode_spec = cast(dict[str, Any], data.get("toolchain", {})).get("renode")
-        if isinstance(renode_spec, dict) and isinstance(renode_spec.get("version"), str):
-            pinned_renode = str(renode_spec["version"])
-            base_renode = pinned_renode.split("+", 1)[0]
-            latest_renode = _fetch_github_latest_version("renode/renode")
-            if latest_renode and _is_version_newer(base_renode, latest_renode.lstrip("v")):
-                outdated.append(("toolchain.renode (runtime.toml)", pinned_renode, latest_renode))
+        toolchain_raw = data.get("toolchain")
+        if isinstance(toolchain_raw, dict):
+            toolchain = cast(dict[str, Any], toolchain_raw)
+            renode_raw = toolchain.get("renode")
+            if isinstance(renode_raw, dict):
+                renode_spec = cast(dict[str, Any], renode_raw)
+                pinned_val = renode_spec.get("version")
+                if isinstance(pinned_val, str):
+                    base_renode = pinned_val.split("+", 1)[0]
+                    latest_renode = version_fetcher("renode/renode")
+                    if latest_renode and _is_version_newer(base_renode, latest_renode.lstrip("v")):
+                        outdated.append(("toolchain.renode (runtime.toml)", pinned_val, latest_renode))
 
     script_checks: tuple[tuple[str, Path, str, str], ...] = (
         (
@@ -556,7 +567,7 @@ def check_external_versions(root: Path = ROOT) -> list[tuple[str, str, str]]:
         pinned = _extract_regex_group(path, pattern)
         if not pinned:
             continue
-        latest = _fetch_github_latest_version(gh_repo)
+        latest = version_fetcher(gh_repo)
         if latest and _is_version_newer(pinned.lstrip("v"), latest.lstrip("v")):
             outdated.append((label, pinned, latest))
 
@@ -575,7 +586,7 @@ def check_external_versions(root: Path = ROOT) -> list[tuple[str, str, str]]:
             pinned_sha = head_file.read_text(encoding="utf-8").strip()
             if len(pinned_sha) != 40:
                 continue
-            latest_sha = _fetch_github_latest_commit(gh_repo)
+            latest_sha = commit_fetcher(gh_repo)
             if latest_sha and latest_sha != pinned_sha:
                 outdated.append((f"{sub_path} (.gitmodules)", pinned_sha[:8], latest_sha[:8]))
 

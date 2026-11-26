@@ -25,6 +25,7 @@ local_path_override(
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
 pw_transfer_cooperative_repo = use_repo_rule("//tools/bazel:pw_transfer_cooperative.bzl", "pw_transfer_cooperative_repo")
 
@@ -94,8 +95,10 @@ cc_library(
     urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
 )
 
-http_archive(
+git_repository(
     name = "nanopb_c",
+    remote = "https://github.com/nanopb/nanopb.git",
+    commit = "93550bb52a6216a7396d0a168a42b3a88223d811",
     build_file_content = """
 load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
@@ -106,10 +109,7 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
-    integrity = "sha256-Mk5e8+m/KsVJ5U9mD4UpQxSPNWKevoiCTqz8N5KRaPk=",
     patch_cmds = ["mkdir -p _rel_inc"],
-    strip_prefix = "nanopb-nanopb-0.4.9.2",
-    urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/nanopb-0.4.9.2.tar.gz"],
 )
 
 http_archive(

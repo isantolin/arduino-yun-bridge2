@@ -159,7 +159,7 @@ option (rpc.pb.hardware) = {
   max_safety_pins: 8
   max_pin_subscriptions: 8
   max_mailbox_queue_size_other: 4
-  max_mailbox_queue_size_avr: 4
+  max_mailbox_queue_size_avr: 2
 };
 option (rpc.pb.status_reasons) = {
   sync_auth_mismatch: "sync_auth_mismatch"
@@ -632,8 +632,8 @@ message CloudDefaults {
 }
 
 message StatusReasons {
-  string sync_auth_mismatch = 17;
-  string sync_length_mismatch = 18;
+  string sync_auth_mismatch: 17;
+  string sync_length_mismatch: 18;
 }
 
 message ArchConfig {

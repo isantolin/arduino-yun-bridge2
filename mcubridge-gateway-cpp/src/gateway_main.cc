@@ -202,24 +202,26 @@ bool IsValidPrincipalId(std::string_view id) {
   return true;
 }
 
+bool PeerCertificateAllowsClientAuth(WOLFSSL* ssl) {
+  WOLFSSL_X509* certificate = wolfSSL_get_peer_certificate(ssl);
+  if (certificate == nullptr) return false;
+  // Match TLS client-purpose semantics: absent EKU is allowed; if present it
+  // must authorize client authentication or any purpose.
+  const int eku_extension =
+      wolfSSL_X509_get_ext_by_NID(certificate, NID_ext_key_usage, -1);
+  const unsigned int extended_key_usage =
+      wolfSSL_X509_get_extended_key_usage(certificate);
+  wolfSSL_X509_free(certificate);
+  return eku_extension < 0 ||
+         (extended_key_usage & (EXTKEYUSE_CLIENT_AUTH | EXTKEYUSE_ANY)) != 0U;
+}
+
 pw::Result<PeerIdentity> PeerIdentityFromCertificate(WOLFSSL* ssl) {
   if (wolfSSL_get_verify_result(ssl) != WOLFSSL_X509_V_OK) {
     return pw::Status::Unauthenticated();
   }
   WOLFSSL_X509* certificate = wolfSSL_get_peer_certificate(ssl);
   if (certificate == nullptr) {
-    return pw::Status::Unauthenticated();
-  }
-
-  // Preserve TLS client-purpose semantics: a missing EKU is allowed, but
-  // when present it must authorize client authentication (or any purpose).
-  const int eku_extension =
-      wolfSSL_X509_get_ext_by_NID(certificate, NID_ext_key_usage, -1);
-  const unsigned int extended_key_usage =
-      wolfSSL_X509_get_extended_key_usage(certificate);
-  if (eku_extension >= 0 &&
-      (extended_key_usage & (EXTKEYUSE_CLIENT_AUTH | EXTKEYUSE_ANY)) == 0U) {
-    wolfSSL_X509_free(certificate);
     return pw::Status::Unauthenticated();
   }
 
@@ -1528,6 +1530,15 @@ struct SessionTask {
     if (wolfSSL_accept(ssl) != 1) {
       metrics_ref.client_rejections_total.Increment();
       PW_LOG_WARN("event=client_rejected reason=tls_handshake_failed");
+      wolfSSL_free(ssl);
+      CloseFd();
+      done.store(true);
+      return;
+    }
+    if (!PeerCertificateAllowsClientAuth(ssl)) {
+      metrics_ref.client_rejections_total.Increment();
+      PW_LOG_WARN("event=client_rejected reason=invalid_client_auth_eku");
+      wolfSSL_shutdown(ssl);
       wolfSSL_free(ssl);
       CloseFd();
       done.store(true);

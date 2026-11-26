@@ -663,7 +663,7 @@ jobs:
         uses: bazel-contrib/setup-bazel@0.19.2
         with:
           bazelisk-cache: true
-          bazelisk-version: 1.30.0
+          bazelisk-version: 1.31.0
           repository-cache: true
           disk-cache: ${{ runner.os }}-${{ github.workflow }}
 

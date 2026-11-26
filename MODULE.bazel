@@ -34,11 +34,9 @@ local_path_override(
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
 
-# Build OpenSSL from source with Pigweed's hermetic host C toolchain.
-# Importing the runner's shared libraries would mix its newer glibc ABI with
-# Pigweed's pinned Linux sysroot and make the resulting OCI binary non-portable.
+# Pinned full wolfSSL source archive shared by CMake and Bazel Gateway builds.
 http_archive(
-    name = "openssl_source",
+    name = "wolfssl_source",
     build_file_content = """
 filegroup(
     name = "all_srcs",
@@ -46,9 +44,9 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 """,
-    sha256 = "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
-    strip_prefix = "openssl-3.5.9",
-    urls = ["https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz"],
+    sha256 = "9cd0d69d208d025b16836c177658cc0deebc2a85c4b60898c9bc546bc6cbdf18",
+    strip_prefix = "wolfssl-5.9.4",
+    urls = ["https://www.wolfssl.com/download/wolfssl-5.9.4.zip"],
 )
 
 pw_transfer_cooperative_repo = use_repo_rule("//tools/bazel:pw_transfer_cooperative.bzl", "pw_transfer_cooperative_repo")

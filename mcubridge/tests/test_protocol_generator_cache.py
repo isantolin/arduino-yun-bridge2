@@ -76,6 +76,7 @@ def test_incremental_build_invalidates_changed_inputs_and_missing_outputs(tmp_pa
     missing_output, _, _ = generate.check_incremental_build(args, "2.1.0", repo_root=tmp_path)
     assert not missing_output
 
+
 def test_generated_nanopb_headers_keep_the_public_runtime_include() -> None:
     generated = "#include <pb.h>\n\nstruct rpc_message {};\n"
 
@@ -84,7 +85,10 @@ def test_generated_nanopb_headers_keep_the_public_runtime_include() -> None:
     assert "#include <pb.h>" in rewritten
     assert '#include "../pb.h"' not in rewritten
     assert "typedef pb_byte_t mcu_wire_pb_byte_t;" in rewritten
-    assert generate._nanopb_header_with_public_runtime_include(rewritten, "mcu_wire") == rewritten
+    assert (
+        generate._nanopb_header_with_public_runtime_include(rewritten, "mcu_wire") == rewritten
+    )
+
 
 def test_generated_nanopb_header_requires_the_runtime_include() -> None:
     import pytest

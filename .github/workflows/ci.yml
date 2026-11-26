@@ -686,6 +686,26 @@ jobs:
         run: |
           bazel build --lockfile_mode=error //mcubridge-gateway-cpp:mcubridge-gateway-cpp
           bazel test --lockfile_mode=error --test_output=errors //mcubridge-library-arduino/...
+      - name: Commit resolved Bzlmod lockfile to PR branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          lockfile="$(mktemp)"
+          cp MODULE.bazel.lock "$lockfile"
+          git fetch origin "refs/heads/$HEAD_REF:refs/remotes/origin/$HEAD_REF"
+          lockfile_worktree="$(mktemp -d)"
+          rmdir "$lockfile_worktree"
+          git worktree add -B "$HEAD_REF" "$lockfile_worktree" "origin/$HEAD_REF"
+          cp "$lockfile" "$lockfile_worktree/MODULE.bazel.lock"
+          git -C "$lockfile_worktree" add MODULE.bazel.lock
+          if ! git -C "$lockfile_worktree" diff --cached --quiet -- MODULE.bazel.lock; then
+            git -C "$lockfile_worktree" config user.name "github-actions[bot]"
+            git -C "$lockfile_worktree" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git -C "$lockfile_worktree" commit -m "build(bazel): lock resolved Bzlmod dependencies"
+            git -C "$lockfile_worktree" push origin "HEAD:refs/heads/$HEAD_REF"
+          fi
+          git worktree remove "$lockfile_worktree" --force
       - name: Build Linux Gateway OCI image with Bazel
         run: |
           bazel build //mcubridge-gateway-cpp:mcubridge-gateway-image
@@ -709,23 +729,6 @@ jobs:
           docker build -f mcubridge-gateway-cpp/Dockerfile -t mcubridge-gateway-cpp:ci .
           docker run --rm mcubridge-gateway-cpp:ci --help
           test "$(docker run --rm --entrypoint id mcubridge-gateway-cpp:ci -u)" = "10001"
-      - name: Commit resolved Bzlmod lockfile to PR branch
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-        run: |
-          lockfile="$(mktemp)"
-          cp MODULE.bazel.lock "$lockfile"
-          git fetch origin "refs/heads/$HEAD_REF:refs/remotes/origin/$HEAD_REF"
-          git checkout -B "$HEAD_REF" "origin/$HEAD_REF"
-          cp "$lockfile" MODULE.bazel.lock
-          git add MODULE.bazel.lock
-          if ! git diff --cached --quiet -- MODULE.bazel.lock; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "build(bazel): lock resolved Bzlmod dependencies"
-            git push origin "HEAD:refs/heads/$HEAD_REF"
-          fi
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min

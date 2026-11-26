@@ -11,6 +11,9 @@ bazel_dep(name = "rules_cc", version = "0.2.28")
 bazel_dep(name = "rules_oci", version = "2.3.5")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
 
+# Pigweed disables host toolchain autodetection; register its hermetic Linux host compiler.
+register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux")
+
 local_path_override(
     module_name = "pigweed",
     path = "third_party/pigweed",

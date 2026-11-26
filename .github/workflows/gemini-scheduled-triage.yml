@@ -39,7 +39,7 @@ jobs:
       triaged_issues: '${{ env.TRIAGED_ISSUES }}'
     steps:
       - name: 'Checkout repository'
-        uses: 'actions/checkout@v7'
+        uses: 'actions/checkout@v7.0.1'
 
       - name: 'Read canonical Gemini model'
         id: 'gemini_model'

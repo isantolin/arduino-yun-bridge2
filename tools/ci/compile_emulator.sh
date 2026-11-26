@@ -97,6 +97,7 @@ PW_OBJECTS=()
 PW_ALL_SRCS=(
     "${PW_PIGWEED_SRCS[@]}"
     "${PW_TRANSFER_STAGED_SRCS[@]}"
+    "${PW_PERIPHERAL_STAGED_SRCS[@]}"
 )
 for source in "${PW_ALL_SRCS[@]}"; do
     object_name="${source#"$ROOT_DIR/"}"

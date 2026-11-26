@@ -15,6 +15,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@etl",
+        "@pigweed//pw_chrono:system_clock",
         "@wolfssl",
     ],
 )

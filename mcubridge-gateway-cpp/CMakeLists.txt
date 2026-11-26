@@ -60,6 +60,7 @@ add_subdirectory("${PIGWEED_ROOT}/pw_polyfill" pw_polyfill)
 add_subdirectory("${PIGWEED_ROOT}/pw_preprocessor" pw_preprocessor)
 
 add_subdirectory("${PIGWEED_ROOT}/pw_assert" pw_assert)
+add_subdirectory("${PIGWEED_ROOT}/pw_containers" pw_containers)
 add_subdirectory("${PIGWEED_ROOT}/pw_result" pw_result)
 add_subdirectory("${PIGWEED_ROOT}/pw_span" pw_span)
 add_subdirectory("${PIGWEED_ROOT}/pw_bytes" pw_bytes)

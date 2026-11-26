@@ -315,8 +315,8 @@ rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
 name = "httpx"
-pip = "httpx==0.28.1"
-rationale = "HTTP client used by development tooling and retry integration tests"
+pip = "httpx==0.29.0"
+rationale = "Latest stable HTTP client used by development tooling and retry integration tests"
 
 [[dev_dependency]]
 name = "asyncssh"

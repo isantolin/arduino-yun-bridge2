@@ -31,7 +31,6 @@ local_path_override(
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
-git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
 pw_transfer_cooperative_repo = use_repo_rule("//tools/bazel:pw_transfer_cooperative.bzl", "pw_transfer_cooperative_repo")
 
@@ -99,23 +98,6 @@ cc_library(
     integrity = "sha256-s+elVEeV7I9KGyq0b26I/beL5aB3OPAIzhHdN+0UtuQ=",
     strip_prefix = "etl-20.49.0",
     urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
-)
-
-git_repository(
-    name = "nanopb_c",
-    remote = "https://github.com/nanopb/nanopb.git",
-    commit = "93550bb52a6216a7396d0a168a42b3a88223d811",
-    build_file_content = """
-load("@rules_cc//cc:defs.bzl", "cc_library")
-cc_library(
-    name = "nanopb_c",
-    srcs = ["pb_common.c", "pb_decode.c", "pb_encode.c"],
-    hdrs = ["pb.h", "pb_common.h", "pb_decode.h", "pb_encode.h"],
-    includes = [".", "_rel_inc"],
-    visibility = ["//visibility:public"],
-)
-""",
-    patch_cmds = ["mkdir -p _rel_inc"],
 )
 
 http_archive(

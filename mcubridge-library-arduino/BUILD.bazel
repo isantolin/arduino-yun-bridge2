@@ -72,7 +72,7 @@ cc_library(
         "@avr_pigweed_port//pw_digital_io_avr:pw_digital_io_avr",
         "@avr_pigweed_port//pw_spi_avr:pw_spi_avr",
         "@etl",
-        "@nanopb_c",
+        "@nanopb//:nanopb",
         "@pigweed//pw_assert:assert",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",

@@ -379,6 +379,7 @@ _build_pigweed_archive() {
         PW_TRANSFER_STAGED_INC_DIR=""
         PW_TRANSFER_STAGED_SRC_DIR=""
         PW_TRANSFER_STAGED_SRCS=()
+        PW_PERIPHERAL_STAGED_SRCS=()
     fi
     rm -rf "$build_tmp"
     echo "[toolchain] Built Pigweed + cooperative pw_transfer archive for ${arch_tag}: $output_archive" >&2

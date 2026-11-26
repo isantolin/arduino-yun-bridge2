@@ -95,3 +95,24 @@ def test_generated_nanopb_header_requires_the_runtime_include() -> None:
 
     with pytest.raises(ValueError, match="public <pb.h> include"):
         generate.nanopb_header_with_public_runtime_include("struct rpc_message {};\n", "mcu_wire")
+
+def test_buf_generation_uses_temporary_nanopb_descriptors_with_pinned_protoc(
+    monkeypatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(*args, **kwargs):
+        env = kwargs["env"]
+        temp_dir = Path(env["NANOPB_PB2_TEMP_DIR"])
+        assert temp_dir.is_dir()
+        captured["temp_dir"] = temp_dir
+        captured["command"] = args[0]
+
+    monkeypatch.setattr(generate, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(generate, "_resolve_nanopb_protoc_dir", lambda: None)
+    monkeypatch.setattr(generate.subprocess, "run", fake_run)
+
+    generate.run_buf_generate(tmp_path)
+
+    assert captured["command"] == ["buf", "generate"]
+    assert not Path(captured["temp_dir"]).exists()

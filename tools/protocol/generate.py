@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,11 +78,23 @@ def run_buf_generate(proto_dir: Path) -> None:
     nanopb_dir = _resolve_nanopb_protoc_dir()
     if nanopb_dir:
         env["PATH"] = f"{env['PATH']}:{nanopb_dir}"
+
+    # Nanopb 0.4.9.3 ships a pre-generated nanopb_pb2.py built with a newer
+    # Protobuf compiler than the Bridge's Pigweed 0.0.24 runtime (5.28.3).
+    # Force Nanopb to regenerate that module with the pinned system protoc,
+    # rather than importing incompatible bundled gencode.
+    nanopb_pb2_temp = None
+    if not env.get("NANOPB_PB2_TEMP_DIR"):
+        nanopb_pb2_temp = tempfile.TemporaryDirectory(prefix="nanopb-pb2-")
+        env["NANOPB_PB2_TEMP_DIR"] = nanopb_pb2_temp.name
     try:
         subprocess.run(["buf", "generate"], check=True, capture_output=True, text=True, cwd=str(proto_dir), env=env)
     except subprocess.CalledProcessError as e:
         sys.stderr.write(f"Error: buf generate failed:\n{e.stderr}\n")
         sys.exit(1)
+    finally:
+        if nanopb_pb2_temp is not None:
+            nanopb_pb2_temp.cleanup()
 
 
 def run_pw_rpc_packet_generate(repo_root: Path) -> None:

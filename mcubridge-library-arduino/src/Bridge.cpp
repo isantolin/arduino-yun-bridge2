@@ -182,43 +182,23 @@ class GpioRpcService final
 
   pw::Status DigitalRead(const rpc_pb_PinRead& request,
                          rpc_pb_DigitalReadResponse& response) {
-    if (!isValidDigitalPin(request.pin)) return pw::Status::InvalidArgument();
-    const uint8_t pin = static_cast<uint8_t>(request.pin);
-    switch (g_pin_runtime_modes[pin]) {
-      case PinRuntimeMode::kOutputLow:
-      case PinRuntimeMode::kOutputHigh: {
-        pw::digital_io::ArduinoDigitalInOut input(
-            pin, false,
-            g_pin_runtime_modes[pin] == PinRuntimeMode::kOutputHigh
-                ? pw::digital_io::State::kActive
-                : pw::digital_io::State::kInactive,
-            false);
-        const pw::Status enabled = input.Enable();
-        if (!enabled.ok()) return enabled;
-        auto value = input.GetState();
-        if (!value.ok()) return value.status();
-        response.value = value.value() == pw::digital_io::State::kActive ? 1U : 0U;
-        return pw::OkStatus();
-      }
-      case PinRuntimeMode::kPwmLow:
-      case PinRuntimeMode::kPwmHigh:
-        response.value =
-            g_pin_runtime_modes[pin] == PinRuntimeMode::kPwmHigh ? 1U : 0U;
-        return pw::OkStatus();
-      case PinRuntimeMode::kInput:
-      case PinRuntimeMode::kInputPullup:
-      default: {
-        pw::digital_io::ArduinoDigitalIn input(
-            pin, g_pin_runtime_modes[pin] == PinRuntimeMode::kInputPullup,
-            false);
-        const pw::Status enabled = input.Enable();
-        if (!enabled.ok()) return enabled;
-        auto value = input.GetState();
-        if (!value.ok()) return value.status();
-        response.value = value.value() == pw::digital_io::State::kActive ? 1U : 0U;
-        return pw::OkStatus();
-      }
+    if (!isValidDigitalPin(request.pin)) {
+      return pw::Status::InvalidArgument();
     }
+    // Observation-only mode samples the physical pin without changing its
+    // direction, pull-up configuration, or output latch.
+    pw::digital_io::ArduinoDigitalInOut input(
+        static_cast<uint8_t>(request.pin),
+        false,
+        pw::digital_io::State::kInactive,
+        false);
+    const pw::Status enabled = input.Enable();
+    if (!enabled.ok()) return enabled;
+    auto value = input.GetState();
+    if (!value.ok()) return value.status();
+    response.value =
+        value.value() == pw::digital_io::State::kActive ? 1U : 0U;
+    return pw::OkStatus();
   }
 
   pw::Status AnalogRead(const rpc_pb_PinRead& request,

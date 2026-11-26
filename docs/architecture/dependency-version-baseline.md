@@ -25,7 +25,7 @@ version). The source-of-truth manifests remain `MODULE.bazel`,
 | rules_oci | `2.3.5` | Bzlmod |
 | rules_pkg | `1.3.0` | Bzlmod |
 | Nanopb generator (PyPI) | `0.4.9.3` | Latest stable PyPI generator package |
-| Nanopb C runtime | `0.4.9.2` | Latest upstream C runtime tag; distinct release stream from PyPI generator |
+| Nanopb C runtime | `0.4.9.3` | Latest upstream C runtime tag; same release as the PyPI generator |
 | ETL | `20.49.0` | Latest upstream release tag checked |
 | Unity | `2.7.0` | Latest upstream release tag checked |
 | wolfSSL Arduino wrapper | `5.8.4` | Latest release of the Arduino-specific wrapper |

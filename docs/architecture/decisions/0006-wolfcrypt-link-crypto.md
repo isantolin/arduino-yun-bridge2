@@ -1,7 +1,7 @@
 # ADR-0006: WolfCrypt Link Crypto Provider
 
 - Status: Accepted (amended)
-- Date: 2026-11-03; amended 2026-11-16
+- Date: 2026-11-03; amended 2026-11-16 and 2026-11-26
 - Renumbered: originally published as a second ADR-0003, which collided with [ADR-0003: Pigweed gateway replacement](0003-pigweed-gateway-replacement.md). The content below the amendment is the original decision.
 - Decision owners: Repository maintainer
 

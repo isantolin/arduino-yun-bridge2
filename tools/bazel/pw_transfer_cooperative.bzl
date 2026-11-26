@@ -72,6 +72,7 @@ cc_library(
         "@pigweed//pw_sync:interrupt_spin_lock",
         "@pigweed//pw_sync:lock_annotations",
         "@pigweed//pw_sync:mutex",
+        "@pigweed//pw_sync:no_lock",
         "@pigweed//pw_sync:scoped_locker",
         "@pigweed//pw_sync:timed_thread_notification",
         "@pigweed//pw_thread:thread",

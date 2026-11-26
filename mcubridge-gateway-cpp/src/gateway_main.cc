@@ -1628,7 +1628,8 @@ pw::Result<TlsContext> CreateTlsContext(const std::string& certificate,
   wolfSSL_CTX_set_verify_depth(context.get(), 4);
   wolfSSL_CTX_set_session_cache_mode(context.get(), WOLFSSL_SESS_CACHE_OFF);
   wolfSSL_CTX_set_options(context.get(), WOLFSSL_OP_NO_RENEGOTIATION);
-  if (wolfSSL_CTX_no_ticket_TLSv13(context.get()) != WOLFSSL_SUCCESS) {
+  // wolfSSL documents 0 as success for this configuration API.
+  if (wolfSSL_CTX_no_ticket_TLSv13(context.get()) != 0) {
     error.clear();
     error << "wolfSSL could not disable TLS 1.3 session tickets";
     return pw::Status::Internal();

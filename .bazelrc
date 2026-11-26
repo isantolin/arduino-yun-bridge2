@@ -28,6 +28,9 @@ build --host_per_file_copt=external/.*rules_cc_autoconf.*/.*.cc@-fexceptions
 build --host_per_file_copt=external/.*rules_cc_autoconf.*/autoconf/private/checker/checker.cc@-Wno-error=unused-but-set-variable
 # The adjacent checker source has a separate unused-variable diagnostic.
 build --host_per_file_copt=external/.*rules_cc_autoconf.*/autoconf/private/checker/check.cc@-Wno-error=unused-variable
+# The checker runner has two independent unused-variable diagnostics.
+build --host_per_file_copt=external/.*rules_cc_autoconf.*/autoconf/private/checker/check_runner.cc@-Wno-error=unused-but-set-variable
+build --host_per_file_copt=external/.*rules_cc_autoconf.*/autoconf/private/checker/check_runner.cc@-Wno-error=unused-variable
 build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
 build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_stdio
 build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_basic

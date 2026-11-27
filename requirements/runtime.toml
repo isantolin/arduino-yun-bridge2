@@ -138,7 +138,7 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 name = "nanopb"
 openwrt = "nanopb"
 pip = "nanopb==0.4.9.1"
-check_latest = false
+check_latest = true
 rationale = "Nanopb generator pinned for Pigweed 0.0.24 / Protobuf 5.28.3 compatibility; paired with nanopb_core 0.4.9.2 [BUILD-ONLY]"
 
 [[dependency]]
@@ -193,7 +193,7 @@ github = "wolfSSL/Arduino-wolfSSL"
 ref_type = "tags"
 version = "5.8.4"
 check_file = "library.properties"
-check_latest = false
+check_latest = true
 sha256 = "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
 rationale = "GPL-3.0-or-later wolfCrypt unified cryptographic provider (HKDF-SHA256, HMAC-SHA256, and ChaCha20-Poly1305) across AVR, SAMD, ESP32, and host"
 
@@ -203,7 +203,7 @@ github = "cmaglie/FlashStorage"
 ref_type = "tags"
 version = "1.0.0"
 check_file = "src/FlashStorage.h"
-check_latest = false
+check_latest = true
 sha256 = "2f5a349e1c5dc4ec7f7e22268c0f998af3f471b98ed873abd6e671ac67940e39"
 rationale = "LGPL-2.1 SAMD21 NVM row storage for the persisted link boot epoch (ADR-0005 MCU handshake nonce)"
 
@@ -315,7 +315,7 @@ rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
 name = "httpx"
-pip = "httpx==0.28.1"
+pip = "httpx==0.29.0"
 rationale = "HTTP client used by development tooling and retry integration tests"
 
 [[dev_dependency]]

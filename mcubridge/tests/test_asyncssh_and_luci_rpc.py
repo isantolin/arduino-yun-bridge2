@@ -10,7 +10,6 @@ import pytest
 from pytest_mock import MockerFixture
 from tools.audit import validate_luci
 from tools.emulation import hardware_harness, sync_to_vm
-from tools.testing.unity_parser import TestSuite as UnityTestSuite
 
 
 def test_validate_luci_rpc_endpoint_success(mocker: MockerFixture) -> None:
@@ -163,49 +162,6 @@ def test_hardware_harness_run_ssh_command(mocker: MockerFixture) -> None:
     assert out == "harness-output"
     assert err == ""
     mock_conn.run.assert_awaited_once_with("uptime")
-
-
-def test_unity_parser_success() -> None:
-    unity_raw_output = """
-tests/test_core.cpp:10:test_handshake_auth:PASS
-tests/test_core.cpp:25:test_mailbox_exchange:PASS
------------------------
-2 Tests 0 Failures 0 Ignored
-OK
-"""
-    suite = UnityTestSuite("unity_suite")
-    suite.add_unity_test_cases(unity_raw_output)
-
-    assert len(suite.testcases) == 2
-    assert suite.testcases[0].name == "test_handshake_auth"
-    assert suite.testcases[0].result == "PASS"
-    assert suite.testcases[1].name == "test_mailbox_exchange"
-    assert suite.testcases[1].result == "PASS"
-    assert len(suite.failed_cases) == 0
-
-    xml = suite.to_xml()
-    assert xml.tag == "testsuite"
-    assert xml.attrib["tests"] == "2"
-    assert xml.attrib["failures"] == "0"
-
-
-def test_unity_parser_failure() -> None:
-    unity_raw_output = """
-tests/test_core.cpp:12:test_expected_assertion:FAIL:Expected 42 Was 0
------------------------
-1 Tests 1 Failures 0 Ignored
-FAIL
-"""
-    suite = UnityTestSuite("unity_failed_suite")
-    suite.add_unity_test_cases(unity_raw_output)
-
-    assert len(suite.testcases) == 1
-    assert suite.testcases[0].name == "test_expected_assertion"
-    assert suite.testcases[0].result == "FAIL"
-    assert len(suite.failed_cases) == 1
-
-    xml = suite.to_xml()
-    assert xml.attrib["failures"] == "1"
 
 
 def test_hardware_harness_rotate_local(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

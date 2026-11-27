@@ -148,14 +148,14 @@ TEST(ArduinoCryptoHarden, HandshakeTagKnownAnswer) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> actual_tag = {};
   EXPECT_TRUE(rpc::security::handshake_generate_tag(
       kVectorSecret, kVectorNonce, actual_tag));
-  EXPECT_EQ(0, memcmp(kExpectedTag.data(), actual_tag.data(), kExpectedTag.size())));
+  EXPECT_EQ(0, memcmp(kExpectedTag.data(), actual_tag.data(), kExpectedTag.size()));
   EXPECT_TRUE(rpc::security::handshake_verify_tag(
       kVectorSecret, kVectorNonce, kExpectedTag));
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> response_tag = {};
   EXPECT_TRUE(rpc::security::handshake_generate_response_tag(
       kVectorSecret, kVectorNonce, kVectorMcuNonce, response_tag));
-  EXPECT_EQ(0, memcmp(kExpectedResponseTag.data(), response_tag.data(), response_tag.size())));
+  EXPECT_EQ(0, memcmp(kExpectedResponseTag.data(), response_tag.data(), response_tag.size()));
   EXPECT_FALSE(etl::equal(actual_tag.begin(), actual_tag.end(), response_tag.begin()));
 }
 
@@ -165,14 +165,14 @@ TEST(ArduinoCryptoHarden, LongHandshakeSecretKnownAnswer) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> request_tag = {};
   EXPECT_TRUE(rpc::security::handshake_generate_tag(
       secret, kLongHandshakeNonce, request_tag));
-  EXPECT_EQ(0, memcmp(kExpectedLongHandshakeTag.data(), request_tag.data(), request_tag.size())));
+  EXPECT_EQ(0, memcmp(kExpectedLongHandshakeTag.data(), request_tag.data(), request_tag.size()));
   EXPECT_TRUE(rpc::security::handshake_verify_tag(
       secret, kLongHandshakeNonce, kExpectedLongHandshakeTag));
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> response_tag = {};
   EXPECT_TRUE(rpc::security::handshake_generate_response_tag(
       secret, kLongHandshakeNonce, kLongMcuNonce, response_tag));
-  EXPECT_EQ(0, memcmp(kExpectedLongHandshakeResponseTag.data(), response_tag.data(), response_tag.size())));
+  EXPECT_EQ(0, memcmp(kExpectedLongHandshakeResponseTag.data(), response_tag.data(), response_tag.size()));
 
   constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kExpectedHostToMcu = {
       0x36U, 0x53U, 0xCAU, 0x7EU, 0x5FU, 0x20U, 0xB5U, 0x58U,
@@ -187,8 +187,8 @@ TEST(ArduinoCryptoHarden, LongHandshakeSecretKnownAnswer) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   EXPECT_TRUE(rpc::security::derive_session_keys(
       secret, kLongHandshakeNonce, kLongMcuNonce, session_keys));
-  EXPECT_EQ(0, memcmp(kExpectedHostToMcu.data(), session_keys.data(), kExpectedHostToMcu.size())));
-  EXPECT_EQ(0, memcmp(kExpectedMcuToHost.data(), session_keys.data() + kExpectedHostToMcu.size(), kExpectedMcuToHost.size())));
+  EXPECT_EQ(0, memcmp(kExpectedHostToMcu.data(), session_keys.data(), kExpectedHostToMcu.size()));
+  EXPECT_EQ(0, memcmp(kExpectedMcuToHost.data(), session_keys.data() + kExpectedHostToMcu.size(), kExpectedMcuToHost.size()));
 }
 
 TEST(ArduinoCryptoHarden, SessionKeyDerivationKnownAnswer) {
@@ -205,15 +205,15 @@ TEST(ArduinoCryptoHarden, SessionKeyDerivationKnownAnswer) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   EXPECT_TRUE(rpc::security::derive_session_keys(
       kVectorSecret, kVectorNonce, kVectorMcuNonce, session_keys));
-  EXPECT_EQ(0, memcmp(kExpectedHostToMcu.data(), session_keys.data(), kExpectedHostToMcu.size())));
-  EXPECT_EQ(0, memcmp(kExpectedMcuToHost.data(), session_keys.data() + kExpectedHostToMcu.size(), kExpectedMcuToHost.size())));
+  EXPECT_EQ(0, memcmp(kExpectedHostToMcu.data(), session_keys.data(), kExpectedHostToMcu.size()));
+  EXPECT_EQ(0, memcmp(kExpectedMcuToHost.data(), session_keys.data() + kExpectedHostToMcu.size(), kExpectedMcuToHost.size()));
 }
 
 TEST(ArduinoCryptoHarden, McuNonceKnownAnswerAndCounterUniqueness) {
   const etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> zero_counter{};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce_a{};
   EXPECT_TRUE(rpc::security::derive_mcu_nonce(kVectorSecret, zero_counter, nonce_a));
-  EXPECT_EQ(0, memcmp(kExpectedMcuNonceZeroCounter.data(), nonce_a.data(), nonce_a.size())));
+  EXPECT_EQ(0, memcmp(kExpectedMcuNonceZeroCounter.data(), nonce_a.data(), nonce_a.size()));
 
   // A different handshake counter (last byte) must give a different nonce.
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> next_counter{};
@@ -370,9 +370,9 @@ void assert_chunked_matches_one_shot(pw::span<const uint8_t> aad,
 
   EXPECT_EQ(static_cast<uint32_t>(plaintext.size() + rpc::RPC_AEAD_TAG_SIZE), static_cast<uint32_t>(collector.size));
   if (!plaintext.empty()) {
-    EXPECT_EQ(0, memcmp(expected_ciphertext.data(), collector.bytes.data(), plaintext.size())));
+    EXPECT_EQ(0, memcmp(expected_ciphertext.data(), collector.bytes.data(), plaintext.size()));
   }
-  EXPECT_EQ(0, memcmp(expected_tag.data(), collector.bytes.data() + plaintext.size(), expected_tag.size())));
+  EXPECT_EQ(0, memcmp(expected_tag.data(), collector.bytes.data() + plaintext.size(), expected_tag.size()));
 }
 
 }  // namespace

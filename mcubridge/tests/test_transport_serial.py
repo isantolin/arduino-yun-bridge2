@@ -1025,48 +1025,31 @@ def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
     ).SerializeToString()
 
 
-async def test_queue_rpc_packet_tracks_request_and_client_error_lifecycle(
+async def test_queue_rpc_packet_forwards_packets_without_manual_rpc_tracking(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, None)
-    runtime_config.serial_shared_secret = b""
-    runtime_state.serial_tx_allowed.set()
-    mock_serial = MagicMock(spec=serial.Serial)
-    mock_serial.is_open = True
-    mock_serial.write = MagicMock(return_value=16)
-    mock_serial.flush = MagicMock()
-    transport.serial = mock_serial
-    request = _make_rpc_packet(PacketType.REQUEST)
-    request_key = (
-        protocol.HDLC_ADDRESS_RPC,
-        pw_packets.decode(request).service_id,
-        pw_packets.decode(request).method_id,
-        pw_packets.decode(request).call_id,
-    )
+    written: list[bytes] = []
 
-    transport.queue_rpc_packet(request)
-    assert request_key in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_rpc_packet_ids"])
+    async def capture(packet: bytes) -> bool:
+        written.append(packet)
+        return True
 
-    client_error = _make_rpc_packet(PacketType.CLIENT_ERROR)
-    transport.queue_rpc_packet(client_error)
-    assert request_key not in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_rpc_packet_ids"])
-
-    # A response packet is written but must not be registered as a new active call.
-    response = _make_rpc_packet(PacketType.RESPONSE)
-    transport.queue_rpc_packet(response)
-    assert request_key not in transport.__dict__["_active_rpc_packet_ids"]
+    transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=capture)
+    packets = [
+        _make_rpc_packet(PacketType.REQUEST),
+        _make_rpc_packet(PacketType.CLIENT_ERROR),
+        _make_rpc_packet(PacketType.RESPONSE),
+    ]
+    for packet in packets:
+        transport.queue_rpc_packet(packet)
 
     for _ in range(100):
-        if mock_serial.write.call_count == 3 and not transport.__dict__["_rpc_write_tasks"]:
+        if len(written) == len(packets) and not transport.__dict__["_rpc_write_tasks"]:
             break
         await asyncio.sleep(0.01)
-    assert mock_serial.write.call_count == 3
 
-
-def test_queue_rpc_packet_ignores_malformed_packet(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, None)
-    transport.queue_rpc_packet(b"\xff")
-    assert transport.__dict__["_active_rpc_packet_ids"] == set()
+    assert written == packets
+    assert "_active_rpc_packet_ids" not in transport.__dict__
 
 
 def test_queue_rpc_packet_rejects_calls_outside_event_loop(
@@ -1074,15 +1057,12 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
     packet = _make_rpc_packet(int(PacketType.REQUEST))
-    decoded = pw_packets.decode(packet)
-    key = (decoded.channel_id, decoded.service_id, decoded.method_id, decoded.call_id)
 
     with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
         transport.queue_rpc_packet(packet)
 
-    assert key in transport.__dict__["_active_rpc_packet_ids"]
+    assert "_active_rpc_packet_ids" not in transport.__dict__
 
-    # Construct outside any running loop, then invoke queue_rpc_packet once an event loop is active.
     adopted_written: list[bytes] = []
 
     async def _capture_adopted(raw: bytes) -> bool:
@@ -1497,6 +1477,34 @@ async def test_pw_transfer_packets_from_mcu_reach_the_pigweed_client(
 
     process_packet.assert_called_once_with(chunk)
     service.handle_mcu_frame.assert_not_awaited()
+
+
+async def test_mcu_rpc_response_routes_to_pigweed_client_without_local_call_table(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    runtime_config.serial_shared_secret = b""
+    service = AsyncMock(spec=BridgeService)
+    transport = SerialTransport(runtime_config, runtime_state, service=service)
+    process_packet = MagicMock()
+    transport.rpc_client = cast(Any, MagicMock(process_packet=process_packet))
+
+    spec = protocol.get_operation("rpc.pb.ClockSyncService/ClockSync")
+    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    packet = RpcPacket(
+        type=PacketType.RESPONSE,
+        channel_id=protocol.HDLC_ADDRESS_RPC,
+        service_id=spec.service_id,
+        method_id=spec.method_id,
+        call_id=37,
+        payload=pb.ClockSyncResponse(host_time_us=123, mcu_time_us=456).SerializeToString(),
+    ).SerializeToString()
+    frame = MagicMock(data=packet, address=protocol.HDLC_ADDRESS_RPC, raw_encoded=packet)
+
+    await transport.process_hdlc_frame(frame)
+
+    process_packet.assert_called_once_with(packet)
+    service.handle_mcu_frame.assert_not_awaited()
+    assert "_active_rpc_packet_ids" not in transport.__dict__
 
 
 async def test_serial_transport_records_retry_failure_and_latency_metrics(

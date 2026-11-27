@@ -75,12 +75,12 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
-        mock_serial.send_raw.return_value = True
+        mock_serial.send_rpc_message.return_value = True
         service = BridgeService(config, state, mock_serial)
 
         # Before sync, MCU frames other than handshake are ignored/denied
         await service.handle_mcu_frame("rpc.pb.SystemService/GetVersion", 1, b"")
-        mock_serial.send_raw.assert_not_called()
+        mock_serial.send_rpc_message.assert_not_called()
     finally:
         if service is not None:
             service.cleanup()
@@ -606,7 +606,7 @@ async def test_runtime_handle_mcu_frame_branches(mock_bridge_service: BridgeServ
     # A bare integer key carries no service/method, so no call can be completed; it is only counted.
     assert svc.state.unknown_command_count == unknown_before + 1
     assert svc.state.unknown_command_last_id == 9999
-    mock_serial.send_status.assert_not_awaited()
+    mock_serial.send_rpc_message.assert_not_awaited()
 
     # Test synchronous (non-awaitable) handler path
     called_sync: list[int] = []
@@ -1014,24 +1014,24 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     assert (await handle_ds_get(1, req)).value == b""
 
     mock_serial = AsyncMock()
-    mock_serial.send_raw = AsyncMock(return_value=True)
+    mock_serial.send_rpc_message = AsyncMock(return_value=True)
     svc.serial = mock_serial
     svc.state.datastore_cache = AsyncMock()
     svc.state.datastore_cache.get = AsyncMock(return_value=b"active")
 
     res = await handle_ds_get(1, req)
     assert res.value == b"active"
-    mock_serial.send_raw.assert_awaited_once()
-    sent_cmd = mock_serial.send_raw.call_args[0][0]
-    sent_resp = mock_serial.send_raw.call_args[0][1]
+    mock_serial.send_rpc_message.assert_awaited_once()
+    sent_cmd = mock_serial.send_rpc_message.call_args[0][0]
+    sent_resp = mock_serial.send_rpc_message.call_args[0][1]
     assert sent_cmd == "rpc.pb.DataStoreService/Get"
     assert sent_resp.value == b"active"
 
-    mock_serial.send_raw.reset_mock()
+    mock_serial.send_rpc_message.reset_mock()
     svc.state.datastore_cache = None
     res_none = await handle_ds_get(2, req)
     assert res_none.value == b""
-    assert mock_serial.send_raw.call_args[0][1].value == b""
+    assert mock_serial.send_rpc_message.call_args[0][1].value == b""
 
 
 async def test_runtime_cloud_session_rpc_commands_and_errors(
@@ -1562,7 +1562,7 @@ async def test_retired_mcu_file_write_reports_unimplemented_on_its_call(
     before = svc.state.unknown_command_count
 
     await svc.handle_mcu_frame((service_id, method_id), 17, b"")
-    mock_serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 17, service_id, method_id)
+    mock_serial.send_rpc_message.assert_awaited_once_with((service_id, method_id), call_id=17, status=Status.UNIMPLEMENTED)
     assert svc.state.unknown_command_count == before + 1
     assert svc.state.unknown_command_last_id == method_id
 
@@ -1574,7 +1574,7 @@ async def test_unknown_mcu_rpc_reports_unimplemented_on_its_call(
     svc.serial = mock_serial
     svc.state.connection_fsm.synchronize()
     await svc.handle_mcu_frame((0x1234, 0x5678), 9, b"")
-    mock_serial.send_status.assert_awaited_once_with(Status.UNIMPLEMENTED, 9, 0x1234, 0x5678)
+    mock_serial.send_rpc_message.assert_awaited_once_with((0x1234, 0x5678), call_id=9, status=Status.UNIMPLEMENTED)
 
 
 @pytest.mark.parametrize(

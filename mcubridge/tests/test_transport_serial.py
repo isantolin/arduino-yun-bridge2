@@ -1042,8 +1042,8 @@ async def test_queue_rpc_packet_tracks_client_routing_direction_only(
     packets = [request, client_error, response]
 
     transport.queue_rpc_packet(request)
-    request_key = getattr(transport, "_rpc_packet_key")(pw_packets.decode(request))
-    assert request_key in getattr(transport, "_active_client_route_keys")
+    request_key = (lambda p: (p.channel_id, p.service_id, p.method_id, p.call_id))(pw_packets.decode(request))
+    assert request_key in transport.__dict__["_active_client_route_keys"]
     transport.queue_rpc_packet(client_error)
     assert request_key not in getattr(transport, "_active_client_route_keys")
     transport.queue_rpc_packet(response)
@@ -1507,7 +1507,7 @@ async def test_mcu_rpc_response_routes_to_pigweed_client_without_local_call_tabl
 
     await transport.process_hdlc_frame(frame)
 
-    packet_key = getattr(transport, "_rpc_packet_key")(pw_packets.decode(packet))
+    packet_key = (lambda p: (p.channel_id, p.service_id, p.method_id, p.call_id))(pw_packets.decode(packet))
     getattr(transport, "_active_client_route_keys").add(packet_key)
 
     await transport.process_hdlc_frame(frame)

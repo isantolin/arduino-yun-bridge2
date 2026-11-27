@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from google.protobuf.message import Message
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
@@ -12,7 +12,7 @@ from mcubridge.protocol.protocol import Status
 
 
 def encode_rpc_packet(
-    target: int | str | tuple[int, int] | Any,
+    target: int | str | tuple[int, int],
     payload: bytes | Message = b"",
     *,
     call_id: int = 1,
@@ -35,7 +35,7 @@ def encode_rpc_packet(
             actual_type = int(PacketType.RESPONSE)
 
     if spec is not None and spec.service_id is not None and spec.method_id is not None:
-        service_id, method_id = spec.service_id, spec.method_id
+        service_id, method_id = cast(int, spec.service_id), cast(int, spec.method_id)
     elif isinstance(target, tuple):
         service_id, method_id = target
     elif isinstance(target, int):
@@ -45,10 +45,10 @@ def encode_rpc_packet(
 
     raw_payload = payload.SerializeToString() if isinstance(payload, Message) else payload
     return RpcPacket(
-        type=actual_type,
+        type=cast(Any, actual_type),
         channel_id=channel_id,
-        service_id=service_id,
-        method_id=method_id,
+        service_id=cast(int, service_id),
+        method_id=cast(int, method_id),
         call_id=call_id,
         status=status.value,
         payload=raw_payload,

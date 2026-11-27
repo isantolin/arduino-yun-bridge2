@@ -49,7 +49,15 @@ class FlowControlStream final : public Stream {
 
 class BridgeCoreFixture : public testing::Test {
  protected:
-  void TearDown() override { Bridge.setStream(Serial); }
+  void SetUp() override {
+    bridge::test::fault::reset();
+    reset_bridge_core(Bridge, Serial);
+  }
+
+  void TearDown() override {
+    // Detach the singleton from any stack-allocated stream used by the test.
+    Bridge.setStream(Serial);
+  }
 };
 
 void reset_bridge(const char* secret = nullptr) {

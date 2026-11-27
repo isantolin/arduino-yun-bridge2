@@ -13,8 +13,10 @@
 
 #include <etl/optional.h>
 #include <pw_stream/memory_stream.h>
-#include <pw_transfer/cooperative_handler_registration.h>
 #include <pw_transfer/handler.h>
+#if !defined(BRIDGE_HOST_TEST)
+#include <pw_transfer/cooperative_handler_registration.h>
+#endif
 
 #include "protocol/rpc_protocol.h"
 
@@ -34,17 +36,43 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
   ~UploadTransferHandler() override {
+#if defined(BRIDGE_HOST_TEST)
+    if (service_ != nullptr) {
+      (void)service_->UnregisterHandler(*this);
+      service_ = nullptr;
+    }
+#else
     registration_.Detach(*this);
+#endif
     g_upload_handler_destroyed = true;
   }
 
   bool attach(pw::transfer::TransferService& service,
               pw::transfer::TransferThread& thread) {
+#if defined(BRIDGE_HOST_TEST)
+    (void)thread;
+    if (service_ == &service) return true;
+    if (service_ != nullptr) {
+      (void)service_->UnregisterHandler(*this);
+      service_ = nullptr;
+    }
+    if (!service.RegisterHandler(*this)) return false;
+    service_ = &service;
+    return true;
+#else
     return registration_.Attach(*this, service, thread);
+#endif
   }
 
   bool detachFrom(const pw::transfer::TransferService& service) {
+#if defined(BRIDGE_HOST_TEST)
+    if (service_ != &service) return false;
+    (void)service_->UnregisterHandler(*this);
+    service_ = nullptr;
+    return true;
+#else
     return registration_.DetachFrom(*this, service);
+#endif
   }
 
   void arm(pw::ConstByteSpan data) { data_ = data; }
@@ -65,7 +93,11 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
  private:
+#if defined(BRIDGE_HOST_TEST)
+  pw::transfer::TransferService* service_ = nullptr;
+#else
   pw::transfer::CooperativeHandlerRegistration registration_;
+#endif
   pw::ConstByteSpan data_;
   etl::optional<pw::stream::MemoryReader> reader_;
 };

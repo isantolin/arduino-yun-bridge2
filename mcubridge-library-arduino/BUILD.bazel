@@ -141,7 +141,9 @@ HOST_TEST_SUITES = [
     for suite in HOST_TEST_SUITES
 ]
 
-cc_test(
+load("@pigweed//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
+
+pw_cc_test(
     name = "test_hal_weak_defaults",
     srcs = ["tests/test_hal_weak_defaults.cpp"],
     copts = HOST_COPTS,
@@ -150,6 +152,6 @@ cc_test(
         ":bridge_core",
         "@pigweed//pw_assert:backend_impl",
         "@pigweed//pw_log:backend_impl",
-        "@unity",
+        "@pigweed//pw_unit_test",
     ],
 )

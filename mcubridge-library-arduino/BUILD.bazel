@@ -142,6 +142,8 @@ HOST_TEST_SUITES = [
             ":host_filesystem_mock",
             "@pigweed//pw_assert:backend_impl",
             "@pigweed//pw_log:backend_impl",
+            "@pigweed//pw_thread:thread",
+            "@pigweed//pw_thread_stl:options",
             "@pigweed//pw_unit_test",
         ],
     )

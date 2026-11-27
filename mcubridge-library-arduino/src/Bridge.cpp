@@ -610,10 +610,12 @@ void BridgeClass::process() {
   const uint32_t start_us = ::micros();
   _watchdogTask();
   _serialTask();
+#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
   const pw::Status transfer_status = _transfer_thread.Poll(2);
   if (!transfer_status.ok() && transfer_status != pw::Status::Unavailable()) {
     emitStatus(transfer_status);
   }
+#endif
   _timerTask();
   _subscriptionTask();
 #if BRIDGE_ENABLE_CONSOLE

@@ -37,10 +37,7 @@ using bridge::test::TestAccessor;
 class BridgeEdgePathsFixture : public testing::Test {
  protected:
   void SetUp() override { bridge::test::fault::reset(); }
-};
-void tearDown() {}
-
-namespace {
+};namespace {
 
 void on_datastore_get(etl::string_view, pw::span<const uint8_t>) {}
 void on_process_run(int32_t) {}

@@ -62,29 +62,31 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
 async def test_serial_transport_acknowledge(tmp_path: Path) -> None:
     transport, state, mock_serial = _make_transport(tmp_path)
 
-    await transport.send_raw(Status.OK.value, b"", 42)
+    spec = protocol.get_operation("rpc.pb.GpioService/DigitalRead")
+    assert spec is not None and spec.service_id is not None and spec.method_id is not None
+    await transport.send_status(Status.OK, 42, spec.service_id, spec.method_id)
     assert mock_serial.write.called
 
     state.cleanup()
 
 
-async def test_serial_transport_send_raw(tmp_path: Path) -> None:
+async def test_serial_transport_send_rpc_message(tmp_path: Path) -> None:
     transport, state, mock_serial = _make_transport(tmp_path)
 
-    # 1. Normal send_raw
-    res = await transport.send_raw("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13), seq_id=10)
+    # 1. Normal send_rpc_message
+    res = await transport.send_rpc_message("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13), call_id=10)
     assert res is True
     assert mock_serial.write.called
 
-    # 2. send_raw with closed serial
+    # 2. send_rpc_message with closed serial
     transport.serial = None
-    res_none = await transport.send_raw("rpc.pb.GpioService/DigitalRead", b"")
+    res_none = await transport.send_rpc_message("rpc.pb.GpioService/DigitalRead", pb.PinRead())
     assert res_none is False
 
-    # 3. send_raw with write exception
+    # 3. send_rpc_message with write exception
     transport.serial = mock_serial
     mock_serial.write.side_effect = SerialException("device disconnected")
-    res_err = await transport.send_raw("rpc.pb.GpioService/DigitalRead", b"")
+    res_err = await transport.send_rpc_message("rpc.pb.GpioService/DigitalRead", pb.PinRead())
     assert res_err is False
 
     state.cleanup()
@@ -99,7 +101,7 @@ async def test_serial_transport_encrypts_outgoing_rpc_and_incoming_console(tmp_p
     state.link_cipher = LinkCipher(host_to_mcu, mcu_to_host)
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
 
-    assert await transport.send_raw("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13), seq_id=7)
+    assert await transport.send_rpc_message("rpc.pb.GpioService/DigitalRead", pb.PinRead(pin=13), call_id=7)
     encoded = mock_serial.write.call_args.args[0]
     outgoing_frame = next(iter(transport.decoder.process(encoded)))
     assert outgoing_frame.address == protocol.HDLC_ADDRESS_RPC

@@ -102,10 +102,10 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
     mock_serial.close.assert_called_once()
 
 
-async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_send_rpc_message_no_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     transport.serial = None
-    ok = await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
+    ok = await transport.send_rpc_message("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest())
     assert ok is False
 
 
@@ -133,8 +133,8 @@ async def test_logging_not_debug_branches(
     transport.serial = mock_serial
 
     mocker.patch("mcubridge.transport.serial.logger.is_enabled_for", return_value=False)
-    # 1. send_raw when logger is not debug
-    ok = await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
+    # 1. send_rpc_message when logger is not debug
+    ok = await transport.send_rpc_message("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest())
     assert ok is True
 
     # 2. feed_data when logger is not debug

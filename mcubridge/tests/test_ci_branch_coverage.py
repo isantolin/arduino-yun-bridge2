@@ -294,8 +294,8 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
 
     # 4. Pre-handshake guards when secret is configured and cipher is None
     assert not await transport.send_console(b"console")
-    assert not await transport.send_raw("rpc.pb.SystemService/GetVersion", b"")
-    assert await transport.send_raw("rpc.pb.SystemService/LinkReset", b"")
+    assert not await transport.send_rpc_message("rpc.pb.SystemService/GetVersion", b"")
+    assert await transport.send_rpc_message("rpc.pb.SystemService/LinkReset", b"")
 
     # 5. Post-handshake (cipher installed): invalid encrypted frame is rejected
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
@@ -305,8 +305,8 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     assert runtime_state.serial_decode_errors == 2
 
     # 6. Post-handshake guards: LinkSync rejected while cipher active; LinkReset sent cleartext
-    assert not await transport.send_raw("rpc.pb.SystemService/LinkSync", b"")
-    assert await transport.send_raw("rpc.pb.SystemService/LinkReset", b"")
+    assert not await transport.send_rpc_message("rpc.pb.SystemService/LinkSync", b"")
+    assert await transport.send_rpc_message("rpc.pb.SystemService/LinkReset", b"")
     assert await transport.send_console(b"encrypted-console")
 
     # 7. Cleartext console write when shared secret is empty

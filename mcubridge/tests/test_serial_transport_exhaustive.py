@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 import pytest
 from pw_hdlc.encode import ui_frame
 from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher
 from mcubridge.state.context import RuntimeState
@@ -226,21 +227,21 @@ async def test_read_loop_valid_frame_dispatch(
     assert transport.consecutive_crc_errors == 0
 
 
-async def test_send_raw_success(
+async def test_send_rpc_message_success(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
     _install_test_cipher(transport)
     mock_serial.is_open = True
 
-    res = await transport.send_raw(command_id=0x01, payload=b"test")
+    res = await transport.send_rpc_message(operation="rpc.pb.SystemService/GetVersion", payload=pb.SubscribeRequest())
     assert res is True
     assert mock_serial.write.call_count == 1
     written_data = mock_serial.write.call_args[0][0]
     assert written_data.endswith(protocol.FRAME_DELIMITER)
 
 
-async def test_send_raw_write_error(
+async def test_send_rpc_message_write_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
@@ -248,5 +249,5 @@ async def test_send_raw_write_error(
     mock_serial.is_open = True
     mock_serial.write.side_effect = OSError("Write failed")
 
-    res = await transport.send_raw(command_id=0x01, payload=b"test")
+    res = await transport.send_rpc_message(operation="rpc.pb.SystemService/GetVersion", payload=pb.SubscribeRequest())
     assert res is False

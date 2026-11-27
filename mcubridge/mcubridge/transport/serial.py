@@ -899,71 +899,81 @@ class SerialTransport:
         )
         return await self._rpc_packet_writer(packet)
 
-    async def send_raw(
+    async def send_rpc_message(
         self,
-        command_id: int | str | protocol.OperationSpec | tuple[int, int],
+        operation: str | protocol.OperationSpec | tuple[int, int],
         payload: bytes | ProtobufMessage,
-        seq_id: int | None = None,
+        call_id: int | None = None,
     ) -> bool:
-        """Send a request or an explicitly correlated MCU RPC response.
+        """Encode a descriptor-typed Pigweed request or response and send it over HDLC.
 
-        ``seq_id`` is the incoming Pigweed ``call_id`` for server responses.
-        Responses with a distinct Protobuf response type must provide it; the
-        transport never guesses a call ID from only service/method IDs.
+        Raw non-empty payloads and unknown service/method IDs are deliberately
+        rejected. Empty bytes are accepted only as shorthand for an empty
+        Protobuf request; responses must be typed and explicitly correlated.
         """
         if not self.serial:
             return False
 
-        spec = get_operation(command_id)
-        if seq_id is None:
-            if (
-                spec is not None
-                and spec.response_type is not None
-                and spec.response_type is not spec.request_type
-                and isinstance(payload, spec.response_type)
-            ):
-                logger.error(
-                    "Refusing to infer an MCU RPC call_id from service/method; pass the incoming call_id explicitly",
-                    operation=spec.name,
-                )
-                return False
-            self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
-            seq_id = self.tx_sequence_id
+        spec = get_operation(operation)
+        if spec is None or spec.service_id is None or spec.method_id is None:
+            logger.error("Refusing RPC transmission without a registered Pigweed method", operation=str(operation))
+            return False
 
-        label = spec.name if spec is not None else str(command_id)
+        if isinstance(payload, ProtobufMessage):
+            message = payload
+        elif isinstance(payload, bytes) and not payload and spec.request_type is not None:
+            message = spec.request_type()
+        else:
+            logger.error(
+                "Refusing untyped RPC payload; use a generated Protobuf message",
+                operation=spec.name,
+                payload_bytes=len(payload) if isinstance(payload, bytes) else None,
+            )
+            return False
+
+        is_request = spec.request_type is not None and isinstance(message, spec.request_type)
+        is_response = (
+            spec.response_type is not None
+            and spec.response_type is not spec.request_type
+            and isinstance(message, spec.response_type)
+        )
+        if not (is_request or is_response):
+            logger.error(
+                "RPC message type does not match the Pigweed method descriptor",
+                operation=spec.name,
+                message_type=type(message).__name__,
+            )
+            return False
+
+        if is_response and call_id is None:
+            logger.error(
+                "Refusing to infer an MCU RPC call_id from service/method; pass the incoming call_id explicitly",
+                operation=spec.name,
+            )
+            return False
+
+        if call_id is None:
+            self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
+            call_id = self.tx_sequence_id
+
+        rpc_ids = RpcIds(protocol.HDLC_ADDRESS_RPC, spec.service_id, spec.method_id, call_id)
+        if is_response and spec.is_server_streaming:
+            packet = pw_packets.encode_server_stream(rpc_ids, message)
+        elif is_response:
+            packet = pw_packets.encode_response(rpc_ids, message)
+        else:
+            packet = pw_packets.encode_request(rpc_ids, message)
+
         is_link_reset = spec is _LINK_RESET_SPEC
         is_link_sync = spec is _LINK_SYNC_SPEC
         if self.config.serial_shared_secret and self.state.link_cipher is not None and is_link_sync:
             return False
 
-        target = spec if spec is not None else command_id
-        rpc_ids = (
-            RpcIds(protocol.HDLC_ADDRESS_RPC, spec.service_id, spec.method_id, seq_id)
-            if spec is not None and spec.service_id is not None and spec.method_id is not None
-            else None
-        )
-        if rpc_ids is not None and spec is not None and isinstance(payload, ProtobufMessage):
-            is_typed_response = (
-                spec.response_type is not None
-                and spec.response_type is not spec.request_type
-                and isinstance(payload, spec.response_type)
-            )
-            is_typed_request = spec.request_type is not None and isinstance(payload, spec.request_type)
-            if is_typed_response and spec.is_server_streaming:
-                packet = pw_packets.encode_server_stream(rpc_ids, payload)
-            elif is_typed_response:
-                packet = pw_packets.encode_response(rpc_ids, payload)
-            elif is_typed_request:
-                packet = pw_packets.encode_request(rpc_ids, payload)
-            else:
-                packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
-        else:
-            packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
         return await self._write_hdlc_frame(
             protocol.HDLC_ADDRESS_RPC,
             packet,
             encrypt=not (is_link_reset or is_link_sync),
-            label=label,
+            label=spec.name,
         )
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:

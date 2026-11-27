@@ -10,6 +10,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pw_hdlc.encode import ui_frame
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher
 from mcubridge.services.runtime import BridgeService
@@ -98,7 +99,7 @@ async def test_tx_sequence_wrapping_isomorphism(init_seq: int) -> None:
         bytes(range(16, 32)),
     )
     transport.tx_sequence_id = init_seq
-    result = await transport.send_raw(0x01, b"")
+    result = await transport.send_rpc_message("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest())
     assert result is True
     expected_seq = (init_seq + 1) & protocol.UINT16_MAX
     assert transport.tx_sequence_id == expected_seq

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -96,19 +97,25 @@ def test_check_latest_versions_detects_enabled_cpp_dependency_updates(
         "wolfSSL/Arduino-wolfSSL": "5.8.5",
         "cmaglie/FlashStorage": "1.0.1",
     }
-    checked_repositories: list[str] = []
+    requested_urls: list[str] = []
 
-    def fake_latest_version(repository: str) -> str | None:
-        checked_repositories.append(repository)
-        return latest_versions.get(repository)
+    def fake_fetch_url(
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        attempts: int = 3,
+    ) -> httpx.Response:
+        requested_urls.append(url)
+        repository = url.removeprefix("https://api.github.com/repos/").removesuffix("/releases/latest")
+        return httpx.Response(200, json={"tag_name": latest_versions[repository]})
 
-    monkeypatch.setattr(sync_runtime_deps, "_fetch_github_latest_version", fake_latest_version)
+    monkeypatch.setattr(sync_runtime_deps, "fetch_url_with_retry", fake_fetch_url)
 
     outdated = sync_runtime_deps.check_latest_versions([], [wolfssl, flashstorage])
 
-    assert checked_repositories == [
-        "wolfSSL/Arduino-wolfSSL",
-        "cmaglie/FlashStorage",
+    assert requested_urls == [
+        "https://api.github.com/repos/wolfSSL/Arduino-wolfSSL/releases/latest",
+        "https://api.github.com/repos/cmaglie/FlashStorage/releases/latest",
     ]
     assert outdated == [
         ("wolfssl", "5.8.4", "5.8.5"),
@@ -122,10 +129,15 @@ def test_check_latest_versions_skips_disabled_cpp_dependency(
     manifest = sync_runtime_deps.load_manifest()
     nanopb_core = next(dep for dep in manifest.cpp if dep["name"] == "nanopb_core")
 
-    def unexpected_latest_version_lookup(repository: str) -> str | None:
-        pytest.fail(f"unexpected latest-version lookup for disabled dependency: {repository}")
+    def unexpected_fetch_url(
+        url: str,
+        headers: dict[str, str] | None = None,
+        timeout: float = 10.0,
+        attempts: int = 3,
+    ) -> httpx.Response:
+        pytest.fail(f"unexpected latest-version HTTP request for disabled dependency: {url}")
 
-    monkeypatch.setattr(sync_runtime_deps, "_fetch_github_latest_version", unexpected_latest_version_lookup)
+    monkeypatch.setattr(sync_runtime_deps, "fetch_url_with_retry", unexpected_fetch_url)
 
     assert nanopb_core["check_latest"] is False
     assert not sync_runtime_deps.check_latest_versions([], [nanopb_core])

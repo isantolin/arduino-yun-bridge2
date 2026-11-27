@@ -3,6 +3,9 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <pw_bytes/endian.h>
+#if defined(BRIDGE_HOST_TEST)
+#include <stdlib.h>
+#endif
 #if defined(ARDUINO_ARCH_AVR)
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
@@ -468,8 +471,10 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
   }
 
   if constexpr (Traits::id == ArchId::ARCH_HOST) {
-    // [SIL-2] On host/test environment, exit instead of hanging CI.
-    exit(0);
+    // [SIL-2] On host/test environment, terminate without running global
+    // destructors: the timer test may be executing in a forked child where
+    // the parent process transfer worker no longer exists.
+    ::_Exit(0);
   }
 
   Traits::reset();

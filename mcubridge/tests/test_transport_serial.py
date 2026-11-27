@@ -1770,24 +1770,28 @@ async def test_stop_cancels_active_stream_calls_before_closing_serial(
     runtime_state: RuntimeState,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from mcubridge.transport import serial as serial_module
-
     transport = SerialTransport(runtime_config, runtime_state, None)
     call = MagicMock()
-    transport._active_stream_calls.add(call)
-    transport.serial = MagicMock(spec=serial.Serial)
-    close_serial = AsyncMock()
-    cancelled: list[Any] = []
+    rpc_method = MagicMock()
+    rpc_method.invoke.return_value = call
+    invoke_stream = cast(
+        Callable[[Any, Any, str], Coroutine[Any, Any, bool]],
+        _private_attribute(transport, "_invoke_server_stream_rpc"),
+    )
 
-    def cancel_rpc(active_call: Any, _message: str) -> bool:
-        cancelled.append(active_call)
-        return True
+    # Register the stream through the transport's RPC invocation path rather
+    # than mutating its private lifecycle registry from the test.
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=1), "SubscribePins")
 
-    monkeypatch.setattr(serial_module, "cancel_rpc_call", cancel_rpc)
-    monkeypatch.setattr(transport, "_close_serial_handle", close_serial)
+    serial_port = MagicMock(spec=serial.Serial)
+    transport.serial = serial_port
+
+    async def run_in_thread(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_in_thread)
 
     await transport.stop()
 
-    assert cancelled == [call]
-    assert not transport._active_stream_calls
-    close_serial.assert_awaited_once_with(transport.serial, "stop")
+    call.cancel.assert_called_once()
+    serial_port.close.assert_called_once()

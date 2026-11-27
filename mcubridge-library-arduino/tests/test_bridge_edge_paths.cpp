@@ -1026,9 +1026,9 @@ TEST_F(BridgeEdgePathsFixture, EncryptedFrameStreamingMatchesOneShotAead) {
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> expected_tag = {};
   EXPECT_TRUE(rpc::security::aead_encrypt(
       ba.txAeadKey(), nonce, aad, payload, expected_ciphertext, expected_tag));
-  EXPECT_EQ(0, memcmp(aad.data() + 1U, envelope.data(), rpc::RPC_AEAD_COUNTER_SIZE));;
-  EXPECT_EQ(0, memcmp(expected_ciphertext.data(), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE, expected_ciphertext.size()));;
-  EXPECT_EQ(0, memcmp(expected_tag.data(), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size(), expected_tag.size()));;
+  EXPECT_EQ(0, memcmp(aad.data() + 1U, envelope.data(), rpc::RPC_AEAD_COUNTER_SIZE));
+  EXPECT_EQ(0, memcmp(expected_ciphertext.data(), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE, expected_ciphertext.size()));
+  EXPECT_EQ(0, memcmp(expected_tag.data(), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size(), expected_tag.size()));
 }
 
 // Regression (ADR-0005): a recorded LinkSync replayed after a forced

@@ -346,7 +346,7 @@ struct ChunkCollector {
   }
 };
 
-void assert_chunked_matches_one_shot(pw::span<const uint8_t> aad,
+bool assert_chunked_matches_one_shot(pw::span<const uint8_t> aad,
                                      pw::span<const uint8_t> plaintext) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> key{};
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce{};
@@ -373,6 +373,9 @@ void assert_chunked_matches_one_shot(pw::span<const uint8_t> aad,
     EXPECT_EQ(0, memcmp(expected_ciphertext.data(), collector.bytes.data(), plaintext.size()));
   }
   EXPECT_EQ(0, memcmp(expected_tag.data(), collector.bytes.data() + plaintext.size(), expected_tag.size()));
+  return collector.size == plaintext.size() + rpc::RPC_AEAD_TAG_SIZE &&
+         memcmp(expected_ciphertext.data(), collector.bytes.data(), plaintext.size()) == 0 &&
+         memcmp(expected_tag.data(), collector.bytes.data() + plaintext.size(), expected_tag.size()) == 0;
 }
 
 }  // namespace
@@ -385,9 +388,9 @@ TEST(ArduinoCryptoHarden, AeadEncryptChunkedMatchesOneShot) {
   etl::array<uint8_t, 9> aad{};
   aad.fill(0xA5U);
 
-  assert_chunked_matches_one_shot(aad, plaintext);
-  assert_chunked_matches_one_shot(pw::span<const uint8_t>(), plaintext);
-  assert_chunked_matches_one_shot(aad, pw::span<const uint8_t>());
+  EXPECT_TRUE(assert_chunked_matches_one_shot(aad, plaintext));
+  EXPECT_TRUE(assert_chunked_matches_one_shot(pw::span<const uint8_t>(), plaintext));
+  EXPECT_TRUE(assert_chunked_matches_one_shot(aad, pw::span<const uint8_t>()));
 }
 
 TEST(ArduinoCryptoHarden, AeadEncryptChunkedRejectsAndAborts) {

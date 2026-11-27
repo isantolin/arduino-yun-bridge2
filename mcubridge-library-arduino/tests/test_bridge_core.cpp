@@ -50,8 +50,10 @@ class FlowControlStream final : public Stream {
 class BridgeCoreFixture : public testing::Test {
  protected:
   void SetUp() override {
+    // Reset only the fault/clock controls here. Each test that exercises Bridge
+    // explicitly reconstructs it with reset_bridge(), avoiding an implicit
+    // extra begin()/transfer-handler registration before the test body.
     bridge::test::fault::reset();
-    reset_bridge_core(Bridge, Serial);
   }
 
   void TearDown() override {
@@ -221,6 +223,7 @@ TEST_F(BridgeCoreFixture, BridgeAwaitSynchronizationBounded) {
 }
 
 TEST_F(BridgeCoreFixture, BridgeWcetTracking) {
+  reset_bridge();
   Bridge.resetWcetStats();
   EXPECT_EQ(0, Bridge.getWcetMaxMicros());
   Bridge.process();

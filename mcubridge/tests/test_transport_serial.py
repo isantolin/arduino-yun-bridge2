@@ -17,6 +17,7 @@ from pw_rpc.descriptors import Channel as PwRpcChannel
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Status
 from mcubridge.security.security import LinkCipher, derive_link_keys
@@ -726,7 +727,7 @@ def _rpc_frame(
     assert spec is not None
     assert spec.service_id is not None
     assert spec.method_id is not None
-    packet = protocol.encode_rpc_packet(
+    packet = encode_rpc_packet(
         (spec.service_id, spec.method_id),
         payload,
         call_id=call_id,
@@ -1408,7 +1409,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     assert ds_get_spec.method_id is not None
     mcu_req_frame = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet(
+        encode_rpc_packet(
             (ds_get_spec.service_id, ds_get_spec.method_id),
             pb.DatastoreGet(key="k"),
             call_id=77,

@@ -15,6 +15,7 @@ from serial import SerialException
 from google.protobuf.message import Message as ProtobufMessage
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.state.context import RuntimeState, create_runtime_state
@@ -141,7 +142,7 @@ async def test_logging_not_debug_branches(
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
     cleartext = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet("rpc.pb.SystemService/GetVersion", payload, call_id=1),
+        encode_rpc_packet("rpc.pb.SystemService/GetVersion", payload, call_id=1),
     )
     frame = next(iter(FrameDecoder().process(cleartext)))
     encoded = ui_frame(
@@ -170,7 +171,7 @@ async def test_feed_data_uninitialized_protobuf(
 
     encoded = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet((0x1000, 0x2000), b"dummy_payload", call_id=1, channel_id=1),
+        encode_rpc_packet((0x1000, 0x2000), b"dummy_payload", call_id=1, channel_id=1),
     )
     initial_errors = mock_state.serial_decode_errors
     await transport.feed_data(encoded)

@@ -167,13 +167,14 @@ def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
     from pw_hdlc.decode import FrameDecoder
     from pw_hdlc.encode import ui_frame
     from pw_rpc.internal.packet_pb2 import RpcPacket
-    from mcubridge.protocol import protocol
+    from tests.rpc_packet_utils import encode_rpc_packet
+from mcubridge.protocol import protocol
 
     # 1. RPC HDLC encoding & decoding
     pin_msg = mcu_wire_pb2.PinRead(pin=13)
     encoded_rpc = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet("rpc.pb.GpioService/DigitalRead", pin_msg, call_id=42),
+        encode_rpc_packet("rpc.pb.GpioService/DigitalRead", pin_msg, call_id=42),
     )
     assert encoded_rpc.startswith(b"\x7e")
     assert encoded_rpc.endswith(b"\x7e")

@@ -21,6 +21,7 @@ from pw_rpc import packets as pw_packets
 from pw_rpc.internal.packet_pb2 import PacketType
 from serial import SerialException
 from mcubridge.config.settings import RuntimeConfig
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Status
 from mcubridge.security.security import LinkCipher, derive_link_keys
@@ -171,7 +172,7 @@ async def test_serial_transport_feed_data_hdlc_rpc(tmp_path: Path) -> None:
     # Valid HDLC RPC frame
     host_to_mcu, mcu_to_host = derive_link_keys(_TEST_SECRET, _TEST_NONCE, bytes(range(16, 32)))
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
-    packet = protocol.encode_rpc_packet(
+    packet = encode_rpc_packet(
         "rpc.pb.GpioService/DigitalRead",
         pb.PinRead(pin=13),
         call_id=5,

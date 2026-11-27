@@ -18,6 +18,7 @@ from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.services.runtime import BridgeService
@@ -122,7 +123,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                         )
                         resp_frame = ui_frame(
                             protocol.HDLC_ADDRESS_RPC,
-                            protocol.encode_rpc_packet(
+                            encode_rpc_packet(
                                 "rpc.pb.SystemService/LinkSync",
                                 resp_pb,
                                 call_id=rx_seq,
@@ -243,7 +244,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                         resp_pb = pb.LinkSync(nonce=sync_req.nonce, tag=tag, mcu_nonce=_MCU_NONCE)
                         resp_frame = ui_frame(
                             protocol.HDLC_ADDRESS_RPC,
-                            protocol.encode_rpc_packet(
+                            encode_rpc_packet(
                                 "rpc.pb.SystemService/LinkSync",
                                 resp_pb,
                                 call_id=rx_seq,

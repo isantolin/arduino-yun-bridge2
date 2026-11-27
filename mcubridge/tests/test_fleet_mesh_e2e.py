@@ -23,6 +23,7 @@ from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -106,7 +107,7 @@ def test_firmware_uart_probe_requires_matching_authenticated_sync(monkeypatch: p
             self.incoming.extend(
                 ui_frame(
                     protocol.HDLC_ADDRESS_RPC,
-                    fleet_mesh.protocol.encode_rpc_packet(
+                    encode_rpc_packet(
                         "rpc.pb.SystemService/LinkSync",
                         mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
                         call_id=call_id,
@@ -177,7 +178,7 @@ def test_firmware_uart_probe_never_overlaps_delayed_sync_requests(monkeypatch: p
                 self.incoming.extend(
                     ui_frame(
                         protocol.HDLC_ADDRESS_RPC,
-                        fleet_mesh.protocol.encode_rpc_packet(
+                        encode_rpc_packet(
                             "rpc.pb.SystemService/LinkSync",
                             mcu_wire_pb2.LinkSync(nonce=nonce, tag=tag, mcu_nonce=_MCU_NONCE),
                             call_id=call_id,

@@ -23,6 +23,8 @@ from pw_tokenizer.encode import encode_token_and_args
 from pw_tokenizer.tokens import Database as TokenDatabase, TokenizedStringEntry, pw_tokenizer_65599_hash, write_binary
 import pytest
 
+from tests.rpc_packet_utils import encode_rpc_packet
+
 from mcubridge.protocol import config_schema_pb2 as config_pb, mcu_wire_pb2 as pb, protocol
 from mcubridge.security.security import LinkCipher, derive_link_keys
 from mcubridge.services.handshake import SerialHandshakeManager
@@ -459,7 +461,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
                 mcu_nonce=mcu_nonce,
                 tag=SerialHandshakeManager.calculate_handshake_response_tag(secret, request.nonce, mcu_nonce),
             )
-            response_packet = protocol.encode_rpc_packet(
+            response_packet = encode_rpc_packet(
                 "rpc.pb.SystemService/LinkSync",
                 response,
                 call_id=packet.call_id,
@@ -495,7 +497,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
     mcu_cipher = LinkCipher(mcu_to_host, host_to_mcu)
 
     secure_writer = pw_bridge_console.SecureHdlcWriter(transport, cipher)
-    request_packet = protocol.encode_rpc_packet(
+    request_packet = encode_rpc_packet(
         "rpc.pb.SystemService/GetVersion",
         b"",
         call_id=17,
@@ -504,7 +506,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
     encrypted_request = next(frame.data for frame in FrameDecoder().process(wire_writes[-1]) if frame.ok())
     assert mcu_cipher.decrypt(protocol.HDLC_ADDRESS_RPC, encrypted_request) == request_packet
 
-    response_packet = protocol.encode_rpc_packet(
+    response_packet = encode_rpc_packet(
         "rpc.pb.SystemService/GetVersion",
         b"",
         call_id=17,
@@ -519,7 +521,7 @@ def test_authenticated_console_handshake_and_bidirectional_frame_protection() ->
     secure_reader = pw_bridge_console.SecureHdlcReader(raw_reader, cipher)
     assert secure_reader.read() == ui_frame(protocol.HDLC_ADDRESS_RPC, response_packet)
 
-    reset_request = protocol.encode_rpc_packet(
+    reset_request = encode_rpc_packet(
         "rpc.pb.SystemService/LinkReset",
         b"",
         call_id=18,

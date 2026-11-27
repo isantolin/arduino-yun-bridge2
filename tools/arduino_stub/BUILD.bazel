@@ -12,5 +12,9 @@ cc_library(
         "ARDUINO_STUB_CUSTOM_MILLIS=1",
     ],
     includes = ["include"],
+    deps = [
+        "@etl",
+        "@pigweed//pw_chrono:system_clock",
+    ],
     visibility = ["//visibility:public"],
 )

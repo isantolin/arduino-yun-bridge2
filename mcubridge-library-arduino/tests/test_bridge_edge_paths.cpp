@@ -10,7 +10,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
+#include <algorithm>
 
 namespace etl {
 void handle_error(const etl::exception& e);
@@ -33,7 +34,10 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 using bridge::test::TestAccessor;
 
-void setUp() { bridge::test::fault::reset(); }
+class BridgeEdgePathsFixture : public testing::Test {
+ protected:
+  void SetUp() override { bridge::test::fault::reset(); }
+};
 void tearDown() {}
 
 namespace {
@@ -63,7 +67,7 @@ inline void invoke_response(TestAccessor& ba, uint32_t service_id,
   invoke_rpc_response(ba, service_id, method_id, fields, msg, call_id);
 }
 
-void test_dispatch_valid_payload_handlers_unique_seq() {
+TEST_F(BridgeEdgePathsFixture, DispatchValidPayloadHandlersUniqueSeq) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -179,10 +183,10 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                   rpc_pb_ProcessPollResponse_fields, pp_resp);
 
   Bridge.process();
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_dispatch_malformed_payload_paths() {
+TEST_F(BridgeEdgePathsFixture, DispatchMalformedPayloadPaths) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -251,10 +255,10 @@ void test_dispatch_malformed_payload_paths() {
   ba.invokeRpcResponse(bad_pkt);
 
   Bridge.process();
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_packet_received_security_paths() {
+TEST_F(BridgeEdgePathsFixture, PacketReceivedSecurityPaths) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -268,9 +272,9 @@ void test_packet_received_security_paths() {
   dw.value = 1;
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
                        rpc_pb_DigitalWrite_fields, dw);
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
-  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+  EXPECT_TRUE(Bridge.isSynchronized());
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[13U].value);
 
   // 2. Corrupt FCS frame is dropped by decoder
   etl::array<uint8_t, 128> corrupt_frame;
@@ -278,12 +282,12 @@ void test_packet_received_security_paths() {
       build_hdlc_rpc_frame(1, pw::rpc::internal::pwpb::PacketType::REQUEST,
                            kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
                            pw::span<const uint8_t>(), corrupt_frame);
-  TEST_ASSERT_GREATER_THAN(2, len);
+  EXPECT_GT(len, 2);
   if (len >= 2) {
     corrupt_frame[len - 2] ^= 0xFF;  // Corrupt CRC
   }
   ba.feedHdlcBytes(pw::span<const uint8_t>(corrupt_frame.data(), len));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 
   // 3. Truncated RPC packet inside HDLC frame (< 4 bytes)
   const uint8_t short_bytes[] = {0x01, 0x02};
@@ -291,7 +295,7 @@ void test_packet_received_security_paths() {
   size_t short_len = TestHdlc::encodeUIFrame(
       1, pw::span<const uint8_t>(short_bytes, sizeof(short_bytes)), hdlc_short);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_short.data(), short_len));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 
   // 4. Unknown HDLC address (e.g. 0x99) dropped safely
   etl::array<uint8_t, 64> hdlc_unknown_addr;
@@ -299,7 +303,7 @@ void test_packet_received_security_paths() {
       0x99, pw::span<const uint8_t>(short_bytes, sizeof(short_bytes)),
       hdlc_unknown_addr);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_unknown_addr.data(), unk_len));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 
   // 5. Unsynchronized access with shared secret set rejects non-LinkSync RPC
   resetArduinoStubPinStates();
@@ -312,11 +316,11 @@ void test_packet_received_security_paths() {
   feed_rpc_request_msg(secret_bridge, kGpioSvc,
                        pw::tokenizer::Hash("DigitalWrite"),
                        rpc_pb_DigitalWrite_fields, dw);
-  TEST_ASSERT_FALSE(secret_bridge.isSynchronized());
-  TEST_ASSERT_NOT_EQUAL(HIGH, g_arduino_stub_pin_states[14U].value);
+  EXPECT_FALSE(secret_bridge.isSynchronized());
+  EXPECT_NE(HIGH, g_arduino_stub_pin_states[14U].value);
 }
 
-void test_console_and_policy_edges() {
+TEST_F(BridgeEdgePathsFixture, ConsoleAndPolicyEdges) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -324,14 +328,14 @@ void test_console_and_policy_edges() {
   Console.begin();
 
   Bridge.enterSafeState();
-  TEST_ASSERT_EQUAL(-1, Console.peek());
-  TEST_ASSERT_EQUAL(-1, Console.read());
+  EXPECT_EQ(-1, Console.peek());
+  EXPECT_EQ(-1, Console.read());
 
   etl::array<char, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill_chars{};
   etl::fill(fill_chars.begin(), fill_chars.end(), 'x');
   etl::for_each(fill_chars.begin(), fill_chars.end(),
                 [](char c) { Console.write(c); });
-  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));
+  EXPECT_EQ(0, static_cast<uint32_t>(Console.write('z')));
 
   // Feed console raw bytes on HDLC Address 0x03
   reset_bridge_core(Bridge, stream);
@@ -345,24 +349,24 @@ void test_console_and_policy_edges() {
       3, pw::span<const uint8_t>(console_in, sizeof(console_in)), hdlc_console);
   ba2.feedHdlcBytes(pw::span<const uint8_t>(hdlc_console.data(), len));
 
-  TEST_ASSERT_EQUAL(0x41, Console.peek());
-  TEST_ASSERT_EQUAL(0x41, Console.read());
-  TEST_ASSERT_EQUAL(0x42, Console.read());
-  TEST_ASSERT_EQUAL(-1, Console.read());
+  EXPECT_EQ(0x41, Console.peek());
+  EXPECT_EQ(0x41, Console.read());
+  EXPECT_EQ(0x42, Console.read());
+  EXPECT_EQ(-1, Console.read());
 
   // Send console/log stream with null stream returns false
   ba2.setNullStream();
-  TEST_ASSERT_FALSE(Bridge.sendConsoleStream(
+  EXPECT_FALSE(Bridge.sendConsoleStream(
       pw::span<const uint8_t>(console_in, sizeof(console_in))));
-  TEST_ASSERT_FALSE(Bridge.sendLogStream(
+  EXPECT_FALSE(Bridge.sendLogStream(
       pw::span<const uint8_t>(console_in, sizeof(console_in))));
 
   Bridge.enterSafeState();
-  TEST_ASSERT_FALSE(Bridge.sendLogStream(
+  EXPECT_FALSE(Bridge.sendLogStream(
       pw::span<const uint8_t>(console_in, sizeof(console_in))));
 }
 
-void test_observer_and_task_runtime_edges() {
+TEST_F(BridgeEdgePathsFixture, ObserverAndTaskRuntimeEdges) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -384,25 +388,25 @@ void test_observer_and_task_runtime_edges() {
   auto& ba_flow = TestAccessor::create(Bridge);
   flow.avail = bridge::config::FLOW_CONTROL_XOFF_THRESHOLD + 1;
   ba_flow.invokeSerialTask();
-  TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
+  EXPECT_TRUE(ba_flow.isSerialXoffSent());
 
   // Keep XOFF latched while the receive queue remains above the XON threshold.
   // This exercises the short-circuit false branch of the XON recovery check.
   ba_flow.invokeSerialTask();
-  TEST_ASSERT_TRUE(ba_flow.isSerialXoffSent());
+  EXPECT_TRUE(ba_flow.isSerialXoffSent());
 
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
-  TEST_ASSERT_FALSE(ba_flow.isSerialXoffSent());
+  EXPECT_FALSE(ba_flow.isSerialXoffSent());
   ba_flow.setSynchronized();
   ba_flow.invokeSendFlowControl(true);
   ba_flow.invokeSendFlowControl(false);
   ba_flow.setTxEnabled(false);
   ba_flow.invokeSendFlowControl(true);
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_timer_link_and_bootloader_edges() {
+TEST_F(BridgeEdgePathsFixture, TimerLinkAndBootloaderEdges) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0, nullptr);
   auto& ba = TestAccessor::create(Bridge);
@@ -420,7 +424,7 @@ void test_timer_link_and_bootloader_edges() {
 
   // LinkReset
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.isSynchronized());
 
   // SetBaudrate
   rpc_pb_SetBaudratePacket baud_msg = rpc_pb_SetBaudratePacket_init_default;
@@ -435,7 +439,7 @@ void test_timer_link_and_bootloader_edges() {
                        rpc_pb_EnterBootloader_fields, boot_msg);
 }
 
-void test_service_capacity_and_send_fail_edges() {
+TEST_F(BridgeEdgePathsFixture, ServiceCapacityAndSendFailEdges) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -457,10 +461,10 @@ void test_service_capacity_and_send_fail_edges() {
       etl::delegate<void(etl::string_view,
                          pw::span<const uint8_t>)>::create<on_datastore_get>());
   Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.isSynchronized());
 }
 
-void test_filesystem_spi_fsm_edges() {
+TEST_F(BridgeEdgePathsFixture, FilesystemSpiFsmEdges) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -486,10 +490,10 @@ void test_filesystem_spi_fsm_edges() {
   bridge::fsm::BridgeFsm fsm;
   fsm.start();
   fsm.receive(bridge::fsm::EvReset());
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_link_sync_authentication_paths() {
+TEST_F(BridgeEdgePathsFixture, LinkSyncAuthenticationPaths) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
@@ -504,21 +508,21 @@ void test_link_sync_authentication_paths() {
   sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 
   // An empty tag is never accepted when a shared secret is configured.
   ba.clearSynchronized();
   sync.tag.size = 0;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 
   // A non-empty tag is never accepted when no shared secret is configured.
   reset_bridge_core(Bridge, stream, 0U, "");
   sync.tag.size = 1;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
 
@@ -527,20 +531,20 @@ void test_link_sync_authentication_paths() {
   sync.tag.size = 0;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 
   // A short nonce is rejected even when authentication is disabled.
   ba.clearSynchronized();
   sync.nonce.size = rpc::RPC_HANDSHAKE_NONCE_LENGTH - 1U;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 
   // The firmware self-tests cover SHA-256, HMAC-SHA256, and ChaCha20-Poly1305.
-  TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
+  EXPECT_TRUE(rpc::security::run_cryptographic_self_tests());
 }
 
-void test_fault_injection_harness_paths() {
+TEST_F(BridgeEdgePathsFixture, FaultInjectionHarnessPaths) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -550,11 +554,11 @@ void test_fault_injection_harness_paths() {
   SPIService.begin();
   etl::array<uint8_t, 2> spi_buf = {0x10, 0x20};
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
-  TEST_ASSERT_TRUE(SPIService.transfer(pw::span<uint8_t>(spi_buf)) ==
+  EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(spi_buf)) ==
                    pw::Status::DeadlineExceeded());
   SPIService.end();
 
-  TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
+  EXPECT_TRUE(rpc::security::run_cryptographic_self_tests());
 
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
@@ -586,11 +590,11 @@ void test_fault_injection_harness_paths() {
   ba_flow.invokeSerialTask();
 }
 
-void test_architectural_extensions_edge_paths() {
+TEST_F(BridgeEdgePathsFixture, ArchitecturalExtensionsEdgePaths) {
   rpc_pb_Capabilities caps = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(caps);
-  TEST_ASSERT_EQUAL_UINT32(rpc::PROTOCOL_VERSION, caps.ver);
-  TEST_ASSERT_TRUE(caps.board_name[0] != '\0');
+  EXPECT_EQ(rpc::PROTOCOL_VERSION, caps.ver);
+  EXPECT_TRUE(caps.board_name[0] != '\0');
 
   // Exercise applySafetyPin all states and default
   bridge::hal::applySafetyPin(10, bridge::hal::SafetyPinState::SAFE_PIN_LOW);
@@ -620,23 +624,23 @@ void test_architectural_extensions_edge_paths() {
 
   // Watchdog timeout branches
   Bridge.setWatchdogTimeout(100);
-  TEST_ASSERT_EQUAL_UINT32(100, Bridge.getWatchdogTimeout());
+  EXPECT_EQ(100, Bridge.getWatchdogTimeout());
   ba.setLastRxMs(bridge::test::fault::clock_ms());
   ba.invokeWatchdog();  // (clock_ms() - last_rx_ms) <= 100 -> does NOT expire
   bridge::test::fault::advance_clock_ms(200);
   ba.invokeWatchdog();  // (clock_ms() - last_rx_ms) > 100 -> EXPIRES
   Bridge.setWatchdogTimeout(0);
-  TEST_ASSERT_EQUAL_UINT32(0, Bridge.getWatchdogTimeout());
+  EXPECT_EQ(0, Bridge.getWatchdogTimeout());
 
   ba.clearSynchronized();
   Bridge.setWatchdogTimeout(100);
   ba.invokeWatchdog();
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.isSynchronized());
 
   Bridge.setWatchdogTimeout(0);
   ba.setSynchronized();
   ba.invokeWatchdog();
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 
   constexpr uint32_t kClkSvc = pw::tokenizer::Hash("rpc.pb.ClockSyncService");
   constexpr uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
@@ -739,7 +743,7 @@ void test_architectural_extensions_edge_paths() {
   reset_bridge_core(Bridge, stream);
   auto& ba_no_writer = TestAccessor::create(Bridge);
   ba_no_writer.setSynchronized();
-  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+  EXPECT_FALSE(Bridge.sendPinEvent(13, 1));
 
   // Exercise begin() with baudrate zero: initialization must not restart UART.
   Bridge.begin(0, nullptr);
@@ -755,32 +759,30 @@ void test_architectural_extensions_edge_paths() {
   // Null stream paths
   ba.setNullStream();
   ba.invokeInitializeRuntime();
-  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+  EXPECT_FALSE(Bridge.sendPinEvent(13, 1));
   reset_bridge_core(Bridge, stream);
   ba.setSynchronized();
 }
 
-void test_force_safe_state_uses_core_bus_pin_map() {
+TEST_F(BridgeEdgePathsFixture, ForceSafeStateUsesCoreBusPinMap) {
   resetArduinoStubPinStates();
   bridge::hal::forceSafeState();
 
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_SS].mode);
-  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[PIN_SPI_SS].value);
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_SCK].mode);
-  TEST_ASSERT_EQUAL_UINT8(LOW, g_arduino_stub_pin_states[PIN_SPI_SCK].value);
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_MOSI].mode);
-  TEST_ASSERT_EQUAL_UINT8(LOW, g_arduino_stub_pin_states[PIN_SPI_MOSI].value);
-  TEST_ASSERT_EQUAL_UINT8(INPUT, g_arduino_stub_pin_states[PIN_SPI_MISO].mode);
-  TEST_ASSERT_EQUAL_UINT8(INPUT_PULLUP,
-                          g_arduino_stub_pin_states[PIN_WIRE_SDA].mode);
-  TEST_ASSERT_EQUAL_UINT8(INPUT_PULLUP,
-                          g_arduino_stub_pin_states[PIN_WIRE_SCL].mode);
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_SS].mode);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[PIN_SPI_SS].value);
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_SCK].mode);
+  EXPECT_EQ(LOW, g_arduino_stub_pin_states[PIN_SPI_SCK].value);
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_MOSI].mode);
+  EXPECT_EQ(LOW, g_arduino_stub_pin_states[PIN_SPI_MOSI].value);
+  EXPECT_EQ(INPUT, g_arduino_stub_pin_states[PIN_SPI_MISO].mode);
+  EXPECT_EQ(INPUT_PULLUP, g_arduino_stub_pin_states[PIN_WIRE_SDA].mode);
+  EXPECT_EQ(INPUT_PULLUP, g_arduino_stub_pin_states[PIN_WIRE_SCL].mode);
 
-  TEST_ASSERT_EQUAL_UINT8(0xFF, g_arduino_stub_pin_states[0].mode);
-  TEST_ASSERT_EQUAL_UINT8(0xFF, g_arduino_stub_pin_states[1].mode);
+  EXPECT_EQ(0xFF, g_arduino_stub_pin_states[0].mode);
+  EXPECT_EQ(0xFF, g_arduino_stub_pin_states[1].mode);
 }
 
-void test_all_timers_and_etl_error_coverage() {
+TEST_F(BridgeEdgePathsFixture, AllTimersAndEtlErrorCoverage) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0, nullptr);
   auto& ba = TestAccessor::create(Bridge);
@@ -792,10 +794,10 @@ void test_all_timers_and_etl_error_coverage() {
   // Exercise weak etl::handle_error definition
   etl::exception sim_exc("sim_error", "test", 1);
   etl::handle_error(sim_exc);
-  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  EXPECT_FALSE(ba.isTxEnabled());
 }
 
-void test_bootloader_timer_and_hal_coverage() {
+TEST_F(BridgeEdgePathsFixture, BootloaderTimerAndHalCoverage) {
   pid_t pid = fork();
   if (pid == 0) {
     BiStream stream;
@@ -810,8 +812,8 @@ void test_bootloader_timer_and_hal_coverage() {
   }
   int status = 0;
   waitpid(pid, &status, 0);
-  TEST_ASSERT_TRUE(WIFEXITED(status));
-  TEST_ASSERT_EQUAL_INT(0, WEXITSTATUS(status));
+  EXPECT_TRUE(WIFEXITED(status));
+  EXPECT_EQ(0, WEXITSTATUS(status));
 }
 
 template <size_t N>
@@ -846,14 +848,14 @@ size_t build_encrypted_hdlc_frame(TestAccessor& ba, uint64_t address,
       address, pw::span<const uint8_t>(envelope.data(), env_len), out_hdlc);
 }
 
-void test_encrypted_hdlc_and_session_edge_paths() {
+TEST_F(BridgeEdgePathsFixture, EncryptedHdlcAndSessionEdgePaths) {
   BiStream stream;
   const char* long_secret =
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefX";
   Bridge.setStream(stream);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, long_secret);
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  EXPECT_FALSE(ba.isTxEnabled());
 
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   constexpr uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
@@ -864,16 +866,16 @@ void test_encrypted_hdlc_and_session_edge_paths() {
   sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSynchronized());
-  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+  EXPECT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSessionKeysReady());
 
   const uint8_t msg_bytes[] = {'O', 'K'};
   const bool console_sent = Bridge.sendConsoleStream(
       pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
   const bool log_sent = Bridge.sendLogStream(
       pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)));
-  TEST_ASSERT_TRUE(console_sent);
-  TEST_ASSERT_TRUE(log_sent);
+  EXPECT_TRUE(console_sent);
+  EXPECT_TRUE(log_sent);
 
   Console.begin();
   etl::array<uint8_t, 256> hdlc_buf = {};
@@ -881,8 +883,8 @@ void test_encrypted_hdlc_and_session_edge_paths() {
       ba, rpc::RPC_HDLC_ADDRESS_CONSOLE, 1U,
       pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes)), hdlc_buf);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
-  TEST_ASSERT_EQUAL('O', Console.read());
-  TEST_ASSERT_EQUAL('K', Console.read());
+  EXPECT_EQ('O', Console.read());
+  EXPECT_EQ('K', Console.read());
 
   hdlc_len = build_encrypted_hdlc_frame(
       ba, rpc::RPC_HDLC_ADDRESS_CONSOLE, 2U,
@@ -919,7 +921,7 @@ void test_encrypted_hdlc_and_session_edge_paths() {
       ba, rpc::RPC_HDLC_ADDRESS_RPC, 4U,
       pw::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 
   ba.setSynchronized();
   ba.setSessionKeysReady(true);
@@ -928,12 +930,12 @@ void test_encrypted_hdlc_and_session_edge_paths() {
       pw::span<const uint8_t>(pkt_buf, enc_ver.value().size()), hdlc_buf);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), hdlc_len));
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
-  TEST_ASSERT_FALSE(ba.isSessionKeysReady());
+  EXPECT_FALSE(ba.isSessionKeysReady());
 
   ba.setSessionKeysReady(true);
   etl::array<uint8_t, 10> small_env = {};
   etl::array<uint8_t, 24> exact_env = {};
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
+  EXPECT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
       256U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes))));
   // One byte past the largest payload whose counter || ciphertext || tag fits
   // the peer's RX buffer.
@@ -941,38 +943,38 @@ void test_encrypted_hdlc_and_session_edge_paths() {
                           rpc::RPC_AEAD_COUNTER_SIZE - rpc::RPC_AEAD_TAG_SIZE +
                           1U>
       oversized_payload = {};
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(1U, oversized_payload));
+  EXPECT_FALSE(ba.invokeWriteEncryptedHdlcFrame(1U, oversized_payload));
   ba.setTxAeadCounter(UINT64_MAX);
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
+  EXPECT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
       1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes))));
   ba.setTxAeadCounter(0U);
   ba.setSessionKeysReady(false);
-  TEST_ASSERT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
+  EXPECT_FALSE(ba.invokeWriteEncryptedHdlcFrame(
       1U, pw::span<const uint8_t>(msg_bytes, sizeof(msg_bytes))));
 
   pw::span<const uint8_t> plain_out;
-  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
+  EXPECT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
   ba.setSessionKeysReady(true);
-  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(256U, exact_env, plain_out));
-  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, small_env, plain_out));
+  EXPECT_FALSE(ba.invokeDecryptHdlcFrame(256U, exact_env, plain_out));
+  EXPECT_FALSE(ba.invokeDecryptHdlcFrame(1U, small_env, plain_out));
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE + 32U> huge_env = {};
-  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, huge_env, plain_out));
-  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
+  EXPECT_FALSE(ba.invokeDecryptHdlcFrame(1U, huge_env, plain_out));
+  EXPECT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
   exact_env[7] = 2U;
   ba.setRxAeadCounter(5U);
-  TEST_ASSERT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
+  EXPECT_FALSE(ba.invokeDecryptHdlcFrame(1U, exact_env, plain_out));
 
   ba.setNullStream();
   const uint8_t dummy_byte = 0x01;
   const pw::Status send_status =
       ba.invokeChannelSend(pw::as_bytes(pw::span(&dummy_byte, 1U)));
-  TEST_ASSERT_FALSE(send_status.ok());
+  EXPECT_FALSE(send_status.ok());
 }
 
 // Regression: the MCU now streams counter || ciphertext || tag into the HDLC
 // encoder in 32-byte chunks instead of building a frame-sized envelope on the
 // stack. The bytes on the wire must stay identical to one-shot AEAD.
-void test_encrypted_frame_streaming_matches_one_shot_aead() {
+TEST_F(BridgeEdgePathsFixture, EncryptedFrameStreamingMatchesOneShotAead) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
@@ -984,7 +986,7 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
   sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+  EXPECT_TRUE(ba.isSessionKeysReady());
 
   stream.clear();
   constexpr uint64_t kPreviousCounter = 41U;
@@ -994,8 +996,7 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
   for (size_t i = 0; i < payload.size(); ++i) {
     payload[i] = static_cast<uint8_t>(i * 7U + 3U);
   }
-  TEST_ASSERT_TRUE(
-      ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+  EXPECT_TRUE(ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
 
   // pw::hdlc::Frame is only constructible by the Decoder, so keep the
   // decoder's Result and stop at the first complete frame.
@@ -1005,16 +1006,14 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
     decoded = decoder.Process(
         static_cast<pw::ByteSpan::element_type>(stream.tx_buf.data[i]));
   }
-  TEST_ASSERT_TRUE(decoded.ok());
+  EXPECT_TRUE(decoded.ok());
   const pw::hdlc::Frame& frame = decoded.value();
-  TEST_ASSERT_EQUAL_UINT64(rpc::RPC_HDLC_ADDRESS_RPC, frame.address());
+  EXPECT_EQ(rpc::RPC_HDLC_ADDRESS_RPC, frame.address());
   const auto envelope = pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(frame.data().data()),
       frame.data().size());
-  TEST_ASSERT_EQUAL_UINT32(
-      static_cast<uint32_t>(rpc::RPC_AEAD_COUNTER_SIZE + payload.size() +
-                            rpc::RPC_AEAD_TAG_SIZE),
-      static_cast<uint32_t>(envelope.size()));
+  EXPECT_EQ(static_cast<uint32_t>(rpc::RPC_AEAD_COUNTER_SIZE + payload.size() +
+                            rpc::RPC_AEAD_TAG_SIZE), static_cast<uint32_t>(envelope.size()));
 
   const uint64_t counter = kPreviousCounter + 1U;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
@@ -1028,24 +1027,18 @@ void test_encrypted_frame_streaming_matches_one_shot_aead() {
   }
   etl::array<uint8_t, 100> expected_ciphertext = {};
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> expected_tag = {};
-  TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
+  EXPECT_TRUE(rpc::security::aead_encrypt(
       ba.txAeadKey(), nonce, aad, payload, expected_ciphertext, expected_tag));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(aad.data() + 1U, envelope.data(),
-                                rpc::RPC_AEAD_COUNTER_SIZE);
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_ciphertext.data(),
-                                envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE,
-                                expected_ciphertext.size());
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(
-      expected_tag.data(),
-      envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size(),
-      expected_tag.size());
+  EXPECT_TRUE(std::equal(aad.data() + 1U, (aad.data() + 1U) + (rpc::RPC_AEAD_COUNTER_SIZE), envelope.data()));
+  EXPECT_TRUE(std::equal(expected_ciphertext.data(), (expected_ciphertext.data()) + (expected_ciphertext.size()), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE));
+  EXPECT_TRUE(std::equal(expected_tag.data(), (expected_tag.data()) + (expected_tag.size()), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size()));
 }
 
 // Regression (ADR-0005): a recorded LinkSync replayed after a forced
 // LinkReset used to derive the same session keys (keys depended only on the
 // host nonce), so captured frames were accepted again. With the MCU nonce the
 // replay must yield different keys in both directions.
-void test_replayed_link_sync_derives_fresh_keys() {
+TEST_F(BridgeEdgePathsFixture, ReplayedLinkSyncDerivesFreshKeys) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
@@ -1058,23 +1051,21 @@ void test_replayed_link_sync_derives_fresh_keys() {
 
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+  EXPECT_TRUE(ba.isSessionKeysReady());
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> first_rx = {};
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> first_tx = {};
   etl::copy(ba.rxAeadKey().begin(), ba.rxAeadKey().end(), first_rx.begin());
   etl::copy(ba.txAeadKey().begin(), ba.txAeadKey().end(), first_tx.begin());
 
   feed_rpc_request(ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
-  TEST_ASSERT_FALSE(ba.isSessionKeysReady());
+  EXPECT_FALSE(ba.isSessionKeysReady());
 
   // Replay the identical recorded host LinkSync.
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
-  TEST_ASSERT_FALSE(
-      etl::equal(first_rx.begin(), first_rx.end(), ba.rxAeadKey().begin()));
-  TEST_ASSERT_FALSE(
-      etl::equal(first_tx.begin(), first_tx.end(), ba.txAeadKey().begin()));
+  EXPECT_TRUE(ba.isSessionKeysReady());
+  EXPECT_FALSE(etl::equal(first_rx.begin(), first_rx.end(), ba.rxAeadKey().begin()));
+  EXPECT_FALSE(etl::equal(first_tx.begin(), first_tx.end(), ba.txAeadKey().begin()));
 }
 
 // Accepts at most `budget` bytes in total, then reports short writes.
@@ -1102,7 +1093,7 @@ class WriteBudgetStream : public Stream {
 
 // A short write at any point of the streamed frame (start, counter,
 // ciphertext chunks, tag or closing FCS/flag) must make the send fail.
-void test_encrypted_frame_streaming_fails_on_short_write() {
+TEST_F(BridgeEdgePathsFixture, EncryptedFrameStreamingFailsOnShortWrite) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0U, "shared-key");
   auto& ba = TestAccessor::create(Bridge);
@@ -1114,7 +1105,7 @@ void test_encrypted_frame_streaming_fails_on_short_write() {
   sync.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
   feed_rpc_request_msg(ba, kSysSvc, pw::tokenizer::Hash("LinkSync"),
                        rpc_pb_LinkSync_fields, sync);
-  TEST_ASSERT_TRUE(ba.isSessionKeysReady());
+  EXPECT_TRUE(ba.isSessionKeysReady());
 
   // 40 bytes: two ciphertext chunks plus the tag.
   etl::array<uint8_t, 40> payload = {};
@@ -1123,25 +1114,22 @@ void test_encrypted_frame_streaming_fails_on_short_write() {
   WriteBudgetStream unlimited(4096U);
   Bridge.setStream(unlimited);
   ba.setTxAeadCounter(0U);
-  TEST_ASSERT_TRUE(
-      ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+  EXPECT_TRUE(ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
   const size_t frame_size = unlimited.written();
-  TEST_ASSERT_TRUE(frame_size > rpc::RPC_AEAD_COUNTER_SIZE + payload.size() +
+  EXPECT_TRUE(frame_size > rpc::RPC_AEAD_COUNTER_SIZE + payload.size() +
                                     rpc::RPC_AEAD_TAG_SIZE);
 
   for (size_t budget = 0U; budget < frame_size; ++budget) {
     WriteBudgetStream limited(budget);
     Bridge.setStream(limited);
     ba.setTxAeadCounter(0U);
-    TEST_ASSERT_FALSE(
-        ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+    EXPECT_FALSE(ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
   }
 
   WriteBudgetStream exact(frame_size);
   Bridge.setStream(exact);
   ba.setTxAeadCounter(0U);
-  TEST_ASSERT_TRUE(
-      ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
+  EXPECT_TRUE(ba.invokeWriteEncryptedHdlcFrame(rpc::RPC_HDLC_ADDRESS_RPC, payload));
   Bridge.setStream(stream);
 }
 
@@ -1157,7 +1145,7 @@ void capture_edge_status(pw::Status s, pw::span<const uint8_t>) {
 }  // namespace
 
 // A subscribed input that rises must be reported and become the new baseline.
-void test_pin_subscription_reports_rising_edge() {
+TEST_F(BridgeEdgePathsFixture, PinSubscriptionReportsRisingEdge) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -1174,19 +1162,19 @@ void test_pin_subscription_reports_rising_edge() {
   sub.enabled = true;
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
                        rpc_pb_PinSubscribeRequest_fields, sub);
-  TEST_ASSERT_EQUAL_INT32(0, ba.subscriptionLastValueForPin(kPin));
+  EXPECT_EQ(0, ba.subscriptionLastValueForPin(kPin));
 
   g_arduino_stub_pin_states[kPin].value = HIGH;
   bridge::test::fault::advance_clock_ms(20U);
   ba.invokeSubscriptionTask();
-  TEST_ASSERT_EQUAL_INT32(1, ba.subscriptionLastValueForPin(kPin));
+  EXPECT_EQ(1, ba.subscriptionLastValueForPin(kPin));
 
   g_arduino_stub_pin_states[kPin].value = LOW;
 }
 
 // Without a shared secret, a plaintext RPC frame that is not a valid
 // pw_rpc packet must be rejected with INVALID_ARGUMENT and not dispatched.
-void test_plaintext_malformed_rpc_frame_is_rejected() {
+TEST_F(BridgeEdgePathsFixture, PlaintextMalformedRpcFrameIsRejected) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -1196,82 +1184,81 @@ void test_plaintext_malformed_rpc_frame_is_rejected() {
 
   const etl::array<uint8_t, 2> garbage = {0xFFU, 0xFFU};
   pw::stream::MemoryWriterBuffer<32> frame;
-  TEST_ASSERT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
+  EXPECT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
                                           pw::as_bytes(pw::span(garbage)),
                                           frame)
                        .ok());
   ba.feedHdlcBytes(pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
 
-  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::InvalidArgument().code()),
-                        static_cast<int>(g_edge_last_status.code()));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_EQ(1U, g_edge_status_calls);
+  EXPECT_EQ(static_cast<int>(pw::Status::InvalidArgument().code()), static_cast<int>(g_edge_last_status.code()));
+  EXPECT_TRUE(Bridge.isSynchronized());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
 // Only HardwareSerial ports (selected by type) are re-clocked on baudrate
 // changes; generic streams must never be treated as a UART.
-void test_set_stream_selects_hardware_serial_by_type() {
+TEST_F(BridgeEdgePathsFixture, SetStreamSelectsHardwareSerialByType) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT_NULL(ba.hardwareSerial());
+  EXPECT_EQ(nullptr, ba.hardwareSerial());
 
   Bridge.setStream(Serial);
-  TEST_ASSERT_EQUAL_PTR(&Serial, ba.hardwareSerial());
+  EXPECT_EQ(&Serial, ba.hardwareSerial());
 
   Bridge.setStream(stream);
-  TEST_ASSERT_NULL(ba.hardwareSerial());
+  EXPECT_EQ(nullptr, ba.hardwareSerial());
 
   BridgeClass uart_bridge(Serial);
   auto& uart_ba = TestAccessor::create(uart_bridge);
-  TEST_ASSERT_EQUAL_PTR(&Serial, uart_ba.hardwareSerial());
+  EXPECT_EQ(&Serial, uart_ba.hardwareSerial());
 }
 
 // With a live stream but TX disabled (e.g. after entering the safe state) the
 // console must not emit frames.
-void test_console_stream_blocked_while_tx_disabled() {
+TEST_F(BridgeEdgePathsFixture, ConsoleStreamBlockedWhileTxDisabled) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   const etl::array<uint8_t, 2> msg = {'h', 'i'};
-  TEST_ASSERT_TRUE(Bridge.sendConsoleStream(msg));
+  EXPECT_TRUE(Bridge.sendConsoleStream(msg));
 
   ba.setTxEnabled(false);
-  TEST_ASSERT_FALSE(Bridge.sendConsoleStream(msg));
+  EXPECT_FALSE(Bridge.sendConsoleStream(msg));
 }
 
 // Pin events are only emitted on a synchronized link, even with TX enabled.
-void test_pin_event_blocked_while_unsynchronized() {
+TEST_F(BridgeEdgePathsFixture, PinEventBlockedWhileUnsynchronized) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setTxEnabled(true);
   ba.clearSynchronized();
-  TEST_ASSERT_TRUE(ba.isTxEnabled());
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(Bridge.sendPinEvent(13, 1));
+  EXPECT_TRUE(ba.isTxEnabled());
+  EXPECT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.sendPinEvent(13, 1));
 }
 
 // Log stream frames must respect FLAG_TX_ENABLED just like console stream
 // frames.
-void test_log_stream_blocked_while_tx_disabled() {
+TEST_F(BridgeEdgePathsFixture, LogStreamBlockedWhileTxDisabled) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   const etl::array<uint8_t, 3> msg = {'l', 'o', 'g'};
-  TEST_ASSERT_TRUE(Bridge.sendLogStream(msg));
+  EXPECT_TRUE(Bridge.sendLogStream(msg));
 
   ba.setTxEnabled(false);
-  TEST_ASSERT_FALSE(Bridge.sendLogStream(msg));
+  EXPECT_FALSE(Bridge.sendLogStream(msg));
 }
 
 // Server-bound RPC frames addressing an unknown channel ID fail inside
 // pw::rpc::Server::ProcessPacket and report their status through onStatus.
-void test_unknown_channel_rpc_frame_emits_server_error_status() {
+TEST_F(BridgeEdgePathsFixture, UnknownChannelRpcFrameEmitsServerErrorStatus) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -1281,19 +1268,17 @@ void test_unknown_channel_rpc_frame_emits_server_error_status() {
   g_edge_status_calls = 0U;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_edge_status>());
 
-  TEST_ASSERT_TRUE(
-      send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+  EXPECT_TRUE(send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
                     pw::tokenizer::Hash("GetVersion"), {},
                     pw::rpc::internal::pwpb::PacketType::REQUEST, 1U, 99U) > 0);
-  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unavailable().code()),
-                        static_cast<int>(g_edge_last_status.code()));
+  EXPECT_EQ(1U, g_edge_status_calls);
+  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()), static_cast<int>(g_edge_last_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
 // Before session keys are established on an authenticated link, malformed
 // non-RPC HDLC payloads on the RPC address must fail closed into safe state.
-void test_pre_handshake_malformed_rpc_frame_enters_safe_state() {
+TEST_F(BridgeEdgePathsFixture, PreHandshakeMalformedRpcFrameEntersSafeState) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0, "top-secret-key");
   auto& ba = TestAccessor::create(Bridge);
@@ -1304,47 +1289,16 @@ void test_pre_handshake_malformed_rpc_frame_enters_safe_state() {
 
   const etl::array<uint8_t, 3> garbage = {0xFFU, 0xFFU, 0xFFU};
   pw::stream::MemoryWriterBuffer<32> frame;
-  TEST_ASSERT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
+  EXPECT_TRUE(pw::hdlc::WriteUIFrame(rpc::RPC_HDLC_ADDRESS_RPC,
                                           pw::as_bytes(pw::span(garbage)),
                                           frame)
                        .ok());
   ba.feedHdlcBytes(pw::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(frame.data()), frame.bytes_written()));
 
-  TEST_ASSERT_EQUAL_UINT32(1U, g_edge_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unauthenticated().code()),
-                        static_cast<int>(g_edge_last_status.code()));
-  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  EXPECT_EQ(1U, g_edge_status_calls);
+  EXPECT_EQ(static_cast<int>(pw::Status::Unauthenticated().code()), static_cast<int>(g_edge_last_status.code()));
+  EXPECT_FALSE(ba.isTxEnabled());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
-  RUN_TEST(test_dispatch_malformed_payload_paths);
-  RUN_TEST(test_packet_received_security_paths);
-  RUN_TEST(test_console_and_policy_edges);
-  RUN_TEST(test_observer_and_task_runtime_edges);
-  RUN_TEST(test_timer_link_and_bootloader_edges);
-  RUN_TEST(test_service_capacity_and_send_fail_edges);
-  RUN_TEST(test_filesystem_spi_fsm_edges);
-  RUN_TEST(test_link_sync_authentication_paths);
-  RUN_TEST(test_fault_injection_harness_paths);
-  RUN_TEST(test_architectural_extensions_edge_paths);
-  RUN_TEST(test_force_safe_state_uses_core_bus_pin_map);
-  RUN_TEST(test_all_timers_and_etl_error_coverage);
-  RUN_TEST(test_bootloader_timer_and_hal_coverage);
-  RUN_TEST(test_encrypted_hdlc_and_session_edge_paths);
-  RUN_TEST(test_encrypted_frame_streaming_matches_one_shot_aead);
-  RUN_TEST(test_encrypted_frame_streaming_fails_on_short_write);
-  RUN_TEST(test_replayed_link_sync_derives_fresh_keys);
-  RUN_TEST(test_pin_subscription_reports_rising_edge);
-  RUN_TEST(test_plaintext_malformed_rpc_frame_is_rejected);
-  RUN_TEST(test_set_stream_selects_hardware_serial_by_type);
-  RUN_TEST(test_console_stream_blocked_while_tx_disabled);
-  RUN_TEST(test_pin_event_blocked_while_unsynchronized);
-  RUN_TEST(test_log_stream_blocked_while_tx_disabled);
-  RUN_TEST(test_unknown_channel_rpc_frame_emits_server_error_status);
-  RUN_TEST(test_pre_handshake_malformed_rpc_frame_enters_safe_state);
-  return UNITY_END();
-}

@@ -31,7 +31,6 @@ Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 
-// Unity setup/teardown
 using namespace bridge::test;
 
 void reset_bridge_comp(BiStream& stream) {

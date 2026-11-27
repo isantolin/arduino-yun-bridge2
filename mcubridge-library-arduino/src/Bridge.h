@@ -43,7 +43,6 @@
 #include <pw_hdlc/decoder.h>
 #include <pw_hdlc/encoder.h>
 #include <pw_log/log.h>
-#include <pw_log_avr/log_avr.h>
 #include <pw_metric/global.h>
 #include <pw_metric/metric.h>
 #include <pw_metric/metric_service_pwpb.h>

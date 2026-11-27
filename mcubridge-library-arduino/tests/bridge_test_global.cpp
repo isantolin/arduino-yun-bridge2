@@ -5,6 +5,7 @@
 #include <pw_thread_stl/options.h>
 
 #include "BridgeFaultInjection.h"
+#include "hal/hal.h"
 #include "hal/hal_internal.h"
 
 // Defines the global Bridge instance as a TestAccessor so that test code can
@@ -77,6 +78,9 @@ bool run_power_on_self_tests() {
   return internal::run_power_on_self_tests_impl();
 }
 
-[[noreturn]] void enterBootloader() { ::_Exit(0); }
+[[noreturn]] void enterBootloader() {
+  forceSafeState();
+  ::_Exit(0);
+}
 
 }  // namespace bridge::hal

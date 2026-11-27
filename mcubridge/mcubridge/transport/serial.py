@@ -259,7 +259,7 @@ class SerialTransport:
         self._stream_event_queue.clear()
 
     def cancel_pin_stream(self) -> bool:
-        """Explicitly cancel any active server-streaming RPC call."""
+        """Explicitly cancel every active server-streaming RPC call."""
         calls = tuple(self._active_stream_calls)
         self._active_stream_calls.clear()
         cancelled = False

@@ -279,7 +279,7 @@ def test_close_serial_port_releases_leaked_socket() -> None:
 async def test_send_rpc_message_emits_call_bound_server_error(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    """send_rpc_message(status=...) must answer the MCU's call with its service/method/call ids, not a bare status packet."""
+    """Verify status responses retain the MCU's service, method, and call IDs."""
     from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 
     written: list[bytes] = []

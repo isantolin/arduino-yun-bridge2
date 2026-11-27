@@ -1,45 +1,34 @@
-#include "Unity/src/unity.h"
+#include "pw_unit_test/framework.h"
+
 #include "hal/hal.h"
 #include "protocol/mcu_wire.pb.h"
 
 bool g_host_has_sd = false;
 bool g_host_fs_enabled = false;
 
-void setUp() {}
-void tearDown() {}
-
 // Test weak defaults in hal.cpp when not overridden by a mock.
-
-void test_hal_weak_defaults_without_mock() {
+TEST(HalWeakDefaults, WithoutMock) {
   const bool original_sd = g_host_has_sd;
   const bool original_fs = g_host_fs_enabled;
 
   g_host_has_sd = false;
   g_host_fs_enabled = false;
 
-  TEST_ASSERT_FALSE(bridge::hal::hasSD());
+  EXPECT_FALSE(bridge::hal::hasSD());
 
   const auto remove_res = bridge::hal::removeFile("test.txt");
-  TEST_ASSERT_TRUE(remove_res.IsUnimplemented());
+  EXPECT_TRUE(remove_res.IsUnimplemented());
 
   rpc_pb_Capabilities caps = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(caps);
-  TEST_ASSERT_FALSE(caps.sd);
-  TEST_ASSERT_EQUAL_UINT8(NUM_DIGITAL_PINS, caps.dig);
-  TEST_ASSERT_EQUAL_UINT8(NUM_ANALOG_INPUTS, caps.ana);
+  EXPECT_FALSE(caps.sd);
+  EXPECT_EQ(caps.dig, NUM_DIGITAL_PINS);
+  EXPECT_EQ(caps.ana, NUM_ANALOG_INPUTS);
 
   const auto wm = bridge::hal::getStackWatermark();
-  TEST_ASSERT_EQUAL_UINT32(0U, wm.used_bytes);
-  TEST_ASSERT_EQUAL_UINT32(0U, wm.budget_bytes);
+  EXPECT_EQ(wm.used_bytes, 0U);
+  EXPECT_EQ(wm.budget_bytes, 0U);
 
   g_host_has_sd = original_sd;
   g_host_fs_enabled = original_fs;
 }
-
-#if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_hal_weak_defaults_without_mock);
-  return UNITY_END();
-}
-#endif

@@ -17,6 +17,11 @@ local_path_override(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+# Cooperative pw_transfer and tokenized pw_log_avr shared with MCU firmware.
+avr_pigweed_host = use_repo_rule("//tools/bazel:avr_pigweed_host.bzl", "avr_pigweed_host")
+
+avr_pigweed_host(name = "avr_pigweed_host")
+
 http_archive(
     name = "etl",
     build_file_content = """

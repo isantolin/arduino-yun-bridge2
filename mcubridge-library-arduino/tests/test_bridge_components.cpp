@@ -2,10 +2,11 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 
+#include <SPI.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <SPI.h>
+
 #include "pw_unit_test/framework.h"
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
@@ -216,43 +217,44 @@ TEST(BridgeComponents, SpiDataModesMapToNativeSettings) {
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   EXPECT_TRUE(SPIService.setConfig(config).ok());
-  EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(
-                                   payload.data(), payload.size())).ok());
+  EXPECT_TRUE(
+      SPIService.transfer(pw::span<uint8_t>(payload.data(), payload.size()))
+          .ok());
   EXPECT_EQ(SPI_MODE0, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_1;
   EXPECT_TRUE(SPIService.setConfig(config).ok());
-  EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(
-                                   payload.data(), payload.size())).ok());
+  EXPECT_TRUE(
+      SPIService.transfer(pw::span<uint8_t>(payload.data(), payload.size()))
+          .ok());
   EXPECT_EQ(SPI_MODE1, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_2;
   EXPECT_TRUE(SPIService.setConfig(config).ok());
-  EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(
-                                   payload.data(), payload.size())).ok());
+  EXPECT_TRUE(
+      SPIService.transfer(pw::span<uint8_t>(payload.data(), payload.size()))
+          .ok());
   EXPECT_EQ(SPI_MODE2, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
   EXPECT_TRUE(SPIService.setConfig(config).ok());
-  EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(
-                                   payload.data(), payload.size())).ok());
+  EXPECT_TRUE(
+      SPIService.transfer(pw::span<uint8_t>(payload.data(), payload.size()))
+          .ok());
   EXPECT_EQ(SPI_MODE3, SPI.last_settings.data_mode);
   EXPECT_EQ(LSBFIRST, SPI.last_settings.bit_order);
   EXPECT_EQ(config.frequency, SPI.last_settings.clock);
 
   config.data_mode = static_cast<rpc_pb_SpiDataMode>(99);
-  EXPECT_TRUE(SPIService.setConfig(config) ==
-                   pw::Status::InvalidArgument());
+  EXPECT_TRUE(SPIService.setConfig(config) == pw::Status::InvalidArgument());
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   config.bit_order = static_cast<rpc_pb_SpiBitOrder>(99);
-  EXPECT_TRUE(SPIService.setConfig(config) ==
-                   pw::Status::InvalidArgument());
+  EXPECT_TRUE(SPIService.setConfig(config) == pw::Status::InvalidArgument());
 
   config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
   config.frequency = 0U;
-  EXPECT_TRUE(SPIService.setConfig(config) ==
-                   pw::Status::InvalidArgument());
+  EXPECT_TRUE(SPIService.setConfig(config) == pw::Status::InvalidArgument());
 
   SPIService.end();
 }
@@ -274,7 +276,8 @@ TEST(BridgeComponents, ComponentExtendedOperations) {
   Mailbox.signalProcessed(123);
 
   // FileSystem
-  EXPECT_TRUE(FileSystem.upload("test.txt", pw::span<const uint8_t>(mbox_data, 3)));
+  EXPECT_TRUE(
+      FileSystem.upload("test.txt", pw::span<const uint8_t>(mbox_data, 3)));
   EXPECT_TRUE(FileSystem.uploadPending());
   FileSystem._resetUpload();
   EXPECT_FALSE(FileSystem.uploadPending());
@@ -301,7 +304,8 @@ TEST(BridgeComponents, ComponentExtendedOperations) {
   // SPI uninitialized transfer
   SPIService.end();
   uint8_t spi_buf[2] = {0, 0};
-  SPIService.transfer(pw::span<uint8_t>(spi_buf, 2));
+  EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(spi_buf, 2))
+                  .IsFailedPrecondition());
 
   EXPECT_TRUE(Bridge.isSynchronized());
 }
@@ -556,7 +560,8 @@ TEST(BridgeComponents, FilesystemEdges) {
   reset_bridge_comp(stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  EXPECT_FALSE(FileSystem.upload(etl::string_view(), pw::span<const uint8_t>()));
+  EXPECT_FALSE(
+      FileSystem.upload(etl::string_view(), pw::span<const uint8_t>()));
   FileSystem.remove(etl::string_view());
 
   ba.setTxEnabled(false);
@@ -590,13 +595,13 @@ TEST(BridgeComponents, SpiEdges) {
 
   SPIService.end();
   EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)) ==
-                   pw::Status::FailedPrecondition());
+              pw::Status::FailedPrecondition());
 
   // 3. Timeout fault
   SPIService.begin();
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
   EXPECT_TRUE(SPIService.transfer(pw::span<uint8_t>(buf)) ==
-                   pw::Status::DeadlineExceeded());
+              pw::Status::DeadlineExceeded());
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
   // 4. SPI Transfer via HDLC RPC
@@ -845,7 +850,8 @@ TEST(BridgeComponents, ProcessRpcCorrelationAndStatusPropagation) {
                    ProcessType::ProcessRunHandler::create<r22_run_handler_2>());
   EXPECT_EQ(1U, s_r22_run_calls_2);
   EXPECT_EQ(-1, s_r22_run_pid_2);
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   // Overlapping with invalid handler also rejects cleanly without clobbering.
   Process.runAsync("third", {}, ProcessType::ProcessRunHandler{});
@@ -873,7 +879,8 @@ TEST(BridgeComponents, ProcessRpcCorrelationAndStatusPropagation) {
                                   rpc_pb_ProcessRunAsyncResponse_fields,
                                   err_resp, pw::Status::PermissionDenied());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()),
+            static_cast<int>(s_rpc_last_status.code()));
   EXPECT_EQ(1U, s_r22_run_calls_1);
   EXPECT_EQ(-1, s_r22_run_pid_1);
 
@@ -884,7 +891,8 @@ TEST(BridgeComponents, ProcessRpcCorrelationAndStatusPropagation) {
                    ProcessType::ProcessRunHandler::create<r22_run_handler_1>());
   invoke_rpc_server_error(ba, kProcSvc, kRunMeth, pw::Status::Unavailable());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()),
+            static_cast<int>(s_rpc_last_status.code()));
   EXPECT_EQ(1U, s_r22_run_calls_1);
   EXPECT_EQ(-1, s_r22_run_pid_1);
 
@@ -900,7 +908,8 @@ TEST(BridgeComponents, ProcessRpcCorrelationAndStatusPropagation) {
   Process.poll(78,
                ProcessType::ProcessPollHandler::create<r22_poll_handler_2>());
   EXPECT_EQ(1U, s_r22_poll_calls_2);
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(s_r22_poll_status_2.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(s_r22_poll_status_2.code()));
   // Overlapping poll with invalid handler.
   Process.poll(79, ProcessType::ProcessPollHandler{});
   EXPECT_EQ(0U, s_r22_poll_calls_1);
@@ -927,9 +936,11 @@ TEST(BridgeComponents, ProcessRpcCorrelationAndStatusPropagation) {
                                   rpc_pb_ProcessPollResponse_fields,
                                   poll_err_resp, pw::Status::NotFound());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()),
+            static_cast<int>(s_rpc_last_status.code()));
   EXPECT_EQ(1U, s_r22_poll_calls_1);
-  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()), static_cast<int>(s_r22_poll_status_1.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()),
+            static_cast<int>(s_r22_poll_status_1.code()));
 
   s_rpc_status_calls = 0U;
   s_r22_poll_calls_1 = 0U;
@@ -937,9 +948,11 @@ TEST(BridgeComponents, ProcessRpcCorrelationAndStatusPropagation) {
                ProcessType::ProcessPollHandler::create<r22_poll_handler_1>());
   invoke_rpc_server_error(ba, kProcSvc, kPollMeth, pw::Status::Internal());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()),
+            static_cast<int>(s_rpc_last_status.code()));
   EXPECT_EQ(1U, s_r22_poll_calls_1);
-  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()), static_cast<int>(s_r22_poll_status_1.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()),
+            static_cast<int>(s_r22_poll_status_1.code()));
 
   // Cover poll on_error and !isRpcTxReady with invalid handler.
   Process.poll(77, ProcessType::ProcessPollHandler{});
@@ -973,7 +986,8 @@ TEST(BridgeComponents, DatastoreRpcCorrelationAndStatusPropagation) {
   DataStore.get("k1", DataStoreClass::GetHandler::create<r22_ds_handler_1>());
   DataStore.get("k2", DataStoreClass::GetHandler::create<r22_ds_handler_2>());
   EXPECT_EQ(0U, s_r22_ds_calls_2);
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   rpc_pb_DatastoreGetResponse ok_resp =
       rpc_pb_DatastoreGetResponse_init_default;
@@ -997,7 +1011,8 @@ TEST(BridgeComponents, DatastoreRpcCorrelationAndStatusPropagation) {
                                   rpc_pb_DatastoreGetResponse_fields,
                                   empty_resp, pw::Status::NotFound());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()),
+            static_cast<int>(s_rpc_last_status.code()));
   EXPECT_EQ(0U, s_r22_ds_calls_1);
 
   // 3. SERVER_ERROR invokes on_error, emits status, frees slot for next call.
@@ -1006,7 +1021,8 @@ TEST(BridgeComponents, DatastoreRpcCorrelationAndStatusPropagation) {
                 DataStoreClass::GetHandler::create<r22_ds_handler_1>());
   invoke_rpc_server_error(ba, kDsSvc, kGetMeth, pw::Status::PermissionDenied());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()),
+            static_cast<int>(s_rpc_last_status.code()));
   EXPECT_EQ(0U, s_r22_ds_calls_1);
 
   // Subsequent get succeeds after error cleanup.
@@ -1050,7 +1066,8 @@ TEST(BridgeComponents, MailboxRpcCorrelationAndStatusPropagation) {
   // 1. Overlapping requestRead returns false and emits ResourceExhausted.
   EXPECT_TRUE(Mailbox.requestRead());
   EXPECT_FALSE(Mailbox.requestRead());
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   // Non-OK RESPONSE on Read emits status and does NOT enqueue bogus payload.
   s_rpc_status_calls = 0U;
@@ -1064,7 +1081,8 @@ TEST(BridgeComponents, MailboxRpcCorrelationAndStatusPropagation) {
   Mailbox.process();
   EXPECT_FALSE(message_callback_called);
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   // SERVER_ERROR on Read emits status and frees slot.
   s_rpc_status_calls = 0U;
@@ -1073,12 +1091,14 @@ TEST(BridgeComponents, MailboxRpcCorrelationAndStatusPropagation) {
   Mailbox.process();
   EXPECT_FALSE(message_callback_called);
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   // 2. Overlapping requestAvailable returns false and emits ResourceExhausted.
   EXPECT_TRUE(Mailbox.requestAvailable());
   EXPECT_FALSE(Mailbox.requestAvailable());
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   // Non-OK RESPONSE on Available emits status and does NOT call callback.
   s_rpc_status_calls = 0U;
@@ -1090,7 +1110,8 @@ TEST(BridgeComponents, MailboxRpcCorrelationAndStatusPropagation) {
                                   bad_avail, pw::Status::PermissionDenied());
   EXPECT_FALSE(available_callback_called);
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   // SERVER_ERROR on Available emits status and frees slot.
   s_rpc_status_calls = 0U;
@@ -1112,13 +1133,15 @@ TEST(BridgeComponents, MailboxRpcCorrelationAndStatusPropagation) {
   invoke_rpc_response_with_status(ba, kMbSvc, kPushMeth, rpc_pb_Empty_fields,
                                   empty_msg, pw::Status::ResourceExhausted());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   s_rpc_status_calls = 0U;
   Mailbox.push(push_bytes);
   invoke_rpc_server_error(ba, kMbSvc, kPushMeth, pw::Status::Internal());
   EXPECT_EQ(1U, s_rpc_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()), static_cast<int>(s_rpc_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()),
+            static_cast<int>(s_rpc_last_status.code()));
 
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
@@ -1196,4 +1219,3 @@ TEST(BridgeComponents, GpioHalAndSafetyModeCoverage) {
   EXPECT_FALSE(Bridge.isSynchronized());
   Bridge.clearSafetyPins();
 }
-

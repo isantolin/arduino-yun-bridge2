@@ -1,11 +1,9 @@
 #include <etl/algorithm.h>
-#include <chrono>
-#include <thread>
+#include <pw_chrono/system_clock.h>
 
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
 #include "SPI.h"
-#include "pw_log_avr/log_avr.h"
 
 ArduinoStubPinState g_arduino_stub_pin_states[NUM_DIGITAL_PINS]{};
 
@@ -30,10 +28,6 @@ unsigned long micros() { return bridge::test::fault::clock_ms() * 1000UL; }
 
 void delay(unsigned long ms) __attribute__((weak));
 void delay(unsigned long ms) {
-  // Host HAL timers use Pigweed's monotonic SystemClock. Keep this Arduino
-  // stub delay faithful to the platform API so bounded wait tests advance
-  // both the real host clock and the independent micros()/millis() test stub.
-  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   bridge::test::fault::advance_clock_ms(static_cast<uint32_t>(ms));
 }
 #endif
@@ -43,19 +37,6 @@ namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception& e) { (void)e; }
 }  // namespace etl
 
-
-namespace {
-pw_log_avr_LogSink g_pw_log_avr_sink = nullptr;
-}
-
-extern "C" void pw_log_avr_SetLogSink(pw_log_avr_LogSink sink) {
-  g_pw_log_avr_sink = sink;
-}
-
-extern "C" void pw_log_avr_HandleLog(uint8_t level, const uint8_t* log_data,
-                                      size_t size) {
-  if (g_pw_log_avr_sink != nullptr) {
-    g_pw_log_avr_sink(level, log_data, size);
-  }
-}
-
+namespace pw::chrono::backend {
+int64_t GetSystemClockTickCount() { return static_cast<int64_t>(::millis()); }
+}  // namespace pw::chrono::backend

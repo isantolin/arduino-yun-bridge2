@@ -6,21 +6,21 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #endif
 #include <Arduino.h>
-#include <string.h>
 #include <BridgeFaultInjection.h>
 #include <etl/array.h>
 #include <etl/numeric.h>
 #include <etl/string_view.h>
 #include <pw_bytes/endian.h>
+#include <pw_log/log.h>
 #include <pw_metric_proto/metric_service.pwpb.h>
-#include <pw_log_avr/log_avr.h>
 #include <pw_protobuf/decoder.h>
 #include <pw_span/span.h>
-#include "pw_unit_test/framework.h"
+#include <string.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
+#include "pw_unit_test/framework.h"
 #include "security/security.h"
 #include "services/Console.h"
 #include "services/SPIService.h"
@@ -101,7 +101,8 @@ TEST_F(BridgeCoreFixture, BridgeHandshakeResponseUsesTagLength) {
       pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kSharedSecret),
                               sizeof(kSharedSecret) - 1U);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> request_tag = {};
-  EXPECT_TRUE(rpc::security::handshake_generate_tag(secret, nonce, request_tag));
+  EXPECT_TRUE(
+      rpc::security::handshake_generate_tag(secret, nonce, request_tag));
 
   rpc_pb_LinkSync request = rpc_pb_LinkSync_init_default;
   etl::copy_n(nonce.begin(), nonce.size(), request.nonce.bytes);
@@ -110,8 +111,9 @@ TEST_F(BridgeCoreFixture, BridgeHandshakeResponseUsesTagLength) {
   request.tag.size = request_tag.size();
 
   EXPECT_GT(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
-                          pw::tokenizer::Hash("LinkSync"),
-                          rpc_pb_LinkSync_fields, request), 0);
+                             pw::tokenizer::Hash("LinkSync"),
+                             rpc_pb_LinkSync_fields, request),
+            0);
 
   rpc_pb_LinkSync response = rpc_pb_LinkSync_init_default;
   EXPECT_TRUE(decode_tx_response(stream, rpc_pb_LinkSync_fields, response));
@@ -125,7 +127,8 @@ TEST_F(BridgeCoreFixture, BridgeHandshakeResponseUsesTagLength) {
       pw::span<const uint8_t>(response.mcu_nonce.bytes,
                               response.mcu_nonce.size),
       expected_response_tag));
-  EXPECT_EQ(0, memcmp(expected_response_tag.data(), response.tag.bytes, expected_response_tag.size()));
+  EXPECT_EQ(0, memcmp(expected_response_tag.data(), response.tag.bytes,
+                      expected_response_tag.size()));
 }
 
 TEST_F(BridgeCoreFixture, BridgeSendFrame) {
@@ -134,7 +137,8 @@ TEST_F(BridgeCoreFixture, BridgeSendFrame) {
   ba.setSynchronized();
 
   etl::array<uint8_t, 2> payload = {0xAA, 0xBB};
-  EXPECT_TRUE(Bridge.sendConsoleStream(pw::span<const uint8_t>(payload.data(), 2)));
+  EXPECT_TRUE(
+      Bridge.sendConsoleStream(pw::span<const uint8_t>(payload.data(), 2)));
   EXPECT_TRUE(Bridge.sendLogStream(pw::span<const uint8_t>(payload.data(), 2)));
   pw_log_avr_HandleLog(1, payload.data(), payload.size());
 
@@ -142,8 +146,9 @@ TEST_F(BridgeCoreFixture, BridgeSendFrame) {
   sub_req.pin = 13;
   sub_req.enabled = true;
   EXPECT_GT(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
-                          pw::tokenizer::Hash("SubscribePins"),
-                          rpc_pb_PinSubscribeRequest_fields, sub_req), 0);
+                             pw::tokenizer::Hash("SubscribePins"),
+                             rpc_pb_PinSubscribeRequest_fields, sub_req),
+            0);
 
   EXPECT_TRUE(Bridge.sendPinEvent(13, 1));
 }
@@ -157,8 +162,9 @@ TEST_F(BridgeCoreFixture, BridgeProcessRx) {
   msg.pin = 13;
   msg.value = 1;
   EXPECT_GT(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
-                          pw::tokenizer::Hash("DigitalWrite"),
-                          rpc_pb_DigitalWrite_fields, msg), 0);
+                             pw::tokenizer::Hash("DigitalWrite"),
+                             rpc_pb_DigitalWrite_fields, msg),
+            0);
   Bridge.process();
 
   EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[13U].mode);
@@ -280,12 +286,14 @@ TEST_F(BridgeCoreFixture, BridgeEmitStatusVariants) {
 
   Bridge.emitStatus(pw::OkStatus());
   EXPECT_EQ(1U, g_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::OkStatus().code()), static_cast<int>(g_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::OkStatus().code()),
+            static_cast<int>(g_last_status.code()));
   EXPECT_EQ(0U, g_last_status_len);
 
   Bridge.emitStatus(pw::Status::Internal(), etl::string_view("Error"));
   EXPECT_EQ(2U, g_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()), static_cast<int>(g_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()),
+            static_cast<int>(g_last_status.code()));
   EXPECT_EQ(5U, g_last_status_len);
 
   const etl::array<uint8_t, 3> raw = {1U, 2U, 3U};
@@ -296,7 +304,8 @@ TEST_F(BridgeCoreFixture, BridgeEmitStatusVariants) {
 
   Bridge.emitStatus(pw::Status::ResourceExhausted());
   EXPECT_EQ(4U, g_status_calls);
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(g_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(g_last_status.code()));
 
   Bridge.onStatus(BridgeClass::StatusHandler());
   Bridge.emitStatus(pw::OkStatus(), etl::string_view(""));
@@ -555,7 +564,8 @@ TEST_F(BridgeCoreFixture, BridgeAuthenticatedDigitalWriteFrame) {
   auto& ba = TestAccessor::create(Bridge);
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> handshake_nonce = {};
-  EXPECT_TRUE(perform_test_link_sync(ba, 0xABU, pw::span<uint8_t>(handshake_nonce)));
+  EXPECT_TRUE(
+      perform_test_link_sync(ba, 0xABU, pw::span<uint8_t>(handshake_nonce)));
   EXPECT_TRUE(ba.isSynchronized());
 
   rpc_pb_DigitalWrite request = rpc_pb_DigitalWrite_init_default;
@@ -585,13 +595,16 @@ TEST_F(BridgeCoreFixture, BridgeAuthenticatedDigitalWriteFrame) {
                               sizeof(kSharedSecret) - 1U);
   // Derive the keys independently from both nonces (handshake v2).
   rpc_pb_LinkSync link_response = rpc_pb_LinkSync_init_default;
-  EXPECT_TRUE(decode_tx_response(stream, rpc_pb_LinkSync_fields, link_response));
+  EXPECT_TRUE(
+      decode_tx_response(stream, rpc_pb_LinkSync_fields, link_response));
   EXPECT_EQ(rpc::RPC_HANDSHAKE_NONCE_LENGTH, link_response.mcu_nonce.size);
   EXPECT_TRUE(rpc::security::derive_session_keys(
       secret, handshake_nonce,
       pw::span<const uint8_t>(link_response.mcu_nonce.bytes,
                               link_response.mcu_nonce.size),
       session_keys));
+  EXPECT_EQ(0, memcmp(mcu_to_host_key.data(), ba.txAeadKey().data(),
+                      rpc::RPC_AEAD_KEY_SIZE));
 
   constexpr uint64_t kCounter = 1U;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
@@ -743,14 +756,7 @@ TEST_F(BridgeCoreFixture, BridgePwLogTokenizedHdlcFrame) {
   ba.setSynchronized();
   stream.tx_buf.clear();
 
-  // Exercise the AVR backend's tokenized-log entry point. The host Bazel
-  // target uses pw_log's host backend for ordinary PW_LOG macros.
-  constexpr uint32_t kLogToken =
-      PW_TOKENIZER_STRING_TOKEN("Phase2 log value=%d");
-  etl::array<uint8_t, 5> log_payload{};
-  memcpy(log_payload.data(), &kLogToken, sizeof(kLogToken));
-  log_payload[4] = 0x54U;  // ZigZag-encoded integer 42.
-  pw_log_avr_HandleLog(2U, log_payload.data(), log_payload.size());
+  PW_LOG_INFO("Phase2 log value=%d", 42);
   ASSERT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;
@@ -783,11 +789,6 @@ TEST_F(BridgeCoreFixture, BridgeSafeStateEmitsTokenizedPwLog) {
   ba.setSynchronized();
   stream.tx_buf.clear();
 
-  constexpr uint32_t kSafeStateToken =
-      PW_TOKENIZER_STRING_TOKEN("BRIDGE_SAFE_STATE");
-  pw_log_avr_HandleLog(
-      3U, reinterpret_cast<const uint8_t*>(&kSafeStateToken),
-      sizeof(kSafeStateToken));
   Bridge.enterSafeState();
   EXPECT_FALSE(Bridge.isSynchronized());
   ASSERT_GT(stream.tx_buf.len, 0U);
@@ -930,8 +931,10 @@ TEST_F(BridgeCoreFixture, BridgePwMetricServiceGetAndWalk) {
   stream.tx_buf.clear();
 
   // 1. Invoke pw.metric.proto.MetricService/Get (server streaming).
-  EXPECT_GT(send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
-                    pw::tokenizer::Hash("Get")), 0U);
+  EXPECT_GT(
+      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
+                    pw::tokenizer::Hash("Get")),
+      0U);
 
   DecodedBridgeMetrics get_metrics{};
   size_t stream_packets = 0U;
@@ -944,7 +947,7 @@ TEST_F(BridgeCoreFixture, BridgePwMetricServiceGetAndWalk) {
     const auto& frame = frame_res.value();
     if (frame.address() != rpc::RPC_HDLC_ADDRESS_RPC) continue;
     auto pkt_res = pw::rpc::internal::Packet::FromBuffer(frame.data());
-    EXPECT_TRUE(pkt_res.ok());
+    ASSERT_TRUE(pkt_res.ok());
     const auto& pkt = pkt_res.value();
     if (pkt.type() == pw::rpc::internal::pwpb::PacketType::SERVER_STREAM) {
       ++stream_packets;
@@ -973,8 +976,10 @@ TEST_F(BridgeCoreFixture, BridgePwMetricServiceGetAndWalk) {
 
   // 2. Invoke pw.metric.proto.MetricService/Walk (paginated unary).
   stream.tx_buf.clear();
-  EXPECT_GT(send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
-                    pw::tokenizer::Hash("Walk")), 0U);
+  EXPECT_GT(
+      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
+                    pw::tokenizer::Hash("Walk")),
+      0U);
 
   DecodedBridgeMetrics walk_metrics{};
   bool walk_done = false;
@@ -987,7 +992,7 @@ TEST_F(BridgeCoreFixture, BridgePwMetricServiceGetAndWalk) {
     const auto& frame = frame_res.value();
     if (frame.address() != rpc::RPC_HDLC_ADDRESS_RPC) continue;
     auto pkt_res = pw::rpc::internal::Packet::FromBuffer(frame.data());
-    EXPECT_TRUE(pkt_res.ok());
+    ASSERT_TRUE(pkt_res.ok());
     const auto& pkt = pkt_res.value();
     if (pkt.type() == pw::rpc::internal::pwpb::PacketType::RESPONSE) {
       EXPECT_TRUE(pkt.status().ok());
@@ -1083,7 +1088,7 @@ TEST_F(BridgeCoreFixture, PinSubscribeUnsubscribeReclaimsSlot) {
                    sub_new);
   pw::Status resp_status = pw::OkStatus();
   EXPECT_FALSE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
-                                                     resp_status));
+                                                resp_status));
   EXPECT_GE(ba.subscriptionLastValueForPin(kNewPin), 0);
   EXPECT_EQ(INPUT_PULLUP, g_arduino_stub_pin_states[kNewPin].mode);
 }
@@ -1129,8 +1134,9 @@ TEST_F(BridgeCoreFixture, PinSubscribeFullDoesNotMutatePinMode) {
                    rej_pullup);
   pw::Status status_pullup = pw::OkStatus();
   EXPECT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
-                                                    status_pullup));
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(status_pullup.code()));
+                                               status_pullup));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(status_pullup.code()));
   EXPECT_EQ(0xFFU, g_arduino_stub_pin_states[kRejectedPullupPin].mode);
   EXPECT_EQ(-1, ba.subscriptionLastValueForPin(kRejectedPullupPin));
 
@@ -1144,9 +1150,9 @@ TEST_F(BridgeCoreFixture, PinSubscribeFullDoesNotMutatePinMode) {
                    rej_input);
   pw::Status status_input = pw::OkStatus();
   EXPECT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
-                                                    status_input));
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(status_input.code()));
+                                               status_input));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(status_input.code()));
   EXPECT_EQ(0xFFU, g_arduino_stub_pin_states[kRejectedInputPin].mode);
   EXPECT_EQ(-1, ba.subscriptionLastValueForPin(kRejectedInputPin));
 }
-

@@ -13,8 +13,8 @@
 
 #include <etl/optional.h>
 #include <pw_stream/memory_stream.h>
+#include <pw_transfer/cooperative_handler_registration.h>
 #include <pw_transfer/handler.h>
-#include <pw_transfer/transfer.h>
 
 #include "protocol/rpc_protocol.h"
 
@@ -34,15 +34,17 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
   ~UploadTransferHandler() override {
+    registration_.Detach(*this);
     g_upload_handler_destroyed = true;
   }
 
-  bool attach(pw::transfer::TransferService& service) {
-    return service.RegisterHandler(*this);
+  bool attach(pw::transfer::TransferService& service,
+              pw::transfer::TransferThread& thread) {
+    return registration_.Attach(*this, service, thread);
   }
 
-  bool detachFrom(pw::transfer::TransferService& service) {
-    return service.UnregisterHandler(*this);
+  bool detachFrom(const pw::transfer::TransferService& service) {
+    return registration_.DetachFrom(*this, service);
   }
 
   void arm(pw::ConstByteSpan data) { data_ = data; }
@@ -63,6 +65,7 @@ class UploadTransferHandler final : public pw::transfer::ReadOnlyHandler {
   }
 
  private:
+  pw::transfer::CooperativeHandlerRegistration registration_;
   pw::ConstByteSpan data_;
   etl::optional<pw::stream::MemoryReader> reader_;
 };
@@ -91,12 +94,12 @@ void FileSystemClass::_resetUpload() {
 
 bool FileSystemClass::registerUploadHandler(
     pw::transfer::TransferService& service,
-    pw::transfer::TransferThread& /* thread */) {
-  return g_upload_handler.attach(service);
+    pw::transfer::TransferThread& thread) {
+  return g_upload_handler.attach(service, thread);
 }
 
 void FileSystemClass::unregisterUploadHandler(
-    pw::transfer::TransferService& service) {
+    const pw::transfer::TransferService& service) {
   if (g_upload_handler_destroyed) return;
   if (g_upload_handler.detachFrom(service)) {
     _resetUpload();
@@ -142,7 +145,7 @@ void FileSystemClass::remove(etl::string_view path) {
 }
 
 void FileSystemClass::_onRemove(const rpc_pb_FileRemove& msg) {
-  bridge::hal::removeFile(etl::string_view(msg.path));
+  bridge::hal::removeFile(etl::string_view(msg.path)).IgnoreError();
 }
 
 FileSystemType FileSystem;

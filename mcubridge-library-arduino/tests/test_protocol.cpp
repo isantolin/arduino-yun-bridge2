@@ -14,8 +14,8 @@
 #endif
 #include <etl/array.h>
 #include <pw_span/span.h>
-#include "pw_unit_test/framework.h"
 
+#include "pw_unit_test/framework.h"
 #include "test_support.h"
 
 HardwareSerial Serial;
@@ -39,7 +39,8 @@ TEST(Protocol, HdlcRoundtripAndCrc) {
       frame_found = true;
       EXPECT_EQ(1, res.value().address());
       EXPECT_EQ(sizeof(test_payload), res.value().data().size());
-      EXPECT_EQ(0, memcmp(test_payload, res.value().data().data(), sizeof(test_payload)));
+      EXPECT_EQ(0, memcmp(test_payload, res.value().data().data(),
+                          sizeof(test_payload)));
     }
   }
   EXPECT_TRUE(frame_found);
@@ -93,20 +94,19 @@ TEST(Protocol, RpcPacketEncodingAndDecoding) {
 
   uint8_t encoded_buf[128];
   auto enc_res = packet.Encode(pw::as_writable_bytes(pw::span(encoded_buf)));
-  EXPECT_TRUE(enc_res.ok());
-  EXPECT_TRUE(enc_res.value().size() > 0);
+  ASSERT_TRUE(enc_res.ok());
+  EXPECT_GT(enc_res.value().size(), 0U);
 
   auto dec_res = pw::rpc::internal::Packet::FromBuffer(enc_res.value());
-  EXPECT_TRUE(dec_res.ok());
+  ASSERT_TRUE(dec_res.ok());
 
   const auto& decoded = dec_res.value();
-  EXPECT_TRUE(decoded.type() ==
-                   pw::rpc::internal::pwpb::PacketType::REQUEST);
-  EXPECT_EQ(1, decoded.channel_id());
+  EXPECT_TRUE(decoded.type() == pw::rpc::internal::pwpb::PacketType::REQUEST);
+  EXPECT_EQ(1U, decoded.channel_id());
   EXPECT_EQ(packet.service_id(), decoded.service_id());
   EXPECT_EQ(packet.method_id(), decoded.method_id());
-  EXPECT_EQ(42, decoded.call_id());
-  EXPECT_EQ(sizeof(payload), decoded.payload().size());
+  EXPECT_EQ(42U, decoded.call_id());
+  ASSERT_EQ(sizeof(payload), decoded.payload().size());
   EXPECT_EQ(0, memcmp(payload, decoded.payload().data(), sizeof(payload)));
 }
 
@@ -126,4 +126,3 @@ TEST(Protocol, ServiceIdTokenizerHashing) {
   EXPECT_NE(kDataStore, kMailbox);
   EXPECT_NE(kProcess, kFileSystem);
 }
-

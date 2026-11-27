@@ -6,7 +6,12 @@ package(default_visibility = ["//visibility:public"])
 HOST_COPTS = [
     "-Wall",
     "-Wextra",
+    "-Werror",
     "-Wno-unused-parameter",
+]
+
+TEST_COPTS = HOST_COPTS + [
+    "-Wno-sign-compare",
 ]
 
 HOST_DEFINES = [
@@ -17,9 +22,6 @@ HOST_DEFINES = [
     "BRIDGE_ENABLE_FILESYSTEM=1",
     "BRIDGE_ENABLE_PROCESS=1",
     "BRIDGE_ENABLE_SPI=1",
-    "PW_TRANSFER_COOPERATIVE=1",
-    "PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY=2",
-    "PW_TRANSFER_COOPERATIVE_CHUNK_BUFFER_SIZE=128",
 ]
 
 genrule(
@@ -72,7 +74,8 @@ cc_library(
         "//third_party/avr_pigweed_port/pw_analog_avr:pw_analog_avr",
         "//third_party/avr_pigweed_port/pw_digital_io_avr:pw_digital_io_avr",
         "//third_party/avr_pigweed_port/pw_spi_avr:pw_spi_avr",
-        "//third_party/avr_pigweed_port/pw_log_avr:pw_log_avr_headers",
+        "@avr_pigweed_host//:pw_log_avr",
+        "@avr_pigweed_host//:pw_transfer",
         "@pigweed//pw_assert:assert",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",
@@ -102,9 +105,6 @@ cc_library(
         "@pigweed//pw_sync:interrupt_spin_lock",
         "@pigweed//pw_sync:no_lock",
         "@pigweed//pw_tokenizer",
-        "@pigweed//pw_transfer",
-        "@pigweed//pw_thread:thread",
-        "@pigweed//pw_thread_stl:options",
         "@pigweed//pw_varint",
         "@wolfssl",
     ],
@@ -136,15 +136,13 @@ HOST_TEST_SUITES = [
     pw_cc_test(
         name = suite,
         srcs = ["tests/{}.cpp".format(suite)],
-        copts = HOST_COPTS,
+        copts = TEST_COPTS,
         defines = HOST_DEFINES,
         deps = [
             ":bridge_core",
             ":host_filesystem_mock",
             "@pigweed//pw_assert:backend_impl",
             "@pigweed//pw_log:backend_impl",
-            "@pigweed//pw_thread:thread",
-            "@pigweed//pw_thread_stl:options",
             "@pigweed//pw_unit_test",
         ],
     )
@@ -154,7 +152,7 @@ HOST_TEST_SUITES = [
 pw_cc_test(
     name = "test_hal_weak_defaults",
     srcs = ["tests/test_hal_weak_defaults.cpp"],
-    copts = HOST_COPTS,
+    copts = TEST_COPTS,
     defines = HOST_DEFINES,
     deps = [
         ":bridge_core",

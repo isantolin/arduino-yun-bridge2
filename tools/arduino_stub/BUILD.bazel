@@ -15,7 +15,6 @@ cc_library(
     deps = [
         "@etl",
         "@pigweed//pw_chrono:system_clock",
-        "//third_party/avr_pigweed_port/pw_log_avr:pw_log_avr_headers",
     ],
     visibility = ["//visibility:public"],
 )

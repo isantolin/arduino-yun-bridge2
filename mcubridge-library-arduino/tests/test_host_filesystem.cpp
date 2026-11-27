@@ -4,17 +4,17 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 #include <errno.h>
-#include <string.h>
 #include <etl/array.h>
 #include <etl/string.h>
 #include <pw_transfer/internal/chunk.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
-#include "pw_unit_test/framework.h"
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
+#include "pw_unit_test/framework.h"
 #include "services/FileSystem.h"
 #include "test_support.h"
 
@@ -133,8 +133,9 @@ bool find_tx_packet(const BiStream& stream,
 
 void send_transfer_read_open(TestAccessor& ba, uint32_t call_id = 1U) {
   EXPECT_TRUE(send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
-                    pw::tokenizer::Hash("Read"), {},
-                    pw::rpc::internal::pwpb::PacketType::REQUEST, call_id) > 0);
+                            pw::tokenizer::Hash("Read"), {},
+                            pw::rpc::internal::pwpb::PacketType::REQUEST,
+                            call_id) > 0);
 }
 
 void send_transfer_read_chunk(TestAccessor& ba, uint32_t resource_id,
@@ -156,12 +157,13 @@ void send_transfer_read_chunk(TestAccessor& ba, uint32_t resource_id,
     return;
   }
   EXPECT_TRUE(send_hdlc_rpc(
-          ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
-          pw::tokenizer::Hash("Read"),
-          pw::span<const uint8_t>(
-              reinterpret_cast<const uint8_t*>(encoded.value().data()),
-              encoded.value().size()),
-          pw::rpc::internal::pwpb::PacketType::CLIENT_STREAM, call_id) > 0);
+                  ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
+                  pw::tokenizer::Hash("Read"),
+                  pw::span<const uint8_t>(
+                      reinterpret_cast<const uint8_t*>(encoded.value().data()),
+                      encoded.value().size()),
+                  pw::rpc::internal::pwpb::PacketType::CLIENT_STREAM,
+                  call_id) > 0);
 }
 
 void send_transfer_read_start_chunk(TestAccessor& ba, uint32_t resource_id,
@@ -206,7 +208,8 @@ TEST(HostFilesystem, FilesystemUploadValidationAndUnavailable) {
   EXPECT_FALSE(FileSystem.upload(
       "offline.bin", pw::span<const uint8_t>(payload.data(), payload.size())));
   EXPECT_EQ(1U, g_fs_status_count);
-  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()), static_cast<int>(g_fs_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()),
+            static_cast<int>(g_fs_last_status.code()));
   EXPECT_FALSE(FileSystem.uploadPending());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
@@ -223,11 +226,11 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   stream.tx_buf.clear();
   send_transfer_read_start_chunk(ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID, 10U);
   Bridge.process();
-  ba.transferThread().WaitUntilEventIsProcessed();
 
   pw::rpc::internal::Packet chunk_pkt;
   etl::array<uint8_t, 512> chunk_payload{};
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), chunk_pkt, chunk_payload));
   auto parsed_err = pw::transfer::internal::Chunk::Parse(chunk_pkt.payload());
@@ -236,7 +239,8 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   // Upstream pw_transfer maps non-permission/non-unimplemented PrepareRead()
   // failures (FailedPrecondition from disarmed UploadTransferHandler) to
   // DATA_LOSS on the wire.
-  EXPECT_EQ(static_cast<int>(pw::Status::DataLoss().code()), static_cast<int>(parsed_err.value().status().value().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::DataLoss().code()),
+            static_cast<int>(parsed_err.value().status().value().code()));
 
   // 2. Armed upload + concurrent rejection + real pw_transfer read + OK finish.
   const etl::array<uint8_t, 10> upload_data = {'m', 'c', 'u', '-', 'u',
@@ -271,17 +275,18 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   stream.tx_buf.clear();
   send_transfer_read_start_chunk(ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID, 10U);
   Bridge.process();
-  ba.transferThread().WaitUntilEventIsProcessed();
 
   pw::rpc::internal::Packet data_pkt;
   etl::array<uint8_t, 512> data_pkt_payload{};
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), data_pkt, data_pkt_payload));
   auto parsed_data = pw::transfer::internal::Chunk::Parse(data_pkt.payload());
   ASSERT_TRUE(parsed_data.ok());
-  EXPECT_EQ(upload_data.size(), parsed_data.value().payload().size());
-  EXPECT_EQ(0, memcmp(upload_data.data(), parsed_data.value().payload().data(), upload_data.size()));
+  ASSERT_EQ(upload_data.size(), parsed_data.value().payload().size());
+  EXPECT_EQ(0, memcmp(upload_data.data(), parsed_data.value().payload().data(),
+                      upload_data.size()));
 
   // Complete the Upload RPC with OK -> disarms handler and clears pending.
   ba.invokeRpcResponse(
@@ -297,10 +302,10 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
       ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID,
       pw::transfer::internal::Chunk::Type::kParametersRetransmit, 10U);
   Bridge.process();
-  ba.transferThread().WaitUntilEventIsProcessed();
   pw::rpc::internal::Packet late_pkt;
   etl::array<uint8_t, 512> late_payload{};
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), late_pkt, late_payload));
   auto parsed_late = pw::transfer::internal::Chunk::Parse(late_pkt.payload());
@@ -332,7 +337,8 @@ TEST(HostFilesystem, FilesystemUploadErrorResetAndUnimplementedServerRpc) {
   ba.invokeRpcResponse(pw::rpc::internal::Packet::ServerError(
       upload_req, pw::Status::PermissionDenied()));
   EXPECT_FALSE(FileSystem.uploadPending());
-  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()), static_cast<int>(FileSystem.lastUploadStatus().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()),
+            static_cast<int>(FileSystem.lastUploadStatus().code()));
 
   // Start another upload and clear it with _resetUpload().
   EXPECT_TRUE(FileSystem.upload(
@@ -340,33 +346,40 @@ TEST(HostFilesystem, FilesystemUploadErrorResetAndUnimplementedServerRpc) {
   EXPECT_TRUE(FileSystem.uploadPending());
   FileSystem._resetUpload();
   EXPECT_FALSE(FileSystem.uploadPending());
-  EXPECT_EQ(static_cast<int>(pw::Status::Aborted().code()), static_cast<int>(FileSystem.lastUploadStatus().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Aborted().code()),
+            static_cast<int>(FileSystem.lastUploadStatus().code()));
 
   // MCU server rejects inbound FileSystemService.Upload with UNIMPLEMENTED.
   stream.tx_buf.clear();
   rpc_pb_FileUpload inbound = rpc_pb_FileUpload_init_default;
   bridge::pb::copy_string(inbound.path, sizeof(inbound.path), "nope.bin");
   inbound.size = 4U;
-  EXPECT_TRUE(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-                       pw::tokenizer::Hash("Upload"), rpc_pb_FileUpload_fields,
-                       inbound, 77U) > 0);
+  EXPECT_TRUE(send_rpc_request(ba,
+                               pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+                               pw::tokenizer::Hash("Upload"),
+                               rpc_pb_FileUpload_fields, inbound, 77U) > 0);
   pw::rpc::internal::Packet resp_pkt;
   etl::array<uint8_t, 512> resp_payload{};
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
                      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                      pw::tokenizer::Hash("Upload"), resp_pkt, resp_payload));
-  EXPECT_EQ(static_cast<int>(pw::Status::Unimplemented().code()), static_cast<int>(resp_pkt.status().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Unimplemented().code()),
+            static_cast<int>(resp_pkt.status().code()));
   // MCU server rejects retired FileSystemService.Write with NOT_FOUND.
   stream.tx_buf.clear();
   EXPECT_TRUE(send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
-                    pw::tokenizer::Hash("Write"), {},
-                    pw::rpc::internal::pwpb::PacketType::REQUEST, 78U) > 0);
+                            pw::tokenizer::Hash("Write"), {},
+                            pw::rpc::internal::pwpb::PacketType::REQUEST,
+                            78U) > 0);
   pw::rpc::internal::Packet err_pkt;
   etl::array<uint8_t, 512> err_payload{};
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_ERROR,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_ERROR,
                      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                      pw::tokenizer::Hash("Write"), err_pkt, err_payload));
-  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()), static_cast<int>(err_pkt.status().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()),
+            static_cast<int>(err_pkt.status().code()));
 }
 
 TEST(HostFilesystem, TransferHandlerAndBridgeLifecycleRegression) {
@@ -412,7 +425,8 @@ TEST(HostFilesystem, TransferHandlerAndBridgeLifecycleRegression) {
       pw::transfer::internal::Chunk::Type::kParametersContinue, 20U);
   Bridge.process();
   EXPECT_TRUE(g_fs_status_count >= 1U);
-  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(g_fs_last_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()),
+            static_cast<int>(g_fs_last_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 
   // Destroying Bridge while events are queued must still detach cleanly.
@@ -434,25 +448,26 @@ TEST(HostFilesystem, SystemServiceXoffXonRpcHandlers) {
   rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
   stream.tx_buf.clear();
   EXPECT_TRUE(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
-                       pw::tokenizer::Hash("Xoff"),
-                       rpc_pb_SubscribeRequest_fields, req, 31U) > 0);
+                               pw::tokenizer::Hash("Xoff"),
+                               rpc_pb_SubscribeRequest_fields, req, 31U) > 0);
   pw::rpc::internal::Packet xoff_resp;
   etl::array<uint8_t, 512> resp_payload{};
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
                      pw::tokenizer::Hash("rpc.pb.SystemService"),
                      pw::tokenizer::Hash("Xoff"), xoff_resp, resp_payload));
   EXPECT_TRUE(xoff_resp.status().ok());
 
   stream.tx_buf.clear();
   EXPECT_TRUE(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
-                       pw::tokenizer::Hash("Xon"),
-                       rpc_pb_SubscribeRequest_fields, req, 32U) > 0);
+                               pw::tokenizer::Hash("Xon"),
+                               rpc_pb_SubscribeRequest_fields, req, 32U) > 0);
   pw::rpc::internal::Packet xon_resp;
-  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
+  EXPECT_TRUE(
+      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
                      pw::tokenizer::Hash("rpc.pb.SystemService"),
                      pw::tokenizer::Hash("Xon"), xon_resp, resp_payload));
   EXPECT_TRUE(xon_resp.status().ok());
 }
 
 }  // namespace
-

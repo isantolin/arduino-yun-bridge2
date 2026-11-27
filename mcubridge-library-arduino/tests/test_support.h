@@ -21,12 +21,13 @@
 #include <etl/string_view.h>
 #include <pw_rpc/internal/packet.h>
 #include <pw_span/span.h>
-#include <new>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <new>
 
 #include "pb_decode.h"
 #include "pb_encode.h"
@@ -209,14 +210,9 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
 inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                               unsigned long baudrate = 0,
                               const char* secret = nullptr) {
-  // The worker and registered services are test runtime state. Stop the
-  // test-owned worker after detaching services, then reconstruct the complete
-  // derived TestAccessor object before starting a worker for its new thread.
   auto& accessor = bridge::test::TestAccessor::create(bridge);
-  bridge::test::stopHostTransferWorker();
   accessor.~TestAccessor();
   new (static_cast<void*>(&bridge)) bridge::test::TestAccessor(stream);
-  bridge::test::startHostTransferWorker();
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {

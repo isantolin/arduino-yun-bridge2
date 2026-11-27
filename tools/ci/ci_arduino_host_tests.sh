@@ -49,7 +49,7 @@ TEST_TARGETS=(
 
 if [ "$COVERAGE_MODE" = false ]; then
     echo "[host-cpp] Running Pigweed pw_unit_test suites with Bazel..."
-    bazel test "${TEST_TARGETS[@]}" --test_output=errors --keep_going
+    bazel test --config=arduino_host "${TEST_TARGETS[@]}" --test_output=errors --keep_going
     echo "[host-cpp] ALL PIGWEED HOST TESTS PASSED"
     exit 0
 fi
@@ -61,7 +61,7 @@ MIN_FUNCTION="${ARDUINO_COVERAGE_MIN_FUNCTION:-95}"
 mkdir -p "${OUTPUT_ROOT}"
 
 echo "[host-cpp] Running Pigweed pw_unit_test suites with Bazel coverage..."
-bazel coverage "${TEST_TARGETS[@]}" \
+bazel coverage --config=arduino_host "${TEST_TARGETS[@]}" \
     --combined_report=lcov \
     --instrumentation_filter='//mcubridge-library-arduino' \
     --test_output=errors \

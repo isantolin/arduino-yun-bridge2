@@ -18,24 +18,6 @@ local_path_override(
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
-    name = "unity",
-    build_file_content = """
-load("@rules_cc//cc:defs.bzl", "cc_library")
-cc_library(
-    name = "unity",
-    srcs = ["src/unity.c"],
-    hdrs = glob(["src/*.h"]),
-    includes = ["src"],
-    defines = ["UNITY_INCLUDE_DOUBLE"],
-    visibility = ["//visibility:public"],
-)
-""",
-    integrity = "sha256-6E6zAcp5Z4MeaLFyj5Eeh/otNF2N22T4l7wvLuJKMhw=",
-    strip_prefix = "Unity-2.7.0",
-    urls = ["https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v2.7.0.tar.gz"],
-)
-
-http_archive(
     name = "etl",
     build_file_content = """
 load("@rules_cc//cc:defs.bzl", "cc_library")

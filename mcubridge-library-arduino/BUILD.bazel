@@ -68,7 +68,7 @@ cc_library(
         "tests",
     ],
     deps = [
-        ":arduino_stub",
+        "//tools/arduino_stub",
         "@etl",
         "@nanopb_c",
         "//third_party/avr_pigweed_port/pw_analog_avr:pw_analog_avr",

@@ -3,7 +3,6 @@
 #include <stdint.h>
 #include <string.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #include "pb_decode.h"
 #include "pb_encode.h"

@@ -1763,3 +1763,31 @@ def test_handshake_response_tag_rejects_an_invalid_mcu_nonce_length() -> None:
             b"h" * protocol.HANDSHAKE_NONCE_LENGTH,
             b"short",
         )
+
+
+async def test_stop_cancels_active_stream_calls_before_closing_serial(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcubridge.transport import serial as serial_module
+
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    call = MagicMock()
+    transport._active_stream_calls.add(call)
+    transport.serial = MagicMock(spec=serial.Serial)
+    close_serial = AsyncMock()
+    cancelled: list[Any] = []
+
+    def cancel_rpc(active_call: Any, _message: str) -> bool:
+        cancelled.append(active_call)
+        return True
+
+    monkeypatch.setattr(serial_module, "cancel_rpc_call", cancel_rpc)
+    monkeypatch.setattr(transport, "_close_serial_handle", close_serial)
+
+    await transport.stop()
+
+    assert cancelled == [call]
+    assert not transport._active_stream_calls
+    close_serial.assert_awaited_once_with(transport.serial, "stop")

@@ -1,5 +1,4 @@
 #include <etl/algorithm.h>
-#include <pw_chrono/system_clock.h>
 
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep

@@ -4,13 +4,13 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 #include <errno.h>
+#include <string.h>
 #include <etl/array.h>
 #include <etl/string.h>
 #include <pw_transfer/internal/chunk.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -276,7 +276,7 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   auto parsed_data = pw::transfer::internal::Chunk::Parse(data_pkt.payload());
   EXPECT_TRUE(parsed_data.ok());
   EXPECT_EQ(upload_data.size(), parsed_data.value().payload().size());
-  EXPECT_TRUE(std::equal(upload_data.data(), (upload_data.data()) + (upload_data.size()), parsed_data.value().payload().data()));
+  EXPECT_EQ(0, memcmp(upload_data.data(), parsed_data.value().payload().data(), upload_data.size())));
 
   // Complete the Upload RPC with OK -> disarms handler and clears pending.
   ba.invokeRpcResponse(

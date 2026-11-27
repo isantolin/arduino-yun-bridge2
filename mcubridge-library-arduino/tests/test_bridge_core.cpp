@@ -52,7 +52,10 @@ class BridgeCoreFixture : public testing::Test {
 };
 
 void reset_bridge(const char* secret = nullptr) {
-  Bridge.begin(115200, secret);
+  // Reconstruct the singleton so each Pigweed test starts with fresh RPC,
+  // transfer, timer and observer state instead of relying on begin() to erase
+  // every in-flight object from the previous test.
+  reset_bridge_core(Bridge, Serial, 115200U, secret);
   Console.begin();
 }
 
@@ -181,6 +184,7 @@ TEST_F(BridgeCoreFixture, BridgeStatusAck) {
 }
 
 TEST_F(BridgeCoreFixture, BridgePostAndStackSentinel) {
+  reset_bridge();
   EXPECT_TRUE(bridge::hal::run_power_on_self_tests());
   EXPECT_TRUE(bridge::hal::checkStackOverflow());
   EXPECT_GE(bridge::hal::getFreeMemory(), bridge::hal::MIN_STACK_MARGIN_BYTES);
@@ -215,6 +219,7 @@ TEST_F(BridgeCoreFixture, BridgeWcetTracking) {
 }
 
 TEST_F(BridgeCoreFixture, BridgeBeginNullSecret) {
+  reset_bridge();
   Bridge.begin(115200, nullptr);
   EXPECT_TRUE(Bridge.isPostPassed());
   Bridge.process();
@@ -323,9 +328,13 @@ TEST_F(BridgeCoreFixture, BridgeDispatchStatusAndUnknown) {
 }
 
 TEST_F(BridgeCoreFixture, BridgePostFailure) {
+  reset_bridge();
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
   Bridge.begin(115200, "secret");
+  EXPECT_FALSE(Bridge.isPostPassed());
+  EXPECT_FALSE(TestAccessor::create(Bridge).isTxEnabled());
+
   bridge::test::fault::reset();
   reset_bridge();
   EXPECT_TRUE(Bridge.isPostPassed());

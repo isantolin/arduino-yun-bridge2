@@ -9,7 +9,8 @@
 #include <pw_transfer/internal/chunk.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
+#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -21,9 +22,6 @@
 Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
 HardwareSerial Serial1;
-void setUp(void) {}
-void tearDown(void) {}
-
 namespace {
 using bridge::test::TestAccessor;
 
@@ -40,51 +38,50 @@ bool create_host_test_file(const char* name, pw::span<const uint8_t> data) {
   return written == data.size();
 }
 
-void test_hal_remove_file_roundtrip() {
+TEST(HostFilesystem, HalRemoveFileRoundtrip) {
   const etl::array<uint8_t, 8> payload = {'m', 'c', 'u', '-',
                                           'd', 'a', 't', 'a'};
-  TEST_ASSERT_TRUE(create_host_test_file(
+  EXPECT_TRUE(create_host_test_file(
       "test_hal.bin", pw::span<const uint8_t>(payload.data(), payload.size())));
-  TEST_ASSERT_TRUE(bridge::hal::removeFile("test_hal.bin").ok());
-  TEST_ASSERT_FALSE(bridge::hal::removeFile("test_hal.bin").ok());
-  TEST_ASSERT_TRUE(
-      bridge::hal::removeFile("../escape.bin").IsInvalidArgument());
+  EXPECT_TRUE(bridge::hal::removeFile("test_hal.bin").ok());
+  EXPECT_FALSE(bridge::hal::removeFile("test_hal.bin").ok());
+  EXPECT_TRUE(bridge::hal::removeFile("../escape.bin").IsInvalidArgument());
 }
 
-void test_filesystem_api_remove() {
+TEST(HostFilesystem, FilesystemApiRemove) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   FileSystem.remove("api_rem.bin");
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_TRUE(stream.tx_buf.len > 0);
+  EXPECT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(stream.tx_buf.len > 0);
 }
 
-void test_filesystem_on_remove() {
+TEST(HostFilesystem, FilesystemOnRemove) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   const etl::array<uint8_t, 2> dummy = {1, 2};
-  TEST_ASSERT_TRUE(create_host_test_file(
+  EXPECT_TRUE(create_host_test_file(
       "on_rem.bin", pw::span<const uint8_t>(dummy.data(), dummy.size())));
   rpc_pb_FileRemove msg = rpc_pb_FileRemove_init_default;
   bridge::pb::copy_string(msg.path, sizeof(msg.path), "on_rem.bin");
   FileSystem._onRemove(msg);
-  TEST_ASSERT_FALSE(bridge::hal::removeFile("on_rem.bin").ok());
+  EXPECT_FALSE(bridge::hal::removeFile("on_rem.bin").ok());
 }
 
-void test_filesystem_api_rejects_when_rpc_tx_is_unavailable() {
+TEST(HostFilesystem, FilesystemApiRejectsWhenRpcTxIsUnavailable) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setTxEnabled(false);
-  TEST_ASSERT_FALSE(Bridge.isRpcTxReady());
+  EXPECT_FALSE(Bridge.isRpcTxReady());
 
   FileSystem.remove("offline.bin");
-  TEST_ASSERT_FALSE(Bridge.isRpcTxReady());
+  EXPECT_FALSE(Bridge.isRpcTxReady());
 }
 
-void test_filesystem_api_empty_and_error_paths() {
+TEST(HostFilesystem, FilesystemApiEmptyAndErrorPaths) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -92,7 +89,7 @@ void test_filesystem_api_empty_and_error_paths() {
 
   // Empty remove
   FileSystem.remove("");
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
 pw::Status g_fs_last_status = pw::OkStatus();
@@ -135,8 +132,7 @@ bool find_tx_packet(const BiStream& stream,
 }
 
 void send_transfer_read_open(TestAccessor& ba, uint32_t call_id = 1U) {
-  TEST_ASSERT_TRUE(
-      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
+  EXPECT_TRUE(send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
                     pw::tokenizer::Hash("Read"), {},
                     pw::rpc::internal::pwpb::PacketType::REQUEST, call_id) > 0);
 }
@@ -155,9 +151,8 @@ void send_transfer_read_chunk(TestAccessor& ba, uint32_t resource_id,
   etl::array<pw::ByteSpan::element_type, 64> encoded_buf{};
   auto encoded =
       chunk.Encode(pw::ByteSpan(encoded_buf.data(), encoded_buf.size()));
-  TEST_ASSERT_TRUE(encoded.ok());
-  TEST_ASSERT_TRUE(
-      send_hdlc_rpc(
+  EXPECT_TRUE(encoded.ok());
+  EXPECT_TRUE(send_hdlc_rpc(
           ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
           pw::tokenizer::Hash("Read"),
           pw::span<const uint8_t>(
@@ -172,24 +167,24 @@ void send_transfer_read_start_chunk(TestAccessor& ba, uint32_t resource_id,
       ba, resource_id, pw::transfer::internal::Chunk::Type::kStart, call_id);
 }
 
-void test_filesystem_upload_validation_and_unavailable() {
+TEST(HostFilesystem, FilesystemUploadValidationAndUnavailable) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   const etl::array<uint8_t, 4> payload = {'t', 'e', 's', 't'};
-  TEST_ASSERT_FALSE(FileSystem.uploadPending());
+  EXPECT_FALSE(FileSystem.uploadPending());
 
   // Empty path and empty data are rejected without starting an upload.
-  TEST_ASSERT_FALSE(FileSystem.upload(
+  EXPECT_FALSE(FileSystem.upload(
       "", pw::span<const uint8_t>(payload.data(), payload.size())));
-  TEST_ASSERT_FALSE(FileSystem.upload("valid.bin", pw::span<const uint8_t>()));
+  EXPECT_FALSE(FileSystem.upload("valid.bin", pw::span<const uint8_t>()));
 
   // Path equal to or longer than the protobuf char buffer (leaving no NUL).
   etl::array<char, sizeof(rpc_pb_FileUpload{}.path)> long_path{};
   long_path.fill('a');
-  TEST_ASSERT_FALSE(FileSystem.upload(
+  EXPECT_FALSE(FileSystem.upload(
       etl::string_view(long_path.data(), long_path.size()),
       pw::span<const uint8_t>(payload.data(), payload.size())));
 
@@ -197,7 +192,7 @@ void test_filesystem_upload_validation_and_unavailable() {
   if constexpr (sizeof(size_t) > sizeof(uint32_t)) {
     const pw::span<const uint8_t> huge_span(
         payload.data(), static_cast<size_t>(UINT32_MAX) + 1U);
-    TEST_ASSERT_FALSE(FileSystem.upload("huge.bin", huge_span));
+    EXPECT_FALSE(FileSystem.upload("huge.bin", huge_span));
   }
 
   // Unavailable RPC TX emits UNAVAILABLE and returns false.
@@ -205,16 +200,15 @@ void test_filesystem_upload_validation_and_unavailable() {
   g_fs_status_count = 0;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_fs_status>());
   ba.setTxEnabled(false);
-  TEST_ASSERT_FALSE(FileSystem.upload(
+  EXPECT_FALSE(FileSystem.upload(
       "offline.bin", pw::span<const uint8_t>(payload.data(), payload.size())));
-  TEST_ASSERT_EQUAL_UINT(1U, g_fs_status_count);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unavailable().code()),
-                        static_cast<int>(g_fs_last_status.code()));
-  TEST_ASSERT_FALSE(FileSystem.uploadPending());
+  EXPECT_EQ(1U, g_fs_status_count);
+  EXPECT_EQ(static_cast<int>(pw::Status::Unavailable().code()), static_cast<int>(g_fs_last_status.code()));
+  EXPECT_FALSE(FileSystem.uploadPending());
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
-void test_filesystem_upload_transfer_read_armed_and_disarmed() {
+TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -229,38 +223,35 @@ void test_filesystem_upload_transfer_read_armed_and_disarmed() {
 
   pw::rpc::internal::Packet chunk_pkt;
   etl::array<uint8_t, 512> chunk_payload{};
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), chunk_pkt, chunk_payload));
   auto parsed_err = pw::transfer::internal::Chunk::Parse(chunk_pkt.payload());
-  TEST_ASSERT_TRUE(parsed_err.ok());
-  TEST_ASSERT_TRUE(parsed_err.value().status().has_value());
+  EXPECT_TRUE(parsed_err.ok());
+  EXPECT_TRUE(parsed_err.value().status().has_value());
   // Upstream pw_transfer maps non-permission/non-unimplemented PrepareRead()
   // failures (FailedPrecondition from disarmed UploadTransferHandler) to
   // DATA_LOSS on the wire.
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(pw::Status::DataLoss().code()),
-      static_cast<int>(parsed_err.value().status().value().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::DataLoss().code()), static_cast<int>(parsed_err.value().status().value().code()));
 
   // 2. Armed upload + concurrent rejection + real pw_transfer read + OK finish.
   const etl::array<uint8_t, 10> upload_data = {'m', 'c', 'u', '-', 'u',
                                                'p', 'l', 'o', 'a', 'd'};
   stream.tx_buf.clear();
-  TEST_ASSERT_TRUE(FileSystem.upload(
+  EXPECT_TRUE(FileSystem.upload(
       "logs/telemetry.bin",
       pw::span<const uint8_t>(upload_data.data(), upload_data.size())));
-  TEST_ASSERT_TRUE(FileSystem.uploadPending());
+  EXPECT_TRUE(FileSystem.uploadPending());
 
   // Concurrent upload must be rejected while one is in progress.
-  TEST_ASSERT_FALSE(FileSystem.upload(
+  EXPECT_FALSE(FileSystem.upload(
       "logs/second.bin",
       pw::span<const uint8_t>(upload_data.data(), upload_data.size())));
 
   // Verify the outgoing FileSystemService.Upload RPC request payload.
   pw::rpc::internal::Packet upload_req;
   etl::array<uint8_t, 512> upload_req_payload{};
-  TEST_ASSERT_TRUE(find_tx_packet(
+  EXPECT_TRUE(find_tx_packet(
       stream, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.FileSystemService"),
       pw::tokenizer::Hash("Upload"), upload_req, upload_req_payload));
@@ -268,9 +259,9 @@ void test_filesystem_upload_transfer_read_armed_and_disarmed() {
   pb_istream_t istream = pb_istream_from_buffer(
       reinterpret_cast<const uint8_t*>(upload_req.payload().data()),
       upload_req.payload().size());
-  TEST_ASSERT_TRUE(pb_decode(&istream, rpc_pb_FileUpload_fields, &decoded_req));
-  TEST_ASSERT_EQUAL_STRING("logs/telemetry.bin", decoded_req.path);
-  TEST_ASSERT_EQUAL_UINT32(upload_data.size(), decoded_req.size);
+  EXPECT_TRUE(pb_decode(&istream, rpc_pb_FileUpload_fields, &decoded_req));
+  EXPECT_STREQ("logs/telemetry.bin", decoded_req.path);
+  EXPECT_EQ(upload_data.size(), decoded_req.size);
 
   // Trigger pw_transfer read against the armed UploadTransferHandler.
   stream.tx_buf.clear();
@@ -279,23 +270,19 @@ void test_filesystem_upload_transfer_read_armed_and_disarmed() {
 
   pw::rpc::internal::Packet data_pkt;
   etl::array<uint8_t, 512> data_pkt_payload{};
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), data_pkt, data_pkt_payload));
   auto parsed_data = pw::transfer::internal::Chunk::Parse(data_pkt.payload());
-  TEST_ASSERT_TRUE(parsed_data.ok());
-  TEST_ASSERT_EQUAL_UINT(upload_data.size(),
-                         parsed_data.value().payload().size());
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(upload_data.data(),
-                                parsed_data.value().payload().data(),
-                                upload_data.size());
+  EXPECT_TRUE(parsed_data.ok());
+  EXPECT_EQ(upload_data.size(), parsed_data.value().payload().size());
+  EXPECT_TRUE(std::equal(upload_data.data(), (upload_data.data()) + (upload_data.size()), parsed_data.value().payload().data()));
 
   // Complete the Upload RPC with OK -> disarms handler and clears pending.
   ba.invokeRpcResponse(
       pw::rpc::internal::Packet::Response(upload_req, pw::OkStatus()));
-  TEST_ASSERT_FALSE(FileSystem.uploadPending());
-  TEST_ASSERT_TRUE(FileSystem.lastUploadStatus().ok());
+  EXPECT_FALSE(FileSystem.uploadPending());
+  EXPECT_TRUE(FileSystem.lastUploadStatus().ok());
 
   // A late retransmit chunk on the still-open pw_transfer session after
   // disarm() must never invoke pure-virtual Stream::DoSeek/DoRead on a
@@ -307,17 +294,16 @@ void test_filesystem_upload_transfer_read_armed_and_disarmed() {
   Bridge.process();
   pw::rpc::internal::Packet late_pkt;
   etl::array<uint8_t, 512> late_payload{};
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), late_pkt, late_payload));
   auto parsed_late = pw::transfer::internal::Chunk::Parse(late_pkt.payload());
-  TEST_ASSERT_TRUE(parsed_late.ok());
-  TEST_ASSERT_TRUE(parsed_late.value().status().has_value());
-  TEST_ASSERT_FALSE(parsed_late.value().status().value().ok());
+  EXPECT_TRUE(parsed_late.ok());
+  EXPECT_TRUE(parsed_late.value().status().has_value());
+  EXPECT_FALSE(parsed_late.value().status().value().ok());
 }
 
-void test_filesystem_upload_error_reset_and_unimplemented_server_rpc() {
+TEST(HostFilesystem, FilesystemUploadErrorResetAndUnimplementedServerRpc) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -325,13 +311,13 @@ void test_filesystem_upload_error_reset_and_unimplemented_server_rpc() {
 
   const etl::array<uint8_t, 4> payload = {0xAAU, 0xBBU, 0xCCU, 0xDDU};
   stream.tx_buf.clear();
-  TEST_ASSERT_TRUE(FileSystem.upload(
+  EXPECT_TRUE(FileSystem.upload(
       "err.bin", pw::span<const uint8_t>(payload.data(), payload.size())));
-  TEST_ASSERT_TRUE(FileSystem.uploadPending());
+  EXPECT_TRUE(FileSystem.uploadPending());
 
   pw::rpc::internal::Packet upload_req;
   etl::array<uint8_t, 512> upload_req_payload{};
-  TEST_ASSERT_TRUE(find_tx_packet(
+  EXPECT_TRUE(find_tx_packet(
       stream, pw::rpc::internal::pwpb::PacketType::REQUEST,
       pw::tokenizer::Hash("rpc.pb.FileSystemService"),
       pw::tokenizer::Hash("Upload"), upload_req, upload_req_payload));
@@ -339,53 +325,45 @@ void test_filesystem_upload_error_reset_and_unimplemented_server_rpc() {
   // Deliver a SERVER_ERROR -> invokes on_error -> updates lastUploadStatus.
   ba.invokeRpcResponse(pw::rpc::internal::Packet::ServerError(
       upload_req, pw::Status::PermissionDenied()));
-  TEST_ASSERT_FALSE(FileSystem.uploadPending());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::PermissionDenied().code()),
-                        static_cast<int>(FileSystem.lastUploadStatus().code()));
+  EXPECT_FALSE(FileSystem.uploadPending());
+  EXPECT_EQ(static_cast<int>(pw::Status::PermissionDenied().code()), static_cast<int>(FileSystem.lastUploadStatus().code()));
 
   // Start another upload and clear it with _resetUpload().
-  TEST_ASSERT_TRUE(FileSystem.upload(
+  EXPECT_TRUE(FileSystem.upload(
       "reset.bin", pw::span<const uint8_t>(payload.data(), payload.size())));
-  TEST_ASSERT_TRUE(FileSystem.uploadPending());
+  EXPECT_TRUE(FileSystem.uploadPending());
   FileSystem._resetUpload();
-  TEST_ASSERT_FALSE(FileSystem.uploadPending());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Aborted().code()),
-                        static_cast<int>(FileSystem.lastUploadStatus().code()));
+  EXPECT_FALSE(FileSystem.uploadPending());
+  EXPECT_EQ(static_cast<int>(pw::Status::Aborted().code()), static_cast<int>(FileSystem.lastUploadStatus().code()));
 
   // MCU server rejects inbound FileSystemService.Upload with UNIMPLEMENTED.
   stream.tx_buf.clear();
   rpc_pb_FileUpload inbound = rpc_pb_FileUpload_init_default;
   bridge::pb::copy_string(inbound.path, sizeof(inbound.path), "nope.bin");
   inbound.size = 4U;
-  TEST_ASSERT_TRUE(
-      send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+  EXPECT_TRUE(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                        pw::tokenizer::Hash("Upload"), rpc_pb_FileUpload_fields,
                        inbound, 77U) > 0);
   pw::rpc::internal::Packet resp_pkt;
   etl::array<uint8_t, 512> resp_payload{};
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
                      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                      pw::tokenizer::Hash("Upload"), resp_pkt, resp_payload));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Unimplemented().code()),
-                        static_cast<int>(resp_pkt.status().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::Unimplemented().code()), static_cast<int>(resp_pkt.status().code()));
   // MCU server rejects retired FileSystemService.Write with NOT_FOUND.
   stream.tx_buf.clear();
-  TEST_ASSERT_TRUE(
-      send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
+  EXPECT_TRUE(send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                     pw::tokenizer::Hash("Write"), {},
                     pw::rpc::internal::pwpb::PacketType::REQUEST, 78U) > 0);
   pw::rpc::internal::Packet err_pkt;
   etl::array<uint8_t, 512> err_payload{};
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_ERROR,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_ERROR,
                      pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                      pw::tokenizer::Hash("Write"), err_pkt, err_payload));
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::NotFound().code()),
-                        static_cast<int>(err_pkt.status().code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::NotFound().code()), static_cast<int>(err_pkt.status().code()));
 }
 
-void test_transfer_handler_and_bridge_lifecycle_regression() {
+TEST(HostFilesystem, TransferHandlerAndBridgeLifecycleRegression) {
   BiStream stream;
   // Repeated reset_bridge_core cycles must cleanly detach and re-attach
   // g_upload_handler and static RPC services without intrusive-list crashes.
@@ -427,10 +405,8 @@ void test_transfer_handler_and_bridge_lifecycle_regression() {
       ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID,
       pw::transfer::internal::Chunk::Type::kParametersContinue, 20U);
   Bridge.process();
-  TEST_ASSERT_TRUE(g_fs_status_count >= 1U);
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(pw::Status::ResourceExhausted().code()),
-      static_cast<int>(g_fs_last_status.code()));
+  EXPECT_TRUE(g_fs_status_count >= 1U);
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(g_fs_last_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 
   // Destroying Bridge while events are queued must still detach cleanly.
@@ -443,7 +419,7 @@ void test_transfer_handler_and_bridge_lifecycle_regression() {
   reset_bridge_core(Bridge, stream);
 }
 
-void test_system_service_xoff_xon_rpc_handlers() {
+TEST(HostFilesystem, SystemServiceXoffXonRpcHandlers) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -451,44 +427,26 @@ void test_system_service_xoff_xon_rpc_handlers() {
 
   rpc_pb_SubscribeRequest req = rpc_pb_SubscribeRequest_init_default;
   stream.tx_buf.clear();
-  TEST_ASSERT_TRUE(
-      send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+  EXPECT_TRUE(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
                        pw::tokenizer::Hash("Xoff"),
                        rpc_pb_SubscribeRequest_fields, req, 31U) > 0);
   pw::rpc::internal::Packet xoff_resp;
   etl::array<uint8_t, 512> resp_payload{};
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
                      pw::tokenizer::Hash("rpc.pb.SystemService"),
                      pw::tokenizer::Hash("Xoff"), xoff_resp, resp_payload));
-  TEST_ASSERT_TRUE(xoff_resp.status().ok());
+  EXPECT_TRUE(xoff_resp.status().ok());
 
   stream.tx_buf.clear();
-  TEST_ASSERT_TRUE(
-      send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+  EXPECT_TRUE(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
                        pw::tokenizer::Hash("Xon"),
                        rpc_pb_SubscribeRequest_fields, req, 32U) > 0);
   pw::rpc::internal::Packet xon_resp;
-  TEST_ASSERT_TRUE(
-      find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
+  EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::RESPONSE,
                      pw::tokenizer::Hash("rpc.pb.SystemService"),
                      pw::tokenizer::Hash("Xon"), xon_resp, resp_payload));
-  TEST_ASSERT_TRUE(xon_resp.status().ok());
+  EXPECT_TRUE(xon_resp.status().ok());
 }
 
 }  // namespace
 
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_hal_remove_file_roundtrip);
-  RUN_TEST(test_filesystem_api_remove);
-  RUN_TEST(test_filesystem_on_remove);
-  RUN_TEST(test_filesystem_api_rejects_when_rpc_tx_is_unavailable);
-  RUN_TEST(test_filesystem_api_empty_and_error_paths);
-  RUN_TEST(test_filesystem_upload_validation_and_unavailable);
-  RUN_TEST(test_filesystem_upload_transfer_read_armed_and_disarmed);
-  RUN_TEST(test_filesystem_upload_error_reset_and_unimplemented_server_rpc);
-  RUN_TEST(test_transfer_handler_and_bridge_lifecycle_regression);
-  RUN_TEST(test_system_service_xoff_xon_rpc_handlers);
-  return UNITY_END();
-}

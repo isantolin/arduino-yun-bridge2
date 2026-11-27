@@ -120,7 +120,7 @@ for source in "${PW_ALL_SRCS[@]}"; do
 done
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
-g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -pthread -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
     "${PW_COOPERATIVE_DEFINES[@]}" \
     -I"${SRC_DIR}" \
@@ -143,7 +143,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
-    "${SRC_DIR}/BridgeInstance.cpp" \
+    "${TEST_DIR}/bridge_test_global.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
     "${SRC_DIR}/services/Mailbox.cpp" \
@@ -157,7 +157,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_
     -o "${TEST_DIR}/bridge_emulator"
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
-g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -pthread -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
     "${PW_COOPERATIVE_DEFINES[@]}" \
     -I"${SRC_DIR}" \
@@ -180,7 +180,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
-    "${SRC_DIR}/BridgeInstance.cpp" \
+    "${TEST_DIR}/bridge_test_global.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
     "${SRC_DIR}/services/Mailbox.cpp" \

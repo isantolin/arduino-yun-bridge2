@@ -88,6 +88,7 @@ PW_COMMON_INC_FLAGS=(
     -I"${PW_ROOT}/pw_sync/public"
     -I"${PW_ROOT}/pw_sync/public_overrides"
     -I"${PW_ROOT}/pw_thread/public"
+    -I"${PW_ROOT}/pw_thread_stl/public"
     -I"${PW_ROOT}/pw_toolchain/public"
     -I"${PW_ROOT}/third_party/fuchsia/repo/sdk/lib/stdcompat/include"
     -I"${PW_ROOT}/third_party/fuchsia/repo/sdk/lib/fit/include"

@@ -7,11 +7,9 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include <stdlib.h>
 
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
-#include "hal/hal.h"
 #include "host_serial_stream.h"
 #include "services/Console.h"
 
@@ -74,6 +72,3 @@ int main(int argc, char** argv) {
   fprintf(stderr, "McuBridge Emulator Terminating...\n");
   return 0;
 }
-namespace bridge::hal {
-[[noreturn]] void enterBootloader() { ::_Exit(0); }
-}  // namespace bridge::hal

@@ -35,7 +35,7 @@ def encode_rpc_packet(
             actual_type = int(PacketType.RESPONSE)
 
     if spec is not None and spec.service_id is not None and spec.method_id is not None:
-        service_id, method_id = cast(int, spec.service_id), cast(int, spec.method_id)
+        service_id, method_id = spec.service_id, spec.method_id
     elif isinstance(target, tuple):
         service_id, method_id = target
     elif isinstance(target, int):
@@ -47,8 +47,8 @@ def encode_rpc_packet(
     return RpcPacket(
         type=cast(Any, actual_type),
         channel_id=channel_id,
-        service_id=cast(int, service_id),
-        method_id=cast(int, method_id),
+        service_id=service_id,
+        method_id=method_id,
         call_id=call_id,
         status=status.value,
         payload=raw_payload,

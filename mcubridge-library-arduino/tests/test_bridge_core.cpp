@@ -748,7 +748,7 @@ TEST_F(BridgeCoreFixture, BridgePwLogTokenizedHdlcFrame) {
   memcpy(log_payload.data(), &kLogToken, sizeof(kLogToken));
   log_payload[4] = 0x54U;  // ZigZag-encoded integer 42.
   pw_log_avr_HandleLog(2U, log_payload.data(), log_payload.size());
-  EXPECT_GT(stream.tx_buf.len, 0U);
+  ASSERT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;
   pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
@@ -760,10 +760,10 @@ TEST_F(BridgeCoreFixture, BridgePwLogTokenizedHdlcFrame) {
       break;
     }
   }
-  EXPECT_TRUE(decoded.ok());
+  ASSERT_TRUE(decoded.ok());
   const pw::hdlc::Frame& frame = decoded.value();
   // 4-byte 32-bit token + 1-byte varint argument (ZigZag(42) = 84 = 0x54)
-  EXPECT_GE(frame.data().size(), 5U);
+  ASSERT_GE(frame.data().size(), 5U);
 
   const uint32_t expected_token =
       PW_TOKENIZER_STRING_TOKEN("Phase2 log value=%d");
@@ -787,7 +787,7 @@ TEST_F(BridgeCoreFixture, BridgeSafeStateEmitsTokenizedPwLog) {
       sizeof(kSafeStateToken));
   Bridge.enterSafeState();
   EXPECT_FALSE(Bridge.isSynchronized());
-  EXPECT_GT(stream.tx_buf.len, 0U);
+  ASSERT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;
   pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
@@ -799,8 +799,8 @@ TEST_F(BridgeCoreFixture, BridgeSafeStateEmitsTokenizedPwLog) {
       break;
     }
   }
-  EXPECT_TRUE(decoded.ok());
-  EXPECT_EQ(sizeof(uint32_t), decoded.value().data().size());
+  ASSERT_TRUE(decoded.ok());
+  ASSERT_EQ(sizeof(uint32_t), decoded.value().data().size());
 
   const uint32_t expected_token =
       PW_TOKENIZER_STRING_TOKEN("BRIDGE_SAFE_STATE");

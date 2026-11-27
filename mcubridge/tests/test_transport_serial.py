@@ -1593,7 +1593,7 @@ async def test_pw_rpc_client_tracks_multiple_streams_and_late_failures(
     rpc_method = MagicMock()
 
     def invoke(
-        _request: ProtobufMessage,
+        _request: Any,
         *,
         on_next: Any,
         on_completed: Any,

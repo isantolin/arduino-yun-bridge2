@@ -21,6 +21,7 @@ from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Status
 from mcubridge.security.security import LinkCipher, derive_link_keys
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialHandshakeFatal, SerialTransport
@@ -1312,7 +1313,7 @@ async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection()
                 mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, close_pkt.SerializeToString()),
             )
         )
-        assert _private_attribute(transport, "_stream_call") is None
+        assert not _private_attribute(transport, "_active_stream_calls")
 
         # 5. Reconnect and resubscribe active pin, then cancel stream explicitly
         assert await service.gpio.resubscribe_pins() == 1
@@ -1398,7 +1399,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     )
     enqueue_fn(pb.PinUpdateEvent(pin=1, value=1, timestamp_micros=1))
     await transport.reset()
-    assert _private_attribute(transport, "_stream_call") is None
+    assert not _private_attribute(transport, "_active_stream_calls")
 
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
@@ -1580,3 +1581,217 @@ async def test_serial_transport_records_retry_failure_and_latency_metrics(
     assert snapshot.serial_latency_ms > 0.0
     assert snapshot.rpc_latency_ms > 0.0
     assert len(sent_packets) == 1
+
+
+async def test_pw_rpc_client_tracks_multiple_streams_and_late_failures(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    first_call = MagicMock()
+    second_call = MagicMock()
+    callbacks: list[dict[str, Any]] = []
+    rpc_method = MagicMock()
+
+    def invoke(
+        _request: Any,
+        *,
+        on_next: Any,
+        on_completed: Any,
+        on_error: Any,
+    ) -> Any:
+        callbacks.append(
+            {
+                "on_next": on_next,
+                "on_completed": on_completed,
+                "on_error": on_error,
+            }
+        )
+        return first_call if len(callbacks) == 1 else second_call
+
+    rpc_method.invoke.side_effect = invoke
+    invoke_stream = cast(
+        Callable[[Any, Any, str], Coroutine[Any, Any, bool]],
+        _private_attribute(transport, "_invoke_server_stream_rpc"),
+    )
+
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=1), "SubscribePins")
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=2), "SubscribePins")
+    active_calls = cast(set[Any], _private_attribute(transport, "_active_stream_calls"))
+    assert active_calls == {first_call, second_call}
+
+    # A failure arriving after the initial acceptance window must still retire
+    # the correct call instead of being hidden by the startup timeout.
+    callbacks[0]["on_error"](first_call, RuntimeError("late stream failure"))
+    assert active_calls == {second_call}
+
+    completed_status = MagicMock()
+    completed_status.ok.return_value = True
+    callbacks[1]["on_completed"](second_call, completed_status)
+    assert not active_calls
+    assert transport.cancel_pin_stream() is False
+
+
+async def test_rpc_status_requires_the_incoming_call_id(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    writer = AsyncMock(return_value=True)
+    transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=writer)
+
+    assert await transport.send_rpc_message(
+        "rpc.pb.SystemService/GetVersion",
+        status=Status.UNAVAILABLE,
+    ) is False
+    writer.assert_not_awaited()
+
+
+async def test_rpc_status_supports_explicit_service_method_ids(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    writer = AsyncMock(return_value=True)
+    transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=writer)
+
+    assert await transport.send_rpc_message(
+        (0x1234, 0x5678),
+        call_id=29,
+        status=Status.UNAVAILABLE,
+    )
+    assert writer.await_args is not None
+    packet = pw_packets.decode(writer.await_args.args[0])
+    assert packet.service_id == 0x1234
+    assert packet.method_id == 0x5678
+    assert packet.call_id == 29
+    assert packet.type == PacketType.SERVER_ERROR
+
+
+async def test_rpc_rejects_a_protobuf_message_with_the_wrong_method_type(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    runtime_config.serial_shared_secret = b""
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    mock_serial = MagicMock(spec=serial.Serial)
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+
+    assert await transport.send_rpc_message(
+        "rpc.pb.SystemService/GetVersion",
+        pb.PinUpdateEvent(),
+    ) is False
+    mock_serial.write.assert_not_called()
+
+
+async def test_queue_rpc_packet_without_decoded_metadata_still_writes(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    writer = AsyncMock(return_value=True)
+    transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=writer)
+
+    transport.queue_rpc_packet(b"opaque-packet")
+    await asyncio.sleep(0)
+
+    writer.assert_awaited_once_with(b"opaque-packet")
+
+
+async def test_toggle_dtr_handles_serial_disappearing_before_worker_runs(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    transport.serial = MagicMock(spec=serial.Serial)
+
+    async def run_after_disconnect(callback: Callable[[], None]) -> None:
+        transport.serial = None
+        callback()
+
+    monkeypatch.setattr(asyncio, "to_thread", run_after_disconnect)
+    await transport.toggle_dtr()
+    assert transport.serial is None
+
+
+async def test_stream_terminal_callbacks_are_idempotent(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    call = MagicMock()
+    callbacks: list[dict[str, Any]] = []
+    rpc_method = MagicMock()
+
+    def invoke(
+        _request: Any,
+        *,
+        on_next: Any,
+        on_completed: Any,
+        on_error: Any,
+    ) -> Any:
+        callbacks.append(
+            {
+                "on_next": on_next,
+                "on_completed": on_completed,
+                "on_error": on_error,
+            }
+        )
+        return call
+
+    rpc_method.invoke.side_effect = invoke
+    invoke_stream = cast(
+        Callable[[Any, Any, str], Coroutine[Any, Any, bool]],
+        _private_attribute(transport, "_invoke_server_stream_rpc"),
+    )
+
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=1), "SubscribePins")
+    callbacks[0]["on_error"](call, RuntimeError("late failure"))
+    callbacks[0]["on_error"](call, RuntimeError("duplicate failure"))
+
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=2), "SubscribePins")
+    completed_status = MagicMock()
+    completed_status.ok.return_value = True
+    callbacks[1]["on_completed"](call, completed_status)
+    callbacks[1]["on_completed"](call, completed_status)
+    assert not cast(set[Any], _private_attribute(transport, "_active_stream_calls"))
+
+
+def test_handshake_response_tag_rejects_an_invalid_mcu_nonce_length() -> None:
+    with pytest.raises(ValueError, match="invalid length"):
+        SerialHandshakeManager.calculate_handshake_response_tag(
+            b"shared-secret",
+            b"h" * protocol.HANDSHAKE_NONCE_LENGTH,
+            b"short",
+        )
+
+
+async def test_stop_cancels_active_stream_calls_before_closing_serial(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    call = MagicMock()
+    rpc_method = MagicMock()
+    rpc_method.invoke.return_value = call
+    invoke_stream = cast(
+        Callable[[Any, Any, str], Coroutine[Any, Any, bool]],
+        _private_attribute(transport, "_invoke_server_stream_rpc"),
+    )
+
+    # Register the stream through the transport's RPC invocation path rather
+    # than mutating its private lifecycle registry from the test.
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=1), "SubscribePins")
+
+    serial_port = MagicMock(spec=serial.Serial)
+    transport.serial = serial_port
+
+    async def run_in_thread(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_in_thread)
+
+    await transport.stop()
+
+    call.cancel.assert_called_once()
+    serial_port.close.assert_called_once()

@@ -1,6 +1,6 @@
 # Plan de migración a Pigweed: ejecución consolidada
 
-- **Estado:** PR #100–#105 y el empaquetado del Gateway C++ están integrados. La capa cliente Python usa `pw_rpc.Client`, y el transporte UART ya envía mensajes Protobuf tipados mediante encoders Pigweed. **La sustitución del servidor/dispatcher Linux para llamadas MCU → Linux sigue pendiente**: `_process_rpc_packet()`, `BridgeService.handle_mcu_frame()`, `LOCAL_RPC_HANDLERS` y `mcu_registry` aún se ejecutan. La prueba física UART/HDLC en hardware real también continúa como release gate independiente.
+- **Estado:** PR #100–#105 y el empaquetado del Gateway C++ están integrados. La capa cliente Python usa `pw_rpc.Client`, y el transporte UART envía mensajes Protobuf tipados mediante encoders Pigweed. La limpieza independiente del servidor está cerrada: `send_raw()` y sus mocks obsoletos fueron retirados del transporte productivo y de los tests; `send_rpc_message()` genera paquetes Pigweed tipados; `_active_server_call_ids` y la correlación cliente duplicada fueron eliminadas. **La sustitución del servidor/dispatcher Linux para llamadas MCU → Linux sigue pendiente** y constituye el siguiente bloque arquitectónico único: `_process_rpc_packet()`, `BridgeService.handle_mcu_frame()`, `mcu_registry` y el routing MCU entrante. La prueba física UART/HDLC en hardware real continúa como release gate independiente.
 - **Base:** ADR-0002 — `docs/architecture/decisions/0002-pigweed-hdlc-rpc-migration.md` y ADR-0003 — `docs/architecture/decisions/0003-pigweed-gateway-cpp-replacement.md`.
 - **Protocolo canónico:** `tools/protocol/mcu_wire.proto`, `tools/protocol/config_schema.proto` y `tools/protocol/cloud_gateway.proto`.
 - **Integración MCU:** submódulo `third_party/avr_pigweed_port`, exportado como biblioteca Arduino `PigweedAVR`.
@@ -23,6 +23,20 @@ Reglas obligatorias:
 7. **Conservar el runtime del MPU:** asyncio permanece como runtime del daemon edge para HAL/UBUS/procd. El Gateway central es un servicio Linux C++ independiente; no se conserva el Gateway Python ni se introduce un sidecar.
 8. **Cambios de protocolo coordinados:** no reservar campos Protobuf eliminados; actualizar el contrato y todos sus consumidores conjuntamente. No prometer compatibilidad de firmware mixto si el wire format no la ofrece.
 9. **Validación por etapa:** pruebas unitarias, de contrato, emulación y CI antes de avanzar a la etapa siguiente. No fusionar una etapa con CI fallida.
+
+## Cierre del alcance independiente de `pw::rpc::Server`
+
+La revisión de código posterior al commit `285d984` no identifica otra sustitución productiva independiente que deba ejecutarse antes de integrar el servidor nativo. Los elementos restantes pertenecen al servidor MCU → Linux o a límites que deben conservarse:
+
+- `SerialTransport.send_raw()`: retirado de la API productiva; los mocks residuales se eliminaron en `285d984`.
+- `tools/emulation/protocol_fuzzer.py::_send_raw()`: se conserva. Es el escritor de bytes del fuzz harness y no es el antiguo método de transporte `SerialTransport.send_raw()`.
+- `send_rpc_message()`: se conserva como salida tipada del transporte y usa los encoders oficiales `pw_rpc.packets`; no implementa un dispatcher ni un servidor RPC.
+- `send_mcu_status()`: se conserva como fachada de aplicación que completa respuestas con el `call_id` recibido y delega la codificación al transporte Pigweed.
+- `_active_client_route_keys`: se conserva únicamente para clasificar dirección de paquetes y evitar que el tráfico MCU no asociado a una llamada cliente sea consumido por `pw_rpc.Client`. No duplica la correlación ni el ciclo de vida que ya administra el cliente.
+- `LOCAL_RPC_HANDLERS`: no se elimina aisladamente porque también resuelve routing local de operaciones invocadas desde cloud; su retiro requiere migrar conjuntamente ambas rutas al servidor Pigweed.
+- `_process_rpc_packet()`, `mcu_registry` y `BridgeService.handle_mcu_frame()`: son el dispatcher de entrada MCU → Linux. Su eliminación depende directamente del servidor upstream y no debe simularse mediante una tabla alternativa.
+
+Por tanto, el alcance independiente del servidor está cerrado por auditoría. No se introduce una segunda tabla, un wrapper de RPC ni un proceso sidecar. El siguiente cambio funcional debe ser un corte coordinado del endpoint serial: servidor Pigweed nativo, integración de handlers, empaquetado y pruebas de contrato en una misma entrega.
 
 ## Estado consolidado del ecosistema
 

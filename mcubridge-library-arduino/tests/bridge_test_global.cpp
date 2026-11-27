@@ -1,4 +1,4 @@
-#include <memory>
+#include <new>
 #include <stdlib.h>
 
 #include <pw_thread/thread.h>
@@ -36,22 +36,26 @@ class HostTransferWorker {
   ~HostTransferWorker() { stop(); }
 
   void start() {
-    if (worker_) return;
-    worker_ = std::make_unique<pw::thread::Thread>(
-        pw::thread::stl::Options(), bridge_.transferThread());
+    if (worker_ != nullptr) return;
+    worker_ = new (worker_storage_)
+        pw::thread::Thread(pw::thread::stl::Options(),
+                           bridge_.transferThread());
   }
 
   void stop() {
-    if (!worker_) return;
+    if (worker_ == nullptr) return;
     bridge_.prepareForHostTransferWorkerStop();
     bridge_.transferThread().Terminate();
     worker_->join();
-    worker_.reset();
+    worker_->~Thread();
+    worker_ = nullptr;
   }
 
  private:
   bridge::test::TestAccessor& bridge_;
-  std::unique_ptr<pw::thread::Thread> worker_;
+  alignas(pw::thread::Thread)
+      unsigned char worker_storage_[sizeof(pw::thread::Thread)];
+  pw::thread::Thread* worker_ = nullptr;
 };
 
 HostTransferWorker g_host_transfer_worker(Bridge);

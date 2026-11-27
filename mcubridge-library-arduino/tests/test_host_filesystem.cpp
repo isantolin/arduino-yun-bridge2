@@ -177,7 +177,10 @@ void send_transfer_read_chunk(TestAccessor& ba, uint32_t resource_id,
   etl::array<pw::ByteSpan::element_type, 64> encoded_buf{};
   auto encoded =
       chunk.Encode(pw::ByteSpan(encoded_buf.data(), encoded_buf.size()));
-  EXPECT_TRUE(encoded.ok());
+  if (!encoded.ok()) {
+    ADD_FAILURE() << "Failed to encode pw_transfer test chunk";
+    return;
+  }
   EXPECT_TRUE(send_hdlc_rpc(
           ba, pw::tokenizer::Hash("pw.transfer.Transfer"),
           pw::tokenizer::Hash("Read"),
@@ -255,8 +258,8 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), chunk_pkt, chunk_payload));
   auto parsed_err = pw::transfer::internal::Chunk::Parse(chunk_pkt.payload());
-  EXPECT_TRUE(parsed_err.ok());
-  EXPECT_TRUE(parsed_err.value().status().has_value());
+  ASSERT_TRUE(parsed_err.ok());
+  ASSERT_TRUE(parsed_err.value().status().has_value());
   // Upstream pw_transfer maps non-permission/non-unimplemented PrepareRead()
   // failures (FailedPrecondition from disarmed UploadTransferHandler) to
   // DATA_LOSS on the wire.
@@ -303,7 +306,7 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), data_pkt, data_pkt_payload));
   auto parsed_data = pw::transfer::internal::Chunk::Parse(data_pkt.payload());
-  EXPECT_TRUE(parsed_data.ok());
+  ASSERT_TRUE(parsed_data.ok());
   EXPECT_EQ(upload_data.size(), parsed_data.value().payload().size());
   EXPECT_EQ(0, memcmp(upload_data.data(), parsed_data.value().payload().data(), upload_data.size()));
 
@@ -328,8 +331,8 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
                      pw::tokenizer::Hash("pw.transfer.Transfer"),
                      pw::tokenizer::Hash("Read"), late_pkt, late_payload));
   auto parsed_late = pw::transfer::internal::Chunk::Parse(late_pkt.payload());
-  EXPECT_TRUE(parsed_late.ok());
-  EXPECT_TRUE(parsed_late.value().status().has_value());
+  ASSERT_TRUE(parsed_late.ok());
+  ASSERT_TRUE(parsed_late.value().status().has_value());
   EXPECT_FALSE(parsed_late.value().status().value().ok());
 }
 

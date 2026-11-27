@@ -114,7 +114,7 @@ def ensure_firmware_compiled(sketch_path: Path, fqbn: str, output_path: Path) ->
         return output_path
     logger.info("Compiling firmware for target", fqbn=fqbn, sketch=sketch_path.name)
     compile_script = repo_root / "tools" / "ci" / "compile_firmware.sh"
-    cmd = [str(compile_script), str(sketch_path), fqbn]
+    cmd = ["bash", str(compile_script), str(sketch_path), fqbn]
     res = subprocess.run(cmd, check=False)
     if res.returncode != 0 or not output_path.exists():
         raise RuntimeError(f"Firmware compilation failed for {fqbn}")

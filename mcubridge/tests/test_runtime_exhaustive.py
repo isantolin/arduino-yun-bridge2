@@ -60,7 +60,7 @@ async def test_handle_mcu_frame_pre_sync_denied(runtime_setup: tuple[BridgeServi
 
     await service.handle_mcu_frame("rpc.pb.SystemService/GetVersion", 1, b"")
     serial.invoke_rpc.assert_not_called()
-    serial.send_raw.assert_not_called()
+    serial.send_rpc_message.assert_not_called()
 
 
 async def test_handle_mcu_frame_handshake_routing(
@@ -81,7 +81,7 @@ async def test_handle_mcu_frame_rpc_handlers(
     service, state, serial = runtime_setup
     state.connection_fsm.connect()
     state.connection_fsm.synchronize()
-    serial.send_raw.return_value = True
+    serial.send_rpc_message.return_value = True
 
     # 1. MCU Mailbox Push (triggers enqueue_cloud_publish & acknowledge)
     mock_pub = AsyncMock()

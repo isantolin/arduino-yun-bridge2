@@ -46,7 +46,7 @@ async def test_cloud_file_write_asserts_serial(
     await serial.transfer_write(0x4D454741, b"new_data")
     serial.transfer_write.assert_awaited_once_with(0x4D454741, b"new_data")
     serial.invoke_rpc.assert_not_called()
-    serial.send_raw.assert_not_called()
+    serial.send_rpc_message.assert_not_called()
 
 
 async def test_cloud_datastore_put_asserts_cache(
@@ -165,13 +165,13 @@ async def test_mcu_process_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = service_setup
-    serial.send_raw.return_value = True
+    serial.send_rpc_message.return_value = True
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
 
     await service.handle_mcu_frame("rpc.pb.ProcessService/RunAsync", 1, payload)
 
-    serial.send_raw.assert_awaited()
-    args = serial.send_raw.call_args[0]
+    serial.send_rpc_message.assert_awaited()
+    args = serial.send_rpc_message.call_args[0]
     assert args[0] == "rpc.pb.ProcessService/RunAsync"
     assert isinstance(args[1], pb.ProcessRunAsyncResponse)
     pid = args[1].pid

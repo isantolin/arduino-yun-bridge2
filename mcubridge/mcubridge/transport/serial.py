@@ -445,14 +445,6 @@ class SerialTransport:
         """
         if pw_packets.for_server(pkt):
             return False
-        # Non-OK responses and SERVER_ERROR packets are MCU status reports in
-        # this bridge protocol, not completions of Linux-initiated client calls.
-        # Preserve the status-handler path; pw_rpc.Client discards unmatched
-        # call IDs and would otherwise swallow these daemon-visible reports.
-        if pkt.type == PacketType.SERVER_ERROR or (
-            pkt.type == PacketType.RESPONSE and pkt.status != Status.OK.value
-        ):
-            return False
         if pkt.service_id == _PW_TRANSFER_SERVICE_ID:
             status = self.rpc_client.process_packet(frame_data)
             logger.debug(
@@ -472,7 +464,17 @@ class SerialTransport:
         if not is_client_response:
             return False
 
-        self.rpc_client.process_packet(frame_data)
+        status = self.rpc_client.process_packet(frame_data)
+        if not status.ok():
+            logger.debug(
+                "Pigweed client did not match incoming response",
+                packet_type=pkt.type,
+                service_id=pkt.service_id,
+                method_id=pkt.method_id,
+                call_id=pkt.call_id,
+                status=str(status),
+            )
+            return False
         await self._drain_stream_events()
         return True
 

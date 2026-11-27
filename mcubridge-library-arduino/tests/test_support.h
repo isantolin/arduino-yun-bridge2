@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <new>
 #include <string.h>
 
 #include "pb_decode.h"
@@ -208,8 +209,13 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
 inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                               unsigned long baudrate = 0,
                               const char* secret = nullptr) {
-  bridge.~BridgeClass();
-  new (&bridge) bridge::test::TestAccessor(stream);
+  // The global test Bridge is a TestAccessor, not a plain BridgeClass.
+  // End the complete derived-object lifetime before reusing its storage;
+  // explicitly invoking only the base destructor leaves the derived object
+  // alive and makes repeated placement-new resets undefined behavior.
+  auto& accessor = bridge::test::TestAccessor::create(bridge);
+  accessor.~TestAccessor();
+  new (static_cast<void*>(&bridge)) bridge::test::TestAccessor(stream);
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {

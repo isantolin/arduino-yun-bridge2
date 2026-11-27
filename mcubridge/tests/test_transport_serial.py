@@ -1045,7 +1045,7 @@ async def test_queue_rpc_packet_tracks_client_routing_direction_only(
     request_key = (lambda p: (p.channel_id, p.service_id, p.method_id, p.call_id))(pw_packets.decode(request))
     assert request_key in transport.__dict__["_active_client_route_keys"]
     transport.queue_rpc_packet(client_error)
-    assert request_key not in getattr(transport, "_active_client_route_keys")
+    assert request_key not in cast(set[tuple[int, int, int, int]], transport.__dict__["_active_client_route_keys"])
     transport.queue_rpc_packet(response)
 
     for _ in range(100):
@@ -1054,7 +1054,7 @@ async def test_queue_rpc_packet_tracks_client_routing_direction_only(
         await asyncio.sleep(0.01)
 
     assert written == packets
-    assert not getattr(transport, "_active_client_route_keys")
+    assert not cast(set[tuple[int, int, int, int]], transport.__dict__["_active_client_route_keys"])
 
 
 def test_queue_rpc_packet_rejects_calls_outside_event_loop(
@@ -1066,7 +1066,7 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
     with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
         transport.queue_rpc_packet(packet)
 
-    assert not getattr(transport, "_active_client_route_keys")
+    assert not cast(set[tuple[int, int, int, int]], transport.__dict__["_active_client_route_keys"])
 
     adopted_written: list[bytes] = []
 
@@ -1508,13 +1508,13 @@ async def test_mcu_rpc_response_routes_to_pigweed_client_without_local_call_tabl
     await transport.process_hdlc_frame(frame)
 
     packet_key = (lambda p: (p.channel_id, p.service_id, p.method_id, p.call_id))(pw_packets.decode(packet))
-    getattr(transport, "_active_client_route_keys").add(packet_key)
+    cast(set[tuple[int, int, int, int]], transport.__dict__["_active_client_route_keys"]).add(packet_key)
 
     await transport.process_hdlc_frame(frame)
 
     process_packet.assert_called_once_with(packet)
     service.handle_mcu_frame.assert_not_awaited()
-    assert not getattr(transport, "_active_client_route_keys")
+    assert not cast(set[tuple[int, int, int, int]], transport.__dict__["_active_client_route_keys"])
 
 
 async def test_serial_transport_records_retry_failure_and_latency_metrics(

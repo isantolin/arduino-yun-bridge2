@@ -4,7 +4,7 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 #include <etl/array.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -24,7 +24,7 @@ namespace {
 
 static BiStream g_test_stream;
 
-void integrated_test_bridge_core() {
+TEST(Integrated, BridgeCore) {
   g_test_stream.clear();
   reset_bridge_core(Bridge, g_test_stream, 0, "top-secret");
   auto& accessor = bridge::test::TestAccessor::create(Bridge);
@@ -53,7 +53,7 @@ void integrated_test_bridge_core() {
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
-void integrated_test_components() {
+TEST(Integrated, Components) {
   g_test_stream.clear();
   reset_bridge_core(Bridge, g_test_stream, 0, "");
   auto& ba = bridge::test::TestAccessor::create(Bridge);
@@ -80,12 +80,3 @@ void integrated_test_components() {
 
 }  // namespace
 
-void setUp(void) {}
-void tearDown(void) {}
-
-int main(void) {
-  UNITY_BEGIN();
-  RUN_TEST(integrated_test_bridge_core);
-  RUN_TEST(integrated_test_components);
-  return UNITY_END();
-}

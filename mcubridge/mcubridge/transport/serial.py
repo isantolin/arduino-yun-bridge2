@@ -445,6 +445,14 @@ class SerialTransport:
         """
         if pw_packets.for_server(pkt):
             return False
+        # Non-OK responses and SERVER_ERROR packets are MCU status reports in
+        # this bridge protocol, not completions of Linux-initiated client calls.
+        # Preserve the status-handler path; pw_rpc.Client discards unmatched
+        # call IDs and would otherwise swallow these daemon-visible reports.
+        if pkt.type == PacketType.SERVER_ERROR or (
+            pkt.type == PacketType.RESPONSE and pkt.status != Status.OK.value
+        ):
+            return False
         if pkt.service_id == _PW_TRANSFER_SERVICE_ID:
             status = self.rpc_client.process_packet(frame_data)
             logger.debug(

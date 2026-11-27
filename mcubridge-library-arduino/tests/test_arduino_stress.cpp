@@ -8,7 +8,6 @@
 #include <Arduino.h>
 #include <etl/array.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"

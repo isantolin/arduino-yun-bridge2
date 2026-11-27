@@ -14,7 +14,8 @@
 #include <pw_metric_proto/metric_service.pwpb.h>
 #include <pw_protobuf/decoder.h>
 #include <pw_span/span.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
+#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -45,32 +46,34 @@ class FlowControlStream final : public Stream {
   int _available_calls = 0;
 };
 
-void setUp() {}
-void tearDown() { Bridge.setStream(Serial); }
+class BridgeCoreFixture : public testing::Test {
+ protected:
+  void TearDown() override { Bridge.setStream(Serial); }
+};
 
 void reset_bridge(const char* secret = nullptr) {
   Bridge.begin(115200, secret);
   Console.begin();
 }
 
-void test_bridge_initialization() {
+TEST_F(BridgeCoreFixture, BridgeInitialization) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 }
 
-void test_bridge_handshake() {
+TEST_F(BridgeCoreFixture, BridgeHandshake) {
   reset_bridge("6368616e67656d65313233");
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 
-  TEST_ASSERT_TRUE(perform_test_link_sync(ba, 0x42));
+  EXPECT_TRUE(perform_test_link_sync(ba, 0x42));
   Bridge.process();
 
-  TEST_ASSERT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 }
 
-void test_bridge_handshake_response_uses_tag_length() {
+TEST_F(BridgeCoreFixture, BridgeHandshakeResponseUsesTagLength) {
   BiStream stream;
   stream.clear();
   constexpr char kSharedSecret[] = "top-secret";
@@ -84,8 +87,7 @@ void test_bridge_handshake_response_uses_tag_length() {
       pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(kSharedSecret),
                               sizeof(kSharedSecret) - 1U);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> request_tag = {};
-  TEST_ASSERT_TRUE(
-      rpc::security::handshake_generate_tag(secret, nonce, request_tag));
+  EXPECT_TRUE(rpc::security::handshake_generate_tag(secret, nonce, request_tag));
 
   rpc_pb_LinkSync request = rpc_pb_LinkSync_init_default;
   etl::copy_n(nonce.begin(), nonce.size(), request.nonce.bytes);
@@ -93,54 +95,46 @@ void test_bridge_handshake_response_uses_tag_length() {
   etl::copy_n(request_tag.begin(), request_tag.size(), request.tag.bytes);
   request.tag.size = request_tag.size();
 
-  TEST_ASSERT_GREATER_THAN(
-      0, send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
+  EXPECT_GT(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
                           pw::tokenizer::Hash("LinkSync"),
-                          rpc_pb_LinkSync_fields, request));
+                          rpc_pb_LinkSync_fields, request), 0);
 
   rpc_pb_LinkSync response = rpc_pb_LinkSync_init_default;
-  TEST_ASSERT_TRUE(
-      decode_tx_response(stream, rpc_pb_LinkSync_fields, response));
-  TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_TAG_LENGTH, response.tag.size);
+  EXPECT_TRUE(decode_tx_response(stream, rpc_pb_LinkSync_fields, response));
+  EXPECT_EQ(rpc::RPC_HANDSHAKE_TAG_LENGTH, response.tag.size);
   // Handshake v2: the MCU returns its own nonce and the tag covers both.
-  TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_NONCE_LENGTH,
-                           response.mcu_nonce.size);
+  EXPECT_EQ(rpc::RPC_HANDSHAKE_NONCE_LENGTH, response.mcu_nonce.size);
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> expected_response_tag = {};
-  TEST_ASSERT_TRUE(rpc::security::handshake_generate_response_tag(
+  EXPECT_TRUE(rpc::security::handshake_generate_response_tag(
       secret, nonce,
       pw::span<const uint8_t>(response.mcu_nonce.bytes,
                               response.mcu_nonce.size),
       expected_response_tag));
-  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_response_tag.data(),
-                                response.tag.bytes,
-                                expected_response_tag.size());
+  EXPECT_TRUE(std::equal(expected_response_tag.data(), (expected_response_tag.data()) + (expected_response_tag.size()), response.tag.bytes));
 }
 
-void test_bridge_send_frame() {
+TEST_F(BridgeCoreFixture, BridgeSendFrame) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 2> payload = {0xAA, 0xBB};
-  TEST_ASSERT_TRUE(
-      Bridge.sendConsoleStream(pw::span<const uint8_t>(payload.data(), 2)));
-  TEST_ASSERT_TRUE(
-      Bridge.sendLogStream(pw::span<const uint8_t>(payload.data(), 2)));
+  EXPECT_TRUE(Bridge.sendConsoleStream(pw::span<const uint8_t>(payload.data(), 2)));
+  EXPECT_TRUE(Bridge.sendLogStream(pw::span<const uint8_t>(payload.data(), 2)));
   pw_log_avr_HandleLog(1, payload.data(), payload.size());
 
   rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
   sub_req.pin = 13;
   sub_req.enabled = true;
-  TEST_ASSERT_GREATER_THAN(
-      0, send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
+  EXPECT_GT(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
                           pw::tokenizer::Hash("SubscribePins"),
-                          rpc_pb_PinSubscribeRequest_fields, sub_req));
+                          rpc_pb_PinSubscribeRequest_fields, sub_req), 0);
 
-  TEST_ASSERT_TRUE(Bridge.sendPinEvent(13, 1));
+  EXPECT_TRUE(Bridge.sendPinEvent(13, 1));
 }
 
-void test_bridge_process_rx() {
+TEST_F(BridgeCoreFixture, BridgeProcessRx) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
@@ -148,17 +142,16 @@ void test_bridge_process_rx() {
   rpc_pb_DigitalWrite msg = rpc_pb_DigitalWrite_init_default;
   msg.pin = 13;
   msg.value = 1;
-  TEST_ASSERT_GREATER_THAN(
-      0, send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
+  EXPECT_GT(send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.GpioService"),
                           pw::tokenizer::Hash("DigitalWrite"),
-                          rpc_pb_DigitalWrite_fields, msg));
+                          rpc_pb_DigitalWrite_fields, msg), 0);
   Bridge.process();
 
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
-  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[13U].value);
 }
 
-void test_bridge_dedup_console_write() {
+TEST_F(BridgeCoreFixture, BridgeDedupConsoleWrite) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
@@ -170,10 +163,10 @@ void test_bridge_dedup_console_write() {
       3, pw::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text), 4),
       hdlc_buf);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), len));
-  TEST_ASSERT_EQUAL(4, Console.available());
+  EXPECT_EQ(4, Console.available());
 }
 
-void test_bridge_status_ack() {
+TEST_F(BridgeCoreFixture, BridgeStatusAck) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
@@ -184,63 +177,61 @@ void test_bridge_status_ack() {
                                 pw::tokenizer::Hash("GetVersion"), 0,
                                 pw::ConstByteSpan());
   ba.invokeRpcResponse(pkt);
-  TEST_ASSERT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 }
 
-void test_bridge_post_and_stack_sentinel() {
-  TEST_ASSERT_TRUE(bridge::hal::run_power_on_self_tests());
-  TEST_ASSERT_TRUE(bridge::hal::checkStackOverflow());
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(bridge::hal::MIN_STACK_MARGIN_BYTES,
-                                      bridge::hal::getFreeMemory());
-  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+TEST_F(BridgeCoreFixture, BridgePostAndStackSentinel) {
+  EXPECT_TRUE(bridge::hal::run_power_on_self_tests());
+  EXPECT_TRUE(bridge::hal::checkStackOverflow());
+  EXPECT_GE(bridge::hal::getFreeMemory(), bridge::hal::MIN_STACK_MARGIN_BYTES);
+  EXPECT_TRUE(Bridge.isPostPassed());
 }
 
-void test_bridge_await_synchronization_bounded() {
+TEST_F(BridgeCoreFixture, BridgeAwaitSynchronizationBounded) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
 
   const uint32_t start_ms = bridge::test::fault::clock_ms();
-  TEST_ASSERT_FALSE(Bridge.awaitSynchronization(50U, 5U));
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(
-      50U, bridge::test::fault::clock_ms() - start_ms);
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
-  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  EXPECT_FALSE(Bridge.awaitSynchronization(50U, 5U));
+  EXPECT_GE(bridge::test::fault::clock_ms() - start_ms, 50U);
+  EXPECT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(ba.isTxEnabled());
 
-  TEST_ASSERT_FALSE(Bridge.awaitSynchronization(3U, 0U));
+  EXPECT_FALSE(Bridge.awaitSynchronization(3U, 0U));
 
   reset_bridge();
   ba.setSynchronized();
   const uint32_t sync_start_ms = bridge::test::fault::clock_ms();
-  TEST_ASSERT_TRUE(Bridge.awaitSynchronization(50U, 5U));
-  TEST_ASSERT_EQUAL_UINT32(sync_start_ms, bridge::test::fault::clock_ms());
-  TEST_ASSERT_TRUE(ba.isTxEnabled());
+  EXPECT_TRUE(Bridge.awaitSynchronization(50U, 5U));
+  EXPECT_EQ(sync_start_ms, bridge::test::fault::clock_ms());
+  EXPECT_TRUE(ba.isTxEnabled());
 }
 
-void test_bridge_wcet_tracking() {
+TEST_F(BridgeCoreFixture, BridgeWcetTracking) {
   Bridge.resetWcetStats();
-  TEST_ASSERT_EQUAL_UINT32(0, Bridge.getWcetMaxMicros());
+  EXPECT_EQ(0, Bridge.getWcetMaxMicros());
   Bridge.process();
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, Bridge.getWcetMaxMicros());
+  EXPECT_GE(Bridge.getWcetMaxMicros(), 0);
 }
 
-void test_bridge_begin_null_secret() {
+TEST_F(BridgeCoreFixture, BridgeBeginNullSecret) {
   Bridge.begin(115200, nullptr);
-  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  EXPECT_TRUE(Bridge.isPostPassed());
   Bridge.process();
 }
 
-void test_bridge_handshake_timeout_not_sync() {
+TEST_F(BridgeCoreFixture, BridgeHandshakeTimeoutNotSync) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 
   ba.onHandshakeTimeout();
-  TEST_ASSERT_TRUE(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 
   reset_bridge();
   ba.setSynchronized();
   ba.onHandshakeTimeout();
-  TEST_ASSERT_FALSE(ba.isFault());
+  EXPECT_FALSE(ba.isFault());
 }
 
 namespace {
@@ -254,53 +245,49 @@ void capture_status_handler(pw::Status s, pw::span<const uint8_t> p) {
 }
 }  // namespace
 
-void test_bridge_queue_full_and_flow_control() {
+TEST_F(BridgeCoreFixture, BridgeQueueFullAndFlowControl) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 10> cdata{};
   cdata.fill('c');
-  TEST_ASSERT_TRUE(Bridge.sendConsoleStream(cdata));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.sendConsoleStream(cdata));
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_bridge_emit_status_variants() {
+TEST_F(BridgeCoreFixture, BridgeEmitStatusVariants) {
   reset_bridge();
   g_status_calls = 0U;
   Bridge.onStatus(BridgeClass::StatusHandler::create<capture_status_handler>());
 
   Bridge.emitStatus(pw::OkStatus());
-  TEST_ASSERT_EQUAL_UINT32(1U, g_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::OkStatus().code()),
-                        static_cast<int>(g_last_status.code()));
-  TEST_ASSERT_EQUAL_UINT32(0U, g_last_status_len);
+  EXPECT_EQ(1U, g_status_calls);
+  EXPECT_EQ(static_cast<int>(pw::OkStatus().code()), static_cast<int>(g_last_status.code()));
+  EXPECT_EQ(0U, g_last_status_len);
 
   Bridge.emitStatus(pw::Status::Internal(), etl::string_view("Error"));
-  TEST_ASSERT_EQUAL_UINT32(2U, g_status_calls);
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(pw::Status::Internal().code()),
-                        static_cast<int>(g_last_status.code()));
-  TEST_ASSERT_EQUAL_UINT32(5U, g_last_status_len);
+  EXPECT_EQ(2U, g_status_calls);
+  EXPECT_EQ(static_cast<int>(pw::Status::Internal().code()), static_cast<int>(g_last_status.code()));
+  EXPECT_EQ(5U, g_last_status_len);
 
   const etl::array<uint8_t, 3> raw = {1U, 2U, 3U};
   Bridge.emitStatus(pw::Status::InvalidArgument(),
                     pw::span<const uint8_t>(raw.data(), raw.size()));
-  TEST_ASSERT_EQUAL_UINT32(3U, g_status_calls);
-  TEST_ASSERT_EQUAL_UINT32(3U, g_last_status_len);
+  EXPECT_EQ(3U, g_status_calls);
+  EXPECT_EQ(3U, g_last_status_len);
 
   Bridge.emitStatus(pw::Status::ResourceExhausted());
-  TEST_ASSERT_EQUAL_UINT32(4U, g_status_calls);
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(pw::Status::ResourceExhausted().code()),
-      static_cast<int>(g_last_status.code()));
+  EXPECT_EQ(4U, g_status_calls);
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(g_last_status.code()));
 
   Bridge.onStatus(BridgeClass::StatusHandler());
   Bridge.emitStatus(pw::OkStatus(), etl::string_view(""));
-  TEST_ASSERT_EQUAL_UINT32(4U, g_status_calls);
-  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  EXPECT_EQ(4U, g_status_calls);
+  EXPECT_TRUE(Bridge.isPostPassed());
 }
 
-void test_bridge_send_responses_table() {
+TEST_F(BridgeCoreFixture, BridgeSendResponsesTable) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
@@ -323,28 +310,28 @@ void test_bridge_send_responses_table() {
                    pw::tokenizer::Hash("AnalogRead"), rpc_pb_PinRead_fields,
                    dr);
 
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_bridge_dispatch_status_and_unknown() {
+TEST_F(BridgeCoreFixture, BridgeDispatchStatusAndUnknown) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   send_hdlc_rpc(ba, 99999, 88888);
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_bridge_post_failure() {
+TEST_F(BridgeCoreFixture, BridgePostFailure) {
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
   Bridge.begin(115200, "secret");
   bridge::test::fault::reset();
   reset_bridge();
-  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  EXPECT_TRUE(Bridge.isPostPassed());
 }
 
-void test_bridge_frame_errors_and_zero_spi() {
+TEST_F(BridgeCoreFixture, BridgeFrameErrorsAndZeroSpi) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
@@ -372,7 +359,7 @@ void test_bridge_frame_errors_and_zero_spi() {
                    pw::tokenizer::Hash("Transfer"), rpc_pb_SpiTransfer_fields,
                    spi_req);
 
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
 class FlowControlTestStream : public Stream {
@@ -386,7 +373,7 @@ class FlowControlTestStream : public Stream {
   void flush() override {}
 };
 
-void test_bridge_serial_tasks_and_flow_control() {
+TEST_F(BridgeCoreFixture, BridgeSerialTasksAndFlowControl) {
   BiStream base_stream;
   reset_bridge_core(Bridge, base_stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -404,39 +391,38 @@ void test_bridge_serial_tasks_and_flow_control() {
   ba.onBaudrateChange();
   ba.invokeWatchdog();
 
-  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  EXPECT_TRUE(Bridge.isPostPassed());
 }
 
-void test_bridge_handshake_authentication_edges() {
+TEST_F(BridgeCoreFixture, BridgeHandshakeAuthenticationEdges) {
   etl::array<uint8_t, 32> secret = {0};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> nonce = {0};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag = {0};
   etl::array<uint8_t, 5> bad_tag = {0};
   bool ok = rpc::security::handshake_verify_tag(secret, nonce, bad_tag);
-  TEST_ASSERT_FALSE(ok);
+  EXPECT_FALSE(ok);
 
   const bool empty_tag_ok = rpc::security::handshake_verify_tag(
       secret, nonce, pw::span<const uint8_t>());
-  TEST_ASSERT_FALSE(empty_tag_ok);
+  EXPECT_FALSE(empty_tag_ok);
 
   const bool generated =
       rpc::security::handshake_generate_tag(secret, nonce, out_tag);
-  TEST_ASSERT_TRUE(generated);
+  EXPECT_TRUE(generated);
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> valid_tag = {};
   etl::copy_n(out_tag.begin(), valid_tag.size(), valid_tag.begin());
-  TEST_ASSERT_TRUE(
-      rpc::security::handshake_verify_tag(secret, nonce, valid_tag));
+  EXPECT_TRUE(rpc::security::handshake_verify_tag(secret, nonce, valid_tag));
 
   etl::array<uint8_t, 16> wrong_tag;
   wrong_tag.fill(0xFF);
   bool tag_mismatch_ok =
       rpc::security::handshake_verify_tag(secret, nonce, wrong_tag);
-  TEST_ASSERT_FALSE(tag_mismatch_ok);
+  EXPECT_FALSE(tag_mismatch_ok);
 }
 
-void test_bridge_fsm_resets_and_link_reset() {
+TEST_F(BridgeCoreFixture, BridgeFsmResetsAndLinkReset) {
   bridge::fsm::BridgeFsm unstarted_fsm;
-  TEST_ASSERT_FALSE(unstarted_fsm.isSynchronized());
+  EXPECT_FALSE(unstarted_fsm.isSynchronized());
 
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -447,16 +433,16 @@ void test_bridge_fsm_resets_and_link_reset() {
   ba.trigger(bridge::fsm::EvReset());
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvReset());
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.isSynchronized());
 
   // LinkReset via RPC
   ba.setSynchronized();
   send_hdlc_rpc(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
                 pw::tokenizer::Hash("LinkReset"));
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.isSynchronized());
 }
 
-void test_bridge_dispatch_extra_branches() {
+TEST_F(BridgeCoreFixture, BridgeDispatchExtraBranches) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -538,7 +524,7 @@ void test_bridge_dispatch_extra_branches() {
   ba.onBaudrateChange();
 }
 
-void test_bridge_authenticated_digital_write_frame() {
+TEST_F(BridgeCoreFixture, BridgeAuthenticatedDigitalWriteFrame) {
   BiStream stream;
   stream.clear();
   constexpr char kSharedSecret[] = "top-secret";
@@ -547,9 +533,8 @@ void test_bridge_authenticated_digital_write_frame() {
   auto& ba = TestAccessor::create(Bridge);
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> handshake_nonce = {};
-  TEST_ASSERT_TRUE(
-      perform_test_link_sync(ba, 0xABU, pw::span<uint8_t>(handshake_nonce)));
-  TEST_ASSERT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(perform_test_link_sync(ba, 0xABU, pw::span<uint8_t>(handshake_nonce)));
+  EXPECT_TRUE(ba.isSynchronized());
 
   rpc_pb_DigitalWrite request = rpc_pb_DigitalWrite_init_default;
   request.pin = 13U;
@@ -557,8 +542,7 @@ void test_bridge_authenticated_digital_write_frame() {
   uint8_t payload[64];
   pb_ostream_t payload_stream =
       pb_ostream_from_buffer(payload, sizeof(payload));
-  TEST_ASSERT_TRUE(
-      pb_encode(&payload_stream, rpc_pb_DigitalWrite_fields, &request));
+  EXPECT_TRUE(pb_encode(&payload_stream, rpc_pb_DigitalWrite_fields, &request));
 
   uint8_t rpc_packet[128];
   const size_t rpc_packet_size = build_rpc_packet(
@@ -567,7 +551,7 @@ void test_bridge_authenticated_digital_write_frame() {
       pw::tokenizer::Hash("DigitalWrite"),
       pw::span<const uint8_t>(payload, payload_stream.bytes_written),
       rpc_packet, sizeof(rpc_packet));
-  TEST_ASSERT_GREATER_THAN(0, rpc_packet_size);
+  EXPECT_GT(rpc_packet_size, 0);
 
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE * 2U> session_keys = {};
   const auto host_to_mcu_key =
@@ -579,11 +563,9 @@ void test_bridge_authenticated_digital_write_frame() {
                               sizeof(kSharedSecret) - 1U);
   // Derive the keys independently from both nonces (handshake v2).
   rpc_pb_LinkSync link_response = rpc_pb_LinkSync_init_default;
-  TEST_ASSERT_TRUE(
-      decode_tx_response(stream, rpc_pb_LinkSync_fields, link_response));
-  TEST_ASSERT_EQUAL_UINT32(rpc::RPC_HANDSHAKE_NONCE_LENGTH,
-                           link_response.mcu_nonce.size);
-  TEST_ASSERT_TRUE(rpc::security::derive_session_keys(
+  EXPECT_TRUE(decode_tx_response(stream, rpc_pb_LinkSync_fields, link_response));
+  EXPECT_EQ(rpc::RPC_HANDSHAKE_NONCE_LENGTH, link_response.mcu_nonce.size);
+  EXPECT_TRUE(rpc::security::derive_session_keys(
       secret, handshake_nonce,
       pw::span<const uint8_t>(link_response.mcu_nonce.bytes,
                               link_response.mcu_nonce.size),
@@ -606,7 +588,7 @@ void test_bridge_authenticated_digital_write_frame() {
   auto tag = pw::span<uint8_t>(
       envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + rpc_packet_size,
       rpc::RPC_AEAD_TAG_SIZE);
-  TEST_ASSERT_TRUE(rpc::security::aead_encrypt(
+  EXPECT_TRUE(rpc::security::aead_encrypt(
       host_to_mcu_key, nonce, aad,
       pw::span<const uint8_t>(rpc_packet, rpc_packet_size), ciphertext, tag));
 
@@ -616,25 +598,25 @@ void test_bridge_authenticated_digital_write_frame() {
   tag[0] ^= 0x01U;
   size_t len = TestHdlc::encodeUIFrame(
       1, pw::span<const uint8_t>(envelope.data(), envelope_size), hdlc_buf);
-  TEST_ASSERT_GREATER_THAN(0, len);
+  EXPECT_GT(len, 0);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), len));
-  TEST_ASSERT_NOT_EQUAL(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  EXPECT_NE(OUTPUT, g_arduino_stub_pin_states[13U].mode);
 
   tag[0] ^= 0x01U;
   len = TestHdlc::encodeUIFrame(
       1, pw::span<const uint8_t>(envelope.data(), envelope_size), hdlc_buf);
-  TEST_ASSERT_GREATER_THAN(0, len);
+  EXPECT_GT(len, 0);
   ba.feedHdlcBytes(pw::span<const uint8_t>(hdlc_buf.data(), len));
   Bridge.process();
 
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
-  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+  EXPECT_TRUE(Bridge.isSynchronized());
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[13U].value);
 
   rpc::security::secure_zero(pw::span<uint8_t>(session_keys));
 }
 
-void test_bridge_receive_security_gate_variants() {
+TEST_F(BridgeCoreFixture, BridgeReceiveSecurityGateVariants) {
   BiStream stream;
   stream.clear();
   resetArduinoStubPinStates();
@@ -649,8 +631,8 @@ void test_bridge_receive_security_gate_variants() {
   send_rpc_request(no_secret_bridge, pw::tokenizer::Hash("rpc.pb.GpioService"),
                    pw::tokenizer::Hash("DigitalWrite"),
                    rpc_pb_DigitalWrite_fields, write_req);
-  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
-  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[13U].value);
 
   // 2. With shared secret set, if UNSYNCHRONIZED, non-LinkSync request is
   // rejected and safe state entered
@@ -666,14 +648,14 @@ void test_bridge_receive_security_gate_variants() {
                    pw::tokenizer::Hash("DigitalWrite"),
                    rpc_pb_DigitalWrite_fields, write_req);
 
-  TEST_ASSERT_FALSE(secret_bridge.isSynchronized());
-  TEST_ASSERT_NOT_EQUAL(HIGH, g_arduino_stub_pin_states[14U].value);
+  EXPECT_FALSE(secret_bridge.isSynchronized());
+  EXPECT_NE(HIGH, g_arduino_stub_pin_states[14U].value);
 
   // 3. LinkReset resets synchronized state
   secret_bridge.setSynchronized();
   send_hdlc_rpc(secret_bridge, pw::tokenizer::Hash("rpc.pb.SystemService"),
                 pw::tokenizer::Hash("LinkReset"));
-  TEST_ASSERT_FALSE(secret_bridge.isSynchronized());
+  EXPECT_FALSE(secret_bridge.isSynchronized());
 }
 
 static bool s_status_called = false;
@@ -681,7 +663,7 @@ static void dummy_status_cb(pw::Status, pw::span<const uint8_t>) {
   s_status_called = true;
 }
 
-void test_bridge_edge_paths_and_post() {
+TEST_F(BridgeCoreFixture, BridgeEdgePathsAndPost) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -700,7 +682,7 @@ void test_bridge_edge_paths_and_post() {
   s_status_called = false;
   Bridge.onStatus(BridgeClass::StatusHandler::create<&dummy_status_cb>());
   Bridge.emitStatus(pw::Status::InvalidArgument());
-  TEST_ASSERT_TRUE(s_status_called);
+  EXPECT_TRUE(s_status_called);
   Bridge.onStatus(BridgeClass::StatusHandler());
 
   // 4. Stale handshake timeout
@@ -732,7 +714,7 @@ void test_bridge_edge_paths_and_post() {
   reset_bridge_core(Bridge, stream);
 }
 
-void test_bridge_pw_log_tokenized_hdlc_frame() {
+TEST_F(BridgeCoreFixture, BridgePwLogTokenizedHdlcFrame) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -740,7 +722,7 @@ void test_bridge_pw_log_tokenized_hdlc_frame() {
   stream.tx_buf.clear();
 
   PW_LOG_INFO("Phase2 log value=%d", 42);
-  TEST_ASSERT_GREATER_THAN(0U, stream.tx_buf.len);
+  EXPECT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;
   pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
@@ -752,20 +734,20 @@ void test_bridge_pw_log_tokenized_hdlc_frame() {
       break;
     }
   }
-  TEST_ASSERT_TRUE(decoded.ok());
+  EXPECT_TRUE(decoded.ok());
   const pw::hdlc::Frame& frame = decoded.value();
   // 4-byte 32-bit token + 1-byte varint argument (ZigZag(42) = 84 = 0x54)
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(5U, frame.data().size());
+  EXPECT_GE(frame.data().size(), 5U);
 
   const uint32_t expected_token =
       PW_TOKENIZER_STRING_TOKEN("Phase2 log value=%d");
   uint32_t actual_token = 0;
   memcpy(&actual_token, frame.data().data(), sizeof(uint32_t));
-  TEST_ASSERT_EQUAL_HEX32(expected_token, actual_token);
-  TEST_ASSERT_EQUAL_HEX8(0x54U, static_cast<uint8_t>(frame.data()[4]));
+  EXPECT_EQ(expected_token, actual_token);
+  EXPECT_EQ(0x54U, static_cast<uint8_t>(frame.data()[4]));
 }
 
-void test_bridge_safe_state_emits_tokenized_pw_log() {
+TEST_F(BridgeCoreFixture, BridgeSafeStateEmitsTokenizedPwLog) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -773,7 +755,7 @@ void test_bridge_safe_state_emits_tokenized_pw_log() {
   stream.tx_buf.clear();
 
   Bridge.enterSafeState();
-  TEST_ASSERT_GREATER_THAN(0U, stream.tx_buf.len);
+  EXPECT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;
   pw::Result<pw::hdlc::Frame> decoded = pw::Status::NotFound();
@@ -785,14 +767,14 @@ void test_bridge_safe_state_emits_tokenized_pw_log() {
       break;
     }
   }
-  TEST_ASSERT_TRUE(decoded.ok());
-  TEST_ASSERT_EQUAL_UINT32(sizeof(uint32_t), decoded.value().data().size());
+  EXPECT_TRUE(decoded.ok());
+  EXPECT_EQ(sizeof(uint32_t), decoded.value().data().size());
 
   const uint32_t expected_token =
       PW_TOKENIZER_STRING_TOKEN("BRIDGE_SAFE_STATE");
   uint32_t actual_token = 0;
   memcpy(&actual_token, decoded.value().data().data(), sizeof(uint32_t));
-  TEST_ASSERT_EQUAL_HEX32(expected_token, actual_token);
+  EXPECT_EQ(expected_token, actual_token);
 }
 
 namespace {
@@ -896,7 +878,7 @@ void decode_metrics_container(pw::ConstByteSpan payload, uint32_t metrics_field,
 
 }  // namespace
 
-void test_bridge_pw_metric_service_get_and_walk() {
+TEST_F(BridgeCoreFixture, BridgePwMetricServiceGetAndWalk) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -905,7 +887,7 @@ void test_bridge_pw_metric_service_get_and_walk() {
   // Drive observable metric updates: WCET, TX frames, and safe-state entry.
   Bridge.process();
   const etl::array<uint8_t, 4> console_bytes = {'P', 'I', 'N', 'G'};
-  TEST_ASSERT_TRUE(Bridge.sendConsoleStream(
+  EXPECT_TRUE(Bridge.sendConsoleStream(
       pw::span<const uint8_t>(console_bytes.data(), console_bytes.size())));
   Bridge.enterSafeState();
   ba.setTxEnabled(true);
@@ -913,10 +895,8 @@ void test_bridge_pw_metric_service_get_and_walk() {
   stream.tx_buf.clear();
 
   // 1. Invoke pw.metric.proto.MetricService/Get (server streaming).
-  TEST_ASSERT_GREATER_THAN(
-      0U,
-      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
-                    pw::tokenizer::Hash("Get")));
+  EXPECT_GT(send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
+                    pw::tokenizer::Hash("Get")), 0U);
 
   DecodedBridgeMetrics get_metrics{};
   size_t stream_packets = 0U;
@@ -929,7 +909,7 @@ void test_bridge_pw_metric_service_get_and_walk() {
     const auto& frame = frame_res.value();
     if (frame.address() != rpc::RPC_HDLC_ADDRESS_RPC) continue;
     auto pkt_res = pw::rpc::internal::Packet::FromBuffer(frame.data());
-    TEST_ASSERT_TRUE(pkt_res.ok());
+    EXPECT_TRUE(pkt_res.ok());
     const auto& pkt = pkt_res.value();
     if (pkt.type() == pw::rpc::internal::pwpb::PacketType::SERVER_STREAM) {
       ++stream_packets;
@@ -939,31 +919,27 @@ void test_bridge_pw_metric_service_get_and_walk() {
               pw::metric::proto::pwpb::MetricResponse::Fields::kMetrics),
           get_metrics);
     } else if (pkt.type() == pw::rpc::internal::pwpb::PacketType::RESPONSE) {
-      TEST_ASSERT_TRUE(pkt.status().ok());
+      EXPECT_TRUE(pkt.status().ok());
       got_finish_ok = true;
     }
   }
 
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2U, stream_packets);
-  TEST_ASSERT_TRUE(got_finish_ok);
-  TEST_ASSERT_EQUAL_HEX32(0x3FU, get_metrics.seen_mask);
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2U, get_metrics.tx_frames);
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(1U, get_metrics.rx_frames);
-  TEST_ASSERT_EQUAL_UINT32(1U, get_metrics.safe_state_entries);
-  TEST_ASSERT_EQUAL_UINT32(Bridge.getWcetMaxMicros(), get_metrics.wcet_max_us);
-  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(bridge::hal::MIN_STACK_MARGIN_BYTES,
-                                      get_metrics.free_memory_bytes);
+  EXPECT_GE(stream_packets, 2U);
+  EXPECT_TRUE(got_finish_ok);
+  EXPECT_EQ(0x3FU, get_metrics.seen_mask);
+  EXPECT_GE(get_metrics.tx_frames, 2U);
+  EXPECT_GE(get_metrics.rx_frames, 1U);
+  EXPECT_EQ(1U, get_metrics.safe_state_entries);
+  EXPECT_EQ(Bridge.getWcetMaxMicros(), get_metrics.wcet_max_us);
+  EXPECT_GE(get_metrics.free_memory_bytes, bridge::hal::MIN_STACK_MARGIN_BYTES);
   // Host HAL has no runtime stack watermark; UINT32_MAX is the explicit
   // unavailable sentinel.
-  TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(-1),
-                           get_metrics.stack_used_bytes);
+  EXPECT_EQ(static_cast<uint32_t>(-1), get_metrics.stack_used_bytes);
 
   // 2. Invoke pw.metric.proto.MetricService/Walk (paginated unary).
   stream.tx_buf.clear();
-  TEST_ASSERT_GREATER_THAN(
-      0U,
-      send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
-                    pw::tokenizer::Hash("Walk")));
+  EXPECT_GT(send_hdlc_rpc(ba, pw::tokenizer::Hash("pw.metric.proto.MetricService"),
+                    pw::tokenizer::Hash("Walk")), 0U);
 
   DecodedBridgeMetrics walk_metrics{};
   bool walk_done = false;
@@ -976,10 +952,10 @@ void test_bridge_pw_metric_service_get_and_walk() {
     const auto& frame = frame_res.value();
     if (frame.address() != rpc::RPC_HDLC_ADDRESS_RPC) continue;
     auto pkt_res = pw::rpc::internal::Packet::FromBuffer(frame.data());
-    TEST_ASSERT_TRUE(pkt_res.ok());
+    EXPECT_TRUE(pkt_res.ok());
     const auto& pkt = pkt_res.value();
     if (pkt.type() == pw::rpc::internal::pwpb::PacketType::RESPONSE) {
-      TEST_ASSERT_TRUE(pkt.status().ok());
+      EXPECT_TRUE(pkt.status().ok());
       walk_response_ok = true;
       decode_metrics_container(
           pkt.payload(),
@@ -988,11 +964,10 @@ void test_bridge_pw_metric_service_get_and_walk() {
           walk_metrics, &walk_done);
     }
   }
-  TEST_ASSERT_TRUE(walk_response_ok);
-  TEST_ASSERT_TRUE(walk_done);
-  TEST_ASSERT_EQUAL_HEX32(0x3FU, walk_metrics.seen_mask);
-  TEST_ASSERT_GREATER_THAN_UINT32(get_metrics.rx_frames,
-                                  walk_metrics.rx_frames);
+  EXPECT_TRUE(walk_response_ok);
+  EXPECT_TRUE(walk_done);
+  EXPECT_EQ(0x3FU, walk_metrics.seen_mask);
+  EXPECT_GT(walk_metrics.rx_frames, get_metrics.rx_frames);
 }
 
 namespace {
@@ -1028,7 +1003,7 @@ bool extract_last_rpc_response_status(const BiStream& stream,
 // Regression (R25): unsubscribing a pin must reclaim its slot in
 // _pin_subscriptions so subscribing a new pin after reaching
 // MAX_PIN_SUBSCRIPTIONS succeeds.
-void test_pin_subscribe_unsubscribe_reclaims_slot() {
+TEST_F(BridgeCoreFixture, PinSubscribeUnsubscribeReclaimsSlot) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   resetArduinoStubPinStates();
@@ -1047,8 +1022,7 @@ void test_pin_subscribe_unsubscribe_reclaims_slot() {
     req.enabled = true;
     send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
                      req);
-    TEST_ASSERT_GREATER_OR_EQUAL_INT32(
-        0, ba.subscriptionLastValueForPin(static_cast<uint8_t>(2U + i)));
+    EXPECT_GE(ba.subscriptionLastValueForPin(static_cast<uint8_t>(2U + i)), 0);
   }
 
   // Unsubscribe one pin in the middle and verify its slot is erased.
@@ -1058,7 +1032,7 @@ void test_pin_subscribe_unsubscribe_reclaims_slot() {
   unsub.enabled = false;
   send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
                    unsub);
-  TEST_ASSERT_EQUAL_INT32(-1, ba.subscriptionLastValueForPin(5U));
+  EXPECT_EQ(-1, ba.subscriptionLastValueForPin(5U));
 
   // Subscribing a brand-new pin must now reuse the reclaimed capacity.
   stream.tx_buf.clear();
@@ -1073,18 +1047,16 @@ void test_pin_subscribe_unsubscribe_reclaims_slot() {
   send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
                    sub_new);
   pw::Status resp_status = pw::OkStatus();
-  TEST_ASSERT_FALSE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
+  EXPECT_FALSE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
                                                      resp_status));
-  TEST_ASSERT_GREATER_OR_EQUAL_INT32(0,
-                                     ba.subscriptionLastValueForPin(kNewPin));
-  TEST_ASSERT_EQUAL_UINT8(INPUT_PULLUP,
-                          g_arduino_stub_pin_states[kNewPin].mode);
+  EXPECT_GE(ba.subscriptionLastValueForPin(kNewPin), 0);
+  EXPECT_EQ(INPUT_PULLUP, g_arduino_stub_pin_states[kNewPin].mode);
 }
 
 // Regression (R25): when _pin_subscriptions is full, rejecting a new pin
 // subscribe request must return ResourceExhausted AND must not call ::pinMode()
 // on the rejected pin.
-void test_pin_subscribe_full_does_not_mutate_pin_mode() {
+TEST_F(BridgeCoreFixture, PinSubscribeFullDoesNotMutatePinMode) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   resetArduinoStubPinStates();
@@ -1109,10 +1081,8 @@ void test_pin_subscribe_full_does_not_mutate_pin_mode() {
       static_cast<uint8_t>(2U + bridge::config::MAX_PIN_SUBSCRIPTIONS);
   constexpr uint8_t kRejectedInputPin =
       static_cast<uint8_t>(3U + bridge::config::MAX_PIN_SUBSCRIPTIONS);
-  TEST_ASSERT_EQUAL_UINT8(0xFFU,
-                          g_arduino_stub_pin_states[kRejectedPullupPin].mode);
-  TEST_ASSERT_EQUAL_UINT8(0xFFU,
-                          g_arduino_stub_pin_states[kRejectedInputPin].mode);
+  EXPECT_EQ(0xFFU, g_arduino_stub_pin_states[kRejectedPullupPin].mode);
+  EXPECT_EQ(0xFFU, g_arduino_stub_pin_states[kRejectedInputPin].mode);
 
   stream.tx_buf.clear();
   rpc_pb_PinSubscribeRequest rej_pullup =
@@ -1123,15 +1093,11 @@ void test_pin_subscribe_full_does_not_mutate_pin_mode() {
   send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
                    rej_pullup);
   pw::Status status_pullup = pw::OkStatus();
-  TEST_ASSERT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
+  EXPECT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
                                                     status_pullup));
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(pw::Status::ResourceExhausted().code()),
-      static_cast<int>(status_pullup.code()));
-  TEST_ASSERT_EQUAL_UINT8(0xFFU,
-                          g_arduino_stub_pin_states[kRejectedPullupPin].mode);
-  TEST_ASSERT_EQUAL_INT32(-1,
-                          ba.subscriptionLastValueForPin(kRejectedPullupPin));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(status_pullup.code()));
+  EXPECT_EQ(0xFFU, g_arduino_stub_pin_states[kRejectedPullupPin].mode);
+  EXPECT_EQ(-1, ba.subscriptionLastValueForPin(kRejectedPullupPin));
 
   stream.tx_buf.clear();
   rpc_pb_PinSubscribeRequest rej_input =
@@ -1142,48 +1108,10 @@ void test_pin_subscribe_full_does_not_mutate_pin_mode() {
   send_rpc_request(ba, kGpioSvc, kSubMeth, rpc_pb_PinSubscribeRequest_fields,
                    rej_input);
   pw::Status status_input = pw::OkStatus();
-  TEST_ASSERT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
+  EXPECT_TRUE(extract_last_rpc_response_status(stream, kGpioSvc, kSubMeth,
                                                     status_input));
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(pw::Status::ResourceExhausted().code()),
-      static_cast<int>(status_input.code()));
-  TEST_ASSERT_EQUAL_UINT8(0xFFU,
-                          g_arduino_stub_pin_states[kRejectedInputPin].mode);
-  TEST_ASSERT_EQUAL_INT32(-1,
-                          ba.subscriptionLastValueForPin(kRejectedInputPin));
+  EXPECT_EQ(static_cast<int>(pw::Status::ResourceExhausted().code()), static_cast<int>(status_input.code()));
+  EXPECT_EQ(0xFFU, g_arduino_stub_pin_states[kRejectedInputPin].mode);
+  EXPECT_EQ(-1, ba.subscriptionLastValueForPin(kRejectedInputPin));
 }
 
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_bridge_initialization);
-  RUN_TEST(test_bridge_handshake);
-  RUN_TEST(test_bridge_handshake_response_uses_tag_length);
-  RUN_TEST(test_bridge_send_frame);
-  RUN_TEST(test_bridge_process_rx);
-  RUN_TEST(test_bridge_dedup_console_write);
-  RUN_TEST(test_bridge_status_ack);
-  RUN_TEST(test_bridge_post_and_stack_sentinel);
-  RUN_TEST(test_bridge_await_synchronization_bounded);
-  RUN_TEST(test_bridge_wcet_tracking);
-  RUN_TEST(test_bridge_begin_null_secret);
-  RUN_TEST(test_bridge_handshake_timeout_not_sync);
-  RUN_TEST(test_bridge_queue_full_and_flow_control);
-  RUN_TEST(test_bridge_emit_status_variants);
-  RUN_TEST(test_bridge_send_responses_table);
-  RUN_TEST(test_bridge_dispatch_status_and_unknown);
-  RUN_TEST(test_bridge_post_failure);
-  RUN_TEST(test_bridge_frame_errors_and_zero_spi);
-  RUN_TEST(test_bridge_serial_tasks_and_flow_control);
-  RUN_TEST(test_bridge_handshake_authentication_edges);
-  RUN_TEST(test_bridge_fsm_resets_and_link_reset);
-  RUN_TEST(test_bridge_dispatch_extra_branches);
-  RUN_TEST(test_bridge_authenticated_digital_write_frame);
-  RUN_TEST(test_bridge_receive_security_gate_variants);
-  RUN_TEST(test_bridge_edge_paths_and_post);
-  RUN_TEST(test_bridge_pw_log_tokenized_hdlc_frame);
-  RUN_TEST(test_bridge_safe_state_emits_tokenized_pw_log);
-  RUN_TEST(test_bridge_pw_metric_service_get_and_walk);
-  RUN_TEST(test_pin_subscribe_unsubscribe_reclaims_slot);
-  RUN_TEST(test_pin_subscribe_full_does_not_mutate_pin_mode);
-  return UNITY_END();
-}

@@ -1,4 +1,4 @@
-"""Unit tests for asyncssh, openwrt-luci-rpc, and Unity test parser integrations."""
+"""Unit tests for asyncssh and openwrt-luci-rpc integrations."""
 
 from __future__ import annotations
 

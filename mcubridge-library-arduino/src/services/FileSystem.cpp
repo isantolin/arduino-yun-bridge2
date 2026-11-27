@@ -96,12 +96,9 @@ bool FileSystemClass::registerUploadHandler(
 }
 
 void FileSystemClass::unregisterUploadHandler(
-    const pw::transfer::TransferService& service) {
+    pw::transfer::TransferService& service) {
   if (g_upload_handler_destroyed) return;
-  // TransferService::UnregisterHandler is non-const; the bridge owns the
-  // service but this API is exposed here as a const reference.
-  auto& mutable_service = const_cast<pw::transfer::TransferService&>(service);
-  if (g_upload_handler.detachFrom(mutable_service)) {
+  if (g_upload_handler.detachFrom(service)) {
     _resetUpload();
   }
 }

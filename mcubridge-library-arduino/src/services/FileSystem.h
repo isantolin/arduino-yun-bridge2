@@ -33,7 +33,7 @@ class FileSystemClass {
   static bool registerUploadHandler(pw::transfer::TransferService& service,
                                     pw::transfer::TransferThread& thread);
   static void unregisterUploadHandler(
-      const pw::transfer::TransferService& service);
+      pw::transfer::TransferService& service);
   static void _resetUpload();
 };
 

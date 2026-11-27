@@ -940,13 +940,12 @@ class SerialTransport:
 
         spec = get_operation(command_id)
         if seq_id is None:
-            is_typed_server_response = (
+            if (
                 spec is not None
                 and spec.response_type is not None
                 and spec.response_type is not spec.request_type
                 and isinstance(payload, spec.response_type)
-            )
-            if is_typed_server_response:
+            ):
                 logger.error(
                     "Refusing to infer an MCU RPC call_id from service/method; pass the incoming call_id explicitly",
                     operation=spec.name,

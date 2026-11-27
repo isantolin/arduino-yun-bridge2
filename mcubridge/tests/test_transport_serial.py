@@ -1441,7 +1441,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=77)
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=78)
 
-    response_packets = []
+    response_packets: list[RpcPacket] = []
     for write_call in mock_serial.write.call_args_list:
         written_raw = cast(bytes, write_call.args[0])
         out_frame = next(iter(FrameDecoder().process(written_raw)))

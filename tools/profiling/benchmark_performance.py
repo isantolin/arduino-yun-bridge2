@@ -27,6 +27,7 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_rpc import packets as pw_packets
+from pw_rpc.descriptors import RpcIds
 
 from mcubridge.protocol import mcu_wire_pb2 as pb
 from mcubridge.protocol import protocol
@@ -204,19 +205,21 @@ def benchmark_lmdb_storage(iterations: int = 10_000) -> list[BenchmarkMetric]:
 def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
     """Benchmark full RPC frame construction and parsing with Pigweed HDLC."""
     msg = pb.DigitalWrite(pin=13, value=1)
+    operation = protocol.get_operation("rpc.pb.GpioService/DigitalWrite")
+    assert operation is not None and operation.service_id is not None and operation.method_id is not None
 
     # 1. Build Frame
     start = time.perf_counter()
     raw_frames = [
         ui_frame(
             protocol.HDLC_ADDRESS_RPC,
-            protocol.encode_rpc_packet("rpc.pb.GpioService/DigitalWrite", msg, call_id=i),
+            pw_packets.encode_request(RpcIds(protocol.HDLC_ADDRESS_RPC, operation.service_id, operation.method_id, i), msg),
         )
         for i in range(iterations)
     ]
     dur_build = time.perf_counter() - start
     build_metric = BenchmarkMetric(
-        name="ui_frame(encode_rpc_packet()) Frame",
+        name="ui_frame(pw_rpc.encode_request()) Frame",
         operations=iterations,
         duration_sec=dur_build,
         ops_per_sec=iterations / dur_build,

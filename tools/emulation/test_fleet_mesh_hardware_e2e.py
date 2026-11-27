@@ -32,6 +32,8 @@ from google.protobuf.message import DecodeError
 from pw_emu.frontend import Emulator
 from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
+from pw_rpc import packets as pw_packets
+from pw_rpc.descriptors import RpcIds
 from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
@@ -182,12 +184,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
             # overlapping probes leave stale nonce responses for the daemon.
             if pending_sync is None and now >= next_probe:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
+                reset_spec = protocol.get_operation("rpc.pb.SystemService/LinkReset")
+                assert reset_spec is not None and reset_spec.service_id is not None and reset_spec.method_id is not None
                 reset_request = ui_frame(
                     protocol.HDLC_ADDRESS_RPC,
-                    protocol.encode_rpc_packet(
-                        "rpc.pb.SystemService/LinkReset",
-                        b"",
-                        call_id=call_id,
+                    pw_packets.encode_request(
+                        RpcIds(protocol.HDLC_ADDRESS_RPC, reset_spec.service_id, reset_spec.method_id, call_id),
+                        mcu_wire_pb2.SubscribeRequest(),
                     ),
                 )
                 if ser.write(reset_request) != len(reset_request):
@@ -196,12 +199,13 @@ def wait_for_firmware_uart_ready(port: str, timeout: float) -> bool:
                 call_id = (call_id + 1) & protocol.UINT16_MAX or 1
                 nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
                 request_tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+                sync_spec = protocol.get_operation("rpc.pb.SystemService/LinkSync")
+                assert sync_spec is not None and sync_spec.service_id is not None and sync_spec.method_id is not None
                 sync_request = ui_frame(
                     protocol.HDLC_ADDRESS_RPC,
-                    protocol.encode_rpc_packet(
-                        "rpc.pb.SystemService/LinkSync",
+                    pw_packets.encode_request(
+                        RpcIds(protocol.HDLC_ADDRESS_RPC, sync_spec.service_id, sync_spec.method_id, call_id),
                         mcu_wire_pb2.LinkSync(nonce=nonce, tag=request_tag),
-                        call_id=call_id,
                     ),
                 )
                 if ser.write(sync_request) != len(sync_request):

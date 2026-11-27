@@ -39,7 +39,7 @@ from pw_rpc.callback_client.errors import RpcError, RpcTimeout
 from pw_rpc.callback_client.impl import Impl as PwCallbackClientImpl
 from pw_rpc.client import Client as PwRpcClient
 from pw_rpc.console_tools.console import ClientInfo, flattened_rpc_completions
-from pw_rpc.descriptors import Channel as PwRpcChannel, Service as PwRpcService, Services as PwRpcServices
+from pw_rpc.descriptors import Channel as PwRpcChannel, RpcIds, Service as PwRpcService, Services as PwRpcServices
 from pw_rpc.internal.packet_pb2 import PacketType
 from pw_stream.stream_readers import CancellableReader
 from pw_tokenizer import detokenize, elf_reader
@@ -495,13 +495,25 @@ def establish_link_security(
         transport.writer(ui_frame(protocol.HDLC_ADDRESS_RPC, packet))
         transport.flush()
 
-    write_plain_rpc(protocol.encode_rpc_packet(_LINK_RESET_SPEC, b"", call_id=1))
+    assert _LINK_RESET_SPEC.service_id is not None and _LINK_RESET_SPEC.method_id is not None
+    write_plain_rpc(
+        pw_packets.encode_request(
+            RpcIds(protocol.HDLC_ADDRESS_RPC, _LINK_RESET_SPEC.service_id, _LINK_RESET_SPEC.method_id, 1),
+            mcu_wire_pb2.SubscribeRequest(),
+        )
+    )
     if reset_settle_s > 0:
         time.sleep(reset_settle_s)
 
     host_tag = SerialHandshakeManager.calculate_handshake_tag(shared_secret, host_nonce)
     request = mcu_wire_pb2.LinkSync(nonce=host_nonce, tag=host_tag)
-    write_plain_rpc(protocol.encode_rpc_packet(_LINK_SYNC_SPEC, request, call_id=2))
+    assert _LINK_SYNC_SPEC.service_id is not None and _LINK_SYNC_SPEC.method_id is not None
+    write_plain_rpc(
+        pw_packets.encode_request(
+            RpcIds(protocol.HDLC_ADDRESS_RPC, _LINK_SYNC_SPEC.service_id, _LINK_SYNC_SPEC.method_id, 2),
+            request,
+        )
+    )
 
     decoder = FrameDecoder()
     deadline = time.monotonic() + response_timeout_s

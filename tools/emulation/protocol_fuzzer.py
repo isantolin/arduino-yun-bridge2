@@ -17,6 +17,7 @@ import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 from pw_hdlc.encode import ui_frame
+from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 import serial
 import structlog
 import typer
@@ -79,7 +80,23 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         return self.seq_id
 
     def _build_raw_frame(self, cmd: int | str, seq: int, payload: bytes) -> bytes:
-        return ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(cmd, payload, call_id=seq))
+        """Build an intentionally arbitrary RpcPacket for negative protocol fuzzing."""
+        spec = protocol.get_operation(cmd)
+        if spec is not None and spec.service_id is not None and spec.method_id is not None:
+            service_id, method_id = spec.service_id, spec.method_id
+        elif isinstance(cmd, int):
+            service_id = method_id = cmd
+        else:
+            service_id = method_id = 0
+        packet = RpcPacket(
+            type=PacketType.REQUEST,
+            channel_id=protocol.HDLC_ADDRESS_RPC,
+            service_id=service_id,
+            method_id=method_id,
+            call_id=seq,
+            payload=payload,
+        )
+        return ui_frame(protocol.HDLC_ADDRESS_RPC, packet.SerializeToString())
 
     @rule(payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE))
     def fuzz_valid_ping(self, payload: bytes) -> None:

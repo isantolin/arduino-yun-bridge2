@@ -64,7 +64,7 @@ def test_wolfssl_archive_pin_is_synced_to_installer() -> None:
 
     assert wolfssl["version"] == "5.8.4"
     assert wolfssl["sha256"] == "a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"
-    assert not wolfssl["check_latest"]
+    assert wolfssl["check_latest"] is True
     assert f'WOLFSSL_VERSION="{wolfssl["version"]}"' in installer
     assert f'WOLFSSL_SHA256="{wolfssl["sha256"]}"' in installer
     assert "wolfssl-${WOLFSSL_VERSION}.zip" in installer
@@ -78,7 +78,7 @@ def test_flashstorage_archive_pin_is_synced_to_installer_and_ci() -> None:
     workflow = (sync_runtime_deps.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert flash["sha256"] == "2f5a349e1c5dc4ec7f7e22268c0f998af3f471b98ed873abd6e671ac67940e39"
-    assert not flash["check_latest"]
+    assert flash["check_latest"] is True
     assert f'FLASHSTORAGE_VERSION="{flash["version"]}"' in installer
     assert f'FLASHSTORAGE_SHA256="{flash["sha256"]}"' in installer
     assert "FlashStorage-${FLASHSTORAGE_VERSION}.zip" in installer
@@ -86,18 +86,49 @@ def test_flashstorage_archive_pin_is_synced_to_installer_and_ci() -> None:
     assert not sync_runtime_deps.update_cpp_install_script(manifest.cpp, dry_run=True)
 
 
-def test_check_latest_versions_skips_disabled_cpp_dependency(
+def test_check_latest_versions_detects_enabled_cpp_dependency_updates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manifest = sync_runtime_deps.load_manifest()
     wolfssl = next(dep for dep in manifest.cpp if dep["name"] == "wolfssl")
+    flashstorage = next(dep for dep in manifest.cpp if dep["name"] == "FlashStorage")
+    latest_versions = {
+        "wolfSSL/Arduino-wolfSSL": "5.8.5",
+        "cmaglie/FlashStorage": "1.0.1",
+    }
+    checked_repositories: list[str] = []
 
-    def unexpected_http_request(*args: object, **kwargs: object) -> None:
-        pytest.fail(f"unexpected dependency update request: {args}, {kwargs}")
+    def fake_latest_version(repository: str) -> str | None:
+        checked_repositories.append(repository)
+        return latest_versions.get(repository)
 
-    monkeypatch.setattr(sync_runtime_deps.httpx, "get", unexpected_http_request)
+    monkeypatch.setattr(sync_runtime_deps, "_fetch_github_latest_version", fake_latest_version)
 
-    assert not sync_runtime_deps.check_latest_versions([], [wolfssl])
+    outdated = sync_runtime_deps.check_latest_versions([], [wolfssl, flashstorage])
+
+    assert checked_repositories == [
+        "wolfSSL/Arduino-wolfSSL",
+        "cmaglie/FlashStorage",
+    ]
+    assert outdated == [
+        ("wolfssl", "5.8.4", "5.8.5"),
+        ("FlashStorage", "1.0.0", "1.0.1"),
+    ]
+
+
+def test_check_latest_versions_skips_disabled_cpp_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manifest = sync_runtime_deps.load_manifest()
+    nanopb_core = next(dep for dep in manifest.cpp if dep["name"] == "nanopb_core")
+
+    def unexpected_latest_version_lookup(repository: str) -> str | None:
+        pytest.fail(f"unexpected latest-version lookup for disabled dependency: {repository}")
+
+    monkeypatch.setattr(sync_runtime_deps, "_fetch_github_latest_version", unexpected_latest_version_lookup)
+
+    assert nanopb_core["check_latest"] is False
+    assert not sync_runtime_deps.check_latest_versions([], [nanopb_core])
 
 
 def test_main_dry_run_reports_up_to_date_when_no_changes() -> None:

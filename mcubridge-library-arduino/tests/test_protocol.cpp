@@ -4,6 +4,7 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 #include <Arduino.h>
+#include <string.h>
 #if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
 #include <PigweedAVR.h>
 #else
@@ -15,7 +16,6 @@
 #include <etl/array.h>
 #include <pw_span/span.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #include "test_support.h"
 
@@ -40,7 +40,7 @@ TEST(Protocol, HdlcRoundtripAndCrc) {
       frame_found = true;
       EXPECT_EQ(1, res.value().address());
       EXPECT_EQ(sizeof(test_payload), res.value().data().size());
-      EXPECT_TRUE(std::equal(test_payload, (test_payload) + (sizeof(test_payload)), res.value().data().data()));
+      EXPECT_EQ(0, memcmp(test_payload, res.value().data().data(), sizeof(test_payload))));
     }
   }
   EXPECT_TRUE(frame_found);
@@ -108,7 +108,7 @@ TEST(Protocol, RpcPacketEncodingAndDecoding) {
   EXPECT_EQ(packet.method_id(), decoded.method_id());
   EXPECT_EQ(42, decoded.call_id());
   EXPECT_EQ(sizeof(payload), decoded.payload().size());
-  EXPECT_TRUE(std::equal(payload, (payload) + (sizeof(payload)), decoded.payload().data()));
+  EXPECT_EQ(0, memcmp(payload, decoded.payload().data(), sizeof(payload))));
 }
 
 TEST(Protocol, ServiceIdTokenizerHashing) {

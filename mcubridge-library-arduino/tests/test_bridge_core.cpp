@@ -13,6 +13,7 @@
 #include <etl/string_view.h>
 #include <pw_bytes/endian.h>
 #include <pw_metric_proto/metric_service.pwpb.h>
+#include <pw_log_avr/log_avr.h>
 #include <pw_protobuf/decoder.h>
 #include <pw_span/span.h>
 #include "pw_unit_test/framework.h"
@@ -731,7 +732,14 @@ TEST_F(BridgeCoreFixture, BridgePwLogTokenizedHdlcFrame) {
   ba.setSynchronized();
   stream.tx_buf.clear();
 
-  PW_LOG_INFO("Phase2 log value=%d", 42);
+  // Exercise the AVR backend's tokenized-log entry point. The host Bazel
+  // target uses pw_log's host backend for ordinary PW_LOG macros.
+  constexpr uint32_t kLogToken =
+      PW_TOKENIZER_STRING_TOKEN("Phase2 log value=%d");
+  etl::array<uint8_t, 5> log_payload{};
+  memcpy(log_payload.data(), &kLogToken, sizeof(kLogToken));
+  log_payload[4] = 0x54U;  // ZigZag-encoded integer 42.
+  pw_log_avr_HandleLog(2U, log_payload.data(), log_payload.size());
   EXPECT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;
@@ -764,7 +772,13 @@ TEST_F(BridgeCoreFixture, BridgeSafeStateEmitsTokenizedPwLog) {
   ba.setSynchronized();
   stream.tx_buf.clear();
 
+  constexpr uint32_t kSafeStateToken =
+      PW_TOKENIZER_STRING_TOKEN("BRIDGE_SAFE_STATE");
+  pw_log_avr_HandleLog(
+      3U, reinterpret_cast<const uint8_t*>(&kSafeStateToken),
+      sizeof(kSafeStateToken));
   Bridge.enterSafeState();
+  EXPECT_FALSE(Bridge.isSynchronized());
   EXPECT_GT(stream.tx_buf.len, 0U);
 
   pw::hdlc::DecoderBuffer<1024> decoder;

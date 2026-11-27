@@ -149,7 +149,7 @@ for key in ("line", "branch", "function"):
     percentage = 100.0 if total == 0 else 100.0 * hit / total
     lines.append(f"{key.title()} coverage: {percentage:.2f}% ({hit}/{total}), required >= {minima[key]:.2f}%")
     failed |= percentage < minima[key]
-text = "\\n".join(lines) + "\\n"
+text = "\n".join(lines) + "\n"
 Path(summary).write_text(text, encoding="utf-8")
 print(text, end="")
 if failed:

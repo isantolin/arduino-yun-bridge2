@@ -7,7 +7,6 @@
 #include <string.h>
 #include <SPI.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include <BridgeFaultInjection.h>

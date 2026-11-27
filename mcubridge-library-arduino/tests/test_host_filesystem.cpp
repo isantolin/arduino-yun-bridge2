@@ -8,8 +8,6 @@
 #include <etl/array.h>
 #include <etl/string.h>
 #include <pw_transfer/internal/chunk.h>
-#include <pw_thread/thread.h>
-#include <pw_thread_stl/options.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include "pw_unit_test/framework.h"
@@ -26,30 +24,6 @@ HardwareSerial Serial;
 HardwareSerial Serial1;
 namespace {
 using bridge::test::TestAccessor;
-
-// Upstream pw_transfer::Thread is a ThreadCore. The host integration test must
-// run it on Pigweed's STL thread backend, just as production RTOS targets run
-// it on their system thread.
-class HostTransferThread {
- public:
-  explicit HostTransferThread(TestAccessor& bridge)
-      : transfer_thread_(bridge.transferThread()),
-        worker_(pw::thread::stl::Options(), transfer_thread_) {}
-
-  HostTransferThread(const HostTransferThread&) = delete;
-  HostTransferThread& operator=(const HostTransferThread&) = delete;
-
-  ~HostTransferThread() {
-    transfer_thread_.Terminate();
-    worker_.join();
-  }
-
-  void waitUntilIdle() { transfer_thread_.WaitUntilEventIsProcessed(); }
-
- private:
-  pw::transfer::Thread<1, 1>& transfer_thread_;
-  pw::thread::Thread worker_;
-};
 
 bool create_host_test_file(const char* name, pw::span<const uint8_t> data) {
   if (::mkdir("/tmp/mcubridge-host-fs", 0755) != 0 && errno != EEXIST) {
@@ -241,7 +215,6 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  HostTransferThread transfer_thread(ba);
   ba.setSynchronized();
 
   // 1. Disarmed PrepareRead: daemon requests FILE_UPLOAD_RESOURCE_ID before
@@ -250,7 +223,7 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   stream.tx_buf.clear();
   send_transfer_read_start_chunk(ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID, 10U);
   Bridge.process();
-  transfer_thread.waitUntilIdle();
+  ba.transferThread().WaitUntilEventIsProcessed();
 
   pw::rpc::internal::Packet chunk_pkt;
   etl::array<uint8_t, 512> chunk_payload{};
@@ -298,7 +271,7 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   stream.tx_buf.clear();
   send_transfer_read_start_chunk(ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID, 10U);
   Bridge.process();
-  transfer_thread.waitUntilIdle();
+  ba.transferThread().WaitUntilEventIsProcessed();
 
   pw::rpc::internal::Packet data_pkt;
   etl::array<uint8_t, 512> data_pkt_payload{};
@@ -324,7 +297,7 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
       ba, rpc::RPC_FILE_UPLOAD_RESOURCE_ID,
       pw::transfer::internal::Chunk::Type::kParametersRetransmit, 10U);
   Bridge.process();
-  transfer_thread.waitUntilIdle();
+  ba.transferThread().WaitUntilEventIsProcessed();
   pw::rpc::internal::Packet late_pkt;
   etl::array<uint8_t, 512> late_payload{};
   EXPECT_TRUE(find_tx_packet(stream, pw::rpc::internal::pwpb::PacketType::SERVER_STREAM,

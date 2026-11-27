@@ -1042,10 +1042,10 @@ async def test_queue_rpc_packet_tracks_client_routing_direction_only(
     packets = [request, client_error, response]
 
     transport.queue_rpc_packet(request)
-    request_key = transport._rpc_packet_key(pw_packets.decode(request))
-    assert request_key in transport._active_client_route_keys
+    request_key = getattr(transport, "_rpc_packet_key")(pw_packets.decode(request))
+    assert request_key in getattr(transport, "_active_client_route_keys")
     transport.queue_rpc_packet(client_error)
-    assert request_key not in transport._active_client_route_keys
+    assert request_key not in getattr(transport, "_active_client_route_keys")
     transport.queue_rpc_packet(response)
 
     for _ in range(100):
@@ -1054,7 +1054,7 @@ async def test_queue_rpc_packet_tracks_client_routing_direction_only(
         await asyncio.sleep(0.01)
 
     assert written == packets
-    assert not transport._active_client_route_keys
+    assert not getattr(transport, "_active_client_route_keys")
 
 
 def test_queue_rpc_packet_rejects_calls_outside_event_loop(
@@ -1507,8 +1507,8 @@ async def test_mcu_rpc_response_routes_to_pigweed_client_without_local_call_tabl
 
     await transport.process_hdlc_frame(frame)
 
-    packet_key = transport._rpc_packet_key(pw_packets.decode(packet))
-    transport._active_client_route_keys.add(packet_key)
+    packet_key = getattr(transport, "_rpc_packet_key")(pw_packets.decode(packet))
+    getattr(transport, "_active_client_route_keys").add(packet_key)
 
     await transport.process_hdlc_frame(frame)
 

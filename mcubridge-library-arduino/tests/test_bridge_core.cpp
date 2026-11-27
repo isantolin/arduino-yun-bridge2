@@ -460,6 +460,7 @@ TEST_F(BridgeCoreFixture, BridgeDispatchExtraBranches) {
   send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),
                    pw::tokenizer::Hash("SetBaudrate"),
                    rpc_pb_SetBaudratePacket_fields, baud_msg);
+  EXPECT_TRUE(ba.isSynchronized());
 
   baud_msg.baudrate = 57600U;
   send_rpc_request(ba, pw::tokenizer::Hash("rpc.pb.SystemService"),

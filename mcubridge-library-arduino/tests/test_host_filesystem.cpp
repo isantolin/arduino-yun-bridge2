@@ -276,7 +276,7 @@ TEST(HostFilesystem, FilesystemUploadTransferReadArmedAndDisarmed) {
   auto parsed_data = pw::transfer::internal::Chunk::Parse(data_pkt.payload());
   EXPECT_TRUE(parsed_data.ok());
   EXPECT_EQ(upload_data.size(), parsed_data.value().payload().size());
-  EXPECT_EQ(0, memcmp(upload_data.data(), parsed_data.value().payload().data(), upload_data.size())));
+  EXPECT_EQ(0, memcmp(upload_data.data(), parsed_data.value().payload().data(), upload_data.size()));
 
   // Complete the Upload RPC with OK -> disarms handler and clears pending.
   ba.invokeRpcResponse(

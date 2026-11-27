@@ -21,7 +21,6 @@
 #include <etl/string_view.h>
 #include <pw_rpc/internal/packet.h>
 #include <pw_span/span.h>
-#include <stddef.h>
 #include <new>
 #include <stddef.h>
 #include <stdint.h>

@@ -961,7 +961,28 @@ class SerialTransport:
             return False
 
         target = spec if spec is not None else command_id
-        packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
+        rpc_ids = (
+            RpcIds(protocol.HDLC_ADDRESS_RPC, spec.service_id, spec.method_id, seq_id)
+            if spec is not None and spec.service_id is not None and spec.method_id is not None
+            else None
+        )
+        if rpc_ids is not None and spec is not None and isinstance(payload, ProtobufMessage):
+            is_typed_response = (
+                spec.response_type is not None
+                and spec.response_type is not spec.request_type
+                and isinstance(payload, spec.response_type)
+            )
+            is_typed_request = spec.request_type is not None and isinstance(payload, spec.request_type)
+            if is_typed_response and spec.is_server_streaming:
+                packet = pw_packets.encode_server_stream(rpc_ids, payload)
+            elif is_typed_response:
+                packet = pw_packets.encode_response(rpc_ids, payload)
+            elif is_typed_request:
+                packet = pw_packets.encode_request(rpc_ids, payload)
+            else:
+                packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
+        else:
+            packet = protocol.encode_rpc_packet(target, payload, call_id=seq_id or 1)
         return await self._write_hdlc_frame(
             protocol.HDLC_ADDRESS_RPC,
             packet,

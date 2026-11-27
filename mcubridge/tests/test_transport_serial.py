@@ -1436,12 +1436,20 @@ async def test_server_stream_error_and_reset_cleanup_branches(
             packet_type=int(PacketType.REQUEST),
         ),
     )
+    assert await transport.send_raw("rpc.pb.SystemService/LinkReset", pb.SubscribeRequest(), seq_id=12)
+    request_frame = next(iter(FrameDecoder().process(cast(bytes, mock_serial.write.call_args.args[0]))))
+    request_packet = pw_packets.decode(request_frame.data)
+    assert request_packet.type == PacketType.REQUEST
+    assert request_packet.call_id == 12
+    mock_serial.write.reset_mock()
+
     await transport.feed_data(mcu_req_frame)
     response = pb.DatastoreGetResponse(value=b"val")
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=None) is False
     assert mock_serial.write.call_count == 0
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=77)
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=78)
+    assert await transport.send_raw("rpc.pb.GpioService/SubscribePins", pb.PinUpdateEvent(), seq_id=79)
 
     response_packets: list[RpcPacket] = []
     for write_call in mock_serial.write.call_args_list:
@@ -1452,8 +1460,9 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     assert [packet.type for packet in response_packets] == [
         PacketType.RESPONSE,
         PacketType.RESPONSE,
+        PacketType.SERVER_STREAM,
     ]
-    assert [packet.call_id for packet in response_packets] == [77, 78]
+    assert [packet.call_id for packet in response_packets] == [77, 78, 79]
 
     await transport.reset()
 

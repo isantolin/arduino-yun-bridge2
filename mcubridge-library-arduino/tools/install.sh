@@ -166,7 +166,7 @@ install_dependency() {
 # --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
 ETL_VERSION="20.49.0"
 UNITY_VERSION="v2.7.0"
-NANOPB_VERSION="0.4.9.2"
+NANOPB_VERSION="0.4.9.1"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
 WOLFSSL_VERSION="5.8.4"
 WOLFSSL_SHA256="a3199eb282afdff6ed7ee438a175842a8c425a4264022019153e430def20ef96"

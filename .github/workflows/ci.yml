@@ -292,7 +292,7 @@ jobs:
       - name: Install Python Dependencies
         run: |
           pip install -r requirements/runtime.txt
-          pip install nanopb==0.4.9.3 black
+          pip install nanopb==0.4.9.1 black
       - name: Install Emulation Tools
         run: |
           bash tools/ci/apt_update_with_fallback.sh g++ socat gcc-avr avr-libc

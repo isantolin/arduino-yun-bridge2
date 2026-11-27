@@ -68,7 +68,7 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 * **Watchdog Supervision**: Hardware watchdog timer enabled at 4-second timeout (`wdt_enable(WDTO_4S)` on AVR, `esp_task_wdt` on ESP32, and Procd watchdog in OpenWrt).
 * **Heartbeat Refreshes**: The watchdog is kicked solely if the FSM is alive and memory integrity passes.
 
-### 2.7 Zero-Copy Static Deserialization (Nanopb 0.4.9.2)
+### 2.7 Zero-Copy Static Deserialization (Nanopb 0.4.9.1)
 * **`pb_decode_noinit` Semantics**: Payloads crossing the RPC boundary are decoded directly into pre-allocated static structs without memory re-zeroing (`memset`), preventing CPU cycle exhaustion and stack thrashing on resource-constrained microcontrollers.
 * **Deterministic Bounds**: All variable-length fields are statically constrained via `.options` file definitions.
 

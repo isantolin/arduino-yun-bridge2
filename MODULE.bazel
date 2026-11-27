@@ -63,8 +63,8 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
-    strip_prefix = "nanopb-nanopb-0.4.9.2",
-    urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/nanopb-0.4.9.2.tar.gz"],
+    strip_prefix = "nanopb-nanopb-0.4.9.1",
+    urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/nanopb-0.4.9.1.tar.gz"],
 )
 
 http_archive(

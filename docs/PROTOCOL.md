@@ -103,7 +103,7 @@ python3 tools/protocol/generate.py \
 …se regeneran los bindings de enums/constantes y el catálogo `PW_SERVICES` / `OPERATIONS`. Además, el generador produce artefactos protobuf para ambos lados:
 
 - **Python:** módulos de mensajes `mcu_wire_pb2.py`, `config_schema_pb2.py`, `cloud_gateway_pb2.py`, stubs `.pyi`, descriptores Pigweed RPC y el módulo `protocol.py`.
-- **C++ (nanopb/protobuf):** cabeceras de protocolo `rpc_protocol.h` y `rpc_hw_config.h`, junto con las cabeceras Nanopb `mcu_wire.pb.h`/`.c` y `config_schema.pb.h`/`.c` (estáticas, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
+- **C++ (nanopb/protobuf):** cabeceras de protocolo `rpc_protocol.h` y `rpc_hw_config.h`, junto con las cabeceras Nanopb `mcu_wire.pb.h`/`.c` y `config_schema.pb.h`/`.c` (estáticas, Zero-Heap, sin asignación dinámica de memoria en runtime). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.1) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
 
@@ -136,7 +136,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 - **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría cloud mediante Pigweed RPC.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte transparente para `pyserial` (UART POSIX y sockets TCP/WiFi).
 - **Pigweed RPC sobre TLS mutuo**: el daemon y los clientes se conectan al Gateway C++ standalone mediante `pw_rpc` y `pw_hdlc` sobre el transporte TLS autenticado por certificados. El Gateway termina TLS, vincula el principal a la identidad del certificado y mantiene contexto RPC aislado por conexión (ADR-0003); no se conserva el antiguo Gateway Python/grpclib.
-- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.2 (`pb_decode_noinit`); no se afirma certificación SIL-2.
+- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.1 (`pb_decode_noinit`); no se afirma certificación SIL-2.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante Pigweed RPC sobre HDLC/TLS.
 
 ## Seguridad
@@ -509,7 +509,7 @@ El enlace físico comparte **3 canales lógicos HDLC** independientes:
 | **Motor RPC & Despacho** | Enrutamiento de `RpcPacket` | **Google Pigweed**: `pw::rpc::Server`, `pw::rpc::Client`, `pw::rpc::Channel` y `protoc_gen_mcu_rpc.py` (`rpc::pb::pw_rpc::nanopb::<Service>::Service` para 6 servicios servidor registrados y `Client` para `ProcessService` y `DataStoreService`). | **Google Pigweed**: `pw_rpc.packets` + `pw_rpc.descriptors.Services` (`PW_SERVICES`) para los 8 contratos Protobuf. |
 | **Logs Tokenizados** | Telemetría diagnóstica cero-RAM | **Google Pigweed**: fachada `pw::log::SetLogSink` (`pw_log` + `pw_tokenizer`). | **Google Pigweed**: `pw_tokenizer.Detokenizer`. |
 | **Reloj Monótono MCU** | Timekeeping atómico determinista | **Google Pigweed**: `pw::chrono::SystemClock::now()` (`pw_chrono`). | Reloj monótono `time.monotonic()`. |
-| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.2** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / direct `*_pb2.py` modules, orquestado vía `PW_SERVICES`). |
+| **Payload Serialization** | Codificación de mensajes RPC | **Nanopb 0.4.9.1** (`pb_encode` / `pb_decode_noinit`, Zero-Heap). | **Protobuf** (`google.protobuf` / direct `*_pb2.py` modules, orquestado vía `PW_SERVICES`). |
 
 ## 4. Códigos de estado (`Status` / `pw_status`)
 

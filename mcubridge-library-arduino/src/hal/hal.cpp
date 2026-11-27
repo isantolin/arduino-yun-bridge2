@@ -1,11 +1,9 @@
 #include "hal.h"
+#include "hal_internal.h"
 
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <pw_bytes/endian.h>
-#if defined(BRIDGE_HOST_TEST)
-#include <stdlib.h>
-#endif
 #if defined(ARDUINO_ARCH_AVR)
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
@@ -235,13 +233,8 @@ static bool run_sram_march_test() {
   return true;
 }
 
-bool run_power_on_self_tests() {
-#if defined(BRIDGE_HOST_TEST)
-  if (bridge::test::fault::consume(
-          bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL)) {
-    return false;
-  }
-#endif
+namespace internal {
+bool run_power_on_self_tests_impl() {
   initStackCanary();
   const bool march_ok = run_sram_march_test();
   const bool stack_ok = checkStackOverflow();
@@ -251,6 +244,11 @@ bool run_power_on_self_tests() {
 #else
   return march_ok && stack_ok;
 #endif
+}
+}  // namespace internal
+
+__attribute__((weak)) bool run_power_on_self_tests() {
+  return internal::run_power_on_self_tests_impl();
 }
 
 void init() {
@@ -460,7 +458,7 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
   caps.clock_sync = true;
 }
 
-[[noreturn]] void enterBootloader() {
+[[noreturn]] __attribute__((weak)) void enterBootloader() {
   forceSafeState();
   if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)
@@ -468,13 +466,6 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
     // The bootloader checks the token at 0x0800 on restart.
     *reinterpret_cast<volatile uint16_t*>(0x0800u) = 0x7777u;
 #endif
-  }
-
-  if constexpr (Traits::id == ArchId::ARCH_HOST) {
-    // [SIL-2] On host/test environment, terminate without running global
-    // destructors: the timer test may be executing in a forked child where
-    // the parent process transfer worker no longer exists.
-    ::_Exit(0);
   }
 
   Traits::reset();

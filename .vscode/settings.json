@@ -25,7 +25,6 @@
   ],
   "C_Cpp.default.defines": [
     "ARDUINO=100",
-    "BRIDGE_HOST_TEST=1",
     "ETL_NO_STL",
     "ETL_FORCE_STD_INITIALIZER_LIST",
     "BRIDGE_ENABLE_CONSOLE=1",

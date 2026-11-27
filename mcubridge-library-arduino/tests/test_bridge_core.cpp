@@ -206,9 +206,9 @@ TEST_F(BridgeCoreFixture, BridgeAwaitSynchronizationBounded) {
   reset_bridge();
   auto& ba = TestAccessor::create(Bridge);
 
-  const uint32_t start_ms = bridge::test::fault::clock_ms();
+  const uint32_t start_ms = bridge::hal::nowMillis();
   EXPECT_FALSE(Bridge.awaitSynchronization(50U, 5U));
-  EXPECT_GE(bridge::test::fault::clock_ms() - start_ms, 50U);
+  EXPECT_GE(bridge::hal::nowMillis() - start_ms, 50U);
   EXPECT_FALSE(Bridge.isSynchronized());
   EXPECT_FALSE(ba.isTxEnabled());
 
@@ -216,9 +216,9 @@ TEST_F(BridgeCoreFixture, BridgeAwaitSynchronizationBounded) {
 
   reset_bridge();
   ba.setSynchronized();
-  const uint32_t sync_start_ms = bridge::test::fault::clock_ms();
+  const uint32_t sync_start_ms = bridge::hal::nowMillis();
   EXPECT_TRUE(Bridge.awaitSynchronization(50U, 5U));
-  EXPECT_EQ(sync_start_ms, bridge::test::fault::clock_ms());
+  EXPECT_LT(bridge::hal::nowMillis() - sync_start_ms, 50U);
   EXPECT_TRUE(ba.isTxEnabled());
 }
 

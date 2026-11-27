@@ -16,7 +16,6 @@
             ],
             "defines": [
                 "ARDUINO=10800",
-                "BRIDGE_HOST_TEST=1",
                 "BRIDGE_ENABLE_SPI=1",
                 "BRIDGE_ENABLE_DATASTORE=1",
                 "BRIDGE_ENABLE_MAILBOX=1",

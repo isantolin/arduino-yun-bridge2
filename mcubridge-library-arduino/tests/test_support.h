@@ -209,13 +209,14 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
 inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                               unsigned long baudrate = 0,
                               const char* secret = nullptr) {
-  // The global test Bridge is a TestAccessor, not a plain BridgeClass.
-  // End the complete derived-object lifetime before reusing its storage;
-  // explicitly invoking only the base destructor leaves the derived object
-  // alive and makes repeated placement-new resets undefined behavior.
+  // The worker and registered services are test runtime state. Stop the
+  // test-owned worker after detaching services, then reconstruct the complete
+  // derived TestAccessor object before starting a worker for its new thread.
   auto& accessor = bridge::test::TestAccessor::create(bridge);
+  bridge::test::stopHostTransferWorker();
   accessor.~TestAccessor();
   new (static_cast<void*>(&bridge)) bridge::test::TestAccessor(stream);
+  bridge::test::startHostTransferWorker();
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {

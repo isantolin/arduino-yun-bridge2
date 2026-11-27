@@ -1,4 +1,6 @@
 #include <etl/algorithm.h>
+#include <chrono>
+#include <thread>
 
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
@@ -28,6 +30,10 @@ unsigned long micros() { return bridge::test::fault::clock_ms() * 1000UL; }
 
 void delay(unsigned long ms) __attribute__((weak));
 void delay(unsigned long ms) {
+  // Host HAL timers use Pigweed's monotonic SystemClock. Keep this Arduino
+  // stub delay faithful to the platform API so bounded wait tests advance
+  // both the real host clock and the independent micros()/millis() test stub.
+  std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   bridge::test::fault::advance_clock_ms(static_cast<uint32_t>(ms));
 }
 #endif

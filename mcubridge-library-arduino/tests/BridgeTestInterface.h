@@ -10,6 +10,7 @@
 
 #include "Bridge.h"
 #include "security/security.h"
+#include "services/FileSystem.h"
 
 namespace bridge::test {
 
@@ -130,7 +131,7 @@ class TestAccessor : public BridgeClass {
       _pin_subscriptions[idx].last_value = val;
     }
   }
-  void setSubscriptionLastReportMs(size_t idx, uint16_t ms) {
+  void setSubscriptionLastReportMs(size_t idx, uint32_t ms) {
     if (idx < _pin_subscriptions.size()) {
       _pin_subscriptions[idx].last_report_ms = ms;
     }
@@ -155,6 +156,15 @@ class TestAccessor : public BridgeClass {
   }
 
   pw::transfer::Thread<1, 1>& transferThread() { return _transfer_thread; }
+
+  // Test runtime shutdown runs outside BridgeClass. Unregister handlers and
+  // services while the test-owned Pigweed worker is still alive.
+  void prepareForHostTransferWorkerStop() {
+#if BRIDGE_ENABLE_FILESYSTEM
+    FileSystemClass::unregisterUploadHandler(_transfer_service);
+#endif
+    _unregisterRpcServices();
+  }
 
   bool isSessionKeysReady() const { return _session_keys_ready; }
   void setSessionKeysReady(bool ready) { _session_keys_ready = ready; }
@@ -182,6 +192,9 @@ class TestAccessor : public BridgeClass {
     return _rpc_channel_output.Send(packet);
   }
 };
+
+void startHostTransferWorker();
+void stopHostTransferWorker();
 
 }  // namespace bridge::test
 

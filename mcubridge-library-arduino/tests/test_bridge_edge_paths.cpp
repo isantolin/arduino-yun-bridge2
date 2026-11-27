@@ -624,10 +624,11 @@ TEST_F(BridgeEdgePathsFixture, ArchitecturalExtensionsEdgePaths) {
   // Watchdog timeout branches
   Bridge.setWatchdogTimeout(100);
   EXPECT_EQ(100, Bridge.getWatchdogTimeout());
-  ba.setLastRxMs(bridge::test::fault::clock_ms());
-  ba.invokeWatchdog();  // (clock_ms() - last_rx_ms) <= 100 -> does NOT expire
-  bridge::test::fault::advance_clock_ms(200);
-  ba.invokeWatchdog();  // (clock_ms() - last_rx_ms) > 100 -> EXPIRES
+  const uint32_t watchdog_now = bridge::hal::nowMillis();
+  ba.setLastRxMs(watchdog_now);
+  ba.invokeWatchdog();  // (now - last_rx_ms) <= 100 -> does NOT expire
+  ba.setLastRxMs(watchdog_now - 200U);
+  ba.invokeWatchdog();  // (now - last_rx_ms) > 100 -> EXPIRES
   Bridge.setWatchdogTimeout(0);
   EXPECT_EQ(0, Bridge.getWatchdogTimeout());
 
@@ -719,10 +720,11 @@ TEST_F(BridgeEdgePathsFixture, ArchitecturalExtensionsEdgePaths) {
   ba.invokeSubscriptionTask();  // !isSynchronized()
   ba.setSynchronized();
 
-  ba.setSubscriptionLastReportMs(0, bridge::test::fault::clock_ms());
+  ba.setSubscriptionLastReportMs(0, bridge::hal::nowMillis());
   ba.invokeSubscriptionTask();  // now - last_report_ms < interval_ms
 
-  bridge::test::fault::advance_clock_ms(50);
+  ba.setSubscriptionLastReportMs(
+      0, bridge::hal::nowMillis() - 50U);
   ba.setSubscriptionLastValue(0, 100);
   ba.invokeSubscriptionTask();  // diff < 0
 
@@ -785,9 +787,8 @@ TEST_F(BridgeEdgePathsFixture, AllTimersAndEtlErrorCoverage) {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0, nullptr);
   auto& ba = TestAccessor::create(Bridge);
-  ba.setTimerLastTick(1);
   ba.startTimersForCoverage();
-  bridge::test::fault::advance_clock_ms(300000);
+  ba.setTimerLastTick(bridge::hal::nowMillis() - 300000U);
   ba.invokeTimerTask();
 
   // Exercise weak etl::handle_error definition
@@ -803,10 +804,9 @@ TEST_F(BridgeEdgePathsFixture, BootloaderTimerAndHalCoverage) {
     // Reuse its inherited timer registrations; reconstructing it after fork
     // would try to join a transfer worker that does not exist in the child.
     auto& ba = TestAccessor::create(Bridge);
-    ba.setTimerLastTick(1);
     ba.startBootloaderTimerForCoverage();
-    bridge::test::fault::advance_clock_ms(bridge::config::BOOTLOADER_DELAY_MS +
-                                          100);
+    ba.setTimerLastTick(bridge::hal::nowMillis() -
+                        bridge::config::BOOTLOADER_DELAY_MS - 100U);
     ba.invokeTimerTask();
     _exit(1);
   }
@@ -1165,7 +1165,8 @@ TEST_F(BridgeEdgePathsFixture, PinSubscriptionReportsRisingEdge) {
   EXPECT_EQ(0, ba.subscriptionLastValueForPin(kPin));
 
   g_arduino_stub_pin_states[kPin].value = HIGH;
-  bridge::test::fault::advance_clock_ms(20U);
+  ba.setSubscriptionLastReportMs(
+      0, bridge::hal::nowMillis() - 20U);
   ba.invokeSubscriptionTask();
   EXPECT_EQ(1, ba.subscriptionLastValueForPin(kPin));
 

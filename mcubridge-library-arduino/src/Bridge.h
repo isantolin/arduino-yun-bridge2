@@ -12,10 +12,6 @@
 
 #include <Arduino.h>
 
-#if defined(BRIDGE_HOST_TEST)
-#include <pw_thread/thread.h>
-#include <pw_thread_stl/options.h>
-#endif
 #include <stddef.h>
 #include <stdint.h>
 
@@ -322,11 +318,6 @@ class BridgeClass {
   pw::transfer::Thread<1, 1> _transfer_thread;
   pw::transfer::TransferService _transfer_service;
   pw::transfer::Client _transfer_client;
-#if defined(BRIDGE_HOST_TEST)
-  // Mirror the production requirement that pw_transfer::Thread is actively
-  // driven while handlers are registered and transfer events are processed.
-  pw::thread::Thread _host_transfer_worker;
-#endif
   pw::rpc::NanopbServerWriter<rpc_pb_PinUpdateEvent> _pin_stream_writer{};
   bool _rpc_services_registered{false};
   bool _rpc_plaintext_response{false};

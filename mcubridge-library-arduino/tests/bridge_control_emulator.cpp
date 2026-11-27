@@ -5,11 +5,12 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdlib.h>
 
-#define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
 #include <Arduino.h>
+#include "hal/hal.h"
 
 #include "host_serial_stream.h"
 
@@ -75,3 +76,6 @@ int main() {
   fprintf(stderr, "McuBridge Control Emulator Terminating...\n");
   return 0;
 }
+namespace bridge::hal {
+[[noreturn]] void enterBootloader() { ::_Exit(0); }
+}  // namespace bridge::hal

@@ -23,9 +23,6 @@
 #include <pw_digital_io_avr/digital_io.h>
 #include <etl/string_view.h>
 #include <pw_chrono/system_clock.h>
-#if defined(BRIDGE_HOST_TEST)
-#include <BridgeFaultInjection.h>
-#endif
 #include <stdint.h>
 
 #include "protocol/mcu_wire.pb.h"
@@ -36,11 +33,6 @@ namespace bridge::hal {
  * @brief Monotonic millisecond timestamp sourced from pw::chrono::SystemClock.
  */
 inline uint32_t nowMillis() {
-#if defined(BRIDGE_HOST_TEST)
-  // Keep host-side timer tests deterministic; production targets use
-  // Pigweed's platform SystemClock below.
-  return bridge::test::fault::clock_ms();
-#else
   const int64_t ticks =
       pw::chrono::SystemClock::now().time_since_epoch().count();
   constexpr int64_t kNum = pw::chrono::SystemClock::period::num;
@@ -52,7 +44,6 @@ inline uint32_t nowMillis() {
   } else {
     return static_cast<uint32_t>((ticks * kNum * 1000) / kDen);
   }
-#endif
 }
 
 /**

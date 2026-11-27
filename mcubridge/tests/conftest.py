@@ -376,7 +376,6 @@ def mock_serial() -> AsyncMock:
     mock = AsyncMock()
     mock.invoke_rpc = AsyncMock(return_value=True)
     mock.send_console = AsyncMock(return_value=True)
-    mock.send_raw = AsyncMock(return_value=True)
     mock.rpc_channel = MagicMock()
     mock.rpc_channel.method.side_effect = str
     mock.rpcs = MagicMock()

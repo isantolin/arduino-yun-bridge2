@@ -112,7 +112,9 @@ async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeStat
     serial.send_raw.return_value = True
     assert await on_avail(1, None) is True
     serial.send_raw.assert_called_with(
-        "rpc.pb.MailboxService/Available", mcu_wire_pb2.MailboxAvailableResponse(count=0)
+        "rpc.pb.MailboxService/Available",
+        mcu_wire_pb2.MailboxAvailableResponse(count=0),
+        seq_id=1,
     )
 
     # With items in queue

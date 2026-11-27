@@ -505,7 +505,7 @@ class BridgeService:
         val = res if isinstance(res, bytes) else b""
         resp = mcu_wire_pb2.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE])
         if p is not None and self.serial:
-            await self.serial.send_raw("rpc.pb.DataStoreService/Get", resp)
+            await self.serial.send_raw("rpc.pb.DataStoreService/Get", resp, seq_id=cast(int, req_or_key))
         return resp
 
     # --- Mailbox Subsystem ---
@@ -517,7 +517,7 @@ class BridgeService:
             await self.state.mailbox_incoming_queue.append(p.data)
             await self.publish_mcu_message(p, p.data)
             if self.serial:
-                await self.serial.send_raw("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty())
+                await self.serial.send_raw("rpc.pb.MailboxService/Push", mcu_wire_pb2.Empty(), seq_id=cast(int, req_or_data))
             return mcu_wire_pb2.Empty()
         data = req_or_data.data if isinstance(req_or_data, mcu_wire_pb2.MailboxPush) else cast(bytes, req_or_data)
         # Push first. Queue only when the MCU did not take the message, so the
@@ -544,7 +544,7 @@ class BridgeService:
             content = b""
         resp = mcu_wire_pb2.MailboxReadResponse(content=content)
         if from_mcu and self.serial:
-            await self.serial.send_raw("rpc.pb.MailboxService/Read", resp)
+            await self.serial.send_raw("rpc.pb.MailboxService/Read", resp, seq_id=cast(int, req_or_seq))
         return resp
 
     async def mailbox_available(self, _seq: int, _p: Any) -> bool:
@@ -553,6 +553,7 @@ class BridgeService:
             and await self.serial.send_raw(
                 "rpc.pb.MailboxService/Available",
                 mcu_wire_pb2.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
+                seq_id=_seq,
             )
         )
 
@@ -843,7 +844,7 @@ class BridgeService:
         resp = mcu_wire_pb2.ProcessRunAsyncResponse(pid=pid)
         if p is not None and self.serial:
             if pid:
-                await self.serial.send_raw("rpc.pb.ProcessService/RunAsync", resp)
+                await self.serial.send_raw("rpc.pb.ProcessService/RunAsync", resp, seq_id=cast(int, req_or_cmd))
             else:
                 await self.send_mcu_status(
                     Status.INTERNAL if allowed else Status.PERMISSION_DENIED, cast(int, req_or_cmd), src
@@ -902,7 +903,7 @@ class BridgeService:
                         stderr_truncated=te,
                     )
         if p is not None and self.serial:
-            await self.serial.send_raw("rpc.pb.ProcessService/Poll", resp)
+            await self.serial.send_raw("rpc.pb.ProcessService/Poll", resp, seq_id=cast(int, req_or_pid))
         return resp
 
     def release_process(self, pid: int) -> ProcessContext | None:

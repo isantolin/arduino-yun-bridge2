@@ -1437,14 +1437,21 @@ async def test_server_stream_error_and_reset_cleanup_branches(
         ),
     )
     await transport.feed_data(mcu_req_frame)
-    assert await transport.send_raw("rpc.pb.DataStoreService/Get", pb.DatastoreGetResponse(value=b"val"))
-    written_raw: bytes = mock_serial.write.call_args[0][0]
-    out_frame = next(iter(FrameDecoder().process(written_raw)))
-    out_pkt = pw_packets.decode(out_frame.data)
-    assert out_pkt.type == PacketType.RESPONSE
-    assert out_pkt.call_id == 77
-    active_calls = cast(dict[tuple[int, int], int], _private_attribute(transport, "_active_server_call_ids"))
-    assert (ds_get_spec.service_id, ds_get_spec.method_id) not in active_calls
+    response = pb.DatastoreGetResponse(value=b"val")
+    assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=77)
+    assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=78)
+
+    response_packets = []
+    for write_call in mock_serial.write.call_args_list:
+        written_raw = cast(bytes, write_call.args[0])
+        out_frame = next(iter(FrameDecoder().process(written_raw)))
+        response_packets.append(pw_packets.decode(out_frame.data))
+
+    assert [packet.type for packet in response_packets] == [
+        PacketType.RESPONSE,
+        PacketType.RESPONSE,
+    ]
+    assert [packet.call_id for packet in response_packets] == [77, 78]
 
     await transport.reset()
 

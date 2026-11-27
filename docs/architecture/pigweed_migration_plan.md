@@ -80,7 +80,7 @@ Implementación consolidada en `mcubridge/mcubridge/transport/serial.py`:
 - Usa `pw_hdlc.decode.FrameDecoder` y decodifica `RpcPacket` con `pw_rpc.packets`.
 - Sustituyó `PendingCommand`, la asignación manual de `call_id` y `correlate_frame` por `pw_rpc.Client.from_modules(callback_client.Impl(), ...)` alimentado por los descriptores oficiales de `PW_SERVICES`.
 - Enruta la cardinalidad del método (`Method.Type.UNARY` vs `Method.Type.SERVER_STREAMING`) directamente desde `pw_rpc.descriptors.Method`.
-- Preserva y consume el `call_id` entrante (`_active_server_call_ids`) al responder peticiones iniciadas por el MCU (`DataStore.get`, `Process.runAsync`, `Process.poll`).
+- Propaga explícitamente el `call_id` entrante hasta las respuestas a peticiones MCU → Linux (`DataStore.get`, `Mailbox.*`, `Process.*`); se eliminó `_active_server_call_ids`, que indexaba solo por servicio/método y podía confundir llamadas concurrentes al mismo método.
 - La escritura serial/AEAD y el procesamiento de HDLC permanecen como límites de transporte válidos sin reimplementar el motor RPC.
 
 Criterios de aceptación:
@@ -112,6 +112,10 @@ Cambios en el daemon y el contrato:
    - En `tools/protocol/generate.py` y sus plantillas Jinja2 (`protocol.py.j2`, `protocol_client.py.j2`, `rpc_protocol.h.j2`), se eliminaron las tablas de comandos estáticas y la lógica de catálogo paralela.
    - Los servicios de aplicación (`BridgeService`, `ClockSyncService`, `GpioService`, `RuntimeService`, `UbusService`, `FileSystemService`, etc.) y sus clientes invocan métodos nativos de `pw_rpc` por nombre de servicio y método Protobuf.
    - Se mantienen las interfaces UBUS/LuCI propias del MPU. El contrato gRPC `LocalBridge` no se preserva: sus consumidores deben migrarse a Pigweed antes de eliminarlo en el corte único de ADR-0003.
+
+
+
+**Límite de la implementación RPC Linux (pendiente de sustitución nativa):** el paquete upstream `pw_rpc` para Python implementa un `Client`, no un `Server`; su `Client.process_packet()` rechaza paquetes dirigidos al servidor (`INVALID_ARGUMENT`). Por eso, las llamadas MCU → Linux todavía entran por `_process_rpc_packet()` y el despacho de aplicación de `BridgeService`; `send_status()` y las respuestas con `send_raw()` usan el codec de paquetes de Pigweed, pero no son un `pw_rpc.Server`. La eliminación completa de ese camino requiere incorporar `pw::rpc::Server` o `pw::rpc::ClientServer` en el proceso de borde Linux y conectar sus handlers C++ con el event loop asíncrono Python de forma segura. El servidor de `mcubridge-gateway-cpp` no es sustituto directo: atiende sesiones northbound TLS, no el enlace serie MCU ↔ Linux. No declarar completa esta migración hasta validar esa integración en el toolchain MIPS/OpenWrt y en hardware.
 
 ## Detalle de las etapas 6 y 7: Firmware y streaming de archivos (Opción 1)
 

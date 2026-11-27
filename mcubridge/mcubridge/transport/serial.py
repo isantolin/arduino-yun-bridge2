@@ -202,7 +202,6 @@ class SerialTransport:
         self._rpc_write_tasks: set[asyncio.Task[bool]] = set()
         self._active_rpc_calls: set[Any] = set()
         self._active_rpc_packet_ids: set[tuple[int, int, int, int]] = set()
-        self._active_server_call_ids: dict[tuple[int, int], int] = {}
         self._stream_call: Any | None = None
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
@@ -256,7 +255,6 @@ class SerialTransport:
         self.cancel_pin_stream()
         self._active_rpc_calls.clear()
         self._active_rpc_packet_ids.clear()
-        self._active_server_call_ids.clear()
         self._stream_event_queue.clear()
 
     def cancel_pin_stream(self) -> bool:
@@ -546,8 +544,6 @@ class SerialTransport:
         is_response_handler = (
             spec is not None and spec.name in _HANDSHAKE_RAW_NAMES
         ) or dispatch_key in _SERIAL_STATUS_CODES
-        if pkt.type == PacketType.REQUEST:
-            self._active_server_call_ids[(pkt.service_id, pkt.method_id)] = pkt.call_id
         if self.service and (
             pkt.type != PacketType.RESPONSE
             or (is_response_handler and dispatch_key in getattr(self.service, "mcu_registry", {}))
@@ -925,7 +921,6 @@ class SerialTransport:
             if status.ok()
             else pw_packets.encode_server_error(rpc_ids, status)
         )
-        self._active_server_call_ids.pop((service_id, method_id), None)
         return await self._rpc_packet_writer(packet)
 
     async def send_raw(
@@ -934,28 +929,31 @@ class SerialTransport:
         payload: bytes | ProtobufMessage,
         seq_id: int | None = None,
     ) -> bool:
-        """Low-level send logic without tracking."""
+        """Send a request or an explicitly correlated MCU RPC response.
+
+        ``seq_id`` is the incoming Pigweed ``call_id`` for server responses.
+        Responses with a distinct Protobuf response type must provide it; the
+        transport never guesses a call ID from only service/method IDs.
+        """
         if not self.serial:
             return False
 
         spec = get_operation(command_id)
         if seq_id is None:
-            if (
+            is_typed_server_response = (
                 spec is not None
-                and spec.service_id is not None
-                and spec.method_id is not None
                 and spec.response_type is not None
                 and spec.response_type is not spec.request_type
-                and (spec.service_id, spec.method_id) in self._active_server_call_ids
-            ):
-                key = (spec.service_id, spec.method_id)
-                if spec.is_server_streaming and isinstance(payload, spec.response_type):
-                    seq_id = self._active_server_call_ids[key]
-                else:
-                    seq_id = self._active_server_call_ids.pop(key)
-            else:
-                self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
-                seq_id = self.tx_sequence_id
+                and isinstance(payload, spec.response_type)
+            )
+            if is_typed_server_response:
+                logger.error(
+                    "Refusing to infer an MCU RPC call_id from service/method; pass the incoming call_id explicitly",
+                    operation=spec.name,
+                )
+                return False
+            self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
+            seq_id = self.tx_sequence_id
 
         label = spec.name if spec is not None else str(command_id)
         is_link_reset = spec is _LINK_RESET_SPEC

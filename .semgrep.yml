@@ -258,26 +258,37 @@ rules:
         - "**/tests/**"
 
   # ==============================================================================
-  # RULE 17 & 18: MANDATORY ASSERTIONS IN UNITY C++ TESTS (C++)
+  # RULE 17 & 18: MANDATORY ASSERTIONS IN PIGWEED C++ TESTS (C++)
   # ==============================================================================
   - id: sil2-ban-cpp-test-without-assert
     languages: [cpp]
     severity: ERROR
-    message: "SIL-2 Rule 17/18 Violation: C++ test function must contain at least one TEST_ASSERT* or assert macro."
+    message: "SIL-2 Rule 17/18 Violation: Pigweed C++ test must contain at least one EXPECT_*, ASSERT_*, or FAIL assertion."
     patterns:
-      - pattern: |
-          void $FUNC() {
-            ...
-          }
-      - metavariable-regex:
-          metavariable: "$FUNC"
-          regex: "^test_"
+      - pattern-either:
+          - pattern: |
+              TEST($SUITE, $NAME) {
+                ...
+              }
+          - pattern: |
+              TEST_F($FIXTURE, $NAME) {
+                ...
+              }
       - pattern-not: |
-          void $FUNC() {
+          TEST($SUITE, $NAME) {
             ...
             $ASSERT(...);
             ...
           }
+      - pattern-not: |
+          TEST_F($FIXTURE, $NAME) {
+            ...
+            $ASSERT(...);
+            ...
+          }
+      - metavariable-regex:
+          metavariable: "$ASSERT"
+          regex: "^(EXPECT_|ASSERT_).*"
     paths:
       include:
         - "**/mcubridge-library-arduino/tests/**"
@@ -286,7 +297,6 @@ rules:
         - "**/bridge_control_emulator.cpp"
         - "**/bridge_test_global.cpp"
 
-  # ==============================================================================
   # RULE 27: MANUAL STREAM SHIFTING BAN (C++)
   # ==============================================================================
   - id: sil2-ban-manual-stream-shift

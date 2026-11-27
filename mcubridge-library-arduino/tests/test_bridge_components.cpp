@@ -1193,6 +1193,7 @@ TEST(BridgeComponents, GpioHalAndSafetyModeCoverage) {
   Bridge.registerSafetyPin(7U, BridgeClass::SafetyPinState::SAFE_PIN_INPUT);
   Bridge.registerSafetyPin(255U, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
   Bridge.enterSafeState();
+  EXPECT_FALSE(Bridge.isSynchronized());
   Bridge.clearSafetyPins();
 }
 

@@ -428,7 +428,11 @@ BridgeClass::BridgeClass(Stream& stream)
                        pw::ByteSpan(_transfer_encode_storage.data(),
                                     _transfer_encode_storage.size())),
       _transfer_service(_transfer_thread, 256),
-      _transfer_client(_rpc_client, 1, _transfer_thread, 256) {
+      _transfer_client(_rpc_client, 1, _transfer_thread, 256)
+#if defined(BRIDGE_HOST_TEST)
+      , _host_transfer_worker(pw::thread::stl::Options(), _transfer_thread)
+#endif
+      {
 #if defined(ARDUINO_ARCH_AVR)
   pw_assert_avr_SetPanicHook(BridgePanicHook);
 #endif
@@ -478,6 +482,12 @@ BridgeClass::~BridgeClass() {
   _pin_stream_writer = {};
   _clearObservers();
   _unregisterRpcServices();
+#if defined(BRIDGE_HOST_TEST)
+  // Handler removal above is synchronous with the transfer worker. Stop the
+  // worker only after all service registrations have been detached.
+  _transfer_thread.Terminate();
+  _host_transfer_worker.join();
+#endif
 }
 
 pw::Status BridgeClass::RpcChannelOutput::Send(pw::ConstByteSpan packet) {

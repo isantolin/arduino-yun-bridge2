@@ -203,7 +203,7 @@ class SerialTransport:
         self._active_rpc_calls: set[Any] = set()
         # Directional routing only; pw_rpc.Client owns call lifecycle/correlation.
         self._active_client_route_keys: set[tuple[int, int, int, int]] = set()
-        self._stream_call: Any | None = None
+        self._active_stream_calls: set[Any] = set()
         self._stream_event_queue: deque[ProtobufMessage] = deque(maxlen=_STREAM_EVENT_QUEUE_MAX)
         self._stream_backpressure_drops: int = 0
         self._transfer_manager: PwTransferManager | None = None
@@ -260,9 +260,12 @@ class SerialTransport:
 
     def cancel_pin_stream(self) -> bool:
         """Explicitly cancel any active server-streaming RPC call."""
-        call = self._stream_call
-        self._stream_call = None
-        return cancel_rpc_call(call, "Unable to cancel Pigweed server-streaming RPC")
+        calls = tuple(self._active_stream_calls)
+        self._active_stream_calls.clear()
+        cancelled = False
+        for call in calls:
+            cancelled = cancel_rpc_call(call, "Unable to cancel Pigweed server-streaming RPC") or cancelled
+        return cancelled
 
     def _enqueue_stream_event(self, message: ProtobufMessage) -> None:
         """Buffer an incoming Pigweed server-streaming message with bounded backpressure."""
@@ -878,20 +881,23 @@ class SerialTransport:
         """Invoke or update a server-streaming RPC via pw_rpc.Client."""
         rejection_future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
 
-        def _finish_stream_call(ok: bool, detail: Any) -> None:
-            self._stream_call = None
-            if not ok and not rejection_future.done():
+        def _finish_stream_call(call: Any, ok: bool, detail: Any) -> None:
+            self._active_stream_calls.discard(call)
+            if not ok:
                 logger.warning("Pigweed server-streaming RPC failed", method=method_name, detail=str(detail))
-                rejection_future.set_result(False)
+                if not rejection_future.done():
+                    rejection_future.set_result(False)
+            elif not rejection_future.done():
+                rejection_future.set_result(True)
 
         def _on_next(_call: Any, message: ProtobufMessage) -> None:
             self._enqueue_stream_event(message)
 
-        def _on_completed(_call: Any, status: Any) -> None:
-            _finish_stream_call(status.ok(), status)
+        def _on_completed(call: Any, status: Any) -> None:
+            _finish_stream_call(call, status.ok(), status)
 
-        def _on_error(_call: Any, error: Any) -> None:
-            _finish_stream_call(False, error)
+        def _on_error(call: Any, error: Any) -> None:
+            _finish_stream_call(call, False, error)
 
         try:
             call = rpc_method.invoke(
@@ -904,13 +910,14 @@ class SerialTransport:
             logger.error("Unable to invoke Pigweed server-streaming RPC", method=method_name, error=str(exc))
             return False
 
-        if not rejection_future.done():
-            self._stream_call = call
+        self._active_stream_calls.add(call)
 
         try:
             async with asyncio.timeout(min(self._ack_timeout, 0.05)):
-                return await rejection_future
+                return await asyncio.shield(rejection_future)
         except TimeoutError:
+            # Keep the future alive: a later server rejection must still be logged
+            # and must release this call from the active-stream registry.
             return True
 
     async def send_rpc_message(

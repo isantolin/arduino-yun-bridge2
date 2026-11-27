@@ -12,6 +12,7 @@ from pytest_mock import MockerFixture
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import cloud_gateway_pb2, mcu_wire_pb2 as pb
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher, verify_crypto_integrity
 from mcubridge.services.handshake import (
@@ -269,7 +270,7 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     # 2. Pre-handshake: non-LinkSync RPC frame is rejected and increments decode errors
     ver_raw = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet("rpc.pb.SystemService/GetVersion", b"", call_id=1),
+        encode_rpc_packet("rpc.pb.SystemService/GetVersion", b"", call_id=1),
     )
     ver_frame = next(iter(FrameDecoder().process(ver_raw)))
     await transport.process_hdlc_frame(ver_frame)
@@ -278,7 +279,7 @@ async def test_serial_transport_aead_and_pre_handshake_branches(
     # 3. Pre-handshake: LinkSync response frame is accepted
     sync_resp_raw = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet(
+        encode_rpc_packet(
             "rpc.pb.SystemService/LinkSync",
             pb.LinkSync(
                 nonce=b"\x01" * protocol.HANDSHAKE_NONCE_LENGTH,
@@ -371,11 +372,11 @@ def test_operation_spec_and_protocol_builder_branches(mock_bridge_service: Bridg
     assert isinstance(ubus_defs, dict)
 
     # 5. encode_rpc_packet branches: server streaming response with empty payload, tuple target, and int target
-    stream_resp_pkt = protocol.encode_rpc_packet("rpc.pb.GpioService/SubscribePins", b"", call_id=1)
+    stream_resp_pkt = encode_rpc_packet("rpc.pb.GpioService/SubscribePins", b"", call_id=1)
     assert stream_resp_pkt is not None
 
-    tuple_target_pkt = protocol.encode_rpc_packet((123, 456), b"data", call_id=1)
+    tuple_target_pkt = encode_rpc_packet((123, 456), b"data", call_id=1)
     assert tuple_target_pkt is not None
 
-    int_target_pkt = protocol.encode_rpc_packet(789, b"data", call_id=1)
+    int_target_pkt = encode_rpc_packet(789, b"data", call_id=1)
     assert int_target_pkt is not None

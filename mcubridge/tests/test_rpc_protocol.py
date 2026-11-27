@@ -9,6 +9,7 @@ from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_rpc.internal.packet_pb2 import RpcPacket
 
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from tests.conftest import (
     st_analog_write,
@@ -30,7 +31,7 @@ from tests.conftest import (
 @example(command_id=protocol.UINT16_MAX, sequence_id=protocol.UINT16_MAX, payload=b"X" * 256)
 def test_hdlc_rpc_build_and_parse_roundtrip_property(command_id: int, sequence_id: int, payload: bytes) -> None:
     """Property: Any frame built with command ID, sequence, and payload roundtrips losslessly via HDLC."""
-    raw = ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(command_id, payload, call_id=sequence_id))
+    raw = ui_frame(protocol.HDLC_ADDRESS_RPC, encode_rpc_packet(command_id, payload, call_id=sequence_id))
     assert raw.startswith(protocol.FRAME_DELIMITER)
     assert raw.endswith(protocol.FRAME_DELIMITER)
 
@@ -80,7 +81,7 @@ def test_hdlc_direct_rpc_roundtrip_property(
     """Property: Direct RPC convention (channel, service, method, call_id, payload) roundtrips losslessly."""
     raw = ui_frame(
         protocol.HDLC_ADDRESS_RPC,
-        protocol.encode_rpc_packet((service_id, method_id), payload, call_id=call_id, channel_id=channel_id),
+        encode_rpc_packet((service_id, method_id), payload, call_id=call_id, channel_id=channel_id),
     )
     decoder = FrameDecoder()
     frames = list(decoder.process(raw))
@@ -107,7 +108,7 @@ def test_hdlc_direct_rpc_roundtrip_property(
 def test_hdlc_detects_corrupted_fcs(command_id: int, sequence_id: int, payload: bytes, corrupt_idx: int) -> None:
     """Property: Any bit flip in the FCS tail guarantees deterministic frame error detection."""
     raw = bytearray(
-        ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(command_id, payload, call_id=sequence_id))
+        ui_frame(protocol.HDLC_ADDRESS_RPC, encode_rpc_packet(command_id, payload, call_id=sequence_id))
     )
     # Mutate a byte in the FCS before the final delimiter
     raw[-1 - corrupt_idx] ^= 0x01
@@ -134,7 +135,7 @@ def test_protobuf_message_payload_roundtrip_property(
     command_id: int, sequence_id: int, pb_msg: ProtobufMessage
 ) -> None:
     """SIL-2 Property: Any Protobuf message payload embedded in an HDLC RpcPacket roundtrips losslessly."""
-    raw = ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(command_id, pb_msg, call_id=sequence_id))
+    raw = ui_frame(protocol.HDLC_ADDRESS_RPC, encode_rpc_packet(command_id, pb_msg, call_id=sequence_id))
     decoder = FrameDecoder()
     frames = list(decoder.process(raw))
     assert len(frames) == 1

@@ -10,6 +10,7 @@ from pw_hdlc.decode import FrameDecoder
 from pw_hdlc.encode import ui_frame
 from pw_rpc.internal.packet_pb2 import RpcPacket
 
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 
 
@@ -66,7 +67,7 @@ def test_hdlc_streaming_chunking_fragmentation_invariant(
     for service_id, method_id, call_id, payload in rpc_packets:
         frame_bytes = ui_frame(
             protocol.HDLC_ADDRESS_RPC,
-            protocol.encode_rpc_packet((service_id, method_id), payload, call_id=call_id, channel_id=1),
+            encode_rpc_packet((service_id, method_id), payload, call_id=call_id, channel_id=1),
         )
         wire_parts.append(frame_bytes)
         expected_frames.append((service_id, method_id, call_id, payload))

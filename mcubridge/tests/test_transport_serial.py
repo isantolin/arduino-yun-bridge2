@@ -160,11 +160,11 @@ async def test_write_frame_debug_logs_unknown_command(
             side_effect=mock_log,
         )
 
-        ok = await transport.send_raw(0xFE, b"payload")
+        ok = await transport.send_rpc_message("rpc.pb.SystemService/GetVersion", pb.SubscribeRequest())
         assert ok
         assert mock_serial.write.called
         # Check that the operation identifier 254 (0xFE) is present in debug log
-        assert "254" in seen.get("msg", "")
+        assert "rpc.pb.SystemService/GetVersion" in seen.get("msg", "")
     finally:
         state.cleanup()
 
@@ -513,7 +513,7 @@ async def test_serial_transport_edge_branches(
     assert res is False
     assert await transport.send_console(b"offline") is False
 
-    # 3. send_raw when serial_tx_allowed is clear and wait times out
+    # 3. send_rpc_message when serial_tx_allowed is clear and wait times out
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True
     mock_serial.write = MagicMock(return_value=10)
@@ -521,7 +521,7 @@ async def test_serial_transport_edge_branches(
     transport.serial = mock_serial
     runtime_state.serial_tx_allowed.clear()
     mocker.patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.01)
-    res_raw = await transport.send_raw("rpc.pb.GpioService/DigitalWrite", b"raw_test")
+    res_raw = await transport.send_rpc_message("rpc.pb.GpioService/DigitalWrite", pb.DigitalWrite(pin=7, value=1))
     assert res_raw is True
     runtime_state.serial_tx_allowed.set()
 
@@ -612,14 +612,14 @@ async def test_feed_data_fuzz_resilience_property(raw_bytes: bytes) -> None:
 
 
 @given(
-    command_id=st.integers(1, 0x00FF),
     seq_id=st.integers(1, protocol.UINT16_MAX),
-    payload=st.binary(max_size=128),
+    pin=st.integers(0, 0xFFFF),
+    value=st.integers(0, 1),
 )
-async def test_send_raw_arbitrary_payload_and_sequence_property(
-    command_id: int,
+async def test_send_rpc_message_typed_request_and_sequence_property(
     seq_id: int,
-    payload: bytes,
+    pin: int,
+    value: int,
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -635,7 +635,7 @@ async def test_send_raw_arbitrary_payload_and_sequence_property(
         mock_serial.flush = MagicMock()
         transport.serial = mock_serial
 
-        ok = await transport.send_raw(command_id, payload, seq_id=seq_id)
+        ok = await transport.send_rpc_message("rpc.pb.GpioService/DigitalWrite", pb.DigitalWrite(pin=pin, value=value), call_id=seq_id)
         assert ok is True
         assert mock_serial.write.called
         written_data: bytes = mock_serial.write.call_args[0][0]
@@ -1416,7 +1416,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
             packet_type=int(PacketType.REQUEST),
         ),
     )
-    assert await transport.send_raw("rpc.pb.SystemService/LinkReset", pb.SubscribeRequest(), seq_id=12)
+    assert await transport.send_rpc_message("rpc.pb.SystemService/LinkReset", pb.SubscribeRequest(), call_id=12)
     request_frame = next(iter(FrameDecoder().process(cast(bytes, mock_serial.write.call_args.args[0]))))
     request_packet = pw_packets.decode(request_frame.data)
     assert request_packet.type == PacketType.REQUEST
@@ -1425,11 +1425,11 @@ async def test_server_stream_error_and_reset_cleanup_branches(
 
     await transport.feed_data(mcu_req_frame)
     response = pb.DatastoreGetResponse(value=b"val")
-    assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=None) is False
+    assert await transport.send_rpc_message("rpc.pb.DataStoreService/Get", response, call_id=None) is False
     assert mock_serial.write.call_count == 0
-    assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=77)
-    assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=78)
-    assert await transport.send_raw("rpc.pb.GpioService/SubscribePins", pb.PinUpdateEvent(), seq_id=79)
+    assert await transport.send_rpc_message("rpc.pb.DataStoreService/Get", response, call_id=77)
+    assert await transport.send_rpc_message("rpc.pb.DataStoreService/Get", response, call_id=78)
+    assert await transport.send_rpc_message("rpc.pb.GpioService/SubscribePins", pb.PinUpdateEvent(), call_id=79)
 
     response_packets: list[RpcPacket] = []
     for write_call in mock_serial.write.call_args_list:

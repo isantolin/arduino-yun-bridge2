@@ -929,13 +929,13 @@ class SerialTransport:
 
         if isinstance(payload, ProtobufMessage):
             message = payload
-        elif isinstance(payload, bytes) and not payload and spec.request_type is not None:
+        elif not payload and spec.request_type is not None:
             message = spec.request_type()
         else:
             logger.error(
                 "Refusing untyped RPC payload; use a generated Protobuf message",
                 operation=spec.name,
-                payload_bytes=len(payload) if isinstance(payload, bytes) else None,
+                payload_bytes=len(payload),
             )
             return False
 

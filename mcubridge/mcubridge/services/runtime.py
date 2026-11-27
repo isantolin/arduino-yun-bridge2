@@ -544,7 +544,7 @@ class BridgeService:
             content = b""
         resp = mcu_wire_pb2.MailboxReadResponse(content=content)
         if from_mcu and self.serial:
-            await self.serial.send_rpc_message("rpc.pb.MailboxService/Read", resp, call_id=cast(int, req_or_seq))
+            await self.serial.send_rpc_message("rpc.pb.MailboxService/Read", resp, call_id=req_or_seq)
         return resp
 
     async def mailbox_available(self, _seq: int, _p: Any) -> bool:

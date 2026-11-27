@@ -154,6 +154,8 @@ class TestAccessor : public BridgeClass {
     _fsm.receive(bridge::fsm::EvReset());
   }
 
+  pw::transfer::Thread<1, 1>& transferThread() { return _transfer_thread; }
+
   bool isSessionKeysReady() const { return _session_keys_ready; }
   void setSessionKeysReady(bool ready) { _session_keys_ready = ready; }
   void setTxAeadCounter(uint64_t c) { _tx_aead_counter = c; }

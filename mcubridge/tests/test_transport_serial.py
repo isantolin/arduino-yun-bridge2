@@ -1398,7 +1398,7 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     )
     enqueue_fn(pb.PinUpdateEvent(pin=1, value=1, timestamp_micros=1))
     await transport.reset()
-    assert _private_attribute(transport, "_stream_call") is None
+    assert not _private_attribute(transport, "_active_stream_calls")
 
     mock_serial = MagicMock(spec=serial.Serial)
     mock_serial.is_open = True

@@ -160,14 +160,6 @@ version = "20.49.0"
 check_file = "include/etl/algorithm.h"
 rationale = "Zero-heap, STL-free deterministic C++ template library for SIL-2 MCU algorithms"
 
-[[cpp_dependency]]
-name = "Unity"
-github = "ThrowTheSwitch/Unity"
-ref_type = "tags"
-version = "v2.7.0"
-check_file = "unity.h"
-target_dir = "tests"
-rationale = "Host-based deterministic C/C++ unit testing harness for MCU components"
 
 [[cpp_dependency]]
 name = "nanopb_core"

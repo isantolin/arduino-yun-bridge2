@@ -9,7 +9,6 @@
 #include <etl/array.h>
 #include <pw_span/span.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -26,9 +25,6 @@ static pw::Status s_captured_harden_status = pw::OkStatus();
 static void capture_harden_status(pw::Status s, pw::span<const uint8_t>) {
   s_captured_harden_status = s;
 }
-
-void setUp() {}
-void tearDown() {}
 
 TEST(ArduinoHarden, BridgeMalformedRpcPacket) {
   BiStream stream;

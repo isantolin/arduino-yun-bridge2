@@ -63,7 +63,7 @@ mkdir -p "${OUTPUT_ROOT}"
 echo "[host-cpp] Running Pigweed pw_unit_test suites with Bazel coverage..."
 bazel coverage "${TEST_TARGETS[@]}" \
     --combined_report=lcov \
-    --instrumentation_filter='//mcubridge-library-arduino/src' \
+    --instrumentation_filter='//mcubridge-library-arduino' \
     --test_output=errors \
     --keep_going
 
@@ -98,7 +98,7 @@ declared_functions: set[str] = set()
 
 def include(path: str) -> bool:
     normalized = path.replace("\\", "/")
-    return "/mcubridge-library-arduino/src/" in normalized and not (
+    return "mcubridge-library-arduino/src/" in normalized and not (
         normalized.endswith(".h")
         or ".pb.c" in normalized
         or "/protocol/" in normalized

@@ -897,21 +897,13 @@ class SerialTransport:
         except TimeoutError:
             return True
 
-    async def send_status(self, status: Status, call_id: int, service_id: int, method_id: int) -> bool:
-        """Complete an MCU-initiated unary RPC with a pw_rpc RESPONSE (OK) or SERVER_ERROR bound to its call."""
-        rpc_ids = RpcIds(protocol.HDLC_ADDRESS_RPC, service_id, method_id, call_id)
-        packet = (
-            pw_packets.encode_response(rpc_ids, status=Status.OK)
-            if status.ok()
-            else pw_packets.encode_server_error(rpc_ids, status)
-        )
-        return await self._rpc_packet_writer(packet)
-
     async def send_rpc_message(
         self,
         operation: str | protocol.OperationSpec | tuple[int, int],
-        payload: bytes | ProtobufMessage,
+        payload: bytes | ProtobufMessage = b"",
         call_id: int | None = None,
+        *,
+        status: Status | None = None,
     ) -> bool:
         """Encode a descriptor-typed Pigweed request or response and send it over HDLC.
 
@@ -923,6 +915,27 @@ class SerialTransport:
             return False
 
         spec = get_operation(operation)
+        if status is not None:
+            if call_id is None:
+                logger.error("Refusing to send an RPC status without the incoming call_id", operation=str(operation))
+                return False
+            if spec is not None and spec.service_id is not None and spec.method_id is not None:
+                service_id, method_id = spec.service_id, spec.method_id
+                label = spec.name
+            elif isinstance(operation, tuple):
+                service_id, method_id = operation
+                label = f"service:{service_id}/method:{method_id}"
+            else:
+                logger.error("Refusing RPC status without registered service/method IDs", operation=str(operation))
+                return False
+            rpc_ids = RpcIds(protocol.HDLC_ADDRESS_RPC, service_id, method_id, call_id)
+            packet = (
+                pw_packets.encode_response(rpc_ids, status=Status.OK)
+                if status.ok()
+                else pw_packets.encode_server_error(rpc_ids, status)
+            )
+            return await self._rpc_packet_writer(packet)
+
         if spec is None or spec.service_id is None or spec.method_id is None:
             logger.error("Refusing RPC transmission without a registered Pigweed method", operation=str(operation))
             return False

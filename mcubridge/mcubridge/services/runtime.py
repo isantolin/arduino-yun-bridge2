@@ -223,7 +223,7 @@ class BridgeService:
         spec = protocol.get_operation(request_or_key)
         if serial is None or spec is None or spec.service_id is None or spec.method_id is None:
             return False
-        return await serial.send_status(status, seq_id, spec.service_id, spec.method_id)
+        return await serial.send_rpc_message(spec, call_id=seq_id, status=status)
 
     # --- External Interface ---
 
@@ -447,7 +447,7 @@ class BridgeService:
                     else (operation_key[1] if isinstance(operation_key, tuple) else 0)
                 )
                 if isinstance(operation_key, tuple):
-                    await serial.send_status(Status.UNIMPLEMENTED, sequence_id, operation_key[0], operation_key[1])
+                    await serial.send_rpc_message(operation_key, call_id=sequence_id, status=Status.UNIMPLEMENTED)
 
     # --- Business Logic & MCU Protocol Handlers ---
 

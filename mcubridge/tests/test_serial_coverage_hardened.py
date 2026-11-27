@@ -65,7 +65,7 @@ async def test_serial_transport_acknowledge(tmp_path: Path) -> None:
 
     spec = protocol.get_operation("rpc.pb.GpioService/DigitalRead")
     assert spec is not None and spec.service_id is not None and spec.method_id is not None
-    await transport.send_status(Status.OK, 42, spec.service_id, spec.method_id)
+    await transport.send_rpc_message(spec, call_id=42, status=Status.OK)
     assert mock_serial.write.called
 
     state.cleanup()

@@ -289,8 +289,8 @@ async def test_send_status_emits_call_bound_server_error(
         return True
 
     transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=_writer)
-    assert await transport.send_status(protocol.Status.NOT_FOUND, 42, 0xAAAA, 0xBBBB)
-    assert await transport.send_status(protocol.Status.OK, 43, 0xAAAA, 0xBBBB)
+    assert await transport.send_rpc_message((0xAAAA, 0xBBBB), call_id=42, status=protocol.Status.NOT_FOUND)
+    assert await transport.send_rpc_message((0xAAAA, 0xBBBB), call_id=43, status=protocol.Status.OK)
     err, ok = (RpcPacket.FromString(p) for p in written)
     assert (err.type, err.status, err.call_id, err.service_id, err.method_id) == (
         PacketType.SERVER_ERROR,

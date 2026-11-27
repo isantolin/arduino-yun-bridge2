@@ -4,7 +4,8 @@
 #define ETL_FORCE_STD_INITIALIZER_LIST
 #endif
 #include <etl/array.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
+#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -15,108 +16,99 @@
 Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
 HardwareSerial Serial1;
-void setUp(void) {}
-void tearDown(void) {}
-
 namespace {
 using bridge::test::TestAccessor;
 
-void test_fsm_initial_state() {
+TEST(FsmMutualAuth, FsmInitialState) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  TEST_ASSERT(ba.isUnsynchronized());
+  EXPECT_TRUE(ba.isUnsynchronized());
 }
 
-void test_mutual_auth_success() {
+TEST(FsmMutualAuth, MutualAuthSuccess) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  TEST_ASSERT(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 }
 
-void test_mutual_auth_failure_to_startup() {
+TEST(FsmMutualAuth, MutualAuthFailureToStartup) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.trigger(bridge::fsm::EvHandshakeStart());
   ba.trigger(bridge::fsm::EvHandshakeFailed());
   // Observed behavior: Handshake failure resets to Startup
-  TEST_ASSERT(ba.getStartupStabilizing());
+  EXPECT_TRUE(ba.getStartupStabilizing());
 }
 
-void test_fsm_timeout_to_fault() {
+TEST(FsmMutualAuth, FsmTimeoutToFault) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvTimeout());
   // Observed behavior: Timeout from synchronized goes to Fault
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 }
 
-void test_fsm_handshake_timeout_to_fault() {
+TEST(FsmMutualAuth, FsmHandshakeTimeoutToFault) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.trigger(bridge::fsm::EvHandshakeStart());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(bridge::fsm::StateId::HANDSHAKE),
-                        static_cast<int>(ba.get_state_id()));
+  EXPECT_EQ(static_cast<int>(bridge::fsm::StateId::HANDSHAKE), static_cast<int>(ba.get_state_id()));
   ba.trigger(bridge::fsm::EvTimeout());
   // Fail-safe requirement: EvTimeout during handshake must transition to FAULT
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 }
 
-void test_fsm_baudrate_change_round_trip() {
+TEST(FsmMutualAuth, FsmBaudrateChangeRoundTrip) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   ba.trigger(bridge::fsm::EvBaudrateChange());
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(bridge::fsm::StateId::CHANGING_BAUDRATE),
-      static_cast<int>(ba.get_state_id()));
+  EXPECT_EQ(static_cast<int>(bridge::fsm::StateId::CHANGING_BAUDRATE), static_cast<int>(ba.get_state_id()));
   // The link remains logically synchronized while the baudrate is changing.
-  TEST_ASSERT(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 
   ba.trigger(bridge::fsm::EvBaudrateApplied());
-  TEST_ASSERT_EQUAL_INT(static_cast<int>(bridge::fsm::StateId::SYNCHRONIZED),
-                        static_cast<int>(ba.get_state_id()));
-  TEST_ASSERT(ba.isSynchronized());
+  EXPECT_EQ(static_cast<int>(bridge::fsm::StateId::SYNCHRONIZED), static_cast<int>(ba.get_state_id()));
+  EXPECT_TRUE(ba.isSynchronized());
 }
 
-void test_fsm_bootloader_entry_and_reset() {
+TEST(FsmMutualAuth, FsmBootloaderEntryAndReset) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   ba.trigger(bridge::fsm::EvEnterBootloader());
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(bridge::fsm::StateId::ENTERING_BOOTLOADER),
-      static_cast<int>(ba.get_state_id()));
-  TEST_ASSERT(!ba.isSynchronized());
+  EXPECT_EQ(static_cast<int>(bridge::fsm::StateId::ENTERING_BOOTLOADER), static_cast<int>(ba.get_state_id()));
+  EXPECT_TRUE(!ba.isSynchronized());
 
   ba.trigger(bridge::fsm::EvReset());
-  TEST_ASSERT(ba.isUnsynchronized());
+  EXPECT_TRUE(ba.isUnsynchronized());
 }
 
-void test_fsm_reset_recovers_fault() {
+TEST(FsmMutualAuth, FsmResetRecoversFault) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvTimeout());
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 
   ba.trigger(bridge::fsm::EvReset());
-  TEST_ASSERT(ba.isUnsynchronized());
-  TEST_ASSERT(!ba.isFault());
+  EXPECT_TRUE(ba.isUnsynchronized());
+  EXPECT_TRUE(!ba.isFault());
 }
 
-void test_fsm_timeout_from_startup_and_unsynchronized() {
+TEST(FsmMutualAuth, FsmTimeoutFromStartupAndUnsynchronized) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -124,70 +116,50 @@ void test_fsm_timeout_from_startup_and_unsynchronized() {
   // A failed handshake returns to STARTUP; timeout there must fail safe.
   ba.trigger(bridge::fsm::EvHandshakeStart());
   ba.trigger(bridge::fsm::EvHandshakeFailed());
-  TEST_ASSERT(ba.getStartupStabilizing());
+  EXPECT_TRUE(ba.getStartupStabilizing());
   ba.trigger(bridge::fsm::EvTimeout());
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 
   // Reset returns to UNSYNCHRONIZED, where timeout also fails safe.
   ba.trigger(bridge::fsm::EvReset());
-  TEST_ASSERT(ba.isUnsynchronized());
+  EXPECT_TRUE(ba.isUnsynchronized());
   ba.trigger(bridge::fsm::EvTimeout());
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 }
 
-void test_fsm_timeout_from_baudrate_change_and_bootloader() {
+TEST(FsmMutualAuth, FsmTimeoutFromBaudrateChangeAndBootloader) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   ba.trigger(bridge::fsm::EvBaudrateChange());
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(bridge::fsm::StateId::CHANGING_BAUDRATE),
-      static_cast<int>(ba.get_state_id()));
+  EXPECT_EQ(static_cast<int>(bridge::fsm::StateId::CHANGING_BAUDRATE), static_cast<int>(ba.get_state_id()));
   ba.trigger(bridge::fsm::EvTimeout());
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 
   ba.trigger(bridge::fsm::EvReset());
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvEnterBootloader());
-  TEST_ASSERT_EQUAL_INT(
-      static_cast<int>(bridge::fsm::StateId::ENTERING_BOOTLOADER),
-      static_cast<int>(ba.get_state_id()));
+  EXPECT_EQ(static_cast<int>(bridge::fsm::StateId::ENTERING_BOOTLOADER), static_cast<int>(ba.get_state_id()));
   ba.trigger(bridge::fsm::EvTimeout());
-  TEST_ASSERT(ba.isFault());
+  EXPECT_TRUE(ba.isFault());
 }
 
-void test_fsm_handshake_failed_from_synchronized_states() {
+TEST(FsmMutualAuth, FsmHandshakeFailedFromSynchronizedStates) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   ba.trigger(bridge::fsm::EvHandshakeFailed());
-  TEST_ASSERT(ba.getStartupStabilizing());
+  EXPECT_TRUE(ba.getStartupStabilizing());
 
   ba.trigger(bridge::fsm::EvReset());
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvBaudrateChange());
   ba.trigger(bridge::fsm::EvHandshakeFailed());
-  TEST_ASSERT(ba.getStartupStabilizing());
+  EXPECT_TRUE(ba.getStartupStabilizing());
 }
 
 }  // namespace
-
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_fsm_initial_state);
-  RUN_TEST(test_mutual_auth_success);
-  RUN_TEST(test_mutual_auth_failure_to_startup);
-  RUN_TEST(test_fsm_timeout_to_fault);
-  RUN_TEST(test_fsm_handshake_timeout_to_fault);
-  RUN_TEST(test_fsm_baudrate_change_round_trip);
-  RUN_TEST(test_fsm_bootloader_entry_and_reset);
-  RUN_TEST(test_fsm_reset_recovers_fault);
-  RUN_TEST(test_fsm_timeout_from_startup_and_unsynchronized);
-  RUN_TEST(test_fsm_timeout_from_baudrate_change_and_bootloader);
-  RUN_TEST(test_fsm_handshake_failed_from_synchronized_states);
-  return UNITY_END();
-}

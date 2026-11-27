@@ -1026,7 +1026,7 @@ def _make_rpc_packet(packet_type: int, call_id: int = 41) -> bytes:
     ).SerializeToString()
 
 
-async def test_queue_rpc_packet_forwards_packets_without_manual_rpc_tracking(
+async def test_queue_rpc_packet_tracks_client_routing_direction_only(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     written: list[bytes] = []
@@ -1036,13 +1036,17 @@ async def test_queue_rpc_packet_forwards_packets_without_manual_rpc_tracking(
         return True
 
     transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=capture)
-    packets = [
-        _make_rpc_packet(PacketType.REQUEST),
-        _make_rpc_packet(PacketType.CLIENT_ERROR),
-        _make_rpc_packet(PacketType.RESPONSE),
-    ]
-    for packet in packets:
-        transport.queue_rpc_packet(packet)
+    request = _make_rpc_packet(PacketType.REQUEST, call_id=77)
+    client_error = _make_rpc_packet(PacketType.CLIENT_ERROR, call_id=77)
+    response = _make_rpc_packet(PacketType.RESPONSE, call_id=78)
+    packets = [request, client_error, response]
+
+    transport.queue_rpc_packet(request)
+    request_key = transport._rpc_packet_key(pw_packets.decode(request))
+    assert request_key in transport._active_client_route_keys
+    transport.queue_rpc_packet(client_error)
+    assert request_key not in transport._active_client_route_keys
+    transport.queue_rpc_packet(response)
 
     for _ in range(100):
         if len(written) == len(packets) and not transport.__dict__["_rpc_write_tasks"]:
@@ -1050,7 +1054,7 @@ async def test_queue_rpc_packet_forwards_packets_without_manual_rpc_tracking(
         await asyncio.sleep(0.01)
 
     assert written == packets
-    assert "_active_rpc_packet_ids" not in transport.__dict__
+    assert not transport._active_client_route_keys
 
 
 def test_queue_rpc_packet_rejects_calls_outside_event_loop(
@@ -1062,7 +1066,7 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
     with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
         transport.queue_rpc_packet(packet)
 
-    assert "_active_rpc_packet_ids" not in transport.__dict__
+    assert not transport._active_client_route_keys
 
     adopted_written: list[bytes] = []
 
@@ -1503,9 +1507,14 @@ async def test_mcu_rpc_response_routes_to_pigweed_client_without_local_call_tabl
 
     await transport.process_hdlc_frame(frame)
 
+    packet_key = transport._rpc_packet_key(pw_packets.decode(packet))
+    transport._active_client_route_keys.add(packet_key)
+
+    await transport.process_hdlc_frame(frame)
+
     process_packet.assert_called_once_with(packet)
     service.handle_mcu_frame.assert_not_awaited()
-    assert "_active_rpc_packet_ids" not in transport.__dict__
+    assert not transport._active_client_route_keys
 
 
 async def test_serial_transport_records_retry_failure_and_latency_metrics(

@@ -303,7 +303,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 [[dev_dependency]]
 name = "hypothesis"
 pip = "hypothesis==6.170.19"
-check_latest = false
+check_latest = true
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -360,7 +360,7 @@ rationale = "Standardized core utilities for Python package version parsing and 
 [[dev_dependency]]
 name = "clang-format"
 pip = "clang-format==22.1.8"
-check_latest = false
+check_latest = true
 rationale = "Deterministic C++ and Arduino code formatter matching clang-format 22.x toolchain"
 
 [[dev_dependency]]

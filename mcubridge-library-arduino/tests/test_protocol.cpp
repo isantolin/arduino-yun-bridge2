@@ -40,7 +40,7 @@ TEST(Protocol, HdlcRoundtripAndCrc) {
       frame_found = true;
       EXPECT_EQ(1, res.value().address());
       EXPECT_EQ(sizeof(test_payload), res.value().data().size());
-      EXPECT_EQ(0, memcmp(test_payload, res.value().data().data(), sizeof(test_payload))));
+      EXPECT_EQ(0, memcmp(test_payload, res.value().data().data(), sizeof(test_payload)));
     }
   }
   EXPECT_TRUE(frame_found);
@@ -108,7 +108,7 @@ TEST(Protocol, RpcPacketEncodingAndDecoding) {
   EXPECT_EQ(packet.method_id(), decoded.method_id());
   EXPECT_EQ(42, decoded.call_id());
   EXPECT_EQ(sizeof(payload), decoded.payload().size());
-  EXPECT_EQ(0, memcmp(payload, decoded.payload().data(), sizeof(payload))));
+  EXPECT_EQ(0, memcmp(payload, decoded.payload().data(), sizeof(payload)));
 }
 
 TEST(Protocol, ServiceIdTokenizerHashing) {

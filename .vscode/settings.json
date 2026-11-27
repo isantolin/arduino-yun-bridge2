@@ -19,7 +19,6 @@
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src",
     "${workspaceFolder}/mcubridge-library-arduino/tests",
-    "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
     "${workspaceFolder}/tools/arduino_stub/include",
     "${env:HOME}/Arduino/libraries/wolfssl/src",
     "~/Arduino/libraries/**"

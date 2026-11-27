@@ -53,8 +53,3 @@ extern "C" void pw_log_avr_HandleLog(uint8_t level, const uint8_t* log_data,
   }
 }
 
-namespace pw::chrono::backend {
-int64_t GetSystemClockTickCount() {
-  return static_cast<int64_t>(::millis());
-}
-}  // namespace pw::chrono::backend

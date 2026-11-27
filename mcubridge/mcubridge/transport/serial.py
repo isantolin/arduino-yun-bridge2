@@ -403,6 +403,7 @@ class SerialTransport:
 
     async def stop(self) -> None:
         self.stop_event.set()
+        await self.reset()
         if self.serial:
             await self._close_serial_handle(self.serial, "stop")
 

@@ -112,6 +112,7 @@ TEST(ArduinoHarden, BridgePacketReceivedEdgeCases) {
 }
 
 TEST(ArduinoHarden, BridgeBeginIdempotency) {
+  reset_bridge_core(Bridge, Serial);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
   Bridge.begin(9600);
   EXPECT_TRUE(Bridge.isPostPassed());

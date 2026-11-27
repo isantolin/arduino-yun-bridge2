@@ -1438,6 +1438,8 @@ async def test_server_stream_error_and_reset_cleanup_branches(
     )
     await transport.feed_data(mcu_req_frame)
     response = pb.DatastoreGetResponse(value=b"val")
+    assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=None) is False
+    assert mock_serial.write.call_count == 0
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=77)
     assert await transport.send_raw("rpc.pb.DataStoreService/Get", response, seq_id=78)
 

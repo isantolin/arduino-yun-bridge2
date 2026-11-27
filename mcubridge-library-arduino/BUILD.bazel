@@ -1,4 +1,5 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@pigweed//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -125,7 +126,7 @@ HOST_TEST_SUITES = [
 ]
 
 [
-    cc_test(
+    pw_cc_test(
         name = suite,
         srcs = ["tests/{}.cpp".format(suite)],
         copts = HOST_COPTS,
@@ -135,13 +136,11 @@ HOST_TEST_SUITES = [
             ":host_filesystem_mock",
             "@pigweed//pw_assert:backend_impl",
             "@pigweed//pw_log:backend_impl",
-            "@unity",
+            "@pigweed//pw_unit_test",
         ],
     )
     for suite in HOST_TEST_SUITES
 ]
-
-load("@pigweed//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 pw_cc_test(
     name = "test_hal_weak_defaults",

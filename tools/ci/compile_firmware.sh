@@ -28,6 +28,9 @@ OUTPUT_DIR="${3:-${ROOT_DIR}/build/${EMULATOR}/${FQBN//:/-}}"
 # shellcheck source=tools/ci/arduino_toolchains.sh
 source "${ROOT_DIR}/tools/ci/arduino_toolchains.sh"
 
+# Do not build firmware with mismatched Bridge/AVR-port Pigweed source pins.
+bash "${ROOT_DIR}/tools/ci/check_avr_pigweed_upstream_only.sh"
+
 ensure_arduino_cli
 
 USER_LIB_DIR="${ARDUINO_LIB_DIR:-${HOME}/Arduino/libraries}"

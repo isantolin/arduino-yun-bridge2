@@ -17,6 +17,41 @@ if [[ ! -d "$PORT_ROOT" ]]; then
   exit 1
 fi
 
+BRIDGE_PIGWEED_ROOT="${ROOT_DIR}/third_party/pigweed"
+PORT_PIGWEED_ROOT="${PORT_ROOT}/third_party/pigweed"
+
+for path in "$BRIDGE_PIGWEED_ROOT" "$PORT_PIGWEED_ROOT"; do
+  if [[ ! -d "$path" ]]; then
+    echo "ERROR: Pigweed submodule is missing: $path" >&2
+    exit 1
+  fi
+done
+
+EXPECTED_PORT_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD:third_party/avr_pigweed_port)"
+ACTUAL_PORT_COMMIT="$(git -C "$PORT_ROOT" rev-parse HEAD)"
+EXPECTED_BRIDGE_PIGWEED="$(git -C "$ROOT_DIR" rev-parse HEAD:third_party/pigweed)"
+ACTUAL_BRIDGE_PIGWEED="$(git -C "$BRIDGE_PIGWEED_ROOT" rev-parse HEAD)"
+EXPECTED_PORT_PIGWEED="$(git -C "$PORT_ROOT" rev-parse HEAD:third_party/pigweed)"
+ACTUAL_PORT_PIGWEED="$(git -C "$PORT_PIGWEED_ROOT" rev-parse HEAD)"
+
+if [[ "$ACTUAL_PORT_COMMIT" != "$EXPECTED_PORT_COMMIT" ]]; then
+  echo "ERROR: AVR port checkout $ACTUAL_PORT_COMMIT differs from Bridge gitlink $EXPECTED_PORT_COMMIT." >&2
+  exit 1
+fi
+if [[ "$ACTUAL_BRIDGE_PIGWEED" != "$EXPECTED_BRIDGE_PIGWEED" ]]; then
+  echo "ERROR: Bridge Pigweed checkout $ACTUAL_BRIDGE_PIGWEED differs from its gitlink $EXPECTED_BRIDGE_PIGWEED." >&2
+  exit 1
+fi
+if [[ "$ACTUAL_PORT_PIGWEED" != "$EXPECTED_PORT_PIGWEED" ]]; then
+  echo "ERROR: AVR port Pigweed checkout $ACTUAL_PORT_PIGWEED differs from its gitlink $EXPECTED_PORT_PIGWEED." >&2
+  exit 1
+fi
+if [[ "$ACTUAL_BRIDGE_PIGWEED" != "$ACTUAL_PORT_PIGWEED" ]]; then
+  echo "ERROR: Pigweed upstream pins diverge: Bridge=$ACTUAL_BRIDGE_PIGWEED AVR-port=$ACTUAL_PORT_PIGWEED." >&2
+  exit 1
+fi
+echo "PASS: Bridge and AVR port share upstream Pigweed $ACTUAL_BRIDGE_PIGWEED."
+
 if [[ -d "$PORT_ROOT/pw_rpc_avr" ]]; then
   echo "ERROR: legacy pw_rpc_avr implementation directory exists." >&2
   exit 1

@@ -2177,11 +2177,14 @@ async def test_file_upload_without_serial_reports_unavailable(
     svc.config.file_system_root = str(tmp_path)
     svc.serial = None
     status_reported = asyncio.Event()
-    report_status = AsyncMock(side_effect=lambda *_args: status_reported.set())
-    monkeypatch.setattr(svc, "send_mcu_status", report_status)
+    async def report_status(*_args: Any) -> None:
+        status_reported.set()
+
+    report_status_mock = AsyncMock(side_effect=report_status)
+    monkeypatch.setattr(svc, "send_mcu_status", report_status_mock)
     request = mcu_wire_pb2.FileUpload(path="payload.bin", size=1)
 
     await svc.file_upload(31, request)
     await asyncio.wait_for(status_reported.wait(), timeout=1.0)
 
-    report_status.assert_awaited_once_with(Status.UNAVAILABLE, 31, request)
+    report_status_mock.assert_awaited_once_with(Status.UNAVAILABLE, 31, request)

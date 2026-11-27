@@ -2171,16 +2171,17 @@ async def test_mcu_mailbox_push_without_serial_keeps_incoming_message(
 
 
 async def test_file_upload_without_serial_reports_unavailable(
-    mock_bridge_service: BridgeService, tmp_path: Path
+    mock_bridge_service: BridgeService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     svc = mock_bridge_service
     svc.config.file_system_root = str(tmp_path)
     svc.serial = None
-    report_status = AsyncMock()
-    svc.send_mcu_status = report_status
+    status_reported = asyncio.Event()
+    report_status = AsyncMock(side_effect=lambda *_args: status_reported.set())
+    monkeypatch.setattr(svc, "send_mcu_status", report_status)
     request = mcu_wire_pb2.FileUpload(path="payload.bin", size=1)
 
     await svc.file_upload(31, request)
-    await asyncio.sleep(0)
+    await asyncio.wait_for(status_reported.wait(), timeout=1.0)
 
     report_status.assert_awaited_once_with(Status.UNAVAILABLE, 31, request)

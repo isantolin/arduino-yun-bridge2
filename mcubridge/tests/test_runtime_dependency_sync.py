@@ -276,7 +276,7 @@ def test_nanopb_toolchain_versions_match_pigweed_compatibility_set() -> None:
         sync_runtime_deps.ROOT / ".github/workflows/publish-packages.yml",
     )
     for path in bootstrap_paths:
-        assert "nanopb==0.4.9.3" in path.read_text(encoding="utf-8"), str(path)
+        assert "nanopb==0.4.9.2" in path.read_text(encoding="utf-8"), str(path)
 
 
 def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path) -> None:

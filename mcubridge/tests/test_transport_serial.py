@@ -1066,7 +1066,7 @@ def test_queue_rpc_packet_rejects_calls_outside_event_loop(
     with pytest.raises(RuntimeError, match="outside the asyncio event loop"):
         transport.queue_rpc_packet(packet)
 
-    assert not transport._active_client_route_keys
+    assert not getattr(transport, "_active_client_route_keys")
 
     adopted_written: list[bytes] = []
 
@@ -1514,7 +1514,7 @@ async def test_mcu_rpc_response_routes_to_pigweed_client_without_local_call_tabl
 
     process_packet.assert_called_once_with(packet)
     service.handle_mcu_frame.assert_not_awaited()
-    assert not transport._active_client_route_keys
+    assert not getattr(transport, "_active_client_route_keys")
 
 
 async def test_serial_transport_records_retry_failure_and_latency_metrics(

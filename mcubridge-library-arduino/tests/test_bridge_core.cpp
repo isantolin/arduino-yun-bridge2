@@ -6,6 +6,7 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #endif
 #include <Arduino.h>
+#include <string.h>
 #include <BridgeFaultInjection.h>
 #include <etl/array.h>
 #include <etl/numeric.h>
@@ -15,7 +16,6 @@
 #include <pw_protobuf/decoder.h>
 #include <pw_span/span.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -111,7 +111,7 @@ TEST_F(BridgeCoreFixture, BridgeHandshakeResponseUsesTagLength) {
       pw::span<const uint8_t>(response.mcu_nonce.bytes,
                               response.mcu_nonce.size),
       expected_response_tag));
-  EXPECT_TRUE(std::equal(expected_response_tag.data(), (expected_response_tag.data()) + (expected_response_tag.size()), response.tag.bytes));
+  EXPECT_EQ(0, memcmp(expected_response_tag.data(), response.tag.bytes, expected_response_tag.size())));
 }
 
 TEST_F(BridgeCoreFixture, BridgeSendFrame) {

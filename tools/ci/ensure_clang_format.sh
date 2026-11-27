@@ -13,12 +13,11 @@ echo "[ensure_clang_format] clang-format is ready."
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 echo "[ensure_clang_format] Formatting C++ files..."
 
-# Find and format all .cpp, .h, and .ino files, excluding Unity and Nanopb library files
+# Find and format all project .cpp, .h, and .ino files, excluding generated Nanopb files
 find "${ROOT_DIR}/mcubridge-library-arduino/src" \
      "${ROOT_DIR}/mcubridge-library-arduino/tests" \
      "${ROOT_DIR}/mcubridge-library-arduino/examples" \
      \( -name "*.cpp" -o -name "*.h" -o -name "*.ino" \) \
-     -not -path "*/Unity/*" \
      -not -path "*/src/protocol/mcubridge.pb.*" \
      -not -path "*/src/pb_*" \
      -print0 | xargs -0 clang-format -i

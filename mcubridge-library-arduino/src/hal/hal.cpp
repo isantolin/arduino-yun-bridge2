@@ -233,6 +233,12 @@ static bool run_sram_march_test() {
 }
 
 bool run_power_on_self_tests() {
+#if defined(BRIDGE_HOST_TEST)
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL)) {
+    return false;
+  }
+#endif
   initStackCanary();
   const bool march_ok = run_sram_march_test();
   const bool stack_ok = checkStackOverflow();

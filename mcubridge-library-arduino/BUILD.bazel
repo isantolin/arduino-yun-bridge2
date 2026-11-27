@@ -101,6 +101,7 @@ cc_library(
         "@pigweed//pw_stream",
         "@pigweed//pw_string:util",
         "@pigweed//pw_sync:interrupt_spin_lock",
+        "@pigweed//pw_sync:no_lock",
         "@pigweed//pw_tokenizer",
         "@pigweed//pw_transfer",
         "@pigweed//pw_varint",

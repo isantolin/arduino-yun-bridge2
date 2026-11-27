@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2
+from mcubridge.protocol import cloud_gateway_pb2, config_schema_pb2, mcu_wire_pb2, protocol
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import allows_method, get_operation
 
@@ -167,8 +168,6 @@ def test_protocol_hdlc_encoding_decoding_roundtrip() -> None:
     from pw_hdlc.decode import FrameDecoder
     from pw_hdlc.encode import ui_frame
     from pw_rpc.internal.packet_pb2 import RpcPacket
-    from tests.rpc_packet_utils import encode_rpc_packet
-from mcubridge.protocol import protocol
 
     # 1. RPC HDLC encoding & decoding
     pin_msg = mcu_wire_pb2.PinRead(pin=13)

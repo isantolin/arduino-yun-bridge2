@@ -1658,6 +1658,7 @@ async def test_rpc_status_supports_explicit_service_method_ids(
         call_id=29,
         status=Status.UNAVAILABLE,
     )
+    assert writer.await_args is not None
     packet = pw_packets.decode(writer.await_args.args[0])
     assert packet.service_id == 0x1234
     assert packet.method_id == 0x5678
@@ -1689,7 +1690,7 @@ async def test_queue_rpc_packet_without_decoded_metadata_still_writes(
     writer = AsyncMock(return_value=True)
     transport = SerialTransport(runtime_config, runtime_state, None, rpc_packet_writer=writer)
 
-    transport._queue_rpc_packet_on_loop(b"opaque-packet", None)
+    transport.queue_rpc_packet(b"opaque-packet")
     await asyncio.sleep(0)
 
     writer.assert_awaited_once_with(b"opaque-packet")

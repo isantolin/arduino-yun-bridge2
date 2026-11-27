@@ -3,6 +3,7 @@
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
 #include "SPI.h"
+#include "pw_log_avr/log_avr.h"
 
 ArduinoStubPinState g_arduino_stub_pin_states[NUM_DIGITAL_PINS]{};
 
@@ -36,3 +37,18 @@ namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception& e) { (void)e; }
 }  // namespace etl
 
+
+namespace {
+pw_log_avr_LogSink g_pw_log_avr_sink = nullptr;
+}
+
+extern "C" void pw_log_avr_SetLogSink(pw_log_avr_LogSink sink) {
+  g_pw_log_avr_sink = sink;
+}
+
+extern "C" void pw_log_avr_HandleLog(uint8_t level, const uint8_t* log_data,
+                                      size_t size) {
+  if (g_pw_log_avr_sink != nullptr) {
+    g_pw_log_avr_sink(level, log_data, size);
+  }
+}

@@ -6,12 +6,12 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
 #endif
 #include <Arduino.h>
+#include <string.h>
 #include <etl/exception.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "pw_unit_test/framework.h"
-#include <algorithm>
 
 namespace etl {
 void handle_error(const etl::exception& e);
@@ -1026,9 +1026,9 @@ TEST_F(BridgeEdgePathsFixture, EncryptedFrameStreamingMatchesOneShotAead) {
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> expected_tag = {};
   EXPECT_TRUE(rpc::security::aead_encrypt(
       ba.txAeadKey(), nonce, aad, payload, expected_ciphertext, expected_tag));
-  EXPECT_TRUE(std::equal(aad.data() + 1U, (aad.data() + 1U) + (rpc::RPC_AEAD_COUNTER_SIZE), envelope.data()));
-  EXPECT_TRUE(std::equal(expected_ciphertext.data(), (expected_ciphertext.data()) + (expected_ciphertext.size()), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE));
-  EXPECT_TRUE(std::equal(expected_tag.data(), (expected_tag.data()) + (expected_tag.size()), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size()));
+  EXPECT_EQ(0, memcmp(aad.data() + 1U, envelope.data(), rpc::RPC_AEAD_COUNTER_SIZE));;
+  EXPECT_EQ(0, memcmp(expected_ciphertext.data(), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE, expected_ciphertext.size()));;
+  EXPECT_EQ(0, memcmp(expected_tag.data(), envelope.data() + rpc::RPC_AEAD_COUNTER_SIZE + payload.size(), expected_tag.size()));;
 }
 
 // Regression (ADR-0005): a recorded LinkSync replayed after a forced

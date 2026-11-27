@@ -11,6 +11,7 @@ from hypothesis import strategies as st
 from pw_hdlc.encode import ui_frame
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcu_wire_pb2 as pb
+from tests.rpc_packet_utils import encode_rpc_packet
 from mcubridge.protocol import protocol
 from mcubridge.security.security import LinkCipher
 from mcubridge.services.runtime import BridgeService
@@ -61,7 +62,7 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
     mock_serial.is_open = True
     transport.serial = mock_serial
 
-    valid_frame = ui_frame(protocol.HDLC_ADDRESS_RPC, protocol.encode_rpc_packet(0x01, b"ok", call_id=1))
+    valid_frame = ui_frame(protocol.HDLC_ADDRESS_RPC, encode_rpc_packet(0x01, b"ok", call_id=1))
     corrupt_frame = corrupt_payload + protocol.FRAME_DELIMITER
 
     call_count = 0

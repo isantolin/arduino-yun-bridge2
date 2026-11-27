@@ -371,12 +371,4 @@ def test_operation_spec_and_protocol_builder_branches(mock_bridge_service: Bridg
     ubus_defs = protocol.build_ubus_methods(ubus_svc, None)
     assert isinstance(ubus_defs, dict)
 
-    # 5. encode_rpc_packet branches: server streaming response with empty payload, tuple target, and int target
-    stream_resp_pkt = encode_rpc_packet("rpc.pb.GpioService/SubscribePins", b"", call_id=1)
-    assert stream_resp_pkt is not None
 
-    tuple_target_pkt = encode_rpc_packet((123, 456), b"data", call_id=1)
-    assert tuple_target_pkt is not None
-
-    int_target_pkt = encode_rpc_packet(789, b"data", call_id=1)
-    assert int_target_pkt is not None

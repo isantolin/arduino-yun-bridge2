@@ -18,7 +18,6 @@ from pw_rpc.descriptors import (
     Service as PwRpcService,
     Services as PwRpcServices,
 )
-from pw_rpc.internal.packet_pb2 import PacketType, RpcPacket
 from pw_status import Status as Status
 from pw_transfer import transfer_pb2
 import structlog
@@ -366,49 +365,3 @@ RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
 {%- for const in runtime_config_constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
-
-# ==============================================================================
-# Pigweed RPC Serialization Helper
-# ==============================================================================
-
-
-def encode_rpc_packet(
-    target: int | str | OperationSpec | tuple[int, int],
-    payload: bytes | ProtobufMessage = b"",
-    *,
-    call_id: int = 1,
-    channel_id: int = HDLC_ADDRESS_RPC,
-    packet_type: int = int(PacketType.REQUEST),
-    status: Status = Status.OK,
-) -> bytes:
-    """Serialize a Pigweed RpcPacket for an operation, (service_id, method_id), or raw ID."""
-    spec = get_operation(target)
-    actual_type = packet_type
-    if (
-        actual_type == int(PacketType.REQUEST)
-        and spec is not None
-        and spec.response_type is not None
-        and spec.response_type is not spec.request_type
-    ):
-        if isinstance(payload, ProtobufMessage) and isinstance(payload, spec.response_type):
-            actual_type = int(PacketType.SERVER_STREAM) if spec.is_server_streaming else int(PacketType.RESPONSE)
-        elif payload == b"" and spec.is_server_streaming:
-            actual_type = int(PacketType.RESPONSE)
-
-    if spec is not None and spec.service_id is not None and spec.method_id is not None:
-        srv_id, meth_id = spec.service_id, spec.method_id
-    elif isinstance(target, tuple):
-        srv_id, meth_id = target
-    else:
-        srv_id = meth_id = target if isinstance(target, int) else 0
-
-    raw_payload = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
-    return RpcPacket(
-        type=cast(Any, actual_type),
-        channel_id=channel_id,
-        service_id=srv_id,
-        method_id=meth_id,
-        call_id=call_id,
-        status=status.value,
-        payload=raw_payload,
-    ).SerializeToString()

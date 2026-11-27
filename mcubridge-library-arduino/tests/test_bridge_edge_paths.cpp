@@ -799,8 +799,9 @@ TEST_F(BridgeEdgePathsFixture, AllTimersAndEtlErrorCoverage) {
 TEST_F(BridgeEdgePathsFixture, BootloaderTimerAndHalCoverage) {
   pid_t pid = fork();
   if (pid == 0) {
-    BiStream stream;
-    reset_bridge_core(Bridge, stream, 0, nullptr);
+    // The preceding timer-coverage test already initialized the global Bridge.
+    // Reuse its inherited timer registrations; reconstructing it after fork
+    // would try to join a transfer worker that does not exist in the child.
     auto& ba = TestAccessor::create(Bridge);
     ba.setTimerLastTick(1);
     ba.startBootloaderTimerForCoverage();

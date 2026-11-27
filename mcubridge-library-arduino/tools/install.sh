@@ -165,7 +165,6 @@ install_dependency() {
 
 # --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
 ETL_VERSION="20.49.0"
-UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.1"
 NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
 WOLFSSL_VERSION="5.8.4"
@@ -223,11 +222,6 @@ if [ -d "${ROOT_DIR}/third_party/avr_pigweed_port" ] || [ -f "${ROOT_DIR}/.gitmo
     fi
 fi
 
-# Unity test framework (host tests only)
-install_dependency "Unity" \
-    "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/${UNITY_VERSION}" \
-    "unity.h" \
-    "${LIB_ROOT}/tests"
 
 # --- Nanopb Core C Files ---
 # Since these are ignored by .gitignore, we download them dynamically if missing.

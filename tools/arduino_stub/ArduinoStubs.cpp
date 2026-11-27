@@ -1,4 +1,5 @@
 #include <etl/algorithm.h>
+#include <pw_chrono/system_clock.h>
 
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
@@ -52,3 +53,9 @@ extern "C" void pw_log_avr_HandleLog(uint8_t level, const uint8_t* log_data,
     g_pw_log_avr_sink(level, log_data, size);
   }
 }
+
+namespace pw::chrono::backend {
+int64_t GetSystemClockTickCount() {
+  return static_cast<int64_t>(::millis());
+}
+}  // namespace pw::chrono::backend

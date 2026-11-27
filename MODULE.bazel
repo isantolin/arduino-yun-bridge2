@@ -34,6 +34,7 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
+    integrity = "sha256-s+elVEeV7I9KGyq0b26I/beL5aB3OPAIzhHdN+0UtuQ=",
     strip_prefix = "etl-20.49.0",
     urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
 )
@@ -50,6 +51,7 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
+    integrity = "sha256-DT0JDGI31QJt4pJhBaW/ylBfbq6v8B1bAQSGGy0eIgk=",
     strip_prefix = "nanopb-nanopb-0.4.9.1",
     urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/nanopb-0.4.9.1.tar.gz"],
 )

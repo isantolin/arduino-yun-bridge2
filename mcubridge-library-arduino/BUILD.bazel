@@ -135,6 +135,7 @@ HOST_TEST_SUITES = [
 [
     pw_cc_test(
         name = suite,
+        size = "small",
         srcs = ["tests/{}.cpp".format(suite)],
         copts = TEST_COPTS,
         defines = HOST_DEFINES,
@@ -151,6 +152,7 @@ HOST_TEST_SUITES = [
 
 pw_cc_test(
     name = "test_hal_weak_defaults",
+    size = "small",
     srcs = ["tests/test_hal_weak_defaults.cpp"],
     copts = TEST_COPTS,
     defines = HOST_DEFINES,

@@ -1,1 +1,5 @@
 third_party/pigweed
+third_party/avr_pigweed_port/third_party/pigweed
+.tox
+build
+coverage

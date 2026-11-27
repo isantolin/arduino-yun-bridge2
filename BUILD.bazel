@@ -3,13 +3,40 @@ load(
     "pw_compile_commands_generator",
 )
 
+platform(
+    name = "arduino_host_platform",
+    flags = [
+        "--@pigweed//pw_log:backend=@avr_pigweed_host//:pw_log_avr",
+        "--@pigweed//pw_log:backend_impl=@avr_pigweed_host//:pw_log_avr_impl",
+        "--@pigweed//pw_chrono:system_clock_backend=//tools/pw_chrono_arduino:host_system_clock",
+    ],
+    parents = ["@bazel_tools//tools:host_platform"],
+    visibility = ["//visibility:public"],
+)
+
 pw_compile_commands_generator(
-    name = "compile_commands",
-    display_name = "Host (C++)",
+    name = "gateway_compile_commands",
+    display_name = "Gateway (Linux)",
     platform = "@bazel_tools//tools:host_platform",
     target_patterns = [
         "//mcubridge-gateway-cpp/...",
+    ],
+)
+
+pw_compile_commands_generator(
+    name = "arduino_compile_commands",
+    display_name = "Arduino Host (MCU)",
+    platform = "//:arduino_host_platform",
+    target_patterns = [
         "//mcubridge-library-arduino/...",
         "//tools/arduino_stub/...",
+    ],
+)
+
+pw_compile_commands_generator(
+    name = "compile_commands",
+    deps = [
+        ":arduino_compile_commands",
+        ":gateway_compile_commands",
     ],
 )

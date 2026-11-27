@@ -24,7 +24,7 @@ from mcubridge.protocol.gateway import gateway_control_pb2
 from mcubridge.protocol.protocol import Status
 
 from mcubridge.services.handshake import SerialHandshakeFatal
-from mcubridge.services.runtime import BridgeService
+from mcubridge.services.runtime import BridgeService, _directory_usage_bytes
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
 
 from mcubridge.state.storage import LmdbDeque
@@ -2121,3 +2121,56 @@ async def test_file_transfer_default_resource_id_and_rpc_dispatch(
     assert fetch_resp.success is True
     assert fetch_resp.bytes_transferred == len(b"dispatched_content")
     mock_write.assert_awaited_once_with(2, b"dispatched_content")
+
+def test_directory_usage_ignores_non_regular_entries(tmp_path: Path) -> None:
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"regular")
+    (tmp_path / "payload-link.bin").symlink_to(payload)
+
+    assert _directory_usage_bytes(str(tmp_path)) == len(b"regular")
+
+
+def test_runtime_safe_path_rejects_blank_path(mock_bridge_service: BridgeService) -> None:
+    assert mock_bridge_service._get_safe_path("  \\t") is None
+
+
+async def test_send_mcu_status_returns_false_without_serial(mock_bridge_service: BridgeService) -> None:
+    svc = mock_bridge_service
+    svc.serial = None
+
+    spec = protocol.BY_NAME["rpc.pb.SystemService/Xon"]
+    assert await svc.send_mcu_status(Status.UNAVAILABLE, 23, spec) is False
+
+
+async def test_mcu_mailbox_push_without_serial_keeps_incoming_message(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    svc.serial = None
+    publish = AsyncMock()
+    monkeypatch.setattr(svc, "publish_mcu_message", publish)
+    request = mcu_wire_pb2.MailboxPush(data=b"from-mcu")
+
+    response = await svc.mailbox_push(17, request)
+
+    assert isinstance(response, mcu_wire_pb2.Empty)
+    assert await svc.state.mailbox_incoming_queue.popleft() == b"from-mcu"
+    publish.assert_awaited_once_with(request, b"from-mcu")
+
+
+async def test_file_upload_uses_active_runtime_task_group(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    request = mcu_wire_pb2.FileUpload(path="payload.bin", size=1)
+    complete_upload = AsyncMock()
+    monkeypatch.setattr(svc, "_complete_file_upload", complete_upload)
+
+    async with asyncio.TaskGroup() as task_group:
+        svc._tg = task_group
+        await svc.file_upload(31, request)
+
+    svc._tg = None
+    complete_upload.assert_awaited_once_with(31, request, tmp_path / "payload.bin")
+

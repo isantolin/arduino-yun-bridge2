@@ -111,7 +111,7 @@ TEST_F(BridgeCoreFixture, BridgeHandshakeResponseUsesTagLength) {
       pw::span<const uint8_t>(response.mcu_nonce.bytes,
                               response.mcu_nonce.size),
       expected_response_tag));
-  EXPECT_EQ(0, memcmp(expected_response_tag.data(), response.tag.bytes, expected_response_tag.size())));
+  EXPECT_EQ(0, memcmp(expected_response_tag.data(), response.tag.bytes, expected_response_tag.size()));
 }
 
 TEST_F(BridgeCoreFixture, BridgeSendFrame) {

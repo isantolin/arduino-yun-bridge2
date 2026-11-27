@@ -2121,3 +2121,70 @@ async def test_file_transfer_default_resource_id_and_rpc_dispatch(
     assert fetch_resp.success is True
     assert fetch_resp.bytes_transferred == len(b"dispatched_content")
     mock_write.assert_awaited_once_with(2, b"dispatched_content")
+
+
+async def test_write_with_quota_counts_regular_files_without_following_symlinks(
+    mock_bridge_service: BridgeService,
+    tmp_path: Path,
+) -> None:
+    svc = mock_bridge_service
+    root = tmp_path / "storage"
+    root.mkdir()
+    payload = root / "payload.bin"
+    payload.write_bytes(b"regular")
+    (root / "payload-link.bin").symlink_to(payload)
+    svc.config.file_system_root = str(root)
+
+    assert await svc.write_with_quota(root / "new.bin", b"new")
+
+    assert svc.state.file_storage_bytes_used == len(b"regular")
+
+
+async def test_file_write_rejects_blank_path(mock_bridge_service: BridgeService) -> None:
+    response = await mock_bridge_service.file_write(" \t", b"payload")
+
+    assert response.status == "error"
+
+
+async def test_send_mcu_status_returns_false_without_serial(mock_bridge_service: BridgeService) -> None:
+    svc = mock_bridge_service
+    svc.serial = None
+
+    spec = protocol.BY_NAME["rpc.pb.SystemService/Xon"]
+    assert await svc.send_mcu_status(Status.UNAVAILABLE, 23, spec) is False
+
+
+async def test_mcu_mailbox_push_without_serial_keeps_incoming_message(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    svc.serial = None
+    publish = AsyncMock()
+    monkeypatch.setattr(svc, "publish_mcu_message", publish)
+    request = mcu_wire_pb2.MailboxPush(data=b"from-mcu")
+
+    response = await svc.mailbox_push(17, request)
+
+    assert isinstance(response, mcu_wire_pb2.Empty)
+    assert await svc.state.mailbox_incoming_queue.popleft() == b"from-mcu"
+    publish.assert_awaited_once_with(request, b"from-mcu")
+
+
+async def test_file_upload_without_serial_reports_unavailable(
+    mock_bridge_service: BridgeService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    svc = mock_bridge_service
+    svc.config.file_system_root = str(tmp_path)
+    svc.serial = None
+    status_reported = asyncio.Event()
+    async def report_status(*_args: Any) -> None:
+        status_reported.set()
+
+    report_status_mock = AsyncMock(side_effect=report_status)
+    monkeypatch.setattr(svc, "send_mcu_status", report_status_mock)
+    request = mcu_wire_pb2.FileUpload(path="payload.bin", size=1)
+
+    await svc.file_upload(31, request)
+    await asyncio.wait_for(status_reported.wait(), timeout=1.0)
+
+    report_status_mock.assert_awaited_once_with(Status.UNAVAILABLE, 31, request)

@@ -776,6 +776,19 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
         coro.close()
 
 
+async def test_ubus_run_coro_sync_rejects_nested_loop_without_target(
+    mock_runtime: MockRuntimeFacade,
+) -> None:
+    service = UbusService(mock_runtime)
+    service.loop = None
+
+    async def _sample() -> dict[str, str]:
+        return {"status": "nested"}
+
+    with pytest.raises(RuntimeError, match="cannot start a nested event loop"):
+        service.run_sync(_sample())
+
+
 async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime, loop=asyncio.get_running_loop())
 

@@ -1312,7 +1312,7 @@ async def test_pigweed_gpio_server_stream_lifecycle_backpressure_and_rejection()
                 mcu_cipher.encrypt(protocol.HDLC_ADDRESS_RPC, close_pkt.SerializeToString()),
             )
         )
-        assert _private_attribute(transport, "_stream_call") is None
+        assert not _private_attribute(transport, "_active_stream_calls")
 
         # 5. Reconnect and resubscribe active pin, then cancel stream explicitly
         assert await service.gpio.resubscribe_pins() == 1
@@ -1580,3 +1580,52 @@ async def test_serial_transport_records_retry_failure_and_latency_metrics(
     assert snapshot.serial_latency_ms > 0.0
     assert snapshot.rpc_latency_ms > 0.0
     assert len(sent_packets) == 1
+
+
+async def test_pw_rpc_client_tracks_multiple_streams_and_late_failures(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, None)
+    first_call = MagicMock()
+    second_call = MagicMock()
+    callbacks: list[dict[str, Any]] = []
+    rpc_method = MagicMock()
+
+    def invoke(
+        _request: ProtobufMessage,
+        *,
+        on_next: Any,
+        on_completed: Any,
+        on_error: Any,
+    ) -> Any:
+        callbacks.append(
+            {
+                "on_next": on_next,
+                "on_completed": on_completed,
+                "on_error": on_error,
+            }
+        )
+        return first_call if len(callbacks) == 1 else second_call
+
+    rpc_method.invoke.side_effect = invoke
+    invoke_stream = cast(
+        Callable[[Any, Any, str], Coroutine[Any, Any, bool]],
+        _private_attribute(transport, "_invoke_server_stream_rpc"),
+    )
+
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=1), "SubscribePins")
+    assert await invoke_stream(rpc_method, pb.PinSubscribeRequest(pin=2), "SubscribePins")
+    active_calls = cast(set[Any], _private_attribute(transport, "_active_stream_calls"))
+    assert active_calls == {first_call, second_call}
+
+    # A failure arriving after the initial acceptance window must still retire
+    # the correct call instead of being hidden by the startup timeout.
+    callbacks[0]["on_error"](first_call, RuntimeError("late stream failure"))
+    assert active_calls == {second_call}
+
+    completed_status = MagicMock()
+    completed_status.ok.return_value = True
+    callbacks[1]["on_completed"](second_call, completed_status)
+    assert not active_calls
+    assert transport.cancel_pin_stream() is False

@@ -2131,7 +2131,7 @@ def test_directory_usage_ignores_non_regular_entries(tmp_path: Path) -> None:
 
 
 def test_runtime_safe_path_rejects_blank_path(mock_bridge_service: BridgeService) -> None:
-    assert mock_bridge_service._get_safe_path("  \\t") is None
+    assert mock_bridge_service._get_safe_path(" \t") is None
 
 
 async def test_send_mcu_status_returns_false_without_serial(mock_bridge_service: BridgeService) -> None:

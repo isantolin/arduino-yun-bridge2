@@ -313,7 +313,7 @@ rationale = "HTTP client used by development tooling and retry integration tests
 
 [[dev_dependency]]
 name = "asyncssh"
-pip = "asyncssh==2.24.1"
+pip = "asyncssh==2.24.2"
 rationale = "Asynchronous SSH and SFTP client for QEMU OpenWrt deployment and remote execution"
 
 [[dev_dependency]]

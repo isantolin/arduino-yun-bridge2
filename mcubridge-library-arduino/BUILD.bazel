@@ -104,6 +104,8 @@ cc_library(
         "@pigweed//pw_sync:no_lock",
         "@pigweed//pw_tokenizer",
         "@pigweed//pw_transfer",
+        "@pigweed//pw_thread:thread",
+        "@pigweed//pw_thread_stl:options",
         "@pigweed//pw_varint",
         "@wolfssl",
     ],

@@ -38,7 +38,7 @@ TEST(Integrated, BridgeCore) {
   uint8_t payload_buf[64];
   pb_ostream_t ostream =
       pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-  TEST_ASSERT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_req));
+  EXPECT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_req));
 
   etl::array<uint8_t, 256> frame_buf;
   size_t frame_len = build_hdlc_rpc_frame(
@@ -47,10 +47,10 @@ TEST(Integrated, BridgeCore) {
       pw::tokenizer::Hash("LinkSync"),
       pw::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf, 1,
       1);
-  TEST_ASSERT_TRUE(frame_len > 0);
+  EXPECT_TRUE(frame_len > 0);
 
   accessor.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), frame_len));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
 TEST(Integrated, Components) {
@@ -62,7 +62,7 @@ TEST(Integrated, Components) {
   Console.begin();
   Console.write('H');
   Console.process();
-  TEST_ASSERT(g_test_stream.tx_buf.len > 0);
+  EXPECT_TRUE(g_test_stream.tx_buf.len > 0);
 
   FileSystem.remove("test.txt");
 
@@ -72,7 +72,7 @@ TEST(Integrated, Components) {
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  EXPECT_TRUE(Mailbox.requestRead());
 #endif
 
   Process.kill(123);

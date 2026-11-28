@@ -331,7 +331,7 @@ def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path
     (tmp_path / "tools" / "ci").mkdir(parents=True)
     (tmp_path / "tools" / "ci" / "install_arduino_cli.sh").write_text('VERSION="1.5.1"\n', encoding="utf-8")
     (tmp_path / "tools" / "ci" / "install_espressif_core.sh").write_text(
-        'ESP32_CORE_VERSION="${ESP32_CORE_VERSION:-3.3.12}"\n', encoding="utf-8"
+        'ESP32_CORE_VERSION="${ESP32_CORE_VERSION:-4.0.0}"\n', encoding="utf-8"
     )
     (tmp_path / "MODULE.bazel").write_text('bazel_dep(name = "rules_cc", version = "0.1.1")\n', encoding="utf-8")
 

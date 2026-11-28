@@ -1,6 +1,6 @@
 #include "config/bridge_config.h"
 
-#if !defined(ARDUINO_ARCH_AVR) && !defined(__AVR__) && !defined(BRIDGE_HOST_TEST)
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_SAMD)
 #if __has_include("pw_peripheral_backends/digital_io.cpp")
 #include "pw_peripheral_backends/digital_io.cpp"
 #endif

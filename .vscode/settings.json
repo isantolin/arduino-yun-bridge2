@@ -19,14 +19,12 @@
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src",
     "${workspaceFolder}/mcubridge-library-arduino/tests",
-    "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
     "${workspaceFolder}/tools/arduino_stub/include",
     "${env:HOME}/Arduino/libraries/wolfssl/src",
     "~/Arduino/libraries/**"
   ],
   "C_Cpp.default.defines": [
     "ARDUINO=100",
-    "BRIDGE_HOST_TEST=1",
     "ETL_NO_STL",
     "ETL_FORCE_STD_INITIALIZER_LIST",
     "BRIDGE_ENABLE_CONSOLE=1",
@@ -160,7 +158,7 @@
     "-j=1"
   ],
   "bazel.executable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/bazelisk/bazelisk-linux_amd64",
-  "bazel.buildifierExecutable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/buildifier/buildifier-linux_amd64",
-  "bazel.enableCodeLens": true,
+  "bazel.buildifier.executable": "/home/ignaciosantolin/.vscode-insiders/extensions/pigweed.pigweed-1.11.1/node_modules/@bazel/buildifier/buildifier-linux_amd64",
+  "bazel.codeLens.enable": true,
   "pigweed.disableBazelSettingsRecommendations": true
 }

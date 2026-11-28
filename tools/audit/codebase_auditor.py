@@ -29,7 +29,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT / "mcubridge") not in sys.path:
     sys.path.insert(0, str(ROOT / "mcubridge"))
-IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests", "Unity"}
+IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
 FORBIDDEN_SUPPRESSIONS = frozenset(
     {
         "ignore_errors",
@@ -161,7 +161,6 @@ def audit_ast_integrity() -> list[str]:
         "openwrt-sdk",
         "__pycache__",
         "typings",
-        "Unity",
         "third_party",
     }
     for path in ROOT.rglob("*.py"):
@@ -373,7 +372,6 @@ _PROTO_USAGE_IGNORED = {
     "openwrt-sdk",
     "__pycache__",
     "third_party",
-    "Unity",
 }
 _PROTO_GENERATED_NAMES = {
     "config_schema.json",

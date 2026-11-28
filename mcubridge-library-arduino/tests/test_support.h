@@ -27,6 +27,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <new>
+
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include "protocol/mcu_wire.pb.h"
@@ -208,8 +210,9 @@ inline size_t build_hdlc_rpc_frame(uint64_t address,
 inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                               unsigned long baudrate = 0,
                               const char* secret = nullptr) {
-  bridge.~BridgeClass();
-  new (&bridge) bridge::test::TestAccessor(stream);
+  auto& accessor = bridge::test::TestAccessor::create(bridge);
+  accessor.~TestAccessor();
+  new (static_cast<void*>(&bridge)) bridge::test::TestAccessor(stream);
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {

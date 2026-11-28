@@ -145,7 +145,7 @@ void FileSystemClass::remove(etl::string_view path) {
 }
 
 void FileSystemClass::_onRemove(const rpc_pb_FileRemove& msg) {
-  bridge::hal::removeFile(etl::string_view(msg.path));
+  bridge::hal::removeFile(etl::string_view(msg.path)).IgnoreError();
 }
 
 FileSystemType FileSystem;

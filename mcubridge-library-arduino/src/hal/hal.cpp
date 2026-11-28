@@ -3,6 +3,8 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <pw_bytes/endian.h>
+
+#include "hal_internal.h"
 #if defined(ARDUINO_ARCH_AVR)
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
@@ -56,12 +58,12 @@ void _forceSinglePin() {
   if (!digitalPinIsValid(pin)) return;
 #endif
   if constexpr (I == PIN_SPI_SS) {
-    pw::digital_io::ArduinoDigitalOut output(
-        pin, pw::digital_io::State::kActive);
+    pw::digital_io::ArduinoDigitalOut output(pin,
+                                             pw::digital_io::State::kActive);
     (void)output.Enable();
   } else if constexpr (I == PIN_SPI_SCK || I == PIN_SPI_MOSI) {
-    pw::digital_io::ArduinoDigitalOut output(
-        pin, pw::digital_io::State::kInactive);
+    pw::digital_io::ArduinoDigitalOut output(pin,
+                                             pw::digital_io::State::kInactive);
     (void)output.Enable();
   } else if constexpr (I == PIN_SPI_MISO) {
     pw::digital_io::ArduinoDigitalIn input(pin);
@@ -76,8 +78,8 @@ void _forceSinglePin() {
 #if defined(ARDUINO_ARCH_ESP32)
     if (!digitalPinCanOutput(pin)) return;
 #endif
-    pw::digital_io::ArduinoDigitalOut output(
-        pin, pw::digital_io::State::kInactive);
+    pw::digital_io::ArduinoDigitalOut output(pin,
+                                             pw::digital_io::State::kInactive);
     (void)output.Enable();
   } else {
     pw::digital_io::ArduinoDigitalIn input(pin, true);
@@ -232,7 +234,8 @@ static bool run_sram_march_test() {
   return true;
 }
 
-bool run_power_on_self_tests() {
+namespace internal {
+bool run_power_on_self_tests_impl() {
   initStackCanary();
   const bool march_ok = run_sram_march_test();
   const bool stack_ok = checkStackOverflow();
@@ -243,6 +246,19 @@ bool run_power_on_self_tests() {
   return march_ok && stack_ok;
 #endif
 }
+}  // namespace internal
+
+#if !defined(ARDUINO_ARCH_AVR) && !defined(ARDUINO_ARCH_SAMD) && \
+    !defined(ARDUINO_ARCH_ESP32)
+#define BRIDGE_HOST_WEAK __attribute__((weak))
+#else
+#define BRIDGE_HOST_WEAK
+#endif
+
+BRIDGE_HOST_WEAK bool run_power_on_self_tests() {
+  return internal::run_power_on_self_tests_impl();
+}
+#undef BRIDGE_HOST_WEAK
 
 void init() {
   forceSafeState();

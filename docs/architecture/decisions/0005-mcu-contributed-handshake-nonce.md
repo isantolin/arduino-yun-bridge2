@@ -28,7 +28,7 @@ Verified per-platform sources (installed cores):
 
 | Platform | Hardware RNG | Persistent storage |
 |---|---|---|
-| ESP32 (Nano ESP32, core 3.3.12) | Yes: `esp_fill_random()` (`esp_random.h`) | NVS (not needed) |
+| ESP32 (Nano ESP32, core 4.0.0) | Yes: `esp_fill_random()` (`esp_random.h`) | NVS (not needed) |
 | SAMD21 (MKR WiFi 1010) | **No** (TRNG exists only on SAMD51) | No EEPROM; flash only |
 | AVR (Mega 2560) | **No** | 4 KiB EEPROM, today fully exposed as `pw_transfer` resource `0x4D454741` |
 

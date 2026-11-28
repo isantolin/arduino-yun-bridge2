@@ -17,23 +17,10 @@ local_path_override(
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-http_archive(
-    name = "unity",
-    build_file_content = """
-load("@rules_cc//cc:defs.bzl", "cc_library")
-cc_library(
-    name = "unity",
-    srcs = ["src/unity.c"],
-    hdrs = glob(["src/*.h"]),
-    includes = ["src"],
-    defines = ["UNITY_INCLUDE_DOUBLE"],
-    visibility = ["//visibility:public"],
-)
-""",
-    integrity = "sha256-6E6zAcp5Z4MeaLFyj5Eeh/otNF2N22T4l7wvLuJKMhw=",
-    strip_prefix = "Unity-2.7.0",
-    urls = ["https://github.com/ThrowTheSwitch/Unity/archive/refs/tags/v2.7.0.tar.gz"],
-)
+# Cooperative pw_transfer and tokenized pw_log_avr shared with MCU firmware.
+avr_pigweed_host = use_repo_rule("//tools/bazel:avr_pigweed_host.bzl", "avr_pigweed_host")
+
+avr_pigweed_host(name = "avr_pigweed_host")
 
 http_archive(
     name = "etl",
@@ -47,6 +34,7 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
+    integrity = "sha256-s+elVEeV7I9KGyq0b26I/beL5aB3OPAIzhHdN+0UtuQ=",
     strip_prefix = "etl-20.49.0",
     urls = ["https://github.com/ETLCPP/etl/archive/refs/tags/20.49.0.tar.gz"],
 )
@@ -63,6 +51,7 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 """,
+    integrity = "sha256-DT0JDGI31QJt4pJhBaW/ylBfbq6v8B1bAQSGGy0eIgk=",
     strip_prefix = "nanopb-nanopb-0.4.9.1",
     urls = ["https://github.com/nanopb/nanopb/archive/refs/tags/nanopb-0.4.9.1.tar.gz"],
 )

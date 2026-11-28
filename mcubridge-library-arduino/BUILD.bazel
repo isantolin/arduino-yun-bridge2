@@ -1,15 +1,21 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@pigweed//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
 HOST_COPTS = [
     "-Wall",
     "-Wextra",
+    "-Werror",
     "-Wno-unused-parameter",
+    "-fno-exceptions",
+]
+
+TEST_COPTS = HOST_COPTS + [
+    "-Wno-sign-compare",
 ]
 
 HOST_DEFINES = [
-    "BRIDGE_HOST_TEST=1",
     "BRIDGE_DEBUG_IO=1",
     "BRIDGE_ENABLE_CONSOLE=1",
     "BRIDGE_ENABLE_DATASTORE=1",
@@ -17,10 +23,6 @@ HOST_DEFINES = [
     "BRIDGE_ENABLE_FILESYSTEM=1",
     "BRIDGE_ENABLE_PROCESS=1",
     "BRIDGE_ENABLE_SPI=1",
-    "PW_RPC_USE_GLOBAL_MUTEX=0",
-    "PW_TRANSFER_COOPERATIVE=1",
-    "PW_TRANSFER_COOPERATIVE_QUEUE_CAPACITY=2",
-    "PW_TRANSFER_COOPERATIVE_CHUNK_BUFFER_SIZE=128",
 ]
 
 genrule(
@@ -50,6 +52,8 @@ cc_library(
         "src/services/Process.cpp",
         "src/services/SPIService.cpp",
         "tests/bridge_test_global.cpp",
+        "//third_party/avr_pigweed_port/pw_digital_io_avr:pw_digital_io_avr_sources",
+        "//third_party/avr_pigweed_port/pw_spi_avr:pw_spi_avr_sources",
     ] + glob(["src/protocol/*.pb.c"], allow_empty = True),
     hdrs = glob([
         "src/**/*.h",
@@ -68,6 +72,11 @@ cc_library(
         "//tools/arduino_stub",
         "@etl",
         "@nanopb_c",
+        "//third_party/avr_pigweed_port/pw_analog_avr:pw_analog_avr",
+        "//third_party/avr_pigweed_port/pw_digital_io_avr:pw_digital_io_avr",
+        "//third_party/avr_pigweed_port/pw_spi_avr:pw_spi_avr",
+        "@avr_pigweed_host//:pw_log_avr",
+        "@avr_pigweed_host//:pw_transfer",
         "@pigweed//pw_assert:assert",
         "@pigweed//pw_assert:check",
         "@pigweed//pw_bytes",
@@ -95,8 +104,8 @@ cc_library(
         "@pigweed//pw_stream",
         "@pigweed//pw_string:util",
         "@pigweed//pw_sync:interrupt_spin_lock",
+        "@pigweed//pw_sync:no_lock",
         "@pigweed//pw_tokenizer",
-        "@pigweed//pw_transfer",
         "@pigweed//pw_varint",
         "@wolfssl",
     ],
@@ -125,31 +134,33 @@ HOST_TEST_SUITES = [
 ]
 
 [
-    cc_test(
+    pw_cc_test(
         name = suite,
+        size = "small",
         srcs = ["tests/{}.cpp".format(suite)],
-        copts = HOST_COPTS,
+        copts = TEST_COPTS,
         defines = HOST_DEFINES,
         deps = [
             ":bridge_core",
             ":host_filesystem_mock",
             "@pigweed//pw_assert:backend_impl",
             "@pigweed//pw_log:backend_impl",
-            "@unity",
+            "@pigweed//pw_unit_test",
         ],
     )
     for suite in HOST_TEST_SUITES
 ]
 
-cc_test(
+pw_cc_test(
     name = "test_hal_weak_defaults",
+    size = "small",
     srcs = ["tests/test_hal_weak_defaults.cpp"],
-    copts = HOST_COPTS,
+    copts = TEST_COPTS,
     defines = HOST_DEFINES,
     deps = [
         ":bridge_core",
         "@pigweed//pw_assert:backend_impl",
         "@pigweed//pw_log:backend_impl",
-        "@unity",
+        "@pigweed//pw_unit_test",
     ],
 )

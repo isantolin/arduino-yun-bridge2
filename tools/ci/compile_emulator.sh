@@ -82,7 +82,7 @@ for source in "${WOLF_SOURCES[@]}"; do
     object_name="${object_name//\//_}"
     object="${WOLF_OBJ_DIR}/${object_name%.c}.o"
     gcc -std=c99 -O2 -g -Wall -Wextra -Werror \
-        -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DWOLFSSL_USER_SETTINGS \
+        -DARDUINO=100 -DWOLFSSL_USER_SETTINGS \
         -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST \
         -I"${WOLFSSL_INC}" \
         -I"${WOLFSSL_PATH}" \
@@ -120,7 +120,7 @@ for source in "${PW_ALL_SRCS[@]}"; do
 done
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
-g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
     "${PW_COOPERATIVE_DEFINES[@]}" \
     -I"${SRC_DIR}" \
@@ -157,7 +157,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -o "${TEST_DIR}/bridge_emulator"
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
-g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DETL_NO_STL -DETL_FORCE_STD_INITIALIZER_LIST -DPW_RPC_USE_GLOBAL_MUTEX=0 \
     "${PW_COOPERATIVE_DEFINES[@]}" \
     -I"${SRC_DIR}" \

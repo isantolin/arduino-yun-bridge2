@@ -8,7 +8,7 @@
 #include <Arduino.h>
 #include <etl/array.h>
 #include <pw_span/span.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -26,10 +26,7 @@ static void capture_harden_status(pw::Status s, pw::span<const uint8_t>) {
   s_captured_harden_status = s;
 }
 
-void setUp() {}
-void tearDown() {}
-
-void test_bridge_malformed_rpc_packet() {
+TEST(ArduinoHarden, BridgeMalformedRpcPacket) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -44,16 +41,15 @@ void test_bridge_malformed_rpc_packet() {
   size_t frame_len = TestHdlc::encodeUIFrame(
       1, pw::span<const uint8_t>(malformed_rpc, sizeof(malformed_rpc)),
       frame_buf);
-  TEST_ASSERT_TRUE(frame_len > 0);
+  EXPECT_TRUE(frame_len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), frame_len));
 
-  TEST_ASSERT_EQUAL(static_cast<int>(pw::Status::InvalidArgument().code()),
-                    static_cast<int>(s_captured_harden_status.code()));
+  EXPECT_EQ(static_cast<int>(pw::Status::InvalidArgument().code()), static_cast<int>(s_captured_harden_status.code()));
   Bridge.onStatus(BridgeClass::StatusHandler());
 }
 
-void test_bridge_unknown_command_jump_table() {
+TEST(ArduinoHarden, BridgeUnknownCommandJumpTable) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -64,14 +60,14 @@ void test_bridge_unknown_command_jump_table() {
   size_t len = build_hdlc_rpc_frame(
       1, pw::rpc::internal::pwpb::PacketType::REQUEST, 0xDEADBEEF, 0xCAFEBABE,
       pw::span<const uint8_t>(), frame_buf, 42, 1);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
   // Server should send a response (Status::NotFound)
-  TEST_ASSERT_GREATER_THAN(0, stream.tx_buf.len);
+  EXPECT_GT(stream.tx_buf.len, 0);
 }
 
-void test_bridge_console_stream_rx() {
+TEST(ArduinoHarden, BridgeConsoleStreamRx) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -83,13 +79,13 @@ void test_bridge_console_stream_rx() {
   size_t len = TestHdlc::encodeUIFrame(
       3, pw::span<const uint8_t>(console_data, sizeof(console_data)),
       frame_buf);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
-  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isSynchronized());
 }
 
-void test_bridge_packet_received_edge_cases() {
+TEST(ArduinoHarden, BridgePacketReceivedEdgeCases) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -105,24 +101,25 @@ void test_bridge_packet_received_edge_cases() {
                            pw::tokenizer::Hash("rpc.pb.SystemService"),
                            pw::tokenizer::Hash("GetVersion"),
                            pw::span<const uint8_t>(), frame_buf, 1, 1);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   // Invalidate CRC
   frame_buf[len - 2] ^= 0xFF;
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
 
   // Should not have processed corrupt frame
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 }
 
-void test_bridge_begin_idempotency() {
+TEST(ArduinoHarden, BridgeBeginIdempotency) {
+  reset_bridge_core(Bridge, Serial);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
   Bridge.begin(9600);
-  TEST_ASSERT_TRUE(Bridge.isPostPassed());
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_TRUE(Bridge.isPostPassed());
+  EXPECT_FALSE(Bridge.isSynchronized());
 }
 
-void test_bridge_linksync_auth_failure() {
+TEST(ArduinoHarden, BridgeLinksyncAuthFailure) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -139,7 +136,7 @@ void test_bridge_linksync_auth_failure() {
   uint8_t payload_buf[64];
   pb_ostream_t ostream =
       pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-  TEST_ASSERT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_msg));
+  EXPECT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_msg));
 
   etl::array<uint8_t, 256> frame_buf;
   size_t len = build_hdlc_rpc_frame(
@@ -148,13 +145,13 @@ void test_bridge_linksync_auth_failure() {
       pw::tokenizer::Hash("LinkSync"),
       pw::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf, 1,
       1);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 }
 
-void test_bridge_security_pre_sync_rejection() {
+TEST(ArduinoHarden, BridgeSecurityPreSyncRejection) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -169,13 +166,13 @@ void test_bridge_security_pre_sync_rejection() {
                            pw::tokenizer::Hash("rpc.pb.FileSystemService"),
                            pw::tokenizer::Hash("Remove"),
                            pw::span<const uint8_t>(), frame_buf, 1, 1);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
-  TEST_ASSERT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isSynchronized());
 }
 
-void test_bridge_nonce_reuse_attack() {
+TEST(ArduinoHarden, BridgeNonceReuseAttack) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -193,7 +190,7 @@ void test_bridge_nonce_reuse_attack() {
   uint8_t payload_buf[64];
   pb_ostream_t ostream =
       pb_ostream_from_buffer(payload_buf, sizeof(payload_buf));
-  TEST_ASSERT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_msg));
+  EXPECT_TRUE(pb_encode(&ostream, rpc_pb_LinkSync_fields, &sync_msg));
 
   etl::array<uint8_t, 256> frame_buf;
   size_t len = build_hdlc_rpc_frame(
@@ -202,21 +199,9 @@ void test_bridge_nonce_reuse_attack() {
       pw::tokenizer::Hash("LinkSync"),
       pw::span<const uint8_t>(payload_buf, ostream.bytes_written), frame_buf, 1,
       1);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
-  TEST_ASSERT_TRUE(ba.isSynchronized());
+  EXPECT_TRUE(ba.isSynchronized());
 }
 
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_bridge_malformed_rpc_packet);
-  RUN_TEST(test_bridge_unknown_command_jump_table);
-  RUN_TEST(test_bridge_console_stream_rx);
-  RUN_TEST(test_bridge_packet_received_edge_cases);
-  RUN_TEST(test_bridge_begin_idempotency);
-  RUN_TEST(test_bridge_linksync_auth_failure);
-  RUN_TEST(test_bridge_security_pre_sync_rejection);
-  RUN_TEST(test_bridge_nonce_reuse_attack);
-  return UNITY_END();
-}

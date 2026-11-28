@@ -3,12 +3,22 @@ common --repo_env=DO_NOT_TRACK=1
 
 build --cxxopt=-std=c++20
 build --host_cxxopt=-std=c++20
+build --features=-supports_start_end_lib
+build --host_features=-supports_start_end_lib
 build --per_file_copt=external/.*@-Wno-deprecated-declarations
+build --host_per_file_copt=external/.*@-Wno-deprecated-declarations
 build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
 build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_stdio
 build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_basic
 build --@pigweed//pw_assert:check_backend=@pigweed//pw_assert_basic
 build --@pigweed//pw_assert:backend_impl=@pigweed//pw_assert_basic:impl
+
+# Arduino MCU host test configuration: selects the firmware's tokenized
+# pw_log_avr backend and millis()-backed pw_chrono SystemClock backend while
+# leaving the default Linux gateway build untouched.
+build:arduino_host --@pigweed//pw_log:backend=@avr_pigweed_host//:pw_log_avr
+build:arduino_host --@pigweed//pw_log:backend_impl=@avr_pigweed_host//:pw_log_avr_impl
+build:arduino_host --@pigweed//pw_chrono:system_clock_backend=//tools/pw_chrono_arduino:host_system_clock
 
 coverage --combined_report=lcov
 coverage --instrumentation_filter="^//mcubridge-gateway-cpp[/:],^//mcubridge-library-arduino[/:]"

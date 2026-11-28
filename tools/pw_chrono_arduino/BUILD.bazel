@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Host SystemClock backend backed by Arduino millis() (implemented in
+# tools/arduino_stub/ArduinoStubs.cpp), matching PW_CHRONO_ARDUINO_INC_FLAGS
+# used by native emulators and 32-bit bare-metal firmware.
+cc_library(
+    name = "host_system_clock",
+    hdrs = ["public_overrides/pw_chrono_backend/system_clock_config.h"],
+    strip_include_prefix = "public_overrides",
+    deps = [
+        "@pigweed//pw_chrono:epoch",
+        "@pigweed//pw_chrono:system_clock.facade",
+    ],
+)

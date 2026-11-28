@@ -7,7 +7,7 @@
 #endif
 #include <Arduino.h>
 #include <etl/array.h>
-#include <unity.h>
+#include "pw_unit_test/framework.h"
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
@@ -17,9 +17,6 @@
 Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
 HardwareSerial Serial1;
-void setUp(void) {}
-void tearDown(void) {}
-
 unsigned long g_test_millis = 0;
 unsigned long millis() { return g_test_millis; }
 void delay(unsigned long ms) { g_test_millis += ms; }
@@ -32,18 +29,18 @@ namespace {
 
 using bridge::test::TestAccessor;
 
-void test_bridge_handshake_timeout() {
+TEST(ArduinoStress, BridgeHandshakeTimeout) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
   // Trigger handshake timeout before sync
   ba.onHandshakeTimeout();
-  TEST_ASSERT_TRUE(ba.isFault());
-  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  EXPECT_TRUE(ba.isFault());
+  EXPECT_FALSE(ba.isTxEnabled());
 }
 
-void test_bridge_packet_corruption_chaos() {
+TEST(ArduinoStress, BridgePacketCorruptionChaos) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -56,10 +53,10 @@ void test_bridge_packet_corruption_chaos() {
   const uint8_t truncated[] = {0x7E, 0x01, 0x00, 0x7E};
   ba.feedHdlcBytes(pw::span<const uint8_t>(truncated, sizeof(truncated)));
 
-  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  EXPECT_FALSE(Bridge.isSynchronized());
 }
 
-void test_bridge_dispatch_security_denial() {
+TEST(ArduinoStress, BridgeDispatchSecurityDenial) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -76,32 +73,24 @@ void test_bridge_dispatch_security_denial() {
                            pw::tokenizer::Hash("rpc.pb.SystemService"),
                            pw::tokenizer::Hash("GetFreeMemory"),
                            pw::span<const uint8_t>(), frame_buf, 1, 1);
-  TEST_ASSERT_TRUE(len > 0);
+  EXPECT_TRUE(len > 0);
 
   ba.feedHdlcBytes(pw::span<const uint8_t>(frame_buf.data(), len));
 
   // Must not synchronize and TX must remain disabled
-  TEST_ASSERT_FALSE(ba.isSynchronized());
-  TEST_ASSERT_FALSE(ba.isTxEnabled());
+  EXPECT_FALSE(ba.isSynchronized());
+  EXPECT_FALSE(ba.isTxEnabled());
 }
 
-void test_bridge_fsm_illegal_transitions() {
+TEST(ArduinoStress, BridgeFsmIllegalTransitions) {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
   ba.setIdle();
   ba.trigger(bridge::fsm::EvBaudrateApplied());
-  TEST_ASSERT_TRUE(ba.isUnsynchronized());
+  EXPECT_TRUE(ba.isUnsynchronized());
 }
 
 }  // namespace
 
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_bridge_handshake_timeout);
-  RUN_TEST(test_bridge_packet_corruption_chaos);
-  RUN_TEST(test_bridge_dispatch_security_denial);
-  RUN_TEST(test_bridge_fsm_illegal_transitions);
-  return UNITY_END();
-}

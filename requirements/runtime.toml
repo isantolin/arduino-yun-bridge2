@@ -160,14 +160,6 @@ version = "20.49.0"
 check_file = "include/etl/algorithm.h"
 rationale = "Zero-heap, STL-free deterministic C++ template library for SIL-2 MCU algorithms"
 
-[[cpp_dependency]]
-name = "Unity"
-github = "ThrowTheSwitch/Unity"
-ref_type = "tags"
-version = "v2.7.0"
-check_file = "unity.h"
-target_dir = "tests"
-rationale = "Host-based deterministic C/C++ unit testing harness for MCU components"
 
 [[cpp_dependency]]
 name = "nanopb_core"
@@ -256,21 +248,21 @@ rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pi
 
 [[dev_dependency]]
 name = "types-psutil"
-pip = "types-psutil==7.2.2.20261111"
-check_latest = false
-rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
+pip = "types-psutil==7.2.2.20261122"
+check_latest = true
+rationale = "Type stubs for psutil process and telemetry APIs"
 
 [[dev_dependency]]
 name = "types-pexpect"
-pip = "types-pexpect==4.9.0.20260518"
-check_latest = false
-rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
+pip = "types-pexpect==4.9.0.20261122"
+check_latest = true
+rationale = "Type stubs for pexpect interactive QEMU automation"
 
 [[dev_dependency]]
 name = "types-pyserial"
-pip = "types-pyserial==3.5.0.20261030"
-check_latest = false
-rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
+pip = "types-pyserial==3.5.0.20261122"
+check_latest = true
+rationale = "Type stubs for pyserial transport and URL resolution APIs"
 
 
 [[dev_dependency]]
@@ -310,8 +302,8 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.170.19"
-check_latest = false
+pip = "hypothesis==6.170.23"
+check_latest = true
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -321,7 +313,7 @@ rationale = "HTTP client used by development tooling and retry integration tests
 
 [[dev_dependency]]
 name = "asyncssh"
-pip = "asyncssh==2.24.1"
+pip = "asyncssh==2.24.2"
 rationale = "Asynchronous SSH and SFTP client for QEMU OpenWrt deployment and remote execution"
 
 [[dev_dependency]]
@@ -351,9 +343,9 @@ rationale = "Formal YAML parser for workflow frontmatter and configuration audit
 
 [[dev_dependency]]
 name = "types-pyyaml"
-pip = "types-PyYAML==6.0.12.20261113"
-check_latest = false
-rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
+pip = "types-PyYAML==6.0.12.20261122"
+check_latest = true
+rationale = "Type stubs for PyYAML workflow and configuration auditing"
 
 [[dev_dependency]]
 name = "setuptools"
@@ -367,8 +359,8 @@ rationale = "Standardized core utilities for Python package version parsing and 
 
 [[dev_dependency]]
 name = "clang-format"
-pip = "clang-format==22.1.8"
-check_latest = false
+pip = "clang-format==23.1.5"
+check_latest = true
 rationale = "Deterministic C++ and Arduino code formatter matching clang-format 22.x toolchain"
 
 [[dev_dependency]]

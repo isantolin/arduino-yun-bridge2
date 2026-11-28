@@ -130,7 +130,7 @@ class TestAccessor : public BridgeClass {
       _pin_subscriptions[idx].last_value = val;
     }
   }
-  void setSubscriptionLastReportMs(size_t idx, uint16_t ms) {
+  void setSubscriptionLastReportMs(size_t idx, uint32_t ms) {
     if (idx < _pin_subscriptions.size()) {
       _pin_subscriptions[idx].last_report_ms = ms;
     }

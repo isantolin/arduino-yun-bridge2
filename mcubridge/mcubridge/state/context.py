@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import collections
 import time
+from collections.abc import Callable, Iterable
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import psutil
 import structlog
@@ -38,6 +39,33 @@ from .storage import LmdbCache, LmdbDeque
 logger = structlog.get_logger("mcubridge.state")
 
 
+class _WaitProcsFn(Protocol):
+    def __call__(
+        self,
+        procs: Iterable[psutil.Process],
+        timeout: float | None = None,
+        callback: Callable[[psutil.Process], object] | None = None,
+    ) -> tuple[list[psutil.Process], list[psutil.Process]]: ...
+
+
+class _CpuPercentFn(Protocol):
+    def __call__(self, interval: float | None = None) -> float: ...
+
+
+def _wait_procs(
+    procs: Iterable[psutil.Process],
+    *,
+    timeout: float | None = None,
+) -> tuple[list[psutil.Process], list[psutil.Process]]:
+    fn: _WaitProcsFn = cast(_WaitProcsFn, cast(Any, psutil).wait_procs)
+    return fn(procs, timeout=timeout)
+
+
+def _cpu_percent(target: object, *, interval: float | None = None) -> float:
+    fn: _CpuPercentFn = cast(_CpuPercentFn, cast(Any, target).cpu_percent)
+    return fn(interval=interval)
+
+
 def terminate_pid_tree(pid: int, timeout: float = float(protocol.PROCESS_KILL_TIMEOUT_SECONDS)) -> None:
     """Recursively terminate an arbitrary process tree by root PID. [SIL-2]"""
     if pid <= 0 or not psutil.pid_exists(pid):
@@ -47,7 +75,7 @@ def terminate_pid_tree(pid: int, timeout: float = float(protocol.PROCESS_KILL_TI
         procs = p.children(recursive=True) + [p]
         for proc in procs:
             proc.terminate()
-        _, alive = psutil.wait_procs(procs, timeout=timeout)
+        _, alive = _wait_procs(procs, timeout=timeout)
         for lingering in alive:
             lingering.kill()
     except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied) as exc:
@@ -614,7 +642,7 @@ class RuntimeState:
     def build_status_snapshot(self) -> cloud_gateway_pb2.BridgeStatus:
         """Build a holistic snapshot of the bridge status. [SIL-2]"""
         try:
-            sys_cpu = psutil.cpu_percent(interval=None)
+            sys_cpu = _cpu_percent(psutil, interval=None)
             vmem = psutil.virtual_memory()
             total_mem = vmem.total
             avail_mem = vmem.available
@@ -641,7 +669,7 @@ class RuntimeState:
             curr_p = psutil.Process()
             with curr_p.oneshot():
                 curr_mem = curr_p.memory_info().rss
-                curr_cpu = curr_p.cpu_percent(interval=None)
+                curr_cpu = _cpu_percent(curr_p, interval=None)
                 proc_name = curr_p.name() or "mcubridge-daemon"
             proc_stats.append(
                 cloud_gateway_pb2.ProcessStats(
@@ -660,7 +688,7 @@ class RuntimeState:
                     try:
                         sub_p = psutil.Process(pid)
                         with sub_p.oneshot():
-                            sub_cpu = sub_p.cpu_percent(interval=None)
+                            sub_cpu = _cpu_percent(sub_p, interval=None)
                             sub_mem = sub_p.memory_info().rss
                         proc_stats.append(
                             cloud_gateway_pb2.ProcessStats(

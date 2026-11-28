@@ -749,18 +749,16 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       if (!_shared_secret.empty() && _session_keys_ready &&
           isLinkSyncRequest(meta)) {
         emitStatus(pw::Status::FailedPrecondition());
-        if (decrypted) {
-          zeroReceivedPlaintext(data);
-        }
+        PW_DASSERT(decrypted);
+        zeroReceivedPlaintext(data);
         return;
       }
       if (!_shared_secret.empty() && !isSynchronized() &&
           !isLinkSyncRequest(meta) && !isLinkResetRequest(meta)) {
         emitStatus(pw::Status::FailedPrecondition());
         enterSafeState();
-        if (decrypted) {
-          zeroReceivedPlaintext(data);
-        }
+        PW_DASSERT(decrypted);
+        zeroReceivedPlaintext(data);
         return;
       }
       if (isMetricServiceRequest(meta)) {
@@ -771,7 +769,7 @@ void BridgeClass::_handleReceivedHdlcFrame(const pw::hdlc::Frame& frame) {
       _rpc_plaintext_response = false;
       if (!status.ok()) emitStatus(status);
       _emitStackWatermarkLog();
-    } else if (meta.destination_is_client()) {
+    } else {
       (void)_rpc_client.ProcessPacket(pw::as_bytes(data));
       _emitStackWatermarkLog();
     }
@@ -1062,7 +1060,9 @@ pw::Status BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
       return input.Enable();
     }
     case rpc_pb_PinModeType_PIN_OUTPUT: {
+#if defined(ARDUINO_ARCH_ESP32)
       if (!isValidDigitalOutputPin(m.pin)) return pw::Status::InvalidArgument();
+#endif
       const PinRuntimeMode previous_mode = g_pin_runtime_modes[pin];
       const bool initial_active =
           previous_mode == PinRuntimeMode::kInputPullup ||
@@ -1158,7 +1158,7 @@ void BridgeClass::_handlePinSubscribe(
   const bool any_active =
       etl::any_of(_pin_subscriptions.begin(), _pin_subscriptions.end(),
                   [](const PinSubscription& sub) { return sub.active; });
-  if (!any_active && _pin_stream_writer.active()) {
+  if (!any_active) {
     (void)_pin_stream_writer.Finish(pw::OkStatus());
   }
 }

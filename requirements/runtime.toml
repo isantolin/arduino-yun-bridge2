@@ -248,19 +248,19 @@ rationale = "Type stubs for google.protobuf required by pyrefly [commanded by Pi
 
 [[dev_dependency]]
 name = "types-psutil"
-pip = "types-psutil==7.2.2.20261111"
+pip = "types-psutil==7.2.2.20261122"
 check_latest = true
 rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "types-pexpect"
-pip = "types-pexpect==4.9.0.20260518"
+pip = "types-pexpect==4.9.0.20261122"
 check_latest = true
 rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
 [[dev_dependency]]
 name = "types-pyserial"
-pip = "types-pyserial==3.5.0.20261030"
+pip = "types-pyserial==3.5.0.20261122"
 check_latest = true
 rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 
@@ -343,7 +343,7 @@ rationale = "Formal YAML parser for workflow frontmatter and configuration audit
 
 [[dev_dependency]]
 name = "types-pyyaml"
-pip = "types-PyYAML==6.0.12.20261113"
+pip = "types-PyYAML==6.0.12.20261122"
 check_latest = true
 rationale = "Pinned to pre-20261122 typeshed compatible with pyright 1.1.414 bundled _typeshed (no FloatInt)"
 

@@ -338,7 +338,7 @@ def test_check_external_versions_reports_native_mechanism_updates(tmp_path: Path
     latest_map = {
         "renode/renode": "v1.17.1",
         "arduino/arduino-cli": "v1.6.0",
-        "espressif/arduino-esp32": "3.3.13",
+        "espressif/arduino-esp32": "4.0.0",
         "bazelbuild/rules_cc": "0.2.28",
     }
 

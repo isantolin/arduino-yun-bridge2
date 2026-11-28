@@ -25,6 +25,7 @@ void handle_error(const etl::exception& e);
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
+#include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
 #include "test_support.h"
@@ -46,6 +47,8 @@ void on_datastore_get(etl::string_view, pw::span<const uint8_t>) {}
 void on_process_run(int32_t) {}
 void on_process_poll(pw::Status, uint16_t, pw::span<const uint8_t>,
                      pw::span<const uint8_t>) {}
+uint32_t g_edge_mailbox_calls = 0U;
+void on_edge_mailbox_msg(pw::span<const uint8_t>) { ++g_edge_mailbox_calls; }
 
 inline void feed_rpc_request(TestAccessor& ba, uint32_t service_id,
                              uint32_t method_id,
@@ -716,7 +719,10 @@ TEST_F(BridgeEdgePathsFixture, ArchitecturalExtensionsEdgePaths) {
   feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
                        rpc_pb_PinSubscribeRequest_fields, sub_req);
 
-  // Subscription task execution paths
+  // Subscription task execution paths (advance clock past zero so initial
+  // reports record a non-zero last_report_ms and subsequent hysteresis checks
+  // actually evaluate diff < hysteresis).
+  bridge::test::fault::advance_clock_ms(100U);
   ba.clearSynchronized();
   ba.invokeSubscriptionTask();  // !isSynchronized()
   ba.setSynchronized();
@@ -726,10 +732,11 @@ TEST_F(BridgeEdgePathsFixture, ArchitecturalExtensionsEdgePaths) {
 
   ba.setSubscriptionLastReportMs(0, bridge::hal::nowMillis() - 50U);
   ba.setSubscriptionLastValue(0, 100);
-  ba.invokeSubscriptionTask();  // diff < 0
+  ba.invokeSubscriptionTask();  // diff >= hysteresis -> updates last_report_ms
 
+  bridge::test::fault::advance_clock_ms(50U);
   ba.setSubscriptionLastValue(0, 0);
-  ba.invokeSubscriptionTask();  // diff < hysteresis
+  ba.invokeSubscriptionTask();  // diff < hysteresis with non-zero last_report_ms
 
   ba.setSubscriptionActive(0, false);
   ba.invokeSubscriptionTask();  // !sub.active
@@ -1316,4 +1323,108 @@ TEST_F(BridgeEdgePathsFixture, PreHandshakeMalformedRpcFrameEntersSafeState) {
             static_cast<int>(g_edge_last_status.code()));
   EXPECT_FALSE(ba.isTxEnabled());
   Bridge.onStatus(BridgeClass::StatusHandler());
+}
+
+TEST_F(BridgeEdgePathsFixture,
+       SubscriptionClosePullupHandoffAndMiscEdgeContracts) {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  resetArduinoStubPinStates();
+
+  const uint32_t kGpioSvc = pw::tokenizer::Hash("rpc.pb.GpioService");
+  const uint32_t kSysSvc = pw::tokenizer::Hash("rpc.pb.SystemService");
+
+  // 1. INPUT_PULLUP / OUTPUT_HIGH / PWM_HIGH -> OUTPUT must preserve HIGH
+  // latch (no low glitch).
+  rpc_pb_PinMode mode_pu = rpc_pb_PinMode_init_default;
+  mode_pu.pin = 7U;
+  mode_pu.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                       rpc_pb_PinMode_fields, mode_pu);
+  rpc_pb_PinMode mode_out = rpc_pb_PinMode_init_default;
+  mode_out.pin = 7U;
+  mode_out.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                       rpc_pb_PinMode_fields, mode_out);
+  EXPECT_EQ(OUTPUT, g_arduino_stub_pin_states[7U].mode);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[7U].value);
+
+  rpc_pb_DigitalWrite dw_high = rpc_pb_DigitalWrite_init_default;
+  dw_high.pin = 8U;
+  dw_high.value = 1U;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("DigitalWrite"),
+                       rpc_pb_DigitalWrite_fields, dw_high);
+  mode_out.pin = 8U;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                       rpc_pb_PinMode_fields, mode_out);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[8U].value);
+
+  rpc_pb_AnalogWrite aw_high = rpc_pb_AnalogWrite_init_default;
+  aw_high.pin = 9U;
+  aw_high.value = 128U;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("AnalogWrite"),
+                       rpc_pb_AnalogWrite_fields, aw_high);
+  mode_out.pin = 9U;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SetPinMode"),
+                       rpc_pb_PinMode_fields, mode_out);
+  EXPECT_EQ(HIGH, g_arduino_stub_pin_states[9U].value);
+
+  // 2. Single INPUT_PULLUP subscription ticks and unsubscribing the last
+  // active pin finishes the server stream writer.
+  bridge::test::fault::advance_clock_ms(100U);
+  rpc_pb_PinSubscribeRequest sub = rpc_pb_PinSubscribeRequest_init_default;
+  sub.pin = 6U;
+  sub.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  sub.interval_ms = 10U;
+  sub.hysteresis = 1U;
+  sub.enabled = true;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub);
+  g_arduino_stub_pin_states[6U].value = HIGH;
+  stream.tx_buf.clear();
+  ba.invokeSubscriptionTask();
+  EXPECT_GT(stream.tx_buf.len, 0U);
+  EXPECT_EQ(1, ba.subscriptionLastValueForPin(6U));
+
+  sub.enabled = false;
+  feed_rpc_request_msg(ba, kGpioSvc, pw::tokenizer::Hash("SubscribePins"),
+                       rpc_pb_PinSubscribeRequest_fields, sub);
+  EXPECT_FALSE(Bridge.sendPinEvent(6U, 1U));
+
+  // 3. HardwareSerial baudrate path in Bridge.begin().
+  ba.setHardwareSerial(&Serial);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, nullptr);
+  EXPECT_TRUE(Bridge.isPostPassed());
+
+  // 4. HAL fillLinkNonce rejects undersized output buffer.
+  const etl::array<uint8_t, 4> secret = {'k', 'e', 'y', '!'};
+  etl::array<uint8_t, 4> short_nonce = {};
+  EXPECT_FALSE(bridge::hal::fillLinkNonce(secret, short_nonce));
+
+  // 5. Mailbox._enqueue ignores empty payloads without invoking the callback.
+  Mailbox.onLost();
+  g_edge_mailbox_calls = 0U;
+  Mailbox.registerMessageCallback(
+      MailboxClass::MessageCallback::create<on_edge_mailbox_msg>());
+  Mailbox._enqueue(pw::span<const uint8_t>());
+  Mailbox.process();
+  EXPECT_EQ(0U, g_edge_mailbox_calls);
+  Mailbox.registerMessageCallback(MailboxClass::MessageCallback());
+
+  // 6. Plaintext LinkReset on unsynchronized authenticated link is accepted
+  // without entering safe state (unlike client-bound packets or arbitrary RPCs).
+  reset_bridge_core(Bridge, stream, 0U, "shared-secret");
+  auto& auth_ba = TestAccessor::create(Bridge);
+  EXPECT_FALSE(auth_ba.isSynchronized());
+  EXPECT_TRUE(auth_ba.isTxEnabled());
+  feed_rpc_request(auth_ba, kSysSvc, pw::tokenizer::Hash("LinkReset"));
+  EXPECT_TRUE(auth_ba.isTxEnabled());
+
+  // Plaintext RESPONSE packet (client destination) before handshake fails
+  // closed into safe state.
+  send_hdlc_rpc(auth_ba, kSysSvc, pw::tokenizer::Hash("LinkSync"), {},
+                pw::rpc::internal::pwpb::PacketType::RESPONSE);
+  EXPECT_FALSE(auth_ba.isTxEnabled());
 }

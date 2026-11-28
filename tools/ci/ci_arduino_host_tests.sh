@@ -72,12 +72,13 @@ if [ -z "${REPORT}" ] || [ ! -s "${REPORT}" ]; then
     echo "[host-cpp] ERROR: Bazel did not produce an LCOV coverage report." >&2
     exit 1
 fi
-cp "${REPORT}" "${OUTPUT_ROOT}/coverage.info"
+install -m 0644 "${REPORT}" "${OUTPUT_ROOT}/coverage.info"
 
 python3 - "${OUTPUT_ROOT}/coverage.info" "${OUTPUT_ROOT}/summary.txt" \
     "${MIN_LINE}" "${MIN_BRANCH}" "${MIN_FUNCTION}" <<'PY'
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -92,9 +93,13 @@ totals = {
     "branch": [0, 0],
     "function": [0, 0],
 }
+# Match main's gcovr --exclude-branches-by-pattern rule for fatal assert macros.
+FATAL_ASSERT_RE = re.compile(r"\bPW_(?:D?ASSERT|D?CHECK[A-Z_]*)\s*\(")
 source = ""
+source_lines: list[str] = []
 functions: dict[str, int] = {}
 declared_functions: set[str] = set()
+per_file_rows: list[str] = []
 
 def include(path: str) -> bool:
     normalized = path.replace("\\", "/")
@@ -107,18 +112,30 @@ def include(path: str) -> bool:
 def finish_file() -> None:
     if not source or not include(source):
         return
+    fn_total = len(declared_functions)
+    fn_hit = sum(functions.get(name, 0) > 0 for name in declared_functions)
     totals["line"][0] += line_total
     totals["line"][1] += line_hit
     totals["branch"][0] += branch_total
     totals["branch"][1] += branch_hit
-    totals["function"][0] += len(declared_functions)
-    totals["function"][1] += sum(functions.get(name, 0) > 0 for name in declared_functions)
+    totals["function"][0] += fn_total
+    totals["function"][1] += fn_hit
+    lp = 100.0 if line_total == 0 else 100.0 * line_hit / line_total
+    bp = 100.0 if branch_total == 0 else 100.0 * branch_hit / branch_total
+    fp = 100.0 if fn_total == 0 else 100.0 * fn_hit / fn_total
+    per_file_rows.append(
+        f"  {source}: line {lp:5.1f}% ({line_hit}/{line_total}), "
+        f"branch {bp:5.1f}% ({branch_hit}/{branch_total}), "
+        f"func {fp:5.1f}% ({fn_hit}/{fn_total})"
+    )
 
 line_total = line_hit = branch_total = branch_hit = 0
 for raw in Path(report).read_text(encoding="utf-8").splitlines():
     if raw.startswith("SF:"):
         finish_file()
         source = raw[3:]
+        src_path = Path(source)
+        source_lines = src_path.read_text(encoding="utf-8").splitlines() if src_path.is_file() else []
         functions = {}
         declared_functions = set()
         line_total = line_hit = branch_total = branch_hit = 0
@@ -138,6 +155,9 @@ for raw in Path(report).read_text(encoding="utf-8").splitlines():
     elif raw.startswith("BRDA:"):
         parts = raw[5:].split(",")
         if len(parts) == 4 and parts[3] != "-":
+            lineno = int(parts[0])
+            if 0 < lineno <= len(source_lines) and FATAL_ASSERT_RE.search(source_lines[lineno - 1]):
+                continue
             branch_total += 1
             branch_hit += int(parts[3]) > 0
 finish_file()
@@ -151,6 +171,8 @@ for key in ("line", "branch", "function"):
     failed |= percentage < minima[key]
 text = "\n".join(lines) + "\n"
 Path(summary).write_text(text, encoding="utf-8")
+if per_file_rows:
+    print("\n".join(per_file_rows))
 print(text, end="")
 if failed:
     raise SystemExit(1)

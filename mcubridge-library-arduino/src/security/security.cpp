@@ -68,12 +68,12 @@ bool derive_hkdf_sha256(pw::span<const uint8_t> secret,
   // output buffers (32-byte handshake key or 64-byte RX||TX key pair).
   // Embedded size_t is at most word32; the static assertion above enforces it.
   PW_ASSERT(!secret.empty());
+  PW_ASSERT(!salt.empty());
+  PW_ASSERT(!info.empty());
   PW_ASSERT(!output.empty());
-  const byte* salt_data = salt.empty() ? &kEmptyBuffer : salt.data();
-  const byte* info_data = info.empty() ? &kEmptyBuffer : info.data();
   const int status =
       wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-              salt_data, static_cast<word32>(salt.size()), info_data,
+              salt.data(), static_cast<word32>(salt.size()), info.data(),
               static_cast<word32>(info.size()), output.data(),
               static_cast<word32>(output.size()));
   if (status != 0) {
@@ -89,8 +89,8 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
   // Private call sites pass the 32-byte derived authentication key as both
   // key storage and digest scratch, and a fixed-size handshake nonce as input.
   PW_ASSERT(!key.empty());
+  PW_ASSERT(!input.empty());
   PW_ASSERT(digest_scratch.size() == RPC_SHA256_DIGEST_SIZE);
-  const byte* input_data = input.empty() ? &kEmptyBuffer : input.data();
   Hmac hmac{};
   if (wc_HmacInit(&hmac, nullptr, 0) != 0) {
     secure_zero(digest_scratch);
@@ -103,7 +103,7 @@ bool compute_hmac_sha256(pw::span<const uint8_t> key,
   bool ok = wc_HmacSetKey(&hmac, WC_SHA256, key.data(),
                           static_cast<word32>(key.size())) == 0;
   if (ok) {
-    ok = wc_HmacUpdate(&hmac, input_data, static_cast<word32>(input.size())) ==
+    ok = wc_HmacUpdate(&hmac, input.data(), static_cast<word32>(input.size())) ==
          0;
   }
 #if defined(WOLF_CRYPTO_CB)

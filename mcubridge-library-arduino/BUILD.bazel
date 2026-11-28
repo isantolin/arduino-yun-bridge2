@@ -8,6 +8,7 @@ HOST_COPTS = [
     "-Wextra",
     "-Werror",
     "-Wno-unused-parameter",
+    "-fno-exceptions",
 ]
 
 TEST_COPTS = HOST_COPTS + [
